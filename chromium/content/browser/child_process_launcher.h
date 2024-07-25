@@ -40,6 +40,7 @@
 
 namespace base {
 class CommandLine;
+class UnsafeSharedMemoryRegion;
 #if BUILDFLAG(IS_ANDROID)
 namespace android {
 enum class ChildBindingState;
@@ -175,7 +176,7 @@ struct ChildProcessLauncherFileData {
   // with the corresponding key.
   //
   // Currently only supported on Linux, ChromeOS and Android platforms.
-  // TODO(crbug.com/1407089): this currently silently fails on Android.
+  // TODO(crbug.com/40253015): this currently silently fails on Android.
   std::map<std::string, absl::variant<base::FilePath, base::ScopedFD>>
       files_to_preload;
 #endif
@@ -198,6 +199,7 @@ class CONTENT_EXPORT ChildProcessLauncher {
     // Whether the process can use pre-warmed up connection.
     virtual bool CanUseWarmUpConnection();
 #endif
+
    protected:
     virtual ~Client() {}
   };
@@ -219,6 +221,7 @@ class CONTENT_EXPORT ChildProcessLauncher {
       mojo::OutgoingInvitation mojo_invitation,
       const mojo::ProcessErrorCallback& process_error_callback,
       std::unique_ptr<ChildProcessLauncherFileData> file_data,
+      base::UnsafeSharedMemoryRegion = {},
       bool terminate_on_shutdown = true);
 
   ChildProcessLauncher(const ChildProcessLauncher&) = delete;
@@ -264,7 +267,7 @@ class CONTENT_EXPORT ChildProcessLauncher {
   static bool TerminateProcess(const base::Process& process, int exit_code);
 
   // Replaces the ChildProcessLauncher::Client for testing purposes. Returns the
-  // previous  client.
+  // previous client.
   Client* ReplaceClientForTest(Client* client);
 
 #if BUILDFLAG(IS_ANDROID)

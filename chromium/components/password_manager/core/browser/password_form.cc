@@ -22,6 +22,11 @@ namespace password_manager {
 namespace {
 
 std::string ToString(PasswordForm::Store in_store) {
+  // It is possible that both flags are set for password forms in best matches.
+  if (in_store == (PasswordForm::Store::kProfileStore |
+                   PasswordForm::Store::kAccountStore)) {
+    return "Account and Profile Store";
+  }
   switch (in_store) {
     case PasswordForm::Store::kNotSet:
       return "Not Set";
@@ -388,9 +393,9 @@ bool ArePasswordFormUniqueKeysEqual(const PasswordForm& left,
 }
 
 bool operator==(const PasswordForm& lhs, const PasswordForm& rhs) {
-  // TODO(crbug.com/1330906): Revisit whether we should consider the primary_key
-  // field when comparing forms. This is currently used only in tests, and non
-  // of the existing tests test the equality of primary_keys.
+  // TODO(crbug.com/40227324): Revisit whether we should consider the
+  // primary_key field when comparing forms. This is currently used only in
+  // tests, and non of the existing tests test the equality of primary_keys.
   return lhs.scheme == rhs.scheme && lhs.signon_realm == rhs.signon_realm &&
          lhs.url == rhs.url && lhs.action == rhs.action &&
          lhs.submit_element == rhs.submit_element &&

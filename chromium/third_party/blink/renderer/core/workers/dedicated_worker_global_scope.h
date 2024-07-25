@@ -51,6 +51,7 @@ class DedicatedWorkerObjectProxy;
 class DedicatedWorkerThread;
 class PostMessageOptions;
 class ScriptState;
+class SourceLocation;
 class WorkerClassicScriptLoader;
 struct GlobalScopeCreationParams;
 
@@ -84,7 +85,8 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
       mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
           dedicated_worker_host,
       mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
-          back_forward_cache_controller_host);
+          back_forward_cache_controller_host,
+      base::TimeTicks dedicated_worker_start_time);
 
   ~DedicatedWorkerGlobalScope() override;
 
@@ -129,13 +131,17 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
       network::mojom::CredentialsMode,
       RejectCoepUnsafeNone reject_coep_unsafe_none) override;
   bool IsOffMainThreadScriptFetchDisabled() override;
+  void WorkerScriptFetchFinished(
+      Script& worker_script,
+      std::optional<v8_inspector::V8StackTraceId> stack_id) override;
 
   // Implements scheduler::WorkerScheduler::Delegate.
   void UpdateBackForwardCacheDisablingFeatures(
       BlockingDetails details) override;
   // Implements BackForwardCacheLoaderHelperImpl::Delegate.
   void EvictFromBackForwardCache(
-      mojom::blink::RendererEvictionReason reason) override;
+      mojom::blink::RendererEvictionReason reason,
+      std::unique_ptr<SourceLocation> source_location) override;
   void DidBufferLoadWhileInBackForwardCache(bool update_process_wide_count,
                                             size_t num_bytes) override;
 
@@ -173,7 +179,7 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
 
   // Returns the ExecutionContextToken that uniquely identifies the parent
   // context that created this dedicated worker.
-  absl::optional<ExecutionContextToken> GetParentExecutionContextToken()
+  std::optional<ExecutionContextToken> GetParentExecutionContextToken()
       const final {
     return parent_token_;
   }
@@ -205,7 +211,8 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
       mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
           dedicated_worker_host,
       mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
-          back_forward_cache_controller_host);
+          back_forward_cache_controller_host,
+      base::TimeTicks dedicated_worker_start_time);
 
   void DidReceiveResponseForClassicScript(
       WorkerClassicScriptLoader* classic_script_loader);
@@ -236,6 +243,12 @@ class CORE_EXPORT DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
   // Whether this worker has storage access (inherited from the parent
   // ExecutionContext).
   bool has_storage_access_;
+
+  // The timestamp taken when FetchAndRunClassicScript() is called.
+  base::TimeTicks fetch_classic_script_start_time_;
+
+  // The timestamp taken when DedicatedWorker::Start() was called.
+  base::TimeTicks dedicated_worker_start_time_;
 };
 
 template <>

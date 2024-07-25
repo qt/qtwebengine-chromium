@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <algorithm>
 #include <memory>
 #include <string>
@@ -9,6 +14,7 @@
 #include <vector>
 
 #include "core/fxcrt/bytestring.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span_util.h"
 #include "public/fpdf_doc.h"
 #include "public/fpdfview.h"
@@ -18,7 +24,6 @@
 #include "testing/range_set.h"
 #include "testing/utils/file_util.h"
 #include "testing/utils/path_service.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 namespace {
 
@@ -48,7 +53,7 @@ class TestAsyncLoader final : public FX_DOWNLOADHINTS, FX_FILEAVAIL {
     }
 
     file_access_.m_FileLen =
-        pdfium::base::checked_cast<unsigned long>(file_contents_.size());
+        pdfium::checked_cast<unsigned long>(file_contents_.size());
     file_access_.m_GetBlock = SGetBlock;
     file_access_.m_Param = this;
 
@@ -110,8 +115,7 @@ class TestAsyncLoader final : public FX_DOWNLOADHINTS, FX_FILEAVAIL {
     if (!IsDataAvailImpl(pos, size))
       return 0;
     const unsigned long end = std::min(
-        pdfium::base::checked_cast<unsigned long>(file_contents_.size()),
-        pos + size);
+        pdfium::checked_cast<unsigned long>(file_contents_.size()), pos + size);
     if (end <= pos)
       return 0;
     const unsigned long bytes_to_copy = end - pos;
@@ -309,7 +313,7 @@ TEST_F(FPDFDataAvailEmbedderTest, LoadInfoAfterReceivingFirstPage) {
   // Map "Info" to an object within the first section without breaking
   // linearization.
   ByteString data(ByteStringView(loader.file_contents()));
-  absl::optional<size_t> index = data.Find("/Info 27 0 R");
+  std::optional<size_t> index = data.Find("/Info 27 0 R");
   ASSERT_TRUE(index.has_value());
   auto span = loader.mutable_file_contents().subspan(index.value()).subspan(7);
   ASSERT_FALSE(span.empty());
@@ -337,7 +341,7 @@ TEST_F(FPDFDataAvailEmbedderTest, TryLoadInvalidInfo) {
   TestAsyncLoader loader("linearized.pdf");
   // Map "Info" to an invalid object without breaking linearization.
   ByteString data(ByteStringView(loader.file_contents()));
-  absl::optional<size_t> index = data.Find("/Info 27 0 R");
+  std::optional<size_t> index = data.Find("/Info 27 0 R");
   ASSERT_TRUE(index.has_value());
   auto span = loader.mutable_file_contents().subspan(index.value()).subspan(6);
   ASSERT_GE(span.size(), 2u);
@@ -368,7 +372,7 @@ TEST_F(FPDFDataAvailEmbedderTest, TryLoadNonExistsInfo) {
   TestAsyncLoader loader("linearized.pdf");
   // Break the "Info" parameter without breaking linearization.
   ByteString data(ByteStringView(loader.file_contents()));
-  absl::optional<size_t> index = data.Find("/Info 27 0 R");
+  std::optional<size_t> index = data.Find("/Info 27 0 R");
   ASSERT_TRUE(index.has_value());
   auto span = loader.mutable_file_contents().subspan(index.value()).subspan(2);
   ASSERT_FALSE(span.empty());

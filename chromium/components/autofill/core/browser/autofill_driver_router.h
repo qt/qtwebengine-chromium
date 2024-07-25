@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/containers/flat_map.h"
+#include "base/types/optional_ref.h"
 #include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_forest.h"
@@ -167,42 +168,44 @@ class AutofillDriverRouter {
                        const FormData& form,
                        bool known_success,
                        mojom::SubmissionSource submission_source));
+  void CaretMovedInFormField(AutofillDriver* source,
+                             FormData form,
+                             const FormFieldData& field,
+                             const gfx::Rect& caret_bounds,
+                             void (*callback)(AutofillDriver* target,
+                                              const FormData& form,
+                                              const FormFieldData& field,
+                                              const gfx::Rect& caret_bounds));
   void TextFieldDidChange(AutofillDriver* source,
                           FormData form,
                           const FormFieldData& field,
-                          const gfx::RectF& bounding_box,
                           base::TimeTicks timestamp,
                           void (*callback)(AutofillDriver* target,
                                            const FormData& form,
                                            const FormFieldData& field,
-                                           const gfx::RectF& bounding_box,
                                            base::TimeTicks timestamp));
   void TextFieldDidScroll(AutofillDriver* source,
                           FormData form,
                           const FormFieldData& field,
-                          const gfx::RectF& bounding_box,
                           void (*callback)(AutofillDriver* target,
                                            const FormData& form,
-                                           const FormFieldData& field,
-                                           const gfx::RectF& bounding_box));
+                                           const FormFieldData& field));
   void SelectControlDidChange(AutofillDriver* source,
                               FormData form,
                               const FormFieldData& field,
-                              const gfx::RectF& bounding_box,
                               void (*callback)(AutofillDriver* target,
                                                const FormData& form,
-                                               const FormFieldData& field,
-                                               const gfx::RectF& bounding_box));
+                                               const FormFieldData& field));
   void AskForValuesToFill(
       AutofillDriver* source,
       FormData form,
       const FormFieldData& field,
-      const gfx::RectF& bounding_box,
+      const gfx::Rect& caret_bounds,
       AutofillSuggestionTriggerSource trigger_source,
       void (*callback)(AutofillDriver* target,
                        const FormData& form,
                        const FormFieldData& field,
-                       const gfx::RectF& bounding_box,
+                       const gfx::Rect& caret_bounds,
                        AutofillSuggestionTriggerSource trigger_source));
   // This event is broadcast to all drivers.
   void DidEndTextFieldEditing(AutofillDriver* source,
@@ -217,14 +220,12 @@ class AutofillDriverRouter {
       AutofillDriver* source,
       FormData form,
       const FormFieldData& field,
-      const gfx::RectF& bounding_box,
       void (*callback)(AutofillDriver* target,
                        const FormData& form,
-                       const FormFieldData& field,
-                       const gfx::RectF& bounding_box),
+                       const FormFieldData& field),
       void (*focus_no_longer_on_form)(AutofillDriver* target));
   // This event is broadcast to all drivers.
-  void FocusNoLongerOnForm(AutofillDriver* source,
+  void FocusOnNonFormField(AutofillDriver* source,
                            bool had_interacted_form,
                            void (*callback)(AutofillDriver* target,
                                             bool had_interacted_form));
@@ -236,10 +237,12 @@ class AutofillDriverRouter {
       FormData form,
       const FormFieldData& field,
       const std::u16string& old_value,
+      bool formatting_only,
       void (*callback)(AutofillDriver* target,
                        const FormData& form,
                        const FormFieldData& field,
-                       const std::u16string& old_value));
+                       const std::u16string& old_value,
+                       bool formatting_only));
   void SelectOrSelectListFieldOptionsDidChange(
       AutofillDriver* source,
       FormData form,
@@ -248,31 +251,31 @@ class AutofillDriverRouter {
   void SetFormToBeProbablySubmitted(
       AutofillDriver* source,
       std::optional<FormData> form,
-      void (*callback)(AutofillDriver* target, const FormData* optional_form));
+      void (*callback)(AutofillDriver* target,
+                       base::optional_ref<const FormData> form));
 
   // Events called by the browser, passed to the renderer:
   // Keep in alphabetic order.
   base::flat_set<FieldGlobalId> ApplyFormAction(
       AutofillDriver* source,
-      mojom::ActionType action_type,
+      mojom::FormActionType action_type,
       mojom::ActionPersistence action_persistence,
       const FormData& data,
       const url::Origin& triggered_origin,
       const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
       void (*callback)(AutofillDriver* target,
-                       mojom::ActionType action_type,
+                       mojom::FormActionType action_type,
                        mojom::ActionPersistence action_persistence,
-                       FormRendererId form_renderer_id,
-                       const std::vector<FormFieldData>& fields));
+                       const std::vector<FormFieldData::FillData>& fields));
   void ApplyFieldAction(
       AutofillDriver* source,
+      mojom::FieldActionType action_type,
       mojom::ActionPersistence action_persistence,
-      mojom::TextReplacement text_replacement,
       const FieldGlobalId& field,
       const std::u16string& value,
       void (*callback)(AutofillDriver* target,
+                       mojom::FieldActionType action_type,
                        mojom::ActionPersistence action_persistence,
-                       mojom::TextReplacement text_replacement,
                        const FieldRendererId& field,
                        const std::u16string& value));
   using BrowserFormHandler = AutofillDriver::BrowserFormHandler;
@@ -313,9 +316,6 @@ class AutofillDriverRouter {
       void (*callback)(AutofillDriver* target,
                        const FieldRendererId& field,
                        const std::u16string& value));
-  void RendererShouldClearFilledSection(
-      AutofillDriver* source,
-      void (*callback)(AutofillDriver* target));
   void RendererShouldClearPreviewedForm(
       AutofillDriver* source,
       void (*callback)(AutofillDriver* target));
@@ -340,15 +340,6 @@ class AutofillDriverRouter {
       void (*callback)(AutofillDriver* target,
                        const std::vector<FormDataPredictions>& predictions));
 
-  // Event called by the browser, passed to the browser:
-  void OnContextMenuShownInField(
-      AutofillDriver* source,
-      const FormGlobalId& form_global_id,
-      const FieldGlobalId& field_global_id,
-      void (*callback)(AutofillDriver* target,
-                       const FormGlobalId& form_global_id,
-                       const FieldGlobalId& field_global_id));
-
   // Returns the underlying renderer forms of `browser_form`.
   // Note that this function is intended for use outside of the `autofill`
   // component to ensure compatibility with callers whose concept of a form
@@ -369,7 +360,7 @@ class AutofillDriverRouter {
   internal::FormForest form_forest_;
 
   // When the focus moves to a different frame, the order of the events
-  // FocusNoLongerOnForm() and FocusOnFormField() may be reversed due to race
+  // FocusOnNonFormField() and FocusOnFormField() may be reversed due to race
   // conditions. We use these members to correct the order of the events.
   LocalFrameToken focused_frame_;
   bool focus_no_longer_on_form_has_fired_ = true;

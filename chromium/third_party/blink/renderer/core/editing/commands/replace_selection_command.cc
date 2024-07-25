@@ -54,11 +54,17 @@
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
+#include "third_party/blink/renderer/core/html/html_base_element.h"
+#include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_br_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/html_li_element.h"
+#include "third_party/blink/renderer/core/html/html_link_element.h"
+#include "third_party/blink/renderer/core/html/html_meta_element.h"
 #include "third_party/blink/renderer/core/html/html_quote_element.h"
 #include "third_party/blink/renderer/core/html/html_span_element.h"
+#include "third_party/blink/renderer/core/html/html_style_element.h"
+#include "third_party/blink/renderer/core/html/html_title_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -895,8 +901,9 @@ static bool FollowBlockElementStyle(const Node* node) {
 
 // Remove style spans before insertion if they are unnecessary.  It's faster
 // because we'll avoid doing a layout.
-static void HandleStyleSpansBeforeInsertion(ReplacementFragment& fragment,
-                                            const Position& insertion_pos) {
+void ReplaceSelectionCommand::HandleStyleSpansBeforeInsertion(
+    ReplacementFragment& fragment,
+    const Position& insertion_pos) {
   Node* top_node = fragment.FirstChild();
   if (!IsA<HTMLSpanElement>(top_node))
     return;
@@ -917,13 +924,14 @@ static void HandleStyleSpansBeforeInsertion(ReplacementFragment& fragment,
   // |node| can be an inline element like <br> under <li>
   // e.g.) editing/execCommand/switch-list-type.html
   //       editing/deleting/backspace-merge-into-block.html
-  if (IsInline(node)) {
+  if (IsInlineElement(node)) {
     node = EnclosingBlock(insertion_pos.AnchorNode());
     if (!node)
       return;
   }
 
-  if (FollowBlockElementStyle(node)) {
+  if (GetInputType() != InputEvent::InputType::kInsertFromPaste &&
+      FollowBlockElementStyle(node)) {
     fragment.RemoveNodePreservingChildren(wrapping_style_span);
     return;
   }
@@ -1092,7 +1100,8 @@ void ReplaceSelectionCommand::InsertParagraphSeparatorIfNeeds(
 
   const bool start_is_inside_mail_blockquote = EnclosingNodeOfType(
       selection.Start(), IsMailHTMLBlockquoteElement, kCanCrossEditingBoundary);
-  const bool selection_is_plain_text = !IsRichlyEditablePosition(selection.Base());
+  const bool selection_is_plain_text =
+      !IsRichlyEditablePosition(selection.Anchor());
   Element* const current_root = selection.RootEditableElement();
 
   if ((selection_start_was_start_of_paragraph &&
@@ -1217,7 +1226,7 @@ void ReplaceSelectionCommand::DoApply(EditingState* editing_state) {
   const bool start_is_inside_mail_blockquote = EnclosingNodeOfType(
       selection.Start(), IsMailHTMLBlockquoteElement, kCanCrossEditingBoundary);
   const bool selection_is_plain_text =
-      !IsRichlyEditablePosition(selection.Base());
+      !IsRichlyEditablePosition(selection.Anchor());
   const bool selection_end_was_end_of_paragraph =
       IsEndOfParagraph(selection.VisibleEnd());
   const bool selection_start_was_start_of_paragraph =

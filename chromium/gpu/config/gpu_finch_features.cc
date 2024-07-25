@@ -34,18 +34,6 @@ namespace features {
 namespace {
 
 #if BUILDFLAG(IS_ANDROID)
-bool FieldIsInBlocklist(const char* current_value, std::string blocklist_str) {
-  std::vector<std::string> blocklist = base::SplitString(
-      blocklist_str, "|", base::KEEP_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
-  for (const std::string& blocklisted_value : blocklist) {
-    if (base::StartsWith(current_value, blocklisted_value,
-                         base::CompareCase::INSENSITIVE_ASCII)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool IsDeviceBlocked(const char* field, const std::string& block_list) {
   auto disable_patterns = base::SplitString(
       block_list, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
@@ -62,13 +50,7 @@ bool IsDeviceBlocked(const char* field, const std::string& block_list) {
 // Used to limit GL version to 2.0 for skia raster and compositing.
 BASE_FEATURE(kUseGles2ForOopR,
              "UseGles2ForOopR",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || \
-    BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-             base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
-);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 #if BUILDFLAG(IS_ANDROID)
 // Use android SurfaceControl API for managing display compositor's buffer queue
@@ -92,6 +74,10 @@ const base::FeatureParam<std::string> kAndroidSurfaceControlModelBlocklist{
 // Hardware Overlays for WebView.
 BASE_FEATURE(kWebViewSurfaceControl,
              "WebViewSurfaceControl",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kWebViewSurfaceControlForTV,
+             "WebViewSurfaceControlForTV",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Use thread-safe media path on WebView.
@@ -119,6 +105,20 @@ const base::FeatureParam<std::string> kLimitAImageReaderMaxSizeToOneBlocklist{
     &kLimitAImageReaderMaxSizeToOne, "LimitAImageReaderMaxSizeToOneBlocklist",
     "MIBOX|*ODROID*"};
 
+// Used to relax the limit of AImageReader max queue size to 1 for Android Tvs.
+// Currently for all android tv except the ones in this list will have max
+// queue size of 1 image.
+BASE_FEATURE(kRelaxLimitAImageReaderMaxSizeToOne,
+             "RelaxLimitAImageReaderMaxSizeToOne",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// List of devices on which to relax the restriction of max queue size of 1 for
+// AImageReader. This list is based on manufacturer name.
+const base::FeatureParam<std::string>
+    kRelaxLimitAImageReaderMaxSizeToOneBlocklist{
+        &kRelaxLimitAImageReaderMaxSizeToOne,
+        "RelaxLimitAImageReaderMaxSizeToOneBlocklist", "*Broadcom*"};
+
 // Increase number of buffers and pipeline depth for high frame rate devices.
 BASE_FEATURE(kIncreaseBufferCountForHighFrameRate,
              "IncreaseBufferCountForHighFrameRate",
@@ -129,12 +129,6 @@ const base::FeatureParam<std::string>
         &kIncreaseBufferCountForHighFrameRate,
         "DisableIncreaseBufferCountForHighFrameRate", ""};
 #endif
-
-// Use shorter timeout when performDeferredCleanup, and enable
-// performDeferredCleanup for Android WebView.
-BASE_FEATURE(kAggressiveSkiaGpuResourcePurge,
-             "AggressiveSkiaGpuResourcePurge",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable GPU Rasterization by default. This can still be overridden by
 // --enable-gpu-rasterization or --disable-gpu-rasterization.
@@ -156,7 +150,7 @@ BASE_FEATURE(kCanvasOopRasterization,
              "CanvasOopRasterization",
 #if BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_IOS) || BUILDFLAG(IS_WIN) ||         \
     (BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)) || BUILDFLAG(IS_ANDROID) || \
-    BUILDFLAG(IS_CHROMEOS_LACROS)
+    BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
              base::FEATURE_ENABLED_BY_DEFAULT
 #else
              base::FEATURE_DISABLED_BY_DEFAULT
@@ -175,20 +169,6 @@ BASE_FEATURE(kCanvasOopWithoutGpuTileRaster,
              base::FEATURE_ENABLED_BY_DEFAULT
 #endif
 );
-
-#if BUILDFLAG(IS_OZONE)
-// Enables per context GLTexture cache for OzoneImageBacking that avoids
-// unnecessary construction/destruction of GLTextures.
-BASE_FEATURE(kEnablePerContextGLTextureCache,
-             "EnablePerContextGLTextureCache",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Detect front buffering condition and set buffer usage as such.
-// This is a killswitch to be removed once launched.
-BASE_FEATURE(kOzoneFrontBufferUsage,
-             "OzoneFrontBufferUsage",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_OZONE)
 
 // Enables the use of MSAA in skia on Ice Lake and later intel architectures.
 BASE_FEATURE(kEnableMSAAOnNewIntelGPUs,
@@ -237,13 +217,6 @@ BASE_FEATURE(kGenGpuDiskCacheKeyPrefixInGpuService,
              "GenGpuDiskCacheKeyPrefixInGpuService",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Causes us to use the SharedImageManager, removing support for the old
-// mailbox system. Any consumers of the GPU process using the old mailbox
-// system will experience undefined results.
-BASE_FEATURE(kSharedImageManager,
-             "SharedImageManager",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Controls the decode acceleration of JPEG images (as opposed to camera
 // captures) in Chrome OS using the VA-API.
 // TODO(andrescj): remove or enable by default in Chrome OS once
@@ -281,10 +254,6 @@ BASE_FEATURE(kEnableDrDc,
              base::FEATURE_DISABLED_BY_DEFAULT
 #endif
 );
-
-BASE_FEATURE(kForceGpuMainThreadToNormalPriorityDrDc,
-             "ForceGpuMainThreadToNormalPriorityDrDc",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable WebGPU on gpu service side only. This is used with origin trial and
 // enabled by default on supported platforms.
@@ -388,6 +357,10 @@ BASE_FEATURE(kSkiaGraphite,
              base::FEATURE_DISABLED_BY_DEFAULT
 );
 
+BASE_FEATURE(kConditionallySkipGpuChannelFlush,
+             "ConditionallySkipGpuChannelFlush",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Whether the Dawn "skip_validation" toggle is enabled for Skia Graphite.
 const base::FeatureParam<bool> kSkiaGraphiteDawnSkipValidation{
     &kSkiaGraphite, "dawn_skip_validation", true};
@@ -396,20 +369,11 @@ const base::FeatureParam<bool> kSkiaGraphiteDawnSkipValidation{
 const base::FeatureParam<bool> kSkiaGraphiteDawnBackendValidation{
     &kSkiaGraphite, "dawn_backend_validation", false};
 
-// Whether Dawn shares device with ANGLE.
-const base::FeatureParam<bool> kSkiaGraphiteDawnShareDevice{
-    &kSkiaGraphite, "dawn_share_device", true};
-
 #if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kSkiaGraphiteDawnUseD3D12,
              "SkiaGraphiteDawnUseD3D12",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-
-// Enable GrShaderCache to use with Vulkan backend.
-BASE_FEATURE(kEnableGrShaderCacheForVulkan,
-             "EnableGrShaderCacheForVulkan",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enable report only mode on the GPU watchdog instead of pausing the watchdog
 // thread during GPU startup.
@@ -464,28 +428,17 @@ BASE_FEATURE(kUseGpuSchedulerDfs,
 #endif
 );
 
-// Use the ClientGmb interface to create GpuMemoryBuffers. This is supposed to
-// reduce number of IPCs happening while creating GpuMemoryBuffers by allowing
-// Renderers to do IPC directly to GPU process. This feature is now enabled by
-// default on all platforms.
-BASE_FEATURE(kUseClientGmbInterface,
-             "UseClientGmbInterface",
-             base::FEATURE_ENABLED_BY_DEFAULT
-);
-
 // When the application is in background, whether to perform immediate GPU
 // cleanup when executing deferred requests.
 BASE_FEATURE(kGpuCleanupInBackground,
              "GpuCleanupInBackground",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_ANDROID)
-// When enabled, the validating command decoder always returns true
-// from IsGL_REDSupportedOnFBOs in feature_info.cc on Android.
-BASE_FEATURE(kCmdDecoderSkipGLRedMesaWorkaroundOnAndroid,
-             "CmdDecoderSkipGLRedMesaWorkaroundOnAndroid",
+// On platforms with delegated compositing, try to release overlays later, when
+// no new frames are swapped.
+BASE_FEATURE(kDeferredOverlaysRelease,
+             "DeferredOverlayRelease",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
 
 bool UseGles2ForOopR() {
 #if BUILDFLAG(IS_ANDROID) && defined(ARCH_CPU_X86_FAMILY)
@@ -558,12 +511,6 @@ bool IsDrDcEnabled() {
     return false;
   }
 
-  // DrDc is not supported with Graphite-Dawn yet.
-  // TODO(crbug.com/1505023): Add DrDc support with Graphite
-  if (IsSkiaGraphiteEnabled(base::CommandLine::ForCurrentProcess())) {
-    return false;
-  }
-
   // DrDc is supported on android MediaPlayer and MCVD path only when
   // AImageReader is enabled. Also DrDc requires AImageReader max size to be
   // at least 2 for each gpu thread. Hence DrDc is disabled on devices which has
@@ -602,14 +549,6 @@ bool IsDrDcEnabled() {
 #endif
 }
 
-bool IsGpuMainThreadForcedToNormalPriorityDrDc() {
-  // GPU main thread priority is forced to NORMAL only when DrDc is enabled. In
-  // that case DrDc thread continues to use DISPLAY thread priority and hence
-  // have higher thread priority than GPU main.
-  return IsDrDcEnabled() &&
-         base::FeatureList::IsEnabled(kForceGpuMainThreadToNormalPriorityDrDc);
-}
-
 bool IsUsingThreadSafeMediaForWebView() {
 #if BUILDFLAG(IS_ANDROID)
   // SurfaceTexture can't be thread-safe. Also thread safe media code currently
@@ -621,11 +560,10 @@ bool IsUsingThreadSafeMediaForWebView() {
   // If the feature is overridden from command line or finch we will use its
   // value. If not we use kWebViewThreadSafeMediaDefault which is set in
   // AwMainDelegate for WebView.
-  base::FeatureList* feature_list = base::FeatureList::GetInstance();
-  if (feature_list &&
-      feature_list->IsFeatureOverridden(kWebViewThreadSafeMedia.name))
-    return base::FeatureList::IsEnabled(kWebViewThreadSafeMedia);
-
+  if (auto state =
+          base::FeatureList::GetStateIfOverridden(kWebViewThreadSafeMedia)) {
+    return *state;
+  }
   return base::FeatureList::IsEnabled(kWebViewThreadSafeMediaDefault);
 #else
   return false;
@@ -645,30 +583,11 @@ bool IsANGLEValidationEnabled() {
          UsePassthroughCommandDecoder();
 }
 
-bool IsSkiaGraphiteEnabled(const base::CommandLine* command_line) {
-  // Force disabling graphite if --disable-skia-graphite flag is specified.
-  if (command_line->HasSwitch(switches::kDisableSkiaGraphite)) {
-    return false;
-  }
-
-  // Force Graphite on if --enable-skia-graphite flag is specified.
-  if (command_line->HasSwitch(switches::kEnableSkiaGraphite)) {
-    return true;
-  }
-#if !(BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN))
-  // Disallow Graphite from being enabled via the base::Feature on
-  // not-yet-supported platforms to avoid users experiencing undefined behavior,
-  // including behavior that might prevent them from being able to return to
-  // chrome://flags to disable the feature.
-  if (base::FeatureList::IsEnabled(features::kSkiaGraphite)) {
-    LOG(ERROR) << "Enabling Graphite on a not-yet-supported platform is "
-                  "disallowed for safety";
-  }
-  return false;
-#else
+namespace {
+bool IsSkiaGraphiteSupportedByDevice(const base::CommandLine* command_line) {
 #if BUILDFLAG(IS_APPLE)
   // Graphite only works well with ANGLE Metal on Mac or iOS.
-  // TODO(crbug.com/1423574): Remove this after ANGLE Metal launches fully.
+  // TODO(crbug.com/40063538): Remove this after ANGLE Metal launches fully.
   const bool is_angle_metal_enabled =
       UsePassthroughCommandDecoder() &&
       (base::FeatureList::IsEnabled(features::kDefaultANGLEMetal) ||
@@ -718,9 +637,45 @@ bool IsSkiaGraphiteEnabled(const base::CommandLine* command_line) {
     }
   }
 #endif  // BUILDFLAG(IS_MAC)
-#endif  // BUILDFLAG(IS_APPLE)
+  return true;
+#elif BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
+  // Graphite on Android and ChromeOS uses the Dawn Vulkan backend. Only enable
+  // Graphite if device would already be using Ganesh/Vulkan.
+  return IsUsingVulkan();
+#elif BUILDFLAG(IS_WIN)
+  return true;
+#else
+  // Disallow Graphite from being enabled via the base::Feature on
+  // not-yet-supported platforms to avoid users experiencing undefined behavior,
+  // including behavior that might prevent them from being able to return to
+  // chrome://flags to disable the feature.
+  if (base::FeatureList::IsEnabled(features::kSkiaGraphite)) {
+    LOG(ERROR) << "Enabling Graphite on a not-yet-supported platform is "
+                  "disallowed for safety";
+  }
+  return false;
+#endif
+}
+}  // namespace
+
+bool IsSkiaGraphiteEnabled(const base::CommandLine* command_line) {
+  // Force disabling graphite if --disable-skia-graphite flag is specified.
+  if (command_line->HasSwitch(switches::kDisableSkiaGraphite)) {
+    return false;
+  }
+
+  // Force Graphite on if --enable-skia-graphite flag is specified.
+  if (command_line->HasSwitch(switches::kEnableSkiaGraphite)) {
+    return true;
+  }
+
+  if (!IsSkiaGraphiteSupportedByDevice(command_line)) {
+    // Return early before checking "SkiaGraphite" feature so that devices
+    // which don't support graphite are not included in the finch study.
+    return false;
+  }
+
   return base::FeatureList::IsEnabled(features::kSkiaGraphite);
-#endif  // !(BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN))
 }
 
 // Set up such that service side purge depends on the client side purge feature
@@ -747,7 +702,7 @@ bool IsAImageReaderEnabled() {
   // Device Hammer_Energy_2 seems to be very crash with image reader during
   // gl::GLImageEGL::BindTexImage(). Disable image reader on that device for
   // now. crbug.com/1323921
-  // TODO(crbug.com/1323921): Can we revisit this now that GLImage no longer
+  // TODO(crbug.com/40224845): Can we revisit this now that GLImage no longer
   // exists?
   if (IsDeviceBlocked(base::android::BuildInfo::GetInstance()->device(),
                       "Hammer_Energy_2")) {
@@ -783,7 +738,13 @@ bool IsAndroidSurfaceControlEnabled() {
 
   // On WebView we require thread-safe media to use SurfaceControl
   if (IsUsingThreadSafeMediaForWebView()) {
-    return base::FeatureList::IsEnabled(kWebViewSurfaceControl);
+    // We decouple experiments between ATV and the rest of the users by using
+    // different flags here.
+    if (base::android::BuildInfo::GetInstance()->is_tv()) {
+      return base::FeatureList::IsEnabled(kWebViewSurfaceControlForTV);
+    } else {
+      return base::FeatureList::IsEnabled(kWebViewSurfaceControl);
+    }
   }
 
   return base::FeatureList::IsEnabled(kAndroidSurfaceControl);
@@ -798,15 +759,25 @@ bool IsAndroidSurfaceControlEnabled() {
 bool LimitAImageReaderMaxSizeToOne() {
   // Always limit image reader to 1 frame for Android TV. Many TVs doesn't work
   // with more than 1 frame and it's very hard to localize which models do.
-  if (base::android::BuildInfo::GetInstance()->is_tv())
+  if (base::android::BuildInfo::GetInstance()->is_tv()) {
+    // For the android Tvs which are in the below list, we are relaxing this
+    // restrictions as those are able to create AImageReader with more than 1
+    // images. This helps in removing the flickering seen which can happen with
+    // only 1 image.
+    // https://buganizer.corp.google.com/issues/266571065
+    if (IsDeviceBlocked(base::android::BuildInfo::GetInstance()->manufacturer(),
+                        kRelaxLimitAImageReaderMaxSizeToOneBlocklist.Get())) {
+      return false;
+    }
     return true;
+  }
 
-  return (FieldIsInBlocklist(base::android::BuildInfo::GetInstance()->model(),
-                             kLimitAImageReaderMaxSizeToOneBlocklist.Get()));
+  return (IsDeviceBlocked(base::android::BuildInfo::GetInstance()->model(),
+                          kLimitAImageReaderMaxSizeToOneBlocklist.Get()));
 }
 
 bool IncreaseBufferCountForHighFrameRate() {
-  // TODO(crbug.com/1211332): We don't have a way to dynamically adjust number
+  // TODO(crbug.com/40767562): We don't have a way to dynamically adjust number
   // of buffers. So these checks, espeically the RAM one, is to limit the impact
   // of more buffers to devices that can handle them.
   // 8GB of ram with large margin for error.

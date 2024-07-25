@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/task/sequenced_task_runner.h"
 #include "media/base/android/media_codec_util.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace media {
 
@@ -30,7 +30,7 @@ class CodecWrapperImpl : public base::RefCountedThreadSafe<CodecWrapperImpl> {
                    CodecWrapper::OutputReleasedCB output_buffer_release_cb,
                    scoped_refptr<base::SequencedTaskRunner> release_task_runner,
                    const gfx::Size& initial_expected_size,
-                   absl::optional<gfx::Size> coded_size_alignment);
+                   std::optional<gfx::Size> coded_size_alignment);
 
   CodecWrapperImpl(const CodecWrapperImpl&) = delete;
   CodecWrapperImpl& operator=(const CodecWrapperImpl&) = delete;
@@ -93,7 +93,7 @@ class CodecWrapperImpl : public base::RefCountedThreadSafe<CodecWrapperImpl> {
   // An input buffer that was dequeued but subsequently rejected from
   // QueueInputBuffer() because the codec didn't have the crypto key. We
   // maintain ownership of it and reuse it next time.
-  absl::optional<int> owned_input_buffer_;
+  std::optional<int> owned_input_buffer_;
 
   // The current output size. Updated when DequeueOutputBuffer() reports
   // OUTPUT_FORMAT_CHANGED.
@@ -111,7 +111,7 @@ class CodecWrapperImpl : public base::RefCountedThreadSafe<CodecWrapperImpl> {
   gfx::ColorSpace color_space_ = gfx::ColorSpace::CreateSRGB();
 
   // The alignment to use for width, height when guessing coded size.
-  const absl::optional<gfx::Size> coded_size_alignment_;
+  const std::optional<gfx::Size> coded_size_alignment_;
 
   // Task runner on which we'll release codec buffers without rendering.  May be
   // null to always do this on the calling task runner.
@@ -123,7 +123,7 @@ CodecOutputBuffer::CodecOutputBuffer(
     int64_t id,
     const gfx::Size& size,
     const gfx::ColorSpace& color_space,
-    absl::optional<gfx::Size> coded_size_alignment)
+    std::optional<gfx::Size> coded_size_alignment)
     : codec_(std::move(codec)),
       id_(id),
       size_(size),
@@ -135,7 +135,7 @@ CodecOutputBuffer::CodecOutputBuffer(
     int64_t id,
     const gfx::Size& size,
     const gfx::ColorSpace& color_space,
-    absl::optional<gfx::Size> coded_size_alignment)
+    std::optional<gfx::Size> coded_size_alignment)
     : id_(id),
       size_(size),
       color_space_(color_space),
@@ -177,7 +177,7 @@ CodecWrapperImpl::CodecWrapperImpl(
     CodecWrapper::OutputReleasedCB output_buffer_release_cb,
     scoped_refptr<base::SequencedTaskRunner> release_task_runner,
     const gfx::Size& initial_expected_size,
-    absl::optional<gfx::Size> coded_size_alignment)
+    std::optional<gfx::Size> coded_size_alignment)
     : state_(State::kFlushed),
       codec_(std::move(codec_surface_pair.first)),
       surface_bundle_(std::move(codec_surface_pair.second)),
@@ -298,16 +298,16 @@ CodecWrapperImpl::QueueStatus CodecWrapperImpl::QueueInputBuffer(
   const DecryptConfig* decrypt_config = buffer.decrypt_config();
   MediaCodecResult result;
   if (decrypt_config) {
-    // TODO(crbug.com/813845): Use encryption scheme settings from
+    // TODO(crbug.com/40563697): Use encryption scheme settings from
     // DecryptConfig.
     result = codec_->QueueSecureInputBuffer(
-        input_buffer, buffer.data(), buffer.data_size(),
-        decrypt_config->key_id(), decrypt_config->iv(),
-        decrypt_config->subsamples(), decrypt_config->encryption_scheme(),
+        input_buffer, buffer.data(), buffer.size(), decrypt_config->key_id(),
+        decrypt_config->iv(), decrypt_config->subsamples(),
+        decrypt_config->encryption_scheme(),
         decrypt_config->encryption_pattern(), buffer.timestamp());
   } else {
     result = codec_->QueueInputBuffer(input_buffer, buffer.data(),
-                                      buffer.data_size(), buffer.timestamp());
+                                      buffer.size(), buffer.timestamp());
   }
 
   switch (result.code()) {
@@ -463,7 +463,7 @@ bool CodecWrapperImpl::ReleaseCodecOutputBuffer(int64_t id, bool render) {
     // earlier release(s) (with no intervening renders, since those are
     // ordered).  In this case, though, the loop below will still release
     // everything earlier than the rendered buffer, so the codec still sees the
-    // same sequence of calls -- some releases follwed by a render.
+    // same sequence of calls -- some releases followed by a render.
     //
     // Of course, if releases and renders are posted from different threads,
     // then it's unclear what the ordering was anyway.
@@ -520,7 +520,7 @@ CodecWrapper::CodecWrapper(
     OutputReleasedCB output_buffer_release_cb,
     scoped_refptr<base::SequencedTaskRunner> release_task_runner,
     const gfx::Size& initial_expected_size,
-    absl::optional<gfx::Size> coded_size_alignment)
+    std::optional<gfx::Size> coded_size_alignment)
     : impl_(new CodecWrapperImpl(std::move(codec_surface_pair),
                                  std::move(output_buffer_release_cb),
                                  std::move(release_task_runner),

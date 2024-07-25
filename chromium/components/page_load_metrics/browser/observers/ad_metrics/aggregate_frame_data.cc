@@ -24,6 +24,14 @@ void AggregateFrameData::UpdateCpuUsage(base::TimeTicks update_time,
     non_ad_peak_cpu_.UpdatePeakWindowedPercent(update, update_time);
 }
 
+void AggregateFrameData::UpdateFirstAdFCPSinceNavStart(
+    base::TimeDelta time_since_nav_start) {
+  if (!first_ad_fcp_after_main_nav_start_ ||
+      time_since_nav_start < first_ad_fcp_after_main_nav_start_.value()) {
+    first_ad_fcp_after_main_nav_start_ = time_since_nav_start;
+  }
+}
+
 void AggregateFrameData::ProcessResourceLoadInFrame(
     const mojom::ResourceDataUpdatePtr& resource,
     bool is_outermost_main_frame) {
@@ -36,7 +44,7 @@ void AggregateFrameData::ProcessResourceLoadInFrame(
 void AggregateFrameData::AdjustAdBytes(int64_t unaccounted_ad_bytes,
                                        ResourceMimeType mime_type,
                                        bool is_outermost_main_frame) {
-  // TODO(https://crbug.com/1301880): Test coverage isn't enough for this
+  // TODO(crbug.com/40216775): Test coverage isn't enough for this
   // method. Add more tests.
   resource_data_.AdjustAdBytes(unaccounted_ad_bytes, mime_type);
   if (is_outermost_main_frame) {

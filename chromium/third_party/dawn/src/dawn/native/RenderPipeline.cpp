@@ -353,8 +353,7 @@ MaybeError ValidateDepthStencilState(const DeviceBase* device,
 MaybeError ValidateMultisampleState(const DeviceBase* device, const MultisampleState* descriptor) {
     UnpackedPtr<MultisampleState> unpacked;
     DAWN_TRY_ASSIGN(unpacked, ValidateAndUnpack(descriptor));
-    if (auto* msaaRenderToSingleSampledDesc =
-            unpacked.Get<DawnMultisampleStateRenderToSingleSampled>()) {
+    if (unpacked.Get<DawnMultisampleStateRenderToSingleSampled>()) {
         DAWN_INVALID_IF(!device->HasFeature(Feature::MSAARenderToSingleSampled),
                         "The msaaRenderToSingleSampledDesc is not empty while the "
                         "msaa-render-to-single-sampled feature is not enabled.");
@@ -394,10 +393,16 @@ MaybeError ValidateBlendComponent(BlendComponent blendComponent, bool dualSource
 
     if (blendComponent.operation == wgpu::BlendOperation::Min ||
         blendComponent.operation == wgpu::BlendOperation::Max) {
-        DAWN_INVALID_IF(blendComponent.srcFactor != wgpu::BlendFactor::One ||
-                            blendComponent.dstFactor != wgpu::BlendFactor::One,
-                        "Blend factor is not %s when blend operation is %s.",
-                        wgpu::BlendFactor::One, blendComponent.operation);
+        DAWN_INVALID_IF(
+            (blendComponent.srcFactor != wgpu::BlendFactor::One) &&
+                (blendComponent.srcFactor != wgpu::BlendFactor::Undefined),
+            "Source blend factor (%s) is defined and not %s when blend operation is %s.",
+            blendComponent.srcFactor, wgpu::BlendFactor::One, blendComponent.operation);
+        DAWN_INVALID_IF(
+            (blendComponent.dstFactor != wgpu::BlendFactor::One) &&
+                (blendComponent.dstFactor != wgpu::BlendFactor::Undefined),
+            "Destination blend factor (%s) is defined and not %s when blend operation is %s.",
+            blendComponent.dstFactor, wgpu::BlendFactor::One, blendComponent.operation);
     }
 
     return {};
@@ -606,7 +611,7 @@ ResultOrError<ShaderModuleEntryPoint> ValidateFragmentState(DeviceBase* device,
                                                   fragmentMetadata.fragmentOutputMask[i],
                                                   fragmentMetadata.fragmentOutputVariables[i]),
                          "validating targets[%u] framebuffer output.", i);
-        colorAttachmentFormats->push_back(&device->GetValidInternalFormat(targets[i].format));
+        colorAttachmentFormats.push_back(&device->GetValidInternalFormat(targets[i].format));
 
         if (fragmentMetadata.fragmentInputMask[i]) {
             DAWN_TRY_CONTEXT(ValidateFramebufferInput(device, format,
@@ -974,6 +979,11 @@ RenderPipelineBase::RenderPipelineBase(DeviceBase* device,
         mUsesFragDepth = GetStage(SingleShaderStage::Fragment).metadata->usesFragDepth;
     }
 
+    if (HasStage(SingleShaderStage::Vertex)) {
+        mUsesVertexIndex = GetStage(SingleShaderStage::Vertex).metadata->usesVertexIndex;
+        mUsesInstanceIndex = GetStage(SingleShaderStage::Vertex).metadata->usesInstanceIndex;
+    }
+
     SetContentHash(ComputeContentHash());
     GetObjectTrackingList()->Track(this);
 
@@ -1003,7 +1013,7 @@ Ref<RenderPipelineBase> RenderPipelineBase::MakeError(DeviceBase* device, const 
         explicit ErrorRenderPipeline(DeviceBase* device, const char* label)
             : RenderPipelineBase(device, ObjectBase::kError, label) {}
 
-        MaybeError Initialize() override {
+        MaybeError InitializeImpl() override {
             DAWN_UNREACHABLE();
             return {};
         }
@@ -1166,6 +1176,16 @@ bool RenderPipelineBase::WritesStencil() const {
 bool RenderPipelineBase::UsesFragDepth() const {
     DAWN_ASSERT(!IsError());
     return mUsesFragDepth;
+}
+
+bool RenderPipelineBase::UsesVertexIndex() const {
+    DAWN_ASSERT(!IsError());
+    return mUsesVertexIndex;
+}
+
+bool RenderPipelineBase::UsesInstanceIndex() const {
+    DAWN_ASSERT(!IsError());
+    return mUsesInstanceIndex;
 }
 
 size_t RenderPipelineBase::ComputeContentHash() {

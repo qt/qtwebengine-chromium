@@ -20,6 +20,11 @@
  * limitations under the License.
  */
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "fxbarcode/pdf417/BC_PDF417ErrorCorrection.h"
 
 #include <stdint.h>
@@ -133,12 +138,12 @@ int32_t CBC_PDF417ErrorCorrection::GetErrorCorrectionCodewordCount(
 }
 
 // static
-absl::optional<WideString> CBC_PDF417ErrorCorrection::GenerateErrorCorrection(
+std::optional<WideString> CBC_PDF417ErrorCorrection::GenerateErrorCorrection(
     const WideString& dataCodewords,
     int32_t errorCorrectionLevel) {
   int32_t k = GetErrorCorrectionCodewordCount(errorCorrectionLevel);
   if (k < 0)
-    return absl::nullopt;
+    return std::nullopt;
 
   DataVector<wchar_t> ech(k);
   size_t sld = dataCodewords.GetLength();

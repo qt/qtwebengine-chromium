@@ -108,8 +108,7 @@ class PLATFORM_EXPORT WebRtcVideoFrameAdapter
     scoped_refptr<viz::RasterContextProvider> raster_context_provider_
         GUARDED_BY(context_provider_lock_);
 
-    raw_ptr<media::GpuVideoAcceleratorFactories, ExperimentalRenderer>
-        gpu_factories_;
+    raw_ptr<media::GpuVideoAcceleratorFactories> gpu_factories_;
 
     // Handles frame conversions. Maintains an internal scratch space buffer.
     media::VideoFrameConverter frame_converter_;
@@ -175,6 +174,8 @@ class PLATFORM_EXPORT WebRtcVideoFrameAdapter
         int scaled_width,
         int scaled_height) override;
 
+    std::string storage_representation() const override;
+
     const ScaledBufferSize& size() const { return size_; }
 
    private:
@@ -218,6 +219,8 @@ class PLATFORM_EXPORT WebRtcVideoFrameAdapter
   // null is returned.
   scoped_refptr<media::VideoFrame> GetAdaptedVideoBufferForTesting(
       const ScaledBufferSize& size);
+
+  std::string storage_representation() const override;
 
  protected:
   ~WebRtcVideoFrameAdapter() override;

@@ -21,7 +21,7 @@ LIBXML_VERSION_INFO=`expr $LIBXML_MAJOR_VERSION + $LIBXML_MINOR_VERSION`:$LIBXML
 LIBXML_VERSION_NUMBER=`expr $LIBXML_MAJOR_VERSION \* 10000 + $LIBXML_MINOR_VERSION \* 100 + $LIBXML_MICRO_VERSION`
 
 if test -d .git ; then
-  extra=`git describe 2>/dev/null | sed 's+LIBXML[[0-9.]]*-++'`
+  extra=`git describe 2>/dev/null`
   echo extra=$extra
   if test "$extra" != ""
   then
@@ -86,7 +86,7 @@ AC_ARG_WITH(icu,
 AC_ARG_WITH(iso8859x,
 [  --with-iso8859x         ISO-8859-X support if no iconv (on)])
 AC_ARG_WITH(lzma,
-[  --with-lzma[[=DIR]]       use liblzma in DIR (on)])
+[  --with-lzma[[=DIR]]       use liblzma in DIR (off)])
 AC_ARG_WITH(mem_debug,
 [  --with-mem-debug        memory debugging module (off)])
 AC_ARG_WITH(modules,
@@ -103,8 +103,6 @@ AC_ARG_WITH(reader,
 [  --with-reader           xmlReader parsing interface (on)])
 AC_ARG_WITH(regexps,
 [  --with-regexps          regular expressions support (on)])
-AC_ARG_WITH(run_debug,
-[  --with-run-debug        runtime debugging module (off)])
 AC_ARG_WITH(sax1,
 [  --with-sax1             older SAX1 interface (on)])
 AC_ARG_WITH(schemas,
@@ -127,8 +125,10 @@ AC_ARG_WITH(xpath,
 [  --with-xpath            XPath 1.0 support (on)])
 AC_ARG_WITH(xptr,
 [  --with-xptr             XPointer support (on)])
+AC_ARG_WITH(xptr-locs,
+[  --with-xptr-locs        XPointer ranges and points (off)])
 AC_ARG_WITH(zlib,
-[  --with-zlib[[=DIR]]       use libz in DIR (on)])
+[  --with-zlib[[=DIR]]       use libz in DIR (off)])
 
 AC_ARG_WITH(minimum,
 [  --with-minimum          build a minimally sized library (off)])
@@ -241,7 +241,6 @@ if test "$with_minimum" = "yes"; then
     test "$with_reader" = "" && with_reader=no
     test "$with_readline" = "" && with_readline=no
     test "$with_regexps" = "" && with_regexps=no
-    test "$with_run_debug" = "" && with_run_debug=no
     test "$with_sax1" = "" && with_sax1=no
     test "$with_schemas" = "" && with_schemas=no
     test "$with_schematron" = "" && with_schematron=no
@@ -300,6 +299,7 @@ AC_CHECK_HEADERS([sys/mman.h])
 AC_CHECK_HEADERS([sys/socket.h netinet/in.h arpa/inet.h netdb.h])
 AC_CHECK_HEADERS([sys/select.h poll.h])
 AC_CHECK_HEADERS([sys/time.h sys/timeb.h])
+AC_CHECK_HEADERS([sys/random.h])
 AC_CHECK_HEADERS([dl.h dlfcn.h])
 AC_CHECK_HEADERS([glob.h])
 AM_CONDITIONAL(WITH_GLOB, test "$ac_cv_header_glob_h" = "yes")
@@ -310,7 +310,7 @@ dnl
 AC_TYPE_UINT32_T
 
 dnl Checks for library functions.
-AC_CHECK_FUNCS([gettimeofday ftime stat isascii mmap munmap])
+AC_CHECK_FUNCS([getentropy gettimeofday ftime isascii stat mmap munmap])
 
 AH_VERBATIM([HAVE_MUNMAP_AFTER],[/* mmap() is no good without munmap() */
 #if defined(HAVE_MMAP) && !defined(HAVE_MUNMAP)
@@ -907,9 +907,11 @@ dnl Checks for zlib library.
 dnl
 WITH_ZLIB=0
 
-if test "$with_zlib" = "no"; then
-    echo "Disabling zlib compression support"
-else
+if test "$with_zlib" != "no" && \
+   (test "$with_zlib" != "" || test "$with_legacy" = "yes")
+then
+    echo "Enabling zlib compression support"
+
     if test "$with_zlib" != "yes"; then
         Z_DIR=$with_zlib
     fi
@@ -959,9 +961,11 @@ dnl Checks for lzma library.
 dnl
 WITH_LZMA=0
 
-if test "$with_lzma" = "no"; then
-    echo "Disabling lzma compression support"
-else
+if test "$with_lzma" != "no" && \
+   (test "$with_lzma" != "" || test "$with_legacy" = "yes")
+then
+    echo "Enabling lzma compression support"
+
     if test "$with_lzma" != "yes"; then
         LZMA_DIR=$with_lzma
     fi
@@ -1104,6 +1108,15 @@ else
 fi
 AC_SUBST(WITH_ICU)
 
+dnl
+dnl Crypto libraries
+dnl
+case "$host" in
+    *-*-mingw*)
+        CRYPTO_LIBS="-lbcrypt"
+        ;;
+esac
+
 if test "$with_coverage" = "yes" && test "${GCC}" = "yes"
 then
     echo Enabling code coverage for GCC
@@ -1115,7 +1128,7 @@ fi
 
 XML_LIBS="-lxml2"
 XML_LIBTOOLLIBS="libxml2.la"
-NON_PC_LIBS="${THREAD_LIBS} ${ICONV_LIBS} ${LIBM} ${NET_LIBS}"
+NON_PC_LIBS="${THREAD_LIBS} ${ICONV_LIBS} ${LIBM} ${NET_LIBS} ${CRYPTO_LIBS}"
 XML_PC_LIBS="${XML_PC_LIBS} ${NON_PC_LIBS}"
 XML_PRIVATE_LIBS="${XML_PRIVATE_LIBS} ${NON_PC_LIBS}"
 XML_PRIVATE_CFLAGS="${XML_PRIVATE_CFLAGS} ${THREAD_CFLAGS} ${ICONV_CFLAGS}"

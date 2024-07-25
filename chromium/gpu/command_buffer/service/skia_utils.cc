@@ -32,6 +32,7 @@
 
 #if BUILDFLAG(ENABLE_VULKAN)
 #include "components/viz/common/gpu/vulkan_context_provider.h"
+#include "components/viz/common/resources/shared_image_format.h"
 #include "gpu/vulkan/vulkan_device_queue.h"
 #include "gpu/vulkan/vulkan_fence_helper.h"
 #include "gpu/vulkan/vulkan_function_pointers.h"
@@ -294,13 +295,14 @@ void DeleteSkSurface(SharedContextState* context_state,
 
 #if BUILDFLAG(ENABLE_VULKAN)
 GrVkImageInfo CreateGrVkImageInfo(VulkanImage* image,
+                                  const viz::SharedImageFormat& si_format,
                                   const gfx::ColorSpace& color_space) {
   DCHECK(image);
   VkPhysicalDevice physical_device =
       image->device_queue()->GetVulkanPhysicalDevice();
   GrVkYcbcrConversionInfo gr_ycbcr_info = CreateGrVkYcbcrConversionInfo(
-      physical_device, image->image_tiling(), image->format(), color_space,
-      image->ycbcr_info());
+      physical_device, image->image_tiling(), image->format(), si_format,
+      color_space, image->ycbcr_info());
   GrVkAlloc alloc;
   alloc.fMemory = image->device_memory();
   alloc.fOffset = 0;
@@ -323,7 +325,8 @@ GrVkImageInfo CreateGrVkImageInfo(VulkanImage* image,
        image->format() == VK_FORMAT_B8G8R8A8_UNORM ||
        image->format() == VK_FORMAT_B8G8R8_UNORM ||
        image->format() == VK_FORMAT_R8_UNORM ||
-       image->format() == VK_FORMAT_R8G8_UNORM)) {
+       image->format() == VK_FORMAT_R8G8_UNORM ||
+       image->format() == VK_FORMAT_R5G6B5_UNORM_PACK16)) {
     image_info.fImageTiling = VK_IMAGE_TILING_OPTIMAL;
   } else {
     image_info.fImageTiling = image->image_tiling();
@@ -351,6 +354,7 @@ GPU_GLES2_EXPORT GrVkYcbcrConversionInfo CreateGrVkYcbcrConversionInfo(
     VkPhysicalDevice physical_device,
     VkImageTiling tiling,
     VkFormat format,
+    const viz::SharedImageFormat& si_format,
     const gfx::ColorSpace& color_space,
     const std::optional<VulkanYCbCrInfo>& ycbcr_info) {
   auto valid_ycbcr_info = ycbcr_info;
@@ -359,11 +363,42 @@ GPU_GLES2_EXPORT GrVkYcbcrConversionInfo CreateGrVkYcbcrConversionInfo(
       return GrVkYcbcrConversionInfo();
     }
 
-    // YCbCr sampler is required
+    // YCbCr sampler is required.
+#if BUILDFLAG(IS_CHROMEOS)
+    // TODO(b/233667677): AllowColorSpaceCombination() in
+    // overlay_processor_ozone.cc ensures that the only NV12/YV12/P010 quads
+    // that we allow to be promoted to overlays are those that don't use
+    // the BT.2020 matrix and that don't use full range. Furthermore, since
+    // https://crrev.com/c/2336347, we force the DRM/KMS driver to use BT.601
+    // with limited range. Therefore, for compositing purposes, we need to
+    //
+    // a) Use VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601 for any YUV quads that
+    //    might be promoted to overlays - we shouldn't use
+    //    VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709 because we might then see
+    //    a slight difference in compositing vs. overlays (note that the BT.601
+    //    and BT.709 primaries are close to each other, so this shouldn't be a
+    //    huge correctness issue, though we'll need to address this at some
+    //    point);
+    //
+    //    and
+    //
+    // b) Use VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020 for BT.2020 quads in
+    //    order to composite them correctly (and we won't need to worry about a
+    //    difference in compositing vs. overlays in this case since those frames
+    //    won't be promoted to overlays).
+    //
+    // We'll need to revisit this once we plumb the color space and range to
+    // DRM/KMS.
+    VkSamplerYcbcrModelConversion ycbcr_model =
+        (color_space.GetMatrixID() == gfx::ColorSpace::MatrixID::BT2020_NCL)
+            ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020
+            : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
+#else
     VkSamplerYcbcrModelConversion ycbcr_model =
         (color_space.GetMatrixID() == gfx::ColorSpace::MatrixID::BT709)
             ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
             : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
+#endif  // BUILDFLAG(IS_CHROMEOS)
     VkSamplerYcbcrRange ycbcr_range =
         (color_space.GetRangeID() == gfx::ColorSpace::RangeID::FULL)
             ? VK_SAMPLER_YCBCR_RANGE_ITU_FULL
@@ -418,6 +453,24 @@ GPU_GLES2_EXPORT GrVkYcbcrConversionInfo CreateGrVkYcbcrConversionInfo(
   gr_ycbcr_info.fChromaFilter = chroma_filter;
   gr_ycbcr_info.fForceExplicitReconstruction = false;
   gr_ycbcr_info.fFormatFeatures = format_features;
+
+  if (!gr_ycbcr_info.fExternalFormat &&
+      (si_format == viz::LegacyMultiPlaneFormat::kYV12 ||
+       (si_format.is_multi_plane() &&
+        si_format.plane_config() ==
+            viz::SharedImageFormat::PlaneConfig::kY_V_U))) {
+    switch (vk_format) {
+      case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
+      case VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16:
+      case VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM:
+        gr_ycbcr_info.fComponents.r = VK_COMPONENT_SWIZZLE_B;
+        gr_ycbcr_info.fComponents.b = VK_COMPONENT_SWIZZLE_R;
+        break;
+      default:
+        break;
+    }
+  }
 
   return gr_ycbcr_info;
 }

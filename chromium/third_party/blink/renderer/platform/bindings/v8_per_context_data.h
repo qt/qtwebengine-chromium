@@ -62,8 +62,6 @@ class PLATFORM_EXPORT V8PerContextData final
   V8PerContextData(const V8PerContextData&) = delete;
   V8PerContextData& operator=(const V8PerContextData&) = delete;
 
-  static V8PerContextData* From(v8::Local<v8::Context>);
-
   ~V8PerContextData();
 
   void Trace(Visitor* visitor) const;
@@ -120,7 +118,7 @@ class PLATFORM_EXPORT V8PerContextData final
   v8::Local<v8::Object> CreateWrapperFromCacheSlowCase(const WrapperTypeInfo*);
   v8::Local<v8::Function> ConstructorForTypeSlowCase(const WrapperTypeInfo*);
 
-  const raw_ptr<v8::Isolate, ExperimentalRenderer> isolate_;
+  const raw_ptr<v8::Isolate> isolate_;
 
   // For each possible type of wrapper, we keep a boilerplate object.
   // The boilerplate is used to create additional wrappers of the same type.

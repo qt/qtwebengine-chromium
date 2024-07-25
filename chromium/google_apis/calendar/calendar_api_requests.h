@@ -20,7 +20,9 @@ namespace google_apis {
 
 namespace calendar {
 
-inline constexpr char kPrimaryCalendarID[] = "primary";
+// A marker to indicate an event has been injected with its calendar's colorId.
+inline const std::string kInjectedColorIdPrefix = "c";
+inline constexpr char kPrimaryCalendarId[] = "primary";
 
 // Callback used for requests that the server returns Calendar List
 // data formatted into JSON value.
@@ -118,7 +120,8 @@ class CalendarApiEventsRequest : public CalendarApiGetRequest {
                            const CalendarApiUrlGenerator& url_generator,
                            CalendarEventListCallback callback,
                            const base::Time& start_time,
-                           const base::Time& end_time);
+                           const base::Time& end_time,
+                           bool include_attachments = false);
   CalendarApiEventsRequest(const CalendarApiEventsRequest&) = delete;
   CalendarApiEventsRequest& operator=(const CalendarApiEventsRequest&) = delete;
   ~CalendarApiEventsRequest() override;

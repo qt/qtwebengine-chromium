@@ -29,14 +29,13 @@ struct Mailbox;
 class GPU_GLES2_EXPORT GLTextureImageBackingFactory
     : public GLCommonImageBackingFactory {
  public:
-  // The `for_cpu_upload_usage` parameter controls if this factory accepts
-  // `SHARED_IMAGE_USAGE_CPU_UPLOAD`. It is strict, if true the usage must
-  // include CPU upload and if false it must not.
+  // The `supports_cpu_upload` parameter controls if this factory accepts
+  // `SHARED_IMAGE_USAGE_CPU_UPLOAD`.
   GLTextureImageBackingFactory(const GpuPreferences& gpu_preferences,
                                const GpuDriverBugWorkarounds& workarounds,
                                const gles2::FeatureInfo* feature_info,
                                gl::ProgressReporter* progress_reporter,
-                               bool for_cpu_upload_usage);
+                               bool supports_cpu_upload = true);
   ~GLTextureImageBackingFactory() override;
 
   // SharedImageBackingFactory implementation.
@@ -60,6 +59,7 @@ class GPU_GLES2_EXPORT GLTextureImageBackingFactory
       SkAlphaType alpha_type,
       uint32_t usage,
       std::string debug_label,
+      bool is_thread_safe,
       base::span<const uint8_t> pixel_data) override;
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
@@ -89,6 +89,10 @@ class GPU_GLES2_EXPORT GLTextureImageBackingFactory
                    gfx::GpuMemoryBufferType gmb_type,
                    GrContextType gr_context_type,
                    base::span<const uint8_t> pixel_data) override;
+  SharedImageBackingType GetBackingType() override;
+
+  void EnableSupportForAllMetalUsagesForTesting(bool enable);
+  void ForceSetUsingANGLEMetalForTesting(bool value);
 
  private:
   std::unique_ptr<SharedImageBacking> CreateSharedImageInternal(
@@ -103,7 +107,13 @@ class GPU_GLES2_EXPORT GLTextureImageBackingFactory
       std::string debug_label,
       base::span<const uint8_t> pixel_data);
 
-  const bool for_cpu_upload_usage_;
+  const bool supports_cpu_upload_;
+
+  // Many shared image usages are disabled on Metal so that they fall back to an
+  // IOSurface backing. IOSurface backings are much better suited for cross-API
+  // or cross-GPU usages.
+  bool support_all_metal_usages_;
+  bool emulate_using_angle_metal_for_testing_ = false;
 };
 
 }  // namespace gpu

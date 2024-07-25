@@ -113,7 +113,7 @@ namespace {
 // //content/browser/permissions:permission_service_impl
 // ::PermissionDescriptorToPermissionType, producing an error in
 // |error_message| as necessary.
-// TODO(crbug.com/989983): De-duplicate this logic.
+// TODO(crbug.com/40638575): De-duplicate this logic.
 Response PermissionDescriptorToPermissionType(
     std::unique_ptr<protocol::Browser::PermissionDescriptor> descriptor,
     PermissionType* permission_type) {
@@ -173,10 +173,6 @@ Response PermissionDescriptorToPermissionType(
     *permission_type = PermissionType::NFC;
   } else if (name == "window-management") {
     *permission_type = PermissionType::WINDOW_MANAGEMENT;
-  } else if (name == "window-placement" &&
-             base::FeatureList::IsEnabled(
-                 blink::features::kWindowPlacementPermissionAlias)) {
-    *permission_type = PermissionType::WINDOW_MANAGEMENT;
   } else if (name == "local-fonts") {
     *permission_type = PermissionType::LOCAL_FONTS;
   } else if (name == "display-capture") {
@@ -187,6 +183,12 @@ Response PermissionDescriptorToPermissionType(
     *permission_type = PermissionType::TOP_LEVEL_STORAGE_ACCESS;
   } else if (name == "captured-surface-control") {
     *permission_type = PermissionType::CAPTURED_SURFACE_CONTROL;
+  } else if (name == "speaker-selection") {
+    *permission_type = PermissionType::SPEAKER_SELECTION;
+  } else if (name == "keyboard-lock") {
+    *permission_type = PermissionType::KEYBOARD_LOCK;
+  } else if (name == "pointer-lock") {
+    *permission_type = PermissionType::POINTER_LOCK;
   } else {
     return Response::InvalidParams("Invalid PermissionDescriptor name: " +
                                    name);
@@ -260,6 +262,8 @@ Response FromProtocolPermissionType(
   } else if (type ==
              protocol::Browser::PermissionTypeEnum::CapturedSurfaceControl) {
     *out_type = PermissionType::CAPTURED_SURFACE_CONTROL;
+  } else if (type == protocol::Browser::PermissionTypeEnum::SpeakerSelection) {
+    *out_type = PermissionType::SPEAKER_SELECTION;
   } else {
     return Response::InvalidParams("Unknown permission type: " + type);
   }
@@ -606,8 +610,9 @@ void BrowserHandler::DownloadWillBegin(FrameTreeNode* ftn,
 
 void BrowserHandler::SetDownloadEventsEnabled(bool enabled) {
   if (!enabled) {
-    for (auto* item : pending_downloads_)
+    for (download::DownloadItem* item : pending_downloads_) {
       item->RemoveObserver(this);
+    }
     pending_downloads_.clear();
   }
   download_events_enabled_ = enabled;

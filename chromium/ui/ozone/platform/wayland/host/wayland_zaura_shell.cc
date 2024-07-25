@@ -26,9 +26,9 @@ namespace ui {
 namespace {
 
 constexpr uint32_t kMinVersion = 1;
-// Version: 64
+// Version: 65
 constexpr uint32_t kMaxVersion =
-    ZAURA_TOPLEVEL_STATE_TRUSTED_PINNED_SINCE_VERSION;
+    ZAURA_TOPLEVEL_CONFIGURE_OCCLUSION_STATE_SINCE_VERSION;
 
 }  // namespace
 
@@ -58,13 +58,6 @@ void WaylandZAuraShell::Instantiate(WaylandConnection* connection,
   connection->zaura_shell_ =
       std::make_unique<WaylandZAuraShell>(zaura_shell.release(), connection);
   ReportShellUMA(UMALinuxWaylandShell::kZauraShell);
-
-  // Usually WaylandOutputManager is instantiated first, so any ZAuraOutputs it
-  // created wouldn't have been initialized, since the zaura_shell didn't exist
-  // yet. So initialize them now.
-  if (connection->wayland_output_manager()) {
-    connection->wayland_output_manager()->InitializeAllZAuraOutputs();
-  }
 }
 
 WaylandZAuraShell::WaylandZAuraShell(zaura_shell* aura_shell,

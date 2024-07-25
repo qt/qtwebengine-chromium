@@ -15,6 +15,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "cc/base/rtree.h"
+#include "cc/paint/directly_composited_image_info.h"
 #include "cc/paint/discardable_image_map.h"
 #include "cc/paint/image_id.h"
 #include "cc/paint/paint_export.h"
@@ -55,6 +56,8 @@ class CC_PAINT_EXPORT DisplayItemList
   DisplayItemList& operator=(const DisplayItemList&) = delete;
 
   void Raster(SkCanvas* canvas, ImageProvider* image_provider = nullptr) const;
+  void Raster(SkCanvas* canvas, const PlaybackParams& params) const;
+  std::vector<size_t> OffsetsOfOpsToRaster(SkCanvas* canvas) const;
 
   // Captures |DrawTextBlobOp|s intersecting |rect| and returns the associated
   // |NodeId|s in |content|.
@@ -126,18 +129,12 @@ class CC_PAINT_EXPORT DisplayItemList
   // leaving |this| in an empty state.
   PaintRecord FinalizeAndReleaseAsRecord();
 
-  struct DirectlyCompositedImageResult {
-    // See PictureLayerImpl::direct_composited_image_default_raster_scale_.
-    gfx::Vector2dF default_raster_scale;
-    bool nearest_neighbor;
-  };
-
   // If this list represents an image that should be directly composited (i.e.
   // rasterized at the intrinsic size of the image), return the intrinsic size
   // of the image and whether or not to use nearest neighbor filtering when
   // scaling the layer.
-  std::optional<DirectlyCompositedImageResult>
-  GetDirectlyCompositedImageResult() const;
+  std::optional<DirectlyCompositedImageInfo> GetDirectlyCompositedImageInfo()
+      const;
 
   int num_slow_paths_up_to_min_for_MSAA() const {
     return paint_op_buffer_.num_slow_paths_up_to_min_for_MSAA();
@@ -194,6 +191,19 @@ class CC_PAINT_EXPORT DisplayItemList
   bool has_draw_text_ops() const {
     return paint_op_buffer_.has_draw_text_ops();
   }
+  bool has_save_layer_ops() const {
+    return paint_op_buffer_.has_save_layer_ops();
+  }
+  bool has_save_layer_alpha_ops() const {
+    return paint_op_buffer_.has_save_layer_alpha_ops();
+  }
+  bool has_effects_preventing_lcd_text_for_save_layer_alpha() const {
+    return paint_op_buffer_
+        .has_effects_preventing_lcd_text_for_save_layer_alpha();
+  }
+  bool HasDiscardableImages() const {
+    return paint_op_buffer_.HasDiscardableImages();
+  }
 
   // Ops with nested paint ops are considered as a single op.
   size_t num_paint_ops() const { return paint_op_buffer_.size(); }
@@ -208,6 +218,7 @@ class CC_PAINT_EXPORT DisplayItemList
 
  private:
   friend class DisplayItemListTest;
+  friend class PaintOpBufferSerializer;
   friend gpu::raster::RasterImplementation;
   friend gpu::raster::RasterImplementationGLES;
 

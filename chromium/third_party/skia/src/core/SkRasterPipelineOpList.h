@@ -166,6 +166,8 @@
     M(load_1010102_xr) M(load_1010102_xr_dst) M(store_1010102_xr)              \
     M(gather_1010102_xr)                                                       \
     M(load_10x6) M(load_10x6_dst) M(store_10x6) M(gather_10x6)                 \
+    M(gather_10101010_xr) M(load_10101010_xr) M(load_10101010_xr_dst)          \
+    M(store_10101010_xr)                                                       \
     M(store_src_rg) M(load_src_rg)                                             \
     M(byte_tables)                                                             \
     M(colorburn) M(colordodge) M(softlight)                                    \
@@ -188,6 +190,7 @@
     M(bicubic_n3x) M(bicubic_n1x) M(bicubic_p1x) M(bicubic_p3x)                \
     M(bicubic_n3y) M(bicubic_n1y) M(bicubic_p1y) M(bicubic_p3y)                \
     M(accumulate)                                                              \
+    M(perlin_noise)                                                            \
     M(mipmap_linear_init) M(mipmap_linear_update) M(mipmap_linear_finish)      \
     M(xy_to_2pt_conical_strip)                                                 \
     M(xy_to_2pt_conical_focal_on_circle)                                       \

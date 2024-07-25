@@ -29,8 +29,8 @@ _DISALLOW_NON_BLINK_MOJOM = (
     'Warning')
 
 _DISALLOW_CONTINUATION_DATA_ = (
-    '.*(Get|Set|Ensure)ContinuationPreservedEmbedderData.*',
-    '[Get|Set|Ensure]ContinuationPreservedEmbedderData does not support multiple '
+    '.*(Get|Set)ContinuationPreservedEmbedderData.*',
+    '[Get|Set]ContinuationPreservedEmbedderData does not support multiple '
     'clients.')
 
 _CONFIG = [
@@ -61,10 +61,7 @@ _CONFIG = [
             'absl::in_place',
             'absl::in_place_type',
             'absl::int128',
-            'absl::make_optional',
-            'absl::nullopt',
-            'absl::nullopt_t',
-            'absl::optional',
+            'absl::monostate',
             'absl::uint128',
             'absl::variant',
             'absl::visit',
@@ -105,6 +102,7 @@ _CONFIG = [
             'base::Milliseconds',
             'base::Minutes',
             'base::Nanoseconds',
+            'base::NotFatalUntil',
             'base::OptionalFromPtr',
             'base::OptionalToPtr',
             'base::Overloaded',
@@ -160,6 +158,15 @@ _CONFIG = [
             'base::ranges::.+',
             'base::sequence_manager::TaskTimeObserver',
             'base::span',
+            'base::Span(Reader|Writer)',
+            'base::as_byte_span',
+            'base::as_writable_byte_span',
+            'base::as_bytes',
+            'base::as_writable_bytes',
+            'base::as_chars',
+            'base::as_writable_chars',
+            'base::as_string_view',
+            'base::(byte_)?span_from_ref',
             'logging::GetVlogLevel',
             'logging::SetLogItems',
 
@@ -171,6 +178,7 @@ _CONFIG = [
 
             # //base/types/expected.h
             'base::expected',
+            'base::ok',
             'base::unexpected',
 
             # //base/functional/bind.h
@@ -296,10 +304,9 @@ _CONFIG = [
             'base::SingleThreadTaskRunnerThreadMode',
 
             # Byte order
-            'base::ByteSwap',
-            'base::ReadBigEndian',
-            'base::NetToHost(16|32|64)',
-            'base::HostToNet(16|32|64)',
+            'base::BigEndian(Reader|Writer)',
+            'base::numerics::U(8|16|32|64)(To|From)(Big|Little|Native)Endian',
+            'base::numerics::ByteSwap',
 
             # (Cryptographic) random number generation
             'base::RandUint64',
@@ -337,6 +344,8 @@ _CONFIG = [
             # cc painting and raster types.
             'cc::CategorizedWorkerPool',
             'cc::ColorFilter',
+            'cc::DrawLooper',
+            'cc::PathEffect',
             'cc::InspectablePaintRecorder',
             'cc::InspectableRecordPaintCanvas',
             'cc::PaintCanvas',
@@ -459,6 +468,7 @@ _CONFIG = [
             'cc::SurfaceLayer',
 
             # cc::Layer helper data structs.
+            'cc::AnchorPositionScrollData',
             'cc::BrowserControlsParams',
             'cc::ElementId',
             'cc::LayerPositionConstraint',
@@ -497,6 +507,7 @@ _CONFIG = [
             "gfx::KeyframedFloatAnimationCurve",
             "gfx::KeyframedTransformAnimationCurve",
             "gfx::LinearEasingPoint",
+            "gfx::TimingFunction",
             "gfx::TransformKeyframe",
             "gfx::TransformOperations",
 
@@ -534,10 +545,9 @@ _CONFIG = [
             'cc::TargetSnapAreaElementIds',
             'ui::ScrollGranularity',
 
-            # Document transitions
-            'cc::ViewTransitionRequest',
+            # View transitions
             'cc::ViewTransitionContentLayer',
-            'viz::NavigationID'
+            'cc::ViewTransitionRequest',
             'viz::ViewTransitionElementResourceId',
 
             # base/types/strong_alias.h
@@ -632,6 +642,7 @@ _CONFIG = [
             'net::CanonicalCookie',
             'net::CookieInclusionStatus',
             'net::CookiePriority',
+            'net::CookiePartitionKey',
             'net::CookieSameSite',
             'net::CookieSourceScheme',
 
@@ -701,12 +712,16 @@ _CONFIG = [
             'ui::AXMode',
             'ui::AXNodeData',
             'ui::AXRelativeBounds',
+            'ui::AXTreeChecks',
             'ui::AXTreeData',
             'ui::AXTreeSerializer',
             'ui::AXTreeSource',
             'ui::AXTreeUpdate',
             'ui::AXTreeID',
             'ui::AXTreeIDUnknown',
+            'ui::kInvalidAXNodeID',
+            'ui::kFirstGeneratedRendererNodeID',
+            'ui::kLastGeneratedRendererNodeID',
             'ui::kAXModeBasic',
             'ui::kAXModeComplete',
             'ui::ToString',
@@ -721,6 +736,7 @@ _CONFIG = [
             'ui::IsCellOrTableHeader',
             'ui::IsClickable',
             'ui::IsComboBox',
+            'ui::IsComboBoxContainer',
             'ui::IsContainerWithSelectableChildren',
             'ui::IsDialog',
             'ui::IsEmbeddingElement',
@@ -749,10 +765,14 @@ _CONFIG = [
             'base::apple::ScopedCFTypeRef',
             'base::mac::MacOSVersion',
             'base::mac::MacOSMajorVersion',
+
+            # Protected memory
+            'base::ProtectedMemory',
+            'base::AutoWritableMemory',
         ],
         'disallowed': [
-            ('base::Bind(|Once|Repeating)',
-             'Use WTF::Bind or WTF::BindRepeating.'),
+            ('base::Bind(Once|Repeating)',
+             'Use WTF::BindOnce or WTF::BindRepeating.'),
             'base::BindPostTaskToCurrentDefault',
             _DISALLOW_NON_BLINK_MOJOM,
             _DISALLOW_CONTINUATION_DATA_,
@@ -770,9 +790,16 @@ _CONFIG = [
         'allowed': ['gin::.+'],
     },
     {
-        'paths':
-        ['third_party/blink/renderer/bindings/core/v8/serialization/'],
+        'paths': [
+            'third_party/blink/renderer/bindings/core/v8/serialization/',
+            'third_party/blink/renderer/core/typed_arrays/',
+        ],
         'allowed': ['base::BufferIterator'],
+    },
+    {
+        'paths':
+        ['third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h'],
+        'allowed': ['base::FastHash'],
     },
     {
         'paths':
@@ -916,6 +943,12 @@ _CONFIG = [
         ],
     },
     {
+        'paths': ['third_party/blink/renderer/core/css/properties/css_color_function_parser.cc'],
+        'allowed': [
+            'base::MakeFixedFlatMap',
+        ],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/editing/ime'],
         'allowed': [
             'ui::ImeTextSpan',
@@ -962,6 +995,7 @@ _CONFIG = [
             'cc::InputHandlerScrollResult',
             'cc::SwapPromise',
             'viz::CompositorFrameMetadata',
+            'viz::FrameTimingDetails',
         ],
     },
     {
@@ -1046,6 +1080,29 @@ _CONFIG = [
         ],
     },
     {
+        'paths': [
+            'third_party/blink/public/web/web_frame_widget.h',
+            'third_party/blink/renderer/core/frame/animation_frame_timing_monitor',
+            'third_party/blink/renderer/core/frame/local_frame_client_impl.cc',
+            'third_party/blink/renderer/core/frame/web_frame_widget',
+            'third_party/blink/renderer/core/page/chrome_client.h',
+            'third_party/blink/renderer/core/paint/timing',
+            'third_party/blink/renderer/core/timing',
+        ],
+        'allowed': [
+            'viz::FrameTimingDetails',
+        ],
+    },
+    {
+        'paths': [
+            'third_party/blink/public/web/web_frame_widget.h',
+        ],
+        'allowed': [
+            'base::OnceCallback',
+            'gfx::Rect',
+        ],
+    },
+    {
         'paths': ['third_party/blink/renderer/core/style/computed_style.h'],
         'allowed': [
             'css_longhand::.+',
@@ -1076,6 +1133,7 @@ _CONFIG = [
     {
         'paths': [
             'third_party/blink/renderer/core/css/properties/css_parsing_utils.cc',
+            'third_party/blink/renderer/core/html/html_permission_element.cc',
             'third_party/blink/renderer/core/paint/box_border_painter.cc',
         ],
         'allowed': [
@@ -1210,6 +1268,7 @@ _CONFIG = [
         'allowed': [
             'base::flat_map',
             'gl::GpuPreference',
+            'gpu::ClientSharedImage',
             'gpu::SHARED_IMAGE_USAGE_.+',
             'gpu::gles2::GLES2Interface',
             'gpu::raster::RasterInterface',
@@ -1229,6 +1288,7 @@ _CONFIG = [
             'viz::SinglePlaneFormat',
             'viz::ToClosestSkColorType',
             'viz::TransferableResource',
+            'wgpu::.+',
         ],
     },
     {
@@ -1319,16 +1379,21 @@ _CONFIG = [
             # TODO(https://crbug.com/787252): Remove most of the entries below,
             # once the directory is fully Onion soup'ed.
             'base::Bind.*',
-            'base::Unretained',
-            'base::NoDestructor',
-            'base::flat_map',
             'base::EraseIf',
+            'base::flat_map',
+            'base::flat_set',
+            'base::NoDestructor',
+            'base::RetainedRef',
             'base::ScopedPlatformFile',
+            'base::Unretained',
             'mojo::WrapCallbackWithDefaultInvokeIfNotRun',
 
             # TODO(https://crrev.com/787252): Consider allowlisting fidl::*
             # usage more broadly in Blink.
             'fidl::InterfaceHandle',
+        ],
+        'inclass_allowed': [
+            'base::SequencedTaskRunner::GetCurrentDefault'
         ]
     },
     {
@@ -1471,6 +1536,7 @@ _CONFIG = [
             'viz::RasterContextProvider',
             'viz::ReleaseCallback',
             'media::.+',
+            'libgav1::.+',
             'libyuv::.+',
         ]
     },
@@ -1591,10 +1657,6 @@ _CONFIG = [
             "absl::InvalidArgumentError",
             "absl::Status",
             "absl::StatusOr",
-
-            # Required by liburlpattern API in order to pass string data
-            # efficiently.
-            "absl::string_view",
 
             # Needed to work with std::string values returned from
             # liburlpattern API.
@@ -1736,7 +1798,6 @@ _CONFIG = [
 
             # Needed to use the liburlpattern API.
             "absl::StatusOr",
-            "absl::string_view",
             'liburlpattern::.+',
         ],
     },
@@ -1824,16 +1885,11 @@ _CONFIG = [
     },
     {
         'paths': [
-            'third_party/blink/renderer/core/view_transition/view_transition_style_tracker.h'
-        ],
-        'allowed': ['viz::ViewTransitionElementResourceId'],
-    },
-    {
-        'paths': [
             'third_party/blink/renderer/core/view_transition/',
         ],
         'allowed': [
             'base::flat_map',
+            'cc::ScopedPauseRendering'
         ],
     },
     {
@@ -1864,6 +1920,15 @@ _CONFIG = [
         ],
         'allowed': [
             'base::CommandLine',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/controller/blink_leak_detector.cc',
+        ],
+        'allowed': [
+            'base::CommandLine',
+            'switches::kEnableLeakDetectionHeapSnapshot',
         ]
     },
     {
@@ -2006,6 +2071,16 @@ _CONFIG = [
         ],
         'allowed': [
             'blink_mojom::.+',
+        ]
+    },
+    {
+        'paths': [
+            'third_party/blink/renderer/modules/ml/webnn/ml_graph_tflite_converter.cc',
+            'third_party/blink/renderer/modules/ml/webnn/ml_graph_test_model_loader.cc',
+        ],
+        'allowed': [
+            'flatbuffers::.+',
+            'tflite::.+',
         ]
     },
     {

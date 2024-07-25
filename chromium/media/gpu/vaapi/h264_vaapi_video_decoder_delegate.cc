@@ -35,12 +35,14 @@ static constexpr uint8_t kZigzagScan8x8[64] = {
     35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
     58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63};
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 int GetSliceHeaderCounter() {
   // Needs to be static in case there are multiple active at once, in which case
   // they all need unique values.
   static base::AtomicSequenceNumber parsed_slice_hdr_counter;
   return parsed_slice_hdr_counter.GetNext();
 }
+#endif
 
 }  // namespace
 
@@ -99,12 +101,14 @@ static void InitVAPicture(VAPictureH264* va_pic) {
 void H264VaapiVideoDecoderDelegate::ProcessSPS(
     const H264SPS* sps,
     base::span<const uint8_t> sps_nalu_data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   last_sps_nalu_data_.assign(sps_nalu_data.begin(), sps_nalu_data.end());
 }
 
 void H264VaapiVideoDecoderDelegate::ProcessPPS(
     const H264PPS* pps,
     base::span<const uint8_t> pps_nalu_data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   last_pps_nalu_data_.assign(pps_nalu_data.begin(), pps_nalu_data.end());
 }
 
@@ -233,6 +237,7 @@ DecodeStatus H264VaapiVideoDecoderDelegate::ParseEncryptedSliceHeader(
     const std::vector<SubsampleEntry>& subsamples,
     uint64_t /*secure_handle*/,
     H264SliceHeader* slice_header_out) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(slice_header_out);
   DCHECK(!subsamples.empty());
   DCHECK(!data.empty());
@@ -611,7 +616,7 @@ bool H264VaapiVideoDecoderDelegate::OutputPicture(
 }
 
 void H264VaapiVideoDecoderDelegate::Reset() {
-  DETACH_FROM_SEQUENCE(sequence_checker_);
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   encryption_segment_info_.clear();
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)

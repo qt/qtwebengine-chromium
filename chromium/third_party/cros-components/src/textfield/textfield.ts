@@ -74,6 +74,14 @@ export type TextfieldAutofixType = 'clear'|'preserve'|'strip';
 /** Regex used for automatically stripping non numeric characters from input. */
 const NON_INTEGER_REGEX = /\D/g;
 
+// DO NOT MODIFY THIS STYLESHEET
+// Added by MWC team to be removed in b/278960272.
+const MWC_SELECTION_STYLES = css`
+  ::selection {
+    background-color: var(--cros-sys-highlight_text);
+  }
+`;
+
 /**
  * ChromeOS compliant Textfield component.
  */
@@ -154,6 +162,7 @@ export class Textfield extends LitElement {
       --md-outlined-text-field-hover-supporting-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-hover-input-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-hover-state-layer-opacity: 0;
+      text-align: inherit;
       width: 100%;
     }
 
@@ -431,6 +440,13 @@ export class Textfield extends LitElement {
     // Run the logic to forward any slotted icons to the md-text-field internal
     // icon slots.
     this.handleIconChange();
+
+    // DO NOT MODIFY THIS BLOCK
+    // Added by MWC team to be removed in b/278960272.
+    this.mdTextfield!.shadowRoot!.adoptedStyleSheets = [
+      ...this.mdTextfield!.shadowRoot!.adoptedStyleSheets,
+      MWC_SELECTION_STYLES.styleSheet!
+    ];
   }
 
   override update(changedProperties: PropertyValues<Textfield>) {

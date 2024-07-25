@@ -64,7 +64,7 @@ class TCPBoundSocketTest : public testing::Test {
         bound_socket->BindNewPipeAndPassReceiver(),
         base::BindLambdaForTesting(
             [&](int net_error,
-                const absl::optional<net::IPEndPoint>& local_addr) {
+                const std::optional<net::IPEndPoint>& local_addr) {
               bind_result = net_error;
               if (net_error == net::OK) {
                 *ip_endpoint_out = *local_addr;
@@ -133,9 +133,8 @@ class TCPBoundSocketTest : public testing::Test {
         connected_socket->BindNewPipeAndPassReceiver(),
         std::move(socket_observer),
         base::BindLambdaForTesting(
-            [&](int net_error,
-                const absl::optional<net::IPEndPoint>& local_addr,
-                const absl::optional<net::IPEndPoint>& remote_addr,
+            [&](int net_error, const std::optional<net::IPEndPoint>& local_addr,
+                const std::optional<net::IPEndPoint>& remote_addr,
                 mojo::ScopedDataPipeConsumerHandle receive_stream,
                 mojo::ScopedDataPipeProducerHandle send_stream) {
               connect_result = net_error;
@@ -171,11 +170,11 @@ class TCPBoundSocketTest : public testing::Test {
   // Attempts to read exactly |expected_bytes| from |receive_handle|, or reads
   // until the pipe is closed if |expected_bytes| is 0.
   std::string ReadData(mojo::DataPipeConsumerHandle receive_handle,
-                       uint32_t expected_bytes = 0) {
+                       size_t expected_bytes = 0) {
     std::string read_data;
     while (expected_bytes == 0 || read_data.size() < expected_bytes) {
       const void* buffer;
-      uint32_t num_bytes = expected_bytes - read_data.size();
+      size_t num_bytes = expected_bytes - read_data.size();
       MojoResult result = receive_handle.BeginReadData(
           &buffer, &num_bytes, MOJO_READ_DATA_FLAG_NONE);
       if (result == MOJO_RESULT_SHOULD_WAIT) {
@@ -326,7 +325,7 @@ TEST_F(TCPBoundSocketTest, ReadWrite) {
   server_socket->Accept(
       mojo::NullRemote() /* ovserver */,
       base::BindLambdaForTesting(
-          [&](int net_error, const absl::optional<net::IPEndPoint>& remote_addr,
+          [&](int net_error, const std::optional<net::IPEndPoint>& remote_addr,
               mojo::PendingRemote<mojom::TCPConnectedSocket> connected_socket,
               mojo::ScopedDataPipeConsumerHandle receive_stream,
               mojo::ScopedDataPipeProducerHandle send_stream) {
@@ -355,7 +354,7 @@ TEST_F(TCPBoundSocketTest, ReadWrite) {
   // Write data to the client socket until there's an error.
   while (true) {
     void* buffer = nullptr;
-    uint32_t buffer_num_bytes = 0;
+    size_t buffer_num_bytes = 0;
     MojoResult result = client_socket_send_handle->BeginWriteData(
         &buffer, &buffer_num_bytes, MOJO_WRITE_DATA_FLAG_NONE);
     if (result == MOJO_RESULT_SHOULD_WAIT) {
@@ -411,7 +410,7 @@ TEST_F(TCPBoundSocketTest, ConnectWithOptions) {
   server_socket->Accept(
       mojo::NullRemote() /* ovserver */,
       base::BindLambdaForTesting(
-          [&](int net_error, const absl::optional<net::IPEndPoint>& remote_addr,
+          [&](int net_error, const std::optional<net::IPEndPoint>& remote_addr,
               mojo::PendingRemote<mojom::TCPConnectedSocket> connected_socket,
               mojo::ScopedDataPipeConsumerHandle receive_stream,
               mojo::ScopedDataPipeProducerHandle send_stream) {
@@ -479,7 +478,7 @@ TEST_F(TCPBoundSocketTest, UpgradeToTLS) {
           [&](int net_error,
               mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
               mojo::ScopedDataPipeProducerHandle send_pipe_handle,
-              const absl::optional<net::SSLInfo>& ssl_info) {
+              const std::optional<net::SSLInfo>& ssl_info) {
             EXPECT_EQ(net::OK, net_error);
             client_socket_receive_handle = std::move(receive_pipe_handle);
             client_socket_send_handle = std::move(send_pipe_handle);

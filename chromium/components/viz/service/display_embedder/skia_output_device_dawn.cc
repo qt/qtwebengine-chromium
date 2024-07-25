@@ -58,7 +58,7 @@ SkiaOutputDeviceDawn::SkiaOutputDeviceDawn(
   capabilities_.uses_default_gl_framebuffer = false;
   capabilities_.supports_post_sub_buffer = false;
 
-  // TODO(https://crbug.com/1108406): use buffer format from Reshape().
+  // TODO(crbug.com/40141277): use buffer format from Reshape().
   capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::RGBA_8888)] =
       kSurfaceColorType;
   capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::RGBX_8888)] =
@@ -157,7 +157,7 @@ bool SkiaOutputDeviceDawn::Reshape(const SkImageInfo& image_info,
   return swap_chain_ != nullptr;
 }
 
-void SkiaOutputDeviceDawn::Present(const absl::optional<gfx::Rect>& update_rect,
+void SkiaOutputDeviceDawn::Present(const std::optional<gfx::Rect>& update_rect,
                                    BufferPresentedCallback feedback,
                                    OutputSurfaceFrame frame) {
   DCHECK(!update_rect);

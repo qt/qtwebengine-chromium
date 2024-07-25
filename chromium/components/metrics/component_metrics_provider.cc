@@ -4,14 +4,14 @@
 
 #include "components/metrics/component_metrics_provider.h"
 
+#include <string>
+#include <string_view>
+
 #include "base/containers/fixed_flat_map.h"
 #include "base/hash/hash.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "components/component_updater/component_updater_service.h"
 #include "third_party/metrics_proto/system_profile.pb.h"
-
-#include <string>
 
 namespace metrics {
 
@@ -19,11 +19,9 @@ namespace {
 
 SystemProfileProto_ComponentId CrxIdToComponentId(const std::string& app_id) {
   static constexpr auto kComponentMap = base::MakeFixedFlatMap<
-      base::StringPiece, SystemProfileProto_ComponentId>({
+      std::string_view, SystemProfileProto_ComponentId>({
       {"aagaghndoahmfdbmfnajfklaomcanlnh",
        SystemProfileProto_ComponentId_REAL_TIME_URL_CHECKS_ALLOWLIST},
-      {"aemllinfpjdgcldgaelcgakpjmaekbai",
-       SystemProfileProto_ComponentId_WEBVIEW_APPS_PACKAGE_NAMES_ALLOWLIST},
       {"bjbdkfoakgmkndalgpadobhgbhhoanho",
        SystemProfileProto_ComponentId_EPSON_INKJET_PRINTER_ESCPR},
       {"cdoopinbipdmaefofkedmagbfmdcjnaa",
@@ -36,6 +34,8 @@ SystemProfileProto_ComponentId CrxIdToComponentId(const std::string& app_id) {
        SystemProfileProto_ComponentId_COMMERCE_HEURISTICS},
       {"copjbmjbojbakpaedmpkhmiplmmehfck",
        SystemProfileProto_ComponentId_INTERVENTION_POLICY_DATABASE},
+      {"dgeeihjgkpfplghdiaomabiakidhjnnn",
+       SystemProfileProto_ComponentId_GROWTH_CAMPAIGNS},
       {"dhlpobdgcjafebgbbhjdnapejmpkgiie",
        SystemProfileProto_ComponentId_DESKTOP_SHARING_HUB},
       {"eeigpngbgcognadeebkilcpcaedhellh",
@@ -143,7 +143,7 @@ SystemProfileProto_ComponentId CrxIdToComponentId(const std::string& app_id) {
        SystemProfileProto_ComponentId_SODA_JA_JP},
   });
 
-  const auto* result = kComponentMap.find(app_id);
+  const auto result = kComponentMap.find(app_id);
   if (result == kComponentMap.end()) {
     return SystemProfileProto_ComponentId_UNKNOWN;
   }

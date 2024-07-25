@@ -14,25 +14,35 @@ static_library("internal") {
     "//chrome/browser",
     "//chrome/browser/data_sharing:*",
     "//chrome/test:*",
+    "//ios/chrome/browser/data_sharing/model",
   ]
 
   sources = [
+    "collaboration_group_sync_bridge.cc",
+    "collaboration_group_sync_bridge.h",
     "data_sharing_network_loader_impl.cc",
     "data_sharing_network_loader_impl.h",
     "data_sharing_service_impl.cc",
     "data_sharing_service_impl.h",
     "empty_data_sharing_service.cc",
     "empty_data_sharing_service.h",
+    "group_data_proto_utils.cc",
+    "group_data_proto_utils.h",
   ]
 
   deps = [
+    "//components/endpoint_fetcher:endpoint_fetcher",
     "//components/signin/public/identity_manager",
+    "//components/sync/base:base",
+    "//components/sync/model:model",
+    "//components/sync/protocol:protocol",
     "//services/network/public/cpp",
   ]
 
   public_deps = [
     "//base",
     "//components/data_sharing/public",
+    "//components/data_sharing/public/protocol",
     "//components/keyed_service/core",
   ]
 
@@ -54,9 +64,11 @@ source_set("unit_tests") {
   visibility = [ "//components/data_sharing:unit_tests" ]
 
   sources = [
+    "collaboration_group_sync_bridge_unittest.cc",
     "data_sharing_network_loader_impl_unittest.cc",
     "data_sharing_service_impl_unittest.cc",
     "empty_data_sharing_service_unittest.cc",
+    "group_data_proto_utils_unittest.cc",
   ]
 
   if (is_android) {
@@ -67,7 +79,9 @@ source_set("unit_tests") {
     ":internal",
     "//base",
     "//base/test:test_support",
+    "//components/endpoint_fetcher:test_support",
     "//components/signin/public/identity_manager:test_support",
+    "//components/sync:test_support",
     "//net/traffic_annotation:test_support",
     "//services/network:test_support",
     "//services/network/public/cpp",
@@ -115,16 +129,38 @@ if (is_android) {
       "android/java/src/org/chromium/components/data_sharing/DataSharingServiceImpl.java",
     ]
   }
+
+  robolectric_library("data_sharing_junit_tests") {
+    sources = [ "android/java/src/org/chromium/components/data_sharing/DataSharingNetworkLoaderImplTest.java" ]
+
+    deps = [
+      ":internal_java",
+      "//base:base_java",
+      "//base:base_java_test_support",
+      "//base:base_junit_test_support",
+      "//net/android:net_java",
+      "//third_party/jni_zero:jni_zero_java",
+      "//third_party/junit",
+      "//third_party/mockito:mockito_java",
+      "//url:gurl_java",
+    ]
+  }
 }
 
+# TODO(b/339698854): Move these to public/test instead of internal.
 source_set("test_support") {
   testonly = true
 
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//chrome/test:*",
+  ]
 
   sources = [
     "mock_data_sharing_network_loader.cc",
     "mock_data_sharing_network_loader.h",
+    "mock_data_sharing_service.cc",
+    "mock_data_sharing_service.h",
   ]
 
   public_deps = [

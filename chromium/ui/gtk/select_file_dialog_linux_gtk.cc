@@ -16,7 +16,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/cxx20_erase_vector.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
@@ -44,7 +43,7 @@ namespace gtk {
 
 namespace {
 
-// TODO(https://crbug.com/981309): These getters will be unnecessary after
+// TODO(crbug.com/41469294): These getters will be unnecessary after
 // migrating to GtkFileChooserNative.
 const char* GettextPackage() {
   static base::NoDestructor<std::string> gettext_package(
@@ -610,7 +609,7 @@ void SelectFileDialogLinuxGtk::OnSelectMultiFileDialogResponse(
   }
 
   auto filenames = GtkFileChooserGetFilenames(dialog);
-  base::EraseIf(filenames, [this](const base::FilePath& path) {
+  std::erase_if(filenames, [this](const base::FilePath& path) {
     return CallDirectoryExistsOnUIThread(path);
   });
   if (filenames.empty()) {

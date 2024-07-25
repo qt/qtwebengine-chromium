@@ -8,6 +8,7 @@
 
 #include "base/no_destructor.h"
 #include "build/build_config.h"
+#include "media/base/media_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media::cast::encoding_support {
@@ -30,20 +31,23 @@ GetValidProfiles() {
 }  // namespace
 
 TEST(EncodingSupportTest, EnablesVp8HardwareEncoderAlways) {
-  EXPECT_TRUE(IsHardwareEnabled(Codec::kVideoVp8, GetValidProfiles()));
+  EXPECT_TRUE(IsHardwareEnabled(VideoCodec::kVP8, GetValidProfiles()));
 }
 
 TEST(EncodingSupportTest, EnablesH264HardwareEncoderProperly) {
   static const bool is_enabled =
-// The hardware encoder also has major issues on Mac OSX and on Windows.
-#if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_MAC)
+      base::FeatureList::IsEnabled(kCastStreamingMacHardwareH264);
+
+// The hardware encoder is broken on Windows.
+#elif BUILDFLAG(IS_WIN)
       false;
 #else
       true;
 #endif
 
   EXPECT_EQ(is_enabled,
-            IsHardwareEnabled(Codec::kVideoH264, GetValidProfiles()));
+            IsHardwareEnabled(VideoCodec::kH264, GetValidProfiles()));
 }
 
 }  // namespace media::cast::encoding_support

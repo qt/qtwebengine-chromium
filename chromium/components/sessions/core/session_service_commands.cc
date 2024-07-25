@@ -170,7 +170,7 @@ enum PersistedWindowShowState {
   PERSISTED_SHOW_STATE_END = 8,
 };
 
-// TODO(crbug.com/1506068): Remove this around December 2024. This is part of a
+// TODO(crbug.com/40946710): Remove this around December 2024. This is part of a
 // workaround added to support the transition from storing the last_active_time
 // as TimeTicks to Time that was added in December 2023. This is the threshold
 // at which we consider that if a tab is so far in the past, it must be a tab
@@ -645,17 +645,17 @@ void CreateTabsAndWindows(
         const base::Token token(payload.maybe_group.id_high,
                                 payload.maybe_group.id_low);
         session_tab->group =
-            payload.has_group ? absl::make_optional(
+            payload.has_group ? std::make_optional(
                                     tab_groups::TabGroupId::FromRawToken(token))
-                              : absl::nullopt;
+                              : std::nullopt;
         break;
       }
 
       case kCommandSetTabGroupMetadata2: {
-        std::unique_ptr<base::Pickle> pickle = command->PayloadAsPickle();
-        base::PickleIterator iter(*pickle);
+        base::Pickle pickle = command->PayloadAsPickle();
+        base::PickleIterator iter(pickle);
 
-        absl::optional<base::Token> group_token = ReadTokenFromPickle(&iter);
+        std::optional<base::Token> group_token = ReadTokenFromPickle(&iter);
         if (!group_token.has_value())
           return;
 
@@ -744,14 +744,14 @@ void CreateTabsAndWindows(
 
         SessionTab* tab = GetTab(tab_id, tabs);
         tab->user_agent_override.ua_string_override.swap(user_agent_override);
-        tab->user_agent_override.opaque_ua_metadata_override = absl::nullopt;
+        tab->user_agent_override.opaque_ua_metadata_override = std::nullopt;
         break;
       }
 
       case kCommandSetTabUserAgentOverride2: {
         SessionID tab_id = SessionID::InvalidValue();
         std::string user_agent_override;
-        absl::optional<std::string> opaque_ua_metadata_override;
+        std::optional<std::string> opaque_ua_metadata_override;
         if (!RestoreSetTabUserAgentOverrideCommand2(
                 *command, &tab_id, &user_agent_override,
                 &opaque_ua_metadata_override)) {
@@ -766,11 +766,10 @@ void CreateTabsAndWindows(
       }
 
       case kCommandSessionStorageAssociated: {
-        std::unique_ptr<base::Pickle> command_pickle(
-            command->PayloadAsPickle());
+        base::Pickle command_pickle = command->PayloadAsPickle();
+        base::PickleIterator iter(command_pickle);
         SessionID::id_type command_tab_id;
         std::string session_storage_persistent_id;
-        base::PickleIterator iter(*command_pickle);
         if (!iter.ReadInt(&command_tab_id) ||
             !iter.ReadString(&session_storage_persistent_id))
           return;
@@ -803,7 +802,7 @@ void CreateTabsAndWindows(
 
         if (base::Time::Now() - deserialized_time >
             kLastActiveWorkaroundThreshold) {
-          // TODO(crbug.com/1506068): Remove this once enough time has passed
+          // TODO(crbug.com/40946710): Remove this once enough time has passed
           // (added in December 2023, can be removed after ~1 year). This is a
           // workaround put in place during the migration from base::TimeTicks
           // internal representation to microseconds since Windows epoch. As the
@@ -829,8 +828,8 @@ void CreateTabsAndWindows(
       }
 
       case kCommandSetWindowWorkspace2: {
-        std::unique_ptr<base::Pickle> pickle(command->PayloadAsPickle());
-        base::PickleIterator it(*pickle);
+        base::Pickle pickle = command->PayloadAsPickle();
+        base::PickleIterator it(pickle);
         SessionID::id_type window_id = -1;
         std::string workspace;
          if (!it.ReadInt(&window_id) || !it.ReadString(&workspace)) {
@@ -854,8 +853,8 @@ void CreateTabsAndWindows(
       }
 
       case kCommandSetTabGuid: {
-        std::unique_ptr<base::Pickle> pickle(command->PayloadAsPickle());
-        base::PickleIterator it(*pickle);
+        base::Pickle pickle = command->PayloadAsPickle();
+        base::PickleIterator it(pickle);
         SessionID::id_type tab_id = -1;
         std::string guid;
         if (!it.ReadInt(&tab_id) || !it.ReadString(&guid) ||
@@ -868,8 +867,8 @@ void CreateTabsAndWindows(
       }
 
       case kCommandSetTabData: {
-        std::unique_ptr<base::Pickle> pickle(command->PayloadAsPickle());
-        base::PickleIterator it(*pickle);
+        base::Pickle pickle = command->PayloadAsPickle();
+        base::PickleIterator it(pickle);
         SessionID::id_type tab_id = -1;
         int size = 0;
         if (!it.ReadInt(&tab_id) || !it.ReadInt(&size)) {
@@ -1026,7 +1025,7 @@ std::unique_ptr<SessionCommand> CreateSetWindowTypeCommand(
 
 std::unique_ptr<SessionCommand> CreateTabGroupCommand(
     SessionID tab_id,
-    absl::optional<tab_groups::TabGroupId> group) {
+    std::optional<tab_groups::TabGroupId> group) {
   TabGroupPayload payload = {0};
   payload.tab_id = tab_id.id();
   if (group.has_value()) {
@@ -1041,7 +1040,7 @@ std::unique_ptr<SessionCommand> CreateTabGroupCommand(
 std::unique_ptr<SessionCommand> CreateTabGroupMetadataUpdateCommand(
     const tab_groups::TabGroupId group,
     const tab_groups::TabGroupVisualData* visual_data,
-    const absl::optional<std::string> saved_guid) {
+    const std::optional<std::string> saved_guid) {
   base::Pickle pickle;
   WriteTokenToPickle(&pickle, group.token());
   pickle.WriteString16(visual_data->title());
@@ -1215,9 +1214,8 @@ bool ReplacePendingCommand(CommandStorageManager* command_storage_manager,
     SessionCommand* existing_command = i->get();
     if ((*command)->id() == kCommandUpdateTabNavigation &&
         existing_command->id() == kCommandUpdateTabNavigation) {
-      std::unique_ptr<base::Pickle> command_pickle(
-          (*command)->PayloadAsPickle());
-      base::PickleIterator iterator(*command_pickle);
+      base::Pickle command_pickle = (*command)->PayloadAsPickle();
+      base::PickleIterator iterator(command_pickle);
       SessionID::id_type command_tab_id;
       int command_nav_index;
       if (!iterator.ReadInt(&command_tab_id) ||
@@ -1230,9 +1228,8 @@ bool ReplacePendingCommand(CommandStorageManager* command_storage_manager,
         // Creating a pickle like this means the Pickle references the data from
         // the command. Make sure we delete the pickle before the command, else
         // the pickle references deleted memory.
-        std::unique_ptr<base::Pickle> existing_pickle(
-            existing_command->PayloadAsPickle());
-        iterator = base::PickleIterator(*existing_pickle);
+        base::Pickle existing_pickle = existing_command->PayloadAsPickle();
+        iterator = base::PickleIterator(existing_pickle);
         if (!iterator.ReadInt(&existing_tab_id) ||
             !iterator.ReadInt(&existing_nav_index)) {
           return false;

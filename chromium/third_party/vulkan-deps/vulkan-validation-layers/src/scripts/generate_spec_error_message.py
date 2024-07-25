@@ -28,13 +28,12 @@ from collections import defaultdict
 from collections import OrderedDict
 
 class ValidationJSON:
-    def __init__(self, filename):
+    def __init__(self, filename : str):
         self.filename = filename
         self.explicit_vuids = set()
         self.implicit_vuids = set()
         self.all_vuids = set()
         self.vuid_db = defaultdict(list) # Maps VUID string to list of json-data dicts
-        self.duplicate_vuids = set()
         self.api_version = "0.0.0"
 
         # A set of specific regular expression substitutions needed to clean up VUID text
@@ -95,6 +94,15 @@ class ValidationJSON:
          # explicit end in 5 numeric chars
          return vuid_number.isdecimal()
 
+    def dedup(self):
+        unique_explicit_vuids = {}
+        for item in sorted(self.explicit_vuids):
+            key = item[-5:]
+            unique_explicit_vuids[key] = item
+
+        self.explicit_vuids = set(list(unique_explicit_vuids.values()))
+        self.all_vuids = self.explicit_vuids | self.implicit_vuids
+
     def parse(self):
         self.json_dict = {}
         if not os.path.isfile(self.filename):
@@ -138,8 +146,8 @@ class ValidationJSON:
 
         self.all_vuids = self.explicit_vuids | self.implicit_vuids
 
-        self.duplicate_vuids = set({v for v in self.vuid_db if len(self.vuid_db[v]) > 1})
-        if len(self.duplicate_vuids) > 0:
+        duplicate_vuids = set({v for v in self.vuid_db if len(self.vuid_db[v]) > 1})
+        if len(duplicate_vuids) > 0:
             print("Warning: duplicate VUIDs found in validusage.json")
 
     # make list of spec versions containing given VUID
@@ -217,6 +225,14 @@ def make_vuid_spec_version_list(pattern, max_minor_version):
         if resolved_pattern: edition_list_out.append(edition)
     return edition_list_out
 
+# These VUs are huge because they are just listing every possible option that is valid.
+# The size of these make these VU error messages more harmful to print then helpful
+oversized_vus = {
+    'VUID-VkColorBlendEquationEXT-colorBlendOp-07361' : 'colorBlendOp and alphaBlendOp must not be a VkBlendOp from VK_EXT_blend_operation_advanced',
+    'VUID-VkDeviceCreateInfo-pNext-pNext' : 'Each pNext member of any structure (including this one) in the pNext chain must be either NULL or a pointer to a valid struct for extending VkDeviceCreateInfo',
+    'VUID-VkPhysicalDeviceProperties2-pNext-pNext' : 'Each pNext member of any structure (including this one) in the pNext chain must be either NULL or a pointer to a valid struct for extending VkPhysicalDeviceProperties2',
+}
+
 def GenerateSpecErrorMessage(api : str, valid_usage_json : str, out_file : str):
     val_json = ValidationJSON(valid_usage_json)
     val_json.parse()
@@ -282,6 +298,10 @@ typedef struct _vuid_spec_text_pair {{
         db_text = db_text.replace('\n', ' ')
         # Remove multiple whitespaces
         db_text = re.sub(' +', ' ', db_text)
+        # Override for large VU text messages
+        if vuid in oversized_vus:
+            db_text = oversized_vus[vuid]
+
         out.append(f'    {{"{vuid}", "{db_text}", "{spec_url_id}"}},\n')
         # For multiply-defined VUIDs, include versions with extension appended
         if len(val_json.vuid_db[vuid]) > 1:

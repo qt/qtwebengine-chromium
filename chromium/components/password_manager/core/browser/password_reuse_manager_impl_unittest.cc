@@ -4,6 +4,8 @@
 
 #include "components/password_manager/core/browser/password_reuse_manager_impl.h"
 
+#include <string_view>
+
 #include "base/memory/scoped_refptr.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -35,9 +37,9 @@ using ::testing::Return;
 using ::testing::UnorderedElementsAreArray;
 
 PasswordForm CreateForm(
-    base::StringPiece signon_realm,
-    base::StringPiece16 username,
-    base::StringPiece16 password,
+    std::string_view signon_realm,
+    std::u16string_view username,
+    std::u16string_view password,
     PasswordForm::Store store = PasswordForm::Store::kProfileStore) {
   PasswordForm form;
   form.scheme = PasswordForm::Scheme::kHtml;
@@ -117,7 +119,7 @@ class MockPasswordReuseDetector : public PasswordReuseDetector {
               (override));
   MOCK_METHOD(void,
               OnLoginsRetained,
-              (const std::vector<PasswordForm>&),
+              (PasswordForm::Store, const std::vector<PasswordForm>&),
               (override));
   MOCK_METHOD(void, ClearCachedAccountStorePasswords, (), (override));
   MOCK_METHOD(void,
@@ -161,10 +163,13 @@ class PasswordReuseManagerImplTest : public testing::Test {
                                            false);
     prefs_.registry()->RegisterListPref(prefs::kPasswordHashDataList,
                                         PrefRegistry::NO_REGISTRATION_FLAGS);
-
-    profile_store_ = base::MakeRefCounted<TestPasswordStore>();
+    local_prefs_.registry()->RegisterListPref(
+        prefs::kLocalPasswordHashDataList, PrefRegistry::NO_REGISTRATION_FLAGS);
+    profile_store_ =
+        base::MakeRefCounted<TestPasswordStore>(IsAccountStore(false));
     profile_store_->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
-    account_store_ = base::MakeRefCounted<TestPasswordStore>();
+    account_store_ =
+        base::MakeRefCounted<TestPasswordStore>(IsAccountStore(true));
     account_store_->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
   }
 
@@ -181,12 +186,14 @@ class PasswordReuseManagerImplTest : public testing::Test {
     password_reuse_detector_ = mock_password_reuse_detector.get();
 #endif
     if (should_mock_password_reuse_detector) {
-      reuse_manager_.Init(&prefs(), profile_store(), account_store(),
+      reuse_manager_.Init(&prefs(), &local_prefs(), profile_store(),
+                          account_store(),
                           std::move(mock_password_reuse_detector),
                           identity_test_env_.identity_manager(),
                           std::move(mock_shared_pref_delegate_android));
     } else {
-      reuse_manager_.Init(&prefs(), profile_store(), account_store(),
+      reuse_manager_.Init(&prefs(), &local_prefs(), profile_store(),
+                          account_store(),
                           std::make_unique<PasswordReuseDetectorImpl>(),
                           identity_test_env_.identity_manager(),
                           std::move(mock_shared_pref_delegate_android));
@@ -210,6 +217,7 @@ class PasswordReuseManagerImplTest : public testing::Test {
   TestPasswordStore* account_store() { return account_store_.get(); }
   PasswordReuseManager* reuse_manager() { return &reuse_manager_; }
   TestingPrefServiceSimple& prefs() { return prefs_; }
+  TestingPrefServiceSimple& local_prefs() { return local_prefs_; }
   signin::IdentityTestEnvironment& identity_test_env() {
     return identity_test_env_;
   }
@@ -225,6 +233,7 @@ class PasswordReuseManagerImplTest : public testing::Test {
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   base::test::ScopedFeatureList feature_list_;
   TestingPrefServiceSimple prefs_;
+  TestingPrefServiceSimple local_prefs_;
   scoped_refptr<TestPasswordStore> profile_store_;
   scoped_refptr<TestPasswordStore> account_store_;
   signin::IdentityTestEnvironment identity_test_env_;
@@ -680,6 +689,30 @@ TEST_F(PasswordReuseManagerImplTest, NoPasswordSavedFromDifferentUsernames) {
   RunUntilIdle();
 
   EXPECT_EQ(0u, prefs().GetList(prefs::kPasswordHashDataList).size());
+}
+
+TEST_F(PasswordReuseManagerImplTest, OnLoginsRetainedCalledWithCorrectParams) {
+  Initialize(/*should_mock_password_reuse_detector=*/true);
+
+  PasswordForm submitted_form_profile =
+      CreateForm("http://yahoo.com", u"user@yahoo.com", u"password",
+                 PasswordForm::Store::kProfileStore);
+  EXPECT_CALL(*password_reuse_detector(),
+              OnLoginsRetained(PasswordForm::Store::kProfileStore,
+                               testing::UnorderedElementsAreArray(
+                                   {submitted_form_profile})));
+  profile_store()->TriggerOnLoginsRetainedForAndroid({submitted_form_profile});
+  RunUntilIdle();
+
+  PasswordForm submitted_form_account =
+      CreateForm("http://google.com", u"user@google.com", u"password",
+                 PasswordForm::Store::kAccountStore);
+  EXPECT_CALL(*password_reuse_detector(),
+              OnLoginsRetained(PasswordForm::Store::kAccountStore,
+                               testing::UnorderedElementsAreArray(
+                                   {submitted_form_account})));
+  account_store()->TriggerOnLoginsRetainedForAndroid({submitted_form_account});
+  RunUntilIdle();
 }
 #endif
 

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,9 +21,8 @@ extern uint64_t object_track_index;
 // Object Status -- used to track state of individual objects
 typedef VkFlags ObjectStatusFlags;
 enum ObjectStatusFlagBits {
-    OBJSTATUS_NONE = 0x00000000,                      // No status is set
-    OBJSTATUS_COMMAND_BUFFER_SECONDARY = 0x00000001,  // Command Buffer is of type SECONDARY
-    OBJSTATUS_CUSTOM_ALLOCATOR = 0x00000002,          // Allocated with custom allocator
+    OBJSTATUS_NONE = 0x00000000,              // No status is set
+    OBJSTATUS_CUSTOM_ALLOCATOR = 0x00000002,  // Allocated with custom allocator
 };
 
 // Object and state information structure
@@ -35,7 +34,9 @@ struct ObjTrackState {
     std::unique_ptr<vvl::unordered_set<uint64_t> > child_objects;  // Child objects (used for VkDescriptorPool only)
 };
 
-typedef vl_concurrent_unordered_map<uint64_t, std::shared_ptr<ObjTrackState>, 6> object_map_type;
+typedef vvl::concurrent_unordered_map<uint64_t, std::shared_ptr<ObjTrackState>, 6> object_map_type;
+// Used for GPL and we know there are at most only 4 libraries that should be used
+typedef vvl::concurrent_unordered_map<uint64_t, small_vector<std::shared_ptr<ObjTrackState>, 4>, 6> object_list_map_type;
 
 class ObjectLifetimes : public ValidationObject {
     using Func = vvl::Func;
@@ -59,6 +60,7 @@ class ObjectLifetimes : public ValidationObject {
     object_map_type object_map[kVulkanObjectTypeMax + 1];
     // Special-case map for swapchain images
     object_map_type swapchain_image_map;
+    object_list_map_type linked_graphics_pipeline_map;
 
     void *device_createinfo_pnext;
     bool null_descriptor_enabled;
@@ -69,7 +71,7 @@ class ObjectLifetimes : public ValidationObject {
     }
     ~ObjectLifetimes() {
         if (device_createinfo_pnext) {
-            FreePnextChain(device_createinfo_pnext);
+            vku::FreePnextChain(device_createinfo_pnext);
         }
     }
 
@@ -86,7 +88,7 @@ class ObjectLifetimes : public ValidationObject {
                            "Couldn't insert %s Object 0x%" PRIxLEAST64
                            ", already existed. This should not happen and may indicate a "
                            "race condition in the application.",
-                           object_string[object_type], object_handle);
+                           string_VulkanObjectType(object_type), object_handle);
         }
     }
 
@@ -111,7 +113,8 @@ class ObjectLifetimes : public ValidationObject {
     void DestroyQueueDataStructures();
     bool ValidateCommandBuffer(VkCommandPool command_pool, VkCommandBuffer command_buffer, const Location &loc) const;
     bool ValidateDescriptorSet(VkDescriptorPool descriptor_pool, VkDescriptorSet descriptor_set, const Location &loc) const;
-    bool ValidateSamplerObjects(const VkDescriptorSetLayoutCreateInfo *pCreateInfo, const Location &loc) const;
+    bool ValidateDescriptorSetLayoutCreateInfo(const VkDescriptorSetLayoutCreateInfo &create_info,
+                                               const Location &create_info_loc) const;
     bool ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPush, const Location &loc) const;
     bool ValidateAnonymousObject(uint64_t object, VkObjectType core_object_type, const char *invalid_handle_vuid,
                                  const char *wrong_parent_vuid, const Location &loc) const;
@@ -121,6 +124,7 @@ class ObjectLifetimes : public ValidationObject {
     bool TracksObject(uint64_t object_handle, VulkanObjectType object_type) const;
     bool CheckObjectValidity(uint64_t object_handle, VulkanObjectType object_type, const char *invalid_handle_vuid,
                              const char *wrong_parent_vuid, const Location &loc, VulkanObjectType parent_type) const;
+    bool CheckPipelineObjectValidity(uint64_t object_handle, const char *invalid_handle_vuid, const Location &loc) const;
 
     template <typename T1>
     bool ValidateObject(T1 object, VulkanObjectType object_type, bool null_allowed, const char *invalid_handle_vuid,
@@ -183,13 +187,13 @@ class ObjectLifetimes : public ValidationObject {
                     skip |= LogError(expected_custom_allocator_code, object_handle, loc,
                                      "Custom allocator not specified while destroying %s obj 0x%" PRIxLEAST64
                                      " but specified at creation.",
-                                     object_string[object_type], object);
+                                     string_VulkanObjectType(object_type), object);
 
                 } else if (!allocated_with_custom && custom_allocator && expected_default_allocator_code != kVUIDUndefined) {
                     skip |= LogError(expected_default_allocator_code, object_handle, loc,
                                      "Custom allocator specified while destroying %s obj 0x%" PRIxLEAST64
                                      " but not specified at creation.",
-                                     object_string[object_type], object);
+                                     string_VulkanObjectType(object_type), object);
                 }
             }
         }

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_encoded_audio_frame_metadata.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_encoded_audio_frame_options.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_encoded_audio_frame_delegate.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
@@ -15,10 +16,6 @@
 
 namespace blink {
 namespace {
-
-// Limit on the size of encoded frames, to ensure they're not silently dropped
-// later by the RTPSender. See https://crbug.com/1248479.
-const int kMaxAudioFramePayloadByteLength = 1000;
 
 struct SetMetadataValidationOutcome {
   bool allowed;
@@ -30,18 +27,23 @@ SetMetadataValidationOutcome IsAllowedSetMetadataChange(
     const RTCEncodedAudioFrameMetadata* new_metadata) {
   // Only changing the RTP Timestamp is supported.
 
-  if (!new_metadata->hasSynchronizationSource() ||
-      current_metadata->synchronizationSource() !=
-          new_metadata->synchronizationSource()) {
+  if (new_metadata->hasSynchronizationSource() !=
+          current_metadata->hasSynchronizationSource() ||
+      (new_metadata->hasSynchronizationSource() &&
+       current_metadata->synchronizationSource() !=
+           new_metadata->synchronizationSource())) {
     return SetMetadataValidationOutcome{false, "Bad synchronizationSource"};
   }
-  if (!new_metadata->hasContributingSources() ||
-      current_metadata->contributingSources() !=
-          new_metadata->contributingSources()) {
+  if (new_metadata->hasContributingSources() !=
+          current_metadata->hasContributingSources() ||
+      (new_metadata->hasContributingSources() &&
+       current_metadata->contributingSources() !=
+           new_metadata->contributingSources())) {
     return SetMetadataValidationOutcome{false, "Bad contributingSources"};
   }
-  if (!new_metadata->hasPayloadType() ||
-      current_metadata->payloadType() != new_metadata->payloadType()) {
+  if (new_metadata->hasPayloadType() != current_metadata->hasPayloadType() ||
+      (new_metadata->hasPayloadType() &&
+       current_metadata->payloadType() != new_metadata->payloadType())) {
     return SetMetadataValidationOutcome{false, "Bad payloadType"};
   }
   if (new_metadata->hasSequenceNumber() !=
@@ -64,6 +66,39 @@ SetMetadataValidationOutcome IsAllowedSetMetadataChange(
 
 }  // namespace
 
+RTCEncodedAudioFrame* RTCEncodedAudioFrame::Create(
+    RTCEncodedAudioFrame* original_frame,
+    ExceptionState& exception_state) {
+  return RTCEncodedAudioFrame::Create(original_frame, nullptr, exception_state);
+}
+
+RTCEncodedAudioFrame* RTCEncodedAudioFrame::Create(
+    RTCEncodedAudioFrame* original_frame,
+    const RTCEncodedAudioFrameOptions* options_dict,
+    ExceptionState& exception_state) {
+  RTCEncodedAudioFrame* new_frame;
+  if (original_frame) {
+    new_frame = MakeGarbageCollected<RTCEncodedAudioFrame>(
+        original_frame->Delegate()->CloneWebRtcFrame());
+  } else {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidAccessError,
+        "Cannot create a new AudioFrame: input Audioframe is empty.");
+    return nullptr;
+  }
+  if (options_dict && options_dict->hasMetadata()) {
+    base::expected<void, String> set_metadata =
+        new_frame->SetMetadata(options_dict->metadata());
+    if (!set_metadata.has_value()) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidModificationError,
+          "Cannot create a new AudioFrame: " + set_metadata.error());
+      return nullptr;
+    }
+  }
+  return new_frame;
+}
+
 RTCEncodedAudioFrame::RTCEncodedAudioFrame(
     std::unique_ptr<webrtc::TransformableAudioFrameInterface>
         webrtc_audio_frame)
@@ -72,7 +107,7 @@ RTCEncodedAudioFrame::RTCEncodedAudioFrame(
           webrtc_audio_frame ? webrtc_audio_frame->GetContributingSources()
                              : Vector<uint32_t>(),
           webrtc_audio_frame ? webrtc_audio_frame->SequenceNumber()
-                             : absl::nullopt)) {}
+                             : std::nullopt)) {}
 
 RTCEncodedAudioFrame::RTCEncodedAudioFrame(
     scoped_refptr<RTCEncodedAudioFrameDelegate> delegate)
@@ -112,29 +147,31 @@ RTCEncodedAudioFrameMetadata* RTCEncodedAudioFrame::getMetadata() const {
   return metadata;
 }
 
-void RTCEncodedAudioFrame::setMetadata(RTCEncodedAudioFrameMetadata* metadata,
-                                       ExceptionState& exception_state) {
+base::expected<void, String> RTCEncodedAudioFrame::SetMetadata(
+    const RTCEncodedAudioFrameMetadata* metadata) {
   SetMetadataValidationOutcome validation =
       IsAllowedSetMetadataChange(getMetadata(), metadata);
   if (!validation.allowed) {
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kInvalidModificationError,
+    return base::unexpected(
         "Invalid modification of RTCEncodedAudioFrameMetadata. " +
-            validation.error_msg);
+        validation.error_msg);
   }
 
-  delegate_->SetRtpTimestamp(metadata->rtpTimestamp(), exception_state);
-  return;
+  return delegate_->SetRtpTimestamp(metadata->rtpTimestamp());
+}
+
+void RTCEncodedAudioFrame::setMetadata(RTCEncodedAudioFrameMetadata* metadata,
+                                       ExceptionState& exception_state) {
+  base::expected<void, String> set_metadata = SetMetadata(metadata);
+  if (!set_metadata.has_value()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidModificationError,
+        "Cannot setMetadata: " + set_metadata.error());
+  }
 }
 
 void RTCEncodedAudioFrame::setData(DOMArrayBuffer* data) {
-  data_modified_ = true;
   frame_data_ = data;
-}
-
-void RTCEncodedAudioFrame::setTimestamp(uint32_t timestamp,
-                                        ExceptionState& exception_state) {
-  delegate_->SetRtpTimestamp(timestamp, exception_state);
 }
 
 String RTCEncodedAudioFrame::toString() const {
@@ -161,11 +198,6 @@ std::unique_ptr<webrtc::TransformableAudioFrameInterface>
 RTCEncodedAudioFrame::PassWebRtcFrame() {
   SyncDelegate();
   return delegate_->PassWebRtcFrame();
-}
-
-bool RTCEncodedAudioFrame::IsDataTooLarge() {
-  return data_modified_ &&
-         frame_data_->ByteLength() > kMaxAudioFramePayloadByteLength;
 }
 
 void RTCEncodedAudioFrame::Trace(Visitor* visitor) const {

@@ -25,8 +25,8 @@ class CORE_EXPORT FlexLayoutAlgorithm
       const LayoutAlgorithmParams& params,
       const HashMap<wtf_size_t, LayoutUnit>* cross_size_adjustments = nullptr);
 
-  MinMaxSizesResult ComputeMinMaxSizes(const MinMaxSizesFloatInput&) override;
-  const LayoutResult* Layout() override;
+  MinMaxSizesResult ComputeMinMaxSizes(const MinMaxSizesFloatInput&);
+  const LayoutResult* Layout();
 
  private:
   const LayoutResult* RelayoutIgnoringChildScrollbarChanges();
@@ -41,27 +41,13 @@ class CORE_EXPORT FlexLayoutAlgorithm
 
   void CalculateTotalIntrinsicBlockSize(bool use_empty_line_block_size);
 
-  Length GetUsedFlexBasis(const BlockNode& child) const;
-  // This has an optional out parameter so that callers can avoid a subsequent
-  // redundant call to GetUsedFlexBasis.
-  bool IsUsedFlexBasisDefinite(const BlockNode& child,
-                               Length* flex_basis) const;
-  bool DoesItemCrossSizeComputeToAuto(const BlockNode& child) const;
-  bool IsItemCrossAxisLengthDefinite(const BlockNode& child,
-                                     const Length& length) const;
-  bool AspectRatioProvidesMainSize(const BlockNode& child) const;
+  bool DoesItemComputedCrossSizeHaveAuto(const BlockNode& child) const;
   bool DoesItemStretch(const BlockNode& child) const;
   // This checks for one of the scenarios where a flex-item box has a definite
   // size that would be indefinite if the box weren't a flex item.
   // See https://drafts.csswg.org/css-flexbox/#definite-sizes
   bool WillChildCrossSizeBeContainerCrossSize(const BlockNode& child) const;
-  LayoutUnit AdjustMainSizeForAspectRatioCrossAxisMinAndMax(
-      const BlockNode& child,
-      LayoutUnit main_size,
-      const MinMaxSizes& cross_min_max,
-      const BoxStrut& border_padding_in_child_writing_mode);
 
-  bool IsColumnContainerMainSizeDefinite() const;
   bool IsContainerCrossSizeDefinite() const;
 
   enum class Phase { kLayout, kRowIntrinsicSize, kColumnWrapIntrinsicSize };
@@ -70,7 +56,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
   ConstraintSpace BuildSpaceForFlexBasis(const BlockNode& flex_item) const;
   ConstraintSpace BuildSpaceForIntrinsicBlockSize(
       const BlockNode& flex_item,
-      absl::optional<LayoutUnit> override_inline_size) const;
+      std::optional<LayoutUnit> override_inline_size) const;
   // |line_cross_size_for_stretch| should only be set when running the final
   // layout pass for stretch, when the line cross size is definite.
   // |block_offset_for_fragmentation| should only be set when running the final
@@ -78,9 +64,10 @@ class CORE_EXPORT FlexLayoutAlgorithm
   ConstraintSpace BuildSpaceForLayout(
       const BlockNode& flex_item_node,
       LayoutUnit item_main_axis_final_size,
-      absl::optional<LayoutUnit> override_inline_size = absl::nullopt,
-      absl::optional<LayoutUnit> line_cross_size_for_stretch = absl::nullopt,
-      absl::optional<LayoutUnit> block_offset_for_fragmentation = absl::nullopt,
+      bool is_initial_block_size_indefinite,
+      std::optional<LayoutUnit> override_inline_size = std::nullopt,
+      std::optional<LayoutUnit> line_cross_size_for_stretch = std::nullopt,
+      std::optional<LayoutUnit> block_offset_for_fragmentation = std::nullopt,
       bool min_block_size_should_encompass_intrinsic_size = false) const;
 
   void ConstructAndAppendFlexItems(

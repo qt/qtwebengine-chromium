@@ -37,6 +37,9 @@ struct DrawDispatchVuid {
     const char* sample_location_02689 = kVUIDUndefined;
     const char* linear_filter_sampler_04553 = kVUIDUndefined;
     const char* linear_mipmap_sampler_04770 = kVUIDUndefined;
+    const char* linear_filter_sampler_09598 = kVUIDUndefined;
+    const char* unnormalized_coordinates_09635 = kVUIDUndefined;
+    const char* linear_mipmap_sampler_09599 = kVUIDUndefined;
     const char* cubic_sampler_02692 = kVUIDUndefined;
     const char* indirect_protected_cb_02711 = kVUIDUndefined;
     const char* indirect_contiguous_memory_02708 = kVUIDUndefined;
@@ -76,7 +79,7 @@ struct DrawDispatchVuid {
     const char* depth_bias_enable_04877 = kVUIDUndefined;
     const char* logic_op_04878 = kVUIDUndefined;
     const char* primitive_restart_enable_04879 = kVUIDUndefined;
-    const char* vertex_input_04912 = kVUIDUndefined;
+    const char* primitive_restart_list_09637 = kVUIDUndefined;
     const char* vertex_input_binding_stride_04913 = kVUIDUndefined;
     const char* vertex_input_04914 = kVUIDUndefined;
     const char* vertex_input_08734 = kVUIDUndefined;
@@ -109,6 +112,10 @@ struct DrawDispatchVuid {
     const char* dynamic_rendering_07285 = kVUIDUndefined;
     const char* dynamic_rendering_07286 = kVUIDUndefined;
     const char* dynamic_rendering_07287 = kVUIDUndefined;
+    const char* dynamic_rendering_local_location_09548 = kVUIDUndefined;
+    const char* dynamic_rendering_local_index_09549 = kVUIDUndefined;
+    const char* dynamic_rendering_dithering_09642 = kVUIDUndefined;
+    const char* dynamic_rendering_dithering_09643 = kVUIDUndefined;
     const char* image_view_access_64_04470 = kVUIDUndefined;
     const char* image_view_access_32_04471 = kVUIDUndefined;
     const char* image_view_sparse_64_04474 = kVUIDUndefined;

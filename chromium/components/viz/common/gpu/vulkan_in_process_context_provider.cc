@@ -232,15 +232,16 @@ void VulkanInProcessContextProvider::EnqueueSecondaryCBPostSubmitTask(
   NOTREACHED();
 }
 
-absl::optional<uint32_t> VulkanInProcessContextProvider::GetSyncCpuMemoryLimit()
+std::optional<uint32_t> VulkanInProcessContextProvider::GetSyncCpuMemoryLimit()
     const {
   // Return false to indicate that there's no limit.
-  if (!sync_cpu_memory_limit_)
-    return absl::optional<uint32_t>();
+  if (!sync_cpu_memory_limit_) {
+    return std::nullopt;
+  }
   return base::TimeTicks::Now() < critical_memory_pressure_expiration_time_
-             ? absl::optional<uint32_t>(
+             ? std::optional<uint32_t>(
                    kSyncCpuMemoryLimitAtMemoryPressureCritical)
-             : absl::optional<uint32_t>(sync_cpu_memory_limit_);
+             : std::optional<uint32_t>(sync_cpu_memory_limit_);
 }
 
 void VulkanInProcessContextProvider::OnMemoryPressure(

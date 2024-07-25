@@ -16,7 +16,7 @@ class CFunctionInfo;
 namespace internal {
 
 class Isolate;
-class Page;
+class PageMetadata;
 class SCTableReference;
 class StatsCounter;
 
@@ -69,6 +69,7 @@ class StatsCounter;
   V(execution_mode_address, "IsolateData::execution_mode")                     \
   V(debug_suspended_generator_address,                                         \
     "Debug::step_suspended_generator_address()")                               \
+  V(context_address, "Isolate::context_address()")                             \
   V(fast_c_call_caller_fp_address,                                             \
     "IsolateData::fast_c_call_caller_fp_address")                              \
   V(fast_c_call_caller_pc_address,                                             \
@@ -88,7 +89,6 @@ class StatsCounter;
   V(address_of_static_offsets_vector, "OffsetsVector::static_offsets_vector")  \
   V(thread_in_wasm_flag_address_address,                                       \
     "Isolate::thread_in_wasm_flag_address_address")                            \
-  V(javascript_execution_assert, "javascript_execution_assert")                \
   EXTERNAL_REFERENCE_LIST_WITH_ISOLATE_SANDBOX(V)
 
 #ifdef V8_ENABLE_SANDBOX
@@ -106,8 +106,6 @@ class StatsCounter;
 #define EXTERNAL_REFERENCE_LIST(V)                                             \
   V(abort_with_reason, "abort_with_reason")                                    \
   V(address_of_log_or_trace_osr, "v8_flags.log_or_trace_osr")                  \
-  V(address_of_FLAG_harmony_regexp_unicode_sets,                               \
-    "v8_flags.harmony_regexp_unicode_sets")                                    \
   V(address_of_builtin_subclassing_flag, "v8_flags.builtin_subclassing")       \
   V(address_of_double_abs_constant, "double_absolute_constant")                \
   V(address_of_double_neg_constant, "double_negate_constant")                  \
@@ -124,8 +122,8 @@ class StatsCounter;
   V(address_of_shared_string_table_flag, "v8_flags.shared_string_table")       \
   V(address_of_the_hole_nan, "the_hole_nan")                                   \
   V(address_of_uint32_bias, "uint32_bias")                                     \
-  V(allocate_and_initialize_external_pointer_table_entry,                      \
-    "AllocateAndInitializeExternalPointerTableEntry")                          \
+  V(allocate_and_initialize_young_external_pointer_table_entry,                \
+    "AllocateAndInitializeYoungExternalPointerTableEntry")                     \
   V(baseline_pc_for_bytecode_offset, "BaselinePCForBytecodeOffset")            \
   V(baseline_pc_for_next_executed_bytecode,                                    \
     "BaselinePCForNextExecutedBytecode")                                       \
@@ -257,6 +255,7 @@ class StatsCounter;
     "name_to_index_hashtable_lookup_forwarded_string")                         \
   V(name_to_index_hashtable_find_insertion_entry_forwarded_string,             \
     "name_to_index_hashtable_find_insertion_entry_forwarded_string")           \
+  IF_WASM(V, wasm_delete_deoptimizer, "Deoptimizer::DeleteForWasm()")          \
   IF_WASM(V, wasm_sync_stack_limit, "wasm_sync_stack_limit")                   \
   IF_WASM(V, wasm_switch_to_the_central_stack,                                 \
           "wasm::switch_to_the_central_stack")                                 \
@@ -340,6 +339,7 @@ class StatsCounter;
           "wasm::WebAssemblyModuleCustomSections")                             \
   IF_WASM(V, wasm_WebAssemblyModuleExports, "wasm::WebAssemblyModuleExports")  \
   IF_WASM(V, wasm_WebAssemblyModuleImports, "wasm::WebAssemblyModuleImports")  \
+  IF_WASM(V, wasm_WebAssemblySuspending, "wasm::WebAssemblySuspending")        \
   IF_WASM(V, wasm_WebAssemblyTable, "wasm::WebAssemblyTable")                  \
   IF_WASM(V, wasm_WebAssemblyTableGet, "wasm::WebAssemblyTableGet")            \
   IF_WASM(V, wasm_WebAssemblyTableGetLength,                                   \
@@ -362,6 +362,8 @@ class StatsCounter;
   V(address_of_wasm_int32_max_as_double, "wasm_int32_max_as_double")           \
   V(address_of_wasm_uint32_max_as_double, "wasm_uint32_max_as_double")         \
   V(address_of_wasm_int32_overflow_as_float, "wasm_int32_overflow_as_float")   \
+  V(address_of_wasm_i32x8_int32_overflow_as_float,                             \
+    "wasm_i32x8_int32_overflow_as_float")                                      \
   V(supports_cetss_address, "CpuFeatures::supports_cetss_address")             \
   V(write_barrier_marking_from_code_function, "WriteBarrier::MarkingFromCode") \
   V(write_barrier_indirect_pointer_marking_from_code_function,                 \
@@ -434,11 +436,12 @@ class StatsCounter;
 #endif  // V8_INTL_SUPPORT
 
 #ifdef V8_ENABLE_SANDBOX
-#define EXTERNAL_REFERENCE_LIST_SANDBOX(V)                   \
-  V(sandbox_base_address, "Sandbox::base()")                 \
-  V(sandbox_end_address, "Sandbox::end()")                   \
-  V(empty_backing_store_buffer, "EmptyBackingStoreBuffer()") \
-  V(code_pointer_table_address, "GetProcessWideCodePointerTable()")
+#define EXTERNAL_REFERENCE_LIST_SANDBOX(V)                          \
+  V(sandbox_base_address, "Sandbox::base()")                        \
+  V(sandbox_end_address, "Sandbox::end()")                          \
+  V(empty_backing_store_buffer, "EmptyBackingStoreBuffer()")        \
+  V(code_pointer_table_address, "GetProcessWideCodePointerTable()") \
+  V(memory_chunk_metadata_table_address, "MemoryChunkMetadata::Table()")
 #else
 #define EXTERNAL_REFERENCE_LIST_SANDBOX(V)
 #endif  // V8_ENABLE_SANDBOX

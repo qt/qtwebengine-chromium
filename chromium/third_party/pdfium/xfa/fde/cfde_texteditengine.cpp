@@ -4,17 +4,23 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fde/cfde_texteditengine.h"
 
 #include <algorithm>
 #include <utility>
 
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/text_char_pos.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/numerics/safe_conversions.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fde/cfde_wordbreak_data.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
@@ -155,13 +161,13 @@ void CFDE_TextEditEngine::AdjustGap(size_t idx, size_t length) {
 
   // Move the gap, if necessary.
   if (idx < gap_position_) {
-    memmove(content_.data() + idx + gap_size_, content_.data() + idx,
-            (gap_position_ - idx) * char_size);
+    FXSYS_memmove(content_.data() + idx + gap_size_, content_.data() + idx,
+                  (gap_position_ - idx) * char_size);
     gap_position_ = idx;
   } else if (idx > gap_position_) {
-    memmove(content_.data() + gap_position_,
-            content_.data() + gap_position_ + gap_size_,
-            (idx - gap_position_) * char_size);
+    FXSYS_memmove(content_.data() + gap_position_,
+                  content_.data() + gap_position_ + gap_size_,
+                  (idx - gap_position_) * char_size);
     gap_position_ = idx;
   }
 
@@ -170,9 +176,9 @@ void CFDE_TextEditEngine::AdjustGap(size_t idx, size_t length) {
     size_t new_gap_size = length + kGapSize;
     content_.resize(text_length_ + new_gap_size);
 
-    memmove(content_.data() + gap_position_ + new_gap_size,
-            content_.data() + gap_position_ + gap_size_,
-            (text_length_ - gap_position_) * char_size);
+    FXSYS_memmove(content_.data() + gap_position_ + new_gap_size,
+                  content_.data() + gap_position_ + gap_size_,
+                  (text_length_ - gap_position_) * char_size);
 
     gap_size_ = new_gap_size;
   }
@@ -1071,8 +1077,7 @@ void CFDE_TextEditEngine::RebuildPieces() {
       txtEdtPiece.rtPiece.top = current_line_start;
       txtEdtPiece.rtPiece.width = piece->GetWidth() / 20000.0f;
       txtEdtPiece.rtPiece.height = line_spacing_;
-      txtEdtPiece.nStart =
-          pdfium::base::checked_cast<int32_t>(current_piece_start);
+      txtEdtPiece.nStart = pdfium::checked_cast<int32_t>(current_piece_start);
       txtEdtPiece.nCount = piece->GetCharCount();
       txtEdtPiece.nBidiLevel = piece->GetBidiLevel();
       txtEdtPiece.dwCharStyles = piece->GetCharStyles();
@@ -1204,7 +1209,7 @@ wchar_t CFDE_TextEditEngine::Iterator::GetChar() const {
 
 void CFDE_TextEditEngine::Iterator::SetAt(size_t nIndex) {
   nIndex = std::min(nIndex, engine_->GetLength());
-  current_position_ = pdfium::base::checked_cast<int32_t>(nIndex);
+  current_position_ = pdfium::checked_cast<int32_t>(nIndex);
 }
 
 bool CFDE_TextEditEngine::Iterator::IsEOF(bool bPrev) const {

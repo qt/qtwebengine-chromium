@@ -169,7 +169,7 @@ class ClassRegistration<Combobox> : public BaseClassRegistration,
   // ui::ComboboxModel
   size_t GetItemCount() const override { return 1; }
   std::u16string GetItemAt(size_t index) const override { return u"<empty>"; }
-  absl::optional<size_t> GetDefaultIndex() const override { return 0; }
+  std::optional<size_t> GetDefaultIndex() const override { return 0; }
 };
 
 template <>
@@ -335,7 +335,8 @@ ui::Cursor DesignerExample::GrabHandle::GetCursor(const ui::MouseEvent& event) {
   }
 }
 
-gfx::Size DesignerExample::GrabHandle::CalculatePreferredSize() const {
+gfx::Size DesignerExample::GrabHandle::CalculatePreferredSize(
+    const SizeBounds& /*available_size*/) const {
   return gfx::Size(kGrabHandleSize, kGrabHandleSize);
 }
 
@@ -437,7 +438,7 @@ bool DesignerExample::GrabHandle::IsRight(GrabHandlePosition position) {
   return (position & GrabHandlePosition::kRight);
 }
 
-BEGIN_METADATA(DesignerExample, GrabHandle, View)
+BEGIN_METADATA(DesignerExample, GrabHandle)
 END_METADATA
 
 DesignerExample::GrabHandles::GrabHandles() = default;
@@ -524,7 +525,7 @@ void DesignerExample::CreateExampleView(View* container) {
   designer_container_->SetFlexForView(designer_panel_, 75);
   class_registrations_ = GetClassRegistrations();
 
-  // TODO(crbug.com/1392538): Refactor such that the TableModel is not
+  // TODO(crbug.com/40247792): Refactor such that the TableModel is not
   // responsible for managing the lifetimes of views
   tracker_.SetView(inspector_);
 }
@@ -653,7 +654,7 @@ std::u16string DesignerExample::GetItemAt(size_t index) const {
   return class_registrations_[index]->GetViewClassName();
 }
 
-absl::optional<size_t> DesignerExample::GetDefaultIndex() const {
+std::optional<size_t> DesignerExample::GetDefaultIndex() const {
   return 0;
 }
 

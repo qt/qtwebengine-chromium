@@ -45,7 +45,7 @@ void SendTabToSelfSyncService::OnSyncServiceInitialized(
   sync_service_->AddObserver(this);
 }
 
-absl::optional<EntryPointDisplayReason>
+std::optional<EntryPointDisplayReason>
 SendTabToSelfSyncService::GetEntryPointDisplayReason(const GURL& url_to_share) {
   // `sync_service_` can be null in any of these cases. In all of them the
   // handling is correct because sync is not available (Yet? Anymore?).
@@ -55,7 +55,7 @@ SendTabToSelfSyncService::GetEntryPointDisplayReason(const GURL& url_to_share) {
   //   d) Sync got disabled by command-line flag.
   // `bridge_` might be null for fake subclasses that invoked the default
   // constructor.
-  // TODO(crbug.com/1473353): Split interface out of this class and CHECK for
+  // TODO(crbug.com/40278970): Split interface out of this class and CHECK for
   // SendTabToSelfModel in the method below.
   return internal::GetEntryPointDisplayReason(url_to_share, sync_service_,
                                               bridge_.get(), pref_service_);

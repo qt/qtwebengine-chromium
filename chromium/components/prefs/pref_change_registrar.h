@@ -16,9 +16,8 @@
 class PrefService;
 
 // Automatically manages the registration of one or more pref change observers
-// with a PrefStore. Functions much like NotificationRegistrar, but specifically
-// manages observers of preference changes. When the Registrar is destroyed,
-// all registered observers are automatically unregistered with the PrefStore.
+// with a PrefStore. When the Registrar is destroyed, all registered observers
+// are automatically unregistered with the PrefStore.
 class COMPONENTS_PREFS_EXPORT PrefChangeRegistrar final : public PrefObserver {
  public:
   // You can register this type of callback if you need to know the
@@ -35,6 +34,10 @@ class COMPONENTS_PREFS_EXPORT PrefChangeRegistrar final : public PrefObserver {
   // Must be called before adding or removing observers. Can be called more
   // than once as long as the value of |service| doesn't change.
   void Init(PrefService* service);
+
+  // Removes all observers and clears the reference to `PrefService`.
+  // `Init` must be called before adding or removing any observers.
+  void Reset();
 
   // Adds a pref observer for the specified pref |path| and |obs| observer
   // object. All registered observers will be automatically unregistered

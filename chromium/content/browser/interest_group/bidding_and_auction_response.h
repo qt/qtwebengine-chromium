@@ -67,9 +67,14 @@ struct CONTENT_EXPORT BiddingAndAuctionResponse {
   std::optional<blink::AdCurrency> bid_currency;
   std::optional<url::Origin> top_level_seller;
   std::optional<std::string> ad_metadata;
+  std::optional<std::string> buyer_reporting_id;
+  std::optional<std::string> buyer_and_seller_reporting_id;
 
   std::optional<std::string> error;
-  std::optional<ReportingURLs> buyer_reporting, seller_reporting;
+  // The Bidding and Auction server uses the top_level_seller_reporting field
+  // for single-level auctions.
+  std::optional<ReportingURLs> buyer_reporting, top_level_seller_reporting,
+      component_seller_reporting;
 };
 
 }  // namespace content

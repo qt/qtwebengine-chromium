@@ -12,7 +12,14 @@ const std::vector<std::string> kCookiesTypesForFrame{"Cookie", "CookieStore"};
 
 const std::vector<std::string> kStorageTypesForFrame{
     "LocalStorage", "FileSystem", "FileSystemAccess", "SessionStorage",
-    "IndexedDb",    "WebSql",     "CacheStorage",     "ServiceWorker"};
+    "IndexedDb",     "CacheStorage",     "ServiceWorker",
+#if BUILDFLAG(IS_ANDROID)
+    // TODO(crbug.com/333756088): WebSQL is disabled everywhere by default as of
+    // M119 (crbug/695592) except on Android WebView. This is enabled for
+    // Android only to indirectly cover WebSQL deletions on WebView.
+    "WebSql",
+#endif
+};
 
 const std::vector<std::string> kStorageTypesForWorker{
     "WorkerFileSystemAccess", "WorkerCacheStorage", "WorkerIndexedDb"};
@@ -149,8 +156,13 @@ void ExpectCrossTabInfoForFrame(content::RenderFrameHost* frame,
       << "(expected at " << location.ToString() << ")";
 }
 
-bool RequestAndCheckStorageAccessForFrame(content::RenderFrameHost* frame) {
-  return content::EvalJs(frame, kRequestStorageAccess).ExtractBool();
+bool RequestAndCheckStorageAccessForFrame(content::RenderFrameHost* frame,
+                                          bool omit_user_gesture) {
+  int options = content::EXECUTE_SCRIPT_DEFAULT_OPTIONS;
+  if (omit_user_gesture) {
+    options |= content::EXECUTE_SCRIPT_NO_USER_GESTURE;
+  }
+  return content::EvalJs(frame, kRequestStorageAccess, options).ExtractBool();
 }
 
 bool RequestStorageAccessForOrigin(content::RenderFrameHost* frame,

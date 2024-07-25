@@ -75,10 +75,11 @@ const char kFunctions[] =
     "  'parameters': [{"
     "    'name': 'int',"
     "    'type': 'integer'"
-    "  }, {"
+    "  }],"
+    "  'returns_async': {"
     "    'name': 'callback',"
     "    'type': 'function'"
-    "  }]"
+    "  }"
     "}]";
 
 constexpr char kFunctionsWithCallbackSignatures[] = R"(
@@ -90,21 +91,23 @@ constexpr char kFunctionsWithCallbackSignatures[] = R"(
        }]
      }, {
        "name": "intCallback",
-       "parameters": [{
+       "parameters": [],
+       "returns_async": {
          "name": "callback",
-         "type": "function",
+         "does_not_support_promises": "Test",
          "parameters": [{
            "name": "int",
            "type": "integer"
          }]
-       }]
+       }
      }, {
        "name": "noParamCallback",
-       "parameters": [{
+       "parameters": [],
+       "returns_async": {
          "name": "callback",
-         "type": "function",
+         "does_not_support_promises": "Test",
          "parameters": []
-       }]
+       }
      }])";
 
 constexpr char kFunctionsWithPromiseSignatures[] =
@@ -757,7 +760,7 @@ TEST_F(APIBindingUnittest, TestProperties) {
   EXPECT_EQ(R"({"subprop1":"some value","subprop2":true})",
             GetStringPropertyFromObject(binding_object, context, "prop2"));
 
-// TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+// TODO(crbug.com/40118868): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   EXPECT_EQ("\"lacros\"",

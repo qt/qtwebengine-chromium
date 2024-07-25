@@ -14,7 +14,7 @@
 # limitations under the License.
 
 # This tool checks that every SQL object created without prefix
-# 'internal_' is documented with proper schema.
+# '_' is documented with proper schema.
 
 import argparse
 from typing import List, Tuple
@@ -34,25 +34,19 @@ from python.generators.sql_processing.utils import check_banned_include_all
 
 # Allowlist path are relative to the stdlib root.
 CREATE_TABLE_ALLOWLIST = {
-    '/android/binder.sql': [
-        'internal_oom_score', 'internal_async_binder_reply',
-        'internal_binder_async_txn_raw'
-    ],
+    '/prelude/trace_bounds.sql': ['trace_bounds'],
+    '/android/binder.sql': ['_oom_score'],
     '/android/monitor_contention.sql': [
-        'internal_isolated', 'android_monitor_contention_chain',
+        '_isolated', 'android_monitor_contention_chain',
         'android_monitor_contention'
     ],
     '/chrome/tasks.sql': [
-        'internal_chrome_mojo_slices', 'internal_chrome_java_views',
-        'internal_chrome_scheduler_tasks', 'internal_chrome_tasks'
+        '_chrome_mojo_slices', '_chrome_java_views', '_chrome_scheduler_tasks',
+        '_chrome_tasks'
     ],
-    ('/experimental/'
-     'thread_executing_span.sql'): [
-        'internal_wakeup', 'experimental_thread_executing_span_graph',
-        'internal_critical_path', 'internal_wakeup_graph',
-        'experimental_thread_executing_span_graph'
-    ],
-    '/experimental/flat_slices.sql': ['experimental_slice_flattened']
+    '/sched/thread_executing_span.sql': ['_wakeup_graph', '_thread_executing_span_graph',
+        '_critical_path'],
+    '/slices/flat_slices.sql': ['_slice_flattened']
 }
 
 
@@ -87,20 +81,25 @@ def main():
         if not pattern.match(rel_path):
           continue
 
-      if args.verbose:
-        print(f'Parsing {rel_path}:')
-
       with open(path, 'r') as f:
         sql = f.read()
 
-      parsed = parse_file(path, sql)
+      parsed = parse_file(rel_path, sql)
+
+      # Some modules (i.e. `deprecated`) should not be checked.
+      if not parsed:
+        continue
+
       modules.append((path, sql, parsed))
 
       if args.verbose:
-        function_count = len(parsed.functions) + len(parsed.table_functions)
-        print(f'Parsed {function_count} functions'
-              f', {len(parsed.table_views)} tables/views'
-              f' ({len(parsed.errors)} errors).')
+        obj_count = len(parsed.functions) + len(parsed.table_functions) + len(
+            parsed.table_views) + len(parsed.macros)
+        print(
+            f"""Parsing '{rel_path}' ({obj_count} objects, {len(parsed.errors)} errors)
+- {len(parsed.functions)} functions + {len(parsed.table_functions)} table functions,
+- {len(parsed.table_views)} tables/views,
+- {len(parsed.macros)} macros.""")
 
   for path, sql, parsed in modules:
     lines = [l.strip() for l in sql.split('\n')]
@@ -110,6 +109,10 @@ def main():
       if 'RUN_METRIC' in line:
         errors.append(f"RUN_METRIC is banned in standard library.\n"
                       f"Offending file: {path}\n")
+      if 'include perfetto module common.' in line.casefold():
+        errors.append(
+            f"Common module has been deprecated in the standard library.\n"
+            f"Offending file: {path}\n")
       if 'insert into' in line.casefold():
         errors.append(f"INSERT INTO table is not allowed in standard library.\n"
                       f"Offending file: {path}\n")

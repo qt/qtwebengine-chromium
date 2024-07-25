@@ -15,6 +15,7 @@ import("//gpu/vulkan/features.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
 import("//ppapi/buildflags/buildflags.gni")
+import("//third_party/inspector_protocol/inspector_protocol.gni")
 import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
 import("//tools/v8_context_snapshot/v8_context_snapshot.gni")
@@ -33,6 +34,8 @@ if (is_android) {
   import("//third_party/fuchsia-gn-sdk/src/package.gni")
 } else if (is_ios) {
   import("//build/config/ios/config.gni")
+  import("//build/config/ios/swift_source_set.gni")
+  import("//build/ios/extension_bundle_data.gni")
 }
 
 # TODO(crbug.com/1336055, spang): Investigate using shell_views with cast builds as
@@ -124,18 +127,46 @@ static_library("content_shell_app") {
       "app/ios/web_tests_support_ios.mm",
     ]
   }
-  if (is_chromeos) {
-    deps += [ "//ui/gfx/linux:gbm" ]
-  }
   defines = [
     "CONTENT_SHELL_VERSION=\"$content_shell_version\"",
     "CONTENT_SHELL_MAJOR_VERSION=\"$content_shell_major_version\"",
   ]
 }
 
+inspector_protocol_generate("protocol_sources") {
+  visibility = [ ":content_shell_lib" ]
+  deps = [ "//third_party/blink/public/devtools_protocol:protocol_version" ]
+  _blink_protocol_path = rebase_path(
+          "$root_gen_dir/third_party/blink/public/devtools_protocol/protocol.json",
+          root_build_dir)
+
+  inspector_protocol_dir = "//third_party/inspector_protocol"
+  out_dir = "$target_gen_dir/browser"
+  config_file = "browser/protocol_config.json"
+  config_values = [ "protocol.path=$_blink_protocol_path" ]
+  use_embedder_types = true
+
+  inputs = [
+    "$root_gen_dir/third_party/blink/public/devtools_protocol/protocol.json",
+    config_file,
+  ]
+
+  # These are relative to $target_gen_dir.
+  outputs = [
+    "protocol/browser.cc",
+    "protocol/browser.h",
+    "protocol/protocol.h",
+  ]
+}
+
 static_library("content_shell_lib") {
   testonly = true
   sources = [
+    "browser/protocol/browser_handler.cc",
+    "browser/protocol/browser_handler.h",
+    "browser/protocol/domain_handler.h",
+    "browser/protocol/shell_devtools_session.cc",
+    "browser/protocol/shell_devtools_session.h",
     "browser/shell.cc",
     "browser/shell.h",
     "browser/shell_browser_context.cc",
@@ -192,6 +223,8 @@ static_library("content_shell_lib") {
     "utility/shell_content_utility_client.cc",
     "utility/shell_content_utility_client.h",
   ]
+
+  sources += get_target_outputs(":protocol_sources")
 
   if (is_android) {
     sources += [
@@ -275,11 +308,11 @@ static_library("content_shell_lib") {
   ]
   deps = [
     ":content_browsertests_mojom",
+    ":protocol_sources",
     ":resources",
     ":shell_controller_mojom",
     "//base",
     "//base:base_static",
-    "//base/third_party/dynamic_annotations",
     "//build:chromeos_buildflags",
     "//cc/base",
     "//components/cdm/renderer",
@@ -323,6 +356,7 @@ static_library("content_shell_lib") {
     "//third_party/blink/public:resources",
     "//third_party/blink/public/strings",
     "//third_party/blink/public/strings:accessibility_strings",
+    "//third_party/inspector_protocol:crdtp",
     "//ui/base",
     "//ui/base/clipboard",
     "//ui/base/ime/init",
@@ -619,19 +653,23 @@ if (is_android) {
     # Path to an entitlements file used in ios_content_shell. Can be overridden
     # to provide an alternative.
     ios_content_shell_entitlements_path =
-        "//build/config/ios/entitlements.plist"
+        "//content/app/ios/appex/app.entitlements"
   }
 
   ios_app_bundle("content_shell") {
-    info_plist = "app/ios-Info.plist"
+    info_plist = "app/ios/ios-app.plist"
     testonly = true
 
     sources = [ "app/shell_main.cc" ]
 
     deps = [
+      ":content_process_bundle",
       ":content_shell_app",
       ":content_shell_lib",
+      ":gpu_process_bundle",
+      ":network_process_bundle",
       "//base",
+      "//build:ios_buildflags",
       "//content/public/app",
     ]
     bundle_deps = [
@@ -640,6 +678,31 @@ if (is_android) {
     ]
     entitlements_path = ios_content_shell_entitlements_path
     bundle_identifier = ios_content_shell_bundle_identifier
+  }
+
+  if (current_toolchain == default_toolchain) {
+    _extension_toolchain = "${current_toolchain}_blink_app_ext"
+    extension_bundle_data("content_process_bundle") {
+      testonly = true
+      extension_dir = "Extensions"
+      extension_name = "content_process.appex"
+      extension_target =
+          "//content/shell/app/ios:content_process(${_extension_toolchain})"
+    }
+    extension_bundle_data("network_process_bundle") {
+      testonly = true
+      extension_dir = "Extensions"
+      extension_name = "network_process.appex"
+      extension_target =
+          "//content/shell/app/ios:network_process(${_extension_toolchain})"
+    }
+    extension_bundle_data("gpu_process_bundle") {
+      testonly = true
+      extension_dir = "Extensions"
+      extension_name = "gpu_process.appex"
+      extension_target =
+          "//content/shell/app/ios:gpu_process(${_extension_toolchain})"
+    }
   }
 } else {
   executable("content_shell") {
@@ -748,7 +811,8 @@ if (is_apple) {
       if (use_v8_context_snapshot) {
         sources += [ "$root_out_dir/$v8_context_snapshot_filename" ]
         public_deps += [ "//tools/v8_context_snapshot" ]
-      } else {
+      }
+      if (!use_v8_context_snapshot || include_both_v8_snapshots) {
         sources += [ "$root_out_dir/snapshot_blob.bin" ]
       }
     }

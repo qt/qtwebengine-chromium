@@ -14,6 +14,7 @@
 #include "cc/trees/render_frame_metadata.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -108,7 +109,7 @@ IN_PROC_BROWSER_TEST_P(DoubleTapToZoomBrowserTest, MobileOptimizedStatus) {
       << std::get<2>(GetParam());
 }
 
-// TODO(crbug.com/1271210): Flaky on mac and linux.
+// TODO(crbug.com/40805444): Flaky on mac and linux.
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 #define MAYBE_TapDelayEnabled DISABLED_TapDelayEnabled
 #else

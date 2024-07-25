@@ -22,6 +22,7 @@ from . import action
 from .page import InteractivePage
 
 
+# TODO: migrate to config.ConfigObject
 class AbstractPageConfig(abc.ABC):
 
   @classmethod

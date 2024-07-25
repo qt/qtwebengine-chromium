@@ -17,6 +17,7 @@ from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
 
 from tabulate import tabulate
 
+from crossbench import __version__
 import crossbench.benchmarks.all as benchmarks
 from crossbench import cli_helper, helper, plt
 from crossbench.benchmarks.base import Benchmark
@@ -97,6 +98,7 @@ class CrossBenchCLI:
       benchmarks.JetStream21Benchmark,
       benchmarks.JetStream20Benchmark,
       benchmarks.MotionMark12Benchmark,
+      benchmarks.MotionMark13Benchmark,
       benchmarks.PageLoadBenchmark,
       benchmarks.PowerBenchmark,
       benchmarks.ManualBenchmark,
@@ -112,7 +114,6 @@ class CrossBenchCLI:
     self.parser = cli_helper.CrossBenchArgumentParser(
         description=("A cross browser and cross benchmark runner "
                      "with configurable measurement probes."))
-    self.help_parser = cli_helper.CrossBenchArgumentParser()
     self.describe_parser = cli_helper.CrossBenchArgumentParser()
     self.recorder_parser = cli_helper.CrossBenchArgumentParser()
     self.args = argparse.Namespace()
@@ -129,6 +130,8 @@ class CrossBenchCLI:
         action="store_false",
         default=has_color,
         help="Disable colored output")
+    self.parser.add_argument(
+        '--version', action='version', version=f"%(prog)s {__version__}")
 
   def _add_verbosity_argument(self, parser: argparse.ArgumentParser) -> None:
     debug_group = parser.add_argument_group("Verbosity / Debugging Options")
@@ -222,10 +225,14 @@ class CrossBenchCLI:
 
   def _setup_help_subparser(self) -> None:
     # Just for completeness we want to support "--help" and "help"
-    self.help_parser = self.subparsers.add_parser(
-        "help", help="Print the top-level --help")
+    help_parser = self.subparsers.add_parser(
+        "help", help="Print the top-level, same as --help")
+    help_parser.set_defaults(subcommand_fn=self.help_subcommand)
+    version_parser = self.subparsers.add_parser(
+        "version",
+        help="Show program's version number and exit, same as --version")
+    version_parser.set_defaults(subcommand_fn=self.version_subcommand)
     assert isinstance(self.describe_parser, cli_helper.CrossBenchArgumentParser)
-    self.help_parser.set_defaults(subcommand_fn=self.help_subcommand)
     self._add_verbosity_argument(self.describe_parser)
 
   def describe_subcommand(self, args: argparse.Namespace) -> None:
@@ -306,6 +313,11 @@ class CrossBenchCLI:
     self.parser.print_help()
     sys.exit(0)
 
+  def version_subcommand(self, args: argparse.Namespace) -> None:
+    del args
+    print(f"{sys.argv[0]} {__version__}")
+    sys.exit(0)
+
   def _setup_benchmark_subparser(self, benchmark_cls: Type[Benchmark]) -> None:
     subparser = benchmark_cls.add_cli_parser(self.subparsers,
                                              benchmark_cls.aliases())
@@ -377,6 +389,13 @@ class CrossBenchCLI:
         type=cli_config.NetworkConfig.parse,
         default=cli_config.NetworkConfig.default(),
         help=cli_config.NetworkConfig.help())
+    network_settings_group.add_argument(
+        "--wpr",
+        "--web-page-replay",
+        type=cli_config.NetworkConfig.parse_wpr,
+        dest="network",
+        help=("Use wpr.archive to replay network requests "
+              "via a local proxy server."))
 
     env_group = subparser.add_argument_group("Environment Options", "")
     env_settings_group = env_group.add_mutually_exclusive_group()

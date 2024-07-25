@@ -8,7 +8,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
@@ -19,6 +18,7 @@
 #include "components/autofill/core/browser/webdata/addresses/autofill_profile_sync_util.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/sync/base/deletion_origin.h"
 #include "components/sync/model/client_tag_based_model_type_processor.h"
 #include "components/sync/model/metadata_change_list.h"
 #include "components/sync/model/model_error.h"
@@ -178,7 +178,7 @@ void AutofillProfileSyncBridge::GetData(StorageKeyList storage_keys,
   auto batch = std::make_unique<syncer::MutableDataBatch>();
   for (const std::unique_ptr<AutofillProfile>& entry : entries) {
     std::string key = GetStorageKeyFromAutofillProfile(*entry);
-    if (base::Contains(keys_set, key)) {
+    if (keys_set.contains(key)) {
       batch->Put(key, CreateEntityDataFromAutofillProfile(*entry));
     }
   }
@@ -224,7 +224,9 @@ void AutofillProfileSyncBridge::ActOnLocalChange(
           metadata_change_list.get());
       break;
     case AutofillProfileChange::REMOVE:
-      change_processor()->Delete(change.key(), metadata_change_list.get());
+      change_processor()->Delete(change.key(),
+                                 syncer::DeletionOrigin::Unspecified(),
+                                 metadata_change_list.get());
       break;
   }
 
@@ -254,7 +256,9 @@ std::optional<syncer::ModelError> AutofillProfileSyncBridge::FlushSyncTracker(
                             metadata_change_list.get());
   }
   for (const std::string& storage_key : profiles_to_delete_from_sync) {
-    change_processor()->Delete(storage_key, metadata_change_list.get());
+    change_processor()->Delete(storage_key,
+                               syncer::DeletionOrigin::Unspecified(),
+                               metadata_change_list.get());
   }
 
   return change_processor()->GetError();

@@ -6,9 +6,9 @@
 #define CC_INPUT_BROWSER_CONTROLS_OFFSET_MANAGER_H_
 
 #include <memory>
+#include <optional>
 #include <utility>
 
-#include <optional>
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "cc/input/browser_controls_state.h"
@@ -120,6 +120,8 @@ class CC_EXPORT BrowserControlsOffsetManager {
   double PredictViewportBoundsDelta(double current_bounds_delta,
                                     gfx::Vector2dF scroll_distance);
 
+  void ResetAnimations();
+
  protected:
   BrowserControlsOffsetManager(BrowserControlsOffsetManagerClient* client,
                                float controls_show_threshold,
@@ -128,7 +130,6 @@ class CC_EXPORT BrowserControlsOffsetManager {
  private:
   class Animation;
 
-  void ResetAnimations();
   void SetupAnimation(AnimationDirection direction);
   void StartAnimationIfNecessary();
   void ResetBaseline();

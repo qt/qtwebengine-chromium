@@ -13,7 +13,6 @@
 #include "components/exo/touch_delegate.h"
 #include "components/exo/touch_stylus_delegate.h"
 #include "components/exo/wm_helper.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
@@ -73,9 +72,9 @@ void Touch::OnTouchEvent(ui::TouchEvent* event) {
     return;
   }
 
-  // TODO(1371493): Investigate if we need to do something similar to the filter
-  // in `Pointer::OnMouseEvent` when dragging. (not sending touch events during
-  // drag)
+  // TODO(crbug.com/40061238): Investigate if we need to do something similar to
+  // the filter in `Pointer::OnMouseEvent` when dragging. (not sending touch
+  // events during drag)
 
   bool send_details = false;
 

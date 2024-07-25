@@ -103,6 +103,7 @@ mojom("mojom") {
     "//extensions/common/api:mojom",
     "//mojo/public/mojom/base",
     "//services/accessibility/public/mojom:automation",
+    "//third_party/blink/public/mojom:mojom_core",
     "//ui/gfx/geometry/mojom",
     "//url/mojom:url_mojom_gurl",
   ]
@@ -202,7 +203,10 @@ mojom("mojom") {
           [ "//extensions/common/mojom/message_port_mojom_traits.cc" ]
     },
   ]
-  overridden_deps = [ "//content/public/common:interfaces" ]
+  overridden_deps = [
+    "//content/public/common:interfaces",
+    "//third_party/blink/public/mojom:mojom_core",
+  ]
 
   component_deps = [ "//content/public/common" ]
 }
@@ -254,6 +258,8 @@ static_library("common") {
     "api/sockets/sockets_manifest_handler.h",
     "api/sockets/sockets_manifest_permission.cc",
     "api/sockets/sockets_manifest_permission.h",
+    "api/web_request/web_request_activity_log_constants.cc",
+    "api/web_request/web_request_activity_log_constants.h",
     "command.cc",
     "command.h",
     "common_manifest_handlers.cc",
@@ -264,6 +270,8 @@ static_library("common") {
     "context_data.h",
     "cors_util.cc",
     "cors_util.h",
+    "crash_keys.cc",
+    "crash_keys.h",
     "csp_validator.cc",
     "csp_validator.h",
     "dom_action_types.h",
@@ -284,11 +292,6 @@ static_library("common") {
     "extension_id.h",
     "extension_l10n_util.cc",
     "extension_l10n_util.h",
-    "extension_message_generator.cc",
-    "extension_message_generator.h",
-    "extension_messages.h",
-    "extension_param_traits.cc",
-    "extension_param_traits.h",
     "extension_paths.cc",
     "extension_paths.h",
     "extension_resource.cc",
@@ -492,8 +495,11 @@ static_library("common") {
     "//base",
     "//build:branding_buildflags",
     "//build:chromeos_buildflags",
+    "//components/crash/core/common",
     "//components/crx_file",
     "//components/nacl/common:buildflags",
+    "//components/safe_browsing/core/common",
+    "//components/safe_browsing/core/common/hashprefix_realtime:hash_realtime_utils",
     "//components/url_formatter",
     "//components/url_matcher",
     "//components/version_info",
@@ -532,6 +538,12 @@ static_library("common") {
     sources += [
       "manifest_handlers/action_handlers_handler.cc",
       "manifest_handlers/action_handlers_handler.h",
+    ]
+  }
+  if (is_chromeos_ash) {
+    sources += [
+      "manifest_handlers/input_components_handler.cc",
+      "manifest_handlers/input_components_handler.h",
     ]
   }
 }
@@ -589,6 +601,7 @@ source_set("unit_tests") {
     "api/sockets/sockets_manifest_permission_unittest.cc",
     "command_unittest.cc",
     "component_extension_url_pattern_unittest.cc",
+    "crash_keys_unittest.cc",
     "csp_validator_unittest.cc",
     "error_utils_unittest.cc",
     "event_filter_unittest.cc",
@@ -613,16 +626,21 @@ source_set("unit_tests") {
     "manifest_handlers/csp_info_unittest.cc",
     "manifest_handlers/default_locale_manifest_unittest.cc",
     "manifest_handlers/extension_action_handler_unittest.cc",
+    "manifest_handlers/extension_action_page_action_unittest.cc",
     "manifest_handlers/externally_connectable_unittest.cc",
+    "manifest_handlers/homepage_url_unittest.cc",
     "manifest_handlers/icons_handler_unittest.cc",
     "manifest_handlers/incognito_manifest_unittest.cc",
     "manifest_handlers/kiosk_mode_info_unittest.cc",
+    "manifest_handlers/manifest_url_about_unittest.cc",
     "manifest_handlers/manifest_v3_permissions_unittest.cc",
     "manifest_handlers/mime_types_handler_unittest.cc",
     "manifest_handlers/oauth2_manifest_unittest.cc",
     "manifest_handlers/replacement_apps_unittest.cc",
+    "manifest_handlers/requirements_unittest.cc",
     "manifest_handlers/shared_module_manifest_unittest.cc",
     "manifest_handlers/trial_tokens_unittest.cc",
+    "manifest_handlers/update_url_unittest.cc",
     "manifest_unittest.cc",
     "message_bundle_unittest.cc",
     "mojom/message_port_mojom_traits_unittest.cc",
@@ -638,6 +656,7 @@ source_set("unit_tests") {
     "url_pattern_set_unittest.cc",
     "url_pattern_unittest.cc",
     "user_script_unittest.cc",
+    "utils/extension_types_utils_unittest.cc",
     "value_counter_unittest.cc",
   ]
 

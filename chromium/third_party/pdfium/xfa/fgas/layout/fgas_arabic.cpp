@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fgas/layout/fgas_arabic.h"
 
 #include <iterator>
@@ -212,9 +217,9 @@ wchar_t GetFormChar(const CFGAS_Char* cur,
   return (eNext < FX_CHARTYPE::kArabicAlef) ? ft->wFinal : ft->wMedial;
 }
 
-absl::optional<wchar_t> GetArabicFromShaddaTable(wchar_t shadda) {
+std::optional<wchar_t> GetArabicFromShaddaTable(wchar_t shadda) {
   if (shadda < kFirstShaddaTableEntry || shadda > kLastShaddaTableEntry)
-    return absl::nullopt;
+    return std::nullopt;
 
   return kShaddaTable[shadda - kFirstShaddaTableEntry];
 }

@@ -227,8 +227,8 @@ class Annotator : public mojom::Annotator {
   // Called when the data decoder service provides parsed JSON data for a server
   // response.
   void OnResponseJsonParsed(const std::set<RequestKey>& request_keys,
-                            absl::optional<base::Value> json_data,
-                            const absl::optional<std::string>& error);
+                            std::optional<base::Value> json_data,
+                            const std::optional<std::string>& error);
 
   // Adds the given results to the cache (if successful) and notifies clients.
   void ProcessResults(
@@ -245,14 +245,13 @@ class Annotator : public mojom::Annotator {
       const std::unique_ptr<std::string> json_response);
 
   // Parse the JSON from the reply with server languages.
-  void OnServerLangsResponseJsonParsed(
-      absl::optional<base::Value> json_data,
-      const absl::optional<std::string>& error);
+  void OnServerLangsResponseJsonParsed(std::optional<base::Value> json_data,
+                                       const std::optional<std::string>& error);
 
   const std::unique_ptr<Client> client_;
 
   // Maps from request key to previously-obtained annotation results.
-  // TODO(crbug.com/916420): periodically clear entries from this cache.
+  // TODO(crbug.com/41432508): periodically clear entries from this cache.
   std::map<RequestKey, mojom::AnnotateImageResultPtr> cached_results_;
 
   // Maps from request key to its list of request infos (i.e. info of clients

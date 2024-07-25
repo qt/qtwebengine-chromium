@@ -111,14 +111,6 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   bool IsMainFrame() const;
   bool IsOutermostMainFrame() const;
 
-  // Clears any state in this node which was set by the document itself (CSP &
-  // UserActivationState) and notifies proxies as appropriate. Invoked after
-  // committing navigation to a new document (since the new document comes with
-  // a fresh set of CSP).
-  // TODO(arthursonzogni): Remove this function. The frame/document must not be
-  // left temporarily with lax state.
-  void ResetForNavigation();
-
   FrameTree& frame_tree() const { return frame_tree_.get(); }
   Navigator& navigator();
 
@@ -529,7 +521,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // Set the current FencedFrameProperties to have "opaque ads mode".
   // This should only be used during tests, when the proper embedder-initiated
   // fenced frame root urn/config navigation flow isn't available.
-  // TODO(crbug.com/1347953): Refactor and expand use of test utils so there is
+  // TODO(crbug.com/40233168): Refactor and expand use of test utils so there is
   // a consistent way to do this properly everywhere. Consider removing
   // arbitrary restrictions in "default mode" so that using opaque ads mode is
   // less necessary.
@@ -561,7 +553,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // correct after the RenderFrameHost is moved between FrameTreeNodes. The
   // renderers should already have the correct value, so unlike
   // FrameTreeNode::SetFrameName, we do not notify them here.
-  // TODO(https://crbug.com/1237091): Remove this once the BrowsingContextState
+  // TODO(crbug.com/40192974): Remove this once the BrowsingContextState
   //  is implemented to utilize the new path.
   void set_frame_name_for_activation(const std::string& unique_name,
                                      const std::string& name) {
@@ -579,7 +571,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
 
   void set_fenced_frame_properties(
       const std::optional<FencedFrameProperties>& fenced_frame_properties) {
-    // TODO(crbug.com/1262022): Reenable this DCHECK once ShadowDOM and
+    // TODO(crbug.com/40202462): Reenable this DCHECK once ShadowDOM and
     // loading urns in iframes (for FLEDGE OT) are gone.
     // DCHECK_EQ(fenced_frame_status_,
     //          RenderFrameHostImpl::FencedFrameStatus::kFencedFrameRoot);
@@ -600,7 +592,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // frame.
   // Clients should decide which one to use depending on how the application of
   // the fenced frame properties interact with urn iframes.
-  // TODO(crbug.com/1355857): Once navigation support for urn::uuid in iframes
+  // TODO(crbug.com/40060657): Once navigation support for urn::uuid in iframes
   // is deprecated, remove the parameter `node_source`.
   std::optional<FencedFrameProperties>& GetFencedFrameProperties(
       FencedFramePropertiesNodeSource node_source =
@@ -634,7 +626,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   // number of fenced frame boundaries (roots) above this frame that originate
   // from shared storage. This is used to check whether a fenced frame
   // originates from shared storage only (i.e. not from FLEDGE).
-  // TODO(crbug.com/1347953): Remove this check once we put permissions inside
+  // TODO(crbug.com/40233168): Remove this check once we put permissions inside
   // FencedFrameConfig.
   size_t GetFencedFrameDepth(size_t& shared_storage_fenced_frame_root_count);
 
@@ -782,8 +774,13 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
   class OpenerDestroyedObserver;
 
   // The |notification_type| parameter is used for histograms only.
+  // |sticky_only| is set to true when propagating sticky user activation during
+  // cross-document navigations. The transient state remains unchanged.
   bool NotifyUserActivation(
-      blink::mojom::UserActivationNotificationType notification_type);
+      blink::mojom::UserActivationNotificationType notification_type,
+      bool sticky_only = false);
+
+  bool NotifyUserActivationStickyOnly();
 
   bool ConsumeTransientUserActivation();
 
@@ -942,7 +939,7 @@ class CONTENT_EXPORT FrameTreeNode : public RenderFrameHostOwner {
 
   // If this is a fenced frame resulting from a urn:uuid navigation, this
   // contains all the metadata specifying the resulting context.
-  // TODO(crbug.com/1262022): Move this into the FrameTree once ShadowDOM
+  // TODO(crbug.com/40202462): Move this into the FrameTree once ShadowDOM
   // and urn iframes are gone.
   std::optional<FencedFrameProperties> fenced_frame_properties_;
 

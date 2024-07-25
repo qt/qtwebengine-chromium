@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
+#include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/gpu_gles2_export.h"
 #include "gpu/ipc/common/surface_handle.h"
@@ -62,6 +63,7 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
       SkAlphaType alpha_type,
       uint32_t usage,
       std::string debug_label,
+      bool is_thread_safe,
       base::span<const uint8_t> pixel_data) = 0;
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
@@ -88,7 +90,7 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
   // This new api is introduced for MappableSI work where client code sends
   // |buffer_usage| info while creating shared image. This info is used in some
   // backings to create native handle.
-  // TODO(crbug.com/1466569) : Remove this api once the MappableSI is complete
+  // TODO(crbug.com/40276430) : Remove this api once the MappableSI is complete
   // and we have a mapping between shared image usage and BufferUsage.
   virtual std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
@@ -111,6 +113,10 @@ class GPU_GLES2_EXPORT SharedImageBackingFactory {
                             gfx::GpuMemoryBufferType gmb_type,
                             GrContextType gr_context_type,
                             base::span<const uint8_t> pixel_data);
+
+  // Return BackingType of the implementation. This value isn't guaranteed to
+  // be precise, use it for logging/tracing only.
+  virtual SharedImageBackingType GetBackingType() = 0;
 
   base::WeakPtr<SharedImageBackingFactory> GetWeakPtr();
 

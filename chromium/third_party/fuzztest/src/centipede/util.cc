@@ -44,6 +44,7 @@
 
 #include "absl/base/attributes.h"
 #include "absl/base/const_init.h"
+#include "absl/base/nullability.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/log/check.h"
 #include "absl/strings/str_format.h"
@@ -120,15 +121,11 @@ void WriteToLocalFile(std::string_view file_path, ByteSpan data) {
 
 void WriteToLocalFile(std::string_view file_path, std::string_view data) {
   static_assert(sizeof(decltype(data)::value_type) == sizeof(uint8_t));
-  WriteToLocalFile(
-      file_path,
-      ByteSpan(reinterpret_cast<const uint8_t *>(data.data()), data.size()));
+  WriteToLocalFile(file_path, AsByteSpan(data));
 }
 
 void WriteToLocalFile(std::string_view file_path, const FeatureVec &data) {
-  WriteToLocalFile(file_path,
-                   ByteSpan(reinterpret_cast<const uint8_t *>(data.data()),
-                            sizeof(data[0]) * data.size()));
+  WriteToLocalFile(file_path, AsByteSpan(data));
 }
 
 void WriteToLocalHashedFileInDir(std::string_view dir_path, ByteSpan data) {
@@ -218,25 +215,26 @@ static_assert(sizeof(kPackEndMagic) == kMagicLen + 1);
 //
 // This is simple and efficient, but I wonder if there is a ready-to-use
 // standard open-source alternative. Or should we just use tar?
-ByteArray PackBytesForAppendFile(const ByteArray &data) {
+ByteArray PackBytesForAppendFile(ByteSpan blob) {
   ByteArray res;
-  auto hash = Hash(data);
+  auto hash = Hash(blob);
   CHECK_EQ(hash.size(), kHashLen);
-  size_t size = data.size();
+  size_t size = blob.size();
   uint8_t size_bytes[sizeof(size)];
   memcpy(size_bytes, &size, sizeof(size));
   res.insert(res.end(), &kPackBegMagic[0], &kPackBegMagic[kMagicLen]);
   res.insert(res.end(), hash.begin(), hash.end());
   res.insert(res.end(), &size_bytes[0], &size_bytes[sizeof(size_bytes)]);
-  res.insert(res.end(), data.begin(), data.end());
+  res.insert(res.end(), blob.begin(), blob.end());
   res.insert(res.end(), &kPackEndMagic[0], &kPackEndMagic[kMagicLen]);
   return res;
 }
 
 // Reverse to a sequence of PackBytesForAppendFile() appended to each other.
-void UnpackBytesFromAppendFile(const ByteArray &packed_data,
-                               std::vector<ByteArray> *unpacked,
-                               std::vector<std::string> *hashes) {
+void UnpackBytesFromAppendFile(
+    const ByteArray &packed_data,
+    absl::Nullable<std::vector<ByteArray> *> unpacked,
+    absl::Nullable<std::vector<std::string> *> hashes) {
   auto pos = packed_data.cbegin();
   while (true) {
     pos = std::search(pos, packed_data.end(), &kPackBegMagic[0],
@@ -277,9 +275,7 @@ std::string ExtractHashFromArray(ByteArray &ba) {
 
 ByteArray PackFeaturesAndHash(const ByteArray &data,
                               const FeatureVec &features) {
-  ByteSpan feature_bytes(reinterpret_cast<const uint8_t *>(features.data()),
-                         features.size() * sizeof(feature_t));
-  return PackFeaturesAndHashAsRawBytes(data, feature_bytes);
+  return PackFeaturesAndHashAsRawBytes(data, AsByteSpan(features));
 }
 
 ByteArray PackFeaturesAndHashAsRawBytes(const ByteArray &data,
@@ -293,7 +289,8 @@ ByteArray PackFeaturesAndHashAsRawBytes(const ByteArray &data,
   return feature_bytes_with_hash;
 }
 
-std::string UnpackFeaturesAndHash(const ByteSpan &blob, FeatureVec *features) {
+std::string UnpackFeaturesAndHash(ByteSpan blob,
+                                  absl::Nonnull<FeatureVec *> features) {
   size_t features_len_in_bytes = blob.size() - kHashLen;
   features->resize(features_len_in_bytes / sizeof(feature_t));
   memcpy(features->data(), blob.data(), features_len_in_bytes);
@@ -349,7 +346,7 @@ bool ParseAFLDictionary(std::string_view dictionary_text,
     if (stop == start) return false;  // no closing "
     // Replace special characters and hex values.
     std::string replaced = absl::StrReplaceAll(
-        std::string_view(line.begin() + start, stop - start), replacements);
+        std::string_view(line.data() + start, stop - start), replacements);
     dictionary_entries.emplace_back(replaced.begin(), replaced.end());
   }
   return true;

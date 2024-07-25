@@ -6,6 +6,8 @@
 #include "base/functional/callback_helpers.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "content/public/browser/storage_partition.h"
@@ -60,7 +62,7 @@ class CookiesApiTest : public ExtensionApiTest,
               ContentSettingsPattern::Wildcard(),
               ContentSettingsPattern::Wildcard(),
               base::Value(ContentSetting::CONTENT_SETTING_ALLOW),
-              std::string() /* source */, false /* incognito */)},
+              content_settings::ProviderType::kNone, false /* incognito */)},
           base::NullCallback());
       cookie_manager_remote_.FlushForTesting();
     }
@@ -97,7 +99,7 @@ INSTANTIATE_TEST_SUITE_P(
                        ::testing::Values(SameSiteCookieSemantics::kLegacy,
                                          SameSiteCookieSemantics::kModern)));
 
-// TODO(crbug.com/1325506): Flaky on Windows.
+// TODO(crbug.com/40839864): Flaky on Windows.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_Cookies DISABLED_Cookies
 #else

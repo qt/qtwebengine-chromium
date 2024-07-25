@@ -31,7 +31,7 @@ DawnJSONGenerator(
     RESULT_VARIABLE "DAWN_WIRE_GEN_SOURCES"
 )
 
-add_library(dawn_wire ${DAWN_PLACEHOLDER_FILE})
+add_library(dawn_wire)
 common_compile_options(dawn_wire)
 
 target_compile_definitions(dawn_wire PRIVATE "DAWN_WIRE_IMPLEMENTATION")
@@ -88,9 +88,10 @@ target_sources(dawn_wire PRIVATE
     "client/QuerySet.h"
     "client/Queue.cpp"
     "client/Queue.h"
-    "client/RequestTracker.h"
     "client/ShaderModule.cpp"
     "client/ShaderModule.h"
+    "client/Surface.cpp"
+    "client/Surface.h"
     "client/SwapChain.cpp"
     "client/SwapChain.h"
     "client/Texture.cpp"

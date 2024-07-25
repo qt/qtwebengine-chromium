@@ -61,8 +61,12 @@ class SelectType : public GarbageCollected<SelectType> {
   // This is for ListBoxes.
   virtual void ClearLastOnChangeSelection();
 
-  virtual void CreateShadowSubtree(ShadowRoot& root);
-  virtual Element& InnerElement() const;
+  virtual void CreateShadowSubtree(ShadowRoot& root) = 0;
+  virtual void ManuallyAssignSlots() = 0;
+  virtual HTMLButtonElement* SlottedButton() const = 0;
+  virtual HTMLDataListElement* DisplayedDatalist() const = 0;
+  virtual bool IsAppearanceBaseSelect() const = 0;
+  virtual Element& InnerElementForAppearanceAuto() const;
   virtual void ShowPopup(PopupMenu::ShowEventType type);
   virtual void HidePopup();
   virtual void PopupDidHide();

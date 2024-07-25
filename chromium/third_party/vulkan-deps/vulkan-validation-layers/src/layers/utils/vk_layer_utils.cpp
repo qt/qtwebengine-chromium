@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2016, 2020-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2016, 2020-2023 Valve Corporation
- * Copyright (c) 2015-2016, 2020-2023 LunarG, Inc.
+/* Copyright (c) 2015-2016, 2020-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2016, 2020-2024 Valve Corporation
+ * Copyright (c) 2015-2016, 2020-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,59 +20,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "containers/range_vector.h"
 #include "vulkan/vulkan.h"
-
-static const uint8_t kUtF8OneByteCode = 0xC0;
-static const uint8_t kUtF8OneByteMask = 0xE0;
-static const uint8_t kUtF8TwoByteCode = 0xE0;
-static const uint8_t kUtF8TwoByteMask = 0xF0;
-static const uint8_t kUtF8ThreeByteCode = 0xF0;
-static const uint8_t kUtF8ThreeByteMask = 0xF8;
-static const uint8_t kUtF8DataByteCode = 0x80;
-static const uint8_t kUtF8DataByteMask = 0xC0;
-
-VkStringErrorFlags vk_string_validate(const int max_length, const char *utf8) {
-    VkStringErrorFlags result = VK_STRING_ERROR_NONE;
-    int num_char_bytes = 0;
-    int i, j;
-
-    for (i = 0; i <= max_length; i++) {
-        if (utf8[i] == 0) {
-            break;
-        } else if (i == max_length) {
-            result |= VK_STRING_ERROR_LENGTH;
-            break;
-        } else if ((utf8[i] >= 0xa) && (utf8[i] < 0x7f)) {
-            num_char_bytes = 0;
-        } else if ((utf8[i] & kUtF8OneByteMask) == kUtF8OneByteCode) {
-            num_char_bytes = 1;
-        } else if ((utf8[i] & kUtF8TwoByteMask) == kUtF8TwoByteCode) {
-            num_char_bytes = 2;
-        } else if ((utf8[i] & kUtF8ThreeByteMask) == kUtF8ThreeByteCode) {
-            num_char_bytes = 3;
-        } else {
-            result |= VK_STRING_ERROR_BAD_DATA;
-            break;
-        }
-
-        // Validate the following num_char_bytes of data
-        for (j = 0; (j < num_char_bytes) && (i < max_length); j++) {
-            if (++i == max_length) {
-                result |= VK_STRING_ERROR_LENGTH;
-                break;
-            }
-            if ((utf8[i] & kUtF8DataByteMask) != kUtF8DataByteCode) {
-                result |= VK_STRING_ERROR_BAD_DATA;
-                break;
-            }
-        }
-        if (result != VK_STRING_ERROR_NONE) break;
-    }
-    return result;
-}
-
-// Utility function for determining if a string is in a set of strings
-bool white_list(const char *item, const std::set<std::string> &list) { return (list.find(item) != list.end()); }
 
 // Debug callbacks get created in three ways:
 //   o  Application-defined debug callbacks
@@ -85,7 +34,7 @@ bool white_list(const char *item, const std::set<std::string> &list) { return (l
 // If a vk_layer_settings.txt file is present and an application defines a debug callback, both callbacks
 // will be active.  If no vk_layer_settings.txt file is present, creating an application-defined debug
 // callback will cause the default callbacks to be unregisterd and removed.
-void layer_debug_messenger_actions(debug_report_data *report_data, const char *layer_identifier) {
+void LayerDebugMessengerActions(DebugReport *debug_report, const char *layer_identifier) {
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
 
     std::string report_flags_key = layer_identifier;
@@ -139,7 +88,7 @@ void layer_debug_messenger_actions(debug_report_data *report_data, const char *l
         FILE *log_output = getLayerLogOutput(log_filename, layer_identifier);
         dbg_create_info.pfnUserCallback = MessengerLogCallback;
         dbg_create_info.pUserData = (void *)log_output;
-        LayerCreateMessengerCallback(report_data, default_layer_callback, &dbg_create_info, &messenger);
+        LayerCreateMessengerCallback(debug_report, default_layer_callback, &dbg_create_info, &messenger);
     }
 
     messenger = VK_NULL_HANDLE;
@@ -147,7 +96,7 @@ void layer_debug_messenger_actions(debug_report_data *report_data, const char *l
     if (debug_action & VK_DBG_LAYER_ACTION_DEBUG_OUTPUT) {
         dbg_create_info.pfnUserCallback = MessengerWin32DebugOutputMsg;
         dbg_create_info.pUserData = NULL;
-        LayerCreateMessengerCallback(report_data, default_layer_callback, &dbg_create_info, &messenger);
+        LayerCreateMessengerCallback(debug_report, default_layer_callback, &dbg_create_info, &messenger);
     }
 
     messenger = VK_NULL_HANDLE;
@@ -155,11 +104,11 @@ void layer_debug_messenger_actions(debug_report_data *report_data, const char *l
     if (debug_action & VK_DBG_LAYER_ACTION_BREAK) {
         dbg_create_info.pfnUserCallback = MessengerBreakCallback;
         dbg_create_info.pUserData = NULL;
-        LayerCreateMessengerCallback(report_data, default_layer_callback, &dbg_create_info, &messenger);
+        LayerCreateMessengerCallback(debug_report, default_layer_callback, &dbg_create_info, &messenger);
     }
 }
 
-VkLayerInstanceCreateInfo *get_chain_info(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func) {
+VkLayerInstanceCreateInfo *GetChainInfo(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func) {
     VkLayerInstanceCreateInfo *chain_info = (VkLayerInstanceCreateInfo *)pCreateInfo->pNext;
     while (chain_info && !(chain_info->sType == VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO && chain_info->function == func)) {
         chain_info = (VkLayerInstanceCreateInfo *)chain_info->pNext;
@@ -168,7 +117,7 @@ VkLayerInstanceCreateInfo *get_chain_info(const VkInstanceCreateInfo *pCreateInf
     return chain_info;
 }
 
-VkLayerDeviceCreateInfo *get_chain_info(const VkDeviceCreateInfo *pCreateInfo, VkLayerFunction func) {
+VkLayerDeviceCreateInfo *GetChainInfo(const VkDeviceCreateInfo *pCreateInfo, VkLayerFunction func) {
     VkLayerDeviceCreateInfo *chain_info = (VkLayerDeviceCreateInfo *)pCreateInfo->pNext;
     while (chain_info && !(chain_info->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && chain_info->function == func)) {
         chain_info = (VkLayerDeviceCreateInfo *)chain_info->pNext;
@@ -193,4 +142,50 @@ std::string GetTempFilePath() {
     if (!tmp_path.size()) tmp_path = GetEnvironment("TEMP");
     if (!tmp_path.size()) tmp_path = "/tmp";
     return tmp_path;
+}
+
+// Returns the effective extent of an image subresource, adjusted for mip level and array depth.
+VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageAspectFlags aspect_mask, const uint32_t mip_level) {
+    // Return zero extent if mip level doesn't exist
+    if (mip_level >= ci.mipLevels) {
+        return VkExtent3D{0, 0, 0};
+    }
+
+    VkExtent3D extent = ci.extent;
+
+    // If multi-plane, adjust per-plane extent
+    const VkFormat format = ci.format;
+    if (vkuFormatIsMultiplane(format)) {
+        VkExtent2D divisors = vkuFindMultiplaneExtentDivisors(format, static_cast<VkImageAspectFlagBits>(aspect_mask));
+        extent.width /= divisors.width;
+        extent.height /= divisors.height;
+    }
+
+    // Mip Maps
+    {
+        const uint32_t corner = (ci.flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) ? 1 : 0;
+        const uint32_t min_size = 1 + corner;
+        const std::array dimensions = {&extent.width, &extent.height, &extent.depth};
+        for (uint32_t *dim : dimensions) {
+            // Don't allow mip adjustment to create 0 dim, but pass along a 0 if that's what subresource specified
+            if (*dim == 0) {
+                continue;
+            }
+            *dim >>= mip_level;
+            *dim = std::max(min_size, *dim);
+        }
+    }
+
+    // Image arrays have an effective z extent that isn't diminished by mip level
+    if (VK_IMAGE_TYPE_3D != ci.imageType) {
+        extent.depth = ci.arrayLayers;
+    }
+
+    return extent;
+}
+
+// Returns true if [x, x + x_size) and [y, y + y_size) overlap
+bool RangesIntersect(int64_t x, uint64_t x_size, int64_t y, uint64_t y_size) {
+    auto intersection = GetRangeIntersection(x, x_size, y, y_size);
+    return intersection.non_empty();
 }

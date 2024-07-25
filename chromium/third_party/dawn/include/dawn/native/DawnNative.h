@@ -28,6 +28,7 @@
 #ifndef INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 #define INCLUDE_DAWN_NATIVE_DAWNNATIVE_H_
 
+#include <string>
 #include <vector>
 
 #include "dawn/dawn_proc_table.h"
@@ -139,7 +140,9 @@ struct DAWN_NATIVE_EXPORT DawnInstanceDescriptor : wgpu::ChainedStruct {
 
     BackendValidationLevel backendValidationLevel = BackendValidationLevel::Disabled;
     bool beginCaptureOnStartup = false;
-    bool enableAdapterBlocklist = false;
+
+    WGPULoggingCallback loggingCallback = nullptr;
+    void* loggingCallbackUserdata = nullptr;
 
     // Equality operators, mostly for testing. Note that this tests
     // strict pointer-pointer equality if the struct contains member pointers.
@@ -168,7 +171,6 @@ class DAWN_NATIVE_EXPORT Instance {
         const wgpu::RequestAdapterOptions* options = nullptr) const;
 
     const ToggleInfo* GetToggleInfo(const char* toggleName);
-    const FeatureInfo* GetFeatureInfo(WGPUFeatureName feature);
 
     // Enables backend validation layers
     void EnableBackendValidation(bool enableBackendValidation);
@@ -177,13 +179,13 @@ class DAWN_NATIVE_EXPORT Instance {
     // Enable debug capture on Dawn startup
     void EnableBeginCaptureOnStartup(bool beginCaptureOnStartup);
 
-    // Enable / disable the adapter blocklist.
-    void EnableAdapterBlocklist(bool enable);
-
     uint64_t GetDeviceCountForTesting() const;
 
     // Returns the underlying WGPUInstance object.
     WGPUInstance Get() const;
+
+    // Make mImpl->mPlatform point to an object inside Dawn in case it becomes a dangling pointer
+    void DisconnectDawnPlatform();
 
   private:
     InstanceBase* mImpl = nullptr;
@@ -218,7 +220,7 @@ DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
 
 DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
 
-DAWN_NATIVE_EXPORT void InstanceProcessEvents(WGPUInstance instance);
+DAWN_NATIVE_EXPORT bool InstanceProcessEvents(WGPUInstance instance);
 
 // ErrorInjector functions used for testing only. Defined in dawn_native/ErrorInjector.cpp
 DAWN_NATIVE_EXPORT void EnableErrorInjector();
@@ -277,6 +279,30 @@ DAWN_NATIVE_EXPORT std::vector<const ToggleInfo*> AllToggleInfos();
 // Used to query the details of an feature. Return nullptr if featureName is not a valid
 // name of an feature supported in Dawn.
 DAWN_NATIVE_EXPORT const FeatureInfo* GetFeatureInfo(wgpu::FeatureName feature);
+
+class DAWN_NATIVE_EXPORT MemoryDump {
+  public:
+    // Standard attribute |name|s for the AddScalar() and AddString() methods.
+    // These match the expected names in Chromium memory-infra instrumentation.
+    static const char kNameSize[];         // To represent allocated space.
+    static const char kNameObjectCount[];  // To represent number of objects.
+
+    // Standard attribute |unit|s for the AddScalar() and AddString() methods.
+    // These match the expected names in Chromium memory-infra instrumentation.
+    static const char kUnitsBytes[];    // Unit name to represent bytes.
+    static const char kUnitsObjects[];  // Unit name to represent #objects.
+
+    virtual void AddScalar(const char* name,
+                           const char* key,
+                           const char* units,
+                           uint64_t value) = 0;
+
+    virtual void AddString(const char* name, const char* key, const std::string& value) = 0;
+
+  protected:
+    virtual ~MemoryDump() = default;
+};
+DAWN_NATIVE_EXPORT void DumpMemoryStatistics(WGPUDevice device, MemoryDump* dump);
 
 }  // namespace dawn::native
 

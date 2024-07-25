@@ -5,9 +5,10 @@
 #ifndef UI_GL_DIRECT_COMPOSITION_SUPPORT_H_
 #define UI_GL_DIRECT_COMPOSITION_SUPPORT_H_
 
+#include <windows.h>
+
 #include <d3d11.h>
 #include <dcomp.h>
-#include <windows.h>
 #include <wrl/client.h>
 
 #include "base/no_destructor.h"
@@ -63,6 +64,9 @@ GL_EXPORT bool DirectCompositionScaledOverlaysSupported();
 
 // Returns preferred overlay format set when detecting overlay support.
 GL_EXPORT DXGI_FORMAT GetDirectCompositionSDROverlayFormat();
+
+// Returns true if video processor auto HDR feature is supported.
+GL_EXPORT bool VideoProcessorAutoHDRSupported();
 
 // Returns true if video processor support handling the given format.
 GL_EXPORT bool CheckVideoProcessorFormatSupport(DXGI_FORMAT format);

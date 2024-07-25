@@ -1,7 +1,7 @@
 # ~~~
 # Copyright (c) 2014-2024 Valve Corporation
 # Copyright (c) 2014-2024 LunarG, Inc.
-# Copyright (c) 2023-2023 RasterGrid Kft.
+# Copyright (c) 2023-2024 RasterGrid Kft.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ target_sources(VkLayer_utils PRIVATE
     error_message/logging.cpp
     error_message/error_location.cpp
     error_message/error_location.h
+    error_message/error_strings.h
     error_message/record_object.h
     external/xxhash.h
     ${API_TYPE}/generated/error_location_helper.cpp
@@ -41,15 +42,11 @@ target_sources(VkLayer_utils PRIVATE
     ${API_TYPE}/generated/vk_layer_dispatch_table.h
     ${API_TYPE}/generated/vk_dispatch_table_helper.h
     ${API_TYPE}/generated/vk_dispatch_table_helper.cpp
-    ${API_TYPE}/generated/vk_safe_struct.h
-    ${API_TYPE}/generated/vk_safe_struct_utils.cpp
-    ${API_TYPE}/generated/vk_safe_struct_core.cpp
-    ${API_TYPE}/generated/vk_safe_struct_khr.cpp
-    ${API_TYPE}/generated/vk_safe_struct_ext.cpp
-    ${API_TYPE}/generated/vk_safe_struct_vendor.cpp
     ${API_TYPE}/generated/vk_object_types.h
+    ${API_TYPE}/generated/vk_object_types.cpp
     ${API_TYPE}/generated/vk_api_version.h
     ${API_TYPE}/generated/vk_extension_helper.h
+    ${API_TYPE}/generated/vk_extension_helper.cpp
     utils/cast_utils.h
     utils/convert_utils.cpp
     utils/convert_utils.h
@@ -71,6 +68,7 @@ target_sources(VkLayer_utils PRIVATE
 target_link_libraries(VkLayer_utils PUBLIC
     Vulkan::Headers
     Vulkan::LayerSettings
+    Vulkan::SafeStruct
     Vulkan::UtilityHeaders
     ${CMAKE_DL_LIBS}
 )
@@ -111,7 +109,13 @@ elseif(MSVC)
     )
 endif()
 
-add_library(vvl MODULE)
+add_subdirectory(gpu_validation/spirv)
+
+if(IOS)
+    add_library(vvl SHARED)
+else()
+    add_library(vvl MODULE)
+endif()
 
 target_sources(vvl PRIVATE
     best_practices/best_practices_error_enums.h
@@ -129,13 +133,15 @@ target_sources(vvl PRIVATE
     best_practices/bp_pipeline.cpp
     best_practices/bp_ray_tracing.cpp
     best_practices/bp_render_pass.cpp
+    best_practices/bp_state.h
     best_practices/bp_synchronization.cpp
     best_practices/bp_video.cpp
     best_practices/bp_wsi.cpp
     best_practices/best_practices_validation.h
+    chassis/chassis_modification_state.h
+    chassis/layer_chassis_dispatch_manual.cpp
     containers/qfo_transfer.h
     containers/range_vector.h
-    containers/sparse_containers.h
     containers/subresource_adapter.cpp
     containers/subresource_adapter.h
     core_checks/cc_android.cpp
@@ -163,8 +169,12 @@ target_sources(vvl PRIVATE
     core_checks/cc_spirv.cpp
     core_checks/cc_shader_interface.cpp
     core_checks/cc_shader_object.cpp
+    core_checks/cc_state_tracker.h
+    core_checks/cc_state_tracker.cpp
     core_checks/cc_synchronization.cpp
     core_checks/cc_video.cpp
+    core_checks/cc_vuid_maps.cpp
+    core_checks/cc_vuid_maps.h
     core_checks/cc_wsi.cpp
     core_checks/cc_ycbcr.cpp
     drawdispatch/descriptor_validator.cpp
@@ -176,12 +186,12 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/chassis.cpp
     ${API_TYPE}/generated/valid_enum_values.cpp
     ${API_TYPE}/generated/valid_enum_values.h
+    ${API_TYPE}/generated/valid_flag_values.cpp
     ${API_TYPE}/generated/command_validation.cpp
     ${API_TYPE}/generated/dynamic_state_helper.cpp
     ${API_TYPE}/generated/dynamic_state_helper.h
     ${API_TYPE}/generated/enum_flag_bits.h
     ${API_TYPE}/generated/layer_chassis_dispatch.cpp
-    layer_chassis_dispatch_manual.cpp
     ${API_TYPE}/generated/object_tracker.cpp
     ${API_TYPE}/generated/object_tracker.h
     ${API_TYPE}/generated/spirv_grammar_helper.cpp
@@ -196,29 +206,40 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/thread_safety_counter_bodies.h
     ${API_TYPE}/generated/thread_safety_counter_definitions.h
     ${API_TYPE}/generated/thread_safety_counter_instances.h
-    ${API_TYPE}/generated/vk_safe_struct_utils.cpp
-    ${API_TYPE}/generated/vk_safe_struct_core.cpp
-    ${API_TYPE}/generated/vk_safe_struct_khr.cpp
-    ${API_TYPE}/generated/vk_safe_struct_ext.cpp
-    ${API_TYPE}/generated/vk_safe_struct_vendor.cpp
-    ${API_TYPE}/generated/vk_safe_struct.h
+    ${API_TYPE}/generated/gpu_inst_shader_hash.h
+    ${API_TYPE}/generated/gpu_inst_shader_hash.h
+    ${API_TYPE}/generated/gpu_pre_copy_buffer_to_image_comp.h
+    ${API_TYPE}/generated/gpu_pre_copy_buffer_to_image_comp.cpp
+    ${API_TYPE}/generated/gpu_pre_dispatch_comp.h
+    ${API_TYPE}/generated/gpu_pre_dispatch_comp.cpp
+    ${API_TYPE}/generated/gpu_pre_draw_vert.h
+    ${API_TYPE}/generated/gpu_pre_draw_vert.cpp
+    ${API_TYPE}/generated/gpu_pre_trace_rays_rgen.h
+    ${API_TYPE}/generated/gpu_pre_trace_rays_rgen.cpp
     gpu_validation/debug_printf.cpp
     gpu_validation/debug_printf.h
+    gpu_validation/gpu_constants.h
     gpu_validation/gpu_descriptor_set.cpp
     gpu_validation/gpu_descriptor_set.h
     gpu_validation/gpu_error_message.cpp
     gpu_validation/gpu_error_message.h
     gpu_validation/gpu_image_layout.cpp
+    gpu_validation/gpu_shader_instrumentor.cpp
+    gpu_validation/gpu_shader_instrumentor.h
     gpu_validation/gpu_state_tracker.cpp
     gpu_validation/gpu_state_tracker.h
     gpu_validation/gpu_subclasses.cpp
     gpu_validation/gpu_subclasses.h
     gpu_validation/gpu_record.cpp
+    gpu_validation/gpu_resources.h
+    gpu_validation/gpu_settings.h
     gpu_validation/gpu_setup.cpp
     gpu_validation/gpu_validation.cpp
     gpu_validation/gpu_validation.h
     gpu_validation/gpu_vuids.cpp
     gpu_validation/gpu_vuids.h
+    gpu_shaders/gpu_error_codes.h
+    gpu_shaders/gpu_error_header.h
     gpu_shaders/gpu_shaders_constants.h
     object_tracker/object_lifetime_validation.h
     object_tracker/object_tracker_utils.cpp
@@ -262,6 +283,8 @@ target_sources(vvl PRIVATE
     state_tracker/shader_object_state.h
     state_tracker/state_tracker.cpp
     state_tracker/state_tracker.h
+    state_tracker/submission_reference.h
+    state_tracker/vertex_index_buffer_state.h
     state_tracker/video_session_state.cpp
     state_tracker/video_session_state.h
     stateless/sl_buffer.cpp
@@ -289,6 +312,7 @@ target_sources(vvl PRIVATE
     sync/sync_commandbuffer.h
     sync/sync_common.cpp
     sync/sync_common.h
+    sync/sync_image.h
     sync/sync_op.cpp
     sync/sync_op.h
     sync/sync_renderpass.cpp
@@ -311,6 +335,12 @@ target_sources(vvl PRIVATE
 get_target_property(LAYER_SOURCES vvl SOURCES)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${LAYER_SOURCES})
 
+option(BUILD_SELF_VVL "Setup a VVL build that will be used for self validation" FALSE)
+if (BUILD_SELF_VVL)
+    target_compile_definitions(VkLayer_utils PUBLIC BUILD_SELF_VVL)
+    target_compile_definitions(vvl PUBLIC BUILD_SELF_VVL)
+endif()
+
 set_target_properties(vvl PROPERTIES OUTPUT_NAME ${LAYER_NAME})
 
 if(MSVC)
@@ -321,7 +351,19 @@ elseif(MINGW)
     target_compile_options(vvl PRIVATE -Wa,-mbig-obj)
     set_target_properties(vvl PROPERTIES PREFIX "") # remove the prefix "lib" so the manifest json "library_path" matches
 elseif(APPLE)
+
+# IOS and APPLE can both be true (FYI)
+if(IOS)
+    set_target_properties(vvl PROPERTIES
+		FRAMEWORK			TRUE
+                MACOSX_FRAMEWORK_BUNDLE_VERSION "${VulkanHeaders_VERSION}"
+                MACOSX_FRAMEWORK_SHORT_VERSION_STRING "${VulkanHeaders_VERSION}"
+		MACOSX_FRAMEWORK_IDENTIFIER 	com.khronos.validation
+    )
+else()
     set_target_properties(vvl PROPERTIES SUFFIX ".dylib")
+endif()
+    # Both Apple and IOS
     target_link_options(vvl PRIVATE -exported_symbols_list ${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}.exp)
 elseif(ANDROID)
     target_link_options(vvl PRIVATE LINKER:--version-script=${CMAKE_CURRENT_SOURCE_DIR}/${LAYER_NAME}-android.map)
@@ -351,7 +393,7 @@ endif()
 target_link_libraries(vvl PRIVATE
     SPIRV-Headers::SPIRV-Headers
     SPIRV-Tools-opt
-    SPIRV-Tools-link
+    gpu_av_spirv
     VkLayer_utils
 )
 

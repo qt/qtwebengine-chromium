@@ -308,7 +308,6 @@ DecomposeMemoryAccess::Intrinsic* IntrinsicAtomicFor(ast::Builder* builder,
         default:
             TINT_ICE() << "invalid IntrinsicType for DecomposeMemoryAccess::Intrinsic: "
                        << ty->TypeInfo().name;
-            break;
     }
 
     DecomposeMemoryAccess::Intrinsic::DataType type;
@@ -482,7 +481,7 @@ struct DecomposeMemoryAccess::State {
     Symbol LoadFunc(const core::type::Type* el_ty,
                     core::AddressSpace address_space,
                     const Symbol& buffer) {
-        return tint::GetOrCreate(load_funcs, LoadStoreKey{el_ty, buffer}, [&] {
+        return tint::GetOrAdd(load_funcs, LoadStoreKey{el_ty, buffer}, [&] {
             Vector params{b.Param("offset", b.ty.u32())};
 
             auto name = b.Symbols().New(buffer.Name() + "_load");
@@ -513,7 +512,6 @@ struct DecomposeMemoryAccess::State {
                     //   this method only handles storage and uniform.
                     // * Runtime-sized arrays are not loadable.
                     TINT_ICE() << "unexpected non-constant array count";
-                    arr_cnt = 1;
                 }
                 auto* for_cond = b.create<ast::BinaryExpression>(
                     core::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_cnt.value())));
@@ -562,7 +560,7 @@ struct DecomposeMemoryAccess::State {
     /// @param buffer the symbol of the storage buffer variable, owned by the target ProgramBuilder.
     /// @return the name of the function that performs the store
     Symbol StoreFunc(const core::type::Type* el_ty, const Symbol& buffer) {
-        return tint::GetOrCreate(store_funcs, LoadStoreKey{el_ty, buffer}, [&] {
+        return tint::GetOrAdd(store_funcs, LoadStoreKey{el_ty, buffer}, [&] {
             Vector params{
                 b.Param("offset", b.ty.u32()),
                 b.Param("value", CreateASTTypeFor(ctx, el_ty)),
@@ -599,7 +597,6 @@ struct DecomposeMemoryAccess::State {
                             //   arrays, and this method only handles storage and uniform.
                             // * Runtime-sized arrays are not storable.
                             TINT_ICE() << "unexpected non-constant array count";
-                            arr_cnt = 1;
                         }
                         auto* for_cond = b.create<ast::BinaryExpression>(
                             core::BinaryOp::kLessThan, b.Expr(i), b.Expr(u32(arr_cnt.value())));
@@ -653,7 +650,7 @@ struct DecomposeMemoryAccess::State {
                       const sem::BuiltinFn* builtin,
                       const Symbol& buffer) {
         auto fn = builtin->Fn();
-        return tint::GetOrCreate(atomic_funcs, AtomicKey{el_ty, fn, buffer}, [&] {
+        return tint::GetOrAdd(atomic_funcs, AtomicKey{el_ty, fn, buffer}, [&] {
             // The first parameter to all WGSL atomics is the expression to the
             // atomic. This is replaced with two parameters: the buffer and offset.
             Vector params{b.Param("offset", b.ty.u32())};

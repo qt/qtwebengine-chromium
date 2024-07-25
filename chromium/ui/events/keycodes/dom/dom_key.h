@@ -7,11 +7,11 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <ostream>
 
 #include "base/check.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace ui {
 
@@ -82,7 +82,7 @@ class DomKey {
   // Following block is a technique to add inlined constant with C++14
   // compatible way. These can be replaced with inline constexpr after
   // C++17 support.
-  enum InvalidKey : Base { NONE = 0 };
+  enum : Base { NONE = 0 };
 // |dom_key_data.inc| describes the non-printable DomKey values, and is
 // included here to create constants for them in the DomKey:: scope.
 #define DOM_KEY_MAP_DECLARATION_START enum Key : Base {
@@ -109,9 +109,9 @@ class DomKey {
 
   // Factory that returns a DomKey for the specified value. Returns nullopt if
   // |value| is not a valid value (or NONE).
-  static absl::optional<DomKey> FromBase(Base value) {
+  static std::optional<DomKey> FromBase(Base value) {
     if (value != 0 && !IsValidValue(value))
-      return absl::nullopt;
+      return std::nullopt;
     return Base(value);
   }
 

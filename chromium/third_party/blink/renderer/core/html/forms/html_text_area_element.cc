@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/html/forms/form_controller.h"
 #include "third_party/blink/renderer/core/html/forms/form_data.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_inner_elements.h"
+#include "third_party/blink/renderer/core/html/html_br_element.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -59,6 +60,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
@@ -168,7 +170,9 @@ int HTMLTextAreaElement::scrollHeight() {
 
 void HTMLTextAreaElement::ChildrenChanged(const ChildrenChange& change) {
   HTMLElement::ChildrenChanged(change);
-  SetLastChangeWasNotUserEdit();
+  if (!RuntimeEnabledFeatures::TextAreaChildrenChangedStillValidatesEnabled()) {
+    SetLastChangeWasNotUserEdit();
+  }
   if (is_dirty_)
     SetInnerEditorValue(Value());
   else
@@ -378,7 +382,7 @@ void HTMLTextAreaElement::SubtreeHasChanged() {
 
   // When typing in a textarea, childrenChanged is not called, so we need to
   // force the directionality check.
-  CalculateAndAdjustAutoDirectionality(this);
+  CalculateAndAdjustAutoDirectionality();
 
   DCHECK(GetDocument().IsActive());
   GetDocument().GetPage()->GetChromeClient().DidChangeValueInTextField(*this);
@@ -453,18 +457,16 @@ String HTMLTextAreaElement::Value() const {
 }
 
 void HTMLTextAreaElement::setValueForBinding(const String& value) {
-  if (!IsAutofilled()) {
-    SetValue(value);
-  } else {
-    String old_value = this->Value();
-    SetValue(value, TextFieldEventBehavior::kDispatchNoEvent,
-             TextControlSetValueSelection::kSetSelectionToEnd,
-             value != old_value ? WebAutofillState::kNotFilled
-                                : WebAutofillState::kAutofilled);
-    if (Page* page = GetDocument().GetPage()) {
-      page->GetChromeClient().JavaScriptChangedAutofilledValue(*this,
-                                                               old_value);
-    }
+  String old_value = this->Value();
+  bool was_autofilled = IsAutofilled();
+  bool value_changed = old_value != value;
+  SetValue(value, TextFieldEventBehavior::kDispatchNoEvent,
+           TextControlSetValueSelection::kSetSelectionToEnd,
+           was_autofilled && !value_changed ? WebAutofillState::kAutofilled
+                                            : WebAutofillState::kNotFilled);
+  if (Page* page = GetDocument().GetPage(); page && value_changed) {
+    page->GetChromeClient().JavaScriptChangedValue(*this, old_value,
+                                                   was_autofilled);
   }
 }
 
@@ -555,12 +557,18 @@ void HTMLTextAreaElement::SetValueCommon(const String& new_value,
       break;
   }
 
-  // We set the Autofilled state again because setting the autofill value
-  // triggers JavaScript events and the site may override the autofilled value,
-  // which resets the autofill state. Even if the website modifies the from
-  // control element's content during the autofill operation, we want the state
-  // to show as as autofilled.
-  SetAutofillState(autofill_state);
+  if (!base::FeatureList::IsEnabled(
+          features::kAutofillDontSetAutofillStateAfterJavaScriptChanges)) {
+    // We set the Autofilled state again because setting the autofill value
+    // triggers JavaScript events and the site may override the autofilled
+    // value, which resets the autofill state. Even if the website modifies the
+    // form control element's content during the autofill operation, we want the
+    // state to show as autofilled.
+    // If kAutofillDontSetAutofillStateAfterJavaScriptChanges is enabled, the
+    // WebAutofillClient will monitor JavaScript induced changes and take care
+    // of resetting the autofill state when appropriate.
+    SetAutofillState(autofill_state);
+  }
 }
 
 String HTMLTextAreaElement::defaultValue() const {
@@ -695,19 +703,24 @@ void HTMLTextAreaElement::SetPlaceholderVisibility(bool visible) {
   is_placeholder_visible_ = visible;
 }
 
-TextControlInnerEditorElement* HTMLTextAreaElement::EnsureInnerEditorElement()
-    const {
-  return InnerEditorElement();
+void HTMLTextAreaElement::CreateInnerEditorElementIfNecessary() const {
+  // HTMLTextArea immediately creates the inner-editor, so this function should
+  // never be called.
+  NOTREACHED();
 }
 
-void HTMLTextAreaElement::UpdatePlaceholderText() {
+bool HTMLTextAreaElement::IsInnerEditorValueEmpty() const {
+  return InnerEditorValue().empty();
+}
+
+HTMLElement* HTMLTextAreaElement::UpdatePlaceholderText() {
   HTMLElement* placeholder = PlaceholderElement();
   const String placeholder_text = GetPlaceholderValue();
   const bool is_suggested_value = !SuggestedValue().empty();
   if (!is_suggested_value && !FastHasAttribute(html_names::kPlaceholderAttr)) {
     if (placeholder)
       UserAgentShadowRoot()->RemoveChild(placeholder);
-    return;
+    return nullptr;
   }
   if (!placeholder) {
     auto* new_element = MakeGarbageCollected<HTMLDivElement>(GetDocument());
@@ -731,6 +744,7 @@ void HTMLTextAreaElement::UpdatePlaceholderText() {
   // https://html.spec.whatwg.org/multipage/form-elements.html#attr-textarea-placeholder
   ReplaceCRWithNewLine(normalized_value);
   placeholder->setTextContent(normalized_value);
+  return placeholder;
 }
 
 String HTMLTextAreaElement::GetPlaceholderValue() const {
@@ -759,6 +773,15 @@ String HTMLTextAreaElement::DefaultToolTip() const {
   if (FastHasAttribute(html_names::kNovalidateAttr))
     return String();
   return validationMessage();
+}
+
+void HTMLTextAreaElement::SetFocused(bool is_focused,
+                                     mojom::blink::FocusType focus_type) {
+  // See comment in HTMLInputElement::SetFocused.
+  if (UserHasEditedTheField()) {
+    SetUserHasEditedTheFieldAndBlurred();
+  }
+  TextControlElement::SetFocused(is_focused, focus_type);
 }
 
 }  // namespace blink

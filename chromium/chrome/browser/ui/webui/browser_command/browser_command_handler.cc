@@ -106,7 +106,6 @@ void BrowserCommandHandler::CanExecuteCommand(
       break;
     case Command::kOpenNTPAndStartCustomizeChromeTutorial:
       can_execute = TutorialServiceExists() &&
-                    BrowserSupportsCustomizeChromeSidePanel() &&
                     DefaultSearchProviderIsGoogle();
       break;
     case Command::kStartPasswordManagerTutorial:
@@ -114,6 +113,13 @@ void BrowserCommandHandler::CanExecuteCommand(
       break;
     case Command::kStartSavedTabGroupTutorial:
       can_execute = TutorialServiceExists() && BrowserSupportsSavedTabGroups();
+      break;
+    case Command::kOpenAISettings:
+      can_execute = true;
+      break;
+    case Command::kOpenSafetyCheckFromWhatsNew:
+      can_execute = true;
+      break;
   }
   std::move(callback).Run(can_execute);
 }
@@ -187,6 +193,13 @@ void BrowserCommandHandler::ExecuteCommandWithDisposition(
     case Command::kStartSavedTabGroupTutorial:
       StartSavedTabGroupTutorial();
       break;
+    case Command::kOpenAISettings:
+      OpenAISettings();
+      break;
+    case Command::kOpenSafetyCheckFromWhatsNew:
+      NavigateToURL(GURL(chrome::GetSettingsUrl(chrome::kSafetyCheckSubPage)),
+                    disposition);
+      break;
     default:
       NOTREACHED() << "Unspecified behavior for command " << id;
       break;
@@ -240,8 +253,9 @@ void BrowserCommandHandler::OpenPasswordManager() {
   chrome::ShowPasswordManager(chrome::FindBrowserWithProfile(profile_));
 }
 
-bool BrowserCommandHandler::BrowserSupportsCustomizeChromeSidePanel() {
-  return base::FeatureList::IsEnabled(features::kCustomizeChromeSidePanel);
+void BrowserCommandHandler::OpenAISettings() {
+  chrome::ShowSettingsSubPage(chrome::FindBrowserWithProfile(profile_),
+                              chrome::kExperimentalAISettingsSubPage);
 }
 
 bool BrowserCommandHandler::DefaultSearchProviderIsGoogle() {
@@ -253,15 +267,13 @@ bool BrowserCommandHandler::BrowserSupportsSavedTabGroups() {
 
   // Duplicated from chrome/browser/ui/views/bookmarks/bookmark_bar_view.cc
   // Which cannot be included here
-  return base::FeatureList::IsEnabled(features::kTabGroupsSave) &&
-         browser->profile()->IsRegularProfile();
+  return browser->profile()->IsRegularProfile();
 }
 
 void BrowserCommandHandler::OpenNTPAndStartCustomizeChromeTutorial() {
   auto* tutorial_id = kSidePanelCustomizeChromeTutorialId;
 
-  if (BrowserSupportsCustomizeChromeSidePanel() &&
-      DefaultSearchProviderIsGoogle()) {
+  if (DefaultSearchProviderIsGoogle()) {
     StartTutorialInPage::Params params;
     params.tutorial_id = tutorial_id;
     params.callback = base::BindOnce(&BrowserCommandHandler::OnTutorialStarted,

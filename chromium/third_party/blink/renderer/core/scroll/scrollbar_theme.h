@@ -78,17 +78,16 @@ class CORE_EXPORT ScrollbarTheme {
 
   virtual bool IsSolidColor() const { return false; }
   virtual SkColor4f GetSolidColor(
-      const absl::optional<Color>& css_thumb_color) const {
+      const std::optional<Color>& css_thumb_color) const {
     NOTREACHED_NORETURN();
   }
   virtual bool UsesOverlayScrollbars() const { return false; }
   virtual bool UsesFluentOverlayScrollbars() const { return false; }
   virtual gfx::Rect ShrinkMainThreadedMinimalModeThumbRect(
-      Scrollbar&,
-      gfx::Rect& rect) const {
+      const Scrollbar&,
+      const gfx::Rect& rect) const {
     return rect;
   }
-  virtual void UpdateScrollbarOverlayColorTheme(const Scrollbar&) {}
 
   // If true, scrollbars that become invisible (i.e. overlay scrollbars that
   // fade out) should be marked as disabled. This option exists since Mac and
@@ -120,6 +119,7 @@ class CORE_EXPORT ScrollbarTheme {
                                  const DisplayItemClient&,
                                  const gfx::Rect& corner_rect,
                                  mojom::blink::ColorScheme color_scheme,
+                                 bool in_forced_colors,
                                  const ui::ColorProvider* color_provider);
   virtual void PaintTickmarks(GraphicsContext&,
                               const Scrollbar&,

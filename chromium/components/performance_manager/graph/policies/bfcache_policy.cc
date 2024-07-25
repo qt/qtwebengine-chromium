@@ -64,11 +64,11 @@ int BackgroundCacheSizeOnCriticalPressure() {
 }
 
 bool PageMightHaveFramesInBFCache(const PageNode* page_node) {
-  // TODO(crbug.com/1211368): Use PageState when that actually works.
+  // TODO(crbug.com/40182881): Use PageState when that actually works.
   auto main_frame_nodes = page_node->GetMainFrameNodes();
   if (main_frame_nodes.size() == 1)
     return false;
-  for (const auto* main_frame_node : main_frame_nodes) {
+  for (const FrameNode* main_frame_node : main_frame_nodes) {
     if (!main_frame_node->IsCurrent())
       return true;
   }

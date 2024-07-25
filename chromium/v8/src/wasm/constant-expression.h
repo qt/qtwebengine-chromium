@@ -22,6 +22,7 @@ namespace internal {
 
 enum class MessageTemplate;
 class WasmTrustedInstanceData;
+class Zone;
 
 namespace wasm {
 
@@ -38,12 +39,6 @@ class ConstantExpression {
     kRefFunc,
     kWireBytesRef,
     kLastKind = kWireBytesRef
-  };
-
-  union Value {
-    int32_t i32_value;
-    uint32_t index_or_offset;
-    HeapType::Representation repr;
   };
 
   ConstantExpression() : bit_field_(KindField::encode(kEmpty)) {}
@@ -131,9 +126,11 @@ V8_INLINE WasmValue to_value(ValueOrError result) {
 // Evaluates a constant expression.
 // Returns a {WasmValue} if the evaluation succeeds, or an error as a
 // {MessageTemplate} if it fails.
+// Resets {zone} so make sure it contains no useful data.
 ValueOrError EvaluateConstantExpression(
     Zone* zone, ConstantExpression expr, ValueType expected, Isolate* isolate,
-    Handle<WasmTrustedInstanceData> trusted_instance_data);
+    Handle<WasmTrustedInstanceData> trusted_instance_data,
+    Handle<WasmTrustedInstanceData> shared_trusted_instance_data);
 
 }  // namespace wasm
 }  // namespace internal

@@ -275,7 +275,8 @@ class TestClient : public SafeBrowsingDatabaseManager::Client {
                                 const std::string& threat_hash) override {
     ASSERT_EQ(expected_urls_[0], url);
     ASSERT_EQ(expected_sb_threat_type_, threat_type);
-    ASSERT_EQ(threat_type == SB_THREAT_TYPE_SAFE, threat_hash.empty());
+    ASSERT_EQ(threat_type == SBThreatType::SB_THREAT_TYPE_SAFE,
+              threat_hash.empty());
     on_check_resource_url_result_called_ = true;
   }
 
@@ -319,7 +320,8 @@ class TestAllowlistClient : public SafeBrowsingDatabaseManager::Client {
 
   void OnCheckAllowlistUrlResult(bool is_allowlisted) override {
     EXPECT_EQ(match_expected_, is_allowlisted);
-    EXPECT_EQ(SB_THREAT_TYPE_CSD_ALLOWLIST, expected_sb_threat_type_);
+    EXPECT_EQ(SBThreatType::SB_THREAT_TYPE_CSD_ALLOWLIST,
+              expected_sb_threat_type_);
     callback_called_ = true;
   }
 
@@ -392,6 +394,8 @@ class FakeV4LocalDatabaseManager : public V4LocalDatabaseManager {
 
 class V4LocalDatabaseManagerTest : public PlatformTest {
  public:
+  using enum SBThreatType;
+
   V4LocalDatabaseManagerTest() : task_runner_(new base::TestSimpleTaskRunner) {}
 
   void SetUp() override {
@@ -424,7 +428,7 @@ class V4LocalDatabaseManagerTest : public PlatformTest {
   }
 
   void TearDown() override {
-    StopLocalDatabaseManager();
+    ShutdownLocalDatabaseManager();
 
     PlatformTest::TearDown();
   }
@@ -1777,67 +1781,6 @@ TEST_F(V4LocalDatabaseManagerTest, SyncedLists) {
   EXPECT_EQ(expected_lists, synced_lists);
 }
 
-TEST_F(V4LocalDatabaseManagerTest, DeleteUnusedStoreFileDoesNotExist) {
-  auto store_file_path = base_dir_.GetPath().AppendASCII("IpMalware.store");
-  ASSERT_FALSE(base::PathExists(store_file_path));
-
-  // Reset the database manager so that DeleteUnusedStoreFiles is called.
-  ResetLocalDatabaseManager();
-  WaitForTasksOnTaskRunner();
-  ASSERT_FALSE(base::PathExists(store_file_path));
-}
-
-TEST_F(V4LocalDatabaseManagerTest, DeleteUnusedStoreFileSuccess) {
-  auto store_file_path = base_dir_.GetPath().AppendASCII("IpMalware.store");
-  ASSERT_FALSE(base::PathExists(store_file_path));
-
-  // Now write an empty file.
-  base::WriteFile(store_file_path, "", 0);
-  ASSERT_TRUE(base::PathExists(store_file_path));
-
-  // Reset the database manager so that DeleteUnusedStoreFiles is called.
-  ResetLocalDatabaseManager();
-  WaitForTasksOnTaskRunner();
-  ASSERT_FALSE(base::PathExists(store_file_path));
-}
-
-TEST_F(V4LocalDatabaseManagerTest, DeleteUnusedStoreFileRandomFileNotDeleted) {
-  auto random_store_file_path = base_dir_.GetPath().AppendASCII("random.store");
-  ASSERT_FALSE(base::PathExists(random_store_file_path));
-
-  // Now write an empty file.
-  base::WriteFile(random_store_file_path, "", 0);
-  ASSERT_TRUE(base::PathExists(random_store_file_path));
-
-  // Reset the database manager so that DeleteUnusedStoreFiles is called.
-  ResetLocalDatabaseManager();
-  WaitForTasksOnTaskRunner();
-  ASSERT_TRUE(base::PathExists(random_store_file_path));
-
-  // Cleanup
-  base::DeleteFile(random_store_file_path);
-}
-
-TEST_F(V4LocalDatabaseManagerTest, DeleteAssociatedFile) {
-  auto store_file_path = base_dir_.GetPath().AppendASCII("IpMalware.store");
-  ASSERT_FALSE(base::PathExists(store_file_path));
-
-  // Now write an empty file.
-  base::WriteFile(store_file_path, "", 0);
-  ASSERT_TRUE(base::PathExists(store_file_path));
-
-  // Now write a helper file.
-  auto helper_file_path =
-      base_dir_.GetPath().AppendASCII("IpMalware.store.4_timestamp");
-  base::WriteFile(helper_file_path, "", 0);
-  ASSERT_TRUE(base::PathExists(helper_file_path));
-
-  // Reset the database manager so that DeleteUnusedStoreFiles is called.
-  ResetLocalDatabaseManager();
-  WaitForTasksOnTaskRunner();
-  EXPECT_FALSE(base::PathExists(store_file_path));
-}
-
 TEST_F(V4LocalDatabaseManagerTest, TestQueuedChecksMatchArtificialPrefixes) {
   const GURL url("https://www.example.com/");
   TestClient client(SB_THREAT_TYPE_URL_MALWARE, url);
@@ -1851,6 +1794,12 @@ TEST_F(V4LocalDatabaseManagerTest, TestQueuedChecksMatchArtificialPrefixes) {
       "mark_as_malware", "https://example.com/");
   WaitForTasksOnTaskRunner();
 
+  if (kMmapSafeBrowsingDatabaseAsync.Get()) {
+    EXPECT_FALSE(client.on_check_browse_url_result_called());
+    WaitForTasksOnTaskRunner();
+  }
+
+  EXPECT_TRUE(client.on_check_browse_url_result_called());
   EXPECT_TRUE(GetQueuedChecks().empty());
 }
 

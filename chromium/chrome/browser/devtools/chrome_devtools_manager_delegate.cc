@@ -32,6 +32,7 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_tab_helper.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/chrome_switches.h"
@@ -55,6 +56,12 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/switches.h"
 #include "ui/views/controls/webview/webview.h"
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chromeos/constants/chromeos_features.h"
+#include "chromeos/constants/pref_names.h"
+#include "components/prefs/pref_service.h"
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_switches.h"
@@ -111,6 +118,27 @@ bool GetExtensionInfo(content::WebContents* wc,
   return true;
 }
 
+policy::DeveloperToolsPolicyHandler::Availability GetDevToolsAvailability(
+    Profile* profile) {
+  using Availability = policy::DeveloperToolsPolicyHandler::Availability;
+  Availability availability =
+      policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(profile);
+#if BUILDFLAG(IS_CHROMEOS)
+  // On ChromeOS disable dev tools for captive portal signin windows to prevent
+  // them from being used for general navigation.
+  if (chromeos::features::IsCaptivePortalPopupWindowEnabled() &&
+      availability != Availability::kDisallowed) {
+    const PrefService::Preference* const captive_portal_pref =
+        profile->GetPrefs()->FindPreference(
+            chromeos::prefs::kCaptivePortalSignin);
+    if (captive_portal_pref && captive_portal_pref->GetValue()->GetBool()) {
+      availability = Availability::kDisallowed;
+    }
+  }
+#endif
+  return availability;
+}
+
 ChromeDevToolsManagerDelegate* g_instance;
 
 }  // namespace
@@ -165,6 +193,28 @@ void ChromeDevToolsManagerDelegate::Inspect(
     content::DevToolsAgentHost* agent_host) {
   DevToolsWindow::OpenDevToolsWindow(agent_host, nullptr,
                                      DevToolsOpenedByAction::kInspectLink);
+}
+
+void ChromeDevToolsManagerDelegate::Activate(
+    content::DevToolsAgentHost* agent_host) {
+  auto* web_contents = agent_host->GetWebContents();
+  if (!web_contents) {
+    return;
+  }
+
+  // Brings the tab to foreground. We need to do this in case the devtools
+  // window is undocked and this is being called from another tab that is in
+  // the foreground.
+  web_contents->GetDelegate()->ActivateContents(web_contents);
+
+  // Brings a undocked devtools window to the foreground.
+  DevToolsWindow* devtools_window =
+      DevToolsWindow::GetInstanceForInspectedWebContents(
+          agent_host->GetWebContents());
+  if (!devtools_window) {
+    return;
+  }
+  devtools_window->ActivateWindow();
 }
 
 void ChromeDevToolsManagerDelegate::HandleCommand(
@@ -269,8 +319,14 @@ bool ChromeDevToolsManagerDelegate::AllowInspection(
     Profile* profile,
     const extensions::Extension* extension) {
   using Availability = policy::DeveloperToolsPolicyHandler::Availability;
-  Availability availability =
-      policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(profile);
+  Availability availability;
+  if (extension) {
+    availability =
+        policy::DeveloperToolsPolicyHandler::GetEffectiveAvailability(profile);
+  } else {
+    // Perform additional checks for browser windows (extension == null).
+    availability = GetDevToolsAvailability(profile);
+  }
   switch (availability) {
     case Availability::kDisallowed:
       return false;
@@ -308,8 +364,17 @@ bool ChromeDevToolsManagerDelegate::AllowInspection(
       return false;
     case Availability::kAllowed:
       return true;
-    case Availability::kDisallowedForForceInstalledExtensions:
-      return !web_app || !web_app->IsKioskInstalledApp();
+    case Availability::kDisallowedForForceInstalledExtensions: {
+      if (!web_app) {
+        return true;
+      }
+      // DevTools should be blocked for Kiosk apps and policy-installed IWAs.
+      if (web_app->IsKioskInstalledApp() ||
+          web_app->IsIwaPolicyInstalledApp()) {
+        return false;
+      }
+      return true;
+    }
     default:
       NOTREACHED() << "Unknown developer tools policy";
       return true;

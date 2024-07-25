@@ -14,12 +14,14 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "base/types/strong_alias.h"
 #include "components/autofill/core/browser/autofill_client.h"
-#include "components/autofill/core/browser/ui/autofill_popup_delegate.h"
-#include "components/autofill/core/browser/ui/popup_item_ids.h"
+#include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
+#include "components/autofill/core/browser/ui/suggestion_type.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
+#include "components/password_manager/core/browser/password_suggestion_flow.h"
+#include "components/password_manager/core/browser/password_suggestion_generator.h"
 #include "ui/gfx/image/image.h"
 
 namespace favicon_base {
@@ -34,9 +36,10 @@ namespace password_manager {
 
 class PasswordManagerClient;
 class PasswordManagerDriver;
+class PasswordSuggestionGenerator;
 
 // This class is responsible for filling password forms.
-class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
+class PasswordAutofillManager : public autofill::AutofillSuggestionDelegate {
  public:
   PasswordAutofillManager(PasswordManagerDriver* password_manager_driver,
                           autofill::AutofillClient* autofill_client,
@@ -47,10 +50,11 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
 
   ~PasswordAutofillManager() override;
 
-  // AutofillPopupDelegate implementation.
-  void OnPopupShown() override;
-  void OnPopupHidden() override;
-
+  // AutofillSuggestionDelegate implementation.
+  absl::variant<autofill::AutofillDriver*, PasswordManagerDriver*> GetDriver()
+      override;
+  void OnSuggestionsShown() override;
+  void OnSuggestionsHidden() override;
   void DidSelectSuggestion(const autofill::Suggestion& suggestion) override;
   void DidAcceptSuggestion(const autofill::Suggestion& suggestion,
                            const SuggestionPosition& position) override;
@@ -58,10 +62,7 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
       const autofill::Suggestion&) override;
   bool RemoveSuggestion(const autofill::Suggestion& suggestion) override;
   void ClearPreviewedForm() override;
-  autofill::PopupType GetPopupType() const override;
   autofill::FillingProduct GetMainFillingProduct() const override;
-  int32_t GetWebContentsPopupControllerAxId() const override;
-  void RegisterDeletionCallback(base::OnceClosure deletion_callback) override;
 
   // Invoked when a password mapping is added.
   void OnAddPasswordFillData(const autofill::PasswordFormFillData& fill_data);
@@ -70,13 +71,14 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   void DeleteFillData();
 
   // Handles a request from the renderer to show a popup with the suggestions
-  // from the password manager. |options| should be a bitwise mask of
-  // autofill::ShowPasswordSuggestionsOptions values.
-  void OnShowPasswordSuggestions(autofill::FieldRendererId element_id,
-                                 base::i18n::TextDirection text_direction,
-                                 const std::u16string& typed_username,
-                                 int options,
-                                 const gfx::RectF& bounds);
+  // from the password manager.
+  void OnShowPasswordSuggestions(
+      autofill::FieldRendererId element_id,
+      autofill::AutofillSuggestionTriggerSource trigger_source,
+      base::i18n::TextDirection text_direction,
+      const std::u16string& typed_username,
+      ShowWebAuthnCredentials show_webauthn_credentials,
+      const gfx::RectF& bounds);
 
   // If there are relevant credentials for the current frame show them and
   // return true. Otherwise, return false.
@@ -107,24 +109,14 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   // A public version of PreviewSuggestion(), only for use in tests.
   bool PreviewSuggestionForTest(const std::u16string& username);
 
+  void SetManualFallbackFlowForTest(
+      std::unique_ptr<PasswordSuggestionFlow> manual_fallback_flow);
+
+  inline PasswordSuggestionFlow* manual_fallback_flow() {
+    return manual_fallback_flow_.get();
+  }
+
  private:
-  using ForPasswordField = base::StrongAlias<class ForPasswordFieldTag, bool>;
-  using OffersGeneration = base::StrongAlias<class OffersGenerationTag, bool>;
-  using ShowAllPasswords = base::StrongAlias<class ShowAllPasswordsTag, bool>;
-  using ShowPasswordSuggestions =
-      base::StrongAlias<class ShowPasswordSuggestionsTag, bool>;
-  using ShowWebAuthnCredentials =
-      base::StrongAlias<class ShowWebAuthnCredentialsTag, bool>;
-
-  // Builds the suggestions used to show or update the autofill popup.
-  std::vector<autofill::Suggestion> BuildSuggestions(
-      const std::u16string& username_filter,
-      ForPasswordField for_password_field,
-      ShowAllPasswords show_all_passwords,
-      OffersGeneration for_generation,
-      ShowPasswordSuggestions show_password_suggestions,
-      ShowWebAuthnCredentials show_webauthn_credentials);
-
   // Called just before showing a popup to log which |suggestions| were shown.
   void LogMetricsForSuggestions(
       const std::vector<autofill::Suggestion>& suggestions) const;
@@ -135,30 +127,30 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
                  const std::vector<autofill::Suggestion>& suggestions);
 
   // Validates and forwards the given objects to the autofill client.
-  void UpdatePopup(const std::vector<autofill::Suggestion>& suggestions);
+  void UpdatePopup(std::vector<autofill::Suggestion> suggestions);
 
   // Attempts to find and fill the suggestions with the user name |username| and
-  // the `popup_item_id` indicating the store (account-stored or local). Returns
-  // true if it was successful.
+  // the `type` indicating the store (account-stored or local).
+  // Returns true if it was successful.
   bool FillSuggestion(const std::u16string& username,
-                      autofill::PopupItemId popup_item_id);
+                      autofill::SuggestionType type);
 
   // Attempts to find and preview the suggestions with the user name |username|
-  // and the `popup_item_id` indicating the store (account-stored or local).
-  // Returns true if it was successful.
+  // and the `type` indicating the store (account-stored or
+  // local). Returns true if it was successful.
   bool PreviewSuggestion(const std::u16string& username,
-                         autofill::PopupItemId popup_item_id);
+                         autofill::SuggestionType type);
 
   // If one of the login mappings in |fill_data| matches |current_username| and
-  // `popup_item_id` (indicating whether a credential is stored in account or
-  // locally), return true and assign the password and the original signon
+  // `type` (indicating whether a credential is stored in account
+  // or locally), return true and assign the password and the original signon
   // realm to |password_and_meta_data|. Note that if the credential comes from
   // the same realm as the one we're filling to, the |realm| field will be left
   // empty, as this is the behavior of |PasswordFormFillData|.
   // Otherwise, returns false and leaves |password_and_meta_data| untouched.
   bool GetPasswordAndMetadataForUsername(
       const std::u16string& current_username,
-      autofill::PopupItemId popup_item_id,
+      autofill::SuggestionType type,
       const autofill::PasswordFormFillData& fill_data,
       autofill::PasswordAndMetadata* password_and_meta_data);
 
@@ -170,30 +162,35 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   // store is canceled on navigation.
   void OnFaviconReady(const favicon_base::FaviconImageResult& result);
 
-  // Replaces |unlock_item| with a loading symbol and triggers a reauth flow to
-  // opt in for the account-scoped password storage, with
-  // OnUnlockReauthCompleted as callback.
-  void OnUnlockItemAccepted(autofill::PopupItemId unlock_item);
+  // Replaces `type` with a loading symbol and triggers a reauth flow to opt in
+  // for the account-scoped password storage, with OnUnlockReauthCompleted as
+  // callback.
+  void OnUnlockItemAccepted(autofill::SuggestionType type);
 
-  // If reauth failed, resets the suggestions to show the |unlock_item| again.
-  // Otherwise, triggers either generation or filling based on the |unlock_item|
-  // that was clicked.
+  // If reauth failed, resets the suggestions to show the `type` again.
+  // Otherwise, triggers either generation or filling based on the `type` that
+  // was clicked.
   void OnUnlockReauthCompleted(
-      autofill::PopupItemId unlock_item,
-      autofill::AutofillClient::PopupOpenArgs reopen_args,
+      autofill::SuggestionType type,
       PasswordManagerClient::ReauthSucceeded reauth_succeeded);
 
   // Called when the biometric reauth that guards password filling completes.
-  // `popup_item_id` identifies the suggestion that was selected for filling.
+  // `type` identifies the suggestion that was selected for
+  // filling.
   void OnBiometricReauthCompleted(const std::u16string& username_value,
-                                  autofill::PopupItemId popup_item_id,
+                                  autofill::SuggestionType type,
                                   bool auth_succeded);
 
   // Cancels an ongoing biometric re-authentication. Usually, because
   // the filling scope has changed or because |this| is being destroyed.
   void CancelBiometricReauthIfOngoing();
 
+  // Hides the popup.
+  void HidePopup();
+
   std::unique_ptr<autofill::PasswordFormFillData> fill_data_;
+
+  password_manager::PasswordSuggestionGenerator suggestion_generator_;
 
   // Contains the favicon for the credentials offered on the current page.
   gfx::Image page_favicon_;
@@ -205,8 +202,9 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
 
   const raw_ptr<PasswordManagerClient> password_client_;
 
-  // If not null then it will be called in destructor.
-  base::OnceClosure deletion_callback_;
+  // The arguments of the last ShowPopup() call and UpdatePopup(), to be re-used
+  // by OnUnlockReauthCompleted().
+  autofill::AutofillClient::PopupOpenArgs last_popup_open_args_;
 
   // Used to track a requested favicon.
   base::CancelableTaskTracker favicon_tracker_;
@@ -215,6 +213,11 @@ class PasswordAutofillManager : public autofill::AutofillPopupDelegate {
   // to be cleared before the password is filled. Currently only used
   // on Android, Mac and Windows.
   std::unique_ptr<device_reauth::DeviceAuthenticator> authenticator_;
+
+  // Initialized when the user triggers the password manual fallback. This flow
+  // reads all user passworns upon initialization. Hence it's reset upon main
+  // frame navigation or if this `PasswordAutofillManager` is destroyed.
+  std::unique_ptr<PasswordSuggestionFlow> manual_fallback_flow_;
 
   base::WeakPtrFactory<PasswordAutofillManager> weak_ptr_factory_{this};
 };

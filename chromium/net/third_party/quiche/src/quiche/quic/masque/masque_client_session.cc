@@ -68,6 +68,19 @@ MasqueClientSession::MasqueClientSession(
                             crypto_config),
       masque_mode_(masque_mode),
       uri_template_(uri_template),
+      owner_(owner) {
+  // We don't currently use `masque_mode_` but will in the future. To silence
+  // clang's `-Wunused-private-field` warning for this when building QUICHE for
+  // Chrome, add a use of it here.
+  (void)masque_mode_;
+}
+
+MasqueClientSession::MasqueClientSession(
+    const QuicConfig& config, const ParsedQuicVersionVector& supported_versions,
+    QuicConnection* connection, const QuicServerId& server_id,
+    QuicCryptoClientConfig* crypto_config, Owner* owner)
+    : QuicSpdyClientSession(config, supported_versions, connection, server_id,
+                            crypto_config),
       owner_(owner) {}
 
 void MasqueClientSession::OnMessageAcked(QuicMessageId message_id,
@@ -105,7 +118,8 @@ MasqueClientSession::GetOrCreateConnectUdpClientState(
                         &parsed_uri_template);
   if (!parsed_uri_template.path.is_nonempty()) {
     QUIC_BUG(bad URI template path)
-        << "Cannot parse path from URI template " << uri_template_;
+        << connection_id() << ": Cannot parse path from URI template \""
+        << uri_template_ << "\"";
     return nullptr;
   }
   std::string path = uri_template_.substr(parsed_uri_template.path.begin,
@@ -169,7 +183,6 @@ MasqueClientSession::GetOrCreateConnectUdpClientState(
   headers[":scheme"] = scheme;
   headers[":authority"] = authority;
   headers[":path"] = canonicalized_path;
-  headers["connect-udp-version"] = "12";
   AddAdditionalHeaders(headers, url);
   QUIC_DVLOG(1) << "Sending request headers: " << headers.DebugString();
   size_t bytes_sent =
@@ -483,7 +496,7 @@ void MasqueClientSession::OnStreamClosed(QuicStreamId stream_id) {
 }
 
 bool MasqueClientSession::OnSettingsFrame(const SettingsFrame& frame) {
-  QUIC_DLOG(INFO) << "Received SETTINGS: " << frame;
+  QUIC_DLOG(INFO) << connection_id() << " Received SETTINGS: " << frame;
   if (!QuicSpdyClientSession::OnSettingsFrame(frame)) {
     QUIC_DLOG(ERROR) << "Failed to parse received settings";
     return false;

@@ -106,7 +106,7 @@ Tagged<Object> NewError(Isolate* isolate, RuntimeArguments args,
   int message_id_smi = args.smi_value_at(0);
 
   constexpr int kMaxMessageArgs = 3;
-  Handle<Object> message_args[kMaxMessageArgs];
+  DirectHandle<Object> message_args[kMaxMessageArgs];
   int num_message_args = 0;
   while (num_message_args < kMaxMessageArgs &&
          args.length() > num_message_args + 1) {
@@ -243,7 +243,7 @@ RUNTIME_FUNCTION(Runtime_NewError) {
 RUNTIME_FUNCTION(Runtime_NewForeign) {
   HandleScope scope(isolate);
   DCHECK_EQ(0, args.length());
-  return *isolate->factory()->NewForeign(kNullAddress);
+  return *isolate->factory()->NewForeign<kGenericForeignTag>(kNullAddress);
 }
 
 RUNTIME_FUNCTION(Runtime_NewTypeError) {
@@ -818,6 +818,17 @@ RUNTIME_FUNCTION(Runtime_SharedValueBarrierSlow) {
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, shared_value, Object::ShareSlow(isolate, value, kThrowOnError));
   return *shared_value;
+}
+
+RUNTIME_FUNCTION(Runtime_InvalidateDependentCodeForConstTrackingLet) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  Handle<ConstTrackingLetCell> const_tracking_let_cell =
+      Handle<ConstTrackingLetCell>::cast(args.at<HeapObject>(0));
+  DependentCode::DeoptimizeDependencyGroups(
+      isolate, *const_tracking_let_cell,
+      DependentCode::kConstTrackingLetChangedGroup);
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 }  // namespace internal

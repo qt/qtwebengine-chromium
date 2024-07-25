@@ -24,6 +24,7 @@
 #include "content/browser/renderer_host/frame_token_message_queue.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
+#include "content/browser/renderer_host/render_widget_host_factory.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/site_instance_group.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -120,13 +121,12 @@ class RenderWidgetHostViewChildFrameTest
     // Create a RenderWidgetHostImpl which will be associated with an
     // RenderWidgetHostViewChildFrame, to simulate what would be done for an
     // OOPIF.
-    widget_host_ = RenderWidgetHostImpl::Create(
+    widget_host_ = RenderWidgetHostFactory::Create(
         /*frame_tree=*/&contents()->GetPrimaryFrameTree(), &delegate_,
         RenderWidgetHostImpl::DefaultFrameSinkId(*site_instance_group_,
                                                  routing_id),
         site_instance_group_->GetSafeRef(), routing_id,
-        /*hidden=*/false, /*renderer_initiated_creation=*/false,
-        std::make_unique<FrameTokenMessageQueue>());
+        /*hidden=*/false, /*renderer_initiated_creation=*/false);
 
     widget_host_->BindWidgetInterfaces(
         mojo::AssociatedRemote<blink::mojom::WidgetHost>()
@@ -147,7 +147,7 @@ class RenderWidgetHostViewChildFrameTest
     EXPECT_EQ(screen_infos, view_->GetScreenInfos());
 
     test_frame_connector_ = std::make_unique<MockFrameConnector>();
-    test_frame_connector_->SetView(view_);
+    test_frame_connector_->SetView(view_, false);
     view_->SetFrameConnector(test_frame_connector_.get());
   }
 
@@ -292,7 +292,7 @@ TEST_F(RenderWidgetHostViewChildFrameTest,
   visual_properties.local_frame_size = compositor_viewport_pixel_rect.size();
   visual_properties.capture_sequence_number = 123u;
   visual_properties.local_surface_id = local_surface_id;
-  visual_properties.root_widget_window_segments.emplace_back(1, 2, 3, 4);
+  visual_properties.root_widget_viewport_segments.emplace_back(1, 2, 3, 4);
 
   base::RunLoop().RunUntilIdle();
   widget_.ClearVisualProperties();
@@ -310,9 +310,9 @@ TEST_F(RenderWidgetHostViewChildFrameTest,
     EXPECT_EQ(rect_in_local_root.size(), sent_visual_properties.new_size);
     EXPECT_EQ(local_surface_id, sent_visual_properties.local_surface_id);
     EXPECT_EQ(123u, sent_visual_properties.capture_sequence_number);
-    EXPECT_EQ(1u, sent_visual_properties.root_widget_window_segments.size());
+    EXPECT_EQ(1u, sent_visual_properties.root_widget_viewport_segments.size());
     EXPECT_EQ(gfx::Rect(1, 2, 3, 4),
-              sent_visual_properties.root_widget_window_segments[0]);
+              sent_visual_properties.root_widget_viewport_segments[0]);
   }
 }
 

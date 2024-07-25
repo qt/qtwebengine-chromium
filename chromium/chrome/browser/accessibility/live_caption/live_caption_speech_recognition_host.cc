@@ -163,7 +163,8 @@ bool IsLanguageInstallable(const std::string& language_code) {
     }
   }
 
-  return base::Contains(speech::GetEnabledLanguages(), language_code);
+  return base::Contains(speech::GetLiveCaptionEnabledLanguages(),
+                        language_code);
 }
 
 }  // namespace
@@ -409,7 +410,8 @@ void LiveCaptionSpeechRecognitionHost::OnTranslationCallback(
     // to non-ideographic locale. The Speech On-Device API (SODA) automatically
     // prepends a space to recognition events after a final event, but only for
     // non-ideographic locales.
-    // TODO(crbug.com/1426899): Consider moving this to the LiveTranslateController.
+    // TODO(crbug.com/40261536): Consider moving this to the
+    // LiveTranslateController.
     if (is_final) {
       formatted_result += " ";
     }

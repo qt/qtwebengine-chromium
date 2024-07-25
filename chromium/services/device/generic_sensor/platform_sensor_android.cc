@@ -7,8 +7,8 @@
 #include "base/functional/bind.h"
 #include "services/device/generic_sensor/jni_headers/PlatformSensor_jni.h"
 
-using base::android::AttachCurrentThread;
 using base::android::JavaRef;
+using jni_zero::AttachCurrentThread;
 
 namespace device {
 namespace {
@@ -27,10 +27,10 @@ void StopSensorBlocking(base::android::ScopedJavaGlobalRef<jobject> j_object) {
 scoped_refptr<PlatformSensorAndroid> PlatformSensorAndroid::Create(
     mojom::SensorType type,
     SensorReadingSharedBuffer* reading_buffer,
-    PlatformSensorProvider* provider,
+    base::WeakPtr<PlatformSensorProvider> provider,
     const JavaRef<jobject>& java_provider) {
   auto sensor = base::MakeRefCounted<PlatformSensorAndroid>(
-      type, reading_buffer, provider);
+      type, reading_buffer, std::move(provider));
   JNIEnv* env = AttachCurrentThread();
   sensor->j_object_.Reset(
       Java_PlatformSensor_create(env, java_provider, static_cast<jint>(type),
@@ -45,8 +45,8 @@ scoped_refptr<PlatformSensorAndroid> PlatformSensorAndroid::Create(
 PlatformSensorAndroid::PlatformSensorAndroid(
     mojom::SensorType type,
     SensorReadingSharedBuffer* reading_buffer,
-    PlatformSensorProvider* provider)
-    : PlatformSensor(type, reading_buffer, provider) {}
+    base::WeakPtr<PlatformSensorProvider> provider)
+    : PlatformSensor(type, reading_buffer, std::move(provider)) {}
 
 PlatformSensorAndroid::~PlatformSensorAndroid() {
   if (j_object_) {

@@ -5,20 +5,19 @@
 #ifndef COMPONENTS_SUPERVISED_USER_CORE_BROWSER_FETCHER_CONFIG_H_
 #define COMPONENTS_SUPERVISED_USER_CORE_BROWSER_FETCHER_CONFIG_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
-#include "base/strings/string_piece.h"
 #include "base/types/strong_alias.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "net/base/backoff_entry.h"
 #include "net/base/request_priority.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace supervised_user {
@@ -35,10 +34,10 @@ net::NetworkTrafficAnnotationTag CreatePermissionRequestTag();
 struct AccessTokenConfig {
   // Must be set in actual configs. See
   // signin::PrimaryAccountAccessTokenFetcher::Mode docs.
-  absl::optional<signin::PrimaryAccountAccessTokenFetcher::Mode> mode;
+  std::optional<signin::PrimaryAccountAccessTokenFetcher::Mode> mode;
 
   // The OAuth 2.0 permission scope to request the authorization token.
-  base::StringPiece oauth2_scope;
+  std::string_view oauth2_scope;
 };
 
 // Configuration bundle for the ProtoFetcher.
@@ -72,12 +71,12 @@ struct FetcherConfig {
   const Method method = Method::kUndefined;
 
   // Basename for histograms. When unset, metrics won't be emitted.
-  absl::optional<std::string_view> histogram_basename;
+  std::optional<std::string_view> histogram_basename;
 
   net::NetworkTrafficAnnotationTag (*const traffic_annotation)() = nullptr;
 
   // Policy for retrying patterns that will be applied to transient errors.
-  absl::optional<net::BackoffEntry::Policy> backoff_policy;
+  std::optional<net::BackoffEntry::Policy> backoff_policy;
 
   AccessTokenConfig access_token_config;
 
@@ -124,23 +123,19 @@ constexpr FetcherConfig kClassifyUrlConfig = {
     .request_priority = net::IDLE,
 };
 
-constexpr FetcherConfig kClassifyUrlConfigWithHighestPriority = {
+constexpr FetcherConfig kClassifyUrlConfigWaitUntilAccessTokenAvailable = {
     .service_path = "/kidsmanagement/v1/people/me:classifyUrl",
     .method = FetcherConfig::Method::kPost,
     .histogram_basename = "FamilyLinkUser.ClassifyUrlRequest",
     .traffic_annotation = annotations::ClassifyUrlTag,
     .access_token_config =
         {
-            // Fail the fetch right away when access token is not immediately
-            // available.
-            // TODO(b/301931929): consider using `kWaitUntilAvailable` to
-            // improve reliability.
-            .mode = signin::PrimaryAccountAccessTokenFetcher::Mode::kImmediate,
+            .mode = signin::PrimaryAccountAccessTokenFetcher::Mode::
+                kWaitUntilAvailable,
             // TODO(b/284523446): Refer to GaiaConstants rather than literal.
             .oauth2_scope = "https://www.googleapis.com/auth/kid.permission",
         },
-    // Fetch is on critical path for the rendering.
-    .request_priority = net::HIGHEST,
+    .request_priority = net::IDLE,
 };
 
 constexpr FetcherConfig kListFamilyMembersConfig{

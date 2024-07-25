@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_trigger_details.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
+#include "components/autofill/core/browser/test_form_filler.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
 namespace autofill {
@@ -26,7 +27,7 @@ class TestPersonalDataManager;
 
 class TestBrowserAutofillManager : public BrowserAutofillManager {
  public:
-  TestBrowserAutofillManager(AutofillDriver* driver, AutofillClient* client);
+  explicit TestBrowserAutofillManager(AutofillDriver* driver);
 
   TestBrowserAutofillManager(const TestBrowserAutofillManager&) = delete;
   TestBrowserAutofillManager& operator=(const TestBrowserAutofillManager&) =
@@ -43,19 +44,18 @@ class TestBrowserAutofillManager : public BrowserAutofillManager {
                    const std::vector<FormGlobalId>& removed_forms) override;
   void OnTextFieldDidChange(const FormData& form,
                             const FormFieldData& field,
-                            const gfx::RectF& bounding_box,
                             const base::TimeTicks timestamp) override;
   void OnDidFillAutofillFormData(const FormData& form,
                                  const base::TimeTicks timestamp) override;
   void OnAskForValuesToFill(
       const FormData& form,
       const FormFieldData& field,
-      const gfx::RectF& bounding_box,
+      const gfx::Rect& caret_bounds,
       AutofillSuggestionTriggerSource trigger_source) override;
-  void OnJavaScriptChangedAutofilledValue(
-      const FormData& form,
-      const FormFieldData& field,
-      const std::u16string& old_value) override;
+  void OnJavaScriptChangedAutofilledValue(const FormData& form,
+                                          const FormFieldData& field,
+                                          const std::u16string& old_value,
+                                          bool formatting_only) override;
   void OnFormSubmitted(const FormData& form,
                        const bool known_success,
                        const mojom::SubmissionSource source) override;
@@ -75,10 +75,6 @@ class TestBrowserAutofillManager : public BrowserAutofillManager {
   bool MaybeStartVoteUploadProcess(
       std::unique_ptr<FormStructure> form_structure,
       bool observed_submission) override;
-  // Immediately triggers the refill.
-  void ScheduleRefill(const FormData& form,
-                      const FormStructure& form_structure,
-                      const AutofillTriggerDetails& trigger_details) override;
 
   // Unique to TestBrowserAutofillManager:
 
@@ -112,7 +108,6 @@ class TestBrowserAutofillManager : public BrowserAutofillManager {
   void OnAskForValuesToFillTest(
       const FormData& form,
       const FormFieldData& field,
-      const gfx::RectF& bounding_box = {},
       AutofillSuggestionTriggerSource trigger_source =
           AutofillSuggestionTriggerSource::kTextFieldDidChange);
 

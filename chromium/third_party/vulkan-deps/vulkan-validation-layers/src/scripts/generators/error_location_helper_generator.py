@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2023 The Khronos Group Inc.
-# Copyright (c) 2023 Valve Corporation
+# Copyright (c) 2023-2024 The Khronos Group Inc.
+# Copyright (c) 2023-2024 Valve Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,8 +31,8 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2023 The Khronos Group Inc.
-            * Copyright (c) 2023 Valve Corporation
+            * Copyright (c) 2023-2024 The Khronos Group Inc.
+            * Copyright (c) 2023-2024 Valve Corporation
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -87,15 +87,18 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
         out.append('''
             #pragma once
             #include <string_view>
+            #include <sstream>
             #include <vulkan/vulkan.h>
+            #include "containers/custom_containers.h"
+            #include "generated/vk_api_version.h"
 
             namespace vvl {
             enum class Func {
                 Empty = 0,
             ''')
         # Want alpha-sort for ease of look at list while debugging
-        for index, command in enumerate(sorted(self.vk.commands.values()), start=1):
-            out.append(f'    {command.name} = {index},\n')
+        for command in sorted(self.vk.commands.values()):
+            out.append(f'    {command.name},\n')
         out.append('};\n')
 
         out.append('\n')
@@ -113,11 +116,53 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
         for field in self.fields:
             out.append(f'    {field},\n')
         out.append('};\n')
+        out.append('\n')
+
+        out.append('enum class Enum {\n')
+        out.append('    Empty = 0,\n')
+        # Want alpha-sort for ease of look at list while debugging
+        for enum in sorted(self.vk.enums.values()):
+            out.append(f'    {enum.name},\n')
+        out.append('};\n')
+
+        out.append('enum class FlagBitmask {\n')
+        out.append('    Empty = 0,\n')
+        # Want alpha-sort for ease of look at list while debugging
+        for bitmask in sorted(self.vk.bitmasks.values()):
+            out.append(f'    {bitmask.name},\n')
+        out.append('};\n')
+
+        out.append('\n')
+        out.append('// Need underscore prefix to not conflict with namespace, but still easy to match generation\n')
+        out.append('enum class Extension {\n')
+        out.append('    Empty = 0,\n')
+        for extension in sorted(self.vk.extensions.values(), key=lambda x: x.name):
+            out.append(f'    _{extension.name},\n')
+        out.append('};\n')
 
         out.append('''
+
+            // Sometimes you know the requirement list doesn't contain any version values
+            typedef small_vector<vvl::Extension, 2, size_t> Extensions;
+
+            struct Requirement {
+                const vvl::Extension extension;
+                const vvl::Version version;
+
+                Requirement(vvl::Extension extension_) : extension(extension_), version(vvl::Version::Empty) {}
+                Requirement(vvl::Version version_) : extension(vvl::Extension::Empty), version(version_) {}
+            };
+            typedef small_vector <Requirement, 2, size_t> Requirements;
+
             const char* String(Func func);
             const char* String(Struct structure);
             const char* String(Field field);
+            const char* String(Enum value);
+            const char* String(FlagBitmask value);
+            const char* String(Extension extension);
+            std::string String(const Extensions& extensions);
+            std::string String(const Requirement& requirement);
+            std::string String(const Requirements& requirements);
 
             bool IsFieldPointer(Field field);
             }  // namespace vvl
@@ -129,6 +174,7 @@ class ErrorLocationHelperOutputGenerator(BaseGenerator):
         out.append('''
             #include "error_location_helper.h"
             #include "containers/custom_containers.h"
+            #include "generated/vk_api_version.h"
             #include <assert.h>
             ''')
 
@@ -169,6 +215,38 @@ const char* String(Field field) {
     return table[(int)field].data();
 }
 
+const char* String(Enum value) {
+    static const std::string_view table[] = {
+    {"INVALID_EMPTY", 15}, // Enum::Empty
+''')
+        # Need to be alpha-sort also to match array indexing
+        for enum in sorted(self.vk.enums.values()):
+            out.append(f'    {{"{enum.name}", {len(enum.name) + 1}}},\n')
+        out.append('''    };
+    return table[(int)value].data();
+}
+
+const char* String(FlagBitmask value) {
+    static const std::string_view table[] = {
+    {"INVALID_EMPTY", 15}, // FlagBitmask::Empty
+''')
+        # Need to be alpha-sort also to match array indexing
+        for bitmask in sorted(self.vk.bitmasks.values()):
+            out.append(f'    {{"{bitmask.name}", {len(bitmask.name) + 1}}},\n')
+        out.append('''    };
+    return table[(int)value].data();
+}
+
+const char* String(Extension extension) {
+    static const std::string_view table[] = {
+    {"INVALID_EMPTY", 15}, // Extension::Empty
+''')
+        for extension in sorted(self.vk.extensions.values(), key=lambda x: x.name):
+            out.append(f'    {{"{extension.name}", {len(extension.name) + 1}}},\n')
+        out.append('''    };
+    return table[(int)extension].data();
+}
+
 bool IsFieldPointer(Field field) {
     switch (field) {
 ''')
@@ -179,7 +257,42 @@ bool IsFieldPointer(Field field) {
         return false;
     }
 }
-}  // namespace vvl
 // clang-format on
 ''')
+
+        out.append('''
+            std::string String(const Extensions& extensions) {
+                std::stringstream out;
+                for (size_t i = 0; i < extensions.size(); i++) {
+                    out << String(extensions[i]);
+                    if (i + 1 != extensions.size()) {
+                        out << " or ";
+                    }
+                }
+                return out.str();
+            }
+
+            std::string String(const Requirement& requirement) {
+                if (requirement.extension == Extension::Empty) {
+                    APIVersion api_version(static_cast<uint32_t>(requirement.version));
+                    return StringAPIVersion(api_version);
+                } else {
+                    return String(requirement.extension);
+                }
+            }
+
+            std::string String(const Requirements& requirements) {
+                std::stringstream out;
+                for (size_t i = 0; i < requirements.size(); i++) {
+                    out << String(requirements[i]);
+                    if (i + 1 != requirements.size()) {
+                        out << " or ";
+                    }
+                }
+                return out.str();
+            }
+
+        }  // namespace vvl
+        ''')
+
         self.write("".join(out))

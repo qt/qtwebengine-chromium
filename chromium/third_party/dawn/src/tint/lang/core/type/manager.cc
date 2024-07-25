@@ -36,12 +36,15 @@
 #include "src/tint/lang/core/type/f16.h"
 #include "src/tint/lang/core/type/f32.h"
 #include "src/tint/lang/core/type/i32.h"
+#include "src/tint/lang/core/type/invalid.h"
 #include "src/tint/lang/core/type/matrix.h"
 #include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/type.h"
 #include "src/tint/lang/core/type/u32.h"
 #include "src/tint/lang/core/type/vector.h"
 #include "src/tint/lang/core/type/void.h"
+#include "src/tint/utils/macros/compiler.h"
 
 namespace tint::core::type {
 
@@ -52,6 +55,10 @@ Manager::Manager(Manager&&) = default;
 Manager& Manager::operator=(Manager&& rhs) = default;
 
 Manager::~Manager() = default;
+
+const core::type::Invalid* Manager::invalid() {
+    return Get<core::type::Invalid>();
+}
 
 const core::type::Void* Manager::void_() {
     return Get<core::type::Void>();
@@ -197,7 +204,17 @@ const core::type::Pointer* Manager::ptr(core::AddressSpace address_space,
         access == core::Access::kUndefined ? DefaultAccessFor(address_space) : access);
 }
 
+const core::type::Reference* Manager::ref(core::AddressSpace address_space,
+                                          const core::type::Type* subtype,
+                                          core::Access access /* = core::Access::kReadWrite */) {
+    return Get<core::type::Reference>(address_space, subtype, access);
+}
+
 core::type::Struct* Manager::Struct(Symbol name, VectorRef<const StructMember*> members) {
+    if (auto* existing = Find<type::Struct>(name); TINT_UNLIKELY(existing)) {
+        TINT_ICE() << "attempting to construct two structs named " << name.NameView();
+    }
+
     uint32_t max_align = 0u;
     for (const auto& m : members) {
         max_align = std::max(max_align, m->Align());
@@ -208,6 +225,10 @@ core::type::Struct* Manager::Struct(Symbol name, VectorRef<const StructMember*> 
 }
 
 core::type::Struct* Manager::Struct(Symbol name, VectorRef<StructMemberDesc> md) {
+    if (auto* existing = Find<type::Struct>(name); TINT_UNLIKELY(existing)) {
+        TINT_ICE() << "attempting to construct two structs named " << name.NameView();
+    }
+
     tint::Vector<const StructMember*, 4> members;
     uint32_t current_size = 0u;
     uint32_t max_align = 0u;

@@ -8,6 +8,7 @@ import dataclasses
 import argparse
 import dataclasses
 import pathlib
+import re
 from typing import (TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional,
                     TextIO, Tuple, Type, Union, cast)
 
@@ -18,21 +19,40 @@ from crossbench import cli_helper, exception, plt
 import crossbench.browsers.all as browsers
 from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
+from crossbench.cli.config.network import NetworkConfig, NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
 
 from .driver import DriverConfig, BrowserDriverType
 
 SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox")
 
+# Split inputs like:
+# - "/out/x64.release/chrome"
+# - "/out/x64.release/chrome:4G"
+# - "C:\out\x64.release\chrome"
+# - "C:\out\x64.release\chrome:4G"
+# - "applescript:/out/x64.release/chrome"
+# - "applescript:/out/x64.release/chrome:4G"
+# - "selenium:C:\out\x64.release\chrome"
+# - "selenium:C:\out\x64.release\chrome:4G"
+NETWORK_PRESETS: str = "|".join(
+    re.escape(preset.value) for preset in NetworkSpeedPreset)  # pytype: disable=missing-parameter
+SHORT_FORM_RE = re.compile(r"((?P<driver>\w{3,}):)??"
+                           r"(?P<path>([A-Z]:[/\\])?[^:]+)"
+                           f"(:(?P<network>{NETWORK_PRESETS}))?")
+
 @dataclasses.dataclass(frozen=True)
 class BrowserConfig(ConfigObject):
   browser: Union[pathlib.Path, str]
   driver: DriverConfig = DriverConfig.default()
+  network: NetworkConfig = NetworkConfig.default()
 
   def __post_init__(self) -> None:
     if not self.browser:
       raise ValueError(f"{type(self).__name__}.browser cannot be None.")
     if not self.driver:
+      raise ValueError(f"{type(self).__name__}.driver cannot be None.")
+    if not self.network:
       raise ValueError(f"{type(self).__name__}.driver cannot be None.")
 
   @classmethod
@@ -43,21 +63,23 @@ class BrowserConfig(ConfigObject):
   def loads(cls, value: str) -> BrowserConfig:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
+    network = NetworkConfig.default()
     driver = DriverConfig.default()
     path: Optional[Union[pathlib.Path, str]] = None
     if ":" not in value or cls.value_has_path_prefix(value):
       # Variant 1: $PATH_OR_IDENTIFIER
       path = cls._parse_path_or_identifier(value)
     elif value[0] != "{":
-      # Variant 2: ${DRIVER_TYPE}:${PATH_OR_IDENTIFIER}
-      driver, path = cls._parse_inline_driver(value)
+      # Variant 2: ${DRIVER_TYPE}:${PATH_OR_IDENTIFIER}:${NETWORK}
+      driver, path, network = cls._parse_inline_short_form(value)
     else:
       # Variant 3: Full inline hjson
       config = cli_helper.parse_inline_hjson(value)
       with exception.annotate(f"Parsing inline {cls.__name__}"):
         return cls.load_dict(config)
     assert path, "Invalid path"
-    return cls(path, driver)
+    assert network, "Invalid network"
+    return cls(path, driver, network)
 
 
   @classmethod
@@ -77,7 +99,10 @@ class BrowserConfig(ConfigObject):
     path = None
     if "/" in maybe_path_or_identifier or "\\" in maybe_path_or_identifier:
       # Assume a path since short-names never contain back-/slashes.
-      path = cli_helper.parse_existing_path(maybe_path_or_identifier)
+      if driver_type.is_remote:
+        path = cli_helper.parse_path(maybe_path_or_identifier)
+      else:
+        path = cli_helper.parse_existing_path(maybe_path_or_identifier)
     else:
       if ":" in maybe_path_or_identifier:
         raise argparse.ArgumentTypeError(
@@ -154,17 +179,31 @@ class BrowserConfig(ConfigObject):
     return False
 
   @classmethod
-  def _parse_inline_driver(
-      cls, value: str) -> Tuple[DriverConfig, Union[str, pathlib.Path]]:
+  def _parse_inline_short_form(
+      cls, value: str
+  ) -> Tuple[DriverConfig, Union[str, pathlib.Path], NetworkConfig]:
     assert ":" in value
-    # Split inputs like "applescript:/out/x64.release/chrome"
-    driver_path_or_identifier, path_or_identifier = value.split(":", maxsplit=1)
-    if not driver_path_or_identifier:
-      raise argparse.ArgumentTypeError(f"Missing driver name: '{value}'")
-    driver = cast(DriverConfig, DriverConfig.parse(driver_path_or_identifier))
+    match = SHORT_FORM_RE.fullmatch(value)
+    if not match:
+      raise argparse.ArgumentTypeError(
+          f"Invalid browser short form: '{value}' \n"
+          "A browser path/identifier and "
+          "at least a driver or network preset have to be present")
+    driver_identifier = match.group("driver")
+    path_or_identifier = match.group("path")
+    network_identifier = match.group("network")
+    if not path_or_identifier:
+      raise argparse.ArgumentTypeError(
+          "Browser short form: missing path or browser identifier.")
+    driver = DriverConfig.default()
+    if driver_identifier is not None:
+      driver = cast(DriverConfig, DriverConfig.parse(match.group("driver")))
     path: Union[str, pathlib.Path] = cls._parse_path_or_identifier(
         path_or_identifier, driver.type)
-    return (driver, path)
+    network = NetworkConfig.default()
+    if network_identifier is not None:
+      network = NetworkConfig.loads(network_identifier)
+    return (driver, path, network)
 
   @classmethod
   def load(cls, f: TextIO) -> BrowserConfig:
@@ -191,6 +230,11 @@ class BrowserConfig(ConfigObject):
         depends_on=("driver",))
     parser.add_argument(
         "driver", type=DriverConfig, default=DriverConfig.default())
+    parser.add_argument(
+        "network",
+        required=False,
+        default=NetworkConfig.default(),
+        type=NetworkConfig)
     return parser
 
   @property

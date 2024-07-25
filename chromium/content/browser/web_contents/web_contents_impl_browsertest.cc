@@ -118,7 +118,7 @@
 #include "ui/display/screen.h"
 #include "url/gurl.h"
 
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && BUILDFLAG(USE_STARSCAN)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && PA_BUILDFLAG(USE_STARSCAN)
 #include "base/allocator/partition_allocator/src/partition_alloc/starscan/pcscan.h"
 #endif
 
@@ -144,7 +144,7 @@ void ResizeWebContentsView(Shell* shell,
 
 class WebContentsImplBrowserTest : public ContentBrowserTest {
  public:
-  WebContentsImplBrowserTest();
+  WebContentsImplBrowserTest() = default;
   void SetUp() override {
     RenderWidgetHostImpl::DisableResizeAckCheckForTesting();
     ContentBrowserTest::SetUp();
@@ -169,13 +169,6 @@ class WebContentsImplBrowserTest : public ContentBrowserTest {
  protected:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
-
-WebContentsImplBrowserTest::WebContentsImplBrowserTest() {
-  // The WebDisplayModeDelegate does not trigger any of the layout used to
-  // complete SurfaceSync for Fullscreen transitions.
-  scoped_feature_list_.InitAndDisableFeature(
-      features::kSurfaceSyncFullscreenKillswitch);
-}
 
 // Starts a new navigation as soon as the current one commits, but does not
 // wait for it to complete.  This allows us to observe DidStopLoading while
@@ -546,7 +539,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLSubframe) {
                        WindowOpenDisposition::CURRENT_TAB,
                        ui::PAGE_TRANSITION_LINK, true);
   params.initiator_origin = wc->GetPrimaryMainFrame()->GetLastCommittedOrigin();
-  shell()->web_contents()->OpenURL(params);
+  shell()->web_contents()->OpenURL(params, /*navigation_handle_callback=*/{});
 
   // Make sure the NavigationEntry ends up with the FrameTreeNode ID.
   NavigationController* controller = &shell()->web_contents()->GetController();
@@ -573,7 +566,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLNonExistentSubframe) {
                        WindowOpenDisposition::CURRENT_TAB,
                        ui::PAGE_TRANSITION_LINK, true);
   params.initiator_origin = wc->GetPrimaryMainFrame()->GetLastCommittedOrigin();
-  WebContents* new_web_contents = shell()->web_contents()->OpenURL(params);
+  WebContents* new_web_contents = shell()->web_contents()->OpenURL(
+      params, /*navigation_handle_callback=*/{});
 
   // The navigation should have been ignored.
   EXPECT_EQ(new_web_contents, nullptr);
@@ -2430,23 +2424,23 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   run_loop.Run();
 }
 
-class MouseLockDelegate : public WebContentsDelegate {
+class PointerLockDelegate : public WebContentsDelegate {
  public:
   // WebContentsDelegate:
-  void RequestToLockMouse(WebContents* web_contents,
+  void RequestPointerLock(WebContents* web_contents,
                           bool user_gesture,
                           bool last_unlocked_by_target) override {
-    request_to_lock_mouse_called_ = true;
+    request_pointer_lock_called_ = true;
   }
-  bool request_to_lock_mouse_called_ = false;
+  bool request_pointer_lock_called_ = false;
 };
 
-// TODO(crbug.com/898641): This test is flaky.
+// TODO(crbug.com/41422519): This test is flaky.
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
                        DISABLED_RenderWidgetDeletedWhileMouseLockPending) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
-  std::unique_ptr<MouseLockDelegate> delegate(new MouseLockDelegate());
+  std::unique_ptr<PointerLockDelegate> delegate(new PointerLockDelegate());
   shell()->web_contents()->SetDelegate(delegate.get());
   ASSERT_TRUE(shell()->web_contents()->GetDelegate() == delegate.get());
 
@@ -2457,7 +2451,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   ASSERT_TRUE(ExecJs(shell(),
                      "window.domAutomationController.send(document.body."
                      "requestPointerLock());"));
-  EXPECT_TRUE(delegate.get()->request_to_lock_mouse_called_);
+  EXPECT_TRUE(delegate.get()->request_pointer_lock_called_);
 
   // Make sure that the renderer didn't get the pointer lock, since the
   // WebContentsDelegate didn't approve the notification.
@@ -2465,11 +2459,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
   // Try to request the pointer lock again. Since there's a pending request in
   // WebContentsDelelgate, the WebContents shouldn't ask again.
-  delegate.get()->request_to_lock_mouse_called_ = false;
+  delegate.get()->request_pointer_lock_called_ = false;
   ASSERT_TRUE(ExecJs(shell(),
                      "window.domAutomationController.send(document.body."
                      "requestPointerLock());"));
-  EXPECT_FALSE(delegate.get()->request_to_lock_mouse_called_);
+  EXPECT_FALSE(delegate.get()->request_pointer_lock_called_);
 
   // Force a cross-process navigation so that the RenderWidgetHost is deleted.
   EXPECT_TRUE(NavigateToURL(
@@ -2477,11 +2471,11 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 
   // Make sure the WebContents cleaned up the previous pending request. A new
   // request should be forwarded to the WebContentsDelegate.
-  delegate.get()->request_to_lock_mouse_called_ = false;
+  delegate.get()->request_pointer_lock_called_ = false;
   ASSERT_TRUE(ExecJs(shell(),
                      "window.domAutomationController.send(document.body."
                      "requestPointerLock());"));
-  EXPECT_TRUE(delegate.get()->request_to_lock_mouse_called_);
+  EXPECT_TRUE(delegate.get()->request_pointer_lock_called_);
 }
 
 // Checks that user agent override string is only used when it's overridden.
@@ -3445,8 +3439,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, TitleUpdateOnRestore) {
   restored_entry->SetTitle(controller.GetLastCommittedEntry()->GetTitle());
 
   // Create a new tab.
-  Shell* new_shell = Shell::CreateNewWindow(
-      controller.GetBrowserContext(), GURL::EmptyGURL(), nullptr, gfx::Size());
+  Shell* new_shell = Shell::CreateNewWindow(controller.GetBrowserContext(),
+                                            GURL(), nullptr, gfx::Size());
   WebContentsImpl* new_contents =
       static_cast<WebContentsImpl*>(new_shell->web_contents());
   // Before the restore is initiated, the WebContents starts with an empty
@@ -3824,7 +3818,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, NotifyFullscreenAcquired) {
   RenderFrameHostImpl* child_frame =
       static_cast<RenderFrameHostImpl*>(ChildFrameAt(main_frame, 0));
 
-  std::set<RenderFrameHostImpl*> fullscreen_frames;
+  std::set<raw_ptr<RenderFrameHostImpl, SetExperimental>> fullscreen_frames;
   EXPECT_EQ(fullscreen_frames, web_contents->fullscreen_frames_);
   EXPECT_FALSE(IsInFullscreen());
 
@@ -3951,7 +3945,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   RenderFrameHostImpl* child_frame =
       static_cast<RenderFrameHostImpl*>(ChildFrameAt(main_frame, 0));
 
-  std::set<RenderFrameHostImpl*> nodes;
+  std::set<raw_ptr<RenderFrameHostImpl, SetExperimental>> nodes;
   EXPECT_EQ(nodes, web_contents->fullscreen_frames_);
   EXPECT_FALSE(IsInFullscreen());
 
@@ -4002,7 +3996,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   RenderFrameHostImpl* child_frame =
       static_cast<RenderFrameHostImpl*>(ChildFrameAt(main_frame, 0));
 
-  std::set<RenderFrameHostImpl*> fullscreen_frames;
+  std::set<raw_ptr<RenderFrameHostImpl, SetExperimental>> fullscreen_frames;
   EXPECT_EQ(fullscreen_frames, web_contents->fullscreen_frames_);
   EXPECT_FALSE(IsInFullscreen());
 
@@ -4517,10 +4511,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 // frame and mouse up is on OOF iframe, the mouse up event is delivered to the
 // main frame as well to clear cached mouse states including autoscroll
 // selection state.
-// TODO(crbug.com/1517238): Disabled due to too many timeouts.
 IN_PROC_BROWSER_TEST_F(
     WebContentsImplBrowserTest,
-    DISABLED_MouseUpInOOPIframeShouldCancelMainFrameAutoscrollSelection) {
+    MouseUpInOOPIframeShouldCancelMainFrameAutoscrollSelection) {
   ASSERT_TRUE(embedded_test_server()->Start());
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
@@ -4570,10 +4563,21 @@ IN_PROC_BROWSER_TEST_F(
   // Click the input element and start typing.
   SimulateMouseClickAt(web_contents, 0, blink::WebMouseEvent::Button::kLeft,
                        gfx::Point(input_center_x, input_center_y));
+  RunUntilInputProcessed(web_contents->GetRenderWidgetHostWithPageFocus());
+  EXPECT_TRUE(ExecJs(web_contents,
+                     "var inputElement = document.getElementById('input1');"
+                     "new Promise(function(resolve) {"
+                     "  if (document.activeElement == inputElement)"
+                     "    resolve(true);"
+                     "  inputElement.addEventListener('focus', () => {"
+                     "    resolve(true);"
+                     "  });"
+                     "});"));
   SimulateKeyPress(web_contents, ui::DomKey::FromCharacter('A'),
                    ui::DomCode::US_A, ui::VKEY_A, false, false, false, false);
   SimulateKeyPress(web_contents, ui::DomKey::FromCharacter('B'),
                    ui::DomCode::US_B, ui::VKEY_B, false, false, false, false);
+  RunUntilInputProcessed(web_contents->GetRenderWidgetHostWithPageFocus());
   EXPECT_TRUE(ExecJs(web_contents,
                      "var inputElement = document.getElementById('input1');"
                      "new Promise(function(resolve) {"
@@ -4640,6 +4644,7 @@ IN_PROC_BROWSER_TEST_F(
                    ui::DomCode::US_E, ui::VKEY_E, false, false, false, false);
   SimulateKeyPress(web_contents, ui::DomKey::FromCharacter('F'),
                    ui::DomCode::US_F, ui::VKEY_F, false, false, false, false);
+  RunUntilInputProcessed(web_contents->GetRenderWidgetHostWithPageFocus());
   EXPECT_TRUE(ExecJs(web_contents,
                      "var inputElement = document.getElementById('input1');"
                      "new Promise(function(resolve) {"
@@ -5120,7 +5125,7 @@ class DidChangeVerticalScrollDirectionObserver : public WebContentsObserver {
 
 // Tests that DidChangeVerticalScrollDirection is called only when the vertical
 // scroll direction has changed and that it includes the correct details.
-// TODO(crbug.com/1359225): This is flaky on the Mac10.14 bot.
+// TODO(crbug.com/40862270): This is flaky on the Mac10.14 bot.
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_DidChangeVerticalScrollDirection \
   DISABLED_DidChangeVerticalScrollDirection
@@ -5351,8 +5356,8 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
                        IgnoreUnresponsiveRendererDuringPaste) {
   WebContentsImpl* web_contents =
       static_cast<WebContentsImpl*>(shell()->web_contents());
-  ClipboardPasteData clipboard_paste_data =
-      ClipboardPasteData("random pasted text", std::string(), {});
+  ClipboardPasteData clipboard_paste_data;
+  clipboard_paste_data.text = u"random pasted text";
 
   EXPECT_FALSE(web_contents->ShouldIgnoreUnresponsiveRenderer());
   web_contents->IsClipboardPasteAllowedByPolicy(
@@ -5390,7 +5395,7 @@ class DidStopLoadingInterceptor : public mojom::FrameHostInterceptorForTesting {
       delete;
 
   mojom::FrameHost* GetForwardingInterface() override {
-    return render_frame_host_;
+    return swapped_impl_.old_impl();
   }
 
   void DidStopLoading() override {
@@ -5401,9 +5406,7 @@ class DidStopLoadingInterceptor : public mojom::FrameHostInterceptorForTesting {
 
  private:
   raw_ptr<RenderFrameHostImpl> render_frame_host_;
-  mojo::test::ScopedSwapImplForTesting<
-      mojo::AssociatedReceiver<mojom::FrameHost>>
-      swapped_impl_;
+  mojo::test::ScopedSwapImplForTesting<mojom::FrameHost> swapped_impl_;
 };
 
 // Test that get_process_idle_time() returns reasonable values when compared
@@ -6101,15 +6104,11 @@ class MediaWatchTimeChangedDelegate : public WebContentsDelegate {
   void MediaWatchTimeChanged(const MediaPlayerWatchTime& watch_time) override {
     watch_time_ = watch_time;
   }
-  base::WeakPtr<WebContentsDelegate> GetDelegateWeakPtr() override {
-    return weak_factory_.GetWeakPtr();
-  }
 
   const MediaPlayerWatchTime& watch_time() { return watch_time_; }
 
  private:
   MediaPlayerWatchTime watch_time_;
-  base::WeakPtrFactory<MediaWatchTimeChangedDelegate> weak_factory_{this};
 };
 
 // Tests that a media in a fenced frame reports the watch time with the url from
@@ -6157,7 +6156,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsFencedFrameBrowserTest,
   }
 }
 
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && BUILDFLAG(USE_STARSCAN)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && PA_BUILDFLAG(USE_STARSCAN)
 
 namespace {
 
@@ -6301,7 +6300,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplStarScanPrerenderBrowserTest,
 
 class MockColorProviderSource : public ui::ColorProviderSource {
  public:
-  MockColorProviderSource() { provider_.GenerateColorMap(); }
+  MockColorProviderSource() = default;
   MockColorProviderSource(const MockColorProviderSource&) = delete;
   MockColorProviderSource& operator=(const MockColorProviderSource&) = delete;
   ~MockColorProviderSource() override = default;
@@ -6310,7 +6309,7 @@ class MockColorProviderSource : public ui::ColorProviderSource {
   const ui::ColorProvider* GetColorProvider() const override {
     return &provider_;
   }
-  const ui::RendererColorMap GetRendererColorMap(
+  ui::RendererColorMap GetRendererColorMap(
       ui::ColorProviderKey::ColorMode color_mode,
       ui::ColorProviderKey::ForcedColors forced_colors) const override {
     auto key = GetColorProviderKey();
@@ -6410,6 +6409,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
   }
 }
 
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) && BUILDFLAG(USE_STARSCAN)
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC) &&
+        // PA_BUILDFLAG(USE_STARSCAN)
 
 }  // namespace content

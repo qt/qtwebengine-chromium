@@ -25,7 +25,8 @@ def _MergeAPIArgumentParser(*args, **kwargs):
   https://chromium.googlesource.com/chromium/tools/build/+/main/scripts/slave/recipe_modules/swarming/resources/merge_api.py
   """
   parser = argparse.ArgumentParser(*args, **kwargs)
-  parser.add_argument('--build-properties', help=argparse.SUPPRESS)
+  parser.add_argument('--build-properties', help=argparse.SUPPRESS,
+                      default='{}')
   parser.add_argument('--summary-json', help=argparse.SUPPRESS)
   parser.add_argument('--task-output-dir', help=argparse.SUPPRESS)
   parser.add_argument(
@@ -188,7 +189,7 @@ def main():
         'This script was told to merge test results, but no additional merge '
         'script was given.')
 
-  # TODO(crbug.com/1369158): Return non-zero if invalid_profiles is not None
+  # TODO(crbug.com/40868908): Return non-zero if invalid_profiles is not None
   return 1 if failed else 0
 
 

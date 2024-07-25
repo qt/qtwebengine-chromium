@@ -42,13 +42,10 @@ class RenderPipeline final : public RenderPipelineBase {
     static Ref<RenderPipeline> CreateUninitialized(
         Device* device,
         const UnpackedPtr<RenderPipelineDescriptor>& descriptor);
-    static void InitializeAsync(Ref<RenderPipelineBase> renderPipeline,
-                                WGPUCreateRenderPipelineAsyncCallback callback,
-                                void* userdata);
 
     VkPipeline GetHandle() const;
 
-    MaybeError Initialize() override;
+    MaybeError InitializeImpl() override;
 
     // Dawn API
     void SetLabelImpl() override;

@@ -4,9 +4,10 @@
 
 #include "third_party/blink/renderer/modules/nfc/ndef_record.h"
 
+#include <string_view>
+
 #include "base/containers/contains.h"
 #include "base/notreached.h"
-#include "base/strings/string_piece.h"
 #include "services/device/public/mojom/nfc.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
@@ -117,8 +118,7 @@ bool IsValidExternalType(const String& input) {
   if (type.empty())
     return false;
 
-  static constexpr base::StringPiece kOtherCharsForCustomType(
-      ":!()+,-=@;$_*'.");
+  static constexpr std::string_view kOtherCharsForCustomType(":!()+,-=@;$_*'.");
   for (wtf_size_t i = 0; i < type.length(); i++) {
     if (!IsASCIIAlphanumeric(type[i]) &&
         !base::Contains(kOtherCharsForCustomType, type[i])) {
@@ -599,7 +599,7 @@ DOMDataView* NDEFRecord::data() const {
 }
 
 // https://w3c.github.io/web-nfc/#dfn-convert-ndefrecord-data-bytes
-absl::optional<HeapVector<Member<NDEFRecord>>> NDEFRecord::toRecords(
+std::optional<HeapVector<Member<NDEFRecord>>> NDEFRecord::toRecords(
     ExceptionState& exception_state) const {
   if (record_type_ != "smart-poster" &&
       category_ != device::mojom::blink::NDEFRecordTypeCategory::kExternal &&
@@ -608,11 +608,11 @@ absl::optional<HeapVector<Member<NDEFRecord>>> NDEFRecord::toRecords(
         DOMExceptionCode::kNotSupportedError,
         "Only {smart-poster, external, local} type records could have a ndef "
         "message as payload.");
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   if (!payload_message_)
-    return absl::nullopt;
+    return std::nullopt;
 
   return payload_message_->records();
 }

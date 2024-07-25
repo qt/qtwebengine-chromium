@@ -24,7 +24,7 @@ NetworkServiceMemoryCacheURLLoader::NetworkServiceMemoryCacheURLLoader(
     mojo::PendingRemote<mojom::URLLoaderClient> client,
     scoped_refptr<base::RefCountedBytes> content,
     int64_t encoded_body_length,
-    const absl::optional<net::CookiePartitionKey> cookie_partition_key)
+    const std::optional<net::CookiePartitionKey> cookie_partition_key)
     : memory_cache_(memory_cache),
       trace_id_(trace_id),
       net_log_(net_log),
@@ -88,7 +88,7 @@ void NetworkServiceMemoryCacheURLLoader::Start(
 
   // Start sending the response.
   client_->OnReceiveResponse(std::move(response_head),
-                             std::move(consumer_handle), absl::nullopt);
+                             std::move(consumer_handle), std::nullopt);
 
   // Set up data pipe producer.
   producer_handle_watcher_ = std::make_unique<mojo::SimpleWatcher>(
@@ -148,7 +148,7 @@ void NetworkServiceMemoryCacheURLLoader::MaybeNotifyRawResponse(
 
   devtools_observer_->OnRawResponse(
       *devtools_request_id_, /*cookies_with_access_result=*/{},
-      std::move(header_array), /*raw_response_headers=*/absl::nullopt,
+      std::move(header_array), /*raw_response_headers=*/std::nullopt,
       mojom::IPAddressSpace::kUnknown, response_head.headers->response_code(),
       cookie_partition_key_);
 }
@@ -161,16 +161,15 @@ void NetworkServiceMemoryCacheURLLoader::WriteMore() {
     DCHECK_GE(content_->size(), write_position_);
     DCHECK_GE(std::numeric_limits<uint32_t>::max(),
               content_->size() - write_position_);
-    uint32_t write_size =
-        static_cast<uint32_t>(content_->size() - write_position_);
+    size_t write_size = content_->size() - write_position_;
     if (write_size == 0) {
       write_completed = true;
       break;
     }
 
-    MojoResult result =
-        producer_handle_->WriteData(content_->data().data() + write_position_,
-                                    &write_size, MOJO_WRITE_DATA_FLAG_NONE);
+    MojoResult result = producer_handle_->WriteData(
+        content_->as_vector().data() + write_position_, &write_size,
+        MOJO_WRITE_DATA_FLAG_NONE);
     if (result == MOJO_RESULT_SHOULD_WAIT) {
       producer_handle_watcher_->ArmOrNotify();
       break;
@@ -193,8 +192,8 @@ void NetworkServiceMemoryCacheURLLoader::WriteMore() {
   if (net_log_.IsCapturing()) {
     net_log_.AddByteTransferEvent(
         net::NetLogEventType::IN_MEMORY_CACHE_BYTES_READ, total_write_size,
-        reinterpret_cast<const char*>(content_->data().data() +
-                                      original_write_position));
+        base::as_chars(base::span(*content_).subspan(original_write_position))
+            .data());
   }
 
   if (write_completed) {
@@ -250,7 +249,7 @@ void NetworkServiceMemoryCacheURLLoader::FollowRedirect(
     const std::vector<std::string>& removed_headers,
     const net::HttpRequestHeaders& modified_headers,
     const net::HttpRequestHeaders& modified_cors_exempt_headers,
-    const absl::optional<GURL>& new_url) {
+    const std::optional<GURL>& new_url) {
   NOTREACHED();
 }
 

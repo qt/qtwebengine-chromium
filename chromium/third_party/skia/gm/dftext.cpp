@@ -44,10 +44,7 @@ public:
     }
 
 protected:
-    void onOnceBeforeDraw() override {
-        fEmojiTypeface = ToolUtils::EmojiTypeface();
-        fEmojiText     = ToolUtils::EmojiSampleText();
-    }
+    void onOnceBeforeDraw() override { fEmojiSample = ToolUtils::EmojiSample(); }
 
     SkString getName() const override { return SkString("dftext"); }
 
@@ -59,7 +56,10 @@ protected:
 
         // set up offscreen rendering with distance field text
         auto ctx = inputCanvas->recordingContext();
-        SkISize size = getISize();
+        SkISize size = this->getISize();
+        if (!inputCanvas->getBaseLayerSize().isEmpty()) {
+            size = inputCanvas->getBaseLayerSize();
+        }
         SkImageInfo info = SkImageInfo::MakeN32(size.width(), size.height(), kPremul_SkAlphaType,
                                                 inputCanvas->imageInfo().refColorSpace());
         SkSurfaceProps inputProps;
@@ -224,13 +224,18 @@ protected:
         }
 
         // check color emoji
-        if (fEmojiTypeface) {
-            SkFont emoiFont;
-            emoiFont.setSubpixel(true);
-            emoiFont.setTypeface(fEmojiTypeface);
-            emoiFont.setSize(SkIntToScalar(19));
-            canvas->drawSimpleText(fEmojiText, strlen(fEmojiText), SkTextEncoding::kUTF8, 670, 90,
-                                   emoiFont, paint);
+        if (fEmojiSample.typeface) {
+            SkFont emojiFont;
+            emojiFont.setSubpixel(true);
+            emojiFont.setTypeface(fEmojiSample.typeface);
+            emojiFont.setSize(SkIntToScalar(19));
+            canvas->drawSimpleText(fEmojiSample.sampleText,
+                                   strlen(fEmojiSample.sampleText),
+                                   SkTextEncoding::kUTF8,
+                                   670,
+                                   90,
+                                   emojiFont,
+                                   paint);
         }
 
         // render offscreen buffer
@@ -243,8 +248,7 @@ protected:
     }
 
 private:
-    sk_sp<SkTypeface> fEmojiTypeface;
-    const char* fEmojiText;
+    ToolUtils::EmojiTestSample fEmojiSample;
 
     using INHERITED = skiagm::GM;
 };

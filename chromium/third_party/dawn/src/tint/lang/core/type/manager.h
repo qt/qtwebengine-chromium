@@ -52,8 +52,10 @@ class Bool;
 class F16;
 class F32;
 class I32;
+class Invalid;
 class Matrix;
 class Pointer;
+class Reference;
 class U32;
 class Vector;
 class Void;
@@ -109,8 +111,8 @@ class Manager final {
     /// of an existing immutable Manager.
     /// @warning As the copied types are owned by `inner`, `inner` must not be destructed or
     /// assigned while using the returned Manager.
-    /// TODO(bclayton) - Evaluate whether there are safer alternatives to this
-    /// function. See crbug.com/tint/460.
+    /// TODO(crbug.com/tint/460) - Evaluate whether there are safer alternatives to this
+    /// function.
     /// @param inner the immutable Manager to extend
     /// @return the Manager that wraps `inner`
     static Manager Wrap(const Manager& inner) {
@@ -172,8 +174,11 @@ class Manager final {
               typename _ = std::enable_if<tint::traits::IsTypeOrDerived<TYPE, Type>>,
               typename... ARGS>
     auto* Find(ARGS&&... args) const {
-        return types_.Find<ToType<TYPE>>(std::forward<ARGS>(args)...);
+        return types_.Find<TYPE>(std::forward<ARGS>(args)...);
     }
+
+    /// @returns an invalid type
+    const core::type::Invalid* invalid();
 
     /// @returns a void type
     const core::type::Void* void_();
@@ -452,6 +457,32 @@ class Manager final {
         return ptr(SPACE, subtype, ACCESS);
     }
 
+    /// @param address_space the address space
+    /// @param subtype the reference subtype
+    /// @param access the access settings
+    /// @returns the reference type
+    const core::type::Reference* ref(core::AddressSpace address_space,
+                                     const core::type::Type* subtype,
+                                     core::Access access = core::Access::kReadWrite);
+
+    /// @tparam SPACE the address space
+    /// @tparam T the storage type
+    /// @tparam ACCESS the access mode
+    /// @returns the reference type with the templated address space, storage type and access.
+    template <core::AddressSpace SPACE, typename T, core::Access ACCESS = core::Access::kReadWrite>
+    const core::type::Reference* ref() {
+        return ref(SPACE, Get<T>(), ACCESS);
+    }
+
+    /// @param subtype the reference subtype
+    /// @tparam SPACE the address space
+    /// @tparam ACCESS the access mode
+    /// @returns the reference type with the templated address space, storage type and access.
+    template <core::AddressSpace SPACE, core::Access ACCESS = core::Access::kReadWrite>
+    const core::type::Reference* ref(const core::type::Type* subtype) {
+        return ref(SPACE, subtype, ACCESS);
+    }
+
     /// @returns the sampler type
     const core::type::Sampler* sampler() {
         return Get<core::type::Sampler>(core::type::SamplerKind::kSampler);
@@ -475,18 +506,21 @@ class Manager final {
     /// Create a new structure declaration.
     /// @param name the name of the structure
     /// @param members the list of structure members
+    /// @note a structure must not already exist with the same name
     /// @returns the structure type
     core::type::Struct* Struct(Symbol name, VectorRef<const StructMember*> members);
 
     /// Create a new structure declaration.
     /// @param name the name of the structure
     /// @param members the list of structure member descriptors
+    /// @note a structure must not already exist with the same name
     /// @returns the structure type
     core::type::Struct* Struct(Symbol name, VectorRef<StructMemberDesc> members);
 
     /// Create a new structure declaration.
     /// @param name the name of the structure
     /// @param members the list of structure member descriptors
+    /// @note a structure must not already exist with the same name
     /// @returns the structure type
     core::type::Struct* Struct(Symbol name, std::initializer_list<StructMemberDesc> members) {
         return Struct(name, tint::Vector<StructMemberDesc, 4>(members));
@@ -498,16 +532,6 @@ class Manager final {
     TypeIterator end() const { return types_.end(); }
 
   private:
-    /// ToType<T> is specialized for various `T` types and each specialization contains a single
-    /// `type` alias to the corresponding type deriving from `core::type::Type`.
-    template <typename T>
-    struct ToTypeImpl {
-        using type = T;
-    };
-
-    template <typename T>
-    using ToType = typename ToTypeImpl<T>::type;
-
     /// Unique types owned by the manager
     UniqueAllocator<Type> types_;
     /// Unique nodes (excluding types) owned by the manager

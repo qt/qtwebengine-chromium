@@ -27,11 +27,6 @@ BASE_FEATURE(kWinrtGeolocationImplementation,
 BASE_FEATURE(kMacCoreLocationBackend,
              "MacCoreLocationBackend",
              base::FEATURE_DISABLED_BY_DEFAULT);
-// Reduces the interval between WiFi polls to fetch new WiFi data sooner. This
-// can be useful in situations where new WiFi data is needed frequently.
-BASE_FEATURE(kCrOSGeolocationReducedWifiPollingInterval,
-             "ReducedWifiPollingInterval",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 // Enable serial communication for SPP devices.
 BASE_FEATURE(kEnableBluetoothSerialPortProfileInSerialApi,
              "EnableBluetoothSerialPortProfileInSerialApi",
@@ -40,5 +35,11 @@ BASE_FEATURE(kEnableBluetoothSerialPortProfileInSerialApi,
 BASE_FEATURE(kGeolocationDiagnosticsObserver,
              "GeolocationDiagnosticsObserver",
              base::FEATURE_ENABLED_BY_DEFAULT);
+// Expose serial port logical connection state and dispatch connection events
+// for Bluetooth serial ports when the Bluetooth device connection state
+// changes.
+BASE_FEATURE(kSerialPortConnected,
+             "SerialPortConnected",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

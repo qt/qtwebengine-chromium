@@ -661,7 +661,7 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
       this.#viewMap.set(id, view);
     }
 
-    this.#elementContainer.appendTab(id, tabTitle, view, true);
+    this.#elementContainer.appendTab(id, tabTitle, view, payload.type);
   }
 
   #fontInfoToFragment(fontInfo: Map<string, Map<string, Map<string, number[]>>>): UI.Fragment.Fragment {
@@ -748,7 +748,7 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
     const color = (minContrastIssue.textColor.asString(Common.Color.Format.HEXA) as string);
     const backgroundColor = (minContrastIssue.backgroundColor.asString(Common.Color.Format.HEXA) as string);
 
-    const showAPCA = Root.Runtime.experiments.isEnabled('APCA');
+    const showAPCA = Root.Runtime.experiments.isEnabled('apca');
 
     const title = i18nString(UIStrings.textColorSOverSBackgroundResults, {
       PH1: color,
@@ -760,7 +760,9 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
       <button
         title="${title}" aria-label="${title}"
         data-type="contrast" data-key="${key}" data-section="contrast" class="block" $="color"
-        jslog="${VisualLogging.action().track({click: true}).context('css-overview.contrast')}">
+        jslog="${VisualLogging.action('css-overview.contrast').track({
+      click: true,
+    })}">
         Text
       </button>
       <div class="block-title">
@@ -810,7 +812,9 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
     const blockFragment = UI.Fragment.Fragment.build`<li>
       <button title=${color} data-type="color" data-color="${color}"
         data-section="${section}" class="block" $="color"
-        jslog="${VisualLogging.action().track({click: true}).context('css-overview.color')}"></button>
+        jslog="${VisualLogging.action('css-overview.color').track({
+      click: true,
+    })}"></button>
       <div class="block-title color-text">${color}</div>
     </li>`;
 
@@ -841,7 +845,6 @@ export class CSSOverviewCompletedView extends UI.Widget.VBox {
     void this.#render(data);
   }
 
-  // eslint-disable-next-line @typescript-eslint/naming-convention
   static readonly pushedNodes = new Set<Protocol.DOM.BackendNodeId>();
 }
 export class DetailsView extends Common.ObjectWrapper.eventMixin<EventTypes, typeof UI.Widget.VBox>(UI.Widget.VBox) {
@@ -856,9 +859,10 @@ export class DetailsView extends Common.ObjectWrapper.eventMixin<EventTypes, typ
     });
   }
 
-  appendTab(id: string, tabTitle: string, view: UI.Widget.Widget, isCloseable?: boolean): void {
+  appendTab(id: string, tabTitle: string, view: UI.Widget.Widget, jslogContext?: string): void {
     if (!this.#tabbedPane.hasTab(id)) {
-      this.#tabbedPane.appendTab(id, tabTitle, view, undefined, undefined, isCloseable);
+      this.#tabbedPane.appendTab(
+          id, tabTitle, view, undefined, undefined, /* isCloseable */ true, undefined, undefined, jslogContext);
     }
 
     this.#tabbedPane.selectTab(id);
@@ -895,10 +899,9 @@ export class ElementDetailsView extends UI.Widget.Widget {
     this.#cssModel = cssModel;
     this.#linkifier = linkifier;
 
-    const k = Platform.StringUtilities.kebab;
     this.#elementGridColumns = [
       {
-        id: k('node-id'),
+        id: 'node-id',
         title: i18nString(UIStrings.element),
         sortable: true,
         weight: 50,
@@ -916,7 +919,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
         defaultWeight: undefined,
       },
       {
-        id: k('declaration'),
+        id: 'declaration',
         title: i18nString(UIStrings.declaration),
         sortable: true,
         weight: 50,
@@ -934,7 +937,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
         defaultWeight: undefined,
       },
       {
-        id: k('source-url'),
+        id: 'source-url',
         title: i18nString(UIStrings.source),
         sortable: false,
         weight: 100,
@@ -952,7 +955,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
         defaultWeight: undefined,
       },
       {
-        id: k('contrast-ratio'),
+        id: 'contrast-ratio',
         title: i18nString(UIStrings.contrastRatio),
         sortable: true,
         weight: 25,
@@ -1055,7 +1058,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
       this.#elementGrid.insertChild(node);
     }
 
-    this.#elementGrid.setColumnsVisiblity(visibility);
+    this.#elementGrid.setColumnsVisibility(visibility);
     this.#elementGrid.renderInline();
     this.#elementGrid.wasShown();
   }
@@ -1096,7 +1099,7 @@ export class ElementNode extends DataGrid.SortableDataGrid.SortableDataGridNode<
         showNodeIcon.classList.add('show-element');
         UI.Tooltip.Tooltip.install(showNodeIcon, i18nString(UIStrings.showElement));
         showNodeIcon.tabIndex = 0;
-        showNodeIcon.onclick = (): Promise<void> => frontendNode.scrollIntoView();
+        showNodeIcon.onclick = () => frontendNode.scrollIntoView();
         cell.appendChild(showNodeIcon);
       });
       return cell;
@@ -1124,7 +1127,7 @@ export class ElementNode extends DataGrid.SortableDataGrid.SortableDataGridNode<
 
     if (columnId === 'contrast-ratio') {
       const cell = this.createTD(columnId);
-      const showAPCA = Root.Runtime.experiments.isEnabled('APCA');
+      const showAPCA = Root.Runtime.experiments.isEnabled('apca');
       const contrastRatio = Platform.NumberUtilities.floor(this.data.contrastRatio, 2);
       const contrastRatioString = showAPCA ? contrastRatio + '%' : contrastRatio;
       const border = getBorderString(this.data.backgroundColor);

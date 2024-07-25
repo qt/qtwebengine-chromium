@@ -48,7 +48,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
   constructor() {
     super(true);
     this.contentElement.className = 'styles-element-classes-pane';
-    this.contentElement.setAttribute('jslog', `${VisualLogging.pane().context('elements-classes')}`);
+    this.contentElement.setAttribute('jslog', `${VisualLogging.pane('elements-classes')}`);
     const container = this.contentElement.createChild('div', 'title-container');
     this.input = container.createChild('div', 'new-class-input monospace');
     this.setDefaultFocusedElement(this.input);
@@ -179,7 +179,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
     const keys = [...classes.keys()];
     keys.sort(Platform.StringUtilities.caseInsensetiveComparator);
     for (const className of keys) {
-      const label = UI.UIUtils.CheckboxLabel.create(className, classes.get(className));
+      const label = UI.UIUtils.CheckboxLabel.create(className, classes.get(className), undefined, 'element-class');
       label.classList.add('monospace');
       label.checkboxElement.addEventListener('click', this.onClick.bind(this, className), false);
       this.classesContainer.appendChild(label);
@@ -268,7 +268,7 @@ export class ButtonProvider implements UI.Toolbar.Provider {
     this.button.setText('.cls');
     this.button.element.classList.add('monospace');
     this.button.element.setAttribute(
-        'jslog', `${VisualLogging.toggleSubpane().track({click: true}).context('elements-classes')}`);
+        'jslog', `${VisualLogging.toggleSubpane('elements-classes').track({click: true})}`);
     this.button.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.clicked, this);
     this.view = new ClassesPaneWidget();
   }

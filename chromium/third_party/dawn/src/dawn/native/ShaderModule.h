@@ -33,12 +33,14 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "dawn/common/Constants.h"
 #include "dawn/common/ContentLessObjectCacheable.h"
+#include "dawn/common/MutexProtected.h"
 #include "dawn/common/ityp_array.h"
 #include "dawn/native/BindingInfo.h"
 #include "dawn/native/CachedObject.h"
@@ -50,6 +52,7 @@
 #include "dawn/native/Limits.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/PerStage.h"
+#include "dawn/native/RefCountedWithExternalCount.h"
 #include "dawn/native/dawn_platform.h"
 #include "tint/tint.h"
 
@@ -104,8 +107,12 @@ using PipelineConstantEntries = std::map<std::string, double>;
 using EntryPointMetadataTable =
     absl::flat_hash_map<std::string, std::unique_ptr<EntryPointMetadata>>;
 
-// Source for a tint program
-class TintSource;
+struct TintProgram : public RefCounted {
+    TintProgram(tint::Program program, std::unique_ptr<tint::Source::File> file)
+        : program(std::move(program)), file(std::move(file)) {}
+    const tint::Program program;
+    const std::unique_ptr<tint::Source::File> file;  // Keep the tint::Source::File alive
+};
 
 struct ShaderModuleParseResult {
     ShaderModuleParseResult();
@@ -115,8 +122,7 @@ struct ShaderModuleParseResult {
 
     bool HasParsedShader() const;
 
-    std::unique_ptr<tint::Program> tintProgram;
-    std::unique_ptr<TintSource> tintSource;
+    Ref<TintProgram> tintProgram;
 };
 
 struct ShaderModuleEntryPoint {
@@ -149,37 +155,19 @@ ResultOrError<tint::Program> RunTransforms(tint::ast::transform::Manager* transf
                                            tint::ast::transform::DataMap* outputs,
                                            OwnedCompilationMessages* messages);
 
-// Mirrors wgpu::SamplerBindingLayout but instead stores a single boolean
-// for isComparison instead of a wgpu::SamplerBindingType enum.
-struct ShaderSamplerBindingInfo {
-    bool isComparison;
-};
-
-// Mirrors wgpu::TextureBindingLayout but instead has a set of compatible sampleTypes
-// instead of a single enum.
-struct ShaderTextureBindingInfo {
-    SampleTypeBit compatibleSampleTypes;
-    wgpu::TextureViewDimension viewDimension;
-    bool multisampled;
-};
-
-// Per-binding shader metadata contains some SPIRV specific information in addition to
-// most of the frontend per-binding information.
+// Shader metadata for a binding, very similar to information contained in a pipeline layout.
 struct ShaderBindingInfo {
-    // The SPIRV ID of the resource.
-    uint32_t id;
-    uint32_t base_type_id;
-
     BindingNumber binding;
-    BindingInfoType bindingType;
 
     // The variable name of the binding resource.
     std::string name;
 
-    BufferBindingLayout buffer;
-    ShaderSamplerBindingInfo sampler;
-    ShaderTextureBindingInfo texture;
-    StorageTextureBindingLayout storageTexture;
+    std::variant<BufferBindingInfo,
+                 SamplerBindingInfo,
+                 TextureBindingInfo,
+                 StorageTextureBindingInfo,
+                 ExternalTextureBindingInfo>
+        bindingInfo;
 };
 
 using BindingGroupInfoMap = std::map<BindingNumber, ShaderBindingInfo>;
@@ -205,8 +193,7 @@ struct EntryPointMetadata {
     // tries to use the entry point.
     std::vector<std::string> infringedLimitErrors;
 
-    // bindings[G][B] is the reflection data for the binding defined with
-    // @group(G) @binding(B) in WGSL / SPIRV.
+    // bindings[G][B] is the reflection data for the binding defined with @group(G) @binding(B)
     BindingInfoArray bindings;
 
     struct SamplerTexturePair {
@@ -288,10 +275,11 @@ struct EntryPointMetadata {
     bool usesVertexIndex = false;
 };
 
-class ShaderModuleBase : public ApiObjectBase,
+class ShaderModuleBase : public RefCountedWithExternalCountBase<ApiObjectBase>,
                          public CachedObject,
                          public ContentLessObjectCacheable<ShaderModuleBase> {
   public:
+    using Base = RefCountedWithExternalCountBase<ApiObjectBase>;
     ShaderModuleBase(DeviceBase* device,
                      const UnpackedPtr<ShaderModuleDescriptor>& descriptor,
                      ApiObjectBase::UntrackedByDeviceTag tag);
@@ -323,13 +311,19 @@ class ShaderModuleBase : public ApiObjectBase,
         bool operator()(const ShaderModuleBase* a, const ShaderModuleBase* b) const;
     };
 
-    // This returns tint program before running transforms.
-    const tint::Program* GetTintProgram() const;
+    std::optional<bool> GetStrictMath() const;
+
+    using ScopedUseTintProgram = APIRef<ShaderModuleBase>;
+    ScopedUseTintProgram UseTintProgram();
+
+    Ref<TintProgram> GetTintProgram() const;
+    Ref<TintProgram> GetTintProgramForTesting() const;
+    int GetTintProgramRecreateCountForTesting() const;
 
     void APIGetCompilationInfo(wgpu::CompilationInfoCallback callback, void* userdata);
+    Future APIGetCompilationInfoF(const CompilationInfoCallbackInfo& callbackInfo);
 
     void InjectCompilationMessages(std::unique_ptr<OwnedCompilationMessages> compilationMessages);
-
     OwnedCompilationMessages* GetCompilationMessages() const;
 
   protected:
@@ -341,17 +335,27 @@ class ShaderModuleBase : public ApiObjectBase,
   private:
     ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag, const char* label);
 
+    void WillDropLastExternalRef() override;
+
     // The original data in the descriptor for caching.
     enum class Type { Undefined, Spirv, Wgsl };
     Type mType;
     std::vector<uint32_t> mOriginalSpirv;
     std::string mWgsl;
 
+    // TODO(dawn:2503): Remove the optional when Dawn can has a consistent default across backends.
+    // Right now D3D uses strictness by default, and Vulkan/Metal use fast math by default.
+    std::optional<bool> mStrictMath;
+
     EntryPointMetadataTable mEntryPoints;
     PerStage<std::string> mDefaultEntryPointNames;
     PerStage<size_t> mEntryPointCounts;
-    std::unique_ptr<tint::Program> mTintProgram;
-    std::unique_ptr<TintSource> mTintSource;  // Keep the tint::Source::File alive
+
+    struct TintData {
+        Ref<TintProgram> tintProgram;
+        int tintProgramRecreateCount = 0;
+    };
+    MutexProtected<TintData> mTintData;
 
     std::unique_ptr<OwnedCompilationMessages> mCompilationMessages;
 };

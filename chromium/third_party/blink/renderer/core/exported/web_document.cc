@@ -67,6 +67,7 @@
 #include "third_party/blink/renderer/core/html/plugin_document.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/speculation_rules/document_speculation_rules.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
@@ -118,11 +119,11 @@ WebString WebDocument::GetReferrer() const {
   return ConstUnwrap<Document>()->referrer();
 }
 
-absl::optional<SkColor> WebDocument::ThemeColor() {
-  absl::optional<Color> color = Unwrap<Document>()->ThemeColor();
+std::optional<SkColor> WebDocument::ThemeColor() {
+  std::optional<Color> color = Unwrap<Document>()->ThemeColor();
   if (color)
     return color->Rgb();
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 WebURL WebDocument::OpenSearchDescriptionURL() const {
@@ -218,6 +219,17 @@ WebVector<WebFormElement> WebDocument::Forms() const {
   return form_elements;
 }
 
+WebVector<WebFormElement> WebDocument::GetTopLevelForms() const {
+  Vector<WebFormElement> web_forms;
+  HeapVector<Member<HTMLFormElement>> forms =
+      const_cast<Document*>(ConstUnwrap<Document>())->GetTopLevelForms();
+  web_forms.reserve(forms.size());
+  for (auto& form : forms) {
+    web_forms.push_back(form.Get());
+  }
+  return web_forms;
+}
+
 WebURL WebDocument::CompleteURL(const WebString& partial_url) const {
   return ConstUnwrap<Document>()->CompleteURL(partial_url);
 }
@@ -271,11 +283,11 @@ void WebDocument::WatchCSSSelectors(const WebVector<WebString>& web_selectors) {
 WebVector<WebDraggableRegion> WebDocument::DraggableRegions() const {
   WebVector<WebDraggableRegion> draggable_regions;
   const Document* document = ConstUnwrap<Document>();
-  if (document->HasAnnotatedRegions()) {
-    const Vector<AnnotatedRegionValue>& regions = document->AnnotatedRegions();
+  if (document->HasDraggableRegions()) {
+    const Vector<DraggableRegionValue>& regions = document->DraggableRegions();
     draggable_regions = WebVector<WebDraggableRegion>(regions.size());
     for (wtf_size_t i = 0; i < regions.size(); i++) {
-      const AnnotatedRegionValue& value = regions[i];
+      const DraggableRegionValue& value = regions[i];
       draggable_regions[i].draggable = value.draggable;
       draggable_regions[i].bounds = ToPixelSnappedRect(value.bounds);
     }
@@ -312,10 +324,6 @@ bool WebDocument::IsPrerendering() {
 
 bool WebDocument::HasDocumentPictureInPictureWindow() const {
   return ConstUnwrap<Document>()->HasDocumentPictureInPictureWindow();
-}
-
-bool WebDocument::IsAccessibilityEnabled() {
-  return ConstUnwrap<Document>()->IsAccessibilityEnabled();
 }
 
 void WebDocument::AddPostPrerenderingActivationStep(
@@ -355,6 +363,20 @@ net::ReferrerPolicy WebDocument::GetReferrerPolicy() const {
 
 WebString WebDocument::OutgoingReferrer() const {
   return WebString(ConstUnwrap<Document>()->domWindow()->OutgoingReferrer());
+}
+
+void WebDocument::InitiatePreview(const WebURL& url) {
+  if (!url.IsValid()) {
+    return;
+  }
+
+  Document* document = blink::To<Document>(private_.Get());
+  if (!document) {
+    return;
+  }
+
+  KURL kurl(url);
+  DocumentSpeculationRules::From(*document).InitiatePreview(kurl);
 }
 
 }  // namespace blink

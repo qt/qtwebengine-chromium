@@ -22,6 +22,7 @@ try_.defaults.set(
     expiration_timeout = 2 * time.hour,
     reclient_instance = reclient.instance.DEFAULT_UNTRUSTED,
     service_account = "chromium-try-gpu-builder@chops-service-accounts.iam.gserviceaccount.com",
+    siso_enabled = True,
     subproject_list_view = "luci.chromium.try",
     task_template_canary_percentage = 5,
 )
@@ -96,6 +97,39 @@ gpu_android_builder(
     ],
     gn_args = "ci/GPU FYI Android arm64 Builder",
     pool = "luci.chromium.gpu.android.pixel6.try",
+)
+
+gpu_android_builder(
+    name = "gpu-fyi-try-android-pixel-6-64-exp",
+    description_html = "Runs standard GPU tests on experimental Pixel 6 configs",
+    mirrors = [
+        "ci/GPU FYI Android arm64 Builder",
+        "ci/Android FYI Experimental Release (Pixel 6)",
+    ],
+    gn_args = "ci/GPU FYI Android arm64 Builder",
+    pool = "luci.chromium.gpu.android.pixel6.try",
+)
+
+gpu_android_builder(
+    name = "gpu-fyi-try-android-moto-g-power-5g-64",
+    description_html = "Runs GPU tests on Motorola Moto G Power 5G phones",
+    mirrors = [
+        "ci/GPU FYI Android arm64 Builder",
+        "ci/Android FYI Release (Motorola Moto G Power 5G)",
+    ],
+    gn_args = "ci/GPU FYI Android arm64 Builder",
+    pool = "luci.chromium.gpu.android.moto-g-power-5g.try",
+)
+
+gpu_android_builder(
+    name = "gpu-fyi-try-android-s23-64",
+    description_html = "Runs GPU tests on Samsung S23 phones",
+    mirrors = [
+        "ci/GPU FYI Android arm64 Builder",
+        "ci/Android FYI Release (Samsung S23)",
+    ],
+    gn_args = "ci/GPU FYI Android arm64 Builder",
+    pool = "luci.chromium.gpu.android.s23.try",
 )
 
 gpu_android_builder(
@@ -204,6 +238,17 @@ gpu_linux_builder(
     ],
     gn_args = "ci/GPU FYI Linux Builder",
     pool = "luci.chromium.gpu.linux.intel.try",
+)
+
+gpu_linux_builder(
+    name = "gpu-fyi-try-linux-intel-uhd770-rel",
+    description_html = "Runs GPU tests on 12th gen Intel CPUs with UHD 770 GPUs",
+    mirrors = [
+        "ci/GPU FYI Linux Builder",
+        "ci/Linux FYI Release (Intel UHD 770)",
+    ],
+    gn_args = "ci/GPU FYI Linux Builder",
+    pool = "luci.chromium.gpu.linux.intel.uhd770.try",
 )
 
 gpu_linux_builder(
@@ -355,6 +400,17 @@ gpu_mac_builder(
 )
 
 gpu_mac_builder(
+    name = "gpu-fyi-try-mac-arm64-apple-m2-exp",
+    description_html = "Runs standard GPU tests on experimental M2 configs",
+    mirrors = [
+        "ci/GPU FYI Mac arm64 Builder",
+        "ci/Mac FYI Experimental Retina Release (Apple M2)",
+    ],
+    gn_args = "ci/GPU FYI Mac arm64 Builder",
+    pool = "luci.chromium.gpu.mac.arm64.apple.m2.try",
+)
+
+gpu_mac_builder(
     name = "gpu-fyi-try-mac-arm64-apple-m2-retina-rel",
     mirrors = [
         "ci/GPU FYI Mac arm64 Builder",
@@ -490,6 +546,17 @@ gpu_win_builder(
 )
 
 gpu_win_builder(
+    name = "gpu-fyi-try-win10-intel-uhd770-rel",
+    description_html = "Runs GPU tests on 12th gen Intel CPUs with UHD 770 GPUs",
+    mirrors = [
+        "ci/GPU FYI Win x64 Builder",
+        "ci/Win10 FYI x64 Release (Intel UHD 770)",
+    ],
+    gn_args = "ci/GPU FYI Win x64 Builder",
+    pool = "luci.chromium.gpu.win10.intel.uhd770.try",
+)
+
+gpu_win_builder(
     name = "gpu-fyi-try-win10-nvidia-dbg-64",
     mirrors = [
         "ci/GPU FYI Win x64 Builder (dbg)",
@@ -547,6 +614,17 @@ gpu_win_builder(
     ],
     gn_args = "ci/GPU FYI Win x64 Builder",
     pool = "luci.chromium.gpu.win10.nvidia.try",
+)
+
+gpu_win_builder(
+    name = "gpu-fyi-try-win11-qualcomm-rel-64",
+    description_html = "Triggers GPU tests on Windows arm64 devices",
+    mirrors = [
+        "ci/GPU FYI Win arm64 Builder",
+        "ci/Win11 FYI arm64 Release (Qualcomm Adreno 690)",
+    ],
+    gn_args = "ci/GPU FYI Win arm64 Builder",
+    pool = "luci.chromium.gpu.win11.qualcomm.try",
 )
 
 gpu_win_builder(

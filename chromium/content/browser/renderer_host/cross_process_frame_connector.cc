@@ -60,10 +60,11 @@ CrossProcessFrameConnector::~CrossProcessFrameConnector() {
   }
 
   // Notify the view of this object being destroyed, if the view still exists.
-  SetView(nullptr);
+  SetView(nullptr, /*allow_paint_holding=*/false);
 }
 
-void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
+void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view,
+                                         bool allow_paint_holding) {
   // Detach ourselves from the previous |view_|.
   if (view_) {
     RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
@@ -110,7 +111,7 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
     if (frame_proxy_in_parent_renderer_ &&
         frame_proxy_in_parent_renderer_->is_render_frame_proxy_live()) {
       frame_proxy_in_parent_renderer_->GetAssociatedRemoteFrame()
-          ->SetFrameSinkId(view_->GetFrameSinkId());
+          ->SetFrameSinkId(view_->GetFrameSinkId(), allow_paint_holding);
     }
   }
 }
@@ -214,7 +215,7 @@ void CrossProcessFrameConnector::SynchronizeVisualProperties(
       visual_properties.is_pinch_gesture_active,
       visual_properties.visible_viewport_size,
       visual_properties.compositor_viewport,
-      visual_properties.root_widget_window_segments);
+      visual_properties.root_widget_viewport_segments);
 
   render_widget_host->UpdateVisualProperties(propagate);
 }
@@ -238,7 +239,7 @@ gfx::PointF CrossProcessFrameConnector::TransformPointToRootCoordSpace(
 
 bool CrossProcessFrameConnector::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
-    RenderWidgetHostViewBase* target_view,
+    RenderWidgetHostViewInput* target_view,
     const viz::SurfaceId& local_surface_id,
     gfx::PointF* transformed_point) {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
@@ -315,26 +316,26 @@ void CrossProcessFrameConnector::FocusRootView() {
     root_view->Focus();
 }
 
-blink::mojom::PointerLockResult CrossProcessFrameConnector::LockMouse(
+blink::mojom::PointerLockResult CrossProcessFrameConnector::LockPointer(
     bool request_unadjusted_movement) {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
   if (root_view)
-    return root_view->LockMouse(request_unadjusted_movement);
+    return root_view->LockPointer(request_unadjusted_movement);
   return blink::mojom::PointerLockResult::kWrongDocument;
 }
 
-blink::mojom::PointerLockResult CrossProcessFrameConnector::ChangeMouseLock(
+blink::mojom::PointerLockResult CrossProcessFrameConnector::ChangePointerLock(
     bool request_unadjusted_movement) {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
   if (root_view)
-    return root_view->ChangeMouseLock(request_unadjusted_movement);
+    return root_view->ChangePointerLock(request_unadjusted_movement);
   return blink::mojom::PointerLockResult::kWrongDocument;
 }
 
-void CrossProcessFrameConnector::UnlockMouse() {
+void CrossProcessFrameConnector::UnlockPointer() {
   RenderWidgetHostViewBase* root_view = GetRootRenderWidgetHostView();
   if (root_view)
-    root_view->UnlockMouse();
+    root_view->UnlockPointer();
 }
 
 void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
@@ -425,7 +426,7 @@ void CrossProcessFrameConnector::OnVisibilityChanged(
   if (!view_)
     return;
 
-  // TODO(https://crbug.com/1014212) Remove this CHECK when the bug is fixed.
+  // TODO(crbug.com/40103184) Remove this CHECK when the bug is fixed.
   CHECK(current_child_frame_host());
   current_child_frame_host()->VisibilityChanged(visibility_);
 

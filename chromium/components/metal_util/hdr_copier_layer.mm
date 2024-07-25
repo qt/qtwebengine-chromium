@@ -24,7 +24,7 @@ namespace {
 // Source of the shader to perform tonemapping. Note that the functions
 // ToLinearSRGBIsh, ToLinearPQ, and ToLinearHLG are copy-pasted from the GLSL
 // shader source in gfx::ColorTransform.
-// TODO(https://crbug.com/1101041): Add non-identity tonemapping to the shader.
+// TODO(crbug.com/40138176): Add non-identity tonemapping to the shader.
 NSString* tonemapping_shader_source =
     @"#include <metal_stdlib>\n"
      "#include <simd/simd.h>\n"
@@ -207,13 +207,13 @@ id<MTLRenderPipelineState> CreateRenderPipelineState(id<MTLDevice> device) {
 - (void)setHDRContents:(IOSurfaceRef)buffer
                 device:(id<MTLDevice>)device
             colorSpace:(gfx::ColorSpace)colorSpace
-              metadata:(absl::optional<gfx::HDRMetadata>)hdrMetadata;
+              metadata:(std::optional<gfx::HDRMetadata>)hdrMetadata;
 @end
 
 @implementation HDRCopierLayer {
   id<MTLRenderPipelineState> __strong _renderPipelineState;
   gfx::ColorSpace _colorSpace;
-  absl::optional<gfx::HDRMetadata> _hdrMetadata;
+  std::optional<gfx::HDRMetadata> _hdrMetadata;
 }
 - (id)init {
   if (self = [super init]) {
@@ -235,7 +235,7 @@ id<MTLRenderPipelineState> CreateRenderPipelineState(id<MTLDevice> device) {
 - (void)setHDRContents:(IOSurfaceRef)buffer
                 device:(id<MTLDevice>)device
             colorSpace:(gfx::ColorSpace)colorSpace
-              metadata:(absl::optional<gfx::HDRMetadata>)hdrMetadata {
+              metadata:(std::optional<gfx::HDRMetadata>)hdrMetadata {
   // Retrieve information about the IOSurface.
   size_t width = IOSurfaceGetWidth(buffer);
   size_t height = IOSurfaceGetHeight(buffer);
@@ -399,12 +399,11 @@ CALayer* MakeHDRCopierLayer() {
   return [[HDRCopierLayer alloc] init];
 }
 
-void UpdateHDRCopierLayer(
-    CALayer* layer,
-    IOSurfaceRef buffer,
-    id<MTLDevice> device,
-    const gfx::ColorSpace& color_space,
-    const absl::optional<gfx::HDRMetadata>& hdr_metadata) {
+void UpdateHDRCopierLayer(CALayer* layer,
+                          IOSurfaceRef buffer,
+                          id<MTLDevice> device,
+                          const gfx::ColorSpace& color_space,
+                          const std::optional<gfx::HDRMetadata>& hdr_metadata) {
   if (auto* hdr_copier_layer = base::apple::ObjCCast<HDRCopierLayer>(layer)) {
     [hdr_copier_layer setHDRContents:buffer
                               device:device
@@ -438,7 +437,7 @@ bool ShouldUseHDRCopier(IOSurfaceRef buffer,
 
   // Rasterized tiles and the primary plane specify a color space of SRGB_HDR
   // with no extended range metadata.
-  // TODO(https://crbug.com/1446302): Use extended range metadata instead of
+  // TODO(crbug.com/40268540): Use extended range metadata instead of
   // the SDR_HDR color space to indicate this.
   if (color_space.GetTransferID() == gfx::ColorSpace::TransferID::SRGB_HDR) {
     return !is_unorm;

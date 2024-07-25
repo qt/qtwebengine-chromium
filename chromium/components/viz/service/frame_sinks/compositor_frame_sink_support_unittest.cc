@@ -31,6 +31,7 @@
 #include "components/viz/test/fake_external_begin_frame_source.h"
 #include "components/viz/test/fake_surface_observer.h"
 #include "components/viz/test/mock_compositor_frame_sink_client.h"
+#include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/viz_test_suite.h"
 #include "services/viz/privileged/mojom/compositing/frame_sink_manager.mojom.h"
 #include "services/viz/public/mojom/compositing/compositor_frame_sink.mojom.h"
@@ -113,21 +114,20 @@ class MockFrameSinkManagerClient : public mojom::FrameSinkManagerClient {
       const std::vector<int32_t>& thread_ids,
       VerifyThreadIdsDoNotBelongToHostCallback callback) override {}
 #endif
+  void OnScreenshotCaptured(
+      const blink::SameDocNavigationScreenshotDestinationToken&
+          destination_token,
+      std::unique_ptr<CopyOutputResult> copy_output_result) override {}
 };
 
 class CompositorFrameSinkSupportTest : public testing::Test {
  public:
-  explicit CompositorFrameSinkSupportTest(
-      bool override_throttled_frame_rate_params = false)
+  CompositorFrameSinkSupportTest()
       : manager_(FrameSinkManagerImpl::InitParams(&shared_bitmap_manager_)),
         begin_frame_source_(0.f, false),
         local_surface_id_(3, kArbitraryToken),
         frame_sync_token_(GenTestSyncToken(4)),
         consumer_sync_token_(GenTestSyncToken(5)) {
-    if (override_throttled_frame_rate_params) {
-      scoped_feature_list_.InitAndEnableFeature(
-          features::kOverrideThrottledFrameRateParams);
-    }
     manager_.SetLocalClient(&frame_sink_manager_client_);
     now_src_ = std::make_unique<base::SimpleTestTickClock>();
     manager_.surface_manager()->SetTickClockForTesting(now_src_.get());
@@ -149,8 +149,8 @@ class CompositorFrameSinkSupportTest : public testing::Test {
     for (size_t i = 0u; i < num_resource_ids; ++i) {
       TransferableResource resource;
       resource.id = resource_ids[i];
-      resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
-      resource.mailbox_holder.sync_token = frame_sync_token_;
+      resource.set_texture_target(GL_TEXTURE_2D);
+      resource.set_sync_token(frame_sync_token_);
       frame->resource_list.push_back(resource);
     }
   }
@@ -169,7 +169,7 @@ class CompositorFrameSinkSupportTest : public testing::Test {
       std::unique_ptr<CopyOutputRequest> request) {
     frame.render_pass_list.back()->copy_requests.push_back(std::move(request));
     const auto result = support_->MaybeSubmitCompositorFrame(
-        local_surface_id_, std::move(frame), absl::nullopt, 0,
+        local_surface_id_, std::move(frame), std::nullopt, 0,
         mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
     switch (result) {
       case SubmitResult::ACCEPTED:
@@ -266,8 +266,8 @@ class CompositorFrameSinkSupportTest : public testing::Test {
                                   /*flags=*/0));
   }
 
-  bool HasAnimationManagerForNavigation(NavigationID id) const {
-    return manager_.navigation_to_animation_manager_.contains(id);
+  bool HasAnimationManagerForToken(blink::ViewTransitionToken token) const {
+    return manager_.transition_token_to_animation_manager_.contains(token);
   }
 
   void ProcessCompositorFrameTransitionDirective(
@@ -279,11 +279,10 @@ class CompositorFrameSinkSupportTest : public testing::Test {
 
   bool SupportHasSurfaceAnimationManager(
       CompositorFrameSinkSupport* support) const {
-    return !!support->surface_animation_manager_;
+    return !support->view_transition_token_to_animation_manager_.empty();
   }
 
  protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<base::SimpleTestTickClock> now_src_;
   ServerSharedBitmapManager shared_bitmap_manager_;
   FrameSinkManagerImpl manager_;
@@ -311,8 +310,7 @@ class OnBeginFrameAcksCompositorFrameSinkSupportTest
     : public CompositorFrameSinkSupportTest,
       public testing::WithParamInterface<bool> {
  public:
-  explicit OnBeginFrameAcksCompositorFrameSinkSupportTest(
-      bool override_throttled_frame_rate_params = false);
+  OnBeginFrameAcksCompositorFrameSinkSupportTest();
   ~OnBeginFrameAcksCompositorFrameSinkSupportTest() override = default;
 
   // When features::OnBeginFrameAcks is enabled resources are only returned
@@ -341,9 +339,7 @@ class OnBeginFrameAcksCompositorFrameSinkSupportTest
 };
 
 OnBeginFrameAcksCompositorFrameSinkSupportTest::
-    OnBeginFrameAcksCompositorFrameSinkSupportTest(
-        bool override_throttled_frame_rate_params)
-    : CompositorFrameSinkSupportTest(override_throttled_frame_rate_params) {
+    OnBeginFrameAcksCompositorFrameSinkSupportTest() {
   if (BeginFrameAcksEnabled()) {
     scoped_feature_list_.InitAndEnableFeature(features::kOnBeginFrameAcks);
     support_->SetWantsBeginFrameAcks();
@@ -369,14 +365,6 @@ void OnBeginFrameAcksCompositorFrameSinkSupportTest::MaybeTestOnBeginFrame(
       CreateBeginFrameArgsForTesting(BEGINFRAME_FROM_HERE, 0, sequence_number);
   begin_frame_source_.TestOnBeginFrame(args);
 }
-
-class ThrottledBeginFrameCompositorFrameSinkSupportTest
-    : public OnBeginFrameAcksCompositorFrameSinkSupportTest {
- protected:
-  ThrottledBeginFrameCompositorFrameSinkSupportTest()
-      : OnBeginFrameAcksCompositorFrameSinkSupportTest(
-            /*override_throttled_frame_rate_params=*/true) {}
-};
 
 // Tests submitting a frame with resources followed by one with no resources
 // with no resource provider action in between.
@@ -772,37 +760,37 @@ TEST_F(CompositorFrameSinkSupportTest, MonotonicallyIncreasingLocalSurfaceIds) {
 
   // LocalSurfaceId1(6, 1)
   auto result = support->MaybeSubmitCompositorFrame(
-      local_surface_id1, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id1, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
   // LocalSurfaceId(6, 2): Child-initiated synchronization.
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id2, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id2, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
   // LocalSurfaceId(7, 2): Parent-initiated synchronization.
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id3, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id3, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
   // LocalSurfaceId(5, 3): Submit rejected because not monotonically increasing.
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id4, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id4, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::SURFACE_ID_DECREASED, result);
 
   // LocalSurfaceId(8, 1): Submit rejected because not monotonically increasing.
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id5, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id5, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::SURFACE_ID_DECREASED, result);
 
   // LocalSurfaceId(9, 3): Parent AND child-initiated synchronization.
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id6, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id6, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
@@ -870,7 +858,7 @@ TEST_P(OnBeginFrameAcksCompositorFrameSinkSupportTest,
 
   TransferableResource resource;
   resource.id = ResourceId(1);
-  resource.mailbox_holder.texture_target = GL_TEXTURE_2D;
+  resource.set_texture_target(GL_TEXTURE_2D);
   auto frame = CompositorFrameBuilder()
                    .AddDefaultRenderPass()
                    .AddTransferableResource(resource)
@@ -1141,7 +1129,7 @@ TEST_P(OnBeginFrameAcksCompositorFrameSinkSupportTest, FrameSizeMismatch) {
                    .AddRenderPass(gfx::Rect(5, 5), gfx::Rect())
                    .Build();
   auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, std::move(frame), absl::nullopt, 0,
+      local_surface_id_, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
   EXPECT_TRUE(GetSurfaceForId(id));
@@ -1157,7 +1145,7 @@ TEST_P(OnBeginFrameAcksCompositorFrameSinkSupportTest, FrameSizeMismatch) {
                       std::size(frame_resource_ids));
 
   result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, std::move(frame), absl::nullopt, 0,
+      local_surface_id_, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
 
   EXPECT_EQ(SubmitResult::SIZE_MISMATCH, result);
@@ -1182,7 +1170,7 @@ TEST_F(CompositorFrameSinkSupportTest, DeviceScaleFactorMismatch) {
                    .SetDeviceScaleFactor(0.5f)
                    .Build();
   auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, std::move(frame), absl::nullopt, 0,
+      local_surface_id_, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
   EXPECT_TRUE(GetSurfaceForId(id));
@@ -1194,7 +1182,7 @@ TEST_F(CompositorFrameSinkSupportTest, DeviceScaleFactorMismatch) {
               .SetDeviceScaleFactor(0.4f)
               .Build();
   result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, std::move(frame), absl::nullopt, 0,
+      local_surface_id_, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::SIZE_MISMATCH, result);
 }
@@ -1592,7 +1580,7 @@ TEST_F(CompositorFrameSinkSupportTest, OnFrameTokenUpdate) {
 TEST_F(CompositorFrameSinkSupportTest,
        DisallowEmbedTokenReuseAcrossFrameSinks) {
   auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id_, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
@@ -1604,7 +1592,7 @@ TEST_F(CompositorFrameSinkSupportTest,
       false /* not root frame sink */);
   LocalSurfaceId local_surface_id(31232, local_surface_id_.embed_token());
   result = support->MaybeSubmitCompositorFrame(
-      local_surface_id, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::SURFACE_OWNED_BY_ANOTHER_CLIENT, result);
 }
@@ -1620,13 +1608,13 @@ TEST_F(CompositorFrameSinkSupportTest, SubmitAfterReparenting) {
   CompositorFrame frame =
       CompositorFrameBuilder().AddDefaultRenderPass().Build();
   SubmitResult result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id1, std::move(frame), absl::nullopt, 0,
+      local_surface_id1, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
   frame = CompositorFrameBuilder().AddDefaultRenderPass().Build();
   result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id2, std::move(frame), absl::nullopt, 0,
+      local_surface_id2, std::move(frame), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
 
   // Even though |local_surface_id2| has a smaller parent sequence number than
@@ -1824,7 +1812,7 @@ TEST_F(CompositorFrameSinkSupportTest, ThrottleUnresponsiveClient) {
 // Verifies that when CompositorFrameSinkSupport has its
 // |begin_frame_interval_| set, any BeginFrame would be sent only after this
 // interval has passed from the time when the last BeginFrame was sent.
-TEST_P(ThrottledBeginFrameCompositorFrameSinkSupportTest, BeginFrameInterval) {
+TEST_F(CompositorFrameSinkSupportTest, BeginFrameInterval) {
   FakeExternalBeginFrameSource begin_frame_source(0.f, false);
 
   testing::NiceMock<MockCompositorFrameSinkClient> mock_client;
@@ -1917,8 +1905,7 @@ TEST_P(ThrottledBeginFrameCompositorFrameSinkSupportTest, BeginFrameInterval) {
   support->SetNeedsBeginFrame(false);
 }
 
-TEST_P(ThrottledBeginFrameCompositorFrameSinkSupportTest,
-       HandlesSmallErrorInBeginFrameTimes) {
+TEST_F(CompositorFrameSinkSupportTest, HandlesSmallErrorInBeginFrameTimes) {
   FakeExternalBeginFrameSource begin_frame_source(0.f, false);
 
   testing::NiceMock<MockCompositorFrameSinkClient> mock_client;
@@ -1984,7 +1971,7 @@ TEST_P(ThrottledBeginFrameCompositorFrameSinkSupportTest,
   support->SetNeedsBeginFrame(false);
 }
 
-TEST_P(ThrottledBeginFrameCompositorFrameSinkSupportTest,
+TEST_F(CompositorFrameSinkSupportTest,
        UsesThrottledIntervalInPresentationFeedback) {
   static constexpr base::TimeDelta kThrottledFrameInterval = base::Hertz(5);
   // Request BeginFrames.
@@ -2057,31 +2044,38 @@ TEST_F(CompositorFrameSinkSupportTest, ForceFullFrameToActivateSurface) {
 TEST_F(CompositorFrameSinkSupportTest,
        ReleaseTransitionDirectiveClearsFrameSinkManagerEntry) {
   auto result = support_->MaybeSubmitCompositorFrame(
-      local_surface_id_, MakeDefaultCompositorFrame(), absl::nullopt, 0,
+      local_surface_id_, MakeDefaultCompositorFrame(), std::nullopt, 0,
       mojom::CompositorFrameSink::SubmitCompositorFrameSyncCallback());
   EXPECT_EQ(SubmitResult::ACCEPTED, result);
 
-  NavigationID navigation_id = NavigationID::Create();
+  blink::ViewTransitionToken transition_token;
+  const bool maybe_cross_frame_sink = true;
   Surface* surface = support_->GetLastCreatedSurfaceForTesting();
   ASSERT_TRUE(surface);
 
+  auto test_context_provider = TestContextProvider::CreateRaster();
+  TestSharedImageInterface* sii = test_context_provider->SharedImageInterface();
+  ReservedResourceIdTracker id_tracker;
+
   std::unique_ptr<SurfaceAnimationManager> animation_manager =
       SurfaceAnimationManager::CreateWithSave(
-          CompositorFrameTransitionDirective::CreateSave(navigation_id,
+          CompositorFrameTransitionDirective::CreateSave(transition_token,
+                                                         maybe_cross_frame_sink,
                                                          /*sequence_id=*/1, {}),
-          surface, &shared_bitmap_manager_, base::DoNothing());
+          surface, &shared_bitmap_manager_, sii, &id_tracker,
+          base::DoNothing());
   ASSERT_TRUE(animation_manager);
 
-  EXPECT_FALSE(HasAnimationManagerForNavigation(navigation_id));
-  manager_.CacheSurfaceAnimationManager(navigation_id,
+  EXPECT_FALSE(HasAnimationManagerForToken(transition_token));
+  manager_.CacheSurfaceAnimationManager(transition_token,
                                         std::move(animation_manager));
-  EXPECT_TRUE(HasAnimationManagerForNavigation(navigation_id));
+  EXPECT_TRUE(HasAnimationManagerForToken(transition_token));
 
   auto release_directive = CompositorFrameTransitionDirective::CreateRelease(
-      navigation_id, /*sequence_id=*/2);
+      transition_token, maybe_cross_frame_sink, /*sequence_id=*/2);
   ProcessCompositorFrameTransitionDirective(support_.get(), release_directive,
                                             surface);
-  EXPECT_FALSE(HasAnimationManagerForNavigation(navigation_id));
+  EXPECT_FALSE(HasAnimationManagerForToken(transition_token));
   EXPECT_FALSE(SupportHasSurfaceAnimationManager(support_.get()));
 }
 
@@ -2089,7 +2083,7 @@ TEST_F(CompositorFrameSinkSupportTest,
        GetRequestRegionProperties_NoSurfaceWithActiveFrame) {
   const auto props =
       support_->GetRequestRegionProperties(VideoCaptureSubTarget());
-  EXPECT_EQ(absl::nullopt, props);
+  EXPECT_EQ(std::nullopt, props);
 }
 
 TEST_F(CompositorFrameSinkSupportTest,
@@ -2240,11 +2234,6 @@ TEST_F(CompositorFrameSinkSupportTest,
 
 INSTANTIATE_TEST_SUITE_P(,
                          OnBeginFrameAcksCompositorFrameSinkSupportTest,
-                         testing::Bool(),
-                         &PostTestCaseName);
-
-INSTANTIATE_TEST_SUITE_P(,
-                         ThrottledBeginFrameCompositorFrameSinkSupportTest,
                          testing::Bool(),
                          &PostTestCaseName);
 }  // namespace viz

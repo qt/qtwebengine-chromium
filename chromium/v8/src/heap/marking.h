@@ -15,7 +15,7 @@
 
 namespace v8::internal {
 
-class Page;
+class PageMetadata;
 
 class MarkBit final {
  public:
@@ -36,7 +36,7 @@ class MarkBit final {
   inline bool Set();
 
   template <AccessMode mode = AccessMode::NON_ATOMIC>
-  inline bool Get();
+  inline bool Get() const;
 
   // The function returns true if it succeeded to
   // transition the bit from 1 to 0. Only works in non-atomic contexts.
@@ -47,6 +47,9 @@ class MarkBit final {
     return cell_ == other.cell_ && mask_ == other.mask_;
   }
 #endif
+
+  const CellType* CellAddress() const { return cell_; }
+  CellType Mask() const { return mask_; }
 
  private:
   inline MarkBit(CellType* cell, CellType mask) : cell_(cell), mask_(mask) {}
@@ -71,12 +74,12 @@ inline bool MarkBit::Set<AccessMode::ATOMIC>() {
 }
 
 template <>
-inline bool MarkBit::Get<AccessMode::NON_ATOMIC>() {
+inline bool MarkBit::Get<AccessMode::NON_ATOMIC>() const {
   return (*cell_ & mask_) != 0;
 }
 
 template <>
-inline bool MarkBit::Get<AccessMode::ATOMIC>() {
+inline bool MarkBit::Get<AccessMode::ATOMIC>() const {
   return (base::AsAtomicWord::Acquire_Load(cell_) & mask_) != 0;
 }
 
@@ -110,9 +113,7 @@ class V8_EXPORT_PRIVATE MarkingBitmap final {
   // The size of the bitmap in bytes is CellsCount() * kBytesPerCell.
   static constexpr size_t kSize = kCellsCount * kBytesPerCell;
 
-  V8_INLINE static constexpr MarkBitIndex AddressToIndex(Address address) {
-    return (address & kPageAlignmentMask) >> kTaggedSizeLog2;
-  }
+  V8_INLINE static constexpr MarkBitIndex AddressToIndex(Address address);
 
   V8_INLINE static constexpr MarkBitIndex LimitAddressToIndex(Address address);
 
@@ -198,7 +199,7 @@ class V8_EXPORT_PRIVATE MarkingBitmap final {
   // its markbit set. If no such address exists, it returns the page area start.
   // If the page is iterable, the returned address is guaranteed to be the start
   // of a valid object in the page.
-  static inline Address FindPreviousValidObject(const Page* page,
+  static inline Address FindPreviousValidObject(const PageMetadata* page,
                                                 Address maybe_inner_ptr);
 
  private:
@@ -238,7 +239,7 @@ class LiveObjectRange final {
     using iterator_category = std::forward_iterator_tag;
 
     inline iterator();
-    explicit inline iterator(const Page* page);
+    explicit inline iterator(const PageMetadata* page);
 
     inline iterator& operator++();
     inline iterator operator++(int);
@@ -256,7 +257,7 @@ class LiveObjectRange final {
     inline bool AdvanceToNextMarkedObject();
     inline void AdvanceToNextValidObject();
 
-    const Page* const page_ = nullptr;
+    const PageMetadata* const page_ = nullptr;
     const MarkBit::CellType* const cells_ = nullptr;
     const PtrComprCageBase cage_base_;
     MarkingBitmap::CellIndex current_cell_index_ = 0;
@@ -266,13 +267,13 @@ class LiveObjectRange final {
     int current_size_ = 0;
   };
 
-  explicit LiveObjectRange(const Page* page) : page_(page) {}
+  explicit LiveObjectRange(const PageMetadata* page) : page_(page) {}
 
   inline iterator begin();
   inline iterator end();
 
  private:
-  const Page* const page_;
+  const PageMetadata* const page_;
 };
 
 }  // namespace v8::internal

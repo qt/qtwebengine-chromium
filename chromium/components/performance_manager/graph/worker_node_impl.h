@@ -16,6 +16,7 @@
 #include "components/performance_manager/public/graph/worker_node.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace performance_manager {
 
@@ -36,7 +37,8 @@ class WorkerNodeImpl
   WorkerNodeImpl(const std::string& browser_context_id,
                  WorkerType worker_type,
                  ProcessNodeImpl* process_node,
-                 const blink::WorkerToken& worker_token);
+                 const blink::WorkerToken& worker_token,
+                 const url::Origin& origin);
 
   WorkerNodeImpl(const WorkerNodeImpl&) = delete;
   WorkerNodeImpl& operator=(const WorkerNodeImpl&) = delete;
@@ -49,6 +51,7 @@ class WorkerNodeImpl
   const blink::WorkerToken& GetWorkerToken() const override;
   resource_attribution::WorkerContext GetResourceContext() const override;
   const GURL& GetURL() const override;
+  const url::Origin& GetOrigin() const override;
   const PriorityAndReason& GetPriorityAndReason() const override;
   uint64_t GetResidentSetKbEstimate() const override;
   uint64_t GetPrivateFootprintKbEstimate() const override;
@@ -74,9 +77,12 @@ class WorkerNodeImpl
   ProcessNodeImpl* process_node() const;
 
   // Getters for non-const properties. These are not thread safe.
-  const base::flat_set<FrameNodeImpl*>& client_frames() const;
-  const base::flat_set<WorkerNodeImpl*>& client_workers() const;
-  const base::flat_set<WorkerNodeImpl*>& child_workers() const;
+  const base::flat_set<raw_ptr<FrameNodeImpl, CtnExperimental>>& client_frames()
+      const;
+  const base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>>&
+  client_workers() const;
+  const base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>>&
+  child_workers() const;
 
   base::WeakPtr<WorkerNodeImpl> GetWeakPtrOnUIThread();
   base::WeakPtr<WorkerNodeImpl> GetWeakPtr();
@@ -132,18 +138,21 @@ class WorkerNodeImpl
   // OnFinalResponseURLDetermined() is invoked.
   GURL url_ GUARDED_BY_CONTEXT(sequence_checker_);
 
+  // The worker's security origin. Set at creation and never varies.
+  const url::Origin origin_ GUARDED_BY_CONTEXT(sequence_checker_);
+
   // Frames that are clients of this worker.
-  base::flat_set<FrameNodeImpl*> client_frames_
+  base::flat_set<raw_ptr<FrameNodeImpl, CtnExperimental>> client_frames_
       GUARDED_BY_CONTEXT(sequence_checker_);
 
   // Other workers that are clients of this worker. See the declaration of
   // WorkerNode for a distinction between client workers and child workers.
-  base::flat_set<WorkerNodeImpl*> client_workers_
+  base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>> client_workers_
       GUARDED_BY_CONTEXT(sequence_checker_);
 
   // The child workers of this worker. See the declaration of WorkerNode for a
   // distinction between client workers and child workers.
-  base::flat_set<WorkerNodeImpl*> child_workers_
+  base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>> child_workers_
       GUARDED_BY_CONTEXT(sequence_checker_);
 
   uint64_t resident_set_kb_estimate_ = 0;

@@ -26,6 +26,7 @@
 #include <stdarg.h>
 
 #include <algorithm>
+#include <string_view>
 
 #include "base/functional/callback.h"
 #include "base/logging.h"
@@ -245,42 +246,7 @@ String String::Format(const char* format, ...) {
 }
 
 String String::EncodeForDebugging() const {
-  if (IsNull())
-    return "<null>";
-
-  StringBuilder builder;
-  builder.Append('"');
-  for (unsigned index = 0; index < length(); ++index) {
-    // Print shorthands for select cases.
-    UChar character = (*impl_)[index];
-    switch (character) {
-      case '\t':
-        builder.Append("\\t");
-        break;
-      case '\n':
-        builder.Append("\\n");
-        break;
-      case '\r':
-        builder.Append("\\r");
-        break;
-      case '"':
-        builder.Append("\\\"");
-        break;
-      case '\\':
-        builder.Append("\\\\");
-        break;
-      default:
-        if (IsASCIIPrintable(character)) {
-          builder.Append(static_cast<char>(character));
-        } else {
-          // Print "\uXXXX" for control or non-ASCII characters.
-          builder.AppendFormat("\\u%04X", character);
-        }
-        break;
-    }
-  }
-  builder.Append('"');
-  return builder.ToString();
+  return StringView(*this).EncodeForDebugging();
 }
 
 String String::Number(float number) {
@@ -535,7 +501,7 @@ String String::FromUTF8(const LChar* string) {
   return FromUTF8(string, strlen(reinterpret_cast<const char*>(string)));
 }
 
-String String::FromUTF8(base::StringPiece s) {
+String String::FromUTF8(std::string_view s) {
   return FromUTF8(reinterpret_cast<const LChar*>(s.data()), s.size());
 }
 

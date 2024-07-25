@@ -9,14 +9,14 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -217,7 +217,7 @@ gfx::ExtensionSet GetGLExtensionsFromCurrentContext(
   GLint num_extensions = 0;
   api->glGetIntegervFn(num_extensions_enum, &num_extensions);
 
-  std::vector<base::StringPiece> exts(num_extensions);
+  std::vector<std::string_view> exts(num_extensions);
   for (GLint i = 0; i < num_extensions; ++i) {
     const char* extension =
         reinterpret_cast<const char*>(api->glGetStringiFn(extensions_enum, i));
@@ -269,7 +269,7 @@ void SetSoftwareWebGLCommandLineSwitches(base::CommandLine* command_line) {
                                   kANGLEImplementationSwiftShaderForWebGLName);
 }
 
-absl::optional<GLImplementationParts>
+std::optional<GLImplementationParts>
 GetRequestedGLImplementationFromCommandLine(
     const base::CommandLine* command_line,
     bool* fallback_to_software_gl) {
@@ -292,7 +292,7 @@ GetRequestedGLImplementationFromCommandLine(
 
   if (!command_line->HasSwitch(switches::kUseGL) &&
       !command_line->HasSwitch(switches::kUseANGLE)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   std::string gl_name = command_line->GetSwitchValueASCII(switches::kUseGL);
@@ -307,7 +307,7 @@ GetRequestedGLImplementationFromCommandLine(
 
   if (gl_name == "any") {
     *fallback_to_software_gl = true;
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   if ((gl_name == kGLImplementationANGLEName) &&
@@ -420,13 +420,13 @@ std::string FilterGLExtensionList(
   if (extensions == NULL)
     return "";
 
-  std::vector<base::StringPiece> extension_vec = base::SplitStringPiece(
+  std::vector<std::string_view> extension_vec = base::SplitStringPiece(
       extensions, " ", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
-  auto is_disabled = [&disabled_extensions](const base::StringPiece& ext) {
+  auto is_disabled = [&disabled_extensions](std::string_view ext) {
     return base::Contains(disabled_extensions, ext);
   };
-  base::EraseIf(extension_vec, is_disabled);
+  std::erase_if(extension_vec, is_disabled);
 
   return base::JoinString(extension_vec, " ");
 }
@@ -456,7 +456,7 @@ std::string GetGLExtensionsFromCurrentContext(GLApi* api) {
   GLint num_extensions = 0;
   api->glGetIntegervFn(GL_NUM_EXTENSIONS, &num_extensions);
 
-  std::vector<base::StringPiece> exts(num_extensions);
+  std::vector<std::string_view> exts(num_extensions);
   for (GLint i = 0; i < num_extensions; ++i) {
     const char* extension =
         reinterpret_cast<const char*>(api->glGetStringiFn(GL_EXTENSIONS, i));

@@ -88,7 +88,7 @@ enum ModalType {
 // level of z-order granularity. For other platforms, which only provide a
 // distinction between "normal" and "always on top" windows, any of the values
 // here that aren't `kNormal` are treated equally as "always on top".
-// TODO(crbug.com/1358586): For non-desktop widgets on Linux and Windows,
+// TODO(crbug.com/40237029): For non-desktop widgets on Linux and Windows,
 // this z-order currently does not have any effect.
 enum class ZOrderLevel {
   // The default level for windows.
@@ -138,19 +138,6 @@ enum MenuSourceType {
   MENU_SOURCE_ADJUST_SELECTION = 9,
   MENU_SOURCE_ADJUST_SELECTION_RESET = 10,
   MENU_SOURCE_TYPE_LAST = MENU_SOURCE_ADJUST_SELECTION_RESET
-};
-
-// Menu types that are used to position menu windows correctly.
-enum class MenuType {
-  // A context menu opened either via a right click or a long tap.
-  kRootContextMenu = 0,
-
-  // A root non-context menu. Example: The three dot menu.
-  kRootMenu,
-
-  // A child menu opened by clicking on a nested menu entry of either
-  // |kRootContextMenu| or |kRootParentMenu|.
-  kChildMenu,
 };
 
 // Where an owned anchored window should be anchored to. Used by such backends

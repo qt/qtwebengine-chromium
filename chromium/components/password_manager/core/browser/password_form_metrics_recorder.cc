@@ -16,9 +16,9 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/time/default_clock.h"
+#include "components/affiliations/core/browser/affiliation_utils.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/password_generation_util.h"
-#include "components/password_manager/core/browser/affiliation/affiliation_utils.h"
 #include "components/password_manager/core/browser/form_fetcher.h"
 #include "components/password_manager/core/browser/password_bubble_experiment.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
@@ -55,6 +55,7 @@ PasswordFormMetricsRecorder::BubbleDismissalReason GetBubbleDismissalReason(
 
     // Ignore these for metrics collection:
     case metrics_util::CLICKED_MANAGE:
+    case metrics_util::CLICKED_MANAGE_PASSWORD:
     case metrics_util::CLICKED_PASSWORDS_DASHBOARD:
     case metrics_util::AUTO_SIGNIN_TOAST_TIMEOUT:
       break;
@@ -120,13 +121,14 @@ UsernamePasswordsState CalculateUsernamePasswordsState(
 
   for (const FormFieldData& field : submitted_form.fields) {
     const std::u16string& value =
-        field.user_input.empty() ? field.value : field.user_input;
+        field.user_input().empty() ? field.value() : field.user_input();
 
-    bool user_typed = field.properties_mask & FieldPropertiesFlags::kUserTyped;
-    bool manually_filled =
-        field.properties_mask & FieldPropertiesFlags::kAutofilledOnUserTrigger;
+    bool user_typed =
+        field.properties_mask() & FieldPropertiesFlags::kUserTyped;
+    bool manually_filled = field.properties_mask() &
+                           FieldPropertiesFlags::kAutofilledOnUserTrigger;
     bool automatically_filled =
-        field.properties_mask & FieldPropertiesFlags::kAutofilledOnPageLoad;
+        field.properties_mask() & FieldPropertiesFlags::kAutofilledOnPageLoad;
 
     // The typed `value` could appear in `saved_usernames`, `saved_passwords`,
     // or both. In the last case we use the control type of the form as a
@@ -153,7 +155,7 @@ UsernamePasswordsState CalculateUsernamePasswordsState(
         is_possibly_saved_password_in_account_store;
 
     bool field_has_password_type =
-        field.form_control_type == autofill::FormControlType::kInputPassword;
+        field.form_control_type() == autofill::FormControlType::kInputPassword;
 
     if (is_possibly_saved_username &&
         (!is_possibly_saved_password || !field_has_password_type)) {
@@ -195,7 +197,7 @@ bool BlocklistedBySmartBubble(
       password_bubble_experiment::GetSmartBubbleDismissalThreshold();
   for (const FormFieldData& field : submitted_form.fields) {
     const std::u16string& value =
-        field.user_input.empty() ? field.value : field.user_input;
+        field.user_input().empty() ? field.value() : field.user_input();
     for (const InteractionsStats& stat : interactions_stats) {
       if (stat.username_value == value &&
           stat.dismissal_count >= show_threshold)
@@ -554,15 +556,58 @@ void PasswordFormMetricsRecorder::RecordMatchedFormType(
       match_type = FormMatchType::kExactMatch;
       break;
     case password_manager_util::GetLoginMatchType::kAffiliated:
-      match_type = IsValidAndroidFacetURI(form.signon_realm)
+      match_type = affiliations::IsValidAndroidFacetURI(form.signon_realm)
                        ? FormMatchType::kAffiliatedApp
                        : FormMatchType::kAffiliatedWebsites;
       break;
     case password_manager_util::GetLoginMatchType::kPSL:
       match_type = FormMatchType::kPublicSuffixMatch;
       break;
+    case password_manager_util::GetLoginMatchType::kGrouped:
+      match_type = FormMatchType::kGroupedWebsites;
+      break;
   }
   UMA_HISTOGRAM_ENUMERATION("PasswordManager.MatchedFormType", match_type);
+}
+
+void PasswordFormMetricsRecorder::RecordPotentialPreferredMatch(
+    const PasswordForm* preferred_match,
+    const bool were_grouped_credentials_availible) {
+  if (std::exchange(recorded_potential_preferred_matched_password_type, true)) {
+    return;
+  }
+
+  using FormMatchType =
+      password_manager::PasswordFormMetricsRecorder::MatchedFormType;
+  FormMatchType match_type;
+
+  if (!preferred_match) {
+    if (were_grouped_credentials_availible) {
+      UMA_HISTOGRAM_ENUMERATION("PasswordManager.PotentialBestMatchFormType",
+                                FormMatchType::kGroupedWebsites);
+    }
+    return;
+  }
+
+  switch (password_manager_util::GetMatchType(*preferred_match)) {
+    case password_manager_util::GetLoginMatchType::kExact:
+      match_type = FormMatchType::kExactMatch;
+      break;
+    case password_manager_util::GetLoginMatchType::kAffiliated:
+      match_type =
+          affiliations::IsValidAndroidFacetURI(preferred_match->signon_realm)
+              ? FormMatchType::kAffiliatedApp
+              : FormMatchType::kAffiliatedWebsites;
+      break;
+    case password_manager_util::GetLoginMatchType::kPSL:
+      match_type = FormMatchType::kPublicSuffixMatch;
+      break;
+    case password_manager_util::GetLoginMatchType::kGrouped:
+      match_type = FormMatchType::kGroupedWebsites;
+      break;
+  }
+  UMA_HISTOGRAM_ENUMERATION("PasswordManager.PotentialBestMatchFormType",
+                            match_type);
 }
 
 void PasswordFormMetricsRecorder::CalculateFillingAssistanceMetric(
@@ -836,7 +881,7 @@ void PasswordFormMetricsRecorder::RecordPasswordBubbleShown(
       break;
 
     // Other reasons to show a bubble:
-    // TODO(crbug.com/1063853): Decide how to collect metrics for this new UI.
+    // TODO(crbug.com/40123456): Decide how to collect metrics for this new UI.
     case metrics_util::AUTOMATIC_SAVE_UNSYNCED_CREDENTIALS_LOCALLY:
     case metrics_util::MANUAL_MANAGE_PASSWORDS:
     case metrics_util::AUTOMATIC_GENERATED_PASSWORD_CONFIRMATION:
@@ -851,6 +896,7 @@ void PasswordFormMetricsRecorder::RecordPasswordBubbleShown(
     case metrics_util::AUTOMATIC_ADD_USERNAME_BUBBLE:
     case metrics_util::MANUAL_ADD_USERNAME_BUBBLE:
     case metrics_util::AUTOMATIC_RELAUNCH_CHROME_BUBBLE:
+    case metrics_util::AUTOMATIC_DEFAULT_STORE_CHANGED_BUBBLE:
       // Do nothing.
       return;
 

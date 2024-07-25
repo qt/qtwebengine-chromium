@@ -22,8 +22,17 @@
 
 #include "gpu_validation/gpu_descriptor_set.h"
 #include "gpu_validation/gpu_state_tracker.h"
+#include "gpu_validation/gpu_resources.h"
 #include "generated/vk_object_types.h"
 #include "gpu_shaders/gpu_shaders_constants.h"
+
+// We pull in most the core state tracking files
+// gpu_subclasses.h should NOT be included by any other header file
+#include "state_tracker/buffer_state.h"
+#include "state_tracker/image_state.h"
+#include "state_tracker/cmd_buffer_state.h"
+#include "state_tracker/sampler_state.h"
+#include "state_tracker/ray_tracing_state.h"
 
 namespace gpuav {
 
@@ -40,72 +49,12 @@ struct DescSetState {
     std::shared_ptr<DescriptorSet::State> output_state;
 };
 
-struct DeviceMemoryBlock {
-    VkBuffer buffer;
-    VmaAllocation allocation;
-};
-
 struct DescBindingInfo {
     VkBuffer bindless_state_buffer;
     VmaAllocation bindless_state_buffer_allocation;
+    // Hold a buffer for each descriptor set
+    // Note: The index here is from vkCmdBindDescriptorSets::firstSet
     std::vector<DescSetState> descriptor_set_buffers;
-};
-
-struct CommonDrawResources {
-    // some resources can be used each time so only to need to create once
-    bool initialized = false;
-
-    VkShaderModule shader_module = VK_NULL_HANDLE;
-    VkDescriptorSetLayout ds_layout = VK_NULL_HANDLE;
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    vl_concurrent_unordered_map<VkRenderPass, VkPipeline> renderpass_to_pipeline;
-    VkShaderEXT shader_object = VK_NULL_HANDLE;
-
-    void Destroy(VkDevice device);
-};
-
-struct CommonDispatchResources {
-    // some resources can be used each time so only to need to create once
-    bool initialized = false;
-
-    VkShaderModule shader_module = VK_NULL_HANDLE;
-    VkDescriptorSetLayout ds_layout = VK_NULL_HANDLE;
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    VkShaderEXT shader_object = VK_NULL_HANDLE;
-
-    void Destroy(VkDevice device);
-};
-
-struct CommonTraceRaysResources {
-    // some resources can be used each time so only to need to create once
-    bool initialized = false;
-
-    VkShaderModule shader_module = VK_NULL_HANDLE;
-    VkDescriptorSetLayout ds_layout = VK_NULL_HANDLE;
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    VmaPool sbt_pool = VK_NULL_HANDLE;
-    VkBuffer sbt_buffer = VK_NULL_HANDLE;
-    VmaAllocation sbt_allocation = {};
-    VkDeviceAddress sbt_address = 0;
-    uint32_t shader_group_handle_size_aligned = 0;
-
-    void Destroy(VkDevice device, VmaAllocator &vmaAllocator);
-};
-
-struct AccelerationStructureBuildValidationState {
-    // some resources can be used each time so only to need to create once
-    bool initialized = false;
-
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout pipeline_layout = VK_NULL_HANDLE;
-
-    VkAccelerationStructureNV replacement_as = VK_NULL_HANDLE;
-    VmaAllocation replacement_as_allocation = VK_NULL_HANDLE;
-    uint64_t replacement_as_handle = 0;
-
-    void Destroy(VkDevice device, VmaAllocator &vmaAllocator);
 };
 
 // Used for draws/dispatch/traceRays indirect
@@ -119,123 +68,96 @@ struct CmdIndirectState {
     VkDeviceAddress indirectDeviceAddress;
 };
 
-struct AccelerationStructureBuildValidationInfo {
-    // The acceleration structure that is being built.
-    VkAccelerationStructureNV acceleration_structure = VK_NULL_HANDLE;
-
-    // The descriptor pool and descriptor set being used to validate a given build.
-    VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
-
-    // The storage buffer used by the validating compute shader which contains info about
-    // the valid handles and which is written to communicate found invalid handles.
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VmaAllocation buffer_allocation = VK_NULL_HANDLE;
-};
-
-class Validator;
-
-// Every recorded command need the validation resources listed in this function
-// If adding validation for a new command reveals the need to allocate specific resources for it, create a new class that derives
-// from this one
-class CommandResources {
-  public:
-    virtual ~CommandResources() {}
-    virtual void Destroy(gpuav::Validator &validator);
-    CommandResources() = default;
-    CommandResources(const CommandResources &) = default;
-    CommandResources &operator=(const CommandResources &) = default;
-
-    void LogErrorIfAny(gpuav::Validator &validator, VkQueue queue, VkCommandBuffer cmd_buffer, const uint32_t operation_index);
-    // Return true iff an error has been logged
-    virtual bool LogValidationMessage(gpuav::Validator &validator, VkQueue queue, VkCommandBuffer cmd_buffer,
-                                      const uint32_t *debug_record, const uint32_t operation_index, const LogObjectList &objlist);
-
-    DeviceMemoryBlock output_mem_block;
-
-    VkDescriptorSet output_buffer_desc_set = VK_NULL_HANDLE;
-    VkDescriptorPool output_buffer_desc_pool = VK_NULL_HANDLE;
-    VkPipelineBindPoint pipeline_bind_point = VK_PIPELINE_BIND_POINT_MAX_ENUM;
-    bool uses_robustness = false;  // Only used in AnalyseAndeGenerateMessages, to output using LogWarning instead of LogError. It needs to be removed
-    vvl::Func command = vvl::Func::Empty;  // Should probably use Location instead
-    uint32_t desc_binding_index = vvl::kU32Max;// desc_binding is only used to help generate an error message
-    std::vector<DescBindingInfo> *desc_binding_list = nullptr;
-};
-
-class PreDrawResources : public CommandResources {
-  public:
-    ~PreDrawResources() {}
-
-    VkDescriptorPool desc_pool = VK_NULL_HANDLE;
-    // Store a descriptor for the indirect buffer or count buffer
-    VkDescriptorSet buffer_desc_set = VK_NULL_HANDLE;
-    VkBuffer indirect_buffer = VK_NULL_HANDLE;
-    VkDeviceSize indirect_buffer_offset = 0;
-    uint32_t indirect_buffer_stride = 0;
-    VkDeviceSize indirect_buffer_size = 0;
-    static constexpr uint32_t push_constant_words = 11;
-    bool emit_task_error = false;  // Used to decide between mesh error and task error
-
-    void Destroy(gpuav::Validator &validator) final;
-    bool LogValidationMessage(gpuav::Validator &validator, VkQueue queue, VkCommandBuffer cmd_buffer, const uint32_t *debug_record,
-                              const uint32_t operation_index, const LogObjectList &objlist);
-};
-
-class PreDispatchResources : public CommandResources {
-  public:
-    ~PreDispatchResources() {}
-
-    VkDescriptorPool desc_pool = VK_NULL_HANDLE;
-    VkDescriptorSet indirect_buffer_desc_set = VK_NULL_HANDLE;
-    VkBuffer indirect_buffer = VK_NULL_HANDLE;
-    VkDeviceSize indirect_buffer_offset = 0;
-    static constexpr uint32_t push_constant_words = 4;
-
-    void Destroy(gpuav::Validator &validator) final;
-    bool LogValidationMessage(gpuav::Validator &validator, VkQueue queue, VkCommandBuffer cmd_buffer, const uint32_t *debug_record,
-                              const uint32_t operation_index, const LogObjectList &objlist);
-};
-
-class PreTraceRaysResources : public CommandResources {
-  public:
-    ~PreTraceRaysResources() {}
-
-    VkDescriptorPool desc_pool = VK_NULL_HANDLE;
-    VkDescriptorSet desc_set = VK_NULL_HANDLE;
-    VkDeviceAddress indirect_data_address = 0;
-    static constexpr uint32_t push_constant_words = 5;
-
-    void Destroy(gpuav::Validator &validator) final;
-    bool LogValidationMessage(gpuav::Validator &validator, VkQueue queue, VkCommandBuffer cmd_buffer, const uint32_t *debug_record,
-                              const uint32_t operation_index, const LogObjectList &objlist);
-};
-
 class CommandBuffer : public gpu_tracker::CommandBuffer {
   public:
     // per validated command state
     std::vector<std::unique_ptr<CommandResources>> per_command_resources;
     // per vkCmdBindDescriptorSet() state
     std::vector<DescBindingInfo> di_input_buffer_list;
-    std::vector<AccelerationStructureBuildValidationInfo> as_validation_buffers;
     VkBuffer current_bindless_buffer = VK_NULL_HANDLE;
+    uint32_t draw_index = 0, compute_index = 0, trace_rays_index = 0;
 
-    CommandBuffer(Validator *ga, VkCommandBuffer cb, const VkCommandBufferAllocateInfo *pCreateInfo, const vvl::CommandPool *pool);
+    CommandBuffer(Validator &gpuav, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *pCreateInfo,
+                  const vvl::CommandPool *pool);
     ~CommandBuffer();
 
-    bool NeedsProcessing() const final { return !per_command_resources.empty() || has_build_as_cmd; }
-    void Process(VkQueue queue, const Location &loc) final;
+    bool PreProcess() final;
+    void PostProcess(VkQueue queue, const Location &loc) final;
+
+    const VkDescriptorSetLayout &GetInstrumentationDescriptorSetLayout() const {
+        assert(instrumentation_desc_set_layout_ != VK_NULL_HANDLE);
+        return instrumentation_desc_set_layout_;
+    }
+
+    // Bindings: {error output buffer}
+    const VkDescriptorSet &GetValidationCmdCommonDescriptorSet() const {
+        assert(validation_cmd_desc_set_ != VK_NULL_HANDLE);
+        return validation_cmd_desc_set_;
+    }
+
+    const VkDescriptorSetLayout &GetValidationCmdCommonDescriptorSetLayout() const {
+        assert(validation_cmd_desc_set_layout_ != VK_NULL_HANDLE);
+        return validation_cmd_desc_set_layout_;
+    }
+
+    uint32_t GetValidationErrorBufferDescSetIndex() const { return 0; }
+
+    const VkBuffer &GetErrorOutputBuffer() const {
+        assert(error_output_buffer_.buffer != VK_NULL_HANDLE);
+        return error_output_buffer_.buffer;
+    }
+
+    VkDeviceSize GetCmdErrorsCountsBufferByteSize() const { return 8192 * sizeof(uint32_t); }
+
+    const VkBuffer &GetCmdErrorsCountsBuffer() const {
+        assert(cmd_errors_counts_buffer_.buffer != VK_NULL_HANDLE);
+        return cmd_errors_counts_buffer_.buffer;
+    }
+
+    const DeviceMemoryBlock &GetBdaRangesSnapshot() const { return bda_ranges_snapshot_; }
+
+    void ClearCmdErrorsCountsBuffer() const;
 
     void Destroy() final;
     void Reset() final;
 
   private:
+    void AllocateResources();
     void ResetCBState();
-    void ProcessAccelerationStructure(VkQueue queue);
+    bool NeedsPostProcess();
+
+    VkDeviceSize GetBdaRangesBufferByteSize() const;
+    [[nodiscard]] bool UpdateBdaRangesBuffer();
+
+    Validator &state_;
+
+    VkDescriptorSetLayout instrumentation_desc_set_layout_ = VK_NULL_HANDLE;
+
+    VkDescriptorSetLayout validation_cmd_desc_set_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSet validation_cmd_desc_set_ = VK_NULL_HANDLE;
+    VkDescriptorPool validation_cmd_desc_pool_ = VK_NULL_HANDLE;
+
+    // Buffer storing GPU-AV errors
+    DeviceMemoryBlock error_output_buffer_ = {};
+    // Buffer storing an error count per validated commands.
+    // Used to limit the number of errors a single command can emit.
+    DeviceMemoryBlock cmd_errors_counts_buffer_ = {};
+    // Buffer storing a snapshot of buffer device address ranges
+    DeviceMemoryBlock bda_ranges_snapshot_ = {};
+    uint32_t bda_ranges_snapshot_version_ = 0;
+};
+
+class Queue : public gpu_tracker::Queue {
+  public:
+    Queue(Validator &state, VkQueue q, uint32_t index, VkDeviceQueueCreateFlags flags, const VkQueueFamilyProperties &qfp);
+
+  protected:
+    uint64_t PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) override;
 };
 
 class Buffer : public vvl::Buffer {
   public:
-    Buffer(ValidationStateTracker *dev_data, VkBuffer buff, const VkBufferCreateInfo *pCreateInfo, DescriptorHeap &desc_heap_);
+    Buffer(ValidationStateTracker &dev_data, VkBuffer buff, const VkBufferCreateInfo *pCreateInfo, DescriptorHeap &desc_heap_);
 
     void Destroy() final;
     void NotifyInvalidate(const NodeList &invalid_nodes, bool unlink) final;
@@ -283,7 +205,7 @@ class Sampler : public vvl::Sampler {
 class AccelerationStructureKHR : public vvl::AccelerationStructureKHR {
   public:
     AccelerationStructureKHR(VkAccelerationStructureKHR as, const VkAccelerationStructureCreateInfoKHR *ci,
-                             std::shared_ptr<vvl::Buffer> &&buf_state, VkDeviceAddress address, DescriptorHeap &desc_heap_);
+                             std::shared_ptr<vvl::Buffer> &&buf_state, DescriptorHeap &desc_heap_);
 
     void Destroy() final;
     void NotifyInvalidate(const NodeList &invalid_nodes, bool unlink) final;

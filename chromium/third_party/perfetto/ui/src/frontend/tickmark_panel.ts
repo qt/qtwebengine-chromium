@@ -35,7 +35,7 @@ export class TickmarkPanel implements Panel {
 
   constructor(readonly key: string) {}
 
-  get mithril(): m.Children {
+  render(): m.Children {
     return m('.tickbar');
   }
 
@@ -73,29 +73,32 @@ export class TickmarkPanel implements Panel {
         continue;
       }
       const rectStart =
-          Math.max(visibleTimeScale.timeToPx(tStart), 0) + TRACK_SHELL_WIDTH;
+        Math.max(visibleTimeScale.timeToPx(tStart), 0) + TRACK_SHELL_WIDTH;
       const rectEnd = visibleTimeScale.timeToPx(tEnd) + TRACK_SHELL_WIDTH;
       ctx.fillStyle = '#ffe263';
       ctx.fillRect(
-          Math.floor(rectStart),
-          0,
-          Math.ceil(rectEnd - rectStart),
-          size.height);
+        Math.floor(rectStart),
+        0,
+        Math.ceil(rectEnd - rectStart),
+        size.height,
+      );
     }
     const index = globals.state.searchIndex;
-    if (index !== -1 && index < globals.currentSearchResults.tsStarts.length) {
-      const start = globals.currentSearchResults.tsStarts[index];
-      const triangleStart =
+    if (index !== -1 && index < globals.currentSearchResults.tses.length) {
+      const start = globals.currentSearchResults.tses[index];
+      if (start !== -1n) {
+        const triangleStart =
           Math.max(visibleTimeScale.timeToPx(Time.fromRaw(start)), 0) +
           TRACK_SHELL_WIDTH;
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.moveTo(triangleStart, size.height);
-      ctx.lineTo(triangleStart - 3, 0);
-      ctx.lineTo(triangleStart + 3, 0);
-      ctx.lineTo(triangleStart, size.height);
-      ctx.fill();
-      ctx.closePath();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.moveTo(triangleStart, size.height);
+        ctx.lineTo(triangleStart - 3, 0);
+        ctx.lineTo(triangleStart + 3, 0);
+        ctx.lineTo(triangleStart, size.height);
+        ctx.fill();
+        ctx.closePath();
+      }
     }
 
     ctx.restore();

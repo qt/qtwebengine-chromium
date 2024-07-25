@@ -6,9 +6,8 @@
 #define COMPONENTS_PRIVACY_SANDBOX_PRIVACY_SANDBOX_ATTESTATIONS_PRIVACY_SANDBOX_ATTESTATIONS_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
-
-#include "components/privacy_sandbox/privacy_sandbox_settings_impl.h"
 
 #include "base/containers/enum_set.h"
 #include "base/containers/flat_map.h"
@@ -22,8 +21,8 @@
 #include "base/thread_annotations.h"
 #include "base/types/expected.h"
 #include "base/version.h"
+#include "components/privacy_sandbox/privacy_sandbox_settings_impl.h"
 #include "net/base/schemeful_site.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace content {
 class PrivacySandboxAttestationsObserver;
@@ -41,7 +40,7 @@ using PrivacySandboxAttestationsGatedAPISet =
                   PrivacySandboxAttestationsGatedAPI::kTopics,
                   PrivacySandboxAttestationsGatedAPI::kMaxValue>;
 
-// TODO(crbug.com/1454847): Add a concise representation for "this site is
+// TODO(crbug.com/40272506): Add a concise representation for "this site is
 // attested for all APIs".
 using PrivacySandboxAttestationsMap =
     base::flat_map<net::SchemefulSite, PrivacySandboxAttestationsGatedAPISet>;
@@ -55,7 +54,7 @@ class PrivacySandboxAttestations {
 
     // During the time when a new parsing task is running off of the main
     // thread.
-    // TODO(crbug.com/1501408): This will no longer be true when there are two
+    // TODO(crbug.com/40941689): This will no longer be true when there are two
     // parsing tasks posted to the thread pool at the same time, in which case
     // the progress will be `kFinished` after the first one completes. This
     // could be fixed by keeping a counter of pending tasks, and moving the
@@ -104,7 +103,7 @@ class PrivacySandboxAttestations {
 
   // Record the status returned by `IsSiteAttestedInternal` to a histogram, then
   // return the status.
-  // TODO(crbug.com/1500636): This method will occasionally return false
+  // TODO(crbug.com/40940888): This method will occasionally return false
   // positives i.e. it may mark some sites as attested even when they are not.
   // This will occur for example, if the attestations file is corrupted on-disk,
   // or the file is otherwise unavailable.
@@ -139,7 +138,7 @@ class PrivacySandboxAttestations {
   // calling this to make sure the attestations map is set to the testing
   // instance.
   void SetAttestationsForTesting(
-      absl::optional<PrivacySandboxAttestationsMap> attestations_map);
+      std::optional<PrivacySandboxAttestationsMap> attestations_map);
 
   base::Version GetVersionForTesting() const;
 
@@ -223,7 +222,7 @@ class PrivacySandboxAttestations {
   // i.e. whether particular sites have opted in to using particular Privacy
   // Sandbox APIs. If this is a `nullopt`, this implies the attestations list
   // has not been loaded yet.
-  absl::optional<PrivacySandboxAttestationsMap> attestations_map_
+  std::optional<PrivacySandboxAttestationsMap> attestations_map_
       GUARDED_BY_CONTEXT(sequence_checker_);
 
   // Overridden sites by DevTools are considered attested.

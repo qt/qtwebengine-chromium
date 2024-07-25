@@ -67,7 +67,6 @@ class V4LocalDatabaseManager : public SafeBrowsingDatabaseManager {
   bool CanCheckRequestDestination(
       network::mojom::RequestDestination request_destination) const override;
   bool CanCheckUrl(const GURL& url) const override;
-  bool ChecksAreAlwaysAsync() const override;
   bool CheckBrowseUrl(
       const GURL& url,
       const SBThreatTypeSet& threat_types,
@@ -237,7 +236,8 @@ class V4LocalDatabaseManager : public SafeBrowsingDatabaseManager {
   FRIEND_TEST_ALL_PREFIXES(V4LocalDatabaseManagerTest, SyncedLists);
 
   // The checks awaiting a full hash response from SafeBrowsing service.
-  typedef std::unordered_set<PendingCheck*> PendingChecks;
+  typedef std::unordered_set<raw_ptr<PendingCheck, CtnExperimental>>
+      PendingChecks;
 
   // Called when all the stores managed by the database have been read from
   // disk after startup and the database is ready for checking resource
@@ -414,9 +414,6 @@ class V4LocalDatabaseManager : public SafeBrowsingDatabaseManager {
   // Stops tracking all checks awaiting a full hash response from the
   // SafeBrowsing service. Returns the swapped copy of the checks.
   PendingChecks CopyAndRemoveAllPendingChecks();
-
-  // Delete any *.store files from disk that are no longer used.
-  void DeleteUnusedStoreFiles();
 
   // Stores full hashes of URLs that have been artificially marked as unsafe.
   StoreAndHashPrefixes artificially_marked_store_and_hash_prefixes_;

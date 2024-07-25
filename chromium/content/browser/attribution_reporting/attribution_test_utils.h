@@ -15,7 +15,6 @@
 #include "base/containers/flat_set.h"
 #include "base/time/time.h"
 #include "base/uuid.h"
-#include "components/attribution_reporting/aggregatable_values.h"
 #include "components/attribution_reporting/filters.h"
 #include "components/attribution_reporting/source_registration.h"
 #include "components/attribution_reporting/source_registration_time_config.mojom.h"
@@ -23,7 +22,6 @@
 #include "components/attribution_reporting/suitable_origin.h"
 #include "components/attribution_reporting/test_utils.h"
 #include "components/attribution_reporting/trigger_data_matching.mojom-forward.h"
-#include "content/browser/attribution_reporting/aggregatable_histogram_contribution.h"
 #include "content/browser/attribution_reporting/attribution_info.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
 #include "content/browser/attribution_reporting/create_report_result.h"
@@ -32,10 +30,12 @@
 #include "content/browser/attribution_reporting/stored_source.h"
 #include "content/public/browser/attribution_data_model.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/blink/public/mojom/aggregation_service/aggregatable_report.mojom-forward.h"
 
 namespace attribution_reporting {
+class AggregatableValues;
 class AggregationKeys;
-class EventReportWindows;
+class TriggerSpecs;
 }  // namespace attribution_reporting
 
 namespace net {
@@ -50,9 +50,6 @@ namespace content {
 
 class AttributionTrigger;
 class CommonSourceInfo;
-class RandomizedResponseData;
-
-struct FakeEventLevelReport;
 
 enum class RateLimitResult : int;
 
@@ -116,8 +113,7 @@ class SourceBuilder {
 
   SourceBuilder& SetDebugReporting(bool debug_reporting);
 
-  SourceBuilder& SetEventReportWindows(
-      attribution_reporting::EventReportWindows);
+  SourceBuilder& SetTriggerSpecs(attribution_reporting::TriggerSpecs);
 
   SourceBuilder& SetMaxEventLevelReports(int max_event_level_reports);
 
@@ -185,7 +181,7 @@ class TriggerBuilder {
       std::vector<attribution_reporting::AggregatableTriggerData>);
 
   TriggerBuilder& SetAggregatableValues(
-      attribution_reporting::AggregatableValues);
+      std::vector<attribution_reporting::AggregatableValues>);
 
   TriggerBuilder& SetAggregatableDedupKey(
       std::optional<uint64_t> aggregatable_dedup_key);
@@ -222,7 +218,7 @@ class TriggerBuilder {
   std::optional<uint64_t> debug_key_;
   std::vector<attribution_reporting::AggregatableTriggerData>
       aggregatable_trigger_data_;
-  attribution_reporting::AggregatableValues aggregatable_values_;
+  std::vector<attribution_reporting::AggregatableValues> aggregatable_values_;
   std::optional<uint64_t> aggregatable_dedup_key_;
   attribution_reporting::FilterPair aggregatable_dedup_key_filter_pair_;
   bool is_within_fenced_frame_ = false;
@@ -276,7 +272,8 @@ class ReportBuilder {
   ReportBuilder& SetReportId(AttributionReport::Id id);
 
   ReportBuilder& SetAggregatableHistogramContributions(
-      std::vector<AggregatableHistogramContribution> contributions);
+      std::vector<blink::mojom::AggregatableReportHistogramContribution>
+          contributions);
 
   ReportBuilder& SetAggregationCoordinatorOrigin(
       attribution_reporting::SuitableOrigin);
@@ -303,7 +300,8 @@ class ReportBuilder {
   int64_t priority_ = 0;
   base::Uuid external_report_id_;
   AttributionReport::Id report_id_{0};
-  std::vector<AggregatableHistogramContribution> contributions_;
+  std::vector<blink::mojom::AggregatableReportHistogramContribution>
+      contributions_;
   std::optional<attribution_reporting::SuitableOrigin>
       aggregation_coordinator_origin_;
 
@@ -340,16 +338,13 @@ std::ostream& operator<<(std::ostream& out, const CommonSourceInfo& source);
 std::ostream& operator<<(std::ostream& out,
                          const AttributionInfo& attribution_info);
 
-std::ostream& operator<<(std::ostream& out, const FakeEventLevelReport&);
-
-std::ostream& operator<<(std::ostream& out, const RandomizedResponseData&);
-
 std::ostream& operator<<(std::ostream& out, const StorableSource& source);
 
 std::ostream& operator<<(std::ostream& out, const StoredSource& source);
 
-std::ostream& operator<<(std::ostream& out,
-                         const AggregatableHistogramContribution& contribution);
+std::ostream& operator<<(
+    std::ostream& out,
+    const blink::mojom::AggregatableReportHistogramContribution& contribution);
 
 std::ostream& operator<<(std::ostream& out,
                          const AttributionReport::EventLevelData& data);
@@ -411,7 +406,8 @@ MATCHER_P(SourceDebugKeyIs, matcher, "") {
 }
 
 MATCHER_P(SourceDebugCookieSetIs, matcher, "") {
-  return ExplainMatchResult(matcher, arg.debug_cookie_set(), result_listener);
+  return ExplainMatchResult(matcher, arg.common_info().debug_cookie_set(),
+                            result_listener);
 }
 
 MATCHER_P(SourceFilterDataIs, matcher, "") {
@@ -587,9 +583,9 @@ class TestAggregatableSourceProvider {
 TriggerBuilder DefaultAggregatableTriggerBuilder(
     const std::vector<uint32_t>& histogram_values = {1});
 
-std::vector<AggregatableHistogramContribution>
+std::vector<blink::mojom::AggregatableReportHistogramContribution>
 DefaultAggregatableHistogramContributions(
-    const std::vector<uint32_t>& histogram_values = {1});
+    const std::vector<int32_t>& histogram_values = {1});
 
 struct OsRegistration;
 

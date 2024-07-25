@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_VIEW_TRANSITION_VIEW_TRANSITION_STYLE_TRACKER_H_
 
 #include "base/containers/flat_map.h"
+#include "base/unguessable_token.h"
 #include "components/viz/common/view_transition_element_resource_id.h"
 #include "third_party/blink/public/common/frame/view_transition_state.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -17,7 +18,6 @@
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/paint/effect_paint_property_node.h"
-#include "third_party/blink/renderer/platform/graphics/view_transition_element_id.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/heap_traits.h"
 #include "ui/gfx/geometry/transform.h"
@@ -74,7 +74,9 @@ class ViewTransitionStyleTracker
     gfx::Transform snapshot_matrix;
   };
 
-  explicit ViewTransitionStyleTracker(Document& document);
+  explicit ViewTransitionStyleTracker(
+      Document& document,
+      const blink::ViewTransitionToken& transition_token);
   ViewTransitionStyleTracker(Document& document, ViewTransitionState);
   ~ViewTransitionStyleTracker();
 
@@ -86,9 +88,11 @@ class ViewTransitionStyleTracker
                          const AtomicString& view_transition_name) const;
 
   // Indicate that capture was requested. This verifies that the combination of
-  // set elements and names is valid. Returns true if capture phase started, and
-  // false if the transition should be aborted.
-  bool Capture();
+  // set elements and names is valid. Returns true if capture phase started,
+  // and false if the transition should be aborted. If `snap_browser_controls`
+  // is set, browser controls will be forced to a fully shown state to ensure a
+  // consistent state for cross-document transitions.
+  bool Capture(bool snap_browser_controls);
 
   // Notifies when caching snapshots for elements in the old DOM finishes. This
   // is dispatched before script is notified to ensure this class releases any
@@ -108,10 +112,10 @@ class ViewTransitionStyleTracker
   // is initiated.
   void Abort();
 
-  void UpdateElementIndicesAndSnapshotId(
-      Element*,
-      ViewTransitionElementId&,
-      viz::ViewTransitionElementResourceId&) const;
+  // Returns the snapshot ID to identify the render pass based image produced by
+  // this Element. Returns an invalid ID if this element is not participating in
+  // the transition.
+  viz::ViewTransitionElementResourceId GetSnapshotId(const Element&) const;
 
   // Creates a PseudoElement for the corresponding |pseudo_id| and
   // |view_transition_name|. The |pseudo_id| must be a ::transition* element.
@@ -133,19 +137,6 @@ class ViewTransitionStyleTracker
   // Returns true if any of the pseudo elements are currently participating in
   // an animation.
   bool HasActiveAnimations() const;
-
-  // Updates an effect node with the given state. The return value is a result
-  // of updating the effect node.
-  PaintPropertyChangeType UpdateEffect(
-      const Element& element,
-      EffectPaintPropertyNode::State state,
-      const EffectPaintPropertyNodeOrAlias& current_effect);
-  PaintPropertyChangeType UpdateRootEffect(
-      EffectPaintPropertyNode::State state,
-      const EffectPaintPropertyNodeOrAlias& current_effect);
-
-  const EffectPaintPropertyNode* GetEffect(const Element& element) const;
-  const EffectPaintPropertyNode* GetRootEffect() const;
 
   // Updates a clip node with the given state. The return value is a result of
   // updating the clip node.
@@ -197,6 +188,15 @@ class ViewTransitionStyleTracker
   // recreate the same pseudo-element tree in a new Document.
   ViewTransitionState GetViewTransitionState() const;
 
+  // Returns if the current snapshot containing block size has changed since
+  // the initial capture was taken.
+  bool SnapshotRootDidChangeSize() const;
+
+  // https://drafts.csswg.org/css-view-transitions-2/#captured-element-class-list
+  // Returns the class list for a captured element by name.
+  const Vector<AtomicString>& GetViewTransitionClassList(
+      const AtomicString& name) const;
+
  private:
   class ImageWrapperPseudoElement;
 
@@ -235,12 +235,9 @@ class ViewTransitionStyleTracker
     // Valid if there is an element in the new DOM generating a snapshot.
     viz::ViewTransitionElementResourceId new_snapshot_id;
 
-    // An effect used to represent the `target_element`'s contents, including
-    // any of element's own effects, in a pseudo element layer.
-    scoped_refptr<EffectPaintPropertyNode> effect_node;
-
     // A clip used to specify the subset of the `target_element`'s visual
     // overflow rect rendered into the element's snapshot.
+    // TODO(khushalsagar): Move this to ObjectPaintProperties.
     scoped_refptr<ClipPaintPropertyNode> clip_node;
 
     // Index to add to the view transition element id.
@@ -255,8 +252,8 @@ class ViewTransitionStyleTracker
     // A subset of the element's visual overflow rect which is painted into its
     // snapshot. Only populated if the element's painting needs to be clipped.
     // This rect is in layout space.
-    absl::optional<gfx::RectF> captured_rect_in_layout_space;
-    absl::optional<gfx::RectF> cached_captured_rect_in_layout_space;
+    std::optional<gfx::RectF> captured_rect_in_layout_space;
+    std::optional<gfx::RectF> cached_captured_rect_in_layout_space;
 
     // For the following properties, they are initially set to the outgoing
     // element's value, and then switch to the incoming element's value, if one
@@ -266,6 +263,9 @@ class ViewTransitionStyleTracker
     // This only contains properties that need to be animated, which is a
     // subset of `captured_css_properties`.
     base::flat_map<CSSPropertyID, String> cached_animated_css_properties;
+
+    // https://drafts.csswg.org/css-view-transitions-2/#captured-element-class-list
+    Vector<AtomicString> class_list;
   };
 
   // In physical pixels. Returns the snapshot root rect, relative to the
@@ -281,7 +281,7 @@ class ViewTransitionStyleTracker
   void AddTransitionElement(Element*, const AtomicString&);
   bool FlattenAndVerifyElements(VectorOf<Element>&, VectorOf<AtomicString>&);
 
-  void AddTransitionElementsFromCSSRecursive(PaintLayer*);
+  void AddTransitionElementsFromCSSRecursive(PaintLayer*, const TreeScope*);
 
   void InvalidateHitTestingCache();
 
@@ -291,8 +291,6 @@ class ViewTransitionStyleTracker
       LayoutBoxModelObject& box,
       const LayoutBoxModelObject* ancestor = nullptr) const;
 
-  bool SnapshotRootDidChangeSize() const;
-
   // This corresponds to the state computed for keeping pseudo-elements in sync
   // with the state of live DOM elements described in
   // https://drafts.csswg.org/css-view-transitions-1/#style-transition-pseudo-elements-algorithm.
@@ -301,12 +299,18 @@ class ViewTransitionStyleTracker
       LayoutObject& layout_object,
       ContainerProperties&,
       PhysicalRect& visual_overflow_rect_in_layout_space,
-      absl::optional<gfx::RectF>& captured_rect_in_layout_space) const;
+      std::optional<gfx::RectF>& captured_rect_in_layout_space) const;
+
+  viz::ViewTransitionElementResourceId GenerateResourceId() const;
+
+  void SnapBrowserControlsToFullyShown();
 
   Member<Document> document_;
 
   // Indicates which step during the transition we're currently at.
   State state_ = State::kIdle;
+
+  const blink::ViewTransitionToken transition_token_;
 
   // Set if this style tracker was created by deserializing captured state
   // instead of running through the capture phase. This is done for transitions
@@ -324,8 +328,7 @@ class ViewTransitionStyleTracker
   // be empty until the kCapturing phase. For a cross-document transition, this
   // will be initialized from the cached state at creation but is currently
   // unset.
-  // TODO(bokan): Implement for cross-document transitions. crbug.com/1404957.
-  absl::optional<gfx::Size> snapshot_root_layout_size_at_capture_;
+  std::optional<gfx::Size> snapshot_root_layout_size_at_capture_;
 
   // Map of the CSS |view-transition-name| property to state for that tag.
   HeapHashMap<AtomicString, Member<ElementData>> element_data_map_;
@@ -333,11 +336,6 @@ class ViewTransitionStyleTracker
   // The device scale factor used for layout of the Document. This is kept in
   // sync with the Document during RunPostPrePaintSteps().
   float device_pixel_ratio_ = 0.f;
-
-  // The paint property node for the |documentElement|. This is generated if the
-  // element has a valid |view-transition-name| and ensures correct generation
-  // of its snapshot.
-  scoped_refptr<EffectPaintPropertyNode> root_effect_node_;
 
   // The dynamically generated UA stylesheet for default styles on
   // pseudo-elements.
@@ -358,6 +356,10 @@ class ViewTransitionStyleTracker
   // transition. This is a purely performance optimization since this check is
   // used in hot code-paths.
   bool is_root_transitioning_ = false;
+
+  // Returns true if GetViewTransitionState() has already been called. This is
+  // used only to enforce additional captures don't happen after that.
+  mutable bool state_extracted_ = false;
 };
 
 }  // namespace blink

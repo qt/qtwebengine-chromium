@@ -143,8 +143,8 @@ bool VerifyCRL(const Crl& crl,
   }
 
   CBS spki;
-  CBS_init(&spki, parsed_cert->tbs().spki_tlv.UnsafeData(),
-           parsed_cert->tbs().spki_tlv.Length());
+  CBS_init(&spki, parsed_cert->tbs().spki_tlv.data(),
+           parsed_cert->tbs().spki_tlv.size());
   bssl::UniquePtr<EVP_PKEY> pubkey(EVP_parse_public_key(&spki));
   if (!pubkey || CBS_len(&spki) != 0) {
     VLOG(2) << "CRL - Parsing public key failed";
@@ -202,7 +202,7 @@ bool VerifyCRL(const Crl& crl,
   if (!result.HasValidPath()) {
     VLOG(2) << "CRL - Issuer certificate verification failed.";
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-    // TODO(crbug.com/634443): Log the error information.
+    // TODO(crbug.com/41267838): Log the error information.
     return false;
 #endif
   }

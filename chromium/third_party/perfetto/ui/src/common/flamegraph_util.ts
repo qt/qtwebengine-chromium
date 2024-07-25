@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {featureFlags} from '../core/feature_flags';
 import {CallsiteInfo, FlamegraphStateViewingOption, ProfileType} from './state';
 
 interface ViewingOption {
@@ -19,30 +20,54 @@ interface ViewingOption {
   name: string;
 }
 
+const SHOW_HEAP_GRAPH_DOMINATOR_TREE_FLAG = featureFlags.register({
+  id: 'showHeapGraphDominatorTree',
+  name: 'Show heap graph dominator tree',
+  description: 'Show dominated size and objects tabs in Java heap graph view.',
+  defaultValue: true,
+});
+
 export function viewingOptions(profileType: ProfileType): Array<ViewingOption> {
   switch (profileType) {
     case ProfileType.PERF_SAMPLE:
-      return [{
-        option: FlamegraphStateViewingOption.PERF_SAMPLES_KEY,
-        name: 'Samples',
-      }];
+      return [
+        {
+          option: FlamegraphStateViewingOption.PERF_SAMPLES_KEY,
+          name: 'Samples',
+        },
+      ];
     case ProfileType.JAVA_HEAP_GRAPH:
       return [
         {
           option:
-              FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
+            FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
           name: 'Size',
         },
         {
           option: FlamegraphStateViewingOption.OBJECTS_ALLOCATED_NOT_FREED_KEY,
           name: 'Objects',
         },
-      ];
+      ].concat(
+        SHOW_HEAP_GRAPH_DOMINATOR_TREE_FLAG.get()
+          ? [
+              {
+                option:
+                  FlamegraphStateViewingOption.DOMINATOR_TREE_OBJ_SIZE_KEY,
+                name: 'Dominated size',
+              },
+              {
+                option:
+                  FlamegraphStateViewingOption.DOMINATOR_TREE_OBJ_COUNT_KEY,
+                name: 'Dominated objects',
+              },
+            ]
+          : [],
+      );
     case ProfileType.HEAP_PROFILE:
       return [
         {
           option:
-              FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
+            FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
           name: 'Unreleased size',
         },
         {
@@ -62,7 +87,7 @@ export function viewingOptions(profileType: ProfileType): Array<ViewingOption> {
       return [
         {
           option:
-              FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
+            FlamegraphStateViewingOption.SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY,
           name: 'Unreleased malloc size',
         },
         {
@@ -106,13 +131,16 @@ export function viewingOptions(profileType: ProfileType): Array<ViewingOption> {
   }
 }
 
-export function defaultViewingOption(profileType: ProfileType):
-    FlamegraphStateViewingOption {
+export function defaultViewingOption(
+  profileType: ProfileType,
+): FlamegraphStateViewingOption {
   return viewingOptions(profileType)[0].option;
 }
 
 export function expandCallsites(
-    data: CallsiteInfo[], clickedCallsiteIndex: number): CallsiteInfo[] {
+  data: CallsiteInfo[],
+  clickedCallsiteIndex: number,
+): CallsiteInfo[] {
   if (clickedCallsiteIndex === -1) return data;
   const expandedCallsites: CallsiteInfo[] = [];
   if (clickedCallsiteIndex >= data.length || clickedCallsiteIndex < -1) {
@@ -153,8 +181,10 @@ export function mergeCallsites(data: CallsiteInfo[], minSizeDisplayed: number) {
       continue;
     }
     const copiedCallsite = copyCallsite(data[i]);
-    copiedCallsite.parentId =
-        getCallsitesParentHash(copiedCallsite, mergedCallsites);
+    copiedCallsite.parentId = getCallsitesParentHash(
+      copiedCallsite,
+      mergedCallsites,
+    );
 
     let mergedAny = false;
     // If current callsite is small, find other small callsites with same depth
@@ -163,9 +193,11 @@ export function mergeCallsites(data: CallsiteInfo[], minSizeDisplayed: number) {
       let j = i + 1;
       let nextCallsite = data[j];
       while (j < data.length && copiedCallsite.depth === nextCallsite.depth) {
-        if (copiedCallsite.parentId ===
-                getCallsitesParentHash(nextCallsite, mergedCallsites) &&
-            nextCallsite.totalSize <= minSizeDisplayed) {
+        if (
+          copiedCallsite.parentId ===
+            getCallsitesParentHash(nextCallsite, mergedCallsites) &&
+          nextCallsite.totalSize <= minSizeDisplayed
+        ) {
           copiedCallsite.totalSize += nextCallsite.totalSize;
           mergedCallsites.set(nextCallsite.id, copiedCallsite.id);
           mergedAny = true;
@@ -199,9 +231,12 @@ function copyCallsite(callsite: CallsiteInfo): CallsiteInfo {
 }
 
 function getCallsitesParentHash(
-    callsite: CallsiteInfo, map: Map<number, number>): number {
-  return map.has(callsite.parentId) ? +map.get(callsite.parentId)! :
-                                      callsite.parentId;
+  callsite: CallsiteInfo,
+  map: Map<number, number>,
+): number {
+  return map.has(callsite.parentId)
+    ? +map.get(callsite.parentId)!
+    : callsite.parentId;
 }
 export function findRootSize(data: CallsiteInfo[]) {
   let totalSize = 0;

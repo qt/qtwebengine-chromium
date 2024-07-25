@@ -17,6 +17,8 @@
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
+#include "media/base/video_frame.h"
+#include "media/base/video_types.h"
 #include "media/base/video_util.h"
 #include "media/base/wait_and_replace_sync_token_client.h"
 #include "media/renderers/video_frame_rgba_to_yuva_converter.h"
@@ -82,8 +84,8 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
       return nullptr;
     }
     auto client_shared_image = sii->CreateSharedImage(
-        si_format, gpu_memory_buffer->GetSize(), color_space, surface_origin,
-        alpha_type, usage, "WebRTCVideoFramePool",
+        {si_format, gpu_memory_buffer->GetSize(), color_space, surface_origin,
+         alpha_type, usage, "WebRTCVideoFramePool"},
         gpu_memory_buffer->CloneHandle());
     CHECK(client_shared_image);
     sync_token = sii->GenVerifiedSyncToken();
@@ -102,8 +104,9 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
     if (!sii)
       return nullptr;
     auto client_shared_image = sii->CreateSharedImage(
-        gpu_memory_buffer, GpuMemoryBufferManager(), plane, color_space,
-        surface_origin, alpha_type, usage, "WebRTCVideoFramePool");
+        gpu_memory_buffer, GpuMemoryBufferManager(), plane,
+        {color_space, surface_origin, alpha_type, usage,
+         "WebRTCVideoFramePool"});
     CHECK(client_shared_image);
     sync_token = sii->GenVerifiedSyncToken();
     return client_shared_image;
@@ -129,8 +132,7 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
     return manager;
   }
 
-  raw_ptr<media::GpuVideoAcceleratorFactories, ExperimentalRenderer>
-      gpu_factories_;
+  raw_ptr<media::GpuVideoAcceleratorFactories> gpu_factories_;
   scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
 };
 
@@ -283,15 +285,13 @@ WebRtcVideoFrameAdapter::SharedResources::ConstructVideoFrameFromTexture(
   }
 
   auto* ri = scoped_context.RasterInterface();
-  auto* gr_context = raster_context_provider->GrContext();
-
   if (!ri) {
     return nullptr;
   }
 
   return media::ReadbackTextureBackedFrameToMemorySync(
-      *source_frame, ri, gr_context,
-      raster_context_provider->ContextCapabilities(), &pool_for_mapped_frames_);
+      *source_frame, ri, raster_context_provider->ContextCapabilities(),
+      &pool_for_mapped_frames_);
 }
 
 scoped_refptr<media::VideoFrame>
@@ -400,6 +400,11 @@ WebRtcVideoFrameAdapter::ScaledBuffer::CropAndScale(int offset_x,
           parent_,
           size_.CropAndScale(offset_x, offset_y, crop_width, crop_height,
                              scaled_width, scaled_height)));
+}
+
+std::string WebRtcVideoFrameAdapter::ScaledBuffer::storage_representation()
+    const {
+  return "ScaledBuffer(" + parent_->storage_representation() + ")";
 }
 
 WebRtcVideoFrameAdapter::WebRtcVideoFrameAdapter(
@@ -533,6 +538,13 @@ WebRtcVideoFrameAdapter::GetAdaptedVideoBufferForTesting(
       return adapted_frame.video_frame;
   }
   return nullptr;
+}
+
+std::string WebRtcVideoFrameAdapter::storage_representation() const {
+  std::string result = media::VideoPixelFormatToString(frame_->format());
+  result.append(" ");
+  result.append(media::VideoFrame::StorageTypeToString(frame_->storage_type()));
+  return result;
 }
 
 }  // namespace blink

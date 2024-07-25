@@ -8,6 +8,7 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/strcat.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -35,6 +35,7 @@
 #include "chrome/browser/new_tab_page/feature_promo_helper/new_tab_page_feature_promo_helper.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
 #include "chrome/browser/new_tab_page/promos/promo_service_factory.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/background/ntp_background_service.h"
 #include "chrome/browser/search/background/ntp_background_service_factory.h"
@@ -53,7 +54,7 @@
 #include "chrome/browser/ui/side_panel/customize_chrome/customize_chrome_utils.h"
 #include "chrome/browser/ui/webui/new_tab_page/ntp_pref_names.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
-#include "chrome/browser/ui/webui/webui_util.h"
+#include "chrome/browser/ui/webui/webui_util_desktop.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -112,7 +113,7 @@ std::vector<std::string> GetSurveyEligibleModuleIds() {
 // and the One Google Bar. This is done to fix specific GWS themes where the
 // always-light logo and OGB colors do not sufficiently contrast with lighter
 // image backgrounds (see crbug.com/1329552).
-// TODO(crbug.com/1328918): Address this in a general way and extend support to
+// TODO(crbug.com/40842305): Address this in a general way and extend support to
 // custom background images, not just CWS themes.
 bool ShouldForceDarkForegroundColorsForLogo(const ThemeService* theme_service) {
   const auto* theme_supplier = theme_service->GetThemeSupplier();
@@ -122,7 +123,7 @@ bool ShouldForceDarkForegroundColorsForLogo(const ThemeService* theme_service) {
     return false;
   }
   static constexpr auto kPrideThemeExtensionIdsDarkForeground =
-      base::MakeFixedFlatSet<base::StringPiece>({
+      base::MakeFixedFlatSet<std::string_view>({
           "klnkeldihpjnjoopojllmnpepbpljico",
           "iffdmpenldeofnlfjmbjcdmafhoekmka",
           "mckialangcdpcdcflekinnpamfkmkobo",
@@ -163,7 +164,7 @@ new_tab_page::mojom::ThemePtr MakeTheme(
     theme->logo_color =
         color_provider.GetColor(kColorNewTabPageLogoUnthemedLight);
 
-    // TODO(crbug.com/1375760): Post GM3 launch, we can remove the
+    // TODO(crbug.com/40061384): Post GM3 launch, we can remove the
     // kColorNewTabPageMostVisitedTileBackgroundUnthemed color and related
     // logic.
     most_visited->background_color =
@@ -191,9 +192,7 @@ new_tab_page::mojom::ThemePtr MakeTheme(
   theme->text_color = text_color;
   theme->is_dark = !color_utils::IsDark(text_color);
   auto background_image = new_tab_page::mojom::BackgroundImage::New();
-  const bool side_panel_enabled = customize_chrome::IsSidePanelEnabled();
-  if (theme_has_custom_image &&
-      (!custom_background.has_value() || side_panel_enabled)) {
+  if (theme_has_custom_image) {
     if (theme_service->UsingExtensionTheme()) {
       background_image->image_source =
           new_tab_page::mojom::NtpBackgroundImageSource::kThirdPartyTheme;
@@ -282,8 +281,7 @@ new_tab_page::mojom::ThemePtr MakeTheme(
   }
 
   theme->background_image = std::move(background_image);
-  if (custom_background.has_value() &&
-      (!side_panel_enabled || !theme_has_custom_image)) {
+  if (custom_background.has_value() && !theme_has_custom_image) {
     theme->background_image_attribution_1 =
         custom_background->custom_background_attribution_line_1;
     theme->background_image_attribution_2 =
@@ -324,8 +322,7 @@ new_tab_page::mojom::ImageDoodlePtr MakeImageDoodle(
     GURL log_url,
     GURL cta_log_url) {
   auto doodle = new_tab_page::mojom::ImageDoodle::New();
-  std::string base64;
-  base::Base64Encode(data, &base64);
+  std::string base64 = base::Base64Encode(data);
   doodle->image_url = GURL(base::StringPrintf(
       "data:%s;base64,%s", mime_type.c_str(), base64.c_str()));
   if (type == search_provider_logos::LogoType::ANIMATED) {
@@ -468,11 +465,13 @@ NewTabPageHandler::NewTabPageHandler(
         customize_chrome_feature_promo_helper,
     const base::Time& ntp_navigation_start_time,
     const std::vector<std::pair<const std::string, int>>* module_id_names)
-    : ntp_background_service_(
+    : SettingsEnabledObserver(
+          optimization_guide::UserVisibleFeatureKey::kWallpaperSearch),
+      ntp_background_service_(
           NtpBackgroundServiceFactory::GetForProfile(profile)),
       ntp_custom_background_service_(ntp_custom_background_service),
       logo_service_(logo_service),
-      theme_provider_(webui::GetThemeProvider(web_contents)),
+      theme_provider_(webui::GetThemeProviderDeprecated(web_contents)),
       theme_service_(theme_service),
       profile_(profile),
       web_contents_(web_contents),
@@ -500,6 +499,14 @@ NewTabPageHandler::NewTabPageHandler(
   ntp_custom_background_service_observation_.Observe(
       ntp_custom_background_service_.get());
   promo_service_observation_.Observe(promo_service_.get());
+  if (customize_chrome::IsWallpaperSearchEnabledForProfile(profile_)) {
+    optimization_guide_keyed_service_ =
+        OptimizationGuideKeyedServiceFactory::GetForProfile(profile_);
+    if (optimization_guide_keyed_service_) {
+      optimization_guide_keyed_service_
+          ->AddModelExecutionSettingsEnabledObserver(this);
+    }
+  }
   if (base::FeatureList::IsEnabled(
           ntp_features::kNtpBackgroundImageErrorDetection)) {
     ntp_custom_background_service_->VerifyCustomBackgroundImageURL();
@@ -522,7 +529,6 @@ NewTabPageHandler::NewTabPageHandler(
       base::BindRepeating(&NewTabPageHandler::MaybeShowWebstoreToast,
                           base::Unretained(this)));
 
-  if (customize_chrome::IsSidePanelEnabled()) {
     auto* customize_chrome_tab_helper =
         CustomizeChromeTabHelper::FromWebContents(web_contents_);
     // Lifetime is tied to NewTabPageUI which owns the NewTabPageHandler.
@@ -532,13 +538,17 @@ NewTabPageHandler::NewTabPageHandler(
     customize_chrome_tab_helper->SetCallback(base::BindRepeating(
         &NewTabPageHandler::NotifyCustomizeChromeSidePanelVisibilityChanged,
         weak_ptr_factory_.GetWeakPtr()));
-  }
 }
 
 NewTabPageHandler::~NewTabPageHandler() {
   ntp_background_service_->RemoveObserver(this);
   if (select_file_dialog_) {
     select_file_dialog_->ListenerDestroyed();
+  }
+  if (optimization_guide_keyed_service_) {
+    optimization_guide_keyed_service_
+        ->RemoveModelExecutionSettingsEnabledObserver(this);
+    optimization_guide_keyed_service_ = nullptr;
   }
 }
 
@@ -940,6 +950,9 @@ void NewTabPageHandler::SetCustomizeChromeSidePanelVisible(
     case new_tab_page::mojom::CustomizeChromeSection::kModules:
       section_enum = CustomizeChromeSection::kModules;
       break;
+    case new_tab_page::mojom::CustomizeChromeSection::kWallpaperSearch:
+      section_enum = CustomizeChromeSection::kWallpaperSearch;
+      break;
   }
   auto* customize_chrome_tab_helper =
       CustomizeChromeTabHelper::FromWebContents(web_contents_);
@@ -1048,6 +1061,11 @@ void NewTabPageHandler::OnPromoDataUpdated() {
 void NewTabPageHandler::OnPromoServiceShuttingDown() {
   promo_service_observation_.Reset();
   promo_service_ = nullptr;
+}
+
+void NewTabPageHandler::OnChangeInFeatureCurrentlyEnabledState(
+    bool is_now_enabled) {
+  page_->SetWallpaperSearchButtonVisibility(is_now_enabled);
 }
 
 void NewTabPageHandler::OnAppRendered(double time) {
@@ -1354,7 +1372,7 @@ void NewTabPageHandler::OnLogoAvailable(
     }
     auto image_doodle = new_tab_page::mojom::AllModeImageDoodle::New();
     image_doodle->light = MakeImageDoodle(
-        logo->metadata.type, logo->encoded_image->data(),
+        logo->metadata.type, logo->encoded_image->as_string(),
         logo->metadata.mime_type, logo->metadata.animated_url,
         logo->metadata.width_px, logo->metadata.height_px, "#ffffff",
         logo->metadata.share_button_x, logo->metadata.share_button_y,
@@ -1363,7 +1381,7 @@ void NewTabPageHandler::OnLogoAvailable(
         logo->metadata.cta_log_url);
     if (logo->dark_encoded_image) {
       image_doodle->dark = MakeImageDoodle(
-          logo->metadata.type, logo->dark_encoded_image->data(),
+          logo->metadata.type, logo->dark_encoded_image->as_string(),
           logo->metadata.dark_mime_type, logo->metadata.dark_animated_url,
           logo->metadata.dark_width_px, logo->metadata.dark_height_px,
           logo->metadata.dark_background_color,

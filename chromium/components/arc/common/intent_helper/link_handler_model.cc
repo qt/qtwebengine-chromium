@@ -37,7 +37,7 @@ bool GetQueryValue(const GURL& url,
   url::Component key;
   url::Component value;
 
-  while (url::ExtractQueryKeyValue(str.data(), &query, &key, &value)) {
+  while (url::ExtractQueryKeyValue(str, &query, &key, &value)) {
     if (value.is_empty())
       continue;
     if (str.substr(key.begin, key.len) == key_to_find) {
@@ -84,7 +84,7 @@ void LinkHandlerModel::OpenLinkWithHandler(uint32_t handler_id) {
   }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  // TODO(crbug.com/1275075): Take metrics in Lacros as well.
+  // TODO(crbug.com/40808069): Take metrics in Lacros as well.
   ArcMetricsService::RecordArcUserInteraction(
       context_, arc::UserInteractionType::APP_STARTED_FROM_LINK_CONTEXT_MENU);
 #endif

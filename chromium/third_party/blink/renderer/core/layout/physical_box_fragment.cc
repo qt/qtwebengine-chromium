@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/editing/text_affinity.h"
+#include "third_party/blink/renderer/core/html/html_anchor_element.h"
 #include "third_party/blink/renderer/core/layout/block_break_token.h"
 #include "third_party/blink/renderer/core/layout/box_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/disable_layout_side_effects_scope.h"
@@ -103,17 +104,18 @@ const PhysicalBoxFragment* PhysicalBoxFragment::Create(
   const PhysicalBoxStrut borders =
       builder->initial_fragment_geometry_->border.ConvertToPhysical(
           writing_direction);
-  bool has_borders = !borders.IsZero();
+  const PhysicalBoxStrut scrollbar =
+      builder->initial_fragment_geometry_->scrollbar.ConvertToPhysical(
+          writing_direction);
   const PhysicalBoxStrut padding =
       builder->initial_fragment_geometry_->padding.ConvertToPhysical(
           writing_direction);
-  bool has_padding = !padding.IsZero();
 
   const PhysicalSize physical_size =
       ToPhysicalSize(builder->Size(), builder->GetWritingMode());
   WritingModeConverter converter(writing_direction, physical_size);
 
-  absl::optional<PhysicalRect> inflow_bounds;
+  std::optional<PhysicalRect> inflow_bounds;
   if (builder->inflow_bounds_)
     inflow_bounds = converter.ToPhysical(*builder->inflow_bounds_);
 
@@ -126,10 +128,7 @@ const PhysicalBoxFragment* PhysicalBoxFragment::Create(
 #endif
 
   PhysicalRect scrollable_overflow = {PhysicalOffset(), physical_size};
-  if (builder->node_ && !builder->node_.IsReplaced()) {
-    const PhysicalBoxStrut scrollbar =
-        builder->initial_fragment_geometry_->scrollbar.ConvertToPhysical(
-            writing_direction);
+  if (builder->ShouldCalculateScrollableOverflow()) {
     ScrollableOverflowCalculator calculator(
         To<BlockNode>(builder->node_),
         /* is_css_box */ !builder->IsFragmentainerBoxType(),
@@ -179,8 +178,10 @@ const PhysicalBoxFragment* PhysicalBoxFragment::Create(
   // we pass the buffer as a constructor argument.
   return MakeGarbageCollected<PhysicalBoxFragment>(
       AdditionalBytes(byte_size), PassKey(), builder, has_scrollable_overflow,
-      scrollable_overflow, has_borders, borders, has_padding, padding,
-      inflow_bounds, has_fragment_items, block_or_line_writing_mode);
+      scrollable_overflow, borders.IsZero() ? nullptr : &borders,
+      scrollbar.IsZero() ? nullptr : &scrollbar,
+      padding.IsZero() ? nullptr : &padding, inflow_bounds, has_fragment_items,
+      block_or_line_writing_mode);
 }
 
 // static
@@ -271,22 +272,24 @@ PhysicalBoxFragment::PhysicalBoxFragment(
     BoxFragmentBuilder* builder,
     bool has_scrollable_overflow,
     const PhysicalRect& scrollable_overflow,
-    bool has_borders,
-    const PhysicalBoxStrut& borders,
-    bool has_padding,
-    const PhysicalBoxStrut& padding,
-    const absl::optional<PhysicalRect>& inflow_bounds,
+    const PhysicalBoxStrut* borders,
+    const PhysicalBoxStrut* scrollbar,
+    const PhysicalBoxStrut* padding,
+    const std::optional<PhysicalRect>& inflow_bounds,
     bool has_fragment_items,
     WritingMode block_or_line_writing_mode)
     : PhysicalFragment(builder,
                        block_or_line_writing_mode,
                        kFragmentBox,
-                       builder->BoxType()),
+                       builder->GetBoxType()),
       bit_field_(ConstHasFragmentItemsFlag::encode(has_fragment_items) |
                  HasDescendantsForTablePartFlag::encode(false) |
                  IsFragmentationContextRootFlag::encode(
                      builder->is_fragmentation_context_root_) |
-                 IsMonolithicFlag::encode(builder->is_monolithic_)) {
+                 IsMonolithicFlag::encode(builder->is_monolithic_) |
+                 IsMonolithicOverflowPropagationDisabledFlag::encode(
+                     builder->GetConstraintSpace()
+                         .IsMonolithicOverflowPropagationDisabled())) {
   DCHECK(layout_object_);
   DCHECK(layout_object_->IsBoxModelObject());
   DCHECK(!builder->break_token_ || builder->break_token_->IsBlockType());
@@ -309,7 +312,7 @@ PhysicalBoxFragment::PhysicalBoxFragment(
     auto* items = const_cast<FragmentItems*>(ComputeItemsAddress());
     DCHECK_EQ(items_builder->GetWritingMode(), block_or_line_writing_mode);
     DCHECK_EQ(items_builder->Direction(), builder->Direction());
-    absl::optional<PhysicalSize> new_size =
+    std::optional<PhysicalSize> new_size =
         items_builder->ToFragmentItems(Size(), items);
     if (new_size)
       size_ = *new_size;
@@ -324,14 +327,13 @@ PhysicalBoxFragment::PhysicalBoxFragment(
       !!builder->table_collapsed_borders_geometry_ +
       !!builder->table_cell_column_index_ +
       (builder->table_section_row_offsets_.empty() ? 0 : 2) +
-      !!builder->page_name_ + has_borders + has_padding +
+      !!builder->page_name_ + !!borders + !!scrollbar + !!padding +
       inflow_bounds.has_value() + !!builder->Style().MayHaveMargin();
 
   if (rare_fields_size > 0 || !builder->table_column_geometries_.empty()) {
     rare_data_ = MakeGarbageCollected<PhysicalFragmentRareData>(
-        has_scrollable_overflow ? &scrollable_overflow : nullptr,
-        has_borders ? &borders : nullptr, has_padding ? &padding : nullptr,
-        inflow_bounds, *builder, rare_fields_size);
+        has_scrollable_overflow ? &scrollable_overflow : nullptr, borders,
+        scrollbar, padding, inflow_bounds, *builder, rare_fields_size);
   }
 
   bit_field_.set<IsFirstForNodeFlag>(builder->is_first_for_node_);
@@ -411,6 +413,14 @@ void PhysicalBoxFragment::Dispose() {
     ComputeItemsAddress()->~FragmentItems();
 }
 
+PhysicalRect PhysicalBoxFragment::ContentRect() const {
+  PhysicalRect rect(PhysicalOffset(), Size());
+  rect.Contract(Borders() + Padding());
+  DCHECK_GE(rect.size.width, LayoutUnit());
+  DCHECK_GE(rect.size.height, LayoutUnit());
+  return rect;
+}
+
 const LayoutBox* PhysicalBoxFragment::OwnerLayoutBox() const {
   // TODO(layout-dev): We should probably get rid of this method, now that it
   // does nothing, apart from some checking. The checks are useful, but could be
@@ -422,7 +432,7 @@ const LayoutBox* PhysicalBoxFragment::OwnerLayoutBox() const {
   DCHECK(owner_box);
   if (UNLIKELY(IsFragmentainerBox())) {
     if (owner_box->IsLayoutView()) {
-      DCHECK(IsPageBox());
+      DCHECK_EQ(GetBoxType(), kPageArea);
       DCHECK(To<LayoutView>(owner_box)->ShouldUsePrintingLayout());
     } else {
       DCHECK(IsColumnBox());
@@ -488,28 +498,23 @@ const PhysicalBoxFragment* PhysicalBoxFragment::PostLayout() const {
     return this;
   }
 
-  const auto* layout_object = GetSelfOrContainerLayoutObject();
+  const LayoutObject* layout_object = GetLayoutObject();
   if (UNLIKELY(!layout_object)) {
-    // In some cases the layout object may have been removed. This can of course
-    // not happen if we have actually performed layout, but we may in some cases
-    // clone a fragment *before* layout, to ensure that the fragment tree spine
-    // is correctly rebuilt after a subtree layout.
+    // Some fragments don't have a layout object associated directly with
+    // them. This is the case for lines and fragmentainers (columns / pages).
+    // We don't need to do anything special for such fragments. Any post-layout
+    // fragmentainers should be found as children of the post-layout fragments
+    // of the containing block.
+    //
+    // In some cases the layout object may also have been removed. This can of
+    // course not happen if we have actually performed layout, but we may in
+    // some cases clone a fragment *before* layout, to ensure that the fragment
+    // tree spine is correctly rebuilt after a subtree layout.
     return this;
   }
   const auto* box = DynamicTo<LayoutBox>(layout_object);
   if (UNLIKELY(!box)) {
     DCHECK(IsInlineBox());
-    return this;
-  }
-  if (UNLIKELY(!IsCSSBox())) {
-    // We don't need to do anything special for fragments that don't correspond
-    // to entries in the CSS box tree (such as fragmentainers). Any post-layout
-    // fragmentainers should be found as children of the post-layout fragments
-    // of the containing block.
-    //
-    // TODO(mstensho): Clean up this method. Rather than calling
-    // GetSelfOrContainerLayoutObject() above, we first bail on !IsCSSBox(), and
-    // then simply use GetLayoutObject().
     return this;
   }
 
@@ -793,6 +798,66 @@ PhysicalBoxFragment::GetMutableForContainerLayout() const {
   DCHECK(layout_object_->GetFrameView()->IsInPerformLayout());
   return MutableForContainerLayout(base::PassKey<PhysicalBoxFragment>(),
                                    const_cast<PhysicalBoxFragment&>(*this));
+}
+
+void PhysicalBoxFragment::MutableForOofFragmentation::AddChildFragmentainer(
+    const PhysicalBoxFragment& child_fragment,
+    LogicalOffset child_offset) {
+  // We should only end up here when updating a nested multicol container that
+  // has already being laid out, to add new fragmentainers to hold OOFs.
+  DCHECK(fragment_.IsFragmentationContextRoot());
+  DCHECK(child_fragment.IsFragmentainerBox());
+
+  WritingModeConverter converter(fragment_.Style().GetWritingDirection(),
+                                 fragment_.Size());
+  PhysicalFragmentLink link;
+  link.offset = converter.ToPhysical(child_offset, child_fragment.Size());
+  link.fragment = &child_fragment;
+  fragment_.children_.push_back(link);
+}
+
+void PhysicalBoxFragment::MutableForOofFragmentation::Merge(
+    const PhysicalBoxFragment& placeholder_fragmentainer) {
+  DCHECK(placeholder_fragmentainer.IsFragmentainerBox());
+
+  // Copy all child fragments.
+  for (const PhysicalFragmentLink& new_child :
+       placeholder_fragmentainer.children_) {
+    fragment_.children_.push_back(new_child);
+    DCHECK(new_child->IsOutOfFlowPositioned());
+    fragment_.has_out_of_flow_fragment_child_ = true;
+  }
+
+  // The existing break token may need to be updated, because of monolithic
+  // overflow (printing).
+  if (const BlockBreakToken* new_break_token =
+          placeholder_fragmentainer.GetBreakToken()) {
+    if (const BlockBreakToken* old_break_token = fragment_.GetBreakToken()) {
+      old_break_token->GetMutableForOofFragmentation().Merge(*new_break_token);
+    } else {
+      fragment_.break_token_ = new_break_token;
+    }
+  }
+
+  // Copy over any additional anchor queries.
+  if (const PhysicalAnchorQuery* query =
+          placeholder_fragmentainer.AnchorQuery()) {
+    if (!fragment_.oof_data_) {
+      fragment_.oof_data_ = MakeGarbageCollected<OofData>();
+    }
+    for (auto entry : *query) {
+      fragment_.oof_data_->anchor_query.insert(entry.key, entry.value);
+    }
+  }
+
+  UpdateOverflow();
+}
+
+void PhysicalBoxFragment::MutableForOofFragmentation::UpdateOverflow() {
+  PhysicalRect overflow =
+      ScrollableOverflowCalculator::RecalculateScrollableOverflowForFragment(
+          fragment_, /* has_block_fragmentation */ true);
+  fragment_.GetMutableForStyleRecalc().SetScrollableOverflow(overflow);
 }
 
 void PhysicalBoxFragment::SetInkOverflow(const PhysicalRect& self,
@@ -1113,17 +1178,6 @@ void PhysicalBoxFragment::AddOutlineRectsForInlineBox(
 
   if (ShouldIncludeBlockInkOverflowForAnchorOnly(outline_type) &&
       !HasNonVisibleOverflow() && !HasControlClip(*this)) {
-    if (!RuntimeEnabledFeatures::LayoutNewContainingBlockEnabled() &&
-        container->IsAnonymousBlock()) {
-      const auto* container_box = DynamicTo<LayoutBox>(
-          container->GetLayoutObject()->NonAnonymousAncestor());
-      if (!container_box)
-        return;
-      // TODO(crbug.com/1380673): Just picking the first fragment isn't right.
-      container = container_box->GetPhysicalFragment(0);
-      DCHECK(container);
-    }
-
     for (const auto& child : container->PostLayoutChildren()) {
       if (!child->IsOutOfFlowPositioned() ||
           child->GetLayoutObject()->ContainerForAbsolutePosition() !=
@@ -1132,8 +1186,7 @@ void PhysicalBoxFragment::AddOutlineRectsForInlineBox(
       }
 
       AddOutlineRectsForDescendant(child, collector, additional_offset,
-                                   outline_type,
-                                   To<LayoutBoxModelObject>(layout_object));
+                                   outline_type, layout_object);
     }
   }
 }

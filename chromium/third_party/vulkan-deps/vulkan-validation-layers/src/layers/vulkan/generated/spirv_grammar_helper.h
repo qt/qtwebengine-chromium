@@ -3,7 +3,7 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2021-2023 The Khronos Group Inc.
+ * Copyright (c) 2021-2024 The Khronos Group Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -222,10 +222,6 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpImageSparseTexelsResident:
         case spv::OpImageSparseRead:
         case spv::OpSizeOf:
-        case spv::OpConstantPipeStorage:
-        case spv::OpCreatePipeFromPipeStorage:
-        case spv::OpGetKernelLocalSizeForSubgroupCount:
-        case spv::OpGetKernelMaxNumSubgroups:
         case spv::OpGroupNonUniformElect:
         case spv::OpGroupNonUniformAll:
         case spv::OpGroupNonUniformAny:
@@ -290,6 +286,10 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpImageBoxFilterQCOM:
         case spv::OpImageBlockMatchSSDQCOM:
         case spv::OpImageBlockMatchSADQCOM:
+        case spv::OpImageBlockMatchWindowSSDQCOM:
+        case spv::OpImageBlockMatchWindowSADQCOM:
+        case spv::OpImageBlockMatchGatherSSDQCOM:
+        case spv::OpImageBlockMatchGatherSADQCOM:
         case spv::OpGroupIAddNonUniformAMD:
         case spv::OpGroupFAddNonUniformAMD:
         case spv::OpGroupFMinNonUniformAMD:
@@ -302,6 +302,8 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
         case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpGroupNonUniformQuadAllKHR:
+        case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
         case spv::OpHitObjectGetObjectToWorldNV:
         case spv::OpHitObjectGetObjectRayDirectionNV:
@@ -337,13 +339,7 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpConvertSamplerToUNV:
         case spv::OpConvertUToSampledImageNV:
         case spv::OpConvertSampledImageToUNV:
-        case spv::OpSubgroupShuffleINTEL:
-        case spv::OpSubgroupShuffleDownINTEL:
-        case spv::OpSubgroupShuffleUpINTEL:
-        case spv::OpSubgroupShuffleXorINTEL:
-        case spv::OpSubgroupBlockReadINTEL:
-        case spv::OpSubgroupImageBlockReadINTEL:
-        case spv::OpSubgroupImageMediaBlockReadINTEL:
+        case spv::OpRawAccessChainNV:
         case spv::OpUCountLeadingZerosINTEL:
         case spv::OpUCountTrailingZerosINTEL:
         case spv::OpAbsISubINTEL:
@@ -360,19 +356,9 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpUMul32x16INTEL:
         case spv::OpConstantFunctionPointerINTEL:
         case spv::OpFunctionPointerCallINTEL:
-        case spv::OpAsmTargetINTEL:
-        case spv::OpAsmINTEL:
-        case spv::OpAsmCallINTEL:
         case spv::OpAtomicFMinEXT:
         case spv::OpAtomicFMaxEXT:
         case spv::OpExpectKHR:
-        case spv::OpVariableLengthArrayINTEL:
-        case spv::OpSaveMemoryINTEL:
-        case spv::OpPtrCastToCrossWorkgroupINTEL:
-        case spv::OpCrossWorkgroupCastToPtrINTEL:
-        case spv::OpReadPipeBlockingINTEL:
-        case spv::OpWritePipeBlockingINTEL:
-        case spv::OpFPGARegINTEL:
         case spv::OpRayQueryGetRayTMinKHR:
         case spv::OpRayQueryGetRayFlagsKHR:
         case spv::OpRayQueryGetIntersectionTKHR:
@@ -391,9 +377,6 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionObjectToWorldKHR:
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
-        case spv::OpCompositeConstructContinuedINTEL:
-        case spv::OpConvertFToBF16INTEL:
-        case spv::OpConvertBF16ToFINTEL:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -609,11 +592,6 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpImageSparseTexelsResident:
         case spv::OpImageSparseRead:
         case spv::OpSizeOf:
-        case spv::OpTypePipeStorage:
-        case spv::OpConstantPipeStorage:
-        case spv::OpCreatePipeFromPipeStorage:
-        case spv::OpGetKernelLocalSizeForSubgroupCount:
-        case spv::OpGetKernelMaxNumSubgroups:
         case spv::OpGroupNonUniformElect:
         case spv::OpGroupNonUniformAll:
         case spv::OpGroupNonUniformAny:
@@ -680,6 +658,10 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpImageBoxFilterQCOM:
         case spv::OpImageBlockMatchSSDQCOM:
         case spv::OpImageBlockMatchSADQCOM:
+        case spv::OpImageBlockMatchWindowSSDQCOM:
+        case spv::OpImageBlockMatchWindowSADQCOM:
+        case spv::OpImageBlockMatchGatherSSDQCOM:
+        case spv::OpImageBlockMatchGatherSADQCOM:
         case spv::OpGroupIAddNonUniformAMD:
         case spv::OpGroupFAddNonUniformAMD:
         case spv::OpGroupFMinNonUniformAMD:
@@ -692,6 +674,8 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
         case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpGroupNonUniformQuadAllKHR:
+        case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
         case spv::OpHitObjectGetObjectToWorldNV:
         case spv::OpHitObjectGetObjectRayDirectionNV:
@@ -730,13 +714,7 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpConvertSamplerToUNV:
         case spv::OpConvertUToSampledImageNV:
         case spv::OpConvertSampledImageToUNV:
-        case spv::OpSubgroupShuffleINTEL:
-        case spv::OpSubgroupShuffleDownINTEL:
-        case spv::OpSubgroupShuffleUpINTEL:
-        case spv::OpSubgroupShuffleXorINTEL:
-        case spv::OpSubgroupBlockReadINTEL:
-        case spv::OpSubgroupImageBlockReadINTEL:
-        case spv::OpSubgroupImageMediaBlockReadINTEL:
+        case spv::OpRawAccessChainNV:
         case spv::OpUCountLeadingZerosINTEL:
         case spv::OpUCountTrailingZerosINTEL:
         case spv::OpAbsISubINTEL:
@@ -753,22 +731,9 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpUMul32x16INTEL:
         case spv::OpConstantFunctionPointerINTEL:
         case spv::OpFunctionPointerCallINTEL:
-        case spv::OpAsmTargetINTEL:
-        case spv::OpAsmINTEL:
-        case spv::OpAsmCallINTEL:
         case spv::OpAtomicFMinEXT:
         case spv::OpAtomicFMaxEXT:
         case spv::OpExpectKHR:
-        case spv::OpVariableLengthArrayINTEL:
-        case spv::OpSaveMemoryINTEL:
-        case spv::OpAliasDomainDeclINTEL:
-        case spv::OpAliasScopeDeclINTEL:
-        case spv::OpAliasScopeListDeclINTEL:
-        case spv::OpPtrCastToCrossWorkgroupINTEL:
-        case spv::OpCrossWorkgroupCastToPtrINTEL:
-        case spv::OpReadPipeBlockingINTEL:
-        case spv::OpWritePipeBlockingINTEL:
-        case spv::OpFPGARegINTEL:
         case spv::OpRayQueryGetRayTMinKHR:
         case spv::OpRayQueryGetRayFlagsKHR:
         case spv::OpRayQueryGetIntersectionTKHR:
@@ -787,10 +752,6 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionObjectToWorldKHR:
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
-        case spv::OpTypeBufferSurfaceINTEL:
-        case spv::OpCompositeConstructContinuedINTEL:
-        case spv::OpConvertFToBF16INTEL:
-        case spv::OpConvertBF16ToFINTEL:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -869,40 +830,9 @@ static constexpr bool GroupOperation(uint32_t opcode) {
         case spv::OpGroupNonUniformLogicalXor:
         case spv::OpGroupNonUniformQuadBroadcast:
         case spv::OpGroupNonUniformQuadSwap:
+        case spv::OpGroupNonUniformQuadAllKHR:
+        case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpGroupNonUniformPartitionNV:
-            return true;
-        default:
-            return false;
-    }
-}
-
-static constexpr bool DebugOperation(uint32_t opcode) {
-    switch (opcode) {
-        case spv::OpSourceContinued:
-        case spv::OpSource:
-        case spv::OpSourceExtension:
-        case spv::OpName:
-        case spv::OpMemberName:
-        case spv::OpString:
-        case spv::OpLine:
-        case spv::OpNoLine:
-        case spv::OpModuleProcessed:
-            return true;
-        default:
-            return false;
-    }
-}
-
-static constexpr bool AnnotationOperation(uint32_t opcode) {
-    switch (opcode) {
-        case spv::OpDecorate:
-        case spv::OpMemberDecorate:
-        case spv::OpDecorationGroup:
-        case spv::OpGroupDecorate:
-        case spv::OpGroupMemberDecorate:
-        case spv::OpDecorateId:
-        case spv::OpDecorateString:
-        case spv::OpMemberDecorateString:
             return true;
         default:
             return false;
@@ -915,6 +845,8 @@ static constexpr bool ImageGatherOperation(uint32_t opcode) {
         case spv::OpImageDrefGather:
         case spv::OpImageSparseGather:
         case spv::OpImageSparseDrefGather:
+        case spv::OpImageBlockMatchGatherSSDQCOM:
+        case spv::OpImageBlockMatchGatherSADQCOM:
             return true;
         default:
             return false;
@@ -987,8 +919,6 @@ static constexpr uint32_t OpcodeMemoryScopePosition(uint32_t opcode) {
             return 1;
         case spv::OpControlBarrier:
         case spv::OpAtomicStore:
-        case spv::OpControlBarrierArriveINTEL:
-        case spv::OpControlBarrierWaitINTEL:
             return 2;
         case spv::OpAtomicLoad:
         case spv::OpAtomicExchange:
@@ -1020,8 +950,6 @@ static constexpr uint32_t OpcodeExecutionScopePosition(uint32_t opcode) {
     uint32_t position = 0;
     switch (opcode) {
         case spv::OpControlBarrier:
-        case spv::OpControlBarrierArriveINTEL:
-        case spv::OpControlBarrierWaitINTEL:
             return 1;
         case spv::OpGroupAll:
         case spv::OpGroupAny:
@@ -1201,14 +1129,11 @@ enum class SpvType {
     kPointer,
     kFunction,
     kForwardPointer,
-    kPipeStorage,
     kCooperativeMatrixKHR,
     kRayQueryKHR,
     kHitObjectNV,
     kAccelerationStructureKHR,
     kCooperativeMatrixNV,
-    kBufferSurfaceINTEL,
-    kStructContinuedINTEL,
 };
 
 static constexpr SpvType GetSpvType(uint32_t opcode) {
@@ -1243,8 +1168,6 @@ static constexpr SpvType GetSpvType(uint32_t opcode) {
             return SpvType::kFunction;
         case spv::OpTypeForwardPointer:
             return SpvType::kForwardPointer;
-        case spv::OpTypePipeStorage:
-            return SpvType::kPipeStorage;
         case spv::OpTypeCooperativeMatrixKHR:
             return SpvType::kCooperativeMatrixKHR;
         case spv::OpTypeRayQueryKHR:
@@ -1255,16 +1178,13 @@ static constexpr SpvType GetSpvType(uint32_t opcode) {
             return SpvType::kAccelerationStructureKHR;
         case spv::OpTypeCooperativeMatrixNV:
             return SpvType::kCooperativeMatrixNV;
-        case spv::OpTypeBufferSurfaceINTEL:
-            return SpvType::kBufferSurfaceINTEL;
-        case spv::OpTypeStructContinuedINTEL:
-            return SpvType::kStructContinuedINTEL;
         default:
             return SpvType::Empty;
     }
 }
 
 enum class OperandKind {
+    Invalid = 0,
     Id,
     Label,  // Id but for Control Flow
     Literal,

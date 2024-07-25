@@ -15,6 +15,10 @@
 #ifndef MEDIAPIPE_GPU_MULTI_POOL_H_
 #define MEDIAPIPE_GPU_MULTI_POOL_H_
 
+#include <memory>
+
+#include "absl/status/statusor.h"
+#include "mediapipe/framework/port/status_macros.h"
 #include "mediapipe/util/resource_cache.h"
 
 namespace mediapipe {
@@ -22,7 +26,7 @@ namespace mediapipe {
 struct MultiPoolOptions {
   // Keep this many buffers allocated for a given frame size.
   int keep_count = 2;
-  // The maximum size of the GpuBufferMultiPool. When the limit is reached, the
+  // The maximum size of a concrete MultiPool. When the limit is reached, the
   // oldest BufferSpec will be dropped.
   int max_pool_count = 10;
   // Time in seconds after which an inactive buffer can be dropped from the
@@ -63,7 +67,7 @@ class MultiPool {
       : MultiPool(DefaultMakeSimplePool, options) {}
 
   // Obtains an item. May either be reused or created anew.
-  Item Get(const Spec& spec);
+  absl::StatusOr<Item> Get(const Spec& spec);
 
  private:
   static std::shared_ptr<SimplePool> DefaultMakeSimplePool(
@@ -104,14 +108,15 @@ std::shared_ptr<SimplePool> MultiPool<SimplePool, Spec, Item>::RequestPool(
 }
 
 template <class SimplePool, class Spec, class Item>
-Item MultiPool<SimplePool, Spec, Item>::Get(const Spec& spec) {
+absl::StatusOr<Item> MultiPool<SimplePool, Spec, Item>::Get(const Spec& spec) {
   std::shared_ptr<SimplePool> pool = RequestPool(spec);
   if (pool) {
     // Note: we release our multipool lock before accessing the simple pool.
-    return Item(pool->GetBuffer());
-  } else {
-    return Item(SimplePool::CreateBufferWithoutPool(spec));
+    MP_ASSIGN_OR_RETURN(auto item, pool->GetBuffer());
+    return Item(std::move(item));
   }
+  MP_ASSIGN_OR_RETURN(auto item, SimplePool::CreateBufferWithoutPool(spec));
+  return Item(std::move(item));
 }
 
 }  // namespace mediapipe

@@ -1121,7 +1121,7 @@ TEST_F(BookmarkRemoteUpdatesHandlerWithInitialMergeTest,
   const bookmarks::BookmarkNode* node = bookmark_model()->AddFolder(
       /*parent=*/bookmark_model()->bookmark_bar_node(),
       /*index=*/0, u"title", /*meta_info=*/nullptr,
-      /*creation_time=*/absl::nullopt, kBookmarkGuid);
+      /*creation_time=*/std::nullopt, kBookmarkGuid);
 
   // Track a sync entity (similar to what happens after a local creation). The
   // |originator_client_item_id| is used a temp sync id and mark the entity that
@@ -1190,7 +1190,7 @@ TEST_F(
   const bookmarks::BookmarkNode* node = bookmark_model()->AddFolder(
       /*parent=*/bookmark_model()->bookmark_bar_node(),
       /*index=*/0, u"title", /*meta_info=*/nullptr,
-      /*creation_time=*/absl::nullopt, kBookmarkGuid);
+      /*creation_time=*/std::nullopt, kBookmarkGuid);
   // Track a sync entity (similar to what happens after a local creation).
   const SyncedBookmarkTrackerEntity* entity =
       tracker()->Add(node, /*sync_id=*/kSyncId, /*server_version=*/0,
@@ -1282,9 +1282,9 @@ TEST_F(BookmarkRemoteUpdatesHandlerWithInitialMergeTest,
   ASSERT_THAT(entity->bookmark_node()->uuid(), Eq(kGuid));
 
   auto* node = entity->bookmark_node();
-  tracker()->MarkDeleted(entity);
+  tracker()->MarkDeleted(entity, FROM_HERE);
   tracker()->IncrementSequenceNumber(entity);
-  bookmark_model()->Remove(node);
+  bookmark_model()->Remove(node, FROM_HERE);
 
   // Process an update with outdated encryption. This should cause a conflict
   // and the remote version must be applied. Local tombstone entity will be
@@ -1359,12 +1359,13 @@ TEST_F(
   ASSERT_THAT(entity, NotNull());
 
   // Mark the entity as deleted locally.
-  tracker()->MarkDeleted(entity);
+  tracker()->MarkDeleted(entity, FROM_HERE);
   tracker()->IncrementSequenceNumber(entity);
   ASSERT_THAT(tracker()->GetEntityForUuid(kGuid)->IsUnsynced(), Eq(true));
 
   // Remove the bookmark from the local bookmark model.
-  bookmark_model()->Remove(bookmark_bar_node->children().front().get());
+  bookmark_model()->Remove(bookmark_bar_node->children().front().get(),
+                           FROM_HERE);
   ASSERT_THAT(bookmark_bar_node->children().size(), Eq(0u));
 
   // Push a remote deletion for the same entity with an out of date encryption
@@ -1438,12 +1439,13 @@ TEST_F(BookmarkRemoteUpdatesHandlerWithInitialMergeTest,
   ASSERT_THAT(bookmark_bar_node->children().size(), Eq(1u));
 
   // Mark the entity as deleted locally.
-  tracker()->MarkDeleted(entity);
+  tracker()->MarkDeleted(entity, FROM_HERE);
   tracker()->IncrementSequenceNumber(entity);
   ASSERT_THAT(entity->IsUnsynced(), Eq(true));
 
   // Remove the bookmark from the local bookmark model.
-  bookmark_model()->Remove(bookmark_bar_node->children().front().get());
+  bookmark_model()->Remove(bookmark_bar_node->children().front().get(),
+                           FROM_HERE);
   ASSERT_THAT(bookmark_bar_node->children().size(), Eq(0u));
 
   // Push a remote deletion for the same entity.
@@ -1533,12 +1535,13 @@ TEST_F(BookmarkRemoteUpdatesHandlerWithInitialMergeTest,
   ASSERT_THAT(bookmark_bar_node->children().size(), Eq(1u));
 
   // Mark the entity as deleted locally.
-  tracker()->MarkDeleted(entity);
+  tracker()->MarkDeleted(entity, FROM_HERE);
   tracker()->IncrementSequenceNumber(entity);
   ASSERT_THAT(entity->IsUnsynced(), Eq(true));
 
   // Remove the bookmark from the local bookmark model.
-  bookmark_model()->Remove(bookmark_bar_node->children().front().get());
+  bookmark_model()->Remove(bookmark_bar_node->children().front().get(),
+                           FROM_HERE);
   ASSERT_THAT(bookmark_bar_node->children().size(), Eq(0u));
 
   // Push an update for the same entity.

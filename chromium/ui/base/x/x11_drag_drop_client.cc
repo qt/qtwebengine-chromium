@@ -209,8 +209,7 @@ XDragDropClient::XDragDropClient(XDragDropClient::Delegate* delegate,
   x11::Connection::Get()->SetProperty(xwindow_, x11::GetAtom(kXdndAware),
                                       x11::Atom::ATOM, xdnd_version);
 
-  // Some tests change the DesktopDragDropClientAuraX11 associated with an
-  // |xwindow|.
+  // Some tests change the XDragDropClient associated with an |xwindow|.
   g_live_client_map.Get()[xwindow] = this;
 }
 
@@ -341,8 +340,9 @@ void XDragDropClient::OnXdndEnter(const x11::ClientMessageEvent& event) {
                      : SelectionFormatMap()));
 
   if (!source_client) {
-    // The window doesn't have a DesktopDragDropClientAuraX11, which means it's
-    // created by some other process.  Listen for messages on it.
+    // The window doesn't have a XDragDropClient, which means it's
+    // created by some other process, i.e: incoming drag session. Thus,
+    // start listening for messages on it.
     delegate_->OnBeginForeignDrag(
         static_cast<x11::Window>(event.data.data32[0]));
   }
@@ -634,7 +634,8 @@ x11::Window XDragDropClient::FindWindowFor(const gfx::Point& screen_point) {
     return x11::Window::None;
   }
 
-  // TODO(crbug/651775): The proxy window should be reported separately from the
+  // TODO(crbug.com/41278320): The proxy window should be reported separately
+  // from the
   //     target window. XDND messages should be sent to the proxy, and their
   //     window field should point to the target.
 

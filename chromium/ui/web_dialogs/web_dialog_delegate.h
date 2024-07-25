@@ -131,6 +131,10 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   // certain that the window is about to be closed.
   virtual void OnDialogWillClose() {}
 
+  // A callback to notify the delegate that the dialog is about to close due to
+  // the user pressing the ESC key.
+  virtual void OnDialogClosingFromKeyEvent() {}
+
   // A callback to notify the delegate that the dialog closed.
   // IMPORTANT: Implementations should delete |this| here (unless they've
   // arranged for the delegate to be deleted in some other way, e.g. by
@@ -210,9 +214,17 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   // A callback to allow the delegate to open a new URL inside |source|.
   // On return |out_new_contents| should contain the WebContents the URL
   // is opened in. Return false to use the default handler.
-  virtual bool HandleOpenURLFromTab(content::WebContents* source,
-                                    const content::OpenURLParams& params,
-                                    content::WebContents** out_new_contents);
+  // If a `navigation_handle_callback` function is provided, it should be called
+  // with the pending navigation (if any) when the navigation handle become
+  // available. This allows callers to observe or attach their specific data.
+  // `navigation_handle_callback` may not be called if the navigation fails for
+  // any reason.
+  virtual bool HandleOpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params,
+      base::OnceCallback<void(content::NavigationHandle&)>
+          navigation_handle_callback,
+      content::WebContents** out_new_contents);
 
   // A callback to control whether a WebContents will be created. Returns
   // true to disallow the creation. Return false to use the default handler.
@@ -255,7 +267,7 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
 
  private:
   base::flat_map<Accelerator, AcceleratorHandler> accelerators_;
-  absl::optional<std::u16string> accessible_title_;
+  std::optional<std::u16string> accessible_title_;
   bool allow_default_context_menu_ = true;
   bool allow_web_contents_creation_ = true;
   std::string args_;
@@ -269,7 +281,7 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   // TODO(ellyjones): Make this default to false.
   bool delete_on_close_ = true;
   FrameKind frame_kind_ = FrameKind::kNonClient;
-  absl::optional<gfx::Size> minimum_size_;
+  std::optional<gfx::Size> minimum_size_;
   ModalType modal_type_ = ui::MODAL_TYPE_NONE;
   std::string name_;
   bool show_close_button_ = true;

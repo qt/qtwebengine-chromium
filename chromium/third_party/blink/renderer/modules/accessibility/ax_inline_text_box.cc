@@ -30,10 +30,10 @@
 
 #include <stdint.h>
 
+#include <optional>
 #include <utility>
 
 #include "base/numerics/clamped_math.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/editing/ephemeral_range.h"
 #include "third_party/blink/renderer/core/editing/markers/custom_highlight_marker.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
@@ -84,17 +84,17 @@ void AXInlineTextBox::GetRelativeBounds(AXObject** out_container,
   out_bounds_in_container.Offset(-parent_bounding_box.OffsetFromOrigin());
 }
 
-bool AXInlineTextBox::ComputeAccessibilityIsIgnored(
+bool AXInlineTextBox::ComputeIsIgnored(
     IgnoredReasons* ignored_reasons) const {
   AXObject* parent = ParentObject();
   if (!parent)
     return false;
 
-  if (!parent->AccessibilityIsIgnored())
+  if (!parent->IsIgnored())
     return false;
 
   if (ignored_reasons)
-    parent->ComputeAccessibilityIsIgnored(ignored_reasons);
+    parent->ComputeIsIgnored(ignored_reasons);
 
   return true;
 }
@@ -155,7 +155,7 @@ int AXInlineTextBox::TextOffsetInContainer(int offset) const {
 
   // If the parent object in the accessibility tree exists, then it is either
   // a static text object or a line break. In the static text case, it is an
-  // AXLayoutObject associated with an inline text object. Hence the container
+  // AXNodeObject associated with an inline text object. Hence the container
   // is another inline object, not a layout block flow. We need to subtract the
   // text start offset of the static text parent from the text start offset of
   // this inline text box.
@@ -206,7 +206,7 @@ Node* AXInlineTextBox::GetNode() const {
 }
 
 Document* AXInlineTextBox::GetDocument() const {
-  return CachedParentObject() ? CachedParentObject()->GetDocument() : nullptr;
+  return ParentObject() ? ParentObject()->GetDocument() : nullptr;
 }
 
 AbstractInlineTextBox* AXInlineTextBox::GetInlineTextBox() const {
@@ -278,7 +278,7 @@ void AXInlineTextBox::SerializeMarkerAttributes(
   std::vector<int32_t> marker_ends;
 
   // First use ARIA markers for spelling/grammar if available.
-  absl::optional<DocumentMarker::MarkerType> aria_marker_type =
+  std::optional<DocumentMarker::MarkerType> aria_marker_type =
       GetAriaSpellingOrGrammarMarker();
   if (aria_marker_type) {
     marker_types.push_back(ToAXMarkerType(aria_marker_type.value()));
@@ -382,7 +382,7 @@ void AXInlineTextBox::Init(AXObject* parent) {
   DCHECK(ui::CanHaveInlineTextBoxChildren(parent->RoleValue()))
       << "Unexpected parent of inline text box: " << parent->RoleValue();
   DCHECK(parent->CanHaveChildren())
-      << "Parent cannot have children: " << parent->ToString(true, true);
+      << "Parent cannot have children: " << parent;
   // Don't call SetParent(), which calls SetAncestorsHaveDirtyDescendants(),
   // because once inline textboxes are loaded for the parent text, it's never
   // necessary to again recompute this part of the tree.
@@ -416,7 +416,7 @@ int AXInlineTextBox::TextLength() const {
   return static_cast<int>(inline_text_box_->Len());
 }
 
-void AXInlineTextBox::ClearChildren() const {
+void AXInlineTextBox::ClearChildren() {
   // An AXInlineTextBox has no children to clear.
 }
 

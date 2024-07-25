@@ -175,7 +175,7 @@ void ServiceWorkerStorageControlImpl::FindRegistrationForScope(
 
 void ServiceWorkerStorageControlImpl::FindRegistrationForId(
     int64_t registration_id,
-    const absl::optional<blink::StorageKey>& key,
+    const std::optional<blink::StorageKey>& key,
     FindRegistrationForIdCallback callback) {
   if (key.has_value()) {
     storage_->FindRegistrationForId(
@@ -451,7 +451,7 @@ void ServiceWorkerStorageControlImpl::DidFindRegistrationForClientUrl(
     FindRegistrationForClientUrlCallback callback,
     mojom::ServiceWorkerRegistrationDataPtr data,
     std::unique_ptr<ResourceList> resources,
-    const absl::optional<std::vector<GURL>>& scopes,
+    const std::optional<std::vector<GURL>>& scopes,
     mojom::ServiceWorkerDatabaseStatus status) {
   if (status != mojom::ServiceWorkerDatabaseStatus::kOk) {
     std::move(callback).Run(status, /*result=*/nullptr, scopes);
@@ -567,7 +567,7 @@ ServiceWorkerStorageControlImpl::CreateLiveVersionReferenceRemote(
     reference->Add(remote_reference.InitWithNewPipeAndPassReceiver());
     live_versions_[version_id] = std::move(reference);
   } else {
-    // TODO(https://crbug.com/1277263): Remove the following CHECK() once the
+    // TODO(crbug.com/40207717): Remove the following CHECK() once the
     // cause is identified.
     base::debug::Alias(&version_id);
     CHECK(it->second.get()) << "Invalid version id: " << version_id;

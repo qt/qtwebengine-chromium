@@ -55,7 +55,7 @@ import { ConsoleMessage, } from '../common/ConsoleMessage.js';
 import { TargetCloseError } from '../common/Errors.js';
 import { FileChooser } from '../common/FileChooser.js';
 import { NetworkManagerEvent } from '../common/NetworkManagerEvents.js';
-import { createClientError, debugError, evaluationString, getReadableAsBuffer, getReadableFromProtocolStream, NETWORK_IDLE_TIME, pageBindingInitString, timeout, validateDialogType, valueFromRemoteObject, waitForHTTP, } from '../common/util.js';
+import { debugError, evaluationString, getReadableAsBuffer, getReadableFromProtocolStream, parsePDFOptions, timeout, validateDialogType, } from '../common/util.js';
 import { assert } from '../util/assert.js';
 import { Deferred } from '../util/Deferred.js';
 import { AsyncDisposableStack } from '../util/disposable.js';
@@ -75,13 +75,22 @@ import { CdpKeyboard, CdpMouse, CdpTouchscreen } from './Input.js';
 import { MAIN_WORLD } from './IsolatedWorlds.js';
 import { releaseObject } from './JSHandle.js';
 import { Tracing } from './Tracing.js';
+import { createClientError, pageBindingInitString, valueFromRemoteObject, } from './utils.js';
 import { CdpWebWorker } from './WebWorker.js';
+function convertConsoleMessageLevel(method) {
+    switch (method) {
+        case 'warning':
+            return 'warn';
+        default:
+            return method;
+    }
+}
 /**
  * @internal
  */
 export class CdpPage extends Page {
-    static async _create(client, target, ignoreHTTPSErrors, defaultViewport) {
-        const page = new CdpPage(client, target, ignoreHTTPSErrors);
+    static async _create(client, target, defaultViewport) {
+        const page = new CdpPage(client, target);
         await page.#initialize();
         if (defaultViewport) {
             try {
@@ -200,7 +209,7 @@ export class CdpPage extends Page {
         ['Log.entryAdded', this.#onLogEntryAdded.bind(this)],
         ['Page.fileChooserOpened', this.#onFileChooser.bind(this)],
     ];
-    constructor(client, target, ignoreHTTPSErrors) {
+    constructor(client, target) {
         super();
         this.#primaryTargetClient = client;
         this.#tabTargetClient = client.parentSession();
@@ -213,7 +222,7 @@ export class CdpPage extends Page {
         this.#mouse = new CdpMouse(client, this.#keyboard);
         this.#touchscreen = new CdpTouchscreen(client, this.#keyboard);
         this.#accessibility = new Accessibility(client);
-        this.#frameManager = new FrameManager(client, this, ignoreHTTPSErrors, this._timeoutSettings);
+        this.#frameManager = new FrameManager(client, this, this._timeoutSettings);
         this.#emulationManager = new EmulationManager(client);
         this.#tracing = new Tracing(client);
         this.#coverage = new Coverage(client);
@@ -287,7 +296,7 @@ export class CdpPage extends Page {
         assert(session instanceof CdpCDPSession);
         this.#frameManager.onAttachedToTarget(session._target());
         if (session._target()._getTargetInfo().type === 'worker') {
-            const worker = new CdpWebWorker(session, session._target().url(), this.#addConsoleMessage.bind(this), this.#handleException.bind(this));
+            const worker = new CdpWebWorker(session, session._target().url(), session._target()._targetId, session._target().type(), this.#addConsoleMessage.bind(this), this.#handleException.bind(this));
             this.#workers.set(session.id(), worker);
             this.emit("workercreated" /* PageEvent.WorkerCreated */, worker);
         }
@@ -395,7 +404,7 @@ export class CdpPage extends Page {
             });
         }
         if (source !== 'worker') {
-            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(level, text, [], [{ url, lineNumber }]));
+            this.emit("console" /* PageEvent.Console */, new ConsoleMessage(convertConsoleMessageLevel(level), text, [], [{ url, lineNumber }]));
         }
     }
     mainFrame() {
@@ -462,7 +471,7 @@ export class CdpPage extends Page {
         const originalCookies = (await this.#primaryTargetClient.send('Network.getCookies', {
             urls: urls.length ? urls : [this.url()],
         })).cookies;
-        const unsupportedCookieAttributes = ['priority'];
+        const unsupportedCookieAttributes = ['sourcePort'];
         const filterUnsupportedAttributes = (cookie) => {
             for (const attr of unsupportedCookieAttributes) {
                 delete cookie[attr];
@@ -612,7 +621,7 @@ export class CdpPage extends Page {
         const values = event.args.map(arg => {
             return createCdpHandle(context._world, arg);
         });
-        this.#addConsoleMessage(event.type, values, event.stackTrace);
+        this.#addConsoleMessage(convertConsoleMessageLevel(event.type), values, event.stackTrace);
     }
     async #onBindingCalled(event) {
         let payload;
@@ -664,7 +673,7 @@ export class CdpPage extends Page {
                 });
             }
         }
-        const message = new ConsoleMessage(eventType, textTokens.join(' '), args, stackTraceLocations);
+        const message = new ConsoleMessage(convertConsoleMessageLevel(eventType), textTokens.join(' '), args, stackTraceLocations);
         this.emit("console" /* PageEvent.Console */, message);
     }
     #onDialog(event) {
@@ -674,25 +683,16 @@ export class CdpPage extends Page {
     }
     async reload(options) {
         const [result] = await Promise.all([
-            this.waitForNavigation(options),
+            this.waitForNavigation({
+                ...options,
+                ignoreSameDocumentNavigation: true,
+            }),
             this.#primaryTargetClient.send('Page.reload'),
         ]);
         return result;
     }
     async createCDPSession() {
         return await this.target().createCDPSession();
-    }
-    async waitForRequest(urlOrPredicate, options = {}) {
-        const { timeout = this._timeoutSettings.timeout() } = options;
-        return await waitForHTTP(this.#frameManager.networkManager, NetworkManagerEvent.Request, urlOrPredicate, timeout, this.#sessionCloseDeferred);
-    }
-    async waitForResponse(urlOrPredicate, options = {}) {
-        const { timeout = this._timeoutSettings.timeout() } = options;
-        return await waitForHTTP(this.#frameManager.networkManager, NetworkManagerEvent.Response, urlOrPredicate, timeout, this.#sessionCloseDeferred);
-    }
-    async waitForNetworkIdle(options = {}) {
-        const { idleTime = NETWORK_IDLE_TIME, timeout: ms = this._timeoutSettings.timeout(), } = options;
-        await firstValueFrom(this._waitForNetworkIdle(this.#frameManager.networkManager, idleTime).pipe(raceWith(timeout(ms), from(this.#sessionCloseDeferred.valueOrThrow()))));
     }
     async goBack(options = {}) {
         return await this.#go(-1, options);
@@ -813,10 +813,16 @@ export class CdpPage extends Page {
         }
     }
     async createPDFStream(options = {}) {
-        const { landscape, displayHeaderFooter, headerTemplate, footerTemplate, printBackground, scale, width: paperWidth, height: paperHeight, margin, pageRanges, preferCSSPageSize, omitBackground, timeout: ms, tagged: generateTaggedPDF, } = this._getPDFOptions(options);
+        const { timeout: ms = this._timeoutSettings.timeout() } = options;
+        const { landscape, displayHeaderFooter, headerTemplate, footerTemplate, printBackground, scale, width: paperWidth, height: paperHeight, margin, pageRanges, preferCSSPageSize, omitBackground, tagged: generateTaggedPDF, outline: generateDocumentOutline, } = parsePDFOptions(options);
         if (omitBackground) {
             await this.#emulationManager.setTransparentBackgroundColor();
         }
+        await firstValueFrom(from(this.mainFrame()
+            .isolatedRealm()
+            .evaluate(() => {
+            return document.fonts.ready;
+        })).pipe(raceWith(timeout(ms))));
         const printCommandPromise = this.#primaryTargetClient.send('Page.printToPDF', {
             transferMode: 'ReturnAsStream',
             landscape,
@@ -834,6 +840,7 @@ export class CdpPage extends Page {
             pageRanges,
             preferCSSPageSize,
             generateTaggedPDF,
+            generateDocumentOutline,
         });
         const result = await firstValueFrom(from(printCommandPromise).pipe(raceWith(timeout(ms))));
         if (omitBackground) {

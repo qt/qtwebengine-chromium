@@ -89,7 +89,7 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
 
   // Recursive prefetch from a cross-origin main resource prefetch.
   if (resource_request.recursive_prefetch_token) {
-    // TODO(crbug.com/1132770): Figure out why we're seeing this condition
+    // TODO(crbug.com/40150754): Figure out why we're seeing this condition
     // hold true in the field.
     if (!current_context.cross_origin_factory) {
       return;
@@ -281,7 +281,7 @@ PrefetchURLLoaderServiceContext::CreateURLLoaderThrottles(
       base::BindRepeating(&WebContents::FromFrameTreeNodeId,
                           frame_tree_node_id),
       nullptr /* navigation_ui_data */, frame_tree_node_id,
-      /*navigation_id=*/absl::nullopt);
+      /*navigation_id=*/std::nullopt);
 }
 
 }  // namespace content

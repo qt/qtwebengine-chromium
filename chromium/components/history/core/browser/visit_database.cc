@@ -593,22 +593,36 @@ bool VisitDatabase::GetVisitsForTimes(const std::vector<base::Time>& times,
 
 bool VisitDatabase::GetAllVisitsInRange(base::Time begin_time,
                                         base::Time end_time,
+                                        std::optional<std::string> app_id,
                                         int max_results,
                                         VisitVector* visits) {
   visits->clear();
 
-  sql::Statement statement(GetDB().GetCachedStatement(
-      SQL_FROM_HERE, "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
-                     "WHERE visit_time >= ? AND visit_time < ?"
-                     "ORDER BY visit_time LIMIT ?"));
+  sql::Statement statement;
+  if (app_id) {
+    statement.Assign(GetDB().GetCachedStatement(
+        SQL_FROM_HERE, "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+                       "WHERE visit_time >= ? AND visit_time < ? AND app_id=? "
+                       "ORDER BY visit_time LIMIT ?"));
+  } else {
+    statement.Assign(GetDB().GetCachedStatement(
+        SQL_FROM_HERE, "SELECT" HISTORY_VISIT_ROW_FIELDS "FROM visits "
+                       "WHERE visit_time >= ? AND visit_time < ? "
+                       "ORDER BY visit_time LIMIT ?"));
+  }
 
   // See GetVisibleVisitsInRange for more info on how these times are bound.
   int64_t end = end_time.ToInternalValue();
   statement.BindTime(0, begin_time);
   statement.BindInt64(1, end ? end : std::numeric_limits<int64_t>::max());
-  statement.BindInt64(
-      2, max_results ? max_results : std::numeric_limits<int64_t>::max());
-
+  if (app_id) {
+    statement.BindString(2, *app_id);
+    statement.BindInt64(
+        3, max_results ? max_results : std::numeric_limits<int64_t>::max());
+  } else {
+    statement.BindInt64(
+        2, max_results ? max_results : std::numeric_limits<int64_t>::max());
+  }
   return FillVisitVector(statement, visits);
 }
 
@@ -675,6 +689,19 @@ bool VisitDatabase::GetAllURLIDsForTransition(ui::PageTransition transition,
     urls->push_back(statement.ColumnInt64(0));
   }
   return statement.Succeeded();
+}
+
+GetAllAppIdsResult VisitDatabase::GetAllAppIds() {
+  sql::Statement statement(GetDB().GetUniqueStatement(
+      "SELECT DISTINCT app_id FROM visits "
+      "WHERE app_id != '' ORDER BY visit_time DESC"));
+
+  GetAllAppIdsResult result;
+
+  while (statement.Step()) {
+    result.app_ids.push_back(statement.ColumnString(0));
+  }
+  return result;
 }
 
 bool VisitDatabase::GetVisibleVisitsInRange(const QueryOptions& options,

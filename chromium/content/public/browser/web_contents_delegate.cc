@@ -30,8 +30,10 @@ namespace content {
 
 WebContentsDelegate::WebContentsDelegate() = default;
 
-WebContents* WebContentsDelegate::OpenURLFromTab(WebContents* source,
-                                                 const OpenURLParams& params) {
+WebContents* WebContentsDelegate::OpenURLFromTab(
+    WebContents* source,
+    const OpenURLParams& params,
+    base::OnceCallback<void(NavigationHandle&)> navigation_handle_callback) {
   return nullptr;
 }
 
@@ -186,8 +188,7 @@ FullscreenState WebContentsDelegate::GetFullscreenState(
 }
 
 bool WebContentsDelegate::CanEnterFullscreenModeForTab(
-    RenderFrameHost* requesting_frame,
-    const blink::mojom::FullscreenOptions& options) {
+    RenderFrameHost* requesting_frame) {
   return true;
 }
 
@@ -201,16 +202,20 @@ WebContentsDelegate::GetProtocolHandlerSecurityLevel(RenderFrameHost*) {
   return blink::ProtocolHandlerSecurityLevel::kStrict;
 }
 
-void WebContentsDelegate::RequestToLockMouse(WebContents* web_contents,
+void WebContentsDelegate::RequestPointerLock(WebContents* web_contents,
                                              bool user_gesture,
                                              bool last_unlocked_by_target) {
-  web_contents->GotResponseToLockMouseRequest(
+  web_contents->GotResponseToPointerLockRequest(
       blink::mojom::PointerLockResult::kUnknownError);
 }
 
 void WebContentsDelegate::RequestKeyboardLock(WebContents* web_contents,
                                               bool esc_key_locked) {
-  web_contents->GotResponseToKeyboardLockRequest(false);
+  // Notify `web_contents` that the request is accepted and the JavaScript
+  // promise for the request can be resolved. This can be overridden by a
+  // subclass that wants to conditionally accept the request, e.g., depending
+  // on the permissions state.
+  web_contents->GotResponseToKeyboardLockRequest(true);
 }
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_APPLE)
@@ -396,15 +401,7 @@ WebContentsDelegate::GetInstalledWebappGeolocationContext() {
   return nullptr;
 }
 
-base::WeakPtr<WebContentsDelegate> WebContentsDelegate::GetDelegateWeakPtr() {
-  return nullptr;
-}
-
 bool WebContentsDelegate::IsPrivileged() {
-  return false;
-}
-
-bool WebContentsDelegate::IsInPreviewMode() const {
   return false;
 }
 
@@ -413,5 +410,10 @@ bool WebContentsDelegate::ShouldUseInstancedSystemMediaControls() const {
   return false;
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
+
+bool WebContentsDelegate::MaybeCopyContentAreaAsBitmap(
+    base::OnceCallback<void(const SkBitmap&)> callback) {
+  return false;
+}
 
 }  // namespace content

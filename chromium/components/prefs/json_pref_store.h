@@ -8,8 +8,10 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
@@ -19,13 +21,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
-#include "base/strings/string_piece.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "components/prefs/persistent_pref_store.h"
 #include "components/prefs/pref_filter.h"
 #include "components/prefs/prefs_export.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class PrefFilter;
 
@@ -76,7 +76,7 @@ class COMPONENTS_PREFS_EXPORT JsonPrefStore final
   JsonPrefStore& operator=(const JsonPrefStore&) = delete;
 
   // PrefStore overrides:
-  bool GetValue(base::StringPiece key,
+  bool GetValue(std::string_view key,
                 const base::Value** result) const override;
   base::Value::Dict GetValues() const override;
   void AddObserver(PrefStore::Observer* observer) override;
@@ -169,7 +169,7 @@ class COMPONENTS_PREFS_EXPORT JsonPrefStore final
   void OnFileRead(std::unique_ptr<ReadResult> read_result);
 
   // ImportantFileWriter::DataSerializer overrides:
-  absl::optional<std::string> SerializeData() override;
+  std::optional<std::string> SerializeData() override;
   // ImportantFileWriter::BackgroundDataSerializer implementation.
   base::ImportantFileWriter::BackgroundDataProducerCallback
   GetSerializedDataProducerForBackgroundSequence() override;

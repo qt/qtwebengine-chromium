@@ -7,10 +7,12 @@
 #include <utility>
 
 #include "base/debug/dump_without_crashing.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_id_helper.h"
 #include "cc/metrics/compositor_frame_reporter.h"
 #include "cc/metrics/dropped_frame_counter.h"
+#include "cc/metrics/event_latency_tracing_recorder.h"
 #include "cc/metrics/frame_sequence_tracker_collection.h"
 #include "cc/metrics/latency_ukm_reporter.h"
 #include "cc/metrics/scroll_jank_dropped_frame_tracker.h"
@@ -141,9 +143,9 @@ void CompositorFrameReportingController::WillBeginImplFrame(
   if (reporters_[PipelineStage::kBeginImplFrame]) {
     auto& reporter = reporters_[PipelineStage::kBeginImplFrame];
     DCHECK(reporter->did_finish_impl_frame());
-    // TODO(1144353): This is a speculative fix. This code should only be
-    // reached after the previous frame have been explicitly marked as 'did not
-    // produce frame', i.e. this code should have a DCHECK instead of a
+    // TODO(crbug.com/40728802): This is a speculative fix. This code should
+    // only be reached after the previous frame have been explicitly marked as
+    // 'did not produce frame', i.e. this code should have a DCHECK instead of a
     // conditional:
     //   DCHECK(reporter->did_not_produce_frame()).
     if (reporter->did_not_produce_frame()) {
@@ -185,9 +187,9 @@ void CompositorFrameReportingController::WillBeginMainFrame(
     auto active_trackers = active_trackers_;
     auto smooth_thread = GetSmoothThread();
     if (args.frame_id == last_started_compositor_frame_.args.frame_id) {
-      // TODO(1277547): Instead of replacing all current information with the
-      // older information from when the impl-frame started, merge the two sets
-      // of information that makes sense.
+      // TODO(crbug.com/40207819): Instead of replacing all current information
+      // with the older information from when the impl-frame started, merge the
+      // two sets of information that makes sense.
       scrolling_thread = last_started_compositor_frame_.scrolling_thread;
       active_trackers = last_started_compositor_frame_.active_trackers;
       smooth_thread = last_started_compositor_frame_.smooth_thread;
@@ -599,21 +601,24 @@ void CompositorFrameReportingController::DidPresentCompositorFrame(
     reporter->TerminateFrame(termination_status,
                              details.presentation_feedback.timestamp);
 
-    base::TimeDelta latency_prediction_deviation_threshold =
-        details.presentation_feedback.interval.is_zero()
-            ? kDefaultLatencyPredictionDeviationThreshold
-            : (details.presentation_feedback.interval) / 2;
-    switch (reporter->get_reporter_type()) {
-      case CompositorFrameReporter::ReporterType::kImpl:
-        reporter->CalculateCompositorLatencyPrediction(
-            previous_latency_predictions_impl_,
-            latency_prediction_deviation_threshold);
-        break;
-      case CompositorFrameReporter::ReporterType::kMain:
-        reporter->CalculateCompositorLatencyPrediction(
-            previous_latency_predictions_main_,
-            latency_prediction_deviation_threshold);
-        break;
+    base::TimeDelta latency_prediction_deviation_threshold;
+    if (EventLatencyTracingRecorder::IsEventLatencyTracingEnabled()) {
+      latency_prediction_deviation_threshold =
+          details.presentation_feedback.interval.is_zero()
+              ? kDefaultLatencyPredictionDeviationThreshold
+              : (details.presentation_feedback.interval) / 2;
+      switch (reporter->get_reporter_type()) {
+        case CompositorFrameReporter::ReporterType::kImpl:
+          reporter->CalculateCompositorLatencyPrediction(
+              previous_latency_predictions_impl_,
+              latency_prediction_deviation_threshold);
+          break;
+        case CompositorFrameReporter::ReporterType::kMain:
+          reporter->CalculateCompositorLatencyPrediction(
+              previous_latency_predictions_main_,
+              latency_prediction_deviation_threshold);
+          break;
+      }
     }
 
     // If the page was transitioned from invisible to visible, need to throw
@@ -632,10 +637,13 @@ void CompositorFrameReportingController::DidPresentCompositorFrame(
     }
 
     if (termination_status == FrameTerminationStatus::kPresentedFrame) {
-      // TODO(crbug.com/1334827): Consider using a separate container to
-      // differentiate event predictions with and without a main dispatch stage.
-      reporter->CalculateEventLatencyPrediction(
-          event_latency_predictions_, latency_prediction_deviation_threshold);
+      if (EventLatencyTracingRecorder::IsEventLatencyTracingEnabled()) {
+        // TODO(crbug.com/40228308): Consider using a separate container to
+        // differentiate event predictions with and without a main dispatch
+        // stage.
+        reporter->CalculateEventLatencyPrediction(
+            event_latency_predictions_, latency_prediction_deviation_threshold);
+      }
 
       // For presented frames, if `reporter` was cloned from another reporter,
       // and the original reporter is still alive, then check whether the cloned

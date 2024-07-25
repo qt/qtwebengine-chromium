@@ -10,10 +10,14 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "chromeos/ash/components/mojo_service_manager/connection.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
 #include "media/capture/video/chromeos/camera_app_device_bridge_impl.h"
 #include "media/capture/video/chromeos/camera_device_context.h"
 #include "media/capture/video/chromeos/camera_metadata_utils.h"
+#include "media/capture/video/chromeos/mojom/document_scanner.mojom.h"
+#include "mojo/public/cpp/bindings/remote.h"
+#include "third_party/cros_system_api/mojo/service_constants.h"
 #include "third_party/libyuv/include/libyuv.h"
 
 namespace media {
@@ -25,6 +29,43 @@ constexpr int kDetectionHeight = 256;
 
 }  // namespace
 
+class CameraAppDeviceImpl::DocumentScanner {
+ public:
+  using DetectCornersFromNV12ImageCallback =
+      base::OnceCallback<void(bool success,
+                              const std::vector<gfx::PointF>& results)>;
+
+  DocumentScanner() {
+    if (!ash::mojo_service_manager::IsServiceManagerBound()) {
+      return;
+    }
+    ash::mojo_service_manager::GetServiceManagerProxy()->Request(
+        chromeos::mojo_services::kCrosDocumentScanner, std::nullopt,
+        document_scanner_remote_.BindNewPipeAndPassReceiver().PassPipe());
+  }
+
+  DocumentScanner(const DocumentScanner&) = delete;
+  DocumentScanner& operator=(const DocumentScanner&) = delete;
+
+  ~DocumentScanner() = default;
+
+  void DetectCornersFromNV12Image(base::ReadOnlySharedMemoryRegion nv12_image,
+                                  DetectCornersFromNV12ImageCallback callback) {
+    document_scanner_remote_->DetectCornersFromNV12Image(
+        std::move(nv12_image),
+        base::BindOnce(
+            [](DetectCornersFromNV12ImageCallback callback,
+               cros::mojom::DetectCornersResultPtr detect_result) {
+              std::move(callback).Run(detect_result->success,
+                                      std::move(detect_result->corners));
+            },
+            std::move(callback)));
+  }
+
+ private:
+  mojo::Remote<cros::mojom::CrosDocumentScanner> document_scanner_remote_;
+};
+
 // static
 int CameraAppDeviceImpl::GetPortraitSegResultCode(
     const cros::mojom::CameraMetadataPtr* metadata) {
@@ -35,11 +76,14 @@ int CameraAppDeviceImpl::GetPortraitSegResultCode(
   return static_cast<int>(portrait_mode_segmentation_result[0]);
 }
 
-CameraAppDeviceImpl::CameraAppDeviceImpl(const std::string& device_id)
+CameraAppDeviceImpl::CameraAppDeviceImpl(
+    const std::string& device_id,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner)
     : device_id_(device_id),
       allow_new_ipc_weak_ptrs_(true),
       capture_intent_(cros::mojom::CaptureIntent::kDefault),
-      camera_device_context_(nullptr) {}
+      camera_device_context_(nullptr),
+      document_scanner_(ui_task_runner) {}
 
 CameraAppDeviceImpl::~CameraAppDeviceImpl() {
   // If the instance is bound, then this instance should only be destroyed when
@@ -58,7 +102,6 @@ void CameraAppDeviceImpl::BindReceiver(
   receivers_.set_disconnect_handler(
       base::BindRepeating(&CameraAppDeviceImpl::OnMojoConnectionError,
                           weak_ptr_factory_for_mojo_.GetWeakPtr()));
-  document_scanner_service_ = ash::DocumentScannerServiceClient::Create();
 }
 
 base::WeakPtr<CameraAppDeviceImpl> CameraAppDeviceImpl::GetWeakPtr() {
@@ -74,7 +117,7 @@ void CameraAppDeviceImpl::ResetOnDeviceIpcThread(base::OnceClosure callback,
   std::move(callback).Run();
 }
 
-absl::optional<gfx::Range> CameraAppDeviceImpl::GetFpsRange() {
+std::optional<gfx::Range> CameraAppDeviceImpl::GetFpsRange() {
   base::AutoLock lock(fps_ranges_lock_);
 
   return specified_fps_range_;
@@ -131,9 +174,6 @@ void CameraAppDeviceImpl::SetCameraDeviceContext(
 void CameraAppDeviceImpl::MaybeDetectDocumentCorners(
     std::unique_ptr<gpu::GpuMemoryBufferImpl> gmb,
     VideoRotation rotation) {
-  if (!ash::DocumentScannerServiceClient::IsSupported()) {
-    return;
-  }
   {
     base::AutoLock lock(document_corners_observers_lock_);
     if (document_corners_observers_.empty()) {
@@ -345,10 +385,8 @@ void CameraAppDeviceImpl::DetectDocumentCornersOnMojoThread(
     std::unique_ptr<gpu::GpuMemoryBufferImpl> image,
     VideoRotation rotation) {
   DCHECK(mojo_task_runner_->BelongsToCurrentThread());
-  DCHECK(document_scanner_service_);
 
-  if (!document_scanner_service_->IsLoaded() ||
-      IsCloseToPreviousDetectionRequest() ||
+  if (IsCloseToPreviousDetectionRequest() ||
       has_ongoing_document_detection_task_) {
     return;
   }
@@ -364,7 +402,10 @@ void CameraAppDeviceImpl::DetectDocumentCornersOnMojoThread(
 
   base::MappedReadOnlyRegion memory = base::ReadOnlySharedMemoryRegion::Create(
       kDetectionWidth * kDetectionHeight * 3 / 2);
-
+  if (!memory.IsValid()) {
+    LOG(ERROR) << "Failed to allocate shared memory";
+    return;
+  }
   auto* y_data = memory.mapping.GetMemoryAs<uint8_t>();
   auto* uv_data = y_data + kDetectionWidth * kDetectionHeight;
 
@@ -381,14 +422,12 @@ void CameraAppDeviceImpl::DetectDocumentCornersOnMojoThread(
 
   has_ongoing_document_detection_task_ = true;
   document_detection_timer_ = std::make_unique<base::ElapsedTimer>();
-  // Since we destroy |document_scanner_service_| on mojo thread and this
-  // callback is also called on mojo thread, it should be safe to just use
-  // base::Unretained(this) here.
-  document_scanner_service_->DetectCornersFromNV12Image(
-      std::move(memory.region),
-      base::BindOnce(
-          &CameraAppDeviceImpl::OnDetectedDocumentCornersOnMojoThread,
-          base::Unretained(this), rotation));
+
+  document_scanner_.AsyncCall(&DocumentScanner::DetectCornersFromNV12Image)
+      .WithArgs(std::move(memory.region),
+                base::BindPostTaskToCurrentDefault(base::BindOnce(
+                    &CameraAppDeviceImpl::OnDetectedDocumentCornersOnMojoThread,
+                    weak_ptr_factory_for_mojo_.GetWeakPtr(), rotation)));
 }
 
 void CameraAppDeviceImpl::OnDetectedDocumentCornersOnMojoThread(
@@ -474,10 +513,10 @@ void CameraAppDeviceImpl::NotifyCameraInfoUpdatedOnMojoThread() {
   }
 }
 
-absl::optional<PortraitModeCallbacks>
+std::optional<PortraitModeCallbacks>
 CameraAppDeviceImpl::ConsumePortraitModeCallbacks() {
   base::AutoLock lock(portrait_mode_callbacks_lock_);
-  absl::optional<PortraitModeCallbacks> callbacks;
+  std::optional<PortraitModeCallbacks> callbacks;
   if (take_portrait_photo_callbacks_.has_value()) {
     callbacks = std::move(take_portrait_photo_callbacks_);
     take_portrait_photo_callbacks_.reset();

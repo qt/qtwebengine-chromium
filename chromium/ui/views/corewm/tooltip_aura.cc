@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/string_split.h"
@@ -28,7 +27,6 @@
 #include "ui/display/screen.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/text_utils.h"
-#include "ui/views/views_features.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/public/tooltip_observer.h"
 
@@ -36,7 +34,7 @@ namespace {
 
 // TODO(varkha): Update if native widget can be transparent on Linux.
 bool CanUseTranslucentTooltipWidget() {
-// TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+// TODO(crbug.com/40118868): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) || BUILDFLAG(IS_WIN)
   return false;
@@ -79,7 +77,7 @@ void TooltipAura::SetMaxWidth(int width) {
 
 // static
 void TooltipAura::AdjustToCursor(gfx::Rect* anchor_point) {
-  // TODO(crbug.com/1410707): Should adjust with actual cursor size.
+  // TODO(crbug.com/40254494): Should adjust with actual cursor size.
   anchor_point->Offset(kCursorOffsetX, kCursorOffsetY);
 }
 
@@ -227,7 +225,7 @@ void TooltipAura::Update(aura::Window* window,
   new_tooltip_view->SetMaxWidth(GetMaxWidth(anchor_point));
   new_tooltip_view->SetText(tooltip_text);
   ui::OwnedWindowAnchor anchor;
-  auto bounds = GetTooltipBounds(new_tooltip_view->GetPreferredSize(),
+  auto bounds = GetTooltipBounds(new_tooltip_view->GetPreferredSize({}),
                                  anchor_point, trigger, &anchor);
   CreateTooltipWidget(bounds, anchor);
   widget_->SetTooltipView(std::move(new_tooltip_view));
@@ -238,16 +236,13 @@ void TooltipAura::Show() {
   if (widget_) {
     widget_->Show();
 
-    if (!base::FeatureList::IsEnabled(views::features::kWidgetLayering))
-      widget_->StackAtTop();
-
     widget_->GetTooltipView()->NotifyAccessibilityEvent(
         ax::mojom::Event::kTooltipOpened, true);
 
     // Add distance between `tooltip_window_` and its toplevel window to bounds
     // to pass via NotifyTooltipShown() since client will use this bounds as
     // relative to wayland toplevel window.
-    // TODO(crbug.com/1385219): Use `tooltip_window_` instead of its toplevel
+    // TODO(crbug.com/40246673): Use `tooltip_window_` instead of its toplevel
     // window when WaylandWindow on ozone becomes available.
     aura::Window* toplevel_window = tooltip_window_->GetToplevelWindow();
     // `tooltip_window_`'s toplevel window may be null for testing.
@@ -276,7 +271,7 @@ void TooltipAura::Hide() {
     widget_->GetTooltipView()->NotifyAccessibilityEvent(
         ax::mojom::Event::kTooltipClosed, true);
 
-    // TODO(crbug.com/1385219): Use `tooltip_window_` instead of its toplevel
+    // TODO(crbug.com/40246673): Use `tooltip_window_` instead of its toplevel
     // window when WaylandWindow on ozone becomes available.
     aura::Window* toplevel_window = tooltip_window_->GetToplevelWindow();
     // `tooltip_window_`'s toplevel window may be null for testing.

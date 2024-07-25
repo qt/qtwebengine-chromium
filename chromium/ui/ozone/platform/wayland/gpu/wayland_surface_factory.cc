@@ -52,7 +52,7 @@ class GLOzoneEGLWayland : public GLOzoneEGL {
 
   ~GLOzoneEGLWayland() override {}
 
-  bool CanImportNativePixmap() override;
+  bool CanImportNativePixmap(gfx::BufferFormat format) override;
 
   std::unique_ptr<NativePixmapGLBinding> ImportNativePixmap(
       scoped_refptr<gfx::NativePixmap> pixmap,
@@ -85,9 +85,13 @@ class GLOzoneEGLWayland : public GLOzoneEGL {
       buffer_manager_;
 };
 
-bool GLOzoneEGLWayland::CanImportNativePixmap() {
-  return gl::GLSurfaceEGL::GetGLDisplayEGL()
-      ->ext->b_EGL_EXT_image_dma_buf_import;
+bool GLOzoneEGLWayland::CanImportNativePixmap(gfx::BufferFormat format) {
+  if (!gl::GLSurfaceEGL::GetGLDisplayEGL()
+           ->ext->b_EGL_EXT_image_dma_buf_import) {
+    return false;
+  }
+
+  return NativePixmapEGLBinding::IsBufferFormatSupported(format);
 }
 
 std::unique_ptr<NativePixmapGLBinding> GLOzoneEGLWayland::ImportNativePixmap(
@@ -113,8 +117,8 @@ scoped_refptr<gl::GLSurface> GLOzoneEGLWayland::CreateViewGLSurface(
             display->GetAs<gl::GLDisplayEGL>(), widget, buffer_manager_));
   }
 
-  // Only EGLGLES2 is supported with surfaceless view gl.
-  if ((gl::GetGLImplementation() != gl::kGLImplementationEGLGLES2) ||
+  if ((gl::GetGLImplementation() != gl::kGLImplementationEGLGLES2 &&
+       gl::GetGLImplementation() != gl::kGLImplementationEGLANGLE) ||
       !connection_) {
     return nullptr;
   }
@@ -203,8 +207,10 @@ std::vector<gl::GLImplementationParts>
 WaylandSurfaceFactory::GetAllowedGLImplementations() {
   std::vector<gl::GLImplementationParts> impls;
   if (egl_implementation_) {
-    // Add only supported ANGLE implementations. Otherwise, angle-vulkan might
-    // be requested, which is not supported with this backend yet.
+    // Allow for Angle-vulkan implementation.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+    impls.emplace_back(gl::kGLImplementationEGLANGLE);
+#endif
     impls.emplace_back(gl::ANGLEImplementation::kOpenGL);
     impls.emplace_back(gl::ANGLEImplementation::kOpenGLES);
     impls.emplace_back(gl::ANGLEImplementation::kSwiftShader);
@@ -238,7 +244,7 @@ scoped_refptr<gfx::NativePixmap> WaylandSurfaceFactory::CreateNativePixmap(
     gfx::Size size,
     gfx::BufferFormat format,
     gfx::BufferUsage usage,
-    absl::optional<gfx::Size> framebuffer_size) {
+    std::optional<gfx::Size> framebuffer_size) {
   if (framebuffer_size &&
       !gfx::Rect(size).Contains(gfx::Rect(*framebuffer_size))) {
     return nullptr;
@@ -302,7 +308,7 @@ bool WaylandSurfaceFactory::SupportsNativePixmaps() const {
   return supports_native_pixmaps;
 }
 
-absl::optional<gfx::BufferFormat>
+std::optional<gfx::BufferFormat>
 WaylandSurfaceFactory::GetPreferredFormatForSolidColor() const {
   if (!buffer_manager_->SupportsFormat(gfx::BufferFormat::RGBA_8888)) {
     return gfx::BufferFormat::BGRA_8888;

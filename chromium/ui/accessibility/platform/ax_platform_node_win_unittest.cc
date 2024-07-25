@@ -1917,7 +1917,8 @@ TEST_F(AXPlatformNodeWinTest, IAccessible2GetNRelations) {
   root.id = 1;
   root.role = ax::mojom::Role::kRootWebArea;
 
-  std::vector<AXNodeID> describedby_ids = {1, 2, 3};
+  // Add 999 as a target relation id to test that invalid relations are dropped.
+  std::vector<AXNodeID> describedby_ids = {1, 2, 3, 999};
   root.AddIntListAttribute(ax::mojom::IntListAttribute::kDescribedbyIds,
                            describedby_ids);
 
@@ -3575,19 +3576,19 @@ TEST_F(AXPlatformNodeWinTest,
 TEST_F(AXPlatformNodeWinTest, IGridProviderGetRowCount) {
   Init(BuildAriaColumnAndRowCountGrids());
 
-  // Empty Grid
+  // Empty Grid.
   ComPtr<IGridProvider> grid1_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[0]);
 
-  // Grid with a cell that defines aria-rowindex (4) and aria-colindex (5)
+  // Grid with a cell that defines aria-rowindex (4) and aria-colindex (5).
   ComPtr<IGridProvider> grid2_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[1]);
 
-  // Grid that specifies aria-rowcount (2) and aria-colcount (3)
+  // Grid that specifies aria-rowcount (2) and aria-colcount (3).
   ComPtr<IGridProvider> grid3_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[2]);
 
-  // Grid that specifies aria-rowcount and aria-colcount are both (-1)
+  // Grid that specifies aria-rowcount and aria-colcount are both (-1).
   ComPtr<IGridProvider> grid4_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[3]);
 
@@ -3608,19 +3609,19 @@ TEST_F(AXPlatformNodeWinTest, IGridProviderGetRowCount) {
 TEST_F(AXPlatformNodeWinTest, IGridProviderGetColumnCount) {
   Init(BuildAriaColumnAndRowCountGrids());
 
-  // Empty Grid
+  // Empty Grid.
   ComPtr<IGridProvider> grid1_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[0]);
 
-  // Grid with a cell that defines aria-rowindex (4) and aria-colindex (5)
+  // Grid with a cell that defines aria-rowindex (4) and aria-colindex (5).
   ComPtr<IGridProvider> grid2_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[1]);
 
-  // Grid that specifies aria-rowcount (2) and aria-colcount (3)
+  // Grid that specifies aria-rowcount (2) and aria-colcount (3).
   ComPtr<IGridProvider> grid3_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[2]);
 
-  // Grid that specifies aria-rowcount and aria-colcount are both (-1)
+  // Grid that specifies aria-rowcount and aria-colcount are both (-1).
   ComPtr<IGridProvider> grid4_provider =
       QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[3]);
 
@@ -3668,6 +3669,35 @@ TEST_F(AXPlatformNodeWinTest, IGridProviderGetItem) {
   EXPECT_HRESULT_SUCCEEDED(root_igridprovider->GetItem(0, 0, &grid_item));
   EXPECT_NE(nullptr, grid_item);
   EXPECT_EQ(cell1_irawelementprovidersimple.Get(), grid_item);
+}
+
+TEST_F(AXPlatformNodeWinTest, IGridProviderGetItemCustomAria) {
+  Init(BuildAriaColumnAndRowCountGrids());
+
+  // Empty Grid.
+  ComPtr<IGridProvider> grid1_provider =
+      QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[0]);
+
+  // Grid with a cell that defines aria-rowindex (4) and aria-colindex (5).
+  ComPtr<IGridProvider> grid2_provider =
+      QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[1]);
+
+  // Grid that specifies aria-rowcount (2) and aria-colcount (3).
+  ComPtr<IGridProvider> grid3_provider =
+      QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[2]);
+
+  // Grid that specifies aria-rowcount and aria-colcount are both (-1).
+  ComPtr<IGridProvider> grid4_provider =
+      QueryInterfaceFromNode<IGridProvider>(GetRoot()->children()[3]);
+
+  IRawElementProviderSimple* grid_item = nullptr;
+  EXPECT_HRESULT_FAILED(grid1_provider->GetItem(0, 0, &grid_item));
+  EXPECT_HRESULT_SUCCEEDED(grid2_provider->GetItem(3, 4, &grid_item));
+  EXPECT_EQ(QueryInterfaceFromNodeId<IRawElementProviderSimple>(5).Get(),
+            grid_item);
+  // This is an empty grid, so we should not be able to get any items.
+  EXPECT_HRESULT_FAILED(grid3_provider->GetItem(1, 2, &grid_item));
+  EXPECT_HRESULT_FAILED(grid4_provider->GetItem(-1, -1, &grid_item));
 }
 
 TEST_F(AXPlatformNodeWinTest, ITableProviderGetColumnHeadersForTable) {
@@ -4259,6 +4289,28 @@ TEST_F(AXPlatformNodeWinTest, IsUIAControlForNonFocusableNodesInViews) {
   ComPtr<IRawElementProviderSimple> button_2_provider =
       QueryInterfaceFromNode<IRawElementProviderSimple>(button_2_node);
   EXPECT_UIA_BOOL_EQ(button_2_provider, UIA_IsControlElementPropertyId, true);
+}
+
+TEST_F(AXPlatformNodeWinTest, IsUIAControlForLiveRegionNodesInViews) {
+  TestAXTreeUpdate update(std::string(R"HTML(
+    ++1 kUnknown
+    ++++2 kStatus
+  )HTML"));
+  Init(update);
+
+  // Set web content mode to false for the AXTree since we're testing for Views.
+  TestAXNodeWrapper::SetGlobalIsWebContent(false);
+
+  AXNode* root_1_node = GetRoot();
+  AXNode* status_2_node = root_1_node->children()[0];
+
+  ComPtr<IRawElementProviderSimple> root_1_provider =
+      QueryInterfaceFromNode<IRawElementProviderSimple>(root_1_node);
+  EXPECT_UIA_BOOL_EQ(root_1_provider, UIA_IsControlElementPropertyId, true);
+
+  ComPtr<IRawElementProviderSimple> status_2_provider =
+      QueryInterfaceFromNode<IRawElementProviderSimple>(status_2_node);
+  EXPECT_UIA_BOOL_EQ(status_2_provider, UIA_IsControlElementPropertyId, true);
 }
 
 TEST_F(AXPlatformNodeWinTest, UIAGetPropertyValueClickablePoint) {
@@ -5804,7 +5856,7 @@ TEST_F(AXPlatformNodeWinTest, IsUIAControlForStatusRole) {
 
 TEST_F(AXPlatformNodeWinTest, UIALandmarkType) {
   auto TestLandmarkType = [this](ax::mojom::Role node_role,
-                                 absl::optional<LONG> expected_landmark_type,
+                                 std::optional<LONG> expected_landmark_type,
                                  const std::string& node_name = {}) {
     AXNodeData root_data;
     root_data.id = 1;
@@ -7847,7 +7899,7 @@ TEST_F(AXPlatformNodeWinTest, DISABLED_BulkFetch) {
 
   // Note: base::JSONReader is fine for unit tests, but production code
   // that parses untrusted JSON should always use DataDecoder instead.
-  absl::optional<base::Value> result_val =
+  std::optional<base::Value> result_val =
       base::JSONReader::Read(response, base::JSON_ALLOW_TRAILING_COMMAS);
   ASSERT_TRUE(result_val);
   const base::Value::Dict& result = result_val->GetDict();

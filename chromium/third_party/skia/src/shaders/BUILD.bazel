@@ -1,6 +1,10 @@
 load("//bazel:flags.bzl", "bool_flag")
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy()
@@ -25,6 +29,7 @@ SHADER_FILES = [
     "SkLocalMatrixShader.h",
     "SkPerlinNoiseShaderImpl.cpp",
     "SkPerlinNoiseShaderImpl.h",
+    "SkPerlinNoiseShaderType.h",
     "SkPictureShader.cpp",
     "SkPictureShader.h",
     "SkRuntimeShader.cpp",
@@ -60,6 +65,14 @@ skia_filegroup(
         "//src:__pkg__",
         "//src/core:__pkg__",
     ],
+)
+
+skia_filegroup(
+    name = "opts_srcs",
+    srcs = [
+        "SkPerlinNoiseShaderType.h",
+    ],
+    visibility = ["//src/opts:__pkg__"],
 )
 
 skia_filegroup(

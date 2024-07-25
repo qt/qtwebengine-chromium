@@ -4,10 +4,11 @@
 
 #include "tools/win/chromeexts/commands/gwp_asan_command.h"
 
+#include <windows.h>
+
 #include <dbgeng.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
 
 #include <fstream>
 #include <istream>
@@ -146,6 +147,25 @@ HRESULT GwpAsanCommand::Execute() {
         break;
     }
   }
+  if (info.has_mode()) {
+    Printf("%-50s", "GWP-ASan Mode:");
+    switch (info.mode()) {
+      case gwp_asan::Crash_Mode_CLASSIC:
+        Printf("Classic\n");
+        break;
+      case gwp_asan::Crash_Mode_LIGHTWEIGHT_DETECTOR_BRP:
+        Printf("Lightweight UAF Detector (BRP sampling)\n");
+        break;
+      case gwp_asan::Crash_Mode_LIGHTWEIGHT_DETECTOR_RANDOM:
+        Printf("Lightweight UAF Detector (random sampling)\n");
+        break;
+      case gwp_asan::Crash_Mode_EXTREME_LIGHTWEIGHT_DETECTOR:
+        Printf("Extreme Lightweight UAF Detector\n");
+        break;
+      default:
+        Printf("Unknown\n");
+    }
+  }
 
   ULONG64 base_address = 0;
   hr = GetBaseAddress(&base_address);
@@ -196,9 +216,6 @@ void GwpAsanCommand::PrintErrorType(const int& error_type) {
       break;
     case gwp_asan::Crash::FREE_INVALID_ADDRESS:
       Printf("Free Invalid Address");
-      break;
-    case gwp_asan::Crash::LIGHTWEIGHT_USE_AFTER_FREE:
-      Printf("Lightweight Use After Free");
       break;
   }
   Printf("\n");

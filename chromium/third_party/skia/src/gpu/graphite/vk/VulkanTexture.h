@@ -41,6 +41,7 @@ public:
                                const VulkanResourceProvider*,
                                SkISize dimensions,
                                const TextureInfo&,
+                               std::string_view label,
                                skgpu::Budgeted);
 
     static sk_sp<Texture> MakeWrapped(const VulkanSharedContext*,
@@ -49,7 +50,8 @@ public:
                                       const TextureInfo&,
                                       sk_sp<MutableTextureState>,
                                       VkImage,
-                                      const VulkanAlloc&);
+                                      const VulkanAlloc&,
+                                      std::string_view label);
 
     ~VulkanTexture() override {}
 
@@ -71,6 +73,10 @@ public:
                                      bool byRegion,
                                      uint32_t newQueueFamilyIndex) const;
 
+    // This simply updates our internal tracking of the image layout and does not actually perform
+    // any gpu work.
+    void updateImageLayout(VkImageLayout);
+
     VkImageLayout currentLayout() const;
     uint32_t currentQueueFamilyIndex() const;
 
@@ -80,6 +86,11 @@ public:
     static VkPipelineStageFlags LayoutToPipelineSrcStageFlags(const VkImageLayout layout);
     static VkAccessFlags LayoutToSrcAccessMask(const VkImageLayout layout);
 
+    bool supportsInputAttachmentUsage() const {
+        return (this->textureInfo().vulkanTextureSpec().fImageUsageFlags &
+                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT);
+    }
+
 private:
     VulkanTexture(const VulkanSharedContext* sharedContext,
                   SkISize dimensions,
@@ -87,6 +98,7 @@ private:
                   sk_sp<MutableTextureState>,
                   VkImage,
                   const VulkanAlloc&,
+                  std::string_view label,
                   Ownership,
                   skgpu::Budgeted,
                   sk_sp<VulkanSamplerYcbcrConversion>);

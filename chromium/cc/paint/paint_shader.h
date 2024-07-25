@@ -6,9 +6,9 @@
 #define CC_PAINT_PAINT_SHADER_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
-#include <optional>
 #include "base/gtest_prod_util.h"
 #include "base/types/optional_util.h"
 #include "cc/paint/image_analysis_state.h"
@@ -56,7 +56,7 @@ class CC_PAINT_EXPORT PaintShader : public SkRefCnt {
 
   static sk_sp<PaintShader> MakeColor(SkColor4f color);
 
-  // TODO(crbug.com/1155544) SkMatrix is deprecated in favor of SkM44.
+  // TODO(crbug.com/40735471) SkMatrix is deprecated in favor of SkM44.
   static sk_sp<PaintShader> MakeLinearGradient(
       const SkPoint* points,
       const SkColor4f colors[],

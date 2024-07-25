@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxcodec/progressive_decoder.h"
 
 #include <algorithm>
@@ -14,17 +19,18 @@
 #include "build/build_config.h"
 #include "core/fxcodec/cfx_codec_memory.h"
 #include "core/fxcodec/jpeg/jpeg_progressive_decoder.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/notreached.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/dib/cfx_cmyk_to_srgb.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/notreached.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 #ifdef PDF_ENABLE_XFA_BMP
 #include "core/fxcodec/bmp/bmp_progressive_decoder.h"
@@ -75,7 +81,7 @@ void ProgressiveDecoder::HorzTable::CalculateWeights(int dest_len,
                                                      int src_len) {
   CHECK_GE(dest_len, 0);
   m_ItemSize =
-      pdfium::base::checked_cast<int>(PixelWeight::TotalBytesForWeightCount(2));
+      pdfium::checked_cast<int>(PixelWeight::TotalBytesForWeightCount(2));
   FX_SAFE_SIZE_T safe_size = m_ItemSize;
   safe_size *= dest_len;
   m_pWeightTables.resize(safe_size.ValueOrDie(), 0);
@@ -132,7 +138,7 @@ void ProgressiveDecoder::VertTable::CalculateWeights(int dest_len,
                                                      int src_len) {
   CHECK_GE(dest_len, 0);
   m_ItemSize =
-      pdfium::base::checked_cast<int>(PixelWeight::TotalBytesForWeightCount(2));
+      pdfium::checked_cast<int>(PixelWeight::TotalBytesForWeightCount(2));
   FX_SAFE_SIZE_T safe_size = m_ItemSize;
   safe_size *= dest_len;
   m_pWeightTables.resize(safe_size.ValueOrDie(), 0);
@@ -355,7 +361,7 @@ void ProgressiveDecoder::PngFillScanlineBufCompleted(int pass, int line) {
 
 #ifdef PDF_ENABLE_XFA_GIF
 uint32_t ProgressiveDecoder::GifCurrentPosition() const {
-  uint32_t remain_size = pdfium::base::checked_cast<uint32_t>(
+  uint32_t remain_size = pdfium::checked_cast<uint32_t>(
       GifDecoder::GetAvailInput(m_pGifContext.get()));
   return m_offSet - remain_size;
 }
@@ -416,7 +422,7 @@ bool ProgressiveDecoder::GifInputRecordPositionBuf(uint32_t rcd_pos,
       case 3: {
         uint8_t gray =
             FXRGB2GRAY(FXARGB_R(argb), FXARGB_G(argb), FXARGB_B(argb));
-        memset(pScanline, gray, sizeX);
+        FXSYS_memset(pScanline, gray, sizeX);
         break;
       }
       case 8: {
@@ -430,7 +436,7 @@ bool ProgressiveDecoder::GifInputRecordPositionBuf(uint32_t rcd_pos,
       }
       case 12: {
         for (int col = 0; col < sizeX; col++) {
-          FXARGB_SETDIB(pScanline, argb);
+          FXARGB_SetDIB(pScanline, argb);
           pScanline += 4;
         }
         break;
@@ -499,7 +505,7 @@ void ProgressiveDecoder::GifReadScanline(int32_t row_num,
                               .subspan(dest_ScanOffset)
                               .data();
       uint32_t size = m_sizeX * dest_Bpp;
-      memmove(scan_des, scan_src, size);
+      FXSYS_memmove(scan_des, scan_src, size);
     }
   }
   if (bLastPass)
@@ -557,7 +563,7 @@ void ProgressiveDecoder::ResampleVertBT(
   int dest_top = m_startY;
   int dest_bottom = m_startY + m_sizeY;
   FX_SAFE_INT32 check_dest_row_1 = dest_row;
-  check_dest_row_1 += pdfium::base::checked_cast<int>(scale_y);
+  check_dest_row_1 += pdfium::checked_cast<int>(scale_y);
   int dest_row_1 = check_dest_row_1.ValueOrDie();
   if (dest_row_1 >= dest_bottom - 1) {
     const uint8_t* scan_src =
@@ -567,7 +573,7 @@ void ProgressiveDecoder::ResampleVertBT(
                               .subspan(dest_ScanOffset)
                               .data();
       uint32_t size = m_sizeX * dest_Bpp;
-      memmove(scan_des, scan_src, size);
+      FXSYS_memmove(scan_des, scan_src, size);
     }
     return;
   }
@@ -684,7 +690,7 @@ bool ProgressiveDecoder::BmpDetectImageTypeInBuffer(
 
   // Set to 0 to make CalculatePitchAndSize() calculate it.
   constexpr uint32_t kNoPitch = 0;
-  absl::optional<CFX_DIBitmap::PitchAndSize> needed_data =
+  std::optional<CFX_DIBitmap::PitchAndSize> needed_data =
       CFX_DIBitmap::CalculatePitchAndSize(m_SrcWidth, m_SrcHeight, format,
                                           kNoPitch);
   if (!needed_data.has_value()) {
@@ -692,7 +698,7 @@ bool ProgressiveDecoder::BmpDetectImageTypeInBuffer(
     return false;
   }
 
-  uint32_t available_data = pdfium::base::checked_cast<uint32_t>(
+  uint32_t available_data = pdfium::checked_cast<uint32_t>(
       m_pFile->GetSize() - m_offSet +
       BmpDecoder::GetAvailInput(pBmpContext.get()));
   if (needed_data.value().size > available_data) {
@@ -705,8 +711,8 @@ bool ProgressiveDecoder::BmpDetectImageTypeInBuffer(
   m_pBmpContext = std::move(pBmpContext);
   if (m_SrcPaletteNumber) {
     m_SrcPalette.resize(m_SrcPaletteNumber);
-    memcpy(m_SrcPalette.data(), palette->data(),
-           m_SrcPaletteNumber * sizeof(FX_ARGB));
+    FXSYS_memcpy(m_SrcPalette.data(), palette->data(),
+                 m_SrcPaletteNumber * sizeof(FX_ARGB));
   } else {
     m_SrcPalette.clear();
   }
@@ -838,7 +844,7 @@ void ProgressiveDecoder::GifDoubleLineResampleVert(
   int dest_Bpp = pDeviceBitmap->GetBPP() >> 3;
   uint32_t dest_ScanOffset = m_startX * dest_Bpp;
   int dest_top = m_startY;
-  pdfium::base::CheckedNumeric<double> scale_y2 = scale_y;
+  pdfium::CheckedNumeric<double> scale_y2 = scale_y;
   scale_y2 *= 2;
   FX_SAFE_INT32 check_dest_row_1 = dest_row;
   check_dest_row_1 -= scale_y2.ValueOrDie();
@@ -1353,7 +1359,8 @@ FXCODEC_STATUS ProgressiveDecoder::TiffContinueDecode() {
           src_line += 4;
         }
       }
-    } break;
+      break;
+    }
     case FXDIB_Format::kRgb:
     case FXDIB_Format::kRgb32: {
       int32_t desBpp =
@@ -1373,7 +1380,8 @@ FXCODEC_STATUS ProgressiveDecoder::TiffContinueDecode() {
           src_line += 4;
         }
       }
-    } break;
+      break;
+    }
     default:
       break;
   }
@@ -1405,7 +1413,7 @@ bool ProgressiveDecoder::DetectImageType(FXCODEC_IMAGE_TYPE imageType,
     return TiffDetectImageTypeFromFile(pAttribute);
 #endif  // PDF_ENABLE_XFA_TIFF
 
-  size_t size = pdfium::base::checked_cast<size_t>(
+  size_t size = pdfium::checked_cast<size_t>(
       std::min<FX_FILESIZE>(m_pFile->GetSize(), kBlockSize));
   m_pCodecMemory = pdfium::MakeRetain<CFX_CodecMemory>(size);
   m_offSet = 0;
@@ -1448,7 +1456,7 @@ bool ProgressiveDecoder::ReadMoreData(
 
   // Try to get whatever remains.
   uint32_t dwBytesToFetchFromFile =
-      pdfium::base::checked_cast<uint32_t>(m_pFile->GetSize() - m_offSet);
+      pdfium::checked_cast<uint32_t>(m_pFile->GetSize() - m_offSet);
 
   // Figure out if the codec stopped processing midway through the buffer.
   size_t dwUnconsumed;
@@ -1472,7 +1480,7 @@ bool ProgressiveDecoder::ReadMoreData(
     // don't need to do this awkward dance to free up exactly enough buffer
     // space for the next read.
     size_t dwConsumable = m_pCodecMemory->GetSize() - dwUnconsumed;
-    dwBytesToFetchFromFile = pdfium::base::checked_cast<uint32_t>(
+    dwBytesToFetchFromFile = pdfium::checked_cast<uint32_t>(
         std::min<size_t>(dwBytesToFetchFromFile, dwConsumable));
     m_pCodecMemory->Consume(dwBytesToFetchFromFile);
     m_pCodecMemory->Seek(dwConsumable - dwBytesToFetchFromFile);
@@ -1596,7 +1604,8 @@ void ProgressiveDecoder::GetTransMethod(FXDIB_Format dest_format,
         default:
           m_TransMethod = -1;
       }
-    } break;
+      break;
+    }
     case FXDIB_Format::k8bppMask:
     case FXDIB_Format::k8bppRgb: {
       switch (src_format) {
@@ -1621,7 +1630,8 @@ void ProgressiveDecoder::GetTransMethod(FXDIB_Format dest_format,
         default:
           m_TransMethod = -1;
       }
-    } break;
+      break;
+    }
     case FXDIB_Format::kRgb: {
       switch (src_format) {
         case FXCodec_1bppGray:
@@ -1645,7 +1655,8 @@ void ProgressiveDecoder::GetTransMethod(FXDIB_Format dest_format,
         default:
           m_TransMethod = -1;
       }
-    } break;
+      break;
+    }
     case FXDIB_Format::kRgb32:
     case FXDIB_Format::kArgb: {
       switch (src_format) {
@@ -1676,7 +1687,8 @@ void ProgressiveDecoder::GetTransMethod(FXDIB_Format dest_format,
         default:
           m_TransMethod = -1;
       }
-    } break;
+      break;
+    }
     default:
       m_TransMethod = -1;
   }
@@ -1713,7 +1725,8 @@ void ProgressiveDecoder::ResampleScanline(
           dest_g += pixel_weight * src_scan[j];
         }
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
-      } break;
+        break;
+      }
       case 3: {
         uint32_t dest_r = 0;
         uint32_t dest_g = 0;
@@ -1731,7 +1744,8 @@ void ProgressiveDecoder::ResampleScanline(
             FXRGB2GRAY(CStretchEngine::PixelFromFixed(dest_r),
                        CStretchEngine::PixelFromFixed(dest_g),
                        CStretchEngine::PixelFromFixed(dest_b)));
-      } break;
+        break;
+      }
       case 4: {
         uint32_t dest_b = 0;
         uint32_t dest_g = 0;
@@ -1749,31 +1763,30 @@ void ProgressiveDecoder::ResampleScanline(
             FXRGB2GRAY(CStretchEngine::PixelFromFixed(dest_r),
                        CStretchEngine::PixelFromFixed(dest_g),
                        CStretchEngine::PixelFromFixed(dest_b)));
-      } break;
+        break;
+      }
       case 5: {
-        uint32_t dest_b = 0;
-        uint32_t dest_g = 0;
         uint32_t dest_r = 0;
+        uint32_t dest_g = 0;
+        uint32_t dest_b = 0;
         for (int j = pPixelWeights->m_SrcStart; j <= pPixelWeights->m_SrcEnd;
              j++) {
           uint32_t pixel_weight =
               pPixelWeights->m_Weights[j - pPixelWeights->m_SrcStart];
           const uint8_t* src_pixel = src_scan + j * src_bytes_per_pixel;
-          uint8_t src_b = 0;
-          uint8_t src_g = 0;
-          uint8_t src_r = 0;
-          std::tie(src_r, src_g, src_b) =
+          FX_RGB<uint8_t> src_rgb =
               AdobeCMYK_to_sRGB1(255 - src_pixel[0], 255 - src_pixel[1],
                                  255 - src_pixel[2], 255 - src_pixel[3]);
-          dest_b += pixel_weight * src_b;
-          dest_g += pixel_weight * src_g;
-          dest_r += pixel_weight * src_r;
+          dest_r += pixel_weight * src_rgb.red;
+          dest_g += pixel_weight * src_rgb.green;
+          dest_b += pixel_weight * src_rgb.blue;
         }
         *dest_scan++ = static_cast<uint8_t>(
             FXRGB2GRAY(CStretchEngine::PixelFromFixed(dest_r),
                        CStretchEngine::PixelFromFixed(dest_g),
                        CStretchEngine::PixelFromFixed(dest_b)));
-      } break;
+        break;
+      }
       case 6:
         return;
       case 7: {
@@ -1784,9 +1797,10 @@ void ProgressiveDecoder::ResampleScanline(
               pPixelWeights->m_Weights[j - pPixelWeights->m_SrcStart];
           dest_g += pixel_weight * src_scan[j];
         }
-        memset(dest_scan, CStretchEngine::PixelFromFixed(dest_g), 3);
+        FXSYS_memset(dest_scan, CStretchEngine::PixelFromFixed(dest_g), 3);
         dest_scan += dest_bytes_per_pixel;
-      } break;
+        break;
+      }
       case 8: {
         uint32_t dest_r = 0;
         uint32_t dest_g = 0;
@@ -1804,7 +1818,8 @@ void ProgressiveDecoder::ResampleScanline(
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_r);
         dest_scan += dest_bytes_per_pixel - 3;
-      } break;
+        break;
+      }
       case 12: {
 #ifdef PDF_ENABLE_XFA_BMP
         if (m_pBmpContext) {
@@ -1845,7 +1860,8 @@ void ProgressiveDecoder::ResampleScanline(
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_r);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_a);
-      } break;
+        break;
+      }
       case 9: {
         uint32_t dest_b = 0;
         uint32_t dest_g = 0;
@@ -1863,7 +1879,8 @@ void ProgressiveDecoder::ResampleScanline(
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_r);
         dest_scan += dest_bytes_per_pixel - 3;
-      } break;
+        break;
+      }
       case 10: {
         uint32_t dest_b = 0;
         uint32_t dest_g = 0;
@@ -1873,21 +1890,19 @@ void ProgressiveDecoder::ResampleScanline(
           uint32_t pixel_weight =
               pPixelWeights->m_Weights[j - pPixelWeights->m_SrcStart];
           const uint8_t* src_pixel = src_scan + j * src_bytes_per_pixel;
-          uint8_t src_b = 0;
-          uint8_t src_g = 0;
-          uint8_t src_r = 0;
-          std::tie(src_r, src_g, src_b) =
+          FX_RGB<uint8_t> src_rgb =
               AdobeCMYK_to_sRGB1(255 - src_pixel[0], 255 - src_pixel[1],
                                  255 - src_pixel[2], 255 - src_pixel[3]);
-          dest_b += pixel_weight * src_b;
-          dest_g += pixel_weight * src_g;
-          dest_r += pixel_weight * src_r;
+          dest_b += pixel_weight * src_rgb.blue;
+          dest_g += pixel_weight * src_rgb.green;
+          dest_r += pixel_weight * src_rgb.red;
         }
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_b);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_r);
         dest_scan += dest_bytes_per_pixel - 3;
-      } break;
+        break;
+      }
       case 11: {
         uint32_t dest_alpha = 0;
         uint32_t dest_r = 0;
@@ -1908,7 +1923,8 @@ void ProgressiveDecoder::ResampleScanline(
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_g);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_r);
         *dest_scan++ = CStretchEngine::PixelFromFixed(dest_alpha * 255);
-      } break;
+        break;
+      }
       default:
         return;
     }
@@ -1923,7 +1939,7 @@ void ProgressiveDecoder::ResampleVert(
   uint32_t dest_ScanOffset = m_startX * dest_Bpp;
   int dest_top = m_startY;
   FX_SAFE_INT32 check_dest_row_1 = dest_row;
-  check_dest_row_1 -= pdfium::base::checked_cast<int>(scale_y);
+  check_dest_row_1 -= pdfium::checked_cast<int>(scale_y);
   int dest_row_1 = check_dest_row_1.ValueOrDie();
   if (dest_row_1 < dest_top) {
     int dest_bottom = dest_top + m_sizeY;

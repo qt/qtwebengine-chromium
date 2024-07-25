@@ -27,6 +27,7 @@
 
 #include "dawn/native/metal/CommandBufferMTL.h"
 
+#include "dawn/common/MatchVariant.h"
 #include "dawn/native/BindGroupTracker.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/Commands.h"
@@ -197,6 +198,12 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
                 descriptor.colorAttachments[i].loadAction = MTLLoadActionLoad;
                 break;
 
+            case wgpu::LoadOp::ExpandResolveTexture:
+                // The loading of resolve texture -> MSAA attachment is inserted at the beginning of
+                // the render pass. We don't care about the intial value of the MSAA attachment.
+                descriptor.colorAttachments[i].loadAction = MTLLoadActionDontCare;
+                break;
+
             case wgpu::LoadOp::Undefined:
                 DAWN_UNREACHABLE();
                 break;
@@ -278,6 +285,7 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
                     descriptor.depthAttachment.loadAction = MTLLoadActionLoad;
                     break;
 
+                case wgpu::LoadOp::ExpandResolveTexture:
                 case wgpu::LoadOp::Undefined:
                     DAWN_UNREACHABLE();
                     break;
@@ -313,6 +321,7 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
                     descriptor.stencilAttachment.loadAction = MTLLoadActionLoad;
                     break;
 
+                case wgpu::LoadOp::ExpandResolveTexture:
                 case wgpu::LoadOp::Undefined:
                     DAWN_UNREACHABLE();
                     break;
@@ -379,6 +388,13 @@ NSRef<MTLRenderPassDescriptor> CreateMTLRenderPassDescriptor(
 
                 case wgpu::LoadOp::Load:
                     mtlAttachment.loadAction = MTLLoadActionLoad;
+                    break;
+
+                case wgpu::LoadOp::ExpandResolveTexture:
+                    // The loading of resolve texture -> MSAA attachment is inserted at the
+                    // beginning of the render pass. We don't care about the intial value of the
+                    // MSAA attachment.
+                    mtlAttachment.loadAction = MTLLoadActionDontCare;
                     break;
 
                 case wgpu::LoadOp::Undefined:
@@ -570,8 +586,9 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     SingleShaderStage::Compute)[index][bindingIndex];
             }
 
-            switch (bindingInfo.bindingType) {
-                case BindingInfoType::Buffer: {
+            MatchVariant(
+                bindingInfo.bindingLayout,
+                [&](const BufferBindingInfo& layout) {
                     const BufferBinding& binding = group->GetBindingAsBufferBinding(bindingIndex);
                     ToBackend(binding.buffer)->TrackUsage();
                     const id<MTLBuffer> buffer = ToBackend(binding.buffer)->GetMTLBuffer();
@@ -579,7 +596,7 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
 
                     // TODO(crbug.com/dawn/854): Record bound buffer status to use
                     // setBufferOffset to achieve better performance.
-                    if (bindingInfo.buffer.hasDynamicOffset) {
+                    if (layout.hasDynamicOffset) {
                         // Dynamic buffers are packed at the front of BindingIndices.
                         offset += dynamicOffsets[bindingIndex];
                     }
@@ -606,11 +623,8 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                                     offsets:&offset
                                   withRange:NSMakeRange(computeIndex, 1)];
                     }
-
-                    break;
-                }
-
-                case BindingInfoType::Sampler: {
+                },
+                [&](const SamplerBindingInfo&) {
                     auto sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
                     if (hasVertStage) {
                         [render setVertexSamplerState:sampler->GetMTLSamplerState()
@@ -624,11 +638,14 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                         [compute setSamplerState:sampler->GetMTLSamplerState()
                                          atIndex:computeIndex];
                     }
-                    break;
-                }
-
-                case BindingInfoType::Texture:
-                case BindingInfoType::StorageTexture: {
+                },
+                [&](const StaticSamplerBindingInfo&) {
+                    // Static samplers are handled in the frontend.
+                    // TODO(crbug.com/dawn/2482): Implement static samplers in the
+                    // Metal backend.
+                    DAWN_UNREACHABLE();
+                },
+                [&](const TextureBindingInfo&) {
                     auto textureView = ToBackend(group->GetBindingAsTextureView(bindingIndex));
                     if (hasVertStage) {
                         [render setVertexTexture:textureView->GetMTLTexture() atIndex:vertIndex];
@@ -639,12 +656,19 @@ class BindGroupTracker : public BindGroupTrackerBase<true, uint64_t> {
                     if (hasComputeStage) {
                         [compute setTexture:textureView->GetMTLTexture() atIndex:computeIndex];
                     }
-                    break;
-                }
-
-                case BindingInfoType::ExternalTexture:
-                    DAWN_UNREACHABLE();
-            }
+                },
+                [&](const StorageTextureBindingInfo&) {
+                    auto textureView = ToBackend(group->GetBindingAsTextureView(bindingIndex));
+                    if (hasVertStage) {
+                        [render setVertexTexture:textureView->GetMTLTexture() atIndex:vertIndex];
+                    }
+                    if (hasFragStage) {
+                        [render setFragmentTexture:textureView->GetMTLTexture() atIndex:fragIndex];
+                    }
+                    if (hasComputeStage) {
+                        [compute setTexture:textureView->GetMTLTexture() atIndex:computeIndex];
+                    }
+                });
         }
     }
 

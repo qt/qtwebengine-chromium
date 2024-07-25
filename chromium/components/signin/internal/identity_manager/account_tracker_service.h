@@ -64,6 +64,9 @@ class AccountTrackerService {
   // Keep in sync with OAuth2LoginAccountRevokedMigrationState histogram enum.
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
+  //
+  // TODO(crbug.com/40268200): Remove the migration code after enough users
+  // have migrated.
   enum AccountIdMigrationState {
     MIGRATION_NOT_STARTED = 0,
     MIGRATION_IN_PROGRESS = 1,
@@ -116,7 +119,7 @@ class AccountTrackerService {
   // Seeds the accounts with |core_account_infos|. The primary account id is
   // passed to keep it from getting removed.
   void SeedAccountsInfo(const std::vector<CoreAccountInfo>& core_account_infos,
-                        const absl::optional<CoreAccountId>& primary_account_id,
+                        const std::optional<CoreAccountId>& primary_account_id,
                         bool should_remove_stale_accounts);
 
   // Sets whether the account is a Unicorn account.
@@ -137,6 +140,11 @@ class AccountTrackerService {
 #if BUILDFLAG(IS_ANDROID)
   // Returns a reference to the corresponding Java AccountTrackerService object.
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
+
+  // Returns a pointer to the native counterpart of the given Java
+  // `AccountTrackerService`.
+  static AccountTrackerService* FromAccountTrackerServiceAndroid(
+      const base::android::JavaRef<jobject>& j_account_tracker_service);
 
   // Seeds the accounts with |core_account_infos|.
   void LegacySeedAccountsInfo(

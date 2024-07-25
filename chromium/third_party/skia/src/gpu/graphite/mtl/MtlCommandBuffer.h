@@ -76,7 +76,7 @@ private:
                          const Texture* depthStencilTexture,
                          SkRect viewport,
                          const DrawPassList&) override;
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     // Methods for populating a MTLRenderCommandEncoder:
     bool beginRenderPass(const RenderPassDesc&,
@@ -126,6 +126,9 @@ private:
     void bindTexture(const Texture* texture, unsigned int index);
     void bindSampler(const Sampler* sampler, unsigned int index);
     void dispatchThreadgroups(const WorkgroupSize& globalSize, const WorkgroupSize& localSize);
+    void dispatchThreadgroupsIndirect(const WorkgroupSize& localSize,
+                                      const Buffer* indirectBuffer,
+                                      size_t indirectBufferOffset);
     void endComputePass();
 
     // Methods for populating a MTLBlitCommandEncoder:

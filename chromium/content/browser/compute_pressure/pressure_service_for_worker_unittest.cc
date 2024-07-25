@@ -180,7 +180,7 @@ TEST_F(PressureServiceForDedicatedWorkerTest, AddClient) {
                                PressureSource::kCpu, future.GetCallback());
   ASSERT_EQ(future.Get(), PressureStatus::kOk);
 
-  const base::Time time = base::Time::Now();
+  const base::TimeTicks time = base::TimeTicks::Now();
   PressureUpdate update(PressureSource::kCpu, PressureState::kNominal, time);
   pressure_manager_overrider_->UpdateClients(update);
   client.WaitForUpdate();
@@ -233,7 +233,10 @@ class PressureServiceForSharedWorkerTest
         kWorkerUrl, blink::mojom::ScriptType::kClassic,
         network::mojom::CredentialsMode::kSameOrigin, "name",
         rfh->GetStorageKey(),
-        blink::mojom::SharedWorkerCreationContextType::kSecure);
+        blink::mojom::SharedWorkerCreationContextType::kSecure,
+        rfh->GetStorageKey().IsFirstPartyContext()
+            ? blink::mojom::SharedWorkerSameSiteCookies::kAll
+            : blink::mojom::SharedWorkerSameSiteCookies::kNone);
     worker_service_ = std::make_unique<SharedWorkerServiceImpl>(
         rfh->GetStoragePartition(), nullptr /* service_worker_context */);
     worker_host_ = std::make_unique<SharedWorkerHost>(
@@ -287,7 +290,7 @@ TEST_F(PressureServiceForSharedWorkerTest, AddClient) {
                                PressureSource::kCpu, future.GetCallback());
   ASSERT_EQ(future.Get(), PressureStatus::kOk);
 
-  const base::Time time = base::Time::Now();
+  const base::TimeTicks time = base::TimeTicks::Now();
   PressureUpdate update(PressureSource::kCpu, PressureState::kNominal, time);
   pressure_manager_overrider_->UpdateClients(update);
   client.WaitForUpdate();

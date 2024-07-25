@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,6 +19,9 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
+#include "best_practices/bp_state.h"
+#include "state_tracker/render_pass_state.h"
+#include "chassis/chassis_modification_state.h"
 
 static inline bool FormatHasFullThroughputBlendingArm(VkFormat format) {
     switch (format) {
@@ -38,12 +41,12 @@ static inline bool FormatHasFullThroughputBlendingArm(VkFormat format) {
     }
 }
 
-bool BestPractices::ValidateMultisampledBlendingArm(uint32_t createInfoCount, const VkGraphicsPipelineCreateInfo* pCreateInfos,
+bool BestPractices::ValidateMultisampledBlendingArm(uint32_t create_info_count, const VkGraphicsPipelineCreateInfo* create_infos,
                                                     const Location& create_info_loc) const {
     bool skip = false;
 
-    for (uint32_t i = 0; i < createInfoCount; i++) {
-        auto create_info = &pCreateInfos[i];
+    for (uint32_t i = 0; i < create_info_count; i++) {
+        auto create_info = &create_infos[i];
 
         if (!create_info->pColorBlendState || !create_info->pMultisampleState ||
             create_info->pMultisampleState->rasterizationSamples == VK_SAMPLE_COUNT_1_BIT ||
@@ -55,7 +58,7 @@ bool BestPractices::ValidateMultisampledBlendingArm(uint32_t createInfoCount, co
         if (!rp_state) {
             continue;
         }
-        const auto& subpass = rp_state->createInfo.pSubpasses[create_info->subpass];
+        const auto& subpass = rp_state->create_info.pSubpasses[create_info->subpass];
 
         // According to spec, pColorBlendState must be ignored if subpass does not have color attachments.
         uint32_t num_color_attachments = std::min(subpass.colorAttachmentCount, create_info->pColorBlendState->attachmentCount);
@@ -65,7 +68,7 @@ bool BestPractices::ValidateMultisampledBlendingArm(uint32_t createInfoCount, co
             uint32_t att = subpass.pColorAttachments[j].attachment;
 
             if (att != VK_ATTACHMENT_UNUSED && blend_att.blendEnable && blend_att.colorWriteMask) {
-                if (!FormatHasFullThroughputBlendingArm(rp_state->createInfo.pAttachments[att].format)) {
+                if (!FormatHasFullThroughputBlendingArm(rp_state->create_info.pAttachments[att].format)) {
                     skip |= LogPerformanceWarning(kVUID_BestPractices_CreatePipelines_MultisampledBlending, device, create_info_loc,
                                                   "%s Pipeline is multisampled and "
                                                   "color attachment #%u makes use "
@@ -83,7 +86,8 @@ void BestPractices::ManualPostCallRecordCreateComputePipelines(VkDevice device, 
                                                                uint32_t createInfoCount,
                                                                const VkComputePipelineCreateInfo* pCreateInfos,
                                                                const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                               const RecordObject& record_obj, void* pipe_state) {
+                                                               const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                               chassis::CreateComputePipelines& chassis_state) {
     // AMD best practice
     pipeline_cache_ = pipelineCache;
 }
@@ -91,13 +95,13 @@ void BestPractices::ManualPostCallRecordCreateComputePipelines(VkDevice device, 
 bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                            const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                            const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                           const ErrorObject& error_obj, void* cgpl_state_data) const {
-    bool skip = StateTracker::PreCallValidateCreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos,
-                                                                     pAllocator, pPipelines, error_obj, cgpl_state_data);
+                                                           const ErrorObject& error_obj, PipelineStates& pipeline_states,
+                                                           chassis::CreateGraphicsPipelines& chassis_state) const {
+    bool skip = StateTracker::PreCallValidateCreateGraphicsPipelines(
+        device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines, error_obj, pipeline_states, chassis_state);
     if (skip) {
         return skip;
     }
-    create_graphics_pipeline_api_state* cgpl_state = reinterpret_cast<create_graphics_pipeline_api_state*>(cgpl_state_data);
 
     if ((createInfoCount > 1) && (!pipelineCache)) {
         skip |= LogPerformanceWarning(kVUID_BestPractices_CreatePipelines_MultiplePipelines, device, error_obj.location,
@@ -108,7 +112,7 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
     for (uint32_t i = 0; i < createInfoCount; i++) {
         const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
         const auto& create_info = pCreateInfos[i];
-        const auto& pipeline = *cgpl_state->pipe_state[i].get();
+        const auto& pipeline = *pipeline_states[i].get();
 
         if (!(pipeline.active_shaders & VK_SHADER_STAGE_MESH_BIT_EXT) && create_info.pVertexInputState) {
             const auto& vertex_input = *create_info.pVertexInputState;
@@ -172,7 +176,7 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
             }
             const auto& rp_state = pipeline.RenderPassState();
             if (rp_state && !rp_state->UsesDynamicRendering() && stage.entrypoint) {
-                auto rpci = rp_state->createInfo.ptr();
+                auto rpci = rp_state->create_info.ptr();
                 auto subpass = pipeline.Subpass();
                 for (const auto& variable : stage.entrypoint->resource_interface_variables) {
                     if (!variable.decorations.Has(spirv::DecorationSet::input_attachment_bit)) {
@@ -180,7 +184,7 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
                     }
                     auto slot = variable.decorations.input_attachment_index_start;
                     if (!rpci->pSubpasses[subpass].pInputAttachments || slot >= rpci->pSubpasses[subpass].inputAttachmentCount) {
-                        const LogObjectList objlist(stage.module_state->Handle(), pipeline.PipelineLayoutState()->layout());
+                        const LogObjectList objlist(stage.module_state->Handle(), pipeline.PipelineLayoutState()->Handle());
                         skip |= LogWarning(kVUID_BestPractices_Shader_MissingInputAttachment, device, create_info_loc,
                                            "Shader consumes input attachment index %" PRIu32 " but not provided in subpass", slot);
                     }
@@ -213,10 +217,10 @@ static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(bp_state::Pipel
     if (!rp || rp->UsesDynamicRendering()) {
         return result;
     }
-    auto& create_info = pipe_state.GetCreateInfo<VkGraphicsPipelineCreateInfo>();
-    const auto& subpass = rp->createInfo.pSubpasses[create_info.subpass];
+    const auto& create_info = pipe_state.GraphicsCreateInfo();
+    const auto& subpass = rp->create_info.pSubpasses[create_info.subpass];
 
-    // NOTE: see PIPELINE_LAYOUT and safe_VkGraphicsPipelineCreateInfo constructors. pColorBlendState and pDepthStencilState
+    // NOTE: see PIPELINE_LAYOUT and vku::safe_VkGraphicsPipelineCreateInfo constructors. pColorBlendState and pDepthStencilState
     // are only non-null if they are enabled.
     if (create_info.pColorBlendState && !(pipe_state.ignore_color_attachments)) {
         // According to spec, pColorBlendState must be ignored if subpass does not have color attachments.
@@ -249,24 +253,27 @@ static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(bp_state::Pipel
     return result;
 }
 
-bp_state::Pipeline::Pipeline(const ValidationStateTracker* state_data, const VkGraphicsPipelineCreateInfo* pCreateInfo,
+bp_state::Pipeline::Pipeline(const ValidationStateTracker& state_data, const VkGraphicsPipelineCreateInfo* pCreateInfo,
+                             std::shared_ptr<const vvl::PipelineCache>&& pipe_cache,
                              std::shared_ptr<const vvl::RenderPass>&& rpstate, std::shared_ptr<const vvl::PipelineLayout>&& layout,
-                             CreateShaderModuleStates* csm_states)
-    : vvl::Pipeline(state_data, pCreateInfo, std::move(rpstate), std::move(layout), csm_states),
+                             ShaderModuleUniqueIds* shader_unique_id_map)
+    : vvl::Pipeline(state_data, pCreateInfo, std::move(pipe_cache), std::move(rpstate), std::move(layout), shader_unique_id_map),
       access_framebuffer_attachments(GetAttachmentAccess(*this)) {}
 
 std::shared_ptr<vvl::Pipeline> BestPractices::CreateGraphicsPipelineState(const VkGraphicsPipelineCreateInfo* pCreateInfo,
+                                                                          std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
                                                                           std::shared_ptr<const vvl::RenderPass>&& render_pass,
                                                                           std::shared_ptr<const vvl::PipelineLayout>&& layout,
-                                                                          CreateShaderModuleStates* csm_states) const {
-    return std::static_pointer_cast<vvl::Pipeline>(
-        std::make_shared<bp_state::Pipeline>(this, pCreateInfo, std::move(render_pass), std::move(layout), csm_states));
+                                                                          ShaderModuleUniqueIds* shader_unique_id_map) const {
+    return std::static_pointer_cast<vvl::Pipeline>(std::make_shared<bp_state::Pipeline>(
+        *this, pCreateInfo, std::move(pipeline_cache), std::move(render_pass), std::move(layout), shader_unique_id_map));
 }
 
 void BestPractices::ManualPostCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                                 const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                                 const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                                const RecordObject& record_obj, void* cgpl_state_data) {
+                                                                const RecordObject& record_obj, PipelineStates& pipeline_states,
+                                                                chassis::CreateGraphicsPipelines& chassis_state) {
     // AMD best practice
     pipeline_cache_ = pipelineCache;
 }
@@ -274,9 +281,10 @@ void BestPractices::ManualPostCallRecordCreateGraphicsPipelines(VkDevice device,
 bool BestPractices::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                           const VkComputePipelineCreateInfo* pCreateInfos,
                                                           const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                          const ErrorObject& error_obj, void* ccpl_state_data) const {
-    bool skip = StateTracker::PreCallValidateCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfos,
-                                                                    pAllocator, pPipelines, error_obj, ccpl_state_data);
+                                                          const ErrorObject& error_obj, PipelineStates& pipeline_states,
+                                                          chassis::CreateComputePipelines& chassis_state) const {
+    bool skip = StateTracker::PreCallValidateCreateComputePipelines(
+        device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines, error_obj, pipeline_states, chassis_state);
 
     if ((createInfoCount > 1) && (!pipelineCache)) {
         skip |= LogPerformanceWarning(kVUID_BestPractices_CreatePipelines_MultiplePipelines, device, error_obj.location,
@@ -296,22 +304,23 @@ bool BestPractices::PreCallValidateCreateComputePipelines(VkDevice device, VkPip
 
     for (uint32_t i = 0; i < createInfoCount; i++) {
         const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
-        const VkComputePipelineCreateInfo& createInfo = pCreateInfos[i];
+        const VkComputePipelineCreateInfo& create_info = pCreateInfos[i];
         if (VendorCheckEnabled(kBPVendorArm)) {
-            skip |= ValidateCreateComputePipelineArm(createInfo, create_info_loc);
+            skip |= ValidateCreateComputePipelineArm(create_info, create_info_loc);
         }
 
         if (VendorCheckEnabled(kBPVendorAMD)) {
-            skip |= ValidateCreateComputePipelineAmd(createInfo, create_info_loc);
+            skip |= ValidateCreateComputePipelineAmd(create_info, create_info_loc);
         }
 
         if (IsExtEnabled(device_extensions.vk_khr_maintenance4)) {
-            auto module_state = Get<vvl::ShaderModule>(createInfo.stage.module);
+            auto module_state = Get<vvl::ShaderModule>(create_info.stage.module);
             if (module_state &&
                 module_state->spirv->static_data_.has_builtin_workgroup_size) {  // No module if creating from module identifier
                 skip |= LogWarning(kVUID_BestPractices_SpirvDeprecated_WorkgroupSize, device, create_info_loc,
-                                   "is using the Workgroup built-in which SPIR-V 1.6 deprecated. The VK_KHR_maintenance4 "
-                                   "extension exposes a new LocalSizeId execution mode that should be used instead.");
+                                   "is using the SPIR-V Workgroup built-in which SPIR-V 1.6 deprecated. When using "
+                                   "VK_KHR_maintenance4 or Vulkan 1.3+, the new SPIR-V LocalSizeId execution mode should be used "
+                                   "instead. This can be done by recompiling your shader and targeting Vulkan 1.3+.");
             }
         }
     }
@@ -319,16 +328,16 @@ bool BestPractices::PreCallValidateCreateComputePipelines(VkDevice device, VkPip
     return skip;
 }
 
-bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCreateInfo& createInfo,
+bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCreateInfo& create_info,
                                                      const Location& create_info_loc) const {
     bool skip = false;
-    auto module_state = Get<vvl::ShaderModule>(createInfo.stage.module);
+    auto module_state = Get<vvl::ShaderModule>(create_info.stage.module);
     if (!module_state || !module_state->spirv) {
         return false;  // No module if creating from module identifier
     }
 
     // Generate warnings about work group sizes based on active resources.
-    auto entrypoint = module_state->spirv->FindEntrypoint(createInfo.stage.pName, createInfo.stage.stage);
+    auto entrypoint = module_state->spirv->FindEntrypoint(create_info.stage.pName, create_info.stage.stage);
     if (!entrypoint) return false;
 
     uint32_t x = {}, y = {}, z = {};
@@ -390,14 +399,14 @@ bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCrea
     return skip;
 }
 
-bool BestPractices::ValidateCreateComputePipelineAmd(const VkComputePipelineCreateInfo& createInfo,
+bool BestPractices::ValidateCreateComputePipelineAmd(const VkComputePipelineCreateInfo& create_info,
                                                      const Location& create_info_loc) const {
     bool skip = false;
-    auto module_state = Get<vvl::ShaderModule>(createInfo.stage.module);
+    auto module_state = Get<vvl::ShaderModule>(create_info.stage.module);
     if (!module_state || !module_state->spirv) {
         return false;
     }
-    auto entrypoint = module_state->spirv->FindEntrypoint(createInfo.stage.pName, createInfo.stage.stage);
+    auto entrypoint = module_state->spirv->FindEntrypoint(create_info.stage.pName, create_info.stage.stage);
     if (!entrypoint) {
         return false;
     }
@@ -451,7 +460,7 @@ void BestPractices::PreCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer, 
         tgm.state = new_tgm_state;
 
         // Track depthTestEnable and depthCompareOp
-        auto& pipeline_create_info = pipeline_info->GetCreateInfo<VkGraphicsPipelineCreateInfo>();
+        auto& pipeline_create_info = pipeline_info->GraphicsCreateInfo();
         auto depth_stencil_state = pipeline_create_info.pDepthStencilState;
         auto dynamic_state = pipeline_create_info.pDynamicState;
         if (depth_stencil_state && dynamic_state) {
@@ -525,7 +534,7 @@ void BestPractices::PostCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer,
 void BestPractices::PreCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                          const VkGraphicsPipelineCreateInfo* pCreateInfos,
                                                          const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                         const RecordObject& record_obj, void* cgpl_state) {
+                                                         const RecordObject& record_obj) {
     ValidationStateTracker::PreCallRecordCreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
                                                                  pPipelines, record_obj);
     // AMD best practice

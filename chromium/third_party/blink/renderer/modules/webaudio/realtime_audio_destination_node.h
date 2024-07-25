@@ -48,16 +48,19 @@ class WebAudioSinkDescriptor;
 
 class RealtimeAudioDestinationNode final : public AudioDestinationNode {
  public:
-  static RealtimeAudioDestinationNode* Create(
-      AudioContext*,
-      const WebAudioSinkDescriptor&,
-      const WebAudioLatencyHint&,
-      absl::optional<float> sample_rate);
+  static RealtimeAudioDestinationNode* Create(AudioContext*,
+                                              const WebAudioSinkDescriptor&,
+                                              const WebAudioLatencyHint&,
+                                              std::optional<float> sample_rate);
 
   explicit RealtimeAudioDestinationNode(AudioContext&,
                                         const WebAudioSinkDescriptor&,
                                         const WebAudioLatencyHint&,
-                                        absl::optional<float> sample_rate);
+                                        std::optional<float> sample_rate);
+
+  // Returns its own handler object instead of a generic one from
+  // AudioNode::Handler().
+  RealtimeAudioDestinationHandler& GetOwnHandler() const;
 
   // See `RealtimeAudioDestinationHandler.SetSinkDescriptor` for details.
   void SetSinkDescriptor(const WebAudioSinkDescriptor&,

@@ -26,9 +26,9 @@
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
-#include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/autofill/core/browser/ui/suggestion_test_helpers.h"
+#include "components/autofill/core/browser/ui/suggestion_type.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/form_field_data.h"
@@ -40,10 +40,13 @@
 #include "components/favicon/core/test/mock_favicon_service.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/mock_password_feature_manager.h"
+#include "components/password_manager/core/browser/mock_password_suggestion_flow.h"
 #include "components/password_manager/core/browser/mock_webauthn_credentials_delegate.h"
 #include "components/password_manager/core/browser/passkey_credential.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
+#include "components/password_manager/core/browser/password_manual_fallback_flow.h"
+#include "components/password_manager/core/browser/password_suggestion_generator.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
 #include "components/password_manager/core/browser/stub_password_manager_driver.h"
 #include "components/password_manager/core/common/password_manager_features.h"
@@ -60,11 +63,8 @@
 #include "ui/gfx/image/image_unittest_util.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
-#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-#include "components/password_manager/core/common/password_manager_pref_names.h"
-#include "components/prefs/pref_registry_simple.h"
-#include "components/prefs/testing_pref_service.h"
+#include "components/webauthn/android/cred_man_support.h"
+#include "components/webauthn/android/webauthn_cred_man_delegate.h"
 #endif
 
 // The name of the username/password element in the form.
@@ -73,6 +73,9 @@ const char16_t kInvalidUsername[] = u"no-username";
 const char16_t kAliceUsername[] = u"alice";
 const char16_t kAlicePassword[] = u"password";
 const char16_t kAliceAccountStoredPassword[] = u"account-stored-password";
+
+constexpr auto kDefaultTriggerSource =
+    autofill::AutofillSuggestionTriggerSource::kFormControlElementClicked;
 
 using autofill::FillingProduct;
 using autofill::Suggestion;
@@ -96,14 +99,13 @@ using testing::ReturnRef;
 using testing::SizeIs;
 using testing::Unused;
 
-using SuggestionPosition = autofill::AutofillPopupDelegate::SuggestionPosition;
+using SuggestionPosition =
+    autofill::AutofillSuggestionDelegate::SuggestionPosition;
 using UkmEntry = ukm::builders::PageWithPassword;
 
 namespace autofill {
-class AutofillPopupDelegate;
+class AutofillSuggestionDelegate;
 }
-
-class PrefService;
 
 namespace password_manager {
 
@@ -193,11 +195,13 @@ class TestPasswordManagerClient : public StubPasswordManagerClient {
               GetWebAuthnCredentialsDelegateForDriver,
               (PasswordManagerDriver*),
               (override));
-  MOCK_METHOD(PrefService*, GetPrefs, (), (const, override));
-  MOCK_METHOD(PrefService*, GetLocalStatePrefs, (), (const, override));
   MOCK_METHOD(std::unique_ptr<device_reauth::DeviceAuthenticator>,
               GetDeviceAuthenticator,
               (),
+              (override));
+  MOCK_METHOD(bool,
+              CanUseBiometricAuthForFilling,
+              (device_reauth::DeviceAuthenticator*),
               (override));
 
  private:
@@ -212,29 +216,72 @@ class MockAutofillClient : public autofill::TestAutofillClient {
  public:
   MockAutofillClient() = default;
   MOCK_METHOD(void,
-              ShowAutofillPopup,
+              ShowAutofillSuggestions,
               (const autofill::AutofillClient::PopupOpenArgs& open_args,
-               base::WeakPtr<autofill::AutofillPopupDelegate> delegate),
+               base::WeakPtr<autofill::AutofillSuggestionDelegate> delegate),
               (override));
-  MOCK_METHOD(void, PinPopupView, (), (override));
-  MOCK_METHOD(PopupOpenArgs,
-              GetReopenPopupArgs,
-              (autofill::AutofillSuggestionTriggerSource),
-              (const, override));
-  MOCK_METHOD(std::vector<autofill::Suggestion>,
-              GetPopupSuggestions,
-              (),
-              (const, override));
+  MOCK_METHOD(void, PinAutofillSuggestions, (), (override));
   MOCK_METHOD(void,
               UpdatePopup,
-              (const std::vector<autofill::Suggestion>&,
+              (const std::vector<Suggestion>&,
                FillingProduct,
                autofill::AutofillSuggestionTriggerSource),
               (override));
   MOCK_METHOD(void,
-              HideAutofillPopup,
-              (autofill::PopupHidingReason),
+              HideAutofillSuggestions,
+              (autofill::SuggestionHidingReason),
               (override));
+
+  base::span<const Suggestion> GetAutofillSuggestions() const override {
+    return autofill_suggestions_;
+  }
+  void set_autofill_suggestions(std::vector<Suggestion> suggestions) {
+    autofill_suggestions_ = std::move(suggestions);
+  }
+
+  void CreateTestSuggestions(
+      bool has_opt_in_and_fill,
+      bool has_opt_in_and_generate,
+      bool has_re_signin,
+      std::optional<size_t> loading_index = std::nullopt) {
+    autofill_suggestions_.clear();
+    autofill_suggestions_.emplace_back(
+        /*value=*/"User1", /*label=*/"PW1", /*icon=*/Suggestion::Icon::kNoIcon,
+        /*type=*/autofill::SuggestionType::kPasswordEntry);
+    autofill_suggestions_.emplace_back(
+        /*value=*/"Show all pwds", /*label=*/"",
+        /*icon=*/Suggestion::Icon::kNoIcon,
+        /*type=*/
+        autofill::SuggestionType::kAllSavedPasswordsEntry);
+    if (has_opt_in_and_fill) {
+      autofill_suggestions_.emplace_back(
+          /*value=*/"Unlock passwords and fill", /*label=*/"",
+          /*icon=*/Suggestion::Icon::kNoIcon,
+          /*type=*/
+          autofill::SuggestionType::kPasswordAccountStorageOptIn);
+    }
+    if (has_opt_in_and_generate) {
+      autofill_suggestions_.emplace_back(
+          /*value=*/"Unlock passwords and generate", /*label=*/"",
+          /*icon=*/Suggestion::Icon::kNoIcon,
+          /*type=*/
+          autofill::SuggestionType::kPasswordAccountStorageOptInAndGenerate);
+    }
+    if (has_re_signin) {
+      autofill_suggestions_.emplace_back(
+          /*value=*/"Sign in to access passwords", /*label=*/"",
+          /*icon=*/Suggestion::Icon::kNoIcon,
+          /*type=*/
+          autofill::SuggestionType::kPasswordAccountStorageReSignin);
+    }
+    if (loading_index) {
+      autofill_suggestions_[*loading_index].is_loading =
+          Suggestion::IsLoading(true);
+    }
+  }
+
+ private:
+  std::vector<Suggestion> autofill_suggestions_;
 };
 
 base::CancelableTaskTracker::TaskId
@@ -243,60 +290,6 @@ RespondWithTestIcon(Unused, FaviconImageCallback callback, Unused) {
   image_result.image = kTestFavicon;
   std::move(callback).Run(image_result);
   return 1;
-}
-
-std::vector<autofill::Suggestion> CreateTestSuggestions(
-    bool has_opt_in_and_fill,
-    bool has_opt_in_and_generate,
-    bool has_re_signin) {
-  std::vector<Suggestion> suggestions;
-  suggestions.emplace_back(
-      /*value=*/"User1", /*label=*/"PW1", /*icon=*/Suggestion::Icon::kNoIcon,
-      /*popup_item_id=*/autofill::PopupItemId::kPasswordEntry);
-  suggestions.emplace_back(
-      /*value=*/"Show all pwds", /*label=*/"",
-      /*icon=*/Suggestion::Icon::kNoIcon,
-      /*popup_item_id=*/autofill::PopupItemId::kAllSavedPasswordsEntry);
-  if (has_opt_in_and_fill) {
-    suggestions.emplace_back(
-        /*value=*/"Unlock passwords and fill", /*label=*/"",
-        /*icon=*/Suggestion::Icon::kNoIcon,
-        /*popup_item_id=*/
-        autofill::PopupItemId::kPasswordAccountStorageOptIn);
-  }
-  if (has_opt_in_and_generate) {
-    suggestions.emplace_back(
-        /*value=*/"Unlock passwords and generate", /*label=*/"",
-        /*icon=*/Suggestion::Icon::kNoIcon,
-        /*popup_item_id=*/
-        autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate);
-  }
-  if (has_re_signin) {
-    suggestions.emplace_back(
-        /*value=*/"Sign in to access passwords", /*label=*/"",
-        /*icon=*/Suggestion::Icon::kNoIcon,
-        /*popup_item_id=*/
-        autofill::PopupItemId::kPasswordAccountStorageReSignin);
-  }
-  return suggestions;
-}
-
-std::vector<autofill::Suggestion> SetLoading(
-    std::vector<autofill::Suggestion> suggestions,
-    int index_of_loading_element) {
-  suggestions[index_of_loading_element].is_loading =
-      Suggestion::IsLoading(true);
-  return suggestions;
-}
-
-autofill::AutofillClient::PopupOpenArgs CreateReopenArgsWithTestSuggestions(
-    bool has_opt_in_and_fill,
-    bool has_opt_in_and_generate,
-    bool has_re_signin) {
-  return {gfx::RectF(), base::i18n::LEFT_TO_RIGHT,
-          CreateTestSuggestions(has_opt_in_and_fill, has_opt_in_and_generate,
-                                has_re_signin),
-          autofill::AutofillSuggestionTriggerSource::kPasswordManager};
 }
 
 }  // namespace
@@ -316,6 +309,8 @@ class PasswordAutofillManagerTest : public testing::Test {
                                          MockAutofillClient* autofill_client) {
     password_autofill_manager_ = std::make_unique<PasswordAutofillManager>(
         client->mock_driver(), autofill_client, client);
+    password_autofill_manager_->SetManualFallbackFlowForTest(
+        std::make_unique<NiceMock<MockPasswordSuggestionFlow>>());
     favicon::MockFaviconService favicon_service;
     EXPECT_CALL(*client, GetFaviconService())
         .WillOnce(Return(&favicon_service));
@@ -330,15 +325,6 @@ class PasswordAutofillManagerTest : public testing::Test {
     webauthn_credentials_delegate_ =
         std::make_unique<MockWebAuthnCredentialsDelegate>();
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-    test_pref_service_ = std::make_unique<TestingPrefServiceSimple>();
-    test_pref_service_->registry()->RegisterBooleanPref(
-        password_manager::prefs::kBiometricAuthenticationBeforeFilling, true);
-    ON_CALL(*client, GetPrefs())
-        .WillByDefault(Return(test_pref_service_.get()));
-    ON_CALL(*client, GetLocalStatePrefs())
-        .WillByDefault(Return(test_pref_service_.get()));
-#endif
     ON_CALL(*client, GetWebAuthnCredentialsDelegateForDriver)
         .WillByDefault(Return(webauthn_credentials_delegate_.get()));
 
@@ -366,13 +352,10 @@ class PasswordAutofillManagerTest : public testing::Test {
     EXPECT_CALL(*authenticator, AuthenticateWithMessage);
   }
 
-#if BUILDFLAG(IS_ANDROID)
-  void ExpectAndSimulateAuthenticationSuccess(
-      device_reauth::MockDeviceAuthenticator* authenticator) {
-    EXPECT_CALL(*authenticator, AuthenticateWithMessage)
-        .WillOnce(RunOnceCallback<1>(/*auth_succeeded=*/true));
+  MockPasswordSuggestionFlow& manual_fallback_flow() {
+    return *static_cast<MockPasswordSuggestionFlow*>(
+        password_autofill_manager_->manual_fallback_flow());
   }
-#endif
 
  protected:
   autofill::PasswordFormFillData& fill_data() { return fill_data_; }
@@ -391,9 +374,6 @@ class PasswordAutofillManagerTest : public testing::Test {
   // The TestAutofillDriver uses a SequencedWorkerPool which expects the
   // existence of a MessageLoop.
   base::test::SingleThreadTaskEnvironment task_environment_;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  std::unique_ptr<TestingPrefServiceSimple> test_pref_service_;
-#endif
 };
 
 TEST_F(PasswordAutofillManagerTest, FillSuggestion) {
@@ -437,157 +417,108 @@ TEST_F(PasswordAutofillManagerTest, PreviewSuggestion) {
 // Test that the popup is marked as visible after receiving password
 // suggestions.
 TEST_F(PasswordAutofillManagerTest, ExternalDelegatePasswordSuggestions) {
-  for (bool is_suggestion_on_password_field : {false, true}) {
-    SCOPED_TRACE(testing::Message() << "is_suggestion_on_password_field = "
-                                    << is_suggestion_on_password_field);
+  TestPasswordManagerClient client;
+  NiceMock<MockAutofillClient> autofill_client;
+  InitializePasswordAutofillManager(&client, &autofill_client);
 
-    TestPasswordManagerClient client;
-#if BUILDFLAG(IS_ANDROID)
-    if (base::android::BuildInfo::GetInstance()->is_automotive()) {
-      auto authenticator =
-          std::make_unique<device_reauth::MockDeviceAuthenticator>();
-      ExpectAndSimulateAuthenticationSuccess(authenticator.get());
-      ON_CALL(client, GetDeviceAuthenticator)
-          .WillByDefault(Return(testing::ByMove(std::move(authenticator))));
-    }
-#endif
+  // Load filling and favicon data.
+  autofill::PasswordFormFillData data = CreateTestFormFillData();
+  data.preferred_login.uses_account_store = false;
+  favicon::MockFaviconService favicon_service;
+  EXPECT_CALL(client, GetFaviconService()).WillOnce(Return(&favicon_service));
+  EXPECT_CALL(favicon_service, GetFaviconImageForPageURL(data.url, _, _))
+      .WillOnce(Invoke(RespondWithTestIcon));
+  password_autofill_manager_->OnAddPasswordFillData(data);
 
-    NiceMock<MockAutofillClient> autofill_client;
-    InitializePasswordAutofillManager(&client, &autofill_client);
+  // Show the popup and verify the suggestions.
+  autofill::AutofillClient::PopupOpenArgs open_args;
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
+      .WillOnce(testing::SaveArg<0>(&open_args));
 
-    // Load filling and favicon data.
-    autofill::PasswordFormFillData data = CreateTestFormFillData();
-    data.preferred_login.uses_account_store = false;
-    favicon::MockFaviconService favicon_service;
-    EXPECT_CALL(client, GetFaviconService()).WillOnce(Return(&favicon_service));
-    EXPECT_CALL(favicon_service, GetFaviconImageForPageURL(data.url, _, _))
-        .WillOnce(Invoke(RespondWithTestIcon));
-    password_autofill_manager_->OnAddPasswordFillData(data);
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  ASSERT_GE(open_args.suggestions.size(), 1u);
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
+  EXPECT_TRUE(
+      AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
 
-    // Show the popup and verify the suggestions.
-    autofill::AutofillClient::PopupOpenArgs open_args;
-    EXPECT_CALL(autofill_client, ShowAutofillPopup)
-        .WillOnce(testing::SaveArg<0>(&open_args));
+  EXPECT_CALL(*client.mock_driver(),
+              FillSuggestion(test_username_, test_password_));
+  // Accepting a suggestion should trigger a call to hide the popup.
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
+  base::HistogramTester histograms;
 
-    int show_suggestion_options =
-        is_suggestion_on_password_field ? autofill::IS_PASSWORD_FIELD : 0;
-    password_autofill_manager_->OnShowPasswordSuggestions(
-        kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-        show_suggestion_options, gfx::RectF());
-    ASSERT_GE(open_args.suggestions.size(), 1u);
-    EXPECT_THAT(
-        open_args.suggestions,
-        SuggestionVectorIdsAre(is_suggestion_on_password_field
-                                   ? autofill::PopupItemId::kPasswordEntry
-                                   : autofill::PopupItemId::kUsernameEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                               autofill::PopupItemId::kSeparator,
-#endif
-                               autofill::PopupItemId::kAllSavedPasswordsEntry));
-    EXPECT_TRUE(
-        AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
+  password_autofill_manager_->DidAcceptSuggestion(
+      autofill::test::CreateAutofillSuggestion(
+          autofill::SuggestionType::kPasswordEntry, test_username_),
+      SuggestionPosition{.row = 1});
 
-    EXPECT_CALL(*client.mock_driver(),
-                FillSuggestion(test_username_, test_password_));
-    // Accepting a suggestion should trigger a call to hide the popup.
-    EXPECT_CALL(
-        autofill_client,
-        HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
-    base::HistogramTester histograms;
-
-    password_autofill_manager_->DidAcceptSuggestion(
-        autofill::test::CreateAutofillSuggestion(
-            is_suggestion_on_password_field
-                ? autofill::PopupItemId::kPasswordEntry
-                : autofill::PopupItemId::kUsernameEntry,
-            test_username_),
-        SuggestionPosition{.row = 1});
-
-    histograms.ExpectUniqueSample(
-        kDropdownSelectedHistogram,
-        metrics_util::PasswordDropdownSelectedOption::kPassword, 1);
-  }
+  histograms.ExpectUniqueSample(
+      kDropdownSelectedHistogram,
+      metrics_util::PasswordDropdownSelectedOption::kPassword, 1);
 }
 
 // Test that suggestions are filled correctly if account-stored and local
 // suggestion have duplicates.
 TEST_F(PasswordAutofillManagerTest,
        ExternalDelegateAccountStorePasswordSuggestions) {
-  for (bool is_suggestion_on_password_field : {false, true}) {
-    SCOPED_TRACE(testing::Message() << "is_suggestion_on_password_field = "
-                                    << is_suggestion_on_password_field);
-    TestPasswordManagerClient client;
-#if BUILDFLAG(IS_ANDROID)
-    if (base::android::BuildInfo::GetInstance()->is_automotive()) {
-      auto authenticator =
-          std::make_unique<device_reauth::MockDeviceAuthenticator>();
-      ExpectAndSimulateAuthenticationSuccess(authenticator.get());
-      ON_CALL(client, GetDeviceAuthenticator)
-          .WillByDefault(Return(testing::ByMove(std::move(authenticator))));
-    }
-#endif
+  TestPasswordManagerClient client;
+  NiceMock<MockAutofillClient> autofill_client;
+  InitializePasswordAutofillManager(&client, &autofill_client);
 
-    NiceMock<MockAutofillClient> autofill_client;
-    InitializePasswordAutofillManager(&client, &autofill_client);
+  // Load filling data and account-stored duplicate with a different password.
+  autofill::PasswordFormFillData data = CreateTestFormFillData();
+  autofill::PasswordAndMetadata duplicate;
+  duplicate.password_value = kAliceAccountStoredPassword;
+  duplicate.realm = data.preferred_login.realm;
+  duplicate.uses_account_store = true;
+  duplicate.username_value = data.preferred_login.username_value;
+  data.additional_logins.push_back(duplicate);
+  favicon::MockFaviconService favicon_service;
+  EXPECT_CALL(client, GetFaviconService()).WillOnce(Return(&favicon_service));
+  EXPECT_CALL(favicon_service, GetFaviconImageForPageURL(data.url, _, _))
+      .WillOnce(Invoke(RespondWithTestIcon));
+  password_autofill_manager_->OnAddPasswordFillData(data);
 
-    // Load filling data and account-stored duplicate with a different password.
-    autofill::PasswordFormFillData data = CreateTestFormFillData();
-    autofill::PasswordAndMetadata duplicate;
-    duplicate.password_value = kAliceAccountStoredPassword;
-    duplicate.realm = data.preferred_login.realm;
-    duplicate.uses_account_store = true;
-    duplicate.username_value = data.preferred_login.username_value;
-    data.additional_logins.push_back(duplicate);
-    favicon::MockFaviconService favicon_service;
-    EXPECT_CALL(client, GetFaviconService()).WillOnce(Return(&favicon_service));
-    EXPECT_CALL(favicon_service, GetFaviconImageForPageURL(data.url, _, _))
-        .WillOnce(Invoke(RespondWithTestIcon));
-    password_autofill_manager_->OnAddPasswordFillData(data);
+  // Show the popup and verify local and account-stored suggestion coexist.
+  autofill::AutofillClient::PopupOpenArgs open_args;
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
+      .WillOnce(testing::SaveArg<0>(&open_args));
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  ASSERT_GE(open_args.suggestions.size(), 2u);
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kAccountStoragePasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
+  EXPECT_TRUE(
+      AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
+  EXPECT_TRUE(
+      AreImagesEqual(open_args.suggestions[1].custom_icon, kTestFavicon));
 
-    // Show the popup and verify local and account-stored suggestion coexist.
-    autofill::AutofillClient::PopupOpenArgs open_args;
-    EXPECT_CALL(autofill_client, ShowAutofillPopup)
-        .WillOnce(testing::SaveArg<0>(&open_args));
-    password_autofill_manager_->OnShowPasswordSuggestions(
-        kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-        is_suggestion_on_password_field
-            ? autofill::IS_PASSWORD_FIELD
-            : autofill::ShowPasswordSuggestionsOptions(),
-        gfx::RectF());
-    ASSERT_GE(open_args.suggestions.size(), 2u);
-    EXPECT_THAT(open_args.suggestions,
-                SuggestionVectorIdsAre(
-                    is_suggestion_on_password_field
-                        ? autofill::PopupItemId::kPasswordEntry
-                        : autofill::PopupItemId::kUsernameEntry,
-                    is_suggestion_on_password_field
-                        ? autofill::PopupItemId::kAccountStoragePasswordEntry
-                        : autofill::PopupItemId::kAccountStorageUsernameEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                    autofill::PopupItemId::kSeparator,
-#endif
-                    autofill::PopupItemId::kAllSavedPasswordsEntry));
-    EXPECT_TRUE(
-        AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
-    EXPECT_TRUE(
-        AreImagesEqual(open_args.suggestions[1].custom_icon, kTestFavicon));
+  // When selecting the account-stored credential, make sure the filled
+  // password belongs to the selected credential (and not to the first match).
+  EXPECT_CALL(*client.mock_driver(),
+              FillSuggestion(test_username_, duplicate.password_value));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
-    // When selecting the account-stored credential, make sure the filled
-    // password belongs to the selected credential (and not to the first match).
-    EXPECT_CALL(*client.mock_driver(),
-                FillSuggestion(test_username_, duplicate.password_value));
-    EXPECT_CALL(
-        autofill_client,
-        HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
-
-    password_autofill_manager_->DidAcceptSuggestion(
-        autofill::test::CreateAutofillSuggestion(
-            is_suggestion_on_password_field
-                ? autofill::PopupItemId::kAccountStoragePasswordEntry
-                : autofill::PopupItemId::kAccountStorageUsernameEntry,
-            test_username_),
-        SuggestionPosition{.row = 0});
-  }
+  password_autofill_manager_->DidAcceptSuggestion(
+      autofill::test::CreateAutofillSuggestion(
+          autofill::SuggestionType::kAccountStoragePasswordEntry,
+          test_username_),
+      SuggestionPosition{.row = 0});
 }
 
 // Test that the popup is updated once account-stored suggestions are unlocked.
@@ -599,19 +530,17 @@ TEST_F(PasswordAutofillManagerTest, ShowOptInAndFillButton) {
 
   // Show the popup and verify the suggestions.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::SHOW_ALL | autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kPasswordEntry,
-                  autofill::PopupItemId::kPasswordAccountStorageOptIn,
-#if !BUILDFLAG(IS_ANDROID)
-                  autofill::PopupItemId::kSeparator,
-#endif
-                  autofill::PopupItemId::kAllSavedPasswordsEntry));
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kPasswordAccountStorageOptIn,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_EQ(open_args.trigger_source,
             autofill::AutofillSuggestionTriggerSource::kPasswordManager);
 }
@@ -626,15 +555,15 @@ TEST_F(PasswordAutofillManagerTest, SuppressManageAllWithoutPasswords) {
 
   // Show the popup and verify the suggestions.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   EXPECT_CALL(*client.mock_driver(), CanShowAutofillUi).WillOnce(Return(true));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::SHOW_ALL | autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kPasswordAccountStorageOptIn));
+                  autofill::SuggestionType::kPasswordAccountStorageOptIn));
   EXPECT_EQ(open_args.trigger_source,
             autofill::AutofillSuggestionTriggerSource::kPasswordManager);
 }
@@ -648,19 +577,17 @@ TEST_F(PasswordAutofillManagerTest, ShowResigninButton) {
 
   // Show the popup and verify the suggestions.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::SHOW_ALL | autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kPasswordEntry,
-                  autofill::PopupItemId::kPasswordAccountStorageReSignin,
-#if !BUILDFLAG(IS_ANDROID)
-                  autofill::PopupItemId::kSeparator,
-#endif
-                  autofill::PopupItemId::kAllSavedPasswordsEntry));
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kPasswordAccountStorageReSignin,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_EQ(open_args.trigger_source,
             autofill::AutofillSuggestionTriggerSource::kPasswordManager);
 }
@@ -672,7 +599,9 @@ TEST_F(PasswordAutofillManagerTest,
   NiceMock<MockAutofillClient> autofill_client;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
+                                        /*has_opt_in_and_generate*/ false,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup. The
   // update puts the unlock button into a loading state.
@@ -680,21 +609,18 @@ TEST_F(PasswordAutofillManagerTest,
   EXPECT_CALL(
       autofill_client,
       UpdatePopup(SuggestionVectorIdsAre(
-                      autofill::PopupItemId::kPasswordEntry,
-                      autofill::PopupItemId::kAllSavedPasswordsEntry,
-                      autofill::PopupItemId::kPasswordAccountStorageOptIn),
+                      autofill::SuggestionType::kPasswordEntry,
+                      autofill::SuggestionType::kAllSavedPasswordsEntry,
+                      autofill::SuggestionType::kPasswordAccountStorageOptIn),
                   FillingProduct::kPassword,
                   autofill::AutofillSuggestionTriggerSource::kPasswordManager))
       .WillOnce(testing::SaveArg<0>(&suggestions));
   EXPECT_CALL(client, TriggerReauthForPrimaryAccount);
-  EXPECT_CALL(autofill_client, GetPopupSuggestions())
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
-                                             /*has_opt_in_and_generate*/ false,
-                                             /*has_re_signin=*/false)));
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptIn, test_username_),
+          autofill::SuggestionType::kPasswordAccountStorageOptIn,
+          test_username_),
       SuggestionPosition{.row = 1});
 
   ASSERT_GE(suggestions.size(), 2u);
@@ -708,30 +634,28 @@ TEST_F(PasswordAutofillManagerTest,
   NiceMock<MockAutofillClient> autofill_client;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
+                                        /*has_opt_in_and_generate*/ true,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup. The
   // update puts the unlock-to-generate button in a loading state.
   std::vector<autofill::Suggestion> suggestions;
   EXPECT_CALL(
       autofill_client,
-      UpdatePopup(
-          SuggestionVectorIdsAre(
-              autofill::PopupItemId::kPasswordEntry,
-              autofill::PopupItemId::kAllSavedPasswordsEntry,
-              autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate),
-          FillingProduct::kPassword,
-          autofill::AutofillSuggestionTriggerSource::kPasswordManager))
+      UpdatePopup(SuggestionVectorIdsAre(
+                      autofill::SuggestionType::kPasswordEntry,
+                      autofill::SuggestionType::kAllSavedPasswordsEntry,
+                      autofill::SuggestionType::
+                          kPasswordAccountStorageOptInAndGenerate),
+                  FillingProduct::kPassword,
+                  autofill::AutofillSuggestionTriggerSource::kPasswordManager))
       .WillOnce(testing::SaveArg<0>(&suggestions));
   EXPECT_CALL(client, TriggerReauthForPrimaryAccount);
-  EXPECT_CALL(autofill_client, GetPopupSuggestions())
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
-                                             /*has_opt_in_and_generate*/ true,
-                                             /*has_re_signin=*/false)));
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate,
+          autofill::SuggestionType::kPasswordAccountStorageOptInAndGenerate,
           test_username_),
       SuggestionPosition{.row = 1});
 
@@ -750,11 +674,11 @@ TEST_F(PasswordAutofillManagerTest, ClickOnReSiginTriggersSigninAndHides) {
   EXPECT_CALL(client,
               TriggerSignIn(
                   signin_metrics::AccessPoint::ACCESS_POINT_AUTOFILL_DROPDOWN));
-  EXPECT_CALL(autofill_client, HideAutofillPopup);
+  EXPECT_CALL(autofill_client, HideAutofillSuggestions);
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageReSignin,
+          autofill::SuggestionType::kPasswordAccountStorageReSignin,
           test_username_),
       SuggestionPosition{.row = 1});
 }
@@ -767,36 +691,28 @@ TEST_F(PasswordAutofillManagerTest, FailedOptInAndFillUpdatesPopup) {
   std::vector<autofill::Suggestion> suggestions;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
+                                        /*has_opt_in_and_generate*/ false,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup.
-  // First the popup enters the waiting state.
-  EXPECT_CALL(autofill_client, GetPopupSuggestions)
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
-                                             /*has_opt_in_and_generate*/ false,
-                                             /*has_re_signin=*/false)));
-  // As soon as the waiting state is pending, the next update resets the popup.
+  // First the popup enters the waiting state. As soon as the waiting state is
+  // pending, the next update resets the popup.
   EXPECT_CALL(autofill_client, UpdatePopup).WillOnce([&] {
     testing::Mock::VerifyAndClear(&autofill_client);
-    EXPECT_CALL(autofill_client, GetReopenPopupArgs)
-        .WillOnce(Return(CreateReopenArgsWithTestSuggestions(
-            /*has_opt_in_and_fill=*/true, /*has_opt_in_and_generate*/ false,
-            /*has_re_signin=*/false)));
     EXPECT_CALL(client,
                 TriggerReauthForPrimaryAccount(
                     signin_metrics::ReauthAccessPoint::kAutofillDropdown, _))
-        .WillOnce([](auto, auto reauth_callback) {
-          std::move(reauth_callback).Run(ReauthSucceeded(false));
-        });
-    EXPECT_CALL(autofill_client, ShowAutofillPopup);
-    EXPECT_CALL(autofill_client, PinPopupView);
+        .WillOnce(RunOnceCallback<1>(ReauthSucceeded(false)));
+    EXPECT_CALL(autofill_client, ShowAutofillSuggestions);
+    EXPECT_CALL(autofill_client, PinAutofillSuggestions);
     EXPECT_CALL(
         autofill_client,
         UpdatePopup(
             SuggestionVectorIdsAre(
-                autofill::PopupItemId::kPasswordEntry,
-                autofill::PopupItemId::kAllSavedPasswordsEntry,
-                autofill::PopupItemId::kPasswordAccountStorageOptIn),
+                autofill::SuggestionType::kPasswordEntry,
+                autofill::SuggestionType::kAllSavedPasswordsEntry,
+                autofill::SuggestionType::kPasswordAccountStorageOptIn),
             FillingProduct::kPassword,
             autofill::AutofillSuggestionTriggerSource::kPasswordManager))
         .WillOnce(testing::SaveArg<0>(&suggestions));
@@ -804,7 +720,8 @@ TEST_F(PasswordAutofillManagerTest, FailedOptInAndFillUpdatesPopup) {
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptIn, test_username_),
+          autofill::SuggestionType::kPasswordAccountStorageOptIn,
+          test_username_),
       SuggestionPosition{.row = 1});
 
   ASSERT_GE(suggestions.size(), 2u);
@@ -819,37 +736,30 @@ TEST_F(PasswordAutofillManagerTest, FailedOptInAndGenerateUpdatesPopup) {
   std::vector<autofill::Suggestion> suggestions;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
+                                        /*has_opt_in_and_generate*/ true,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup.
-  // First the popup enters the waiting state.
-  EXPECT_CALL(autofill_client, GetPopupSuggestions)
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
-                                             /*has_opt_in_and_generate*/ true,
-                                             /*has_re_signin=*/false)));
-  // As soon as the waiting state is pending, the next update resets the popup.
+  // First the popup enters the waiting state. As soon as the waiting state is
+  // pending, the next update resets the popup.
   EXPECT_CALL(autofill_client, UpdatePopup).WillOnce([&] {
     testing::Mock::VerifyAndClear(&autofill_client);
-    EXPECT_CALL(autofill_client, GetReopenPopupArgs)
-        .WillOnce(Return(CreateReopenArgsWithTestSuggestions(
-            /*has_opt_in_and_fill=*/false, /*has_opt_in_and_generate*/ true,
-            /*has_re_signin=*/false)));
     EXPECT_CALL(
         client,
         TriggerReauthForPrimaryAccount(
             signin_metrics::ReauthAccessPoint::kGeneratePasswordDropdown, _))
-        .WillOnce([](auto, auto reauth_callback) {
-          std::move(reauth_callback).Run(ReauthSucceeded(false));
-        });
-    EXPECT_CALL(autofill_client, ShowAutofillPopup);
-    EXPECT_CALL(autofill_client, PinPopupView);
+        .WillOnce(RunOnceCallback<1>(ReauthSucceeded(false)));
+    EXPECT_CALL(autofill_client, ShowAutofillSuggestions);
+    EXPECT_CALL(autofill_client, PinAutofillSuggestions);
     EXPECT_CALL(
         autofill_client,
         UpdatePopup(
             SuggestionVectorIdsAre(
-                autofill::PopupItemId::kPasswordEntry,
-                autofill::PopupItemId::kAllSavedPasswordsEntry,
-                autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate),
+                autofill::SuggestionType::kPasswordEntry,
+                autofill::SuggestionType::kAllSavedPasswordsEntry,
+                autofill::SuggestionType::
+                    kPasswordAccountStorageOptInAndGenerate),
             FillingProduct::kPassword,
             autofill::AutofillSuggestionTriggerSource::kPasswordManager))
         .WillOnce(testing::SaveArg<0>(&suggestions));
@@ -857,7 +767,7 @@ TEST_F(PasswordAutofillManagerTest, FailedOptInAndGenerateUpdatesPopup) {
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate,
+          autofill::SuggestionType::kPasswordAccountStorageOptInAndGenerate,
           test_username_),
       SuggestionPosition{.row = 1});
 
@@ -872,30 +782,23 @@ TEST_F(PasswordAutofillManagerTest, SuccessfullOptInAndFillHidesPopup) {
   NiceMock<MockAutofillClient> autofill_client;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
+                                        /*has_opt_in_and_generate*/ false,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup.
-  EXPECT_CALL(autofill_client, GetPopupSuggestions)
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/true,
-                                             /*has_opt_in_and_generate*/ false,
-                                             /*has_re_signin=*/false)));
   EXPECT_CALL(autofill_client, UpdatePopup);
-  EXPECT_CALL(autofill_client, GetReopenPopupArgs)
-      .WillOnce(Return(CreateReopenArgsWithTestSuggestions(
-          /*has_opt_in_and_fill=*/true, /*has_opt_in_and_generate*/ false,
-          /*has_re_signin=*/false)));
   EXPECT_CALL(client,
               TriggerReauthForPrimaryAccount(
                   signin_metrics::ReauthAccessPoint::kAutofillDropdown, _))
-      .WillOnce([](auto, auto reauth_callback) {
-        std::move(reauth_callback).Run(ReauthSucceeded(true));
-      });
-  EXPECT_CALL(autofill_client, ShowAutofillPopup);
-  EXPECT_CALL(autofill_client, PinPopupView);
+      .WillOnce(RunOnceCallback<1>(ReauthSucceeded(true)));
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions);
+  EXPECT_CALL(autofill_client, PinAutofillSuggestions);
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptIn, test_username_),
+          autofill::SuggestionType::kPasswordAccountStorageOptIn,
+          test_username_),
       SuggestionPosition{.row = 1});
 }
 
@@ -907,35 +810,28 @@ TEST_F(PasswordAutofillManagerTest,
   NiceMock<MockAutofillClient> autofill_client;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(false);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
+  autofill_client.CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
+                                        /*has_opt_in_and_generate*/ true,
+                                        /*has_re_signin=*/false);
 
   // Accepting a suggestion should trigger a call to update the popup.
-  EXPECT_CALL(autofill_client, GetPopupSuggestions)
-      .WillOnce(Return(CreateTestSuggestions(/*has_opt_in_and_fill=*/false,
-                                             /*has_opt_in_and_generate*/ true,
-                                             /*has_re_signin=*/false)));
   EXPECT_CALL(autofill_client, UpdatePopup);
-  EXPECT_CALL(autofill_client, GetReopenPopupArgs)
-      .WillOnce(Return(CreateReopenArgsWithTestSuggestions(
-          /*has_opt_in_and_fill=*/false, /*has_opt_in_and_generate*/ true,
-          /*has_re_signin=*/false)));
   EXPECT_CALL(
       client,
       TriggerReauthForPrimaryAccount(
           signin_metrics::ReauthAccessPoint::kGeneratePasswordDropdown, _))
-      .WillOnce([](auto, auto reauth_callback) {
-        std::move(reauth_callback).Run(ReauthSucceeded(true));
-      });
-  EXPECT_CALL(autofill_client, ShowAutofillPopup);
-  EXPECT_CALL(autofill_client, PinPopupView);
+      .WillOnce(RunOnceCallback<1>(ReauthSucceeded(true)));
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions);
+  EXPECT_CALL(autofill_client, PinAutofillSuggestions);
   EXPECT_CALL(autofill_client,
-              HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion))
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion))
       .Times(testing::AtLeast(1));
   EXPECT_CALL(client, GeneratePassword(PasswordGenerationType::kAutomatic));
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate,
+          autofill::SuggestionType::kPasswordAccountStorageOptInAndGenerate,
           test_username_),
       SuggestionPosition{.row = 1});
 }
@@ -947,24 +843,25 @@ TEST_F(PasswordAutofillManagerTest, SuccessfullOptInMayShowEmptyState) {
   base::HistogramTester histograms;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(true);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
 
   // Only the unlock button was available. After being clicked, it's in a
   // loading state which the DeleteFillData() call will end.
-  Suggestion unlock_suggestion(
+  std::vector<Suggestion> unlock_suggestion;
+  unlock_suggestion.emplace_back(
       /*main_text=*/"Unlock passwords and fill", /*label=*/"",
       /*icon=*/Suggestion::Icon::kNoIcon,
-      /*popup_item_id=*/
-      autofill::PopupItemId::kPasswordAccountStorageOptIn);
-  unlock_suggestion.is_loading = Suggestion::IsLoading(true);
-  EXPECT_CALL(autofill_client, GetPopupSuggestions)
-      .WillRepeatedly(Return(std::vector<Suggestion>{unlock_suggestion}));
-  EXPECT_CALL(autofill_client,
-              HideAutofillPopup(autofill::PopupHidingReason::kStaleData));
+      /*type=*/
+      autofill::SuggestionType::kPasswordAccountStorageOptIn);
+  unlock_suggestion[0].is_loading = Suggestion::IsLoading(true);
+  autofill_client.set_autofill_suggestions(std::move(unlock_suggestion));
+
+  EXPECT_CALL(
+      autofill_client,
+      HideAutofillSuggestions(autofill::SuggestionHidingReason::kStaleData));
   EXPECT_CALL(
       autofill_client,
       UpdatePopup(SuggestionVectorIdsAre(
-                      autofill::PopupItemId::kPasswordAccountStorageEmpty),
+                      autofill::SuggestionType::kPasswordAccountStorageEmpty),
                   FillingProduct::kPassword,
                   autofill::AutofillSuggestionTriggerSource::kPasswordManager));
 
@@ -982,7 +879,6 @@ TEST_F(PasswordAutofillManagerTest,
   base::HistogramTester histograms;
   InitializePasswordAutofillManager(&client, &autofill_client);
   client.SetAccountStorageOptIn(true);
-  testing::Mock::VerifyAndClearExpectations(&autofill_client);
 
   // Once the data is loaded, an update fills the new passwords:
   autofill::PasswordFormFillData new_data = CreateTestFormFillData();
@@ -991,23 +887,22 @@ TEST_F(PasswordAutofillManagerTest,
   additional.realm = "https://foobarrealm.org";
   additional.username_value = u"bar.foo@example.com";
   new_data.additional_logins.push_back(std::move(additional));
-  EXPECT_CALL(autofill_client, GetPopupSuggestions())
-      .WillRepeatedly(Return(SetLoading(
-          CreateTestSuggestions(
-              /*has_opt_in_and_fill=*/true, /*has_opt_in_and_generate*/ false,
-              /*has_re_signin=*/false),
-          /*index_of_loading_element=*/2)));  // Opt-in is at third position.
-  EXPECT_CALL(autofill_client,
-              HideAutofillPopup(autofill::PopupHidingReason::kStaleData));
+
+  // Opt-in is at third position.
+  autofill_client.CreateTestSuggestions(
+      /*has_opt_in_and_fill=*/true, /*has_opt_in_and_generate*/ false,
+      /*has_re_signin=*/false, /*loading_index=*/2);
+
+  EXPECT_CALL(
+      autofill_client,
+      HideAutofillSuggestions(autofill::SuggestionHidingReason::kStaleData));
   EXPECT_CALL(
       autofill_client,
       UpdatePopup(SuggestionVectorIdsAre(
-                      autofill::PopupItemId::kAccountStoragePasswordEntry,
-                      autofill::PopupItemId::kPasswordEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                      autofill::PopupItemId::kSeparator,
-#endif
-                      autofill::PopupItemId::kAllSavedPasswordsEntry),
+                      autofill::SuggestionType::kAccountStoragePasswordEntry,
+                      autofill::SuggestionType::kPasswordEntry,
+                      autofill::SuggestionType::kSeparator,
+                      autofill::SuggestionType::kAllSavedPasswordsEntry),
                   FillingProduct::kPassword,
                   autofill::AutofillSuggestionTriggerSource::kPasswordManager));
 
@@ -1017,8 +912,9 @@ TEST_F(PasswordAutofillManagerTest,
       kCredentialsCountFromAccountStoreAfterUnlockHistogram, 1, 1);
 }
 
-// Test that OnShowPasswordSuggestions correctly matches the given FormFieldData
-// to the known PasswordFormFillData, and extracts the right suggestions.
+// Test that `OnShowPasswordSuggestions` correctly matches the given
+// FormFieldData to the known PasswordFormFillData, and extracts the right
+// suggestions.
 TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
   TestPasswordManagerClient client;
   NiceMock<MockAutofillClient> autofill_client;
@@ -1048,11 +944,11 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
   // verify that both the values and labels are filled correctly. The 'value'
   // should be the user name; the 'label' should be the realm.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions(), element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), element_bounds);
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorMainTextsAre(
@@ -1060,9 +956,7 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
           Suggestion::Text(u"Gohn Foo", Suggestion::Text::IsPrimary(true)),
           Suggestion::Text(u"John Foo", Suggestion::Text::IsPrimary(true)),
           Suggestion::Text(u"Kohn Foo", Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
   EXPECT_THAT(
@@ -1075,27 +969,25 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
           {Suggestion::Text(u"foobarrealm.org")}}));
 
   // Now simulate displaying suggestions matching "John".
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, u"John",
-      autofill::ShowPasswordSuggestionsOptions(), element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT, u"John",
+      ShowWebAuthnCredentials(false), element_bounds);
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorMainTextsAre(
                   Suggestion::Text(additional.username_value,
                                    Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
                   kSeparatorEntry,
-#endif
                   Suggestion::Text(GetManagePasswordsTitle(),
                                    Suggestion::Text::IsPrimary(true))));
 
   // Finally, simulate displaying all suggestions, without any prefix matching.
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, u"xyz", autofill::SHOW_ALL,
-      element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT, u"",
+      ShowWebAuthnCredentials(false), element_bounds);
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorMainTextsAre(
@@ -1103,9 +995,7 @@ TEST_F(PasswordAutofillManagerTest, ExtractSuggestions) {
           Suggestion::Text(u"Gohn Foo", Suggestion::Text::IsPrimary(true)),
           Suggestion::Text(u"John Foo", Suggestion::Text::IsPrimary(true)),
           Suggestion::Text(u"Kohn Foo", Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
 }
@@ -1130,11 +1020,11 @@ TEST_F(PasswordAutofillManagerTest, PrettifiedAndroidRealmsAreShownAsLabels) {
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions(), gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorLabelsContains(std::vector<std::vector<Suggestion::Text>>{
@@ -1163,18 +1053,16 @@ TEST_F(PasswordAutofillManagerTest, FillSuggestionPasswordField) {
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      test_username_, ShowWebAuthnCredentials(false), element_bounds);
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorMainTextsAre(
           Suggestion::Text(test_username_, Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
   EXPECT_EQ(open_args.trigger_source,
@@ -1184,16 +1072,6 @@ TEST_F(PasswordAutofillManagerTest, FillSuggestionPasswordField) {
 TEST_F(PasswordAutofillManagerTest, PreviewAndFillEmptyUsernameSuggestion) {
   // Initialize PasswordAutofillManager with credentials without username.
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->is_automotive()) {
-    auto authenticator =
-        std::make_unique<device_reauth::MockDeviceAuthenticator>();
-    ExpectAndSimulateAuthenticationSuccess(authenticator.get());
-    ON_CALL(client, GetDeviceAuthenticator)
-        .WillByDefault(Return(testing::ByMove(std::move(authenticator))));
-  }
-#endif
-
   NiceMock<MockAutofillClient> autofill_client;
   fill_data().preferred_login.username_value.clear();
   InitializePasswordAutofillManager(&client, &autofill_client);
@@ -1202,26 +1080,26 @@ TEST_F(PasswordAutofillManagerTest, PreviewAndFillEmptyUsernameSuggestion) {
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_EMPTY_LOGIN);
 
   // Simulate that the user clicks on a username field.
-  EXPECT_CALL(autofill_client, ShowAutofillPopup);
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions);
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions(), element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), element_bounds);
 
   // Check that preview of the empty username works.
   EXPECT_CALL(*client.mock_driver(),
               PreviewSuggestion(std::u16string(), test_password_));
   const Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
-      autofill::PopupItemId::kPasswordEntry, no_username_string);
+      autofill::SuggestionType::kPasswordEntry, no_username_string);
   password_autofill_manager_->DidSelectSuggestion(suggestion);
   testing::Mock::VerifyAndClearExpectations(client.mock_driver());
 
   // Check that fill of the empty username works.
   EXPECT_CALL(*client.mock_driver(),
               FillSuggestion(std::u16string(), test_password_));
-  EXPECT_CALL(
-      autofill_client,
-      HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
   password_autofill_manager_->DidAcceptSuggestion(suggestion,
                                                   SuggestionPosition{.row = 0});
@@ -1248,12 +1126,12 @@ TEST_F(PasswordAutofillManagerTest, ShowAllPasswordsOptionOnPasswordField) {
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::IS_PASSWORD_FIELD, element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      test_username_, ShowWebAuthnCredentials(false), element_bounds);
   histograms.ExpectUniqueSample(kDropdownShownHistogram,
                                 metrics_util::PasswordDropdownState::kStandard,
                                 1);
@@ -1261,9 +1139,7 @@ TEST_F(PasswordAutofillManagerTest, ShowAllPasswordsOptionOnPasswordField) {
       open_args.suggestions,
       SuggestionVectorMainTextsAre(
           Suggestion::Text(test_username_, Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
 
@@ -1271,12 +1147,12 @@ TEST_F(PasswordAutofillManagerTest, ShowAllPasswordsOptionOnPasswordField) {
   // the Password Manager settings page and hide the popup.
   EXPECT_CALL(*client, NavigateToManagePasswordsPage(
                            ManagePasswordsReferrer::kPasswordDropdown));
-  EXPECT_CALL(
-      autofill_client,
-      HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
   password_autofill_manager_->DidAcceptSuggestion(
-      Suggestion(autofill::PopupItemId::kAllSavedPasswordsEntry),
+      Suggestion(autofill::SuggestionType::kAllSavedPasswordsEntry),
       SuggestionPosition{.row = 0});
 
   histograms.ExpectUniqueSample(
@@ -1316,18 +1192,16 @@ TEST_F(PasswordAutofillManagerTest, ShowAllPasswordsOptionOnNonPasswordField) {
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, test_username_,
-      autofill::ShowPasswordSuggestionsOptions(), element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      test_username_, ShowWebAuthnCredentials(false), element_bounds);
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorMainTextsAre(
           Suggestion::Text(test_username_, Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
   EXPECT_EQ(open_args.trigger_source,
@@ -1341,7 +1215,7 @@ TEST_F(PasswordAutofillManagerTest,
   password_autofill_manager_ = std::make_unique<PasswordAutofillManager>(
       client.mock_driver(), &autofill_client, &client);
 
-  EXPECT_CALL(autofill_client, ShowAutofillPopup).Times(0);
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions).Times(0);
   gfx::RectF element_bounds;
   EXPECT_FALSE(
       password_autofill_manager_->MaybeShowPasswordSuggestionsWithGeneration(
@@ -1368,7 +1242,7 @@ TEST_F(PasswordAutofillManagerTest,
   std::u16string generation_string =
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_GENERATE_PASSWORD);
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   EXPECT_TRUE(
       password_autofill_manager_->MaybeShowPasswordSuggestionsWithGeneration(
@@ -1380,9 +1254,7 @@ TEST_F(PasswordAutofillManagerTest,
   EXPECT_THAT(
       open_args.suggestions,
       SuggestionVectorIconsAre(Suggestion::Icon::kGlobe, Suggestion::Icon::kKey,
-#if !BUILDFLAG(IS_ANDROID)
                                Suggestion::Icon::kNoIcon,
-#endif
                                Suggestion::Icon::kSettings));
   EXPECT_THAT(
       open_args.suggestions,
@@ -1390,20 +1262,18 @@ TEST_F(PasswordAutofillManagerTest,
           Suggestion::Text(test_username_, Suggestion::Text::IsPrimary(true)),
           Suggestion::Text(generation_string,
                            Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
           kSeparatorEntry,
-#endif
           Suggestion::Text(GetManagePasswordsTitle(),
                            Suggestion::Text::IsPrimary(true))));
 
   // Click "Generate password".
   EXPECT_CALL(client, GeneratePassword(PasswordGenerationType::kAutomatic));
-  EXPECT_CALL(
-      autofill_client,
-      HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
   password_autofill_manager_->DidAcceptSuggestion(
-      Suggestion(autofill::PopupItemId::kGeneratePasswordEntry),
+      Suggestion(autofill::SuggestionType::kGeneratePasswordEntry),
       SuggestionPosition{.row = 1});
 
   histograms.ExpectUniqueSample(
@@ -1429,7 +1299,7 @@ TEST_F(PasswordAutofillManagerTest,
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_GENERATE_PASSWORD);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   EXPECT_TRUE(
@@ -1438,18 +1308,14 @@ TEST_F(PasswordAutofillManagerTest,
           /*show_password_suggestions=*/false));
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorIconsAre(Suggestion::Icon::kKey,
-#if !BUILDFLAG(IS_ANDROID)
                                        Suggestion::Icon::kNoIcon,
-#endif
                                        Suggestion::Icon::kSettings));
 
   EXPECT_THAT(open_args.suggestions,
               SuggestionVectorMainTextsAre(
                   Suggestion::Text(generation_string,
                                    Suggestion::Text::IsPrimary(true)),
-#if !BUILDFLAG(IS_ANDROID)
                   kSeparatorEntry,
-#endif
                   Suggestion::Text(GetManagePasswordsTitle(),
                                    Suggestion::Text::IsPrimary(true))));
 }
@@ -1458,9 +1324,6 @@ TEST_F(PasswordAutofillManagerTest,
 // generation button does not.
 TEST_F(PasswordAutofillManagerTest,
        MaybeShowPasswordSuggestionsWithAccountPasswordsEnabled) {
-  base::test::ScopedFeatureList features;
-  features.InitAndEnableFeature(features::kEnablePasswordsAccountStorage);
-
   TestPasswordManagerClient client;
   client.SetAccountStorageOptIn(false);
 
@@ -1475,27 +1338,24 @@ TEST_F(PasswordAutofillManagerTest,
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   auto opt_in_and_generate_id =
-      autofill::PopupItemId::kPasswordAccountStorageOptInAndGenerate;
-  auto regular_generate_id = autofill::PopupItemId::kGeneratePasswordEntry;
+      autofill::SuggestionType::kPasswordAccountStorageOptInAndGenerate;
+  auto regular_generate_id = autofill::SuggestionType::kGeneratePasswordEntry;
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   password_autofill_manager_->MaybeShowPasswordSuggestionsWithGeneration(
       gfx::RectF(), base::i18n::RIGHT_TO_LEFT,
       /*show_password_suggestions=*/true);
   EXPECT_THAT(open_args.suggestions,
-              Not(Contains(Field(&autofill::Suggestion::popup_item_id,
+              Not(Contains(Field(&autofill::Suggestion::type,
                                  Eq(regular_generate_id)))));
-  EXPECT_THAT(open_args.suggestions,
-              Contains(Field(&autofill::Suggestion::popup_item_id,
-                             Eq(opt_in_and_generate_id))));
+  EXPECT_THAT(
+      open_args.suggestions,
+      Contains(Field(&autofill::Suggestion::type, Eq(opt_in_and_generate_id))));
 }
 
 TEST_F(PasswordAutofillManagerTest, DisplayAccountSuggestionsIndicatorIcon) {
-  base::test::ScopedFeatureList features;
-  features.InitAndEnableFeature(features::kEnablePasswordsAccountStorage);
-
   TestPasswordManagerClient client;
   NiceMock<MockAutofillClient> autofill_client;
   InitializePasswordAutofillManager(&client, &autofill_client);
@@ -1509,11 +1369,11 @@ TEST_F(PasswordAutofillManagerTest, DisplayAccountSuggestionsIndicatorIcon) {
   password_autofill_manager_->OnAddPasswordFillData(data);
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions(), element_bounds);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), element_bounds);
   ASSERT_THAT(open_args.suggestions.size(),
               testing::Ge(1u));  // No footer on Android.
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
@@ -1528,216 +1388,144 @@ TEST_F(PasswordAutofillManagerTest, DisplayAccountSuggestionsIndicatorIcon) {
 }
 
 TEST_F(PasswordAutofillManagerTest, FillsSuggestionIfAuthNotAvailable) {
-#if BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->is_automotive()) {
-    GTEST_SKIP();
-  }
-#endif
-
   TestPasswordManagerClient client;
   NiceMock<MockAutofillClient> autofill_client;
 
-  for (bool is_suggestion_on_password_field : {false, true}) {
-    auto authenticator =
-        std::make_unique<device_reauth::MockDeviceAuthenticator>();
-
-    InitializePasswordAutofillManager(&client, &autofill_client);
-
-    SCOPED_TRACE(testing::Message() << "is_suggestion_on_password_field = "
-                                    << is_suggestion_on_password_field);
-    // Show the popup
-    autofill::AutofillClient::PopupOpenArgs open_args;
-    EXPECT_CALL(autofill_client, ShowAutofillPopup)
-        .WillOnce(testing::SaveArg<0>(&open_args));
-
-    int show_suggestion_options =
-        is_suggestion_on_password_field ? autofill::IS_PASSWORD_FIELD : 0;
-    password_autofill_manager_->OnShowPasswordSuggestions(
-        kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-        show_suggestion_options, gfx::RectF());
-    ASSERT_GE(open_args.suggestions.size(), 1u);
-    EXPECT_THAT(
-        open_args.suggestions,
-        SuggestionVectorIdsAre(is_suggestion_on_password_field
-                                   ? autofill::PopupItemId::kPasswordEntry
-                                   : autofill::PopupItemId::kUsernameEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                               autofill::PopupItemId::kSeparator,
-#endif
-                               autofill::PopupItemId::kAllSavedPasswordsEntry));
-
-    // Suggestions should always be filled if the authenticator is not available
-    // or it cannot be used.
-    EXPECT_CALL(*client.mock_driver(),
-                FillSuggestion(test_username_, test_password_));
-
-#if BUILDFLAG(IS_ANDROID)
-    // The authenticator exists, but cannot be used for authentication.
-    EXPECT_CALL(*authenticator, CanAuthenticateWithBiometrics)
-        .WillOnce(Return(false));
-#endif
-
-    EXPECT_CALL(client, GetDeviceAuthenticator)
-        .WillOnce(Return(testing::ByMove(std::move(authenticator))));
-
-    // Accept the suggestion to start the filing process which tries to
-    // reauthenticate the user if possible.
-    password_autofill_manager_->DidAcceptSuggestion(
-        autofill::test::CreateAutofillSuggestion(
-            autofill::PopupItemId::kPasswordEntry, test_username_),
-        SuggestionPosition{.row = 1});
-  }
-}
-
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
-TEST_F(PasswordAutofillManagerTest, FillsSuggestionIfAuthSuccessful) {
-  TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
-  NiceMock<MockAutofillClient> autofill_client;
+  auto authenticator =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
 
   InitializePasswordAutofillManager(&client, &autofill_client);
 
-  for (bool is_suggestion_on_password_field : {false, true}) {
-    SCOPED_TRACE(testing::Message() << "is_suggestion_on_password_field = "
-                                    << is_suggestion_on_password_field);
-    // Show the popup
-    autofill::AutofillClient::PopupOpenArgs open_args;
-    EXPECT_CALL(autofill_client, ShowAutofillPopup)
-        .WillOnce(testing::SaveArg<0>(&open_args));
+  // Show the popup
+  autofill::AutofillClient::PopupOpenArgs open_args;
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
+      .WillOnce(testing::SaveArg<0>(&open_args));
 
-    int show_suggestion_options =
-        is_suggestion_on_password_field ? autofill::IS_PASSWORD_FIELD : 0;
-    password_autofill_manager_->OnShowPasswordSuggestions(
-        kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-        show_suggestion_options, gfx::RectF());
-    ASSERT_GE(open_args.suggestions.size(), 1u);
-    EXPECT_THAT(
-        open_args.suggestions,
-        SuggestionVectorIdsAre(is_suggestion_on_password_field
-                                   ? autofill::PopupItemId::kPasswordEntry
-                                   : autofill::PopupItemId::kUsernameEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                               autofill::PopupItemId::kSeparator,
-#endif
-                               autofill::PopupItemId::kAllSavedPasswordsEntry));
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  ASSERT_GE(open_args.suggestions.size(), 1u);
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
 
-    // The suggestion should be filled if the authentication is successful.
-    EXPECT_CALL(*client.mock_driver(),
-                FillSuggestion(test_username_, test_password_));
+  // Suggestions should always be filled if the authenticator is not available
+  // or it cannot be used.
+  EXPECT_CALL(*client.mock_driver(),
+              FillSuggestion(test_username_, test_password_));
 
-    // Accepting a suggestion should trigger a call to hide the popup.
-    EXPECT_CALL(
-        autofill_client,
-        HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(false));
+  EXPECT_CALL(client, GetDeviceAuthenticator)
+      .WillOnce(Return(testing::ByMove(std::move(authenticator))));
 
-    auto authenticator =
-        std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  // Accept the suggestion to start the filing process which tries to
+  // reauthenticate the user if possible.
+  password_autofill_manager_->DidAcceptSuggestion(
+      autofill::test::CreateAutofillSuggestion(
+          autofill::SuggestionType::kPasswordEntry, test_username_),
+      SuggestionPosition{.row = 1});
+}
 
-    // The authenticator exists and is available.
-    ON_CALL(*authenticator, CanAuthenticateWithBiometrics)
-        .WillByDefault(Return(true));
-    EXPECT_CALL(*authenticator, AuthenticateWithMessage)
-        .WillOnce(RunOnceCallback<1>(/*auth_succeeded=*/true));
+TEST_F(PasswordAutofillManagerTest, FillsSuggestionIfAuthSuccessful) {
+  TestPasswordManagerClient client;
+  NiceMock<MockAutofillClient> autofill_client;
+  InitializePasswordAutofillManager(&client, &autofill_client);
 
-    EXPECT_CALL(client, GetDeviceAuthenticator)
-        .WillOnce(Return(testing::ByMove(std::move(authenticator))));
+  // Show the popup
+  autofill::AutofillClient::PopupOpenArgs open_args;
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
+      .WillOnce(testing::SaveArg<0>(&open_args));
 
-    // Accept the suggestion to start the filing process which tries to
-    // reauthenticate the user if possible.
-    password_autofill_manager_->DidAcceptSuggestion(
-        autofill::test::CreateAutofillSuggestion(
-            autofill::PopupItemId::kPasswordEntry, test_username_),
-        SuggestionPosition{.row = 1});
-  }
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  ASSERT_GE(open_args.suggestions.size(), 1u);
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
+
+  // The suggestion should be filled if the authentication is successful.
+  EXPECT_CALL(*client.mock_driver(),
+              FillSuggestion(test_username_, test_password_));
+
+  // Accepting a suggestion should trigger a call to hide the popup.
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
+
+  auto authenticator =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
+
+  // The authenticator exists and is available.
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(/*auth_succeeded=*/true));
+
+  EXPECT_CALL(client, GetDeviceAuthenticator)
+      .WillOnce(Return(testing::ByMove(std::move(authenticator))));
+
+  // Accept the suggestion to start the filing process which tries to
+  // reauthenticate the user if possible.
+  password_autofill_manager_->DidAcceptSuggestion(
+      autofill::test::CreateAutofillSuggestion(
+          autofill::SuggestionType::kPasswordEntry, test_username_),
+      SuggestionPosition{.row = 1});
 }
 
 TEST_F(PasswordAutofillManagerTest, DoesntFillSuggestionIfAuthFailed) {
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
-  for (bool is_suggestion_on_password_field : {false, true}) {
-    NiceMock<MockAutofillClient> autofill_client;
-    auto authenticator =
-        std::make_unique<device_reauth::MockDeviceAuthenticator>();
+  NiceMock<MockAutofillClient> autofill_client;
+  auto authenticator =
+      std::make_unique<device_reauth::MockDeviceAuthenticator>();
 
-    InitializePasswordAutofillManager(&client, &autofill_client);
+  InitializePasswordAutofillManager(&client, &autofill_client);
 
-    SCOPED_TRACE(testing::Message() << "is_suggestion_on_password_field = "
-                                    << is_suggestion_on_password_field);
-    // Show the popup
-    autofill::AutofillClient::PopupOpenArgs open_args;
-    EXPECT_CALL(autofill_client, ShowAutofillPopup)
-        .WillOnce(testing::SaveArg<0>(&open_args));
+  // Show the popup
+  autofill::AutofillClient::PopupOpenArgs open_args;
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
+      .WillOnce(testing::SaveArg<0>(&open_args));
 
-    int show_suggestion_options =
-        is_suggestion_on_password_field ? autofill::IS_PASSWORD_FIELD : 0;
-    password_autofill_manager_->OnShowPasswordSuggestions(
-        kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-        show_suggestion_options, gfx::RectF());
-    ASSERT_GE(open_args.suggestions.size(), 1u);
-    EXPECT_THAT(
-        open_args.suggestions,
-        SuggestionVectorIdsAre(is_suggestion_on_password_field
-                                   ? autofill::PopupItemId::kPasswordEntry
-                                   : autofill::PopupItemId::kUsernameEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                               autofill::PopupItemId::kSeparator,
-#endif
-                               autofill::PopupItemId::kAllSavedPasswordsEntry));
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  ASSERT_GE(open_args.suggestions.size(), 1u);
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
 
-    // The suggestion should not be filled if the authentication fails.
-    EXPECT_CALL(*client.mock_driver(),
-                FillSuggestion(test_username_, test_password_))
-        .Times(0);
-    // Accepting a suggestion should trigger a call to hide the popup.
-    EXPECT_CALL(
-        autofill_client,
-        HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  // The suggestion should not be filled if the authentication fails.
+  EXPECT_CALL(*client.mock_driver(),
+              FillSuggestion(test_username_, test_password_))
+      .Times(0);
+  // Accepting a suggestion should trigger a call to hide the popup.
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
-    // The authenticator exists and is available.
-    ON_CALL(*authenticator, CanAuthenticateWithBiometrics)
-        .WillByDefault(Return(true));
-    EXPECT_CALL(*authenticator, AuthenticateWithMessage)
-        .WillOnce(RunOnceCallback<1>(/*auth_succeeded=*/false));
+  // The authenticator exists and is available.
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator, AuthenticateWithMessage)
+      .WillOnce(RunOnceCallback<1>(/*auth_succeeded=*/false));
 
-    EXPECT_CALL(client, GetDeviceAuthenticator)
-        .WillOnce(Return(testing::ByMove(std::move(authenticator))));
+  EXPECT_CALL(client, GetDeviceAuthenticator)
+      .WillOnce(Return(testing::ByMove(std::move(authenticator))));
 
-    // Accept the suggestion to start the filing process which tries to
-    // reauthenticate the user if possible.
-    password_autofill_manager_->DidAcceptSuggestion(
-        autofill::test::CreateAutofillSuggestion(
-            autofill::PopupItemId::kPasswordEntry, test_username_),
-        SuggestionPosition{.row = 1});
-  }
+  // Accept the suggestion to start the filing process which tries to
+  // reauthenticate the user if possible.
+  password_autofill_manager_->DidAcceptSuggestion(
+      autofill::test::CreateAutofillSuggestion(
+          autofill::SuggestionType::kPasswordEntry, test_username_),
+      SuggestionPosition{.row = 1});
 }
 
 TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnDestroy) {
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
   NiceMock<MockAutofillClient> autofill_client;
   auto authenticator =
       std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -1747,26 +1535,25 @@ TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnDestroy) {
 
   // Show the popup
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   ASSERT_GE(open_args.suggestions.size(), 1u);
-  EXPECT_THAT(
-      open_args.suggestions,
-      SuggestionVectorIdsAre(autofill::PopupItemId::kPasswordEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                             autofill::PopupItemId::kSeparator,
-#endif
-                             autofill::PopupItemId::kAllSavedPasswordsEntry));
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_CALL(*client.mock_driver(),
               FillSuggestion(test_username_, test_password_))
       .Times(0);
 
   // The authenticator exists and is available.
-  ExpectAndAllowAuthentication(authenticator_ptr);
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator, AuthenticateWithMessage);
 
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator))));
@@ -1775,7 +1562,7 @@ TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnDestroy) {
   // reauthenticate the user if possible.
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   EXPECT_CALL(*authenticator_ptr, Cancel());
@@ -1784,15 +1571,6 @@ TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnDestroy) {
 TEST_F(PasswordAutofillManagerTest,
        CancelsOngoingBiometricAuthOnDeleteFillData) {
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
   NiceMock<MockAutofillClient> autofill_client;
   auto authenticator =
       std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -1802,26 +1580,25 @@ TEST_F(PasswordAutofillManagerTest,
 
   // Show the popup
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   ASSERT_GE(open_args.suggestions.size(), 1u);
-  EXPECT_THAT(
-      open_args.suggestions,
-      SuggestionVectorIdsAre(autofill::PopupItemId::kPasswordEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                             autofill::PopupItemId::kSeparator,
-#endif
-                             autofill::PopupItemId::kAllSavedPasswordsEntry));
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_CALL(*client.mock_driver(),
               FillSuggestion(test_username_, test_password_))
       .Times(0);
 
   // The authenticator exists and is available.
-  ExpectAndAllowAuthentication(authenticator_ptr);
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator, AuthenticateWithMessage);
 
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator))));
@@ -1830,7 +1607,7 @@ TEST_F(PasswordAutofillManagerTest,
   // reauthenticate the user if possible.
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   EXPECT_CALL(*authenticator_ptr, Cancel());
@@ -1840,15 +1617,6 @@ TEST_F(PasswordAutofillManagerTest,
 TEST_F(PasswordAutofillManagerTest,
        CancelsOngoingBiometricAuthOnFillDataChange) {
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
   NiceMock<MockAutofillClient> autofill_client;
   auto authenticator =
       std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -1858,26 +1626,25 @@ TEST_F(PasswordAutofillManagerTest,
 
   // Show the popup
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
 
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
   ASSERT_GE(open_args.suggestions.size(), 1u);
-  EXPECT_THAT(
-      open_args.suggestions,
-      SuggestionVectorIdsAre(autofill::PopupItemId::kPasswordEntry,
-#if !BUILDFLAG(IS_ANDROID)
-                             autofill::PopupItemId::kSeparator,
-#endif
-                             autofill::PopupItemId::kAllSavedPasswordsEntry));
+  EXPECT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_CALL(*client.mock_driver(),
               FillSuggestion(test_username_, test_password_))
       .Times(0);
 
   // The authenticator exists and is available.
-  ExpectAndAllowAuthentication(authenticator_ptr);
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator, AuthenticateWithMessage);
 
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator))));
@@ -1886,7 +1653,7 @@ TEST_F(PasswordAutofillManagerTest,
   // reauthenticate the user if possible.
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   EXPECT_CALL(*authenticator_ptr, Cancel());
@@ -1895,15 +1662,6 @@ TEST_F(PasswordAutofillManagerTest,
 
 TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnNewRequest) {
   TestPasswordManagerClient client;
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
-#else
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndEnableFeature(
-      password_manager::features::kBiometricTouchToFill);
-#endif
   NiceMock<MockAutofillClient> autofill_client;
   auto authenticator =
       std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -1912,16 +1670,17 @@ TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnNewRequest) {
   InitializePasswordAutofillManager(&client, &autofill_client);
 
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::IS_PASSWORD_FIELD, gfx::RectF());
-  ExpectAndAllowAuthentication(authenticator_ptr);
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator_ptr, AuthenticateWithMessage);
 
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator))));
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   auto authenticator2 =
@@ -1930,30 +1689,26 @@ TEST_F(PasswordAutofillManagerTest, CancelsOngoingBiometricAuthOnNewRequest) {
 
   // Triggering new authentication should cancel ongoing authentication.
   EXPECT_CALL(*authenticator_ptr, Cancel());
-  ExpectAndAllowAuthentication(authenticator_ptr2);
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
+  EXPECT_CALL(*authenticator_ptr2, AuthenticateWithMessage);
 
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator2))));
 
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   // Destroying the manager should cancel ongoing authentication.
   EXPECT_CALL(*authenticator_ptr2, Cancel());
 }
 
-#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 TEST_F(PasswordAutofillManagerTest, MetricsRecordedForBiometricAuth) {
   base::ScopedMockElapsedTimersForTest mock_elapsed_timers_;
   base::HistogramTester histograms;
   TestPasswordManagerClient client;
-  ON_CALL(*client.GetPasswordFeatureManager(),
-          IsBiometricAuthenticationBeforeFillingEnabled)
-      .WillByDefault(Return(true));
   NiceMock<MockAutofillClient> autofill_client;
   auto authenticator =
       std::make_unique<device_reauth::MockDeviceAuthenticator>();
@@ -1962,13 +1717,15 @@ TEST_F(PasswordAutofillManagerTest, MetricsRecordedForBiometricAuth) {
 
   // Show the popup.
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(), 0, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
 
   // The authenticator exists and is available.
   base::OnceCallback<void(bool)> auth_callback;
   EXPECT_CALL(*authenticator, AuthenticateWithMessage)
       .WillOnce(MoveArg<1>(&auth_callback));
 
+  EXPECT_CALL(client, CanUseBiometricAuthForFilling).WillOnce(Return(true));
   EXPECT_CALL(client, GetDeviceAuthenticator)
       .WillOnce(Return(testing::ByMove(std::move(authenticator))));
 
@@ -1976,7 +1733,7 @@ TEST_F(PasswordAutofillManagerTest, MetricsRecordedForBiometricAuth) {
   // reauthenticate the user.
   password_autofill_manager_->DidAcceptSuggestion(
       autofill::test::CreateAutofillSuggestion(
-          autofill::PopupItemId::kPasswordEntry, test_username_),
+          autofill::SuggestionType::kPasswordEntry, test_username_),
       SuggestionPosition{.row = 1});
 
   // Simulate successful authentication and expect successful filling.
@@ -1990,12 +1747,15 @@ TEST_F(PasswordAutofillManagerTest, MetricsRecordedForBiometricAuth) {
   histograms.ExpectUniqueSample(
       "PasswordManager.PasswordFilling.AuthenticationResult", true, 1);
   histograms.ExpectUniqueSample(
-      "PasswordManager.PasswordFilling.AuthenticationTime", kMockElapsedTime,
+      "PasswordManager.PasswordFilling.AuthenticationTime2", kMockElapsedTime,
       1);
 }
-#endif
 
 TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSuggestions) {
+#if BUILDFLAG(IS_ANDROID)
+  webauthn::WebAuthnCredManDelegate::override_cred_man_support_for_testing(
+      webauthn::CredManSupport::DISABLED);
+#endif  // BUILDFLAG(IS_ANDROID)
   TestPasswordManagerClient client;
   NiceMock<MockAutofillClient> autofill_client;
   MockWebAuthnCredentialsDelegate webauthn_credentials_delegate;
@@ -2023,27 +1783,26 @@ TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSuggestions) {
 
   // Show password suggestions including WebAuthn credentials.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT,
-      /*typed_username=*/std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions::ACCEPTS_WEBAUTHN_CREDENTIALS,
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      /*typed_username=*/std::u16string(), ShowWebAuthnCredentials(true),
       element_bounds);
   ASSERT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kWebauthnCredential,
-                  autofill::PopupItemId::kUsernameEntry,
+                  autofill::SuggestionType::kWebauthnCredential,
+                  autofill::SuggestionType::kPasswordEntry,
 #if !BUILDFLAG(IS_ANDROID)
-                  autofill::PopupItemId::kWebauthnSignInWithAnotherDevice,
-                  autofill::PopupItemId::kSeparator,
+                  autofill::SuggestionType::kWebauthnSignInWithAnotherDevice,
 #endif  // !BUILDFLAG(IS_ANDROID)
-                  autofill::PopupItemId::kAllSavedPasswordsEntry));
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_EQ(open_args.suggestions[0].GetBackendId<Suggestion::Guid>().value(),
             kIdBase64);
-  EXPECT_EQ(open_args.suggestions[0].popup_item_id,
-            autofill::PopupItemId::kWebauthnCredential);
+  EXPECT_EQ(open_args.suggestions[0].type,
+            autofill::SuggestionType::kWebauthnCredential);
   EXPECT_EQ(open_args.suggestions[0].main_text.value, kName);
   EXPECT_TRUE(
       AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
@@ -2057,16 +1816,17 @@ TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSuggestions) {
   EXPECT_CALL(*client.mock_driver(),
               PreviewSuggestion(kName, /*password=*/std::u16string(u"")));
   const Suggestion suggestion = autofill::test::CreateAutofillSuggestion(
-      autofill::PopupItemId::kWebauthnCredential, kName,
+      autofill::SuggestionType::kWebauthnCredential, kName,
       autofill::Suggestion::Guid(kIdBase64));
   password_autofill_manager_->DidSelectSuggestion(suggestion);
   testing::Mock::VerifyAndClearExpectations(client.mock_driver());
 
   // Check that selecting the credential reports back to the client.
-  EXPECT_CALL(webauthn_credentials_delegate, SelectPasskey(kIdBase64));
-  EXPECT_CALL(
-      autofill_client,
-      HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(webauthn_credentials_delegate, SelectPasskey(kIdBase64, _));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion))
+      .Times(0);
 
 #if !BUILDFLAG(IS_ANDROID)
   // Check that the button that triggers passkeys from a different devices uses
@@ -2076,6 +1836,9 @@ TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSuggestions) {
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_USE_DIFFERENT_PASSKEY));
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+  EXPECT_CALL(*client.mock_driver(), CanShowAutofillUi)
+      .WillRepeatedly(Return(true));
+  EXPECT_CALL(autofill_client, UpdatePopup);
   password_autofill_manager_->DidAcceptSuggestion(suggestion,
                                                   SuggestionPosition{.row = 0});
 }
@@ -2099,20 +1862,19 @@ TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSignInWithAnotherDevice) {
 
   // Show password suggestions including WebAuthn credentials.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT,
-      /*typed_username=*/std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions::ACCEPTS_WEBAUTHN_CREDENTIALS,
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      /*typed_username=*/std::u16string(), ShowWebAuthnCredentials(true),
       element_bounds);
   ASSERT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kUsernameEntry,
-                  autofill::PopupItemId::kWebauthnSignInWithAnotherDevice,
-                  autofill::PopupItemId::kSeparator,
-                  autofill::PopupItemId::kAllSavedPasswordsEntry));
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kWebauthnSignInWithAnotherDevice,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
 
   // Check that the button shows the correct text.
   EXPECT_EQ(open_args.suggestions[1].main_text.value,
@@ -2137,19 +1899,18 @@ TEST_F(PasswordAutofillManagerTest, DoesntShowWebAuthnSignInWithAnotherDevice) {
 
   // Show password suggestions including WebAuthn credentials.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT,
-      /*typed_username=*/std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions::ACCEPTS_WEBAUTHN_CREDENTIALS,
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      /*typed_username=*/std::u16string(), ShowWebAuthnCredentials(true),
       element_bounds);
-  ASSERT_THAT(
-      open_args.suggestions,
-      SuggestionVectorIdsAre(autofill::PopupItemId::kUsernameEntry,
-                             autofill::PopupItemId::kSeparator,
-                             autofill::PopupItemId::kAllSavedPasswordsEntry));
+  ASSERT_THAT(open_args.suggestions,
+              SuggestionVectorIdsAre(
+                  autofill::SuggestionType::kPasswordEntry,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
 }
 
 // Regression test for crbug.com/1370037.
@@ -2188,20 +1949,19 @@ TEST_F(PasswordAutofillManagerTest, WebAuthnFaviconWithoutPasswords) {
 
   // Show webauthn suggestions with the correct favicon.
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT,
-      /*typed_username=*/std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions::ACCEPTS_WEBAUTHN_CREDENTIALS,
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      /*typed_username=*/std::u16string(), ShowWebAuthnCredentials(true),
       element_bounds);
   ASSERT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kWebauthnCredential,
-                  autofill::PopupItemId::kWebauthnSignInWithAnotherDevice,
-                  autofill::PopupItemId::kSeparator,
-                  autofill::PopupItemId::kAllSavedPasswordsEntry));
+                  autofill::SuggestionType::kWebauthnCredential,
+                  autofill::SuggestionType::kWebauthnSignInWithAnotherDevice,
+                  autofill::SuggestionType::kSeparator,
+                  autofill::SuggestionType::kAllSavedPasswordsEntry));
   EXPECT_TRUE(
       AreImagesEqual(open_args.suggestions[0].custom_icon, kTestFavicon));
 }
@@ -2228,17 +1988,16 @@ TEST_F(PasswordAutofillManagerTest, ShowsWebAuthnSignInWithoutPasswordData) {
       .WillRepeatedly(Return(true));
 
   autofill::AutofillClient::PopupOpenArgs open_args;
-  EXPECT_CALL(autofill_client, ShowAutofillPopup)
+  EXPECT_CALL(autofill_client, ShowAutofillSuggestions)
       .WillOnce(testing::SaveArg<0>(&open_args));
   gfx::RectF element_bounds;
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT,
-      /*typed_username=*/std::u16string(),
-      autofill::ShowPasswordSuggestionsOptions::ACCEPTS_WEBAUTHN_CREDENTIALS,
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      /*typed_username=*/std::u16string(), ShowWebAuthnCredentials(true),
       element_bounds);
   ASSERT_THAT(open_args.suggestions,
               SuggestionVectorIdsAre(
-                  autofill::PopupItemId::kWebauthnSignInWithAnotherDevice));
+                  autofill::SuggestionType::kWebauthnSignInWithAnotherDevice));
 
   // Check that the button shows the correct text.
   EXPECT_EQ(open_args.suggestions[0].main_text.value,
@@ -2257,15 +2016,14 @@ TEST_F(PasswordAutofillManagerTest, WebAuthnSignInLaunchesWebAuthnFlow) {
 
   // Check that selecting the button reports back to the client.
   EXPECT_CALL(webauthn_credentials_delegate, LaunchWebAuthnFlow());
-  EXPECT_CALL(
-      autofill_client,
-      HideAutofillPopup(autofill::PopupHidingReason::kAcceptSuggestion));
+  EXPECT_CALL(autofill_client,
+              HideAutofillSuggestions(
+                  autofill::SuggestionHidingReason::kAcceptSuggestion));
 
   Suggestion suggestion;
   suggestion.main_text.value =
       l10n_util::GetStringUTF16(IDS_PASSWORD_MANAGER_USE_PASSKEY);
-  suggestion.popup_item_id =
-      autofill::PopupItemId::kWebauthnSignInWithAnotherDevice;
+  suggestion.type = autofill::SuggestionType::kWebauthnSignInWithAnotherDevice;
   suggestion.payload = autofill::Suggestion::BackendId();
   password_autofill_manager_->DidAcceptSuggestion(suggestion,
                                                   SuggestionPosition{.row = 0});
@@ -2287,8 +2045,8 @@ TEST_F(PasswordAutofillManagerTest,
           kElementId,
           autofill::mojom::AutofillSuggestionAvailability::kNoSuggestions));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::SHOW_ALL | autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
 }
 
 // Test that the AutofillSuggestionAvailability is set according to the popup
@@ -2307,13 +2065,12 @@ TEST_F(PasswordAutofillManagerTest,
           kElementId,
           autofill::mojom::AutofillSuggestionAvailability::kAutofillAvailable));
   password_autofill_manager_->OnShowPasswordSuggestions(
-      kElementId, base::i18n::RIGHT_TO_LEFT, std::u16string(),
-      autofill::SHOW_ALL | autofill::IS_PASSWORD_FIELD, gfx::RectF());
+      kElementId, kDefaultTriggerSource, base::i18n::RIGHT_TO_LEFT,
+      std::u16string(), ShowWebAuthnCredentials(false), gfx::RectF());
 }
 
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 TEST_F(PasswordAutofillManagerTest, NoPreviewSuggestionWithAuthBeforeFilling) {
   TestPasswordManagerClient client;
   ON_CALL(*client.GetPasswordFeatureManager(),
@@ -2327,6 +2084,34 @@ TEST_F(PasswordAutofillManagerTest, NoPreviewSuggestionWithAuthBeforeFilling) {
       password_autofill_manager_->PreviewSuggestionForTest(test_username_));
   testing::Mock::VerifyAndClearExpectations(client.mock_driver());
 }
-#endif
+
+TEST_F(PasswordAutofillManagerTest, ManualFallback_InvokesFlow) {
+  TestPasswordManagerClient client;
+  InitializePasswordAutofillManager(&client,
+                                    /*autofill_client=*/nullptr);
+  const gfx::RectF bounds(1, 1, 2, 2);
+  EXPECT_CALL(manual_fallback_flow(),
+              RunFlow(kElementId, bounds, base::i18n::LEFT_TO_RIGHT));
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId,
+      autofill::AutofillSuggestionTriggerSource::kManualFallbackPasswords,
+      base::i18n::LEFT_TO_RIGHT, std::u16string(),
+      ShowWebAuthnCredentials(false), bounds);
+}
+
+TEST_F(PasswordAutofillManagerTest, ManualFallback_FlowResetOnNavigation) {
+  TestPasswordManagerClient client;
+  InitializePasswordAutofillManager(&client,
+                                    /*autofill_client=*/nullptr);
+  password_autofill_manager_->OnShowPasswordSuggestions(
+      kElementId,
+      autofill::AutofillSuggestionTriggerSource::kManualFallbackPasswords,
+      base::i18n::LEFT_TO_RIGHT, std::u16string(),
+      ShowWebAuthnCredentials(false), gfx::RectF(1, 1, 2, 2));
+  EXPECT_TRUE(password_autofill_manager_->manual_fallback_flow());
+  password_autofill_manager_->DidNavigateMainFrame();
+
+  EXPECT_FALSE(password_autofill_manager_->manual_fallback_flow());
+}
 
 }  // namespace password_manager

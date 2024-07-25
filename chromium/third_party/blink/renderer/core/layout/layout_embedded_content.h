@@ -80,7 +80,7 @@ class CORE_EXPORT LayoutEmbeddedContent : public LayoutReplaced {
 
   // The size of the child frame when it should be "frozen"; i.e., it should not
   // change even when the size of |this| changes.
-  virtual const absl::optional<PhysicalSize> FrozenFrameSize() const;
+  virtual const std::optional<PhysicalSize> FrozenFrameSize() const;
 
   // A transform mapping from the coordinate space of the embedded content
   // rendered by this object to the object's border-box.
@@ -90,7 +90,6 @@ class CORE_EXPORT LayoutEmbeddedContent : public LayoutReplaced {
   PaintLayerType LayerTypeRequired() const override;
 
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) final;
-  void UpdateLayout() override;
   void PaintReplaced(const PaintInfo&,
                      const PhysicalOffset& paint_offset) const override;
   CursorDirective GetCursor(const PhysicalOffset&, ui::Cursor&) const final;

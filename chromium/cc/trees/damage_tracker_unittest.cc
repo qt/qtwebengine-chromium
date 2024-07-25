@@ -9,6 +9,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/unguessable_token.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/view_transition_content_layer_impl.h"
@@ -629,7 +630,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForPropertyChanges) {
   EXPECT_TRUE(GetRenderSurface(root)
                   ->damage_tracker()
                   ->has_damage_from_contributing_content());
-  // TODO(crbug.com/1001882): Transform from browser animation should not be
+  // TODO(crbug.com/40646366): Transform from browser animation should not be
   // considered as damage from contributing layer since it is applied to the
   // whole layer which has a render surface.
   EXPECT_TRUE(GetRenderSurface(child)
@@ -924,7 +925,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForBlurredSurface) {
   FilterOperations filters;
   filters.Append(FilterOperation::CreateBlurFilter(5.f));
 
-  // TODO(crbug.com/1001882): Setting the filter on an existing render surface
+  // TODO(crbug.com/40646366): Setting the filter on an existing render surface
   // should not damage the conrresponding render surface.
   ClearDamageForAllSurfaces(root);
   SetFilter(surface, filters);
@@ -1455,6 +1456,8 @@ TEST_F(DamageTrackerTest, VerifyDamageForSurfaceChangeFromDescendantSurface) {
 TEST_F(DamageTrackerTest, VerifyDamageForSurfaceChangeFromViewTransitionLayer) {
   ClearLayersAndProperties();
 
+  blink::ViewTransitionToken transition_token;
+
   LayerImpl* root = root_layer();
   root->SetBounds(gfx::Size(500, 500));
   root->layer_tree_impl()->SetDeviceViewportRect(gfx::Rect(root->bounds()));
@@ -1464,7 +1467,7 @@ TEST_F(DamageTrackerTest, VerifyDamageForSurfaceChangeFromViewTransitionLayer) {
   LayerImpl* child1 = AddLayer<TestLayerImpl>();
   LayerImpl* grand_child1 = AddLayer<TestLayerImpl>();
   LayerImpl* child2 = AddLayer<TestViewTransitionContentLayerImpl>(
-      viz::ViewTransitionElementResourceId(3), false);
+      viz::ViewTransitionElementResourceId(transition_token, 3), false);
 
   // child 1 of the root - live render surface.
   child1->SetBounds(gfx::Size(80, 80));

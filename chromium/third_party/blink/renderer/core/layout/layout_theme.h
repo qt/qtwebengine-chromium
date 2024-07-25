@@ -40,10 +40,8 @@ namespace blink {
 
 class ComputedStyle;
 class ComputedStyleBuilder;
-class Document;
 class Element;
 class File;
-class FontDescription;
 class LocalFrame;
 class Node;
 class ThemePainter;
@@ -121,9 +119,11 @@ class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
   // Highlight and text colors for TextMatches.
   Color PlatformTextSearchHighlightColor(
       bool active_match,
+      bool in_forced_colors,
       mojom::blink::ColorScheme color_scheme,
       const ui::ColorProvider* color_provider) const;
   Color PlatformTextSearchColor(bool active_match,
+                                bool in_forced_colors,
                                 mojom::blink::ColorScheme color_scheme,
                                 const ui::ColorProvider* color_provider) const;
 
@@ -145,8 +145,7 @@ class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
   void SetCaretBlinkInterval(base::TimeDelta);
   virtual base::TimeDelta CaretBlinkInterval() const;
 
-  // System fonts and colors for CSS.
-  void SystemFont(CSSValueID system_font_id, FontDescription&, const Document*);
+  // System colors for CSS.
   virtual Color SystemColor(CSSValueID,
                             mojom::blink::ColorScheme color_scheme,
                             const ui::ColorProvider* color_provider) const;
@@ -201,8 +200,6 @@ class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
   // rendered with enough contrast on the result of GetAccentColorOrDefault.
   Color GetAccentColorText(mojom::blink::ColorScheme color_scheme) const;
 
-  bool InForcedColorsMode() const { return in_forced_colors_mode_; }
-
  protected:
   // The platform selection color.
   virtual Color PlatformActiveSelectionBackgroundColor(
@@ -242,9 +239,10 @@ class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
 
   Color DefaultSystemColor(CSSValueID,
                            mojom::blink::ColorScheme color_scheme) const;
-  Color SystemColorFromNativeTheme(
+  Color SystemColorFromColorProvider(
       CSSValueID,
-      mojom::blink::ColorScheme color_scheme) const;
+      mojom::blink::ColorScheme color_scheme,
+      const ui::ColorProvider* color_provider) const;
 
  private:
   // This function is to be implemented in your platform-specific theme
@@ -265,7 +263,6 @@ class CORE_EXPORT LayoutTheme : public RefCounted<LayoutTheme> {
   base::TimeDelta caret_blink_interval_ = base::Milliseconds(500);
 
   bool delegates_menu_list_rendering_ = false;
-  bool in_forced_colors_mode_ = false;
 
   // This color is expected to be drawn on a semi-transparent overlay,
   // making it more transparent than its alpha value indicates.

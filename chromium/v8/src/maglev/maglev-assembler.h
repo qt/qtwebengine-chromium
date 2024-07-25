@@ -9,7 +9,7 @@
 #include "src/codegen/macro-assembler.h"
 #include "src/common/globals.h"
 #include "src/flags/flags.h"
-#include "src/interpreter/bytecode-flags.h"
+#include "src/interpreter/bytecode-flags-and-tokens.h"
 #include "src/maglev/maglev-code-gen-state.h"
 #include "src/maglev/maglev-ir.h"
 
@@ -19,6 +19,32 @@ namespace maglev {
 
 class Graph;
 class MaglevAssembler;
+
+inline ExternalReference SpaceAllocationTopAddress(Isolate* isolate,
+                                                   AllocationType alloc_type) {
+  if (alloc_type == AllocationType::kYoung) {
+    return ExternalReference::new_space_allocation_top_address(isolate);
+  }
+  DCHECK_EQ(alloc_type, AllocationType::kOld);
+  return ExternalReference::old_space_allocation_top_address(isolate);
+}
+
+inline ExternalReference SpaceAllocationLimitAddress(
+    Isolate* isolate, AllocationType alloc_type) {
+  if (alloc_type == AllocationType::kYoung) {
+    return ExternalReference::new_space_allocation_limit_address(isolate);
+  }
+  DCHECK_EQ(alloc_type, AllocationType::kOld);
+  return ExternalReference::old_space_allocation_limit_address(isolate);
+}
+
+inline Builtin AllocateBuiltin(AllocationType alloc_type) {
+  if (alloc_type == AllocationType::kYoung) {
+    return Builtin::kAllocateInYoungGeneration;
+  }
+  DCHECK_EQ(alloc_type, AllocationType::kOld);
+  return Builtin::kAllocateInOldGeneration;
+}
 
 // Label allowed to be passed to deferred code.
 class ZoneLabelRef {
@@ -91,6 +117,8 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline MemOperand ToMemOperand(const compiler::InstructionOperand& operand);
   inline MemOperand ToMemOperand(const ValueLocation& location);
 
+  inline Register GetFramePointer();
+
   inline int GetFramePointerOffsetForStackSlot(
       const compiler::AllocatedOperand& operand) {
     int index = operand.index();
@@ -105,6 +133,11 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
 
   void Allocate(RegisterSnapshot register_snapshot, Register result,
                 int size_in_bytes,
+                AllocationType alloc_type = AllocationType::kYoung,
+                AllocationAlignment alignment = kTaggedAligned);
+
+  void Allocate(RegisterSnapshot register_snapshot, Register result,
+                Register size_in_bytes,
                 AllocationType alloc_type = AllocationType::kYoung,
                 AllocationAlignment alignment = kTaggedAligned);
 
@@ -335,6 +368,9 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   void MaterialiseValueNode(Register dst, ValueNode* value);
 
   inline void IncrementInt32(Register reg);
+  inline void DecrementInt32(Register reg);
+  inline void AddInt32(Register reg, int amount);
+  inline void ShiftLeft(Register reg, int amount);
   inline void IncrementAddress(Register reg, int32_t delta);
   inline void LoadAddress(Register dst, MemOperand location);
 
@@ -452,10 +488,6 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                                      Condition cond, Label* target,
                                      Label::Distance distance = Label::kFar);
 
-  inline void CompareRootAndJumpIf(Register with, RootIndex index,
-                                   Condition cond, Label* target,
-                                   Label::Distance distance = Label::kFar);
-
   inline void CompareFloat64AndJumpIf(DoubleRegister src1, DoubleRegister src2,
                                       Condition cond, Label* target,
                                       Label* nan_failed,
@@ -497,6 +529,10 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
   inline void JumpIfNotHoleNan(DoubleRegister value, Register scratch,
                                Label* target,
                                Label::Distance distance = Label::kFar);
+  inline void JumpIfNan(DoubleRegister value, Label* target,
+                        Label::Distance distance = Label::kFar);
+  inline void JumpIfNotNan(DoubleRegister value, Label* target,
+                           Label::Distance distance = Label::kFar);
   inline void JumpIfNotHoleNan(MemOperand operand, Label* target,
                                Label::Distance distance = Label::kFar);
 
@@ -604,6 +640,9 @@ class V8_EXPORT_PRIVATE MaglevAssembler : public MacroAssembler {
                                   Label* eager_deopt_entry,
                                   size_t lazy_deopt_count,
                                   Label* lazy_deopt_entry);
+
+  void GenerateCheckConstTrackingLetCellFooter(Register context, Register data,
+                                               int index, Label* done);
 
   compiler::NativeContextRef native_context() const {
     return code_gen_state()->broker()->target_native_context();
@@ -835,19 +874,6 @@ struct is_iterator_range<base::iterator_range<T>> : std::true_type {};
 
 // General helpers.
 
-inline bool AnyMapIsHeapNumber(const compiler::ZoneRefSet<Map>& maps) {
-  return std::any_of(maps.begin(), maps.end(), [](compiler::MapRef map) {
-    return map.IsHeapNumberMap();
-  });
-}
-
-inline bool AnyMapIsHeapNumber(
-    const base::Vector<const compiler::MapRef>& maps) {
-  return std::any_of(maps.begin(), maps.end(), [](compiler::MapRef map) {
-    return map.IsHeapNumberMap();
-  });
-}
-
 inline Condition ToCondition(AssertCondition cond) {
   switch (cond) {
 #define CASE(Name)               \
@@ -871,6 +897,24 @@ constexpr Condition ConditionFor(Operation operation) {
       return kGreaterThan;
     case Operation::kGreaterThanOrEqual:
       return kGreaterThanEqual;
+    default:
+      UNREACHABLE();
+  }
+}
+
+constexpr Condition UnsignedConditionFor(Operation operation) {
+  switch (operation) {
+    case Operation::kEqual:
+    case Operation::kStrictEqual:
+      return kEqual;
+    case Operation::kLessThan:
+      return kUnsignedLessThan;
+    case Operation::kLessThanOrEqual:
+      return kUnsignedLessThanEqual;
+    case Operation::kGreaterThan:
+      return kUnsignedGreaterThan;
+    case Operation::kGreaterThanOrEqual:
+      return kUnsignedGreaterThanEqual;
     default:
       UNREACHABLE();
   }

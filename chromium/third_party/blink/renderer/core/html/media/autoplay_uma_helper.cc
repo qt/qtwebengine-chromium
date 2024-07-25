@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/media/autoplay_policy.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
+#include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer.h"
 #include "third_party/blink/renderer/core/intersection_observer/intersection_observer_entry.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -207,16 +208,14 @@ void AutoplayUmaHelper::MaybeStartRecordingMutedVideoPlayMethodBecomeVisible() {
     return;
 
   muted_video_play_method_intersection_observer_ = IntersectionObserver::Create(
-      /* (root) margin */ Vector<Length>(),
-      /* scroll_margin */ Vector<Length>(),
-      /* thresholds */ {IntersectionObserver::kMinimumThreshold},
-      /* document */ &element_->GetDocument(),
-      /* callback */
+      element_->GetDocument(),
       WTF::BindRepeating(
           &AutoplayUmaHelper::
               OnIntersectionChangedForMutedVideoPlayMethodBecomeVisible,
           WrapWeakPersistent(this)),
-      /* ukm_metric_id */ LocalFrameUkmAggregator::kMediaIntersectionObserver);
+      LocalFrameUkmAggregator::kMediaIntersectionObserver,
+      IntersectionObserver::Params{
+          .thresholds = {IntersectionObserver::kMinimumThreshold}});
   muted_video_play_method_intersection_observer_->observe(element_);
   SetExecutionContext(element_->GetExecutionContext());
 }
@@ -244,17 +243,14 @@ void AutoplayUmaHelper::MaybeStartRecordingMutedVideoOffscreenDuration() {
   is_visible_ = false;
   muted_video_offscreen_duration_intersection_observer_ =
       IntersectionObserver::Create(
-          /* (root) margin */ Vector<Length>(),
-          /* scroll_margin */ Vector<Length>(),
-          /* thresholds */ {IntersectionObserver::kMinimumThreshold},
-          /* document */ &element_->GetDocument(),
-          /* callback */
+          element_->GetDocument(),
           WTF::BindRepeating(
               &AutoplayUmaHelper::
                   OnIntersectionChangedForMutedVideoOffscreenDuration,
               WrapWeakPersistent(this)),
-          /* ukm_metric_id */
-          LocalFrameUkmAggregator::kMediaIntersectionObserver);
+          LocalFrameUkmAggregator::kMediaIntersectionObserver,
+          IntersectionObserver::Params{
+              .thresholds = {IntersectionObserver::kMinimumThreshold}});
   muted_video_offscreen_duration_intersection_observer_->observe(element_);
   element_->addEventListener(event_type_names::kPause, this, false);
   SetExecutionContext(element_->GetExecutionContext());

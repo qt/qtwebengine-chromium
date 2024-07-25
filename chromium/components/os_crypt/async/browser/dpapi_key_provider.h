@@ -5,15 +5,15 @@
 #ifndef COMPONENTS_OS_CRYPT_ASYNC_BROWSER_DPAPI_KEY_PROVIDER_H_
 #define COMPONENTS_OS_CRYPT_ASYNC_BROWSER_DPAPI_KEY_PROVIDER_H_
 
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "base/containers/span.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/types/expected.h"
 #include "components/os_crypt/async/browser/key_provider.h"
-
-#include <optional>
-#include <string>
-#include <vector>
 
 class PrefService;
 
@@ -51,6 +51,7 @@ class DPAPIKeyProvider : public KeyProvider {
   // os_crypt_async::KeyProvider interface.
   void GetKey(KeyCallback callback) override;
   bool UseForEncryption() override;
+  bool IsCompatibleWithOsCryptSync() override;
 
   // Attempt to retrieve `encrypted_key` from `pref_path`. If a key is found
   // that matches and has correct `key_prefix` then the raw encrypted key is

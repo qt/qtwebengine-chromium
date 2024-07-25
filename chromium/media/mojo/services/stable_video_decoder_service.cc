@@ -73,7 +73,7 @@ stable::mojom::VideoFramePtr MediaVideoFrameToMojoVideoFrame(
   mojo_frame->timestamp = media_frame->timestamp();
 
   gfx::GpuMemoryBufferHandle gpu_memory_buffer_handle =
-      media_frame->GetGpuMemoryBuffer()->CloneHandle();
+      media_frame->GetGpuMemoryBufferHandle();
   CHECK_EQ(gpu_memory_buffer_handle.type, gfx::NATIVE_PIXMAP);
   CHECK(!gpu_memory_buffer_handle.native_pixmap_handle.planes.empty());
   mojo_frame->gpu_memory_buffer_handle = std::move(gpu_memory_buffer_handle);
@@ -298,13 +298,13 @@ void StableVideoDecoderService::ReleaseVideoFrame(
   // ultimate client (the renderer process) before calling ReleaseVideoFrame()
   // on the out-of-process video decoder.
   video_frame_handle_releaser_remote_->ReleaseVideoFrame(
-      release_token, /*release_sync_token=*/absl::nullopt);
+      release_token, /*release_sync_token=*/std::nullopt);
 }
 
 void StableVideoDecoderService::OnVideoFrameDecoded(
     const scoped_refptr<VideoFrame>& frame,
     bool can_read_without_stalling,
-    const absl::optional<base::UnguessableToken>& release_token) {
+    const std::optional<base::UnguessableToken>& release_token) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(stable_video_decoder_client_remote_.is_bound());
   DCHECK(release_token.has_value());

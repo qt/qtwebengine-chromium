@@ -13,7 +13,7 @@ from frozendict import frozendict
 
 from crossbench import cli_helper, helper, plt
 from crossbench.browsers.chromium.chromium import Chromium
-from crossbench.network.web_page_replay import WprRecorder
+from crossbench.network.replay.web_page_replay import WprRecorder
 from crossbench.probes import helper as probe_helper
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.results import EmptyProbeResult, ProbeResult

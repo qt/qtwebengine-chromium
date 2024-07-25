@@ -33,13 +33,6 @@ DawnAHardwareBufferImageRepresentation::
 
 wgpu::Texture DawnAHardwareBufferImageRepresentation::BeginAccess(
     wgpu::TextureUsage usage) {
-  // It doesn't make sense to have two overlapping BeginAccess calls on the same
-  // representation.
-  if (texture_) {
-    LOG(ERROR) << "Attempting to begin access before ending previous access.";
-    return nullptr;
-  }
-
   wgpu::TextureDescriptor texture_descriptor;
   texture_descriptor.format = format_;
   texture_descriptor.usage = static_cast<wgpu::TextureUsage>(usage);
@@ -51,6 +44,15 @@ wgpu::Texture DawnAHardwareBufferImageRepresentation::BeginAccess(
   texture_descriptor.viewFormatCount = view_formats_.size();
   texture_descriptor.viewFormats = view_formats_.data();
 
+  // It doesn't make sense to have two overlapping BeginAccess calls on the same
+  // representation.
+  // TODO(blundell): Switch to using the return value of BeginWrite() to detect
+  // errors in BeginAccess/EndAccess flow.
+  if (texture_) {
+    LOG(ERROR) << "Attempting to begin access before ending previous access.";
+    return device_.CreateErrorTexture(&texture_descriptor);
+  }
+
   // We need to have internal usages of CopySrc for copies,
   // RenderAttachment for clears, and TextureBinding for copyTextureForBrowser.
   wgpu::DawnTextureInternalUsageDescriptor internalDesc;
@@ -60,30 +62,69 @@ wgpu::Texture DawnAHardwareBufferImageRepresentation::BeginAccess(
 
   texture_descriptor.nextInChain = &internalDesc;
 
-  dawn::native::vulkan::ExternalImageDescriptorAHardwareBuffer descriptor = {};
-  descriptor.cTextureDescriptor =
-      reinterpret_cast<WGPUTextureDescriptor*>(&texture_descriptor);
-  descriptor.isInitialized = IsCleared();
-  descriptor.handle = handle_.get();
-  descriptor.waitFDs = {};
-
   // Dawn currently doesn't support read-only access and hence concurrent reads.
   base::ScopedFD sync_fd;
   android_backing()->BeginWrite(&sync_fd);
 
-  // If the semaphore from BeginWrite is valid then pass it to WrapVulkanImage.
-  if (sync_fd.is_valid())
-    descriptor.waitFDs.push_back(sync_fd.release());
+  wgpu::SharedTextureMemoryBeginAccessDescriptor begin_access_desc = {};
+  begin_access_desc.initialized = IsCleared();
 
-  texture_ = wgpu::Texture::Acquire(
-      dawn::native::vulkan::WrapVulkanImage(device_.Get(), &descriptor));
+  wgpu::SharedTextureMemoryVkImageLayoutBeginState begin_layout{};
 
-  if (!texture_) {
-    LOG(ERROR) << "Failed to wrap AHardwareBuffer as a Dawn texture.";
-    android_backing()->EndWrite(base::ScopedFD());
+  // TODO(crbug.com/327111284): Track layouts correctly.
+  begin_layout.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  begin_layout.newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  begin_access_desc.nextInChain = &begin_layout;
+
+  wgpu::SharedFence shared_fence;
+  // Pass 1 as the signaled value for the binary semaphore
+  // (Dawn's SharedTextureMemoryVk verifies that this is the value passed).
+  const uint64_t signaled_value = 1;
+
+  // If the semaphore from BeginWrite is valid then pass it to
+  // SharedTextureMemory::BeginAccess() below.
+  if (sync_fd.is_valid()) {
+    wgpu::SharedFenceVkSemaphoreSyncFDDescriptor sync_fd_desc;
+    // NOTE: There is no ownership transfer here, as Dawn internally dup()s the
+    // passed-in handle.
+    sync_fd_desc.handle = sync_fd.get();
+    wgpu::SharedFenceDescriptor fence_desc;
+    fence_desc.nextInChain = &sync_fd_desc;
+    shared_fence = device_.ImportSharedFence(&fence_desc);
+
+    begin_access_desc.fenceCount = 1;
+    begin_access_desc.fences = &shared_fence;
+    begin_access_desc.signaledValues = &signaled_value;
+
+    // We save the SyncFD passed to BeginAccess() in case we need to restore it
+    // in EndAccess() (otherwise we will drop it in EndAccess()).
+    begin_access_sync_fd_ = std::move(sync_fd);
   }
 
-  return texture_.Get();
+  if (!shared_texture_memory_) {
+    wgpu::SharedTextureMemoryDescriptor desc = {};
+
+    wgpu::SharedTextureMemoryAHardwareBufferDescriptor
+        stm_ahardwarebuffer_desc = {};
+    stm_ahardwarebuffer_desc.handle = handle_.get();
+
+    desc.nextInChain = &stm_ahardwarebuffer_desc;
+    shared_texture_memory_ = device_.ImportSharedTextureMemory(&desc);
+  }
+
+  texture_ = shared_texture_memory_.CreateTexture(&texture_descriptor);
+  if (!shared_texture_memory_.BeginAccess(texture_, &begin_access_desc)) {
+    LOG(ERROR) << "Failed to begin access for texture";
+
+    // End the access on the backing and restore its fence, as Dawn did not
+    // consume it.
+    android_backing()->EndWrite(std::move(begin_access_sync_fd_));
+    auto texture = std::move(texture_);
+    texture_ = nullptr;
+    return texture;
+  }
+
+  return texture_;
 }
 
 void DawnAHardwareBufferImageRepresentation::EndAccess() {
@@ -91,20 +132,53 @@ void DawnAHardwareBufferImageRepresentation::EndAccess() {
     return;
   }
 
-  dawn::native::vulkan::ExternalImageExportInfoAHardwareBuffer export_info;
-  if (!dawn::native::vulkan::ExportVulkanImage(
-          texture_.Get(), VK_IMAGE_LAYOUT_UNDEFINED, &export_info)) {
-    DLOG(ERROR) << "Failed to export Dawn Vulkan image.";
-  } else {
-    if (export_info.isInitialized)
-      SetCleared();
+  wgpu::SharedTextureMemoryEndAccessState end_access_desc = {};
+  wgpu::SharedTextureMemoryVkImageLayoutEndState end_layout{};
+  end_access_desc.nextInChain = &end_layout;
 
-    // TODO(dawn:286): Handle waiting on multiple semaphores from dawn.
-    DCHECK_EQ(export_info.semaphoreHandles.size(), 1u);
-    base::ScopedFD sync_fd = base::ScopedFD(export_info.semaphoreHandles[0]);
-    android_backing()->EndWrite(std::move(sync_fd));
+  if (!shared_texture_memory_.EndAccess(texture_, &end_access_desc)) {
+    LOG(ERROR) << "Failed to end access for texture";
+    texture_.Destroy();
+    texture_ = nullptr;
+    return;
   }
 
+  if (end_access_desc.initialized) {
+    SetCleared();
+  }
+
+  wgpu::SharedFenceExportInfo export_info;
+  wgpu::SharedFenceVkSemaphoreSyncFDExportInfo sync_fd_export_info;
+  export_info.nextInChain = &sync_fd_export_info;
+
+  base::ScopedFD end_access_sync_fd;
+
+  // Dawn currently has a bug wherein if it doesn't access the texture during
+  // the access, it will return 2 fences: the fence that this instance gave it
+  // in BeginAccess() (which Dawn didn't consume), and a fence that Dawn created
+  // in EndAccess(). In this case, restore the fence created in BeginAccess() to
+  // the backing, as it is still the fence that the next access should wait on.
+  // TODO(crbug.com/dawn/2454): Remove this special-case after Dawn fixes its
+  // bug and simply returns the fence that it dup'd from that given to it in
+  // BeginAccess().
+  if (end_access_desc.fenceCount == 2u) {
+    end_access_sync_fd = std::move(begin_access_sync_fd_);
+  } else if (end_access_desc.fenceCount == 1u) {
+    end_access_desc.fences[0].ExportInfo(&export_info);
+
+    // Dawn will close its FD when `end_access_desc` falls out of scope, and
+    // so it is necessary to dup() it to give AndroidImageBacking an FD that
+    // it can own.
+    end_access_sync_fd = base::ScopedFD(dup(sync_fd_export_info.handle));
+
+    // In this case `begin_access_sync_fd_` is no longer needed, so drop it.
+    begin_access_sync_fd_.reset();
+  } else {
+    DCHECK_EQ(end_access_desc.fenceCount, 0u);
+    DCHECK(!begin_access_sync_fd_.is_valid());
+  }
+
+  android_backing()->EndWrite(std::move(end_access_sync_fd));
   texture_.Destroy();
   texture_ = nullptr;
 }

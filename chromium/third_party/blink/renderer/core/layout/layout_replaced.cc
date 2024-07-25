@@ -94,8 +94,9 @@ void LayoutReplaced::StyleDidChange(StyleDifference diff,
 
   // Replaced elements can have border-radius clips without clipping overflow;
   // the overflow clipping case is already covered in LayoutBox::StyleDidChange
-  if (old_style && !old_style->RadiiEqual(StyleRef()))
+  if (old_style && !old_style->BorderRadiusEqual(StyleRef())) {
     SetNeedsPaintPropertyUpdate();
+  }
 
   bool had_style = !!old_style;
   float old_zoom = had_style ? old_style->EffectiveZoom()
@@ -117,16 +118,6 @@ void LayoutReplaced::StyleDidChange(StyleDifference diff,
     constexpr bool kDiscardDuplicates = true;
     GetDocument().AddConsoleMessage(console_message, kDiscardDuplicates);
   }
-}
-
-void LayoutReplaced::UpdateLayout() {
-  NOT_DESTROYED();
-  DCHECK(NeedsLayout());
-
-  ClearScrollableOverflow();
-  ClearSelfNeedsScrollableOverflowRecalc();
-  ClearChildNeedsScrollableOverflowRecalc();
-  ClearNeedsLayout();
 }
 
 void LayoutReplaced::IntrinsicSizeChanged() {
@@ -187,34 +178,37 @@ void LayoutReplaced::RecalcVisualOverflow() {
     AddContentsVisualOverflow(ReplacedContentRect());
 }
 
-absl::optional<gfx::SizeF>
+std::optional<gfx::SizeF>
 LayoutReplaced::ComputeObjectViewBoxSizeForIntrinsicSizing() const {
-  if (IntrinsicWidthOverride() || IntrinsicHeightOverride())
-    return absl::nullopt;
+  // TODO(crbug.com/335003884): Investigate if this first branch is
+  // actually doing anything and maybe clean that up too
+  if (!RuntimeEnabledFeatures::NoIntrinsicSizeOverrideEnabled()) {
+    if (IntrinsicWidthOverride() || IntrinsicHeightOverride()) {
+      return std::nullopt;
+    }
+  }
 
   if (auto view_box = ComputeObjectViewBoxRect())
     return static_cast<gfx::SizeF>(view_box->size);
 
-  return absl::nullopt;
+  return std::nullopt;
 }
 
-absl::optional<PhysicalRect> LayoutReplaced::ComputeObjectViewBoxRect(
+std::optional<PhysicalRect> LayoutReplaced::ComputeObjectViewBoxRect(
     const PhysicalSize* overridden_intrinsic_size) const {
   const BasicShape* object_view_box = StyleRef().ObjectViewBox();
   if (LIKELY(!object_view_box))
-    return absl::nullopt;
+    return std::nullopt;
 
   const auto& intrinsic_size =
       overridden_intrinsic_size ? *overridden_intrinsic_size : intrinsic_size_;
   if (intrinsic_size.IsEmpty())
-    return absl::nullopt;
+    return std::nullopt;
 
   if (!CanApplyObjectViewBox())
-    return absl::nullopt;
+    return std::nullopt;
 
-  DCHECK(object_view_box->GetType() == BasicShape::kBasicShapeRectType ||
-         object_view_box->GetType() == BasicShape::kBasicShapeInsetType ||
-         object_view_box->GetType() == BasicShape::kBasicShapeXYWHType);
+  DCHECK_EQ(object_view_box->GetType(), BasicShape::kBasicShapeInsetType);
 
   Path path;
   gfx::RectF bounding_box(0, 0, intrinsic_size.width.ToFloat(),
@@ -224,11 +218,11 @@ absl::optional<PhysicalRect> LayoutReplaced::ComputeObjectViewBoxRect(
   const PhysicalRect view_box_rect =
       PhysicalRect::EnclosingRect(path.BoundingRect());
   if (view_box_rect.IsEmpty())
-    return absl::nullopt;
+    return std::nullopt;
 
   const PhysicalRect intrinsic_rect(PhysicalOffset(), intrinsic_size);
   if (view_box_rect == intrinsic_rect)
-    return absl::nullopt;
+    return std::nullopt;
 
   return view_box_rect;
 }
@@ -376,11 +370,6 @@ PhysicalRect LayoutReplaced::ReplacedContentRectFrom(
     const PhysicalRect& base_content_rect) const {
   NOT_DESTROYED();
   return ComputeReplacedContentRect(base_content_rect);
-}
-
-PhysicalRect LayoutReplaced::PhysicalContentBoxRectFromNG() const {
-  NOT_DESTROYED();
-  return new_content_rect_ ? *new_content_rect_ : PhysicalContentBoxRect();
 }
 
 PhysicalRect LayoutReplaced::PreSnappedRectForPersistentSizing(

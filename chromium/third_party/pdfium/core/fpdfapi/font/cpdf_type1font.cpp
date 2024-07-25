@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/font/cpdf_type1font.h"
 
 #include <algorithm>
@@ -12,6 +17,7 @@
 
 #include "build/build_config.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_fontmapper.h"
@@ -71,7 +77,7 @@ CPDF_Type1Font::CPDF_Type1Font(CPDF_Document* pDocument,
                                RetainPtr<CPDF_Dictionary> pFontDict)
     : CPDF_SimpleFont(pDocument, std::move(pFontDict)) {
 #if BUILDFLAG(IS_APPLE)
-  memset(m_ExtGID, 0xff, sizeof(m_ExtGID));
+  m_ExtGID.fill(0xffff);
 #endif
 }
 
@@ -163,8 +169,9 @@ void CPDF_Type1Font::LoadGlyphMap() {
       }
       if (bGotOne) {
 #if BUILDFLAG(IS_APPLE)
-        if (!bCoreText)
-          memcpy(m_ExtGID, m_GlyphIndex, sizeof(m_ExtGID));
+        if (!bCoreText) {
+          m_ExtGID = m_GlyphIndex;
+        }
 #endif
         return;
       }
@@ -195,8 +202,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
     }
 #if BUILDFLAG(IS_APPLE)
     if (!bCoreText) {
-      fxcrt::spancpy(pdfium::make_span(m_ExtGID),
-                     pdfium::make_span(m_GlyphIndex));
+      m_ExtGID = m_GlyphIndex;
     }
 #endif
     return;
@@ -214,14 +220,12 @@ void CPDF_Type1Font::LoadGlyphMap() {
           SetExtGID(name, charcode);
         } else {
           m_GlyphIndex[charcode] = face->GetCharIndex(charcode);
-          char name_glyph[kInternalTableSize] = {};
-          FT_Get_Glyph_Name(m_Font.GetFaceRec(), m_GlyphIndex[charcode],
-                            name_glyph, sizeof(name_glyph));
-          name_glyph[kInternalTableSize - 1] = 0;
+          ByteString glyph_name = face->GetGlyphName(m_GlyphIndex[charcode]);
           const wchar_t unicode =
-              name_glyph[0] != 0 ? UnicodeFromAdobeName(name_glyph) : 0;
+              glyph_name.IsEmpty() ? 0
+                                   : UnicodeFromAdobeName(glyph_name.c_str());
           m_Encoding.SetUnicode(charcode, unicode);
-          SetExtGID(name_glyph, charcode);
+          SetExtGID(glyph_name.c_str(), charcode);
         }
       }
       return;
@@ -269,19 +273,18 @@ void CPDF_Type1Font::LoadGlyphMap() {
         m_GlyphIndex[charcode] =
             face->GetCharIndex(static_cast<uint32_t>(charcode));
         if (m_GlyphIndex[charcode]) {
-          char name_glyph[kInternalTableSize] = {};
-          FT_Get_Glyph_Name(m_Font.GetFaceRec(), m_GlyphIndex[charcode],
-                            name_glyph, sizeof(name_glyph));
-          name_glyph[kInternalTableSize - 1] = 0;
+          ByteString glyph_name = face->GetGlyphName(m_GlyphIndex[charcode]);
           const wchar_t unicode =
-              name_glyph[0] != 0 ? UnicodeFromAdobeName(name_glyph) : 0;
+              glyph_name.IsEmpty() ? 0
+                                   : UnicodeFromAdobeName(glyph_name.c_str());
           m_Encoding.SetUnicode(charcode, unicode);
         }
       }
     }
 #if BUILDFLAG(IS_APPLE)
-    if (!bCoreText)
-      memcpy(m_ExtGID, m_GlyphIndex, sizeof(m_ExtGID));
+    if (!bCoreText) {
+      m_ExtGID = m_GlyphIndex;
+    }
 #endif
     return;
   }
@@ -308,8 +311,9 @@ void CPDF_Type1Font::LoadGlyphMap() {
     }
   }
 #if BUILDFLAG(IS_APPLE)
-  if (!bCoreText)
-    memcpy(m_ExtGID, m_GlyphIndex, sizeof(m_ExtGID));
+  if (!bCoreText) {
+    m_ExtGID = m_GlyphIndex;
+  }
 #endif
 }
 
@@ -334,10 +338,8 @@ void CPDF_Type1Font::SetExtGID(const char* name, uint32_t charcode) {
 }
 
 void CPDF_Type1Font::CalcExtGID(uint32_t charcode) {
-  char name_glyph[kInternalTableSize] = {};
-  FT_Get_Glyph_Name(m_Font.GetFaceRec(), m_GlyphIndex[charcode], name_glyph,
-                    sizeof(name_glyph));
-  name_glyph[kInternalTableSize - 1] = 0;
-  SetExtGID(name_glyph, charcode);
+  ByteString glyph_name =
+      m_Font.GetFace()->GetGlyphName(m_GlyphIndex[charcode]);
+  SetExtGID(glyph_name.c_str(), charcode);
 }
 #endif  // BUILDFLAG(IS_APPLE)

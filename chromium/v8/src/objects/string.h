@@ -9,6 +9,7 @@
 
 #include "src/base/bits.h"
 #include "src/base/export-template.h"
+#include "src/base/small-vector.h"
 #include "src/base/strings.h"
 #include "src/common/globals.h"
 #include "src/heap/heap.h"
@@ -586,6 +587,14 @@ V8_OBJECT class String : public Name {
       Visitor* visitor, Tagged<String> string, int offset,
       const SharedStringAccessGuardIfNeeded& access_guard);
 
+  static int constexpr kInlineLineEndsSize = 32;
+  using LineEndsVector = base::SmallVector<int32_t, kInlineLineEndsSize>;
+
+  template <typename IsolateT>
+  static LineEndsVector CalculateLineEndsVector(IsolateT* isolate,
+                                                Handle<String> string,
+                                                bool include_ending_line);
+
   template <typename IsolateT>
   static Handle<FixedArray> CalculateLineEnds(IsolateT* isolate,
                                               Handle<String> string,
@@ -1044,6 +1053,7 @@ V8_OBJECT class SlicedString : public String {
   friend struct OffsetsForDebug;
   friend class V8HeapExplorer;
   friend class CodeStubAssembler;
+  friend class SandboxTesting;
   friend class ToDirectStringAssembler;
   friend class maglev::MaglevAssembler;
   friend class compiler::AccessBuilder;

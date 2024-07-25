@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -75,7 +76,9 @@ void DistillerPage::DistillPage(
     const GURL& gurl,
     const dom_distiller::proto::DomDistillerOptions options,
     DistillerPageCallback callback) {
-  DCHECK(ready_);
+  CHECK(ready_, base::NotFatalUntil::M126);
+  CHECK(callback, base::NotFatalUntil::M127);
+  CHECK(!distiller_page_callback_, base::NotFatalUntil::M127);
   // It is only possible to distill one page at a time. |ready_| is reset when
   // the callback to OnDistillationDone happens.
   ready_ = false;

@@ -41,10 +41,12 @@
 #include <ctime>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "absl/base/nullability.h"
 #include "./centipede/byte_array_mutator.h"
 #include "./centipede/defs.h"
 #include "./centipede/execution_metadata.h"
@@ -271,10 +273,12 @@ static void CheckWatchdogLimits() {
 }
 
 __attribute__((noinline)) void CheckStackLimit(uintptr_t sp) {
+  static std::atomic_flag stack_limit_exceeded = ATOMIC_FLAG_INIT;
   const size_t stack_limit = state.run_time_flags.stack_limit_kb.load() << 10;
   // Check for the stack limit only if sp is inside the stack region.
   if (stack_limit > 0 && tls.stack_region_low &&
       tls.top_frame_sp - sp > stack_limit) {
+    if (stack_limit_exceeded.test_and_set()) return;
     fprintf(stderr,
             "========= Stack limit exceeded: %" PRIuPTR " > %" PRIu64
             " (byte); aborting\n",
@@ -533,6 +537,8 @@ void RunnerCallbacks::GetSeeds(std::function<void(ByteSpan)> seed_callback) {
   seed_callback({0});
 }
 
+std::string RunnerCallbacks::GetSerializedTargetConfig() { return ""; }
+
 class LegacyRunnerCallbacks : public RunnerCallbacks {
  public:
   LegacyRunnerCallbacks(FuzzerTestOneInputCallback test_one_input_cb,
@@ -728,7 +734,7 @@ static int ExecuteInputsFromShmem(BlobSequence &inputs_blobseq,
 
 // Dumps the pc table to `output_path`.
 // Requires that state.main_object is already computed.
-static void DumpPcTable(const char *output_path) {
+static void DumpPcTable(absl::Nonnull<const char *> output_path) {
   PrintErrorAndExitIf(!state.main_object.IsSet(), "main_object is not set");
   FILE *output_file = fopen(output_path, "w");
   PrintErrorAndExitIf(output_file == nullptr, "can't open output file");
@@ -744,7 +750,7 @@ static void DumpPcTable(const char *output_path) {
 
 // Dumps the control-flow table to `output_path`.
 // Requires that state.main_object is already computed.
-static void DumpCfTable(const char *output_path) {
+static void DumpCfTable(absl::Nonnull<const char *> output_path) {
   PrintErrorAndExitIf(!state.main_object.IsSet(), "main_object is not set");
   FILE *output_file = fopen(output_path, "w");
   PrintErrorAndExitIf(output_file == nullptr, "can't open output file");
@@ -760,7 +766,7 @@ static void DumpCfTable(const char *output_path) {
 
 // Dumps a DsoTable as a text file. Each line contains the file path and the
 // number of instrumented PCs.
-static void DumpDsoTable(const char *output_path) {
+static void DumpDsoTable(absl::Nonnull<const char *> output_path) {
   FILE *output_file = fopen(output_path, "w");
   RunnerCheck(output_file != nullptr, "DumpDsoTable: can't open output file");
   DsoTable dso_table = state.sancov_objects.CreateDsoTable();
@@ -771,7 +777,7 @@ static void DumpDsoTable(const char *output_path) {
   fclose(output_file);
 }
 
-// Dumps seed inputs to `output_dir`. Also see GetSeedsViaExternalBinary().
+// Dumps seed inputs to `output_dir`. Also see `GetSeedsViaExternalBinary()`.
 static void DumpSeedsToDir(RunnerCallbacks &callbacks, const char *output_dir) {
   size_t seed_index = 0;
   callbacks.GetSeeds([&](ByteSpan seed) {
@@ -791,6 +797,20 @@ static void DumpSeedsToDir(RunnerCallbacks &callbacks, const char *output_dir) {
     fclose(output_file);
     ++seed_index;
   });
+}
+
+// Dumps serialized target config to `output_file_path`. Also see
+// `GetSerializedTargetConfigViaExternalBinary()`.
+static void DumpSerializedTargetConfigToFile(RunnerCallbacks &callbacks,
+                                             const char *output_file_path) {
+  const std::string config = callbacks.GetSerializedTargetConfig();
+  FILE *output_file = fopen(output_file_path, "w");
+  const size_t num_bytes_written =
+      fwrite(config.data(), 1, config.size(), output_file);
+  PrintErrorAndExitIf(
+      num_bytes_written != config.size(),
+      "wrong number of bytes written for serialized target configuration");
+  fclose(output_file);
 }
 
 // Returns a random seed. No need for a more sophisticated seed.
@@ -1028,6 +1048,12 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
   fprintf(stderr, "Centipede fuzz target runner; argv[0]: %s flags: %s\n",
           argv[0], state.centipede_runner_flags);
 
+  if (state.HasFlag(":dump_configuration:")) {
+    DumpSerializedTargetConfigToFile(callbacks,
+                                     /*output_file_path=*/state.arg1);
+    return EXIT_SUCCESS;
+  }
+
   if (state.HasFlag(":dump_seed_inputs:")) {
     // Seed request.
     DumpSeedsToDir(callbacks, /*output_dir=*/state.arg1);
@@ -1074,7 +1100,8 @@ int RunnerMain(int argc, char **argv, RunnerCallbacks &callbacks) {
 }  // namespace centipede
 
 extern "C" int LLVMFuzzerRunDriver(
-    int *argc, char ***argv, FuzzerTestOneInputCallback test_one_input_cb) {
+    absl::Nonnull<int *> argc, absl::Nonnull<char ***> argv,
+    FuzzerTestOneInputCallback test_one_input_cb) {
   if (LLVMFuzzerInitialize) LLVMFuzzerInitialize(argc, argv);
   return RunnerMain(*argc, *argv,
                     *centipede::CreateLegacyRunnerCallbacks(
@@ -1105,7 +1132,8 @@ extern "C" void CentipedeSetTimeoutPerInput(uint64_t timeout_per_input) {
   centipede::state.run_time_flags.timeout_per_input = timeout_per_input;
 }
 
-extern "C" __attribute__((weak)) const char *CentipedeGetRunnerFlags() {
+extern "C" __attribute__((weak)) absl::Nullable<const char *>
+CentipedeGetRunnerFlags() {
   if (const char *runner_flags_env = getenv("CENTIPEDE_RUNNER_FLAGS"))
     return strdup(runner_flags_env);
   return nullptr;

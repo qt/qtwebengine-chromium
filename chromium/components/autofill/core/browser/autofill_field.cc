@@ -62,7 +62,8 @@ static constexpr auto kAutofillHeuristicsVsHtmlOverrides =
          {ADDRESS_HOME_DEPENDENT_LOCALITY, HtmlFieldType::kAddressLine2},
          {ADDRESS_HOME_DEPENDENT_LOCALITY, HtmlFieldType::kAddressLine3},
          {ADDRESS_HOME_OVERFLOW_AND_LANDMARK, HtmlFieldType::kAddressLine2},
-         {ADDRESS_HOME_OVERFLOW, HtmlFieldType::kAddressLine2}});
+         {ADDRESS_HOME_OVERFLOW, HtmlFieldType::kAddressLine2},
+         {ADDRESS_HOME_OVERFLOW, HtmlFieldType::kAddressLine3}});
 
 // This list includes pairs (heuristic_type, server_type) that express which
 // heuristics predictions should be prioritized over server predictions. The
@@ -72,6 +73,8 @@ static constexpr auto kAutofillHeuristicsVsHtmlOverrides =
 static constexpr auto kAutofillHeuristicsVsServerOverrides =
     base::MakeFixedFlatSet<std::pair<FieldType, FieldType>>(
         {{ADDRESS_HOME_ADMIN_LEVEL2, ADDRESS_HOME_CITY},
+         {ADDRESS_HOME_HOUSE_NUMBER_AND_APT, ADDRESS_HOME_HOUSE_NUMBER},
+         {ADDRESS_HOME_HOUSE_NUMBER_AND_APT, ADDRESS_HOME_APT_NUM},
          {ADDRESS_HOME_APT_NUM, ADDRESS_HOME_LINE2},
          {ADDRESS_HOME_APT_NUM, ADDRESS_HOME_LINE3},
          {ADDRESS_HOME_APT_NUM, ADDRESS_HOME_HOUSE_NUMBER},
@@ -86,7 +89,8 @@ static constexpr auto kAutofillHeuristicsVsServerOverrides =
          {ADDRESS_HOME_LANDMARK, ADDRESS_HOME_LINE2},
          {ADDRESS_HOME_BETWEEN_STREETS_OR_LANDMARK, ADDRESS_HOME_LINE2},
          {ADDRESS_HOME_OVERFLOW_AND_LANDMARK, ADDRESS_HOME_LINE2},
-         {ADDRESS_HOME_OVERFLOW, ADDRESS_HOME_LINE2}});
+         {ADDRESS_HOME_OVERFLOW, ADDRESS_HOME_LINE2},
+         {ADDRESS_HOME_OVERFLOW, ADDRESS_HOME_LINE3}});
 
 // Returns true, if the prediction is non-experimental and should be used by
 // autofill or password manager.
@@ -145,8 +149,7 @@ bool PreferHeuristicOverServer(FieldType heuristic_type,
 // won't be overridden by heuristics or server predictions, up to a few
 // exceptions. Check function `ComputedType` for more details.
 DenseSet<HtmlFieldType> BelievedHtmlTypes(FieldType heuristic_prediction,
-                                          FieldType server_prediction,
-                                          bool is_credit_card_prediction) {
+                                          FieldType server_prediction) {
   DenseSet<HtmlFieldType> believed_html_types = {};
   constexpr auto kMin = base::to_underlying(HtmlFieldType::kMinValue);
   constexpr auto kMax = base::to_underlying(HtmlFieldType::kMaxValue);
@@ -155,14 +158,15 @@ DenseSet<HtmlFieldType> BelievedHtmlTypes(FieldType heuristic_prediction,
   }
   // We always override unspecified autocomplete attribute.
   believed_html_types.erase(HtmlFieldType::kUnspecified);
-  auto is_precedence_feature_enabled = []() {
-    return base::FeatureList::IsEnabled(
-        features::kAutofillStreetNameOrHouseNumberPrecedenceOverAutocomplete);
+  auto is_street_name_or_house_number_type = [](FieldType field_type) {
+    return field_type == ADDRESS_HOME_STREET_NAME ||
+           field_type == ADDRESS_HOME_HOUSE_NUMBER;
   };
-
-  if ((IsStreetNameOrHouseNumberType(heuristic_prediction) ||
-       IsStreetNameOrHouseNumberType(server_prediction)) &&
-      is_precedence_feature_enabled()) {
+  // When the heuristics or server predict that an address is a street name or a
+  // house number, we prioritize this over "address-line[1|2]" autocomplete
+  // since those signals are usually stronger for this combination.
+  if (is_street_name_or_house_number_type(heuristic_prediction) ||
+      is_street_name_or_house_number_type(server_prediction)) {
     believed_html_types.erase_all(
         {HtmlFieldType::kAddressLine1, HtmlFieldType::kAddressLine2});
   }
@@ -184,9 +188,9 @@ AutofillField::AutofillField(FieldSignature field_signature) : AutofillField() {
 AutofillField::AutofillField(const FormFieldData& field)
     : FormFieldData(field),
       field_signature_(
-          CalculateFieldSignatureByNameAndType(name, form_control_type)),
-      parseable_name_(name),
-      parseable_label_(label) {
+          CalculateFieldSignatureByNameAndType(name(), form_control_type())),
+      parseable_name_(name()),
+      parseable_label_(label()) {
   local_type_predictions_.fill(NO_SERVER_DATA);
 }
 
@@ -241,14 +245,6 @@ void AutofillField::set_heuristic_type(HeuristicSource s, FieldType type) {
   }
 }
 
-void AutofillField::add_possible_types_validities(
-    const FieldTypeValidityStateMap& possible_types_validities) {
-  for (const auto& possible_type_validity : possible_types_validities) {
-    possible_types_validities_[possible_type_validity.first].push_back(
-        possible_type_validity.second);
-  }
-}
-
 void AutofillField::set_server_predictions(
     std::vector<FieldPrediction> predictions) {
   overall_type_ = AutofillType(NO_SERVER_DATA);
@@ -277,9 +273,9 @@ void AutofillField::set_server_predictions(
         experimental_server_predictions_.push_back(std::move(prediction));
       }
     } else {
-      // TODO(crbug.com/1376045): captured tests store old autofill api response
-      // recordings without `source` field. We need to maintain the old behavior
-      // until these recordings will be migrated.
+      // TODO(crbug.com/40243028): captured tests store old autofill api
+      // response recordings without `source` field. We need to maintain the old
+      // behavior until these recordings will be migrated.
       server_predictions_.push_back(std::move(prediction));
     }
   }
@@ -292,13 +288,6 @@ void AutofillField::set_server_predictions(
       << "Expected up to 2 default predictions from the Autofill server. "
          "Actual: "
       << server_predictions_.size();
-}
-
-std::vector<AutofillDataModel::ValidityState>
-AutofillField::get_validities_for_possible_type(FieldType type) {
-  if (possible_types_validities_.find(type) == possible_types_validities_.end())
-    return {AutofillDataModel::ValidityState::kUnvalidated};
-  return possible_types_validities_[type];
 }
 
 void AutofillField::SetHtmlType(HtmlFieldType type, HtmlFieldMode mode) {
@@ -320,7 +309,7 @@ AutofillType AutofillField::ComputedType() const {
     return AutofillType(server_type());
   }
 
-  // TODO(crbug/1441057) Delete this if-statement when
+  // TODO(crbug.com/40266396) Delete this if-statement when
   // features::kAutofillEnableExpirationDateImprovements has launched. This
   // should be covered by
   // FormStructureRationalizer::RationalizeAutocompleteAttributes.
@@ -347,8 +336,7 @@ AutofillType AutofillField::ComputedType() const {
     return AutofillType(heuristic_type());
   }
 
-  if (BelievedHtmlTypes(heuristic_type(), server_type(),
-                        IsCreditCardPrediction())
+  if (BelievedHtmlTypes(heuristic_type(), server_type())
           .contains(html_type())) {
     return AutofillType(html_type_);
   }
@@ -424,13 +412,13 @@ AutofillType AutofillField::Type() const {
 }
 
 bool AutofillField::IsEmpty() const {
-  return value.empty();
+  return value().empty();
 }
 
 FieldSignature AutofillField::GetFieldSignature() const {
-  return field_signature_
-             ? *field_signature_
-             : CalculateFieldSignatureByNameAndType(name, form_control_type);
+  return field_signature_ ? *field_signature_
+                          : CalculateFieldSignatureByNameAndType(
+                                name(), form_control_type());
 }
 
 std::string AutofillField::FieldSignatureAsStr() const {
@@ -459,15 +447,6 @@ void AutofillField::SetPasswordRequirements(PasswordRequirementsSpec spec) {
   password_requirements_ = std::move(spec);
 }
 
-void AutofillField::NormalizePossibleTypesValidities() {
-  for (auto possible_type : possible_types_) {
-    if (possible_types_validities_[possible_type].empty()) {
-      possible_types_validities_[possible_type].push_back(
-          AutofillDataModel::ValidityState::kUnvalidated);
-    }
-  }
-}
-
 bool AutofillField::IsCreditCardPrediction() const {
   return GroupTypeOfFieldType(server_type()) == FieldTypeGroup::kCreditCard ||
          GroupTypeOfFieldType(heuristic_type()) == FieldTypeGroup::kCreditCard;
@@ -475,7 +454,7 @@ bool AutofillField::IsCreditCardPrediction() const {
 
 void AutofillField::AppendLogEventIfNotRepeated(
     const FieldLogEventType& log_event) {
-  // TODO(crbug.com/1325851): Consider to use an Overflow event to stop
+  // TODO(crbug.com/40225658): Consider to use an Overflow event to stop
   // recording log events into |field_log_events_| to save memory when
   // |field_log_events_| reaches certain threshold, e.g. 1000.
 

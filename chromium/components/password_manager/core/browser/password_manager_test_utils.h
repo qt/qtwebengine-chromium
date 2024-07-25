@@ -10,6 +10,8 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/run_loop.h"
+#include "base/scoped_observation.h"
 #include "components/password_manager/core/browser/origin_credential_store.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_hash_data.h"
@@ -94,12 +96,18 @@ std::unique_ptr<PasswordForm> FillPasswordFormWithData(
     const PasswordFormData& form_data,
     bool use_federated_login = false);
 
+PasswordForm CreateEntry(const std::string& username,
+                         const std::string& password,
+                         const GURL& origin_url,
+                         PasswordForm::MatchType match_type);
+
 // Creates a new vector entry. Callers are expected to call .get() to get a raw
 // pointer to the underlying PasswordForm.
-std::unique_ptr<PasswordForm> CreateEntry(const std::string& username,
-                                          const std::string& password,
-                                          const GURL& origin_url,
-                                          PasswordForm::MatchType match_type);
+std::unique_ptr<PasswordForm> CreateUniquePtrEntry(
+    const std::string& username,
+    const std::string& password,
+    const GURL& origin_url,
+    PasswordForm::MatchType match_type);
 
 // Checks whether the PasswordForms pointed to in |actual_values| are in some
 // permutation pairwise equal to those in |expectations|. Returns true in case
@@ -141,6 +149,34 @@ class MockPasswordStoreObserver : public PasswordStoreInterface::Observer {
               (PasswordStoreInterface * store,
                const std::vector<PasswordForm>& retained_passwords),
               (override));
+};
+
+// Can be used to wait for changes (add or change password) in the password
+// store passed to the constructor. Do not rely on it for passwords being
+// removed (see `PasswordStoreInterface::Observer`).
+class PasswordStoreWaiter : public PasswordStoreInterface::Observer {
+ public:
+  explicit PasswordStoreWaiter(PasswordStoreInterface* store);
+  ~PasswordStoreWaiter() override;
+
+  // Synchronously waits until password data was added or changed. If the change
+  // has already happened, simply return.
+  void WaitOrReturn();
+
+ private:
+  // PasswordStoreInterface::Observer:
+  void OnLoginsChanged(PasswordStoreInterface* store,
+                       const PasswordStoreChangeList& changes) override;
+
+  // PasswordStoreInterface::Observer:
+  void OnLoginsRetained(
+      PasswordStoreInterface* store,
+      const std::vector<PasswordForm>& retained_passwords) override {}
+
+  base::ScopedObservation<PasswordStoreInterface,
+                          PasswordStoreInterface::Observer>
+      password_store_observer_{this};
+  base::RunLoop run_loop_;
 };
 
 class MockPasswordReuseDetectorConsumer final

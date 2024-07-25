@@ -5,10 +5,14 @@
 #include "mojo/core/embedder/embedder.h"
 
 #include <stdint.h>
+
 #include <atomic>
+#include <optional>
+#include <string>
 #include <utility>
 
 #include "base/check.h"
+#include "base/environment.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
 #include "base/task/single_thread_task_runner.h"
@@ -45,6 +49,25 @@ std::atomic<bool> g_mojo_ipcz_enabled{false};
 // Default to enabled even if InitFeatures() is never called.
 std::atomic<bool> g_mojo_ipcz_enabled{true};
 #endif
+
+bool g_enable_memv2 = false;
+
+std::optional<std::string> GetMojoIpczEnvVar() {
+  std::string value;
+  auto env = base::Environment::Create();
+  if (!env->GetVar("MOJO_IPCZ", &value)) {
+    return std::nullopt;
+  }
+  return value;
+}
+
+// Allows MojoIpcz to be forcibly enabled if and only if MOJO_IPCZ=1 in the
+// environment. Note that any other value (or absence) has no influence on
+// whether or not MojoIpcz is enabled.
+bool IsMojoIpczForceEnabledByEnvironment() {
+  static bool force_enabled = GetMojoIpczEnvVar() == "1";
+  return force_enabled;
+}
 
 }  // namespace
 
@@ -83,6 +106,8 @@ void InitFeatures() {
   } else {
     g_mojo_ipcz_enabled.store(false, std::memory_order_release);
   }
+
+  g_enable_memv2 = base::FeatureList::IsEnabled(kMojoIpczMemV2);
 }
 
 void EnableMojoIpcz() {
@@ -95,6 +120,10 @@ void Init(const Configuration& configuration) {
   if (configuration.disable_ipcz) {
     // Allow the caller to override MojoIpcz even when enabled as a Feature.
     g_mojo_ipcz_enabled.store(false, std::memory_order_release);
+  } else if (IsMojoIpczForceEnabledByEnvironment()) {
+    // Allow the environment to force-enable MojoIpcz even if the feature is not
+    // enabled.
+    g_mojo_ipcz_enabled.store(true, std::memory_order_release);
   }
 
   if (IsMojoIpczEnabled()) {
@@ -103,6 +132,7 @@ void Init(const Configuration& configuration) {
         .use_local_shared_memory_allocation =
             configuration.is_broker_process ||
             configuration.force_direct_shared_memory_allocation,
+        .enable_memv2 = g_enable_memv2,
     }));
     MojoEmbedderSetSystemThunks(GetMojoIpczImpl());
   } else {

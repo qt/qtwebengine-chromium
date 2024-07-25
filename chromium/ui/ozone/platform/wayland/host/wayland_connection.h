@@ -53,7 +53,7 @@ class WaylandEventSource;
 class WaylandOutputManager;
 class WaylandSeat;
 class WaylandZAuraShell;
-class WaylandZAuraOutputManager;
+class WaylandZAuraOutputManagerV2;
 class WaylandZcrColorManager;
 class WaylandZcrCursorShapes;
 class WaylandZcrTouchpadHaptics;
@@ -200,8 +200,8 @@ class WaylandConnection {
     return buffer_manager_host_.get();
   }
 
-  WaylandZAuraOutputManager* zaura_output_manager() const {
-    return zaura_output_manager_.get();
+  WaylandZAuraOutputManagerV2* zaura_output_manager_v2() const {
+    return zaura_output_manager_v2_.get();
   }
 
   WaylandZAuraShell* zaura_shell() const { return zaura_shell_.get(); }
@@ -331,15 +331,12 @@ class WaylandConnection {
            !surface_submission_in_pixel_coordinates_;
   }
 
-  bool overlay_delegation_disabled() const {
-    return overlay_delegation_disabled_;
-  }
-
-  void set_overlay_delegation_disabled(bool disabled) {
-    overlay_delegation_disabled_ = disabled;
-  }
-
   bool ShouldUseOverlayDelegation() const;
+
+  // True if the client has bound the either aura output manager globals. If
+  // present aura output manager handles the responsibilities of keeping
+  // output metrics up to date and triggering delegate notifications.
+  bool IsUsingZAuraOutputManager() const;
 
   wl::SerialTracker& serial_tracker() { return serial_tracker_; }
 
@@ -381,7 +378,7 @@ class WaylandConnection {
   friend class WaylandDataDeviceManager;
   friend class WaylandOutput;
   friend class WaylandSeat;
-  friend class WaylandZAuraOutputManager;
+  friend class WaylandZAuraOutputManagerV2;
   friend class WaylandZAuraShell;
   friend class WaylandZcrTouchpadHaptics;
   friend class WaylandZwpPointerConstraints;
@@ -409,7 +406,7 @@ class WaylandConnection {
   // support such, so the devices are derived from the connected interfaces.
   // Also, currently, Wayland doesn't expose InputDeviceType so marked as
   // UNKNOWN.
-  // TODO(crbug.com/1409793): We need further investigation and proper design
+  // TODO(crbug.com/40254071): We need further investigation and proper design
   // how to model these input devices.
   void UpdateInputDevices();
   std::vector<InputDevice> CreateMouseDevices() const;
@@ -486,7 +483,7 @@ class WaylandConnection {
   std::unique_ptr<WaylandDataDeviceManager> data_device_manager_;
   std::unique_ptr<WaylandOutputManager> output_manager_;
   std::unique_ptr<WaylandCursorPosition> cursor_position_;
-  std::unique_ptr<WaylandZAuraOutputManager> zaura_output_manager_;
+  std::unique_ptr<WaylandZAuraOutputManagerV2> zaura_output_manager_v2_;
   std::unique_ptr<WaylandZAuraShell> zaura_shell_;
   std::unique_ptr<WaylandZcrColorManager> zcr_color_manager_;
   std::unique_ptr<WaylandCursorShape> cursor_shape_;
@@ -545,9 +542,6 @@ class WaylandConnection {
   // This is set if wp_viewporter may be used to instruct the compositor to
   // properly scale fractional scaled surfaces.
   bool supports_viewporter_surface_scaling_ = false;
-
-  // This is set if delegated composition should not be used.
-  bool overlay_delegation_disabled_ = false;
 
   wl::SerialTracker serial_tracker_;
 

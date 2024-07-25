@@ -10,8 +10,8 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
-#include "base/containers/cxx20_erase.h"
 #include "base/functional/bind.h"
 #include "base/memory/writable_shared_memory_region.h"
 #include "base/observer_list.h"
@@ -27,7 +27,6 @@
 #include "extensions/browser/guest_view/web_view/web_view_renderer_state.h"
 #include "extensions/browser/renderer_startup_helper.h"
 #include "extensions/browser/script_injection_tracker.h"
-#include "extensions/common/extension_messages.h"
 #include "extensions/common/mojom/run_location.mojom-shared.h"
 #include "extensions/common/permissions/permissions_data.h"
 
@@ -306,7 +305,7 @@ void UserScriptLoader::StartLoad() {
   loaded_scripts_.reset();
 
   // Filter out any scripts that are queued for removal.
-  base::EraseIf(scripts_to_load,
+  std::erase_if(scripts_to_load,
                 [this](const std::unique_ptr<UserScript>& script) {
                   return removed_script_ids_.count(script->id()) > 0u;
                 });
@@ -314,7 +313,7 @@ void UserScriptLoader::StartLoad() {
   // Since all scripts managed by an instance of this class should have unique
   // IDs, remove any already loaded scripts from `scripts_to_load` that will be
   // updated from `added_scripts_map_`.
-  base::EraseIf(scripts_to_load,
+  std::erase_if(scripts_to_load,
                 [this](const std::unique_ptr<UserScript>& script) {
                   return added_scripts_map_.count(script->id()) > 0u;
                 });
@@ -523,7 +522,7 @@ UserScriptLoader::SendUpdateResult UserScriptLoader::SendUpdate(
         // For Controlled Frame embedders, |owner_host| will be a serialized
         // form of the embedder's origin, using scheme, host, port [if
         // applicable] tuple in origin form. No trailing slash.
-        // TODO(crbug.com/1517391): Use an actual Origin object in the
+        // TODO(crbug.com/41490369): Use an actual Origin object in the
         // Controlled Frame comparison rather than a serialized Origin.
         if (owner_host != host_id().id) {
           return SendUpdateResult::kNoActionTaken;

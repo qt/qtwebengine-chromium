@@ -15,9 +15,9 @@
 import {v4 as uuidv4} from 'uuid';
 
 import {BigintMath} from '../../base/bigint_math';
-import {assertFalse} from '../../base/logging';
+import {assertExists, assertFalse} from '../../base/logging';
 import {duration, Time, time} from '../../base/time';
-import {colorForTid} from '../../common/colorizer';
+import {colorForTid} from '../../core/colorizer';
 import {LIMIT, TrackData} from '../../common/track_data';
 import {EngineProxy, TimelineFetcher} from '../../common/track_helper';
 import {checkerboardExcept} from '../../frontend/checkerboard';
@@ -36,8 +36,8 @@ interface Data extends TrackData {
 
 export interface Config {
   pidForColor: number;
-  upid: number|null;
-  utid: number;
+  upid: number | null;
+  utid: number | null;
 }
 
 const MARGIN_TOP = 5;
@@ -67,21 +67,26 @@ export class ProcessSummaryTrack implements Track {
 
   async onCreate(): Promise<void> {
     await this.engine.query(
-        `create virtual table ${this.tableName('window')} using window;`);
+      `create virtual table ${this.tableName('window')} using window;`,
+    );
 
-    let utids = [this.config.utid];
+    let utids: number[];
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (this.config.upid) {
       const threadQuery = await this.engine.query(
-          `select utid from thread where upid=${this.config.upid}`);
+        `select utid from thread where upid=${this.config.upid}`,
+      );
       utids = [];
       for (const it = threadQuery.iter({utid: NUM}); it.valid(); it.next()) {
         utids.push(it.utid);
       }
+    } else {
+      utids = [assertExists(this.config.utid)];
     }
 
     const trackQuery = await this.engine.query(
-        `select id from thread_track where utid in (${utids.join(',')})`);
+      `select id from thread_track where utid in (${utids.join(',')})`,
+    );
     const tracks = [];
     for (const it = trackQuery.iter({id: NUM}); it.valid(); it.next()) {
       tracks.push(it.id);
@@ -89,12 +94,13 @@ export class ProcessSummaryTrack implements Track {
 
     const processSliceView = this.tableName('process_slice_view');
     await this.engine.query(
-        `create view ${processSliceView} as ` +
+      `create view ${processSliceView} as ` +
         // 0 as cpu is a dummy column to perform span join on.
         `select ts, dur/${utids.length} as dur ` +
         `from slice s ` +
         `where depth = 0 and track_id in ` +
-        `(${tracks.join(',')})`);
+        `(${tracks.join(',')})`,
+    );
     await this.engine.query(`create virtual table ${this.tableName('span')}
         using span_join(${processSliceView},
                         ${this.tableName('window')});`);
@@ -104,8 +110,11 @@ export class ProcessSummaryTrack implements Track {
     this.fetcher.requestDataForCurrentTime();
   }
 
-  async onBoundsChange(start: time, end: time, resolution: duration):
-      Promise<Data> {
+  async onBoundsChange(
+    start: time,
+    end: time,
+    resolution: duration,
+  ): Promise<Data> {
     assertFalse(resolution === 0n, 'Resolution cannot be 0');
 
     // |resolution| is in ns/px we want # ns for 10px window:
@@ -124,8 +133,11 @@ export class ProcessSummaryTrack implements Track {
   }
 
   private async computeSummary(
-      start: time, end: time, resolution: duration,
-      bucketSize: duration): Promise<Data> {
+    start: time,
+    end: time,
+    resolution: duration,
+    bucketSize: duration,
+  ): Promise<Data> {
     const duration = end - start;
     const numBuckets = Math.min(Number(duration / bucketSize), LIMIT);
 
@@ -160,9 +172,11 @@ export class ProcessSummaryTrack implements Track {
 
   async onDestroy(): Promise<void> {
     if (this.engine.isAlive) {
-      await this.engine.query(`drop table if exists ${
-          this.tableName(
-              'window')}; drop table if exists ${this.tableName('span')}`);
+      await this.engine.query(
+        `drop table if exists ${this.tableName(
+          'window',
+        )}; drop table if exists ${this.tableName('span')}`,
+      );
     }
     this.fetcher.dispose();
   }
@@ -172,19 +186,18 @@ export class ProcessSummaryTrack implements Track {
   }
 
   render(ctx: CanvasRenderingContext2D, size: PanelSize): void {
-    const {
-      visibleTimeScale,
-    } = globals.timeline;
+    const {visibleTimeScale} = globals.timeline;
     const data = this.fetcher.data;
-    if (data === undefined) return;  // Can't possibly draw anything.
+    if (data === undefined) return; // Can't possibly draw anything.
 
     checkerboardExcept(
-        ctx,
-        this.getHeight(),
-        0,
-        size.width,
-        visibleTimeScale.timeToPx(data.start),
-        visibleTimeScale.timeToPx(data.end));
+      ctx,
+      this.getHeight(),
+      0,
+      size.width,
+      visibleTimeScale.timeToPx(data.start),
+      visibleTimeScale.timeToPx(data.end),
+    );
 
     this.renderSummary(ctx, data);
   }

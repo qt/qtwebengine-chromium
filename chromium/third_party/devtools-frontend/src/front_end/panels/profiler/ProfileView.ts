@@ -16,8 +16,8 @@ import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {BottomUpProfileDataGridTree} from './BottomUpProfileDataGrid.js';
-import {CPUProfileFlameChart, type ProfileFlameChartDataProvider} from './CPUProfileFlameChart.js';
 import {type Formatter, type ProfileDataGridNode, ProfileDataGridTree} from './ProfileDataGrid.js';
+import {ProfileFlameChart, type ProfileFlameChartDataProvider} from './ProfileFlameChartDataProvider.js';
 import {type DataDisplayDelegate, ProfileHeader, type ProfileType} from './ProfileHeader.js';
 import {ProfileSidebarTreeElement} from './ProfileSidebarTreeElement.js';
 import {TopDownProfileDataGridTree} from './TopDownProfileDataGrid.js';
@@ -121,9 +121,9 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
   topDownProfileDataGridTree?: TopDownProfileDataGridTree|null;
   currentSearchResultIndex?: number;
   dataProvider?: ProfileFlameChartDataProvider;
-  flameChart?: CPUProfileFlameChart;
-  visibleView?: CPUProfileFlameChart|DataGrid.DataGrid.DataGridWidget<unknown>;
-  searchableElement?: ProfileDataGridTree|CPUProfileFlameChart;
+  flameChart?: ProfileFlameChart;
+  visibleView?: ProfileFlameChart|DataGrid.DataGrid.DataGridWidget<unknown>;
+  searchableElement?: ProfileDataGridTree|ProfileFlameChart;
   profileDataGridTree?: ProfileDataGridTree;
   constructor() {
     super(i18nString(UIStrings.profile));
@@ -135,9 +135,8 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
     this.searchableViewInternal.show(this.element);
 
     const columns = ([] as DataGrid.DataGrid.ColumnDescriptor[]);
-    const k = Platform.StringUtilities.kebab;
     columns.push({
-      id: k('self'),
+      id: 'self',
       title: this.columnHeader('self'),
       width: '120px',
       fixedWidth: true,
@@ -155,7 +154,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
       defaultWeight: undefined,
     });
     columns.push({
-      id: k('total'),
+      id: 'total',
       title: this.columnHeader('total'),
       width: '120px',
       fixedWidth: true,
@@ -173,7 +172,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
       defaultWeight: undefined,
     });
     columns.push({
-      id: k('function'),
+      id: 'function',
       title: i18nString(UIStrings.function),
       disclosure: true,
       sortable: true,
@@ -252,7 +251,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
   initialize(nodeFormatter: Formatter): void {
     this.nodeFormatter = nodeFormatter;
 
-    this.viewType = Common.Settings.Settings.instance().createSetting('profileView', ViewTypes.Heavy);
+    this.viewType = Common.Settings.Settings.instance().createSetting('profile-view', ViewTypes.Heavy);
     const viewTypes = [ViewTypes.Flame, ViewTypes.Heavy, ViewTypes.Tree];
 
     const optionNames = new Map([
@@ -406,7 +405,7 @@ export class ProfileView extends UI.View.SimpleView implements UI.SearchableView
       return;
     }
     this.dataProvider = this.createFlameChartDataProvider();
-    this.flameChart = new CPUProfileFlameChart(this.searchableViewInternal, this.dataProvider);
+    this.flameChart = new ProfileFlameChart(this.searchableViewInternal, this.dataProvider);
     this.flameChart.addEventListener(PerfUI.FlameChart.Events.EntryInvoked, event => {
       void this.onEntryInvoked(event);
     });

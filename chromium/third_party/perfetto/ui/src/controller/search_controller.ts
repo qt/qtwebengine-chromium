@@ -13,17 +13,13 @@
 // limitations under the License.
 
 import {sqliteString} from '../base/string_utils';
-import {
-  Duration,
-  duration,
-  Span,
-  time,
-  Time,
-  TimeSpan,
-} from '../base/time';
+import {Duration, duration, Span, time, Time, TimeSpan} from '../base/time';
 import {exists} from '../base/utils';
-import {pluginManager} from '../common/plugins';
-import {CurrentSearchResults, SearchSummary} from '../common/search_data';
+import {
+  CurrentSearchResults,
+  SearchSource,
+  SearchSummary,
+} from '../common/search_data';
 import {OmniboxState} from '../common/state';
 import {globals} from '../frontend/globals';
 import {publishSearch, publishSearchResult} from '../frontend/publish';
@@ -75,19 +71,23 @@ export class SearchController extends Controller<'main'> {
 
     const visibleState = globals.state.frontendLocalState.visibleState;
     const omniboxState = globals.state.omniboxState;
-    if (visibleState === undefined || omniboxState === undefined ||
-        omniboxState.mode === 'COMMAND') {
+    if (
+      visibleState === undefined ||
+      omniboxState === undefined ||
+      omniboxState.mode === 'COMMAND'
+    ) {
       return;
     }
     const newSpan = globals.stateVisibleTime();
     const newOmniboxState = omniboxState;
     const newResolution = visibleState.resolution;
-    if (this.previousSpan.contains(newSpan) &&
-        this.previousResolution === newResolution &&
-        this.previousOmniboxState === newOmniboxState) {
+    if (
+      this.previousSpan.contains(newSpan) &&
+      this.previousResolution === newResolution &&
+      this.previousOmniboxState === newOmniboxState
+    ) {
       return;
     }
-
 
     // TODO(hjd): We should restrict this to the start of the trace but
     // that is not easily available here.
@@ -104,8 +104,8 @@ export class SearchController extends Controller<'main'> {
         count: new Uint8Array(0),
       });
       publishSearchResult({
-        sliceIds: new Float64Array(0),
-        tsStarts: new BigInt64Array(0),
+        eventIds: new Float64Array(0),
+        tses: new BigInt64Array(0),
         utids: new Float64Array(0),
         sources: [],
         trackKeys: [],
@@ -115,28 +115,33 @@ export class SearchController extends Controller<'main'> {
     }
 
     this.updateInProgress = true;
-    const computeSummary =
-        this.update(search, newSpan.start, newSpan.end, newResolution)
-            .then((summary) => {
-              publishSearch(summary);
-            });
+    const computeSummary = this.update(
+      search,
+      newSpan.start,
+      newSpan.end,
+      newResolution,
+    ).then((summary) => {
+      publishSearch(summary);
+    });
 
     const computeResults = this.specificSearch(search).then((searchResults) => {
       publishSearchResult(searchResults);
     });
 
-    Promise.all([computeSummary, computeResults])
-        .finally(() => {
-          this.updateInProgress = false;
-          this.run();
-        });
+    Promise.all([computeSummary, computeResults]).finally(() => {
+      this.updateInProgress = false;
+      this.run();
+    });
   }
 
   onDestroy() {}
 
   private async update(
-      search: string, start: time, end: time,
-      resolution: duration): Promise<SearchSummary> {
+    search: string,
+    start: time,
+    end: time,
+    resolution: duration,
+  ): Promise<SearchSummary> {
     const searchLiteral = escapeSearchQuery(search);
 
     const quantum = resolution * 10n;
@@ -202,11 +207,9 @@ export class SearchController extends Controller<'main'> {
     // easier once the track table has entries for all the tracks.
     const cpuToTrackId = new Map();
     for (const track of Object.values(globals.state.tracks)) {
-      if (exists(track?.uri)) {
-        const trackInfo = pluginManager.resolveTrackInfo(track.uri);
-        if (trackInfo?.kind === CPU_SLICE_TRACK_KIND) {
-          exists(trackInfo.cpu) && cpuToTrackId.set(trackInfo.cpu, track.key);
-        }
+      const trackInfo = globals.trackManager.resolveTrackInfo(track.uri);
+      if (trackInfo?.kind === CPU_SLICE_TRACK_KIND) {
+        exists(trackInfo.cpu) && cpuToTrackId.set(trackInfo.cpu, track.key);
       }
     }
 
@@ -219,73 +222,102 @@ export class SearchController extends Controller<'main'> {
       utids.push(it.utid);
     }
 
-    const queryRes = await this.query(`
-    select
-      id as sliceId,
-      ts,
-      'cpu' as source,
-      cpu as sourceId,
-      utid
-    from sched where utid in (${utids.join(',')})
-    union
-    select
-      slice_id as sliceId,
-      ts,
-      'track' as source,
-      track_id as sourceId,
-      0 as utid
-      from slice
-      where slice.name glob ${searchLiteral}
-        or (
-          0 != CAST(${(sqliteString(search))} AS INT) and
-          sliceId = CAST(${(sqliteString(search))} AS INT)
-        )
-    union
-    select
-      slice_id as sliceId,
-      ts,
-      'track' as source,
-      track_id as sourceId,
-      0 as utid
-      from slice
-      join args using(arg_set_id)
-      where string_value glob ${searchLiteral} or key glob ${searchLiteral}
-    union
-    select
-      id as sliceId,
-      ts,
-      'log' as source,
-      0 as sourceId,
-      utid
-    from android_logs where msg glob ${searchLiteral}
-    order by ts
-
+    const res = await this.query(`
+      select
+        id as sliceId,
+        ts,
+        'cpu' as source,
+        cpu as sourceId,
+        utid
+      from sched where utid in (${utids.join(',')})
+      union all
+      select *
+      from (
+        select
+          slice_id as sliceId,
+          ts,
+          'slice' as source,
+          track_id as sourceId,
+          0 as utid
+          from slice
+          where slice.name glob ${searchLiteral}
+            or (
+              0 != CAST(${sqliteString(search)} AS INT) and
+              sliceId = CAST(${sqliteString(search)} AS INT)
+            )
+        union
+        select
+          slice_id as sliceId,
+          ts,
+          'slice' as source,
+          track_id as sourceId,
+          0 as utid
+        from slice
+        join args using(arg_set_id)
+        where string_value glob ${searchLiteral} or key glob ${searchLiteral}
+      )
+      union all
+      select
+        id as sliceId,
+        ts,
+        'log' as source,
+        0 as sourceId,
+        utid
+      from android_logs where msg glob ${searchLiteral}
+      order by ts
     `);
 
-    const rows = queryRes.numRows();
     const searchResults: CurrentSearchResults = {
-      sliceIds: new Float64Array(rows),
-      tsStarts: new BigInt64Array(rows),
-      utids: new Float64Array(rows),
-      trackKeys: [],
+      eventIds: new Float64Array(0),
+      tses: new BigInt64Array(0),
+      utids: new Float64Array(0),
       sources: [],
+      trackKeys: [],
       totalResults: 0,
     };
 
-    const it = queryRes.iter(
-        {sliceId: NUM, ts: LONG, source: STR, sourceId: NUM, utid: NUM});
+    const lowerSearch = search.toLowerCase();
+    for (const track of Object.values(globals.state.tracks)) {
+      if (track.name.toLowerCase().indexOf(lowerSearch) === -1) {
+        continue;
+      }
+      searchResults.totalResults++;
+      searchResults.sources.push('track');
+      searchResults.trackKeys.push(track.key);
+    }
+
+    const rows = res.numRows();
+    searchResults.eventIds = new Float64Array(
+      searchResults.totalResults + rows,
+    );
+    searchResults.tses = new BigInt64Array(searchResults.totalResults + rows);
+    searchResults.utids = new Float64Array(searchResults.totalResults + rows);
+    for (let i = 0; i < searchResults.totalResults; ++i) {
+      searchResults.eventIds[i] = -1;
+      searchResults.tses[i] = -1n;
+      searchResults.utids[i] = -1;
+    }
+
+    const it = res.iter({
+      sliceId: NUM,
+      ts: LONG,
+      source: STR,
+      sourceId: NUM,
+      utid: NUM,
+    });
     for (; it.valid(); it.next()) {
       let trackId = undefined;
       if (it.source === 'cpu') {
         trackId = cpuToTrackId.get(it.sourceId);
-      } else if (it.source === 'track') {
-        trackId = globals.state.trackKeyByTrackId[it.sourceId];
+      } else if (it.source === 'slice') {
+        trackId = globals.trackManager.trackKeyByTrackId.get(it.sourceId);
       } else if (it.source === 'log') {
-        const logTracks =
-            Object.values(globals.state.tracks).filter((track) => {
-              const trackDesc = pluginManager.resolveTrackInfo(track.uri);
-              return (trackDesc && trackDesc.kind === 'AndroidLogTrack');
-            });
+        const logTracks = Object.values(globals.state.tracks).filter(
+          (track) => {
+            const trackDesc = globals.trackManager.resolveTrackInfo(track.uri);
+            return trackDesc && trackDesc.kind === 'AndroidLogTrack';
+          },
+        );
         if (logTracks.length > 0) {
           trackId = logTracks[0].key;
         }
@@ -298,9 +330,9 @@ export class SearchController extends Controller<'main'> {
 
       const i = searchResults.totalResults++;
       searchResults.trackKeys.push(trackId);
-      searchResults.sources.push(it.source);
-      searchResults.sliceIds[i] = it.sliceId;
-      searchResults.tsStarts[i] = it.ts;
+      searchResults.sources.push(it.source as SearchSource);
+      searchResults.eventIds[i] = it.sliceId;
+      searchResults.tses[i] = it.ts;
       searchResults.utids[i] = it.utid;
     }
     return searchResults;

@@ -28,17 +28,19 @@
 #include "base/sequence_checker.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/trace_event/typed_macros.h"
 #include "base/types/pass_key.h"
-#include "content/browser/interest_group/interest_group_ad.pb.h"
+#include "content/browser/interest_group/bidding_and_auction_server_key_fetcher.h"
 #include "content/browser/interest_group/interest_group_features.h"
 #include "content/browser/interest_group/interest_group_k_anonymity_manager.h"
+#include "content/browser/interest_group/interest_group_storage.pb.h"
 #include "content/browser/interest_group/interest_group_update.h"
 #include "content/browser/interest_group/storage_interest_group.h"
 #include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom.h"
+#include "crypto/sha2.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "sql/database.h"
 #include "sql/error_delegate_util.h"
@@ -88,6 +90,8 @@ const base::FilePath::CharType kDatabasePath[] =
 // Version 21 - 2023/11 - crrev.com/c/5063314
 // Version 22 - 2023/12 - crrev.com/c/5063589
 // Version 23 - 2024/01 - crrev.com/c/5173733
+// Version 24 - 2024/01 - crrev.com/c/5245196
+// Version 25 - 2024/04 - crrev.com/c/5497898
 //
 // Version 1 adds a table for interest groups.
 // Version 2 adds a column for rate limiting interest group updates.
@@ -120,11 +124,13 @@ const base::FilePath::CharType kDatabasePath[] =
 // starting and duration columns to starting_time and type columns to the debug
 // report cooldown table.
 // Version 23 adds trusted bidding signals URL length limit.
-const int kCurrentVersionNumber = 23;
+// Version 24 adds cached B&A server keys.
+// Version 25 uses hashed k-anon keys instead of the unhashed versions.
+const int kCurrentVersionNumber = 25;
 
 // Earliest version of the code which can use a |kCurrentVersionNumber| database
 // without failing.
-const int kCompatibleVersionNumber = 23;
+const int kCompatibleVersionNumber = 25;
 
 // Latest version of the database that cannot be upgraded to
 // |kCurrentVersionNumber| without razing the database.
@@ -318,26 +324,27 @@ DeserializeInterestGroupAdVectorProto(const PassKey& passkey,
   if (not success || ad_protos.ads().empty()) {
     return std::nullopt;
   }
+
   std::vector<blink::InterestGroup::Ad> out;
   out.reserve(ad_protos.ads_size());
-  for (const auto& ad_proto : ad_protos.ads()) {
+  for (auto& ad_proto : *ad_protos.mutable_ads()) {
     blink::InterestGroup::Ad& ad =
-        out.emplace_back(passkey, ad_proto.render_url());
+        out.emplace_back(passkey, std::move(*ad_proto.mutable_render_url()));
     if (ad_proto.has_size_group()) {
-      ad.size_group = ad_proto.size_group();
+      ad.size_group = std::move(*ad_proto.mutable_size_group());
     }
     if (ad_proto.has_metadata()) {
-      ad.metadata = ad_proto.metadata();
+      ad.metadata = std::move(*ad_proto.mutable_metadata());
     }
     if (ad_proto.has_buyer_reporting_id()) {
-      ad.buyer_reporting_id = ad_proto.buyer_reporting_id();
+      ad.buyer_reporting_id = std::move(*ad_proto.mutable_buyer_reporting_id());
     }
     if (ad_proto.has_buyer_and_seller_reporting_id()) {
       ad.buyer_and_seller_reporting_id =
-          ad_proto.buyer_and_seller_reporting_id();
+          std::move(*ad_proto.mutable_buyer_and_seller_reporting_id());
     }
     if (ad_proto.has_ad_render_id()) {
-      ad.ad_render_id = ad_proto.ad_render_id();
+      ad.ad_render_id = std::move(*ad_proto.mutable_ad_render_id());
     }
     if (!ad_proto.allowed_reporting_origins().empty()) {
       std::vector<url::Origin> allowed_reporting_origins_vector;
@@ -581,6 +588,24 @@ void MergePrioritySignalsOverrides(
   }
 }
 
+// These values are persisted to the database. Do not change.
+enum KAnonKeyType {
+  kAdBid = 0,
+  kAdNameReporting = 1,
+  kComponentBid = 2,
+  kUnknown = 3
+};
+
+KAnonKeyType GetKAnonType(const std::string& unhashed_key) {
+  if (unhashed_key.starts_with(blink::kKAnonKeyForAdBidPrefix)) {
+    return KAnonKeyType::kAdBid;
+  } else if (unhashed_key.starts_with(
+                 blink::kKAnonKeyForAdComponentBidPrefix)) {
+    return KAnonKeyType::kComponentBid;
+  }
+  return KAnonKeyType::kAdNameReporting;
+}
+
 // Adds indices to the `interest_group` table.
 // Call this function after the table has been created,
 // both when creating a new database in CreateVxxSchema
@@ -658,7 +683,7 @@ bool CreateKAnonIndices(sql::Database& db) {
   static const char kCreateKAnonIndexSQL[] =
       // clang-format off
       "CREATE INDEX kanon_key_idx "
-      "ON k_anon(key)";
+      "ON k_anon(hashed_key)";
   // clang-format on
   if (!db.Execute(kCreateKAnonIndexSQL)) {
     return false;
@@ -675,9 +700,73 @@ bool CreateKAnonIndices(sql::Database& db) {
 
 bool MaybeCreateKAnonEntry(sql::Database& db,
                            const blink::InterestGroupKey& interest_group_key,
-                           const std::string& key,
-                           const base::Time& now,
-                           bool for_database_update = false) {
+                           const std::string& hashed_key,
+                           const KAnonKeyType& key_type,
+                           const base::Time& now) {
+  base::Time distant_past = base::Time::Min();
+  base::Time last_referenced_time = now;
+
+  sql::Statement get_previous_kanon_val(
+      db.GetCachedStatement(SQL_FROM_HERE,
+                            "SELECT is_k_anon,"
+                            "last_k_anon_updated_time,"
+                            "last_reported_to_anon_server_time "
+                            "FROM k_anon "
+                            "WHERE hashed_key = ? "
+                            "LIMIT 1"));
+  // We can get any previously added row for a k_anon key because the same data
+  // is duplicated for each row of the same key.
+  get_previous_kanon_val.BindBlob(0, hashed_key);
+
+  if (!get_previous_kanon_val.is_valid()) {
+    return false;
+  }
+
+  bool is_kanon = false;
+  base::Time last_k_anon_updated_time = distant_past;
+  base::Time last_reported_to_anon_server_time = distant_past;
+  if (get_previous_kanon_val.Step()) {
+    is_kanon = get_previous_kanon_val.ColumnBool(0);
+    last_k_anon_updated_time = get_previous_kanon_val.ColumnTime(1);
+    last_reported_to_anon_server_time = get_previous_kanon_val.ColumnTime(2);
+  }
+
+  sql::Statement maybe_insert_kanon(
+      db.GetCachedStatement(SQL_FROM_HERE,
+                            // clang-format off
+      "INSERT OR REPLACE INTO k_anon("
+              "last_referenced_time,"
+              "owner,"
+              "name,"
+              "is_k_anon,"
+              "last_k_anon_updated_time,"
+              "last_reported_to_anon_server_time,"
+              "hashed_key,"
+              "key_type) "
+            "VALUES(?,?,?,?,?,?,?,?)"));
+  // clang-format on
+
+  if (!maybe_insert_kanon.is_valid()) {
+    return false;
+  }
+
+  maybe_insert_kanon.Reset(true);
+  maybe_insert_kanon.BindTime(0, last_referenced_time);
+  maybe_insert_kanon.BindString(1, Serialize(interest_group_key.owner));
+  maybe_insert_kanon.BindString(2, interest_group_key.name);
+  maybe_insert_kanon.BindBool(3, is_kanon);
+  maybe_insert_kanon.BindTime(4, last_k_anon_updated_time);
+  maybe_insert_kanon.BindTime(5, last_reported_to_anon_server_time);
+  maybe_insert_kanon.BindBlob(6, hashed_key);
+  maybe_insert_kanon.BindInt(7, key_type);
+  return maybe_insert_kanon.Run();
+}
+
+bool MaybeCreateKAnonEntryForV17DatabaseUpgrade(
+    sql::Database& db,
+    const blink::InterestGroupKey& interest_group_key,
+    const std::string& key,
+    const base::Time& now) {
   base::Time distant_past = base::Time::Min();
   base::Time last_referenced_time = now;
 
@@ -707,7 +796,7 @@ bool MaybeCreateKAnonEntry(sql::Database& db,
 
   // clang-format off
   const char insert_k_anon_str[] =
-      "INSERT OR REPLACE INTO %s("
+      "INSERT OR REPLACE INTO k_anon_new("
               "last_referenced_time,"
               "key,"
               "owner,"
@@ -718,16 +807,8 @@ bool MaybeCreateKAnonEntry(sql::Database& db,
             "VALUES(?,?,?,?,?,?,?)";
   // clang-format on
 
-  sql::Statement maybe_insert_kanon;
-  if (for_database_update) {
-    std::string query = base::StringPrintf(insert_k_anon_str, "k_anon_new");
-    maybe_insert_kanon.Assign(
-        db.GetCachedStatement(SQL_FROM_HERE, query.c_str()));
-  } else {
-    std::string query = base::StringPrintf(insert_k_anon_str, "k_anon");
-    maybe_insert_kanon.Assign(
-        db.GetCachedStatement(SQL_FROM_HERE, query.c_str()));
-  }
+  sql::Statement maybe_insert_kanon(
+      db.GetCachedStatement(SQL_FROM_HERE, insert_k_anon_str));
 
   if (!maybe_insert_kanon.is_valid()) {
     return false;
@@ -746,19 +827,20 @@ bool MaybeCreateKAnonEntry(sql::Database& db,
 
 bool InsertKAnonForJoinedInterestGroup(sql::Database& db,
                                        const blink::InterestGroup& data,
-                                       base::Time exact_join_time,
-                                       bool for_database_update) {
+                                       base::Time exact_join_time) {
   blink::InterestGroupKey interest_group_key(data.owner, data.name);
   if (data.ads.has_value() && data.bidding_url.has_value()) {
     for (auto& ad : *data.ads) {
-      if (!MaybeCreateKAnonEntry(db, interest_group_key,
-                                 blink::KAnonKeyForAdNameReporting(data, ad),
-                                 exact_join_time, for_database_update)) {
+      if (!MaybeCreateKAnonEntry(
+              db, interest_group_key,
+              blink::HashedKAnonKeyForAdNameReporting(data, ad),
+              KAnonKeyType::kAdNameReporting, exact_join_time)) {
         return false;
       }
-      if (!MaybeCreateKAnonEntry(db, interest_group_key,
-                                 blink::KAnonKeyForAdBid(data, ad.render_url()),
-                                 exact_join_time, for_database_update)) {
+      if (!MaybeCreateKAnonEntry(
+              db, interest_group_key,
+              blink::HashedKAnonKeyForAdBid(data, ad.render_url()),
+              KAnonKeyType::kAdBid, exact_join_time)) {
         return false;
       }
     }
@@ -767,8 +849,8 @@ bool InsertKAnonForJoinedInterestGroup(sql::Database& db,
     for (auto& ad : *data.ad_components) {
       if (!MaybeCreateKAnonEntry(
               db, interest_group_key,
-              blink::KAnonKeyForAdComponentBid(ad.render_url()),
-              exact_join_time, for_database_update)) {
+              blink::HashedKAnonKeyForAdComponentBid(ad.render_url()),
+              KAnonKeyType::kComponentBid, exact_join_time)) {
         return false;
       }
     }
@@ -779,7 +861,7 @@ bool InsertKAnonForJoinedInterestGroup(sql::Database& db,
 
 // Initializes the tables, returning true on success.
 // The tables cannot exist when calling this function.
-bool CreateV23Schema(sql::Database& db) {
+bool CreateV25Schema(sql::Database& db) {
   DCHECK(!db.DoesTableExist("interest_groups"));
   static const char kInterestGroupTableSql[] =
       // clang-format off
@@ -833,13 +915,14 @@ bool CreateV23Schema(sql::Database& db) {
   static const char kCreateInterestGroupKAnonTableSql[] =
       "CREATE TABLE k_anon("
       "last_referenced_time INTEGER NOT NULL,"
-      "key TEXT NOT NULL,"
+      "hashed_key BLOB NOT NULL,"
       "owner TEXT NOT NULL,"
       "name TEXT NOT NULL,"
       "is_k_anon INTEGER NOT NULL,"
+      "key_type INTEGER NOT NULL,"
       "last_k_anon_updated_time INTEGER NOT NULL,"
       "last_reported_to_anon_server_time INTEGER NOT NULL,"
-      "PRIMARY KEY(owner,name,key))";
+      "PRIMARY KEY(owner,name,hashed_key))";
   // clang-format on
   if (!db.Execute(kCreateInterestGroupKAnonTableSql)) {
     return false;
@@ -933,7 +1016,115 @@ bool CreateV23Schema(sql::Database& db) {
     return false;
   }
 
+  DCHECK(!db.DoesTableExist("bidding_and_auction_server_keys"));
+  static const char kBAKeysTableSql[] =
+      // clang-format off
+      "CREATE TABLE bidding_and_auction_server_keys("
+        "coordinator TEXT NOT NULL,"
+        "keys BLOB NOT NULL,"
+        "expiration INTEGER NOT NULL,"
+      "PRIMARY KEY(coordinator))";
+  // clang-format on
+  if (!db.Execute(kBAKeysTableSql)) {
+    return false;
+  }
   return true;
+}
+
+bool UpgradeV24SchemaToV25(sql::Database& db, sql::MetaTable& meta_table) {
+  static const char kCreateKAnonTableSql[] =
+      "CREATE TABLE k_anon_new("
+      "last_referenced_time INTEGER NOT NULL,"
+      "hashed_key BLOB NOT NULL,"
+      "owner TEXT NOT NULL,"
+      "name TEXT NOT NULL,"
+      "is_k_anon INTEGER NOT NULL,"
+      "key_type INTEGER NOT NULL,"
+      "last_k_anon_updated_time INTEGER NOT NULL,"
+      "last_reported_to_anon_server_time INTEGER NOT NULL,"
+      "PRIMARY KEY(owner,name,hashed_key))";
+  if (!db.Execute(kCreateKAnonTableSql)) {
+    return false;
+  }
+
+  sql::Statement select_previous_k_anon_values(db.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT last_referenced_time, owner, name, "
+      "is_k_anon, last_k_anon_updated_time, "
+      "last_reported_to_anon_server_time, key FROM k_anon"));
+  if (!select_previous_k_anon_values.is_valid()) {
+    return false;
+  }
+
+  // clang-format off
+  sql::Statement insert_entry(
+    db.GetCachedStatement(SQL_FROM_HERE,
+    "INSERT INTO k_anon_new("
+            "last_referenced_time,"
+            "owner,"
+            "name,"
+            "is_k_anon,"
+            "last_k_anon_updated_time,"
+            "last_reported_to_anon_server_time,"
+            "hashed_key,"
+            "key_type) "
+          "VALUES(?,?,?,?,?,?,?,?)"));
+  // clang-format on
+  if (!insert_entry.is_valid()) {
+    return false;
+  }
+
+  while (select_previous_k_anon_values.Step()) {
+    insert_entry.Reset(true);
+
+    // Copy over the existing columns.
+    insert_entry.BindTime(0, select_previous_k_anon_values.ColumnTime(0));
+    insert_entry.BindString(1, select_previous_k_anon_values.ColumnString(1));
+    insert_entry.BindString(2, select_previous_k_anon_values.ColumnString(2));
+    insert_entry.BindBool(3, select_previous_k_anon_values.ColumnBool(3));
+    insert_entry.BindTime(4, select_previous_k_anon_values.ColumnTime(4));
+    insert_entry.BindTime(5, select_previous_k_anon_values.ColumnTime(5));
+
+    // Create the new columns.
+    std::string unhashed_key = select_previous_k_anon_values.ColumnString(6);
+    insert_entry.BindBlob(6, crypto::SHA256HashString(unhashed_key));
+    insert_entry.BindInt(7, GetKAnonType(unhashed_key));
+
+    if (!insert_entry.Run()) {
+      return false;
+    }
+  }
+  if (!select_previous_k_anon_values.Succeeded()) {
+    return false;
+  }
+
+  static const char kDropKAnonTableSql[] = "DROP TABLE k_anon";
+  if (!db.Execute(kDropKAnonTableSql)) {
+    return false;
+  }
+
+  static const char kRenameKAnonTableSql[] =
+      // clang-format off
+      "ALTER TABLE k_anon_new "
+      "RENAME TO k_anon";
+  // clang-format on
+  if (!db.Execute(kRenameKAnonTableSql)) {
+    return false;
+  }
+
+  return CreateKAnonIndices(db);
+}
+
+bool UpgradeV23SchemaToV24(sql::Database& db, sql::MetaTable& meta_table) {
+  static const char kBAKeysTableSql[] =
+      // clang-format off
+    "CREATE TABLE bidding_and_auction_server_keys("
+      "coordinator TEXT NOT NULL,"
+      "keys BLOB NOT NULL,"
+      "expiration INTEGER NOT NULL,"
+    "PRIMARY KEY(coordinator))";
+  // clang-format on
+  return db.Execute(kBAKeysTableSql);
 }
 
 bool UpgradeV22SchemaToV23(sql::Database& db, sql::MetaTable& meta_table) {
@@ -1377,8 +1568,32 @@ bool UpgradeV16SchemaToV17(sql::Database& db,
     ig.bidding_url =
         DeserializeURL(select_igs_with_ads_and_bidding_url.ColumnString(4));
 
-    InsertKAnonForJoinedInterestGroup(db, ig, now,
-                                      /*for_database_update=*/true);
+    // Insert k-anon keys for the interest group's ads.
+    blink::InterestGroupKey interest_group_key(ig.owner, ig.name);
+    if (ig.ads.has_value() && ig.bidding_url.has_value()) {
+      for (auto& ad : *ig.ads) {
+        if (!MaybeCreateKAnonEntryForV17DatabaseUpgrade(
+                db, interest_group_key,
+                blink::DEPRECATED_KAnonKeyForAdNameReporting(ig, ad), now)) {
+          return false;
+        }
+        if (!MaybeCreateKAnonEntryForV17DatabaseUpgrade(
+                db, interest_group_key,
+                blink::DEPRECATED_KAnonKeyForAdBid(ig, ad.render_url()), now)) {
+          return false;
+        }
+      }
+    }
+    if (ig.ad_components.has_value()) {
+      for (auto& ad : *ig.ad_components) {
+        if (!MaybeCreateKAnonEntryForV17DatabaseUpgrade(
+                db, interest_group_key,
+                blink::DEPRECATED_KAnonKeyForAdComponentBid(ad.render_url()),
+                now)) {
+          return false;
+        }
+      }
+    }
   }
 
   static const char kDropKAnonTableSql[] = "DROP TABLE k_anon";
@@ -1391,11 +1606,7 @@ bool UpgradeV16SchemaToV17(sql::Database& db,
       "ALTER TABLE k_anon_new "
       "RENAME TO k_anon";
   // clang-format on
-  if (!db.Execute(kRenameKAnonTableSql)) {
-    return false;
-  }
-
-  return CreateKAnonIndices(db);
+  return db.Execute(kRenameKAnonTableSql);
 }
 
 bool UpgradeV15SchemaToV16(sql::Database& db,
@@ -2296,61 +2507,46 @@ std::optional<std::vector<std::string>> DoClearOriginJoinedInterestGroups(
   return cleared_interest_groups;
 }
 
-bool DoLoadInterestGroup(sql::Database& db,
-                         const PassKey& passkey,
-                         const blink::InterestGroupKey& group_key,
-                         blink::InterestGroup& group,
-                         url::Origin* joining_origin = nullptr,
-                         base::Time* exact_join_time = nullptr,
-                         base::Time* last_updated = nullptr) {
-  // clang-format off
-  sql::Statement load(
-      db.GetCachedStatement(SQL_FROM_HERE,
-        "SELECT expiration,"
-          "joining_origin,"
-          "exact_join_time,"
-          "last_updated,"
-          "priority,"
-          "enable_bidding_signals_prioritization,"
-          "priority_vector,"
-          "priority_signals_overrides,"
-          "seller_capabilities,"
-          "all_sellers_capabilities,"
-          "execution_mode,"
-          "bidding_url,"
-          "bidding_wasm_helper_url,"
-          "update_url,"
-          "trusted_bidding_signals_url,"
-          "trusted_bidding_signals_keys,"
-          "trusted_bidding_signals_slot_size_mode,"
-          "max_trusted_bidding_signals_url_length,"
-          "user_bidding_signals,"  // opaque data
-          "ads_pb,"
-          "ad_components_pb,"
-          "ad_sizes,"
-          "size_groups,"
-          "auction_server_request_flags,"
-          "additional_bid_key,"
-          "aggregation_coordinator_origin "
-        "FROM interest_groups "
-        "WHERE owner = ? AND name = ? "));
-  // clang-format on
+#define COMMON_INTEREST_GROUPS_QUERY_FIELDS \
+  "expiration,"                             \
+  "joining_origin,"                         \
+  "exact_join_time,"                        \
+  "last_updated,"                           \
+  "priority,"                               \
+  "enable_bidding_signals_prioritization,"  \
+  "priority_vector,"                        \
+  "priority_signals_overrides,"             \
+  "seller_capabilities,"                    \
+  "all_sellers_capabilities,"               \
+  "execution_mode,"                         \
+  "bidding_url,"                            \
+  "bidding_wasm_helper_url,"                \
+  "update_url,"                             \
+  "trusted_bidding_signals_url,"            \
+  "trusted_bidding_signals_keys,"           \
+  "trusted_bidding_signals_slot_size_mode," \
+  "max_trusted_bidding_signals_url_length," \
+  "user_bidding_signals," /* opaque data */ \
+  "ads_pb,"                                 \
+  "ad_components_pb,"                       \
+  "ad_sizes,"                               \
+  "size_groups,"                            \
+  "auction_server_request_flags,"           \
+  "additional_bid_key,"                     \
+  "aggregation_coordinator_origin"
 
-  if (!load.is_valid()) {
-    return false;
-  }
-
-  load.Reset(true);
-  load.BindString(0, Serialize(group_key.owner));
-  load.BindString(1, group_key.name);
-
-  if (!load.Step() || !load.Succeeded()) {
-    return false;
-  }
-
+// Populate `group`, `joining_origin`, `exact_join_time`, `last_updated` with
+// the current `load` outcome. Prerequisite: `load` is an interest group query
+// with the initial fields being `COMMON_INTEREST_GROUPS_QUERY_FIELDS`, and
+// there is a row of data returned.
+void PopulateInterestGroupFromQueryResult(sql::Statement& load,
+                                          const PassKey& passkey,
+                                          blink::InterestGroup& group,
+                                          url::Origin* joining_origin,
+                                          base::Time* exact_join_time,
+                                          base::Time* last_updated) {
   group.expiry = load.ColumnTime(0);
-  group.owner = group_key.owner;
-  group.name = group_key.name;
+
   if (joining_origin) {
     *joining_origin = DeserializeOrigin(load.ColumnString(1));
   }
@@ -2360,6 +2556,7 @@ bool DoLoadInterestGroup(sql::Database& db,
   if (last_updated) {
     *last_updated = load.ColumnTime(3);
   }
+
   group.priority = load.ColumnDouble(4);
   group.enable_bidding_signals_prioritization = load.ColumnBool(5);
   group.priority_vector = DeserializeStringDoubleMap(load.ColumnString(6));
@@ -2397,6 +2594,42 @@ bool DoLoadInterestGroup(sql::Database& db,
     group.aggregation_coordinator_origin =
         DeserializeOrigin(load.ColumnString(25));
   }
+}
+
+bool DoLoadInterestGroup(sql::Database& db,
+                         const PassKey& passkey,
+                         const blink::InterestGroupKey& group_key,
+                         blink::InterestGroup& group,
+                         url::Origin* joining_origin = nullptr,
+                         base::Time* exact_join_time = nullptr,
+                         base::Time* last_updated = nullptr) {
+  // clang-format off
+  sql::Statement load(
+      db.GetCachedStatement(SQL_FROM_HERE,
+        "SELECT " COMMON_INTEREST_GROUPS_QUERY_FIELDS " "
+        "FROM interest_groups "
+        "WHERE owner = ? AND name = ? "));
+  // clang-format on
+
+  if (!load.is_valid()) {
+    return false;
+  }
+
+  load.Reset(true);
+  load.BindString(0, Serialize(group_key.owner));
+  load.BindString(1, group_key.name);
+
+  if (!load.Step() || !load.Succeeded()) {
+    return false;
+  }
+
+  group.expiry = load.ColumnTime(0);
+  group.owner = group_key.owner;
+  group.name = group_key.name;
+
+  PopulateInterestGroupFromQueryResult(load, passkey, group, joining_origin,
+                                       exact_join_time, last_updated);
+
   return true;
 }
 
@@ -2587,8 +2820,7 @@ bool DoJoinInterestGroup(sql::Database& db,
     return false;
   }
 
-  if (!InsertKAnonForJoinedInterestGroup(db, data, exact_join_time,
-                                         /*for_database_update=*/false)) {
+  if (!InsertKAnonForJoinedInterestGroup(db, data, exact_join_time)) {
     return false;
   }
   return transaction.Commit();
@@ -2791,12 +3023,36 @@ bool DoUpdateInterestGroup(sql::Database& db,
     return false;
   }
 
-  if (!InsertKAnonForJoinedInterestGroup(db, stored_group, now,
-                                         /*for_database_update=*/false)) {
+  if (!InsertKAnonForJoinedInterestGroup(db, stored_group, now)) {
     return false;
   }
 
   return transaction.Commit();
+}
+
+bool DoAllowUpdateIfOlderThan(sql::Database& db,
+                              const PassKey& passkey,
+                              const blink::InterestGroupKey& group_key,
+                              base::TimeDelta update_if_older_than,
+                              base::Time now) {
+  sql::Statement allow_update_if_older_than(
+      db.GetCachedStatement(SQL_FROM_HERE, R"(
+UPDATE interest_groups SET
+  next_update_after=?
+WHERE owner=? AND name=? AND ? - last_updated >= ?)"));
+
+  if (!allow_update_if_older_than.is_valid()) {
+    return false;
+  }
+
+  allow_update_if_older_than.Reset(true);
+  allow_update_if_older_than.BindTime(0, now);
+  allow_update_if_older_than.BindString(1, Serialize(group_key.owner));
+  allow_update_if_older_than.BindString(2, group_key.name);
+  allow_update_if_older_than.BindTime(3, now);
+  allow_update_if_older_than.BindTimeDelta(4, update_if_older_than);
+
+  return allow_update_if_older_than.Run();
 }
 
 bool DoReportUpdateFailed(sql::Database& db,
@@ -2981,7 +3237,7 @@ bool DoUpdateKAnonymity(sql::Database& db,
       "SET is_k_anon=?,"
           "last_k_anon_updated_time=?,"
           "last_referenced_time=? "
-      "WHERE key=?"));
+      "WHERE hashed_key=?"));
   // clang-format on
   if (!update.is_valid()) {
     return false;
@@ -2991,7 +3247,7 @@ bool DoUpdateKAnonymity(sql::Database& db,
   update.BindInt(0, data.is_k_anonymous);
   update.BindTime(1, data.last_updated);
   update.BindTime(2, now);
-  update.BindString(3, data.key);
+  update.BindBlob(3, data.hashed_key);
   if (!update.Run()) {
     return false;
   }
@@ -2999,21 +3255,22 @@ bool DoUpdateKAnonymity(sql::Database& db,
   return transaction.Commit();
 }
 
-std::optional<base::Time> DoGetLastKAnonymityReported(sql::Database& db,
-                                                      const std::string& key) {
+std::optional<base::Time> DoGetLastKAnonymityReported(
+    sql::Database& db,
+    const std::string& hashed_key) {
   const base::Time distant_past = base::Time::Min();
 
   sql::Statement get_reported(
       db.GetCachedStatement(SQL_FROM_HERE,
                             "SELECT last_reported_to_anon_server_time FROM "
-                            "k_anon WHERE key=? LIMIT 1"));
+                            "k_anon WHERE hashed_key=? LIMIT 1"));
   if (!get_reported.is_valid()) {
     DLOG(ERROR) << "GetLastKAnonymityReported SQL statement did not compile: "
                 << db.GetErrorMessage();
     return std::nullopt;
   }
   get_reported.Reset(true);
-  get_reported.BindString(0, key);
+  get_reported.BindBlob(0, hashed_key);
   if (!get_reported.Step()) {
     return distant_past;
   }
@@ -3024,7 +3281,7 @@ std::optional<base::Time> DoGetLastKAnonymityReported(sql::Database& db,
 }
 
 void DoUpdateLastKAnonymityReported(sql::Database& db,
-                                    const std::string& key,
+                                    const std::string& hashed_key,
                                     base::Time now) {
   sql::Transaction transaction(&db);
   if (!transaction.Begin()) {
@@ -3037,7 +3294,7 @@ void DoUpdateLastKAnonymityReported(sql::Database& db,
       "UPDATE k_anon "
       "SET last_reported_to_anon_server_time=?,"
           "last_referenced_time=? "
-      "WHERE key=?"));
+      "WHERE hashed_key=?"));
   // clang-format on
   if (!set_reported.is_valid()) {
     DLOG(ERROR)
@@ -3048,7 +3305,7 @@ void DoUpdateLastKAnonymityReported(sql::Database& db,
   set_reported.Reset(true);
   set_reported.BindTime(0, now);
   set_reported.BindTime(1, now);
-  set_reported.BindString(2, key);
+  set_reported.BindBlob(2, hashed_key);
   if (!set_reported.Run()) {
     return;
   }
@@ -3071,13 +3328,14 @@ void DoUpdateLastKAnonymityReported(sql::Database& db,
       db.GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO k_anon("
               "last_referenced_time,"
-              "key,"
+              "hashed_key,"
               "owner,"
               "name,"
               "is_k_anon,"
+              "key_type,"
               "last_k_anon_updated_time,"
               "last_reported_to_anon_server_time) "
-            "VALUES(?,?,'','',0,?,?)"));
+            "VALUES(?,?,'','',0,?,?,?)"));
   // clang-format on
 
   if (!insert_entry_for_empty_ig.is_valid()) {
@@ -3086,9 +3344,10 @@ void DoUpdateLastKAnonymityReported(sql::Database& db,
 
   insert_entry_for_empty_ig.Reset(true);
   insert_entry_for_empty_ig.BindTime(0, base::Time::Min());
-  insert_entry_for_empty_ig.BindString(1, key);
-  insert_entry_for_empty_ig.BindTime(2, base::Time::Min());
-  insert_entry_for_empty_ig.BindTime(3, now);
+  insert_entry_for_empty_ig.BindBlob(1, hashed_key);
+  insert_entry_for_empty_ig.BindInt(2, KAnonKeyType::kUnknown);
+  insert_entry_for_empty_ig.BindTime(3, base::Time::Min());
+  insert_entry_for_empty_ig.BindTime(4, now);
 
   if (!insert_entry_for_empty_ig.Run()) {
     return;
@@ -3297,16 +3556,19 @@ bool GetBidCount(sql::Database& db,
 
 void DoGetDebugReportLockout(
     sql::Database& db,
+    std::optional<base::Time> ignore_before,
     DebugReportLockoutAndCooldowns& debug_report_lockout_and_cooldowns) {
   sql::Statement sent_time(
       db.GetCachedStatement(SQL_FROM_HERE,
                             "SELECT last_report_sent_time "
-                            "FROM lockout_debugging_only_report"));
+                            "FROM lockout_debugging_only_report "
+                            "WHERE last_report_sent_time > ?"));
   if (!sent_time.is_valid()) {
     DLOG(ERROR) << "GetLastDebugReportSentDate SQL statement did not compile: "
                 << db.GetErrorMessage();
     return;
   }
+  sent_time.BindTime(0, ignore_before.value_or(base::Time::Min()));
   if (sent_time.Step()) {
     debug_report_lockout_and_cooldowns.last_report_sent_time =
         sent_time.ColumnTime(0);
@@ -3315,20 +3577,22 @@ void DoGetDebugReportLockout(
 
 std::optional<DebugReportCooldown> DoGetDebugReportCooldownForOrigin(
     sql::Database& db,
-    const url::Origin& origin) {
+    const url::Origin& origin,
+    std::optional<base::Time> ignore_before) {
   sql::Statement cooldown_debugging_only_report(
       db.GetCachedStatement(SQL_FROM_HERE,
                             "SELECT starting_time, type "
                             "FROM cooldown_debugging_only_report "
-                            "WHERE origin = ?"));
+                            "WHERE origin = ? AND starting_time > ?"));
   if (!cooldown_debugging_only_report.is_valid()) {
     DLOG(ERROR) << "GetDebugReportCooldown SQL statement did not compile: "
                 << db.GetErrorMessage();
     return std::nullopt;
   }
   cooldown_debugging_only_report.BindString(0, Serialize(origin));
-  if (!cooldown_debugging_only_report.Step() ||
-      !cooldown_debugging_only_report.Succeeded()) {
+  cooldown_debugging_only_report.BindTime(
+      1, ignore_before.value_or(base::Time::Min()));
+  if (!cooldown_debugging_only_report.Step()) {
     return std::nullopt;
   }
 
@@ -3340,10 +3604,11 @@ std::optional<DebugReportCooldown> DoGetDebugReportCooldownForOrigin(
 void DoGetDebugReportCooldowns(
     sql::Database& db,
     const base::flat_set<url::Origin>& origins,
+    std::optional<base::Time> ignore_before,
     DebugReportLockoutAndCooldowns& debug_report_lockout_and_cooldowns) {
   for (const url::Origin& origin : origins) {
     std::optional<DebugReportCooldown> cooldown =
-        DoGetDebugReportCooldownForOrigin(db, origin);
+        DoGetDebugReportCooldownForOrigin(db, origin, ignore_before);
     if (cooldown.has_value()) {
       debug_report_lockout_and_cooldowns.debug_report_cooldown_map[origin] =
           *cooldown;
@@ -3446,11 +3711,11 @@ DoGetAllNegativeInterestGroupNamesForOwner(sql::Database& db,
 std::optional<std::vector<StorageInterestGroup::KAnonymityData>>
 DoGetKAnonymityData(sql::Database& db,
                     const blink::InterestGroupKey& group_key) {
-  sql::Statement interest_group_kanon_query(
-      db.GetCachedStatement(SQL_FROM_HERE,
-                            "SELECT key, is_k_anon, last_k_anon_updated_time "
-                            "FROM k_anon "
-                            "WHERE owner = ? AND name = ?"));
+  sql::Statement interest_group_kanon_query(db.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT hashed_key, is_k_anon, last_k_anon_updated_time "
+      "FROM k_anon "
+      "WHERE owner = ? AND name = ?"));
 
   if (!interest_group_kanon_query.is_valid()) {
     return std::nullopt;
@@ -3462,7 +3727,7 @@ DoGetKAnonymityData(sql::Database& db,
   std::vector<StorageInterestGroup::KAnonymityData> k_anon_data;
   while (interest_group_kanon_query.Step()) {
     k_anon_data.emplace_back(
-        /*key=*/interest_group_kanon_query.ColumnString(0),
+        /*hashed_key=*/interest_group_kanon_query.ColumnString(0),
         /*is_k_anonymous=*/interest_group_kanon_query.ColumnBool(1),
         /*last_updated=*/interest_group_kanon_query.ColumnTime(2));
   }
@@ -3484,11 +3749,11 @@ bool DoGetStoredInterestGroup(sql::Database& db,
     return false;
   }
 
-  sql::Statement interest_group_kanon_query(
-      db.GetCachedStatement(SQL_FROM_HERE,
-                            "SELECT key, last_k_anon_updated_time "
-                            "FROM k_anon "
-                            "WHERE owner = ? AND name = ? AND is_k_anon > 0"));
+  sql::Statement interest_group_kanon_query(db.GetCachedStatement(
+      SQL_FROM_HERE,
+      "SELECT hashed_key, last_k_anon_updated_time, key_type "
+      "FROM k_anon "
+      "WHERE owner = ? AND name = ? AND is_k_anon > 0"));
 
   interest_group_kanon_query.BindString(0, Serialize(group_key.owner));
   interest_group_kanon_query.BindString(1, group_key.name);
@@ -3498,12 +3763,12 @@ bool DoGetStoredInterestGroup(sql::Database& db,
         interest_group_kanon_query.ColumnString(0),
         /*is_k_anonymous=*/true,
         /*last_updated=*/interest_group_kanon_query.ColumnTime(1)};
-    if (kanon_data.key.starts_with(blink::kKAnonKeyForAdBidPrefix)) {
+    int key_type = interest_group_kanon_query.ColumnInt(2);
+    if (key_type == KAnonKeyType::kAdBid) {
       db_interest_group.bidding_ads_kanon.push_back(kanon_data);
-    } else if (kanon_data.key.starts_with(
-                   blink::kKAnonKeyForAdComponentBidPrefix)) {
+    } else if (key_type == KAnonKeyType::kComponentBid) {
       db_interest_group.component_ads_kanon.push_back(kanon_data);
-    } else {
+    } else if (key_type == KAnonKeyType::kAdNameReporting) {
       db_interest_group.reporting_ads_kanon.push_back(kanon_data);
     }
   }
@@ -3579,34 +3844,212 @@ std::optional<std::vector<StorageInterestGroup>> DoGetInterestGroupsForOwner(
     const PassKey& passkey,
     const url::Origin& owner,
     base::Time now) {
+  TRACE_EVENT("fledge", "DoGetInterestGroupsForOwner");
   sql::Transaction transaction(&db);
 
   if (!transaction.Begin()) {
     return std::nullopt;
   }
 
-  std::optional<std::vector<std::string>> group_names =
-      DoGetInterestGroupNamesForOwner(db, owner, now);
+  std::unordered_map<std::string, StorageInterestGroup> interest_group_by_name;
+  {
+    TRACE_EVENT("fledge", "load_from_interest_groups_table");
 
-  if (!group_names) {
+    // clang-format off
+    sql::Statement load(
+        db.GetCachedStatement(SQL_FROM_HERE,
+          "SELECT " COMMON_INTEREST_GROUPS_QUERY_FIELDS ","
+            "name "
+          "FROM interest_groups "
+          "WHERE owner=? AND expiration>?"));
+    // clang-format on
+
+    if (!load.is_valid()) {
+      return std::nullopt;
+    }
+
+    load.BindString(0, Serialize(owner));
+    load.BindTime(1, now);
+
+    while (load.Step()) {
+      std::string name = load.ColumnString(26);
+      StorageInterestGroup& db_interest_group = interest_group_by_name[name];
+      db_interest_group.bidding_browser_signals =
+          auction_worklet::mojom::BiddingBrowserSignals::New();
+
+      blink::InterestGroup& group = db_interest_group.interest_group;
+      group.owner = owner;
+      group.name = name;
+
+      PopulateInterestGroupFromQueryResult(
+          load, passkey, group, &db_interest_group.joining_origin,
+          &db_interest_group.join_time, &db_interest_group.last_updated);
+    }
+
+    if (!load.Succeeded()) {
+      return std::nullopt;
+    }
+  }
+  {
+    TRACE_EVENT("fledge", "load_from_kanon_table");
+
+    sql::Statement kanon_query(db.GetCachedStatement(
+        SQL_FROM_HERE,
+        "SELECT name, hashed_key, last_k_anon_updated_time, key_type "
+        "FROM k_anon "
+        "WHERE owner=? AND is_k_anon>0"));
+
+    kanon_query.BindString(0, Serialize(owner));
+
+    while (kanon_query.Step()) {
+      std::string name = kanon_query.ColumnString(0);
+
+      auto it = interest_group_by_name.find(name);
+      if (it == interest_group_by_name.end()) {
+        // TODO: Return std::nullopt?
+        continue;
+      }
+
+      StorageInterestGroup& db_interest_group = it->second;
+
+      StorageInterestGroup::KAnonymityData kanon_data = {
+          kanon_query.ColumnString(1),
+          /*is_k_anonymous=*/true,
+          /*last_updated=*/kanon_query.ColumnTime(2)};
+      int key_type = kanon_query.ColumnInt(3);
+
+      if (key_type == KAnonKeyType::kAdBid) {
+        db_interest_group.bidding_ads_kanon.push_back(kanon_data);
+      } else if (key_type == KAnonKeyType::kComponentBid) {
+        db_interest_group.component_ads_kanon.push_back(kanon_data);
+      } else if (key_type == KAnonKeyType::kAdNameReporting) {
+        db_interest_group.reporting_ads_kanon.push_back(kanon_data);
+      }
+    }
+
+    if (!kanon_query.Succeeded()) {
+      return std::nullopt;
+    }
+  }
+  {
+    TRACE_EVENT("fledge", "load_from_join_history_table");
+
+    // clang-format off
+    sql::Statement join_count(
+        db.GetCachedStatement(SQL_FROM_HERE,
+      "SELECT name, SUM(count) "
+      "FROM join_history "
+      "WHERE owner=? AND join_time>=? "
+      "GROUP BY name"));
+    // clang-format on
+
+    join_count.BindString(0, Serialize(owner));
+    join_count.BindTime(1, now - InterestGroupStorage::kHistoryLength);
+
+    while (join_count.Step()) {
+      std::string name = join_count.ColumnString(0);
+
+      auto it = interest_group_by_name.find(name);
+      if (it == interest_group_by_name.end()) {
+        // TODO: Return std::nullopt?
+        continue;
+      }
+
+      StorageInterestGroup& db_interest_group = it->second;
+
+      db_interest_group.bidding_browser_signals->join_count =
+          join_count.ColumnInt64(1);
+    }
+
+    if (!join_count.Succeeded()) {
+      return std::nullopt;
+    }
+  }
+  {
+    TRACE_EVENT("fledge", "load_from_bid_history_table");
+
+    // clang-format off
+    sql::Statement bid_count(
+        db.GetCachedStatement(SQL_FROM_HERE,
+      "SELECT name, SUM(count) "
+      "FROM bid_history "
+      "WHERE owner=? AND bid_time>=? "
+      "GROUP BY name"));
+    // clang-format on
+
+    bid_count.BindString(0, Serialize(owner));
+    bid_count.BindTime(1, now - InterestGroupStorage::kHistoryLength);
+
+    while (bid_count.Step()) {
+      std::string name = bid_count.ColumnString(0);
+
+      auto it = interest_group_by_name.find(name);
+      if (it == interest_group_by_name.end()) {
+        // TODO: Return std::nullopt?
+        continue;
+      }
+
+      StorageInterestGroup& db_interest_group = it->second;
+
+      db_interest_group.bidding_browser_signals->bid_count =
+          bid_count.ColumnInt64(1);
+    }
+
+    if (!bid_count.Succeeded()) {
+      return std::nullopt;
+    }
+  }
+  {
+    TRACE_EVENT("fledge", "load_from_prev_wins_table");
+
+    // clang-format off
+    sql::Statement prev_wins(
+        db.GetCachedStatement(SQL_FROM_HERE,
+                              "SELECT name, win_time, ad "
+                              "FROM win_history "
+                              "WHERE owner=? AND win_time>=? "
+                              "ORDER BY name, win_time DESC "));
+    // clang-format on
+
+    prev_wins.BindString(0, Serialize(owner));
+    prev_wins.BindTime(1, now - InterestGroupStorage::kHistoryLength);
+
+    while (prev_wins.Step()) {
+      std::string name = prev_wins.ColumnString(0);
+
+      auto it = interest_group_by_name.find(name);
+      if (it == interest_group_by_name.end()) {
+        // TODO: Return std::nullopt?
+        continue;
+      }
+
+      StorageInterestGroup& db_interest_group = it->second;
+
+      PreviousWinPtr prev_win = auction_worklet::mojom::PreviousWin::New(
+          /*time=*/prev_wins.ColumnTime(1),
+          /*ad_json=*/prev_wins.ColumnString(2));
+      db_interest_group.bidding_browser_signals->prev_wins.push_back(
+          std::move(prev_win));
+    }
+
+    if (!prev_wins.Succeeded()) {
+      return std::nullopt;
+    }
+  }
+  if (!transaction.Commit()) {
     return std::nullopt;
   }
 
   std::vector<StorageInterestGroup> result;
-  result.reserve(group_names->size());
-  for (const std::string& name : *group_names) {
-    StorageInterestGroup& db_interest_group = result.emplace_back();
-    bool success =
-        DoGetStoredInterestGroup(db, db_interest_group, passkey,
-                                 blink::InterestGroupKey(owner, name), now);
-    if (!success) {
-      return std::nullopt;
-    }
+  for (auto& [key, value] : interest_group_by_name) {
+    result.push_back(std::move(value));
   }
 
-  if (!transaction.Commit()) {
-    return std::nullopt;
-  }
+  // Sort `result` by decreasing expiration time.
+  std::sort(result.begin(), result.end(),
+            [](const StorageInterestGroup& a, const StorageInterestGroup& b) {
+              return a.interest_group.expiry > b.interest_group.expiry;
+            });
 
   return result;
 }
@@ -4015,6 +4458,77 @@ bool DeleteExpiredDebugReportCooldown(sql::Database& db, base::Time now) {
   return true;
 }
 
+bool ClearExpiredBiddingAndAuctionKeys(sql::Database& db, base::Time now) {
+  sql::Statement clear_expired_keys(
+      db.GetCachedStatement(SQL_FROM_HERE,
+                            "DELETE FROM bidding_and_auction_server_keys "
+                            "WHERE expiration<?"));
+  clear_expired_keys.BindTime(0, now);
+  return clear_expired_keys.Run();
+}
+
+bool DoSetBiddingAndAuctionServerKeys(
+    sql::Database& db,
+    const url::Origin& coordinator,
+    const std::vector<BiddingAndAuctionServerKey>& keys,
+    base::Time expiration) {
+  BiddingAndAuctionServerKeyProtos key_protos;
+  for (const BiddingAndAuctionServerKey& key : keys) {
+    BiddingAndAuctionServerKeyProtos_BiddingAndAuctionServerKeyProto*
+        key_proto = key_protos.add_keys();
+    key_proto->set_key(key.key);
+    key_proto->set_id(key.id);
+  }
+  sql::Statement insert_keys_statement(db.GetCachedStatement(
+      SQL_FROM_HERE,
+      "INSERT OR REPLACE INTO "
+      "bidding_and_auction_server_keys(coordinator,keys,expiration) "
+      "VALUES  (?,?,?)"));
+
+  insert_keys_statement.Reset(true);
+  insert_keys_statement.BindString(0, Serialize(coordinator));
+  insert_keys_statement.BindBlob(1, key_protos.SerializeAsString());
+  insert_keys_statement.BindTime(2, expiration);
+  return insert_keys_statement.Run();
+}
+
+std::pair<base::Time, std::vector<BiddingAndAuctionServerKey>>
+DoGetBiddingAndAuctionServerKeys(sql::Database& db,
+                                 const url::Origin& coordinator) {
+  sql::Statement keys_statement(
+      db.GetCachedStatement(SQL_FROM_HERE,
+                            "SELECT expiration, keys "
+                            "FROM bidding_and_auction_server_keys "
+                            "WHERE coordinator = ? AND expiration>?"));
+  if (!keys_statement.is_valid()) {
+    DLOG(ERROR)
+        << "DoGetBiddingAndAuctionServerKeys SQL statement did not compile.";
+    return {};
+  }
+
+  keys_statement.Reset(true);
+  keys_statement.BindString(0, Serialize(coordinator));
+  keys_statement.BindTime(1, base::Time::Now());
+
+  if (keys_statement.Step()) {
+    base::Time expiration = keys_statement.ColumnTime(0);
+    std::string key_blob = keys_statement.ColumnString(1);
+    BiddingAndAuctionServerKeyProtos key_protos;
+    bool success = key_protos.ParseFromString(key_blob);
+
+    if (not success || key_protos.keys().empty()) {
+      return {base::Time::Min(), {}};
+    }
+    std::vector<BiddingAndAuctionServerKey> keys;
+    keys.reserve(key_protos.keys_size());
+    for (auto& key_proto : *key_protos.mutable_keys()) {
+      keys.emplace_back(std::move(*key_proto.mutable_key()), key_proto.id());
+    }
+    return {expiration, keys};
+  }
+  return {base::Time::Min(), {}};
+}
+
 bool DoPerformDatabaseMaintenance(sql::Database& db,
                                   base::Time now,
                                   size_t max_owners,
@@ -4051,6 +4565,9 @@ bool DoPerformDatabaseMaintenance(sql::Database& db,
     return false;
   }
   if (!DeleteExpiredDebugReportCooldown(db, now)) {
+    return false;
+  }
+  if (!ClearExpiredBiddingAndAuctionKeys(db, now)) {
     return false;
   }
   return transaction.Commit();
@@ -4192,7 +4709,7 @@ bool InterestGroupStorage::InitializeSchema() {
   }
 
   if (new_db) {
-    return CreateV23Schema(*db_);
+    return CreateV25Schema(*db_);
   }
 
   const int db_version = meta_table.GetVersionNumber();
@@ -4298,6 +4815,16 @@ bool InterestGroupStorage::InitializeSchema() {
         if (!UpgradeV22SchemaToV23(*db_, meta_table)) {
           return false;
         }
+        ABSL_FALLTHROUGH_INTENDED;
+      case 23:
+        if (!UpgradeV23SchemaToV24(*db_, meta_table)) {
+          return false;
+        }
+        ABSL_FALLTHROUGH_INTENDED;
+      case 24:
+        if (!UpgradeV24SchemaToV25(*db_, meta_table)) {
+          return false;
+        }
         if (!meta_table.SetVersionNumber(kCurrentVersionNumber)) {
           return false;
         }
@@ -4385,8 +4912,23 @@ InterestGroupStorage::GetDebugReportLockoutAndCooldowns(
     return std::nullopt;
   }
   DebugReportLockoutAndCooldowns debug_report_lockout_and_cooldowns;
-  DoGetDebugReportLockout(*db_, debug_report_lockout_and_cooldowns);
-  DoGetDebugReportCooldowns(*db_, std::move(origins),
+  // Ignore lockout and cooldowns whose start time is before
+  // kFledgeEnableFilteringDebugReportStartingFrom.
+  std::optional<base::Time> ignore_before;
+  if (blink::features::kFledgeEnableFilteringDebugReportStartingFrom.Get() !=
+      base::Milliseconds(0)) {
+    // Also ceil kFledgeEnableFilteringDebugReportStartingFrom to its nearest
+    // next hour, in the same way as lockout and cooldown start time are ceiled.
+    // Otherwise, it's possible that the ceiled lockout/cooldowns collected
+    // before this flag being greater than the flag, which caused them not being
+    // ignored when they should be.
+    ignore_before = base::Time::FromDeltaSinceWindowsEpoch(
+        blink::features::kFledgeEnableFilteringDebugReportStartingFrom.Get()
+            .CeilToMultiple(base::Hours(1)));
+  }
+  DoGetDebugReportLockout(*db_, ignore_before,
+                          debug_report_lockout_and_cooldowns);
+  DoGetDebugReportCooldowns(*db_, std::move(origins), ignore_before,
                             debug_report_lockout_and_cooldowns);
   return debug_report_lockout_and_cooldowns;
 }
@@ -4406,6 +4948,22 @@ bool InterestGroupStorage::UpdateInterestGroup(
                 << db_->GetErrorMessage();
   }
   return success;
+}
+
+void InterestGroupStorage::AllowUpdateIfOlderThan(
+    const blink::InterestGroupKey& group_key,
+    base::TimeDelta update_if_older_than) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!EnsureDBInitialized()) {
+    return;
+  }
+
+  bool success = DoAllowUpdateIfOlderThan(
+      *db_, PassKey(), group_key, update_if_older_than, base::Time::Now());
+  if (!success) {
+    DLOG(ERROR) << "Could not process update_if_older_than: "
+                << db_->GetErrorMessage();
+  }
 }
 
 void InterestGroupStorage::ReportUpdateFailed(
@@ -4492,23 +5050,23 @@ void InterestGroupStorage::UpdateKAnonymity(
 }
 
 std::optional<base::Time> InterestGroupStorage::GetLastKAnonymityReported(
-    const std::string& key) {
+    const std::string& hashed_key) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!EnsureDBInitialized()) {
     return {};
   }
 
-  return DoGetLastKAnonymityReported(*db_, key);
+  return DoGetLastKAnonymityReported(*db_, hashed_key);
 }
 
 void InterestGroupStorage::UpdateLastKAnonymityReported(
-    const std::string& key) {
+    const std::string& hashed_key) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!EnsureDBInitialized()) {
     return;
   }
 
-  DoUpdateLastKAnonymityReported(*db_, key, base::Time::Now());
+  DoUpdateLastKAnonymityReported(*db_, hashed_key, base::Time::Now());
 }
 
 std::optional<StorageInterestGroup> InterestGroupStorage::GetInterestGroup(
@@ -4742,6 +5300,27 @@ InterestGroupStorage::GetAllInterestGroupsUnfilteredForTesting() {
               std::back_inserter(result));
   }
   return result;
+}
+
+void InterestGroupStorage::SetBiddingAndAuctionServerKeys(
+    const url::Origin& coordinator,
+    const std::vector<BiddingAndAuctionServerKey>& keys,
+    base::Time expiration) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!EnsureDBInitialized()) {
+    return;
+  }
+  DoSetBiddingAndAuctionServerKeys(*db_, coordinator, keys, expiration);
+}
+
+std::pair<base::Time, std::vector<BiddingAndAuctionServerKey>>
+InterestGroupStorage::GetBiddingAndAuctionServerKeys(
+    const url::Origin& coordinator) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!EnsureDBInitialized()) {
+    return {base::Time::Min(), {}};
+  }
+  return DoGetBiddingAndAuctionServerKeys(*db_, coordinator);
 }
 
 base::Time InterestGroupStorage::GetLastMaintenanceTimeForTesting() const {

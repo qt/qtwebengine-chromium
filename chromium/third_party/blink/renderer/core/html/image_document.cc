@@ -26,6 +26,8 @@
 
 #include <limits>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "third_party/blink/public/platform/web_content_settings_client.h"
 #include "third_party/blink/renderer/core/css/css_color.h"
 #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
@@ -103,6 +105,7 @@ class ImageDocumentParser : public RawDataDocumentParser {
 
   void Trace(Visitor* visitor) const override {
     visitor->Trace(image_resource_);
+    visitor->Trace(world_);
     RawDataDocumentParser::Trace(visitor);
   }
 
@@ -111,7 +114,7 @@ class ImageDocumentParser : public RawDataDocumentParser {
   void Finish() override;
 
   Member<ImageResource> image_resource_;
-  const scoped_refptr<const DOMWrapperWorld> world_;
+  const Member<const DOMWrapperWorld> world_;
 };
 
 // --------
@@ -137,10 +140,7 @@ void ImageDocumentParser::AppendBytes(const char* data, size_t length) {
     return;
 
   LocalFrame* frame = GetDocument()->GetFrame();
-  Settings* settings = frame->GetSettings();
-  bool allow_image_renderer = !settings || settings->GetImagesEnabled();
-  bool allow_image_content_setting = frame->GetContentSettings()->allow_image;
-  bool allow_image = allow_image_renderer && allow_image_content_setting;
+  bool allow_image = frame->ImagesEnabled();
   if (!allow_image) {
     auto* client = frame->GetContentSettingsClient();
     if (client) {
@@ -167,8 +167,12 @@ void ImageDocumentParser::AppendBytes(const char* data, size_t length) {
   CHECK_LE(length, std::numeric_limits<unsigned>::max());
   // If decoding has already failed, there's no point in sending additional
   // data to the ImageResource.
-  if (image_resource_->GetStatus() != ResourceStatus::kDecodeError)
-    image_resource_->AppendData(data, length);
+  if (image_resource_->GetStatus() != ResourceStatus::kDecodeError) {
+    image_resource_->AppendData(
+        // SAFETY: The caller must ensure `data` points to `length` bytes.
+        // TODO(crbug.com/40284755): Spanify this method.
+        UNSAFE_BUFFERS(base::span(data, length)));
+  }
 
   if (!IsDetached())
     GetDocument()->ImageUpdated();

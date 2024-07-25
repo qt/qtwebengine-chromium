@@ -543,6 +543,12 @@ class LocationOperand : public InstructionOperand {
   }
 
 #if defined(V8_TARGET_ARCH_X64)
+  // On x64, Simd256 and Simd128 share the identical register.
+  Simd128Register GetSimd256RegisterAsSimd128() const {
+    DCHECK(IsSimd256Register());
+    return Simd128Register::from_code(register_code());
+  }
+
   Simd256Register GetSimd256Register() const {
     DCHECK(IsSimd256Register());
     return Simd256Register::from_code(register_code());
@@ -570,6 +576,7 @@ class LocationOperand : public InstructionOperand {
       case MachineRepresentation::kTagged:
       case MachineRepresentation::kCompressedPointer:
       case MachineRepresentation::kCompressed:
+      case MachineRepresentation::kProtectedPointer:
       case MachineRepresentation::kSandboxedPointer:
         return true;
       case MachineRepresentation::kBit:
@@ -579,9 +586,8 @@ class LocationOperand : public InstructionOperand {
         return false;
       case MachineRepresentation::kMapWord:
       case MachineRepresentation::kIndirectPointer:
-        break;
+        UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   // Return true if the locations can be moved to one another.
@@ -879,7 +885,7 @@ std::ostream& operator<<(std::ostream&, const ParallelMove&);
 class ReferenceMap final : public ZoneObject {
  public:
   explicit ReferenceMap(Zone* zone)
-      : reference_operands_(8, zone), instruction_position_(-1) {}
+      : reference_operands_(zone), instruction_position_(-1) {}
 
   const ZoneVector<InstructionOperand>& reference_operands() const {
     return reference_operands_;
@@ -1048,6 +1054,22 @@ class V8_EXPORT_PRIVATE Instruction final {
     DCHECK_EQ(static_cast<int>(flag) & kInstructionCodeFlagsMask, flag);
 #endif
     return MiscField::decode(opcode()) & flag;
+  }
+
+  // For call instructions, computes the index of the CodeEntrypointTag input.
+  size_t CodeEnrypointTagInputIndex() const {
+    // Keep in sync with instruction-selector.cc where the inputs are assembled.
+    switch (arch_opcode()) {
+      case kArchCallCodeObject:
+        return InputCount() -
+               (HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler)
+                    ? 2
+                    : 1);
+      case kArchTailCallCodeObject:
+        return InputCount() - 3;
+      default:
+        UNREACHABLE();
+    }
   }
 
   enum GapPosition {
@@ -1445,13 +1467,13 @@ class StateValueList {
 
 class FrameStateDescriptor : public ZoneObject {
  public:
-  FrameStateDescriptor(Zone* zone, FrameStateType type,
-                       BytecodeOffset bailout_id,
-                       OutputFrameStateCombine state_combine,
-                       size_t parameters_count, size_t locals_count,
-                       size_t stack_count,
-                       MaybeHandle<SharedFunctionInfo> shared_info,
-                       FrameStateDescriptor* outer_state = nullptr);
+  FrameStateDescriptor(
+      Zone* zone, FrameStateType type, BytecodeOffset bailout_id,
+      OutputFrameStateCombine state_combine, size_t parameters_count,
+      size_t locals_count, size_t stack_count,
+      MaybeHandle<SharedFunctionInfo> shared_info,
+      FrameStateDescriptor* outer_state = nullptr,
+      uint32_t wasm_liftoff_frame_size = std::numeric_limits<uint32_t>::max());
 
   FrameStateType type() const { return type_; }
   BytecodeOffset bailout_id() const { return bailout_id_; }
@@ -1462,7 +1484,11 @@ class FrameStateDescriptor : public ZoneObject {
   MaybeHandle<SharedFunctionInfo> shared_info() const { return shared_info_; }
   FrameStateDescriptor* outer_state() const { return outer_state_; }
   bool HasClosure() const {
-    return type_ != FrameStateType::kConstructInvokeStub;
+    return
+#if V8_ENABLE_WEBASSEMBLY
+        type_ != FrameStateType::kLiftoffFunction &&
+#endif
+        type_ != FrameStateType::kConstructInvokeStub;
   }
   bool HasContext() const {
     return FrameStateFunctionInfo::IsJSFunctionType(type_) ||
@@ -1961,6 +1987,21 @@ class V8_EXPORT_PRIVATE InstructionSequence final
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&,
                                            const InstructionSequence&);
 #undef INSTRUCTION_OPERAND_ALIGN
+
+// Constants for accessing ConditionalCompare data, shared between isel and
+// codegen.
+constexpr size_t kNumCcmpOperands = 5;
+constexpr size_t kCcmpOffsetOfOpcode = 0;
+constexpr size_t kCcmpOffsetOfLhs = 1;
+constexpr size_t kCcmpOffsetOfRhs = 2;
+constexpr size_t kCcmpOffsetOfDefaultFlags = 3;
+constexpr size_t kCcmpOffsetOfCompareCondition = 4;
+constexpr size_t kConditionalSetEndOffsetOfNumCcmps = 1;
+constexpr size_t kConditionalSetEndOffsetOfCondition = 2;
+constexpr size_t kBranchEndOffsetOfFalseBlock = 1;
+constexpr size_t kBranchEndOffsetOfTrueBlock = 2;
+constexpr size_t kConditionalBranchEndOffsetOfNumCcmps = 3;
+constexpr size_t kConditionalBranchEndOffsetOfCondition = 4;
 
 }  // namespace compiler
 }  // namespace internal

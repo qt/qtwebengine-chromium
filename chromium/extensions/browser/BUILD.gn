@@ -5,6 +5,7 @@
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//pdf/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
 assert(enable_extensions)
@@ -83,10 +84,8 @@ source_set("browser_sources") {
     "activity.h",
     "allowlist_state.h",
 
-    # TODO(https://crbug.com/883570): Anything under api/ should be moved out of
+    # TODO(crbug.com/40593486): Anything under api/ should be moved out of
     # this target.
-    "api/activity_log/web_request_constants.cc",
-    "api/activity_log/web_request_constants.h",
     "api/api_resource.cc",
     "api/api_resource.h",
     "api/api_resource_manager.h",
@@ -278,19 +277,19 @@ source_set("browser_sources") {
     "content_hash_reader.h",
     "content_hash_tree.cc",
     "content_hash_tree.h",
-    "content_verifier.cc",
-    "content_verifier.h",
     "content_verifier/content_hash.cc",
     "content_verifier/content_hash.h",
+    "content_verifier/content_verifier.cc",
+    "content_verifier/content_verifier.h",
+    "content_verifier/content_verifier_delegate.h",
+    "content_verifier/content_verifier_io_data.cc",
+    "content_verifier/content_verifier_io_data.h",
     "content_verifier/content_verifier_key.h",
     "content_verifier/content_verifier_utils.cc",
     "content_verifier/content_verifier_utils.h",
+    "content_verifier/content_verify_job.cc",
+    "content_verifier/content_verify_job.h",
     "content_verifier/scoped_uma_recorder.h",
-    "content_verifier_delegate.h",
-    "content_verifier_io_data.cc",
-    "content_verifier_io_data.h",
-    "content_verify_job.cc",
-    "content_verify_job.h",
     "crx_file_info.cc",
     "crx_file_info.h",
     "deferred_start_render_host.h",
@@ -352,8 +351,6 @@ source_set("browser_sources") {
     "extension_icon_image.h",
     "extension_icon_placeholder.cc",
     "extension_icon_placeholder.h",
-    "extension_message_filter.cc",
-    "extension_message_filter.h",
     "extension_navigation_throttle.cc",
     "extension_navigation_throttle.h",
     "extension_navigation_ui_data.cc",
@@ -382,8 +379,6 @@ source_set("browser_sources") {
     "extension_registry_factory.cc",
     "extension_registry_factory.h",
     "extension_registry_observer.h",
-    "extension_service_worker_message_filter.cc",
-    "extension_service_worker_message_filter.h",
     "extension_system.cc",
     "extension_system.h",
     "extension_system_provider.cc",
@@ -428,8 +423,6 @@ source_set("browser_sources") {
     "guest_view/extensions_guest_view_manager_delegate.h",
     "guest_view/guest_view_events.cc",
     "guest_view/guest_view_events.h",
-    "guest_view/guest_view_feature_util.cc",
-    "guest_view/guest_view_feature_util.h",
     "guest_view/mime_handler_view/mime_handler_stream_manager.cc",
     "guest_view/mime_handler_view/mime_handler_stream_manager.h",
     "guest_view/mime_handler_view/mime_handler_view_attach_helper.cc",
@@ -443,7 +436,7 @@ source_set("browser_sources") {
     "guest_view/mime_handler_view/mime_handler_view_guest_delegate.cc",
     "guest_view/mime_handler_view/mime_handler_view_guest_delegate.h",
 
-    # TODO(crbug.com/730220): Ideally web_view should be a separate target on
+    # TODO(crbug.com/41323543): Ideally web_view should be a separate target on
     # which the extension system depends.
     "guest_view/web_view/controlled_frame_embedder_url_fetcher.cc",
     "guest_view/web_view/controlled_frame_embedder_url_fetcher.h",
@@ -543,16 +536,18 @@ source_set("browser_sources") {
     "service_worker/service_worker_host.h",
     "service_worker/service_worker_keepalive.cc",
     "service_worker/service_worker_keepalive.h",
+    "service_worker/service_worker_task_queue.cc",
+    "service_worker/service_worker_task_queue.h",
+    "service_worker/service_worker_task_queue_factory.cc",
+    "service_worker/service_worker_task_queue_factory.h",
     "service_worker/worker_id.cc",
     "service_worker/worker_id.h",
     "service_worker/worker_id_set.cc",
     "service_worker/worker_id_set.h",
     "service_worker_manager.cc",
     "service_worker_manager.h",
-    "service_worker_task_queue.cc",
-    "service_worker_task_queue.h",
-    "service_worker_task_queue_factory.cc",
-    "service_worker_task_queue_factory.h",
+    "site_access_requests_helper.cc",
+    "site_access_requests_helper.h",
     "state_store.cc",
     "state_store.h",
     "state_store_test_observer.cc",
@@ -576,6 +571,8 @@ source_set("browser_sources") {
     "user_script_loader.h",
     "user_script_manager.cc",
     "user_script_manager.h",
+    "user_script_world_configuration_manager.cc",
+    "user_script_world_configuration_manager.h",
     "verified_contents.cc",
     "verified_contents.h",
     "view_type_utils.cc",
@@ -604,10 +601,10 @@ source_set("browser_sources") {
     "//components/keyed_service/content",
     "//components/keyed_service/content:content",
     "//components/keyed_service/core",
+    "//components/pdf/common:constants",
     "//components/permissions",
     "//components/pref_registry",
     "//components/prefs",
-    "//components/safe_browsing/core/browser/hashprefix_realtime:hash_realtime_utils",
     "//components/safe_browsing/core/common",
     "//components/services/unzip/content",
     "//components/services/unzip/public/cpp",
@@ -638,6 +635,7 @@ source_set("browser_sources") {
     "//google_apis",
     "//net",
     "//pdf:buildflags",
+    "//pdf:features",
     "//ppapi/buildflags",
     "//services/data_decoder/public/cpp:cpp",
     "//services/device/public/cpp/hid",
@@ -654,6 +652,7 @@ source_set("browser_sources") {
     "//third_party/re2",
     "//third_party/zlib/google:zip",
     "//tools/json_schema_compiler:generated_api_util",
+    "//ui/color",
     "//ui/display",
     "//url",
   ]
@@ -692,6 +691,7 @@ source_set("browser_sources") {
       "api/clipboard/clipboard_api.h",
     ]
     deps += [
+      "//chromeos/constants",
       "//chromeos/dbus/permission_broker",
       "//components/prefs:prefs",
       "//ui/base/clipboard",
@@ -703,6 +703,10 @@ source_set("browser_sources") {
       "//chromeos/crosapi/mojom",
       "//chromeos/startup",
     ]
+  }
+
+  if (enable_pdf) {
+    deps += [ "//components/resources:components_resources_grit" ]
   }
 
   configs += [
@@ -754,7 +758,6 @@ source_set("browser_tests") {
     "//build:chromeos_buildflags",
     "//components/guest_view/browser:test_support",
     "//components/storage_monitor:test_support",
-    "//content/test:test_support",
     "//device/bluetooth:mocks",
     "//extensions:test_support",
     "//extensions/browser:test_support",
@@ -770,10 +773,12 @@ source_set("browser_tests") {
     "//ui/display:test_support",
   ]
 
+  public_deps = [ "//content/test:test_support" ]
+
   if (is_chromeos_ash) {
     sources += [
       "api/audio/audio_apitest_chromeos.cc",
-      "api/cec_private/cec_private_apitest.cc",
+      "api/cec_private/cec_private_ash_apitest.cc",
       "api/media_perception_private/media_perception_private_apitest.cc",
       "api/virtual_keyboard/virtual_keyboard_apitest.cc",
     ]
@@ -793,6 +798,14 @@ source_set("browser_tests") {
       "//chromeos/dbus/power:power_manager_proto",
       "//components/crash/content/browser/error_reporting:mock_crash_endpoint",
       "//extensions/common:mojom",
+    ]
+  }
+
+  if (is_chromeos_lacros) {
+    sources += [ "api/cec_private/cec_private_lacros_apitest.cc" ]
+    deps += [
+      "//chromeos/crosapi/mojom",
+      "//chromeos/lacros",
     ]
   }
 }
@@ -825,6 +838,8 @@ source_set("test_support") {
     "service_worker/service_worker_test_utils.h",
     "test_event_router_observer.cc",
     "test_event_router_observer.h",
+    "test_extension_console_observer.cc",
+    "test_extension_console_observer.h",
     "updater/extension_cache_fake.cc",
     "updater/extension_cache_fake.h",
     "updater/extension_downloader_test_helper.cc",
@@ -915,8 +930,8 @@ source_set("unit_tests") {
     "content_hash_fetcher_unittest.cc",
     "content_hash_tree_unittest.cc",
     "content_verifier/content_hash_unittest.cc",
-    "content_verifier_unittest.cc",
-    "content_verify_job_unittest.cc",
+    "content_verifier/content_verifier_unittest.cc",
+    "content_verifier/content_verify_job_unittest.cc",
     "error_map_unittest.cc",
     "event_listener_map_unittest.cc",
     "event_router_unittest.cc",
@@ -975,8 +990,8 @@ source_set("unit_tests") {
     "//components/permissions:permissions_common",
     "//components/pref_registry:pref_registry",
     "//components/prefs:test_support",
-    "//components/safe_browsing/core/browser/hashprefix_realtime:hash_realtime_utils",
     "//components/safe_browsing/core/common",
+    "//components/safe_browsing/core/common/hashprefix_realtime:hash_realtime_utils",
     "//components/services/unzip:in_process",
     "//components/services/unzip/content",
     "//components/storage_monitor:test_support",
@@ -1011,6 +1026,13 @@ source_set("unit_tests") {
     "//third_party/zlib/google:zip",
   ]
 
+  if (is_chromeos) {
+    deps += [
+      "//chromeos/constants",
+      "//chromeos/crosapi/mojom",
+    ]
+  }
+
   if (is_chromeos_ash) {
     sources += [
       "api/audio/audio_device_id_calculator_unittest.cc",
@@ -1037,6 +1059,7 @@ source_set("unit_tests") {
       "//chromeos:test_support",
       "//chromeos/ash/components/dbus:test_support",
       "//chromeos/ash/components/dbus/audio",
+      "//chromeos/ash/components/dbus/debug_daemon",
       "//chromeos/ash/components/dbus/media_analytics",
       "//chromeos/ash/components/dbus/media_analytics:media_perception_proto",
       "//chromeos/ash/components/dbus/shill",
@@ -1054,6 +1077,10 @@ source_set("unit_tests") {
       "//components/user_manager:test_support",
       "//extensions/shell:app_shell_lib",
     ]
+  }
+
+  if (is_chromeos_lacros) {
+    deps += [ "//chromeos/startup" ]
   }
 
   data = [

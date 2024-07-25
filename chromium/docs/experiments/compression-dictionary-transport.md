@@ -74,7 +74,7 @@ fetching resources. This may negatively affect Chrome's loading performance.
 Therefore, we are conducting experiments to ensure that this does not cause
 regressions before rolling it out to all users.
 
-TODO(crbug.com/1413922): When we enable the backend for all Chrome, remove this
+TODO(crbug.com/40255884): When we enable the backend for all Chrome, remove this
 section.
 
 ## Feature detection
@@ -155,15 +155,19 @@ Shared Zstandard can be enabled/disabled from
 ## Supported HTTP protocol
 
 From Chrome 121, Chrome may not use stored shared dictionares when the
-connection is using HTTP/1 for non-localhost requests. Also Chrome may not use
-shared dictionares when the HTTPS connection's certificate is not rooted by a
-well known root CA (eg: using a user installed root certificate). This is for
-an investigation for an issue that some network appliances are interfering with
-HTTPS traffic by inspecting encrypted responses but failing to properly decode
-the shared dictionary encoded content.
+connection is using HTTP/1 for non-localhost requests. From Chrome 125, Chrome
+may not use stored shared dictionares when the connection is using HTTP/2 for
+non-localhost requests.
+Also Chrome may not use shared dictionares when the HTTPS connection's
+certificate is not rooted by a well known root CA (eg: using a user installed
+root certificate). This is for an investigation for an issue that some network
+appliances are interfering with HTTPS traffic by inspecting encrypted responses
+but failing to properly decode the shared dictionary encoded content.
 
 If you want to use shared dictionaries with HTTP/1, please enable
-[chrome://flags/#enable-compression-dictionary-transport-over-http1][over-http1-flag].
+[chrome://flags/#enable-compression-dictionary-transport-allow-http1][allow-http1-flag].
+If you want to use shared dictionaries with HTTP/2, please enable
+[chrome://flags/#enable-compression-dictionary-transport-allow-http2][allow-http2-flag].
 Also if you want to use shared dictionaries over the HTTPS connection which
 certificate is not rooted by a well known root CA, please disable
 [chrome://flags/#enable-compression-dictionary-transport-require-known-root-cert][require-known-root-ca-flag].
@@ -193,29 +197,21 @@ Developers can check the related HTTP request and response headers
 - [cbrbug.com/1479809](crbug.com/1479809): Can't use large (>8MB) dictionaries
   for Shared Zstd. Fixed in M118.
 
-## Following spec changes
+## Changes in M123
 
-Currently there are two backend implementations, V1 and V2. V2 is under active
-construction to catch up the following spec changes:
+The following changes have been made to Chrome since M123 to keep up with the
+changes in specifications.
 
-- Change Content-Encoding name "br-d" "zstd-d"
-  - Stauts: Implemented by https://crrev.com/c/5185977.
+- Changed Content-Encoding name "br-d" "zstd-d"
 - Changed match to use URLPattern
-  - Stauts: Not yet implemented.
 - Added support for a server-provided dictionary id
-  - Stauts: Not yet implemented.
-- Updated the default dictionary ttl to 14 days since last fetched
-  - Stauts: Not yet implemented.
+- Stop using "expires" value of "Use-As-Dictionary" header, and use the cache
+  expiration time calculated from the response's freshness instead.
 - Removed support for hash negotiation and force use of sha-256
-  - Stauts: Not yet implemented.
 - Added the dictionary hash to the compressed response
-  - Stauts: Not yet implemented.
 - Dictionary hashes changed to sf-binary
-  - Stauts: Not yet implemented.
-
-You can try the experimental V2 implementation by selecting
-"Enabled experimental V2" in
-[chrome://flags/#enable-compression-dictionary-transport-backend][backend-flag].
+- Use "Available-Dictionary" header instead of "Sec-Available-Dictionary"
+- Added support for match-dest option
 
 ## Demo sites
 

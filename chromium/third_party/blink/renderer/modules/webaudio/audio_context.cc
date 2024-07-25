@@ -10,6 +10,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/mediastream/media_devices.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
@@ -51,10 +52,6 @@
 namespace blink {
 
 namespace {
-
-BASE_FEATURE(kWebAudioSetSinkEchoCancellation,
-             "WebAudioSetSinkEchoCancellation",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Number of AudioContexts still alive.  It's incremented when an
 // AudioContext is created and decremented when the context is closed.
@@ -101,7 +98,7 @@ const char* LatencyCategoryToString(
 }
 
 String GetAudioContextLogString(const WebAudioLatencyHint& latency_hint,
-                                absl::optional<float> sample_rate) {
+                                std::optional<float> sample_rate) {
   StringBuilder builder;
   builder.AppendFormat("AudioContext({latency_hint=%s}",
                        LatencyCategoryToString(latency_hint.Category()));
@@ -175,7 +172,7 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
       WebAudioLatencyHint::AudioContextLatencyCategory::kLastValue);
 
   // This value can be `nullopt` when there's no user-provided options.
-  absl::optional<float> sample_rate;
+  std::optional<float> sample_rate;
   if (context_options->hasSampleRate()) {
     sample_rate = context_options->sampleRate();
   }
@@ -242,7 +239,7 @@ AudioContext* AudioContext::Create(ExecutionContext* context,
 
 AudioContext::AudioContext(LocalDOMWindow& window,
                            const WebAudioLatencyHint& latency_hint,
-                           absl::optional<float> sample_rate,
+                           std::optional<float> sample_rate,
                            WebAudioSinkDescriptor sink_descriptor)
     : BaseAudioContext(&window, kRealtimeContext),
       context_id_(context_id++),
@@ -258,7 +255,7 @@ AudioContext::AudioContext(LocalDOMWindow& window,
   SendLogMessage(GetAudioContextLogString(latency_hint, sample_rate));
 
   // TODO(http://crbug.com/1410553) update the echo cancellation reference
-  // if the client explicitly specified the sink and there are no issuess
+  // if the client explicitly specified the sink and there are no issues
   // accessing it.
   destination_node_ = RealtimeAudioDestinationNode::Create(
       this, sink_descriptor_, latency_hint, sample_rate);
@@ -303,11 +300,9 @@ AudioContext::AudioContext(LocalDOMWindow& window,
   // AudioDestinationNode and RealtimeAudioDestinationNode, casting directly
   // from `destination()` is impossible. This is a temporary workaround until
   // the refactoring is completed.
-  RealtimeAudioDestinationHandler& destination_handler =
-      static_cast<RealtimeAudioDestinationHandler&>(
-          destination()->GetAudioDestinationHandler());
-  base_latency_ = destination_handler.GetFramesPerBuffer() /
-                  static_cast<double>(sampleRate());
+  base_latency_ =
+      GetRealtimeAudioDestinationNode()->GetOwnHandler().GetFramesPerBuffer() /
+      static_cast<double>(sampleRate());
   SendLogMessage(String::Format("%s => (base latency=%.3f seconds))", __func__,
                                 base_latency_));
 
@@ -373,12 +368,13 @@ void AudioContext::Trace(Visitor* visitor) const {
   BaseAudioContext::Trace(visitor);
 }
 
-ScriptPromise AudioContext::suspendContext(ScriptState* script_state,
-                                           ExceptionState& exception_state) {
+ScriptPromise<IDLUndefined> AudioContext::suspendContext(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
   DCHECK(IsMainThread());
 
   if (ContextState() == kClosed) {
-    return ScriptPromise::RejectWithDOMException(
+    return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot suspend a closed AudioContext."));
@@ -396,23 +392,24 @@ ScriptPromise AudioContext::suspendContext(ScriptState* script_state,
 
   // Since we don't have any way of knowing when the hardware actually stops,
   // we'll just resolve the promise now.
-  return ScriptPromise::CastUndefined(script_state);
+  return ToResolvedUndefinedPromise(script_state);
 }
 
-ScriptPromise AudioContext::resumeContext(ScriptState* script_state,
-                                          ExceptionState& exception_state) {
+ScriptPromise<IDLUndefined> AudioContext::resumeContext(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
   DCHECK(IsMainThread());
 
   if (ContextState() == kClosed) {
-    return ScriptPromise::RejectWithDOMException(
+    return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot resume a closed AudioContext."));
   }
 
-  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
       script_state, exception_state.GetContext());
-  ScriptPromise promise = resolver->Promise();
+  auto promise = resolver->Promise();
 
   // If we're already running, just resolve; nothing else needs to be done.
   if (ContextState() == kRunning) {
@@ -438,7 +435,7 @@ ScriptPromise AudioContext::resumeContext(ScriptState* script_state,
   // Save the resolver which will get resolved when the destination node starts
   // pulling on the graph again.
   {
-    GraphAutoLocker locker(this);
+    DeferredTaskHandler::GraphAutoLocker locker(this);
     resume_resolvers_.push_back(resolver);
   }
 
@@ -452,13 +449,11 @@ bool AudioContext::IsPullingAudioGraph() const {
     return false;
   }
 
-  RealtimeAudioDestinationHandler& destination_handler =
-      static_cast<RealtimeAudioDestinationHandler&>(
-          destination()->GetAudioDestinationHandler());
-
   // The realtime context is pulling on the audio graph if the realtime
   // destination allows it.
-  return destination_handler.IsPullingAudioGraphAllowed();
+  return GetRealtimeAudioDestinationNode()
+      ->GetOwnHandler()
+      .IsPullingAudioGraphAllowed();
 }
 
 AudioTimestamp* AudioContext::getOutputTimestamp(
@@ -499,18 +494,19 @@ AudioTimestamp* AudioContext::getOutputTimestamp(
   return result;
 }
 
-ScriptPromise AudioContext::closeContext(ScriptState* script_state,
-                                         ExceptionState& exception_state) {
+ScriptPromise<IDLUndefined> AudioContext::closeContext(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
   if (ContextState() == kClosed) {
-    return ScriptPromise::RejectWithDOMException(
+    return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot close a closed AudioContext."));
   }
 
-  close_resolver_ = MakeGarbageCollected<ScriptPromiseResolver>(
+  close_resolver_ = MakeGarbageCollected<ScriptPromiseResolver<IDLUndefined>>(
       script_state, exception_state.GetContext());
-  ScriptPromise promise = close_resolver_->Promise();
+  auto promise = close_resolver_->Promise();
 
   // Stops the rendering, but it doesn't release the resources here.
   StopRendering();
@@ -533,7 +529,7 @@ void AudioContext::DidClose() {
 
   // Reject all pending resolvers for setSinkId() before closing AudioContext.
   for (auto& set_sink_id_resolver : set_sink_id_resolvers_) {
-    set_sink_id_resolver->Reject(MakeGarbageCollected<DOMException>(
+    set_sink_id_resolver->Resolver()->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kInvalidStateError,
         "Cannot resolve pending promise from setSinkId(), AudioContext is "
         "going away"));
@@ -593,13 +589,13 @@ double AudioContext::outputLatency() const {
   DCHECK(IsMainThread());
   DCHECK(destination());
 
-  GraphAutoLocker locker(this);
+  DeferredTaskHandler::GraphAutoLocker locker(this);
 
   double factor = GetOutputLatencyQuantizingFactor();
   return std::round(output_position_.hardware_output_latency / factor) * factor;
 }
 
-ScriptPromise AudioContext::setSinkId(
+ScriptPromise<IDLUndefined> AudioContext::setSinkId(
     ScriptState* script_state,
     const V8UnionAudioSinkOptionsOrString* v8_sink_id,
     ExceptionState& exception_state) {
@@ -609,7 +605,7 @@ ScriptPromise AudioContext::setSinkId(
   // setSinkId invoked from a detached document should throw kInvalidStateError
   // DOMException.
   if (!GetExecutionContext()) {
-    return ScriptPromise::RejectWithDOMException(
+    return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state, MakeGarbageCollected<DOMException>(
                           DOMExceptionCode::kInvalidStateError,
                           "Cannot proceed setSinkId on a detached document."));
@@ -618,7 +614,7 @@ ScriptPromise AudioContext::setSinkId(
   // setSinkId invoked from a closed AudioContext should throw
   // kInvalidStateError DOMException.
   if (ContextState() == kClosed) {
-    return ScriptPromise::RejectWithDOMException(
+    return ScriptPromise<IDLUndefined>::RejectWithDOMException(
         script_state,
         MakeGarbageCollected<DOMException>(
             DOMExceptionCode::kInvalidStateError,
@@ -626,8 +622,8 @@ ScriptPromise AudioContext::setSinkId(
   }
 
   SetSinkIdResolver* resolver =
-      SetSinkIdResolver::Create(script_state, *this, *v8_sink_id);
-  ScriptPromise promise = resolver->Promise();
+      MakeGarbageCollected<SetSinkIdResolver>(script_state, *this, *v8_sink_id);
+  auto promise = resolver->Resolver()->Promise();
 
   set_sink_id_resolvers_.push_back(resolver);
 
@@ -697,22 +693,7 @@ AutoplayPolicy::Type AudioContext::GetAutoplayPolicy() const {
   LocalDOMWindow* window = GetWindow();
   DCHECK(window);
 
-  auto autoplay_policy =
-      AutoplayPolicy::GetAutoplayPolicyForDocument(*window->document());
-
-  if (autoplay_policy ==
-          AutoplayPolicy::Type::kDocumentUserActivationRequired &&
-      RuntimeEnabledFeatures::AutoplayIgnoresWebAudioEnabled()) {
-// When ignored, the policy is different on Android compared to Desktop.
-#if BUILDFLAG(IS_ANDROID)
-    return AutoplayPolicy::Type::kUserGestureRequired;
-#else
-    // Force no user gesture required on desktop.
-    return AutoplayPolicy::Type::kNoUserGestureRequired;
-#endif
-  }
-
-  return autoplay_policy;
+  return AutoplayPolicy::GetAutoplayPolicyForDocument(*window->document());
 }
 
 bool AudioContext::AreAutoplayRequirementsFulfilled() const {
@@ -835,6 +816,11 @@ bool AudioContext::HasPendingActivity() const {
       permission_receiver_.is_bound();
 }
 
+RealtimeAudioDestinationNode* AudioContext::GetRealtimeAudioDestinationNode()
+    const {
+  return static_cast<RealtimeAudioDestinationNode*>(destination());
+}
+
 bool AudioContext::HandlePreRenderTasks(const AudioIOPosition* output_position,
                                         const AudioCallbackMetric* metric) {
   DCHECK(IsAudioThread());
@@ -937,7 +923,7 @@ void AudioContext::ResolvePromisesForUnpause() {
 
 AudioIOPosition AudioContext::OutputPosition() const {
   DCHECK(IsMainThread());
-  GraphAutoLocker locker(this);
+  DeferredTaskHandler::GraphAutoLocker locker(this);
   return output_position_;
 }
 
@@ -981,8 +967,14 @@ AudioCallbackMetric AudioContext::GetCallbackMetric() const {
   // allow seeing the audio thread changing the struct values. This method
   // gets called once per second and the size of the struct is small, so
   // creating a copy is acceptable here.
-  GraphAutoLocker locker(this);
+  DeferredTaskHandler::GraphAutoLocker locker(this);
   return callback_metric_;
+}
+
+base::TimeDelta AudioContext::PlatformBufferDuration() const {
+  return GetRealtimeAudioDestinationNode()
+      ->GetOwnHandler()
+      .GetPlatformBufferDuration();
 }
 
 void AudioContext::OnPermissionStatusChange(
@@ -1013,8 +1005,7 @@ void AudioContext::DidInitialPermissionCheck(
       GetExecutionContext()->GetTaskRunner(TaskType::kPermission));
   permission_service_->AddPermissionObserver(
       CreatePermissionDescriptor(mojom::blink::PermissionName::AUDIO_CAPTURE),
-      microphone_permission_status_,
-      std::move(observer));
+      microphone_permission_status_, std::move(observer));
 }
 
 double AudioContext::GetOutputLatencyQuantizingFactor() const {
@@ -1042,8 +1033,7 @@ void AudioContext::NotifySetSinkIdIsDone(
 
   sink_descriptor_ = pending_sink_descriptor;
   if (sink_descriptor_.Type() ==
-          WebAudioSinkDescriptor::AudioSinkType::kAudible &&
-      base::FeatureList::IsEnabled(kWebAudioSetSinkEchoCancellation)) {
+      WebAudioSinkDescriptor::AudioSinkType::kAudible) {
     // Note: in order to not break echo cancellation of PeerConnection audio, we
     // are heavily relying on the fact that setSinkId() path of AudioContext is
     // not triggered unless the sink ID is explicitly specified. It assumes we
@@ -1147,10 +1137,9 @@ void AudioContext::OnDevicesChanged(mojom::blink::MediaDeviceType device_type,
     sink_descriptor_ = WebAudioSinkDescriptor(
         String(""),
         To<LocalDOMWindow>(GetExecutionContext())->GetLocalFrameToken());
-    auto* destination_node = destination();
+    auto* destination_node = GetRealtimeAudioDestinationNode();
     if (destination_node) {
-      static_cast<RealtimeAudioDestinationNode*>(destination_node)
-          ->SetSinkDescriptor(sink_descriptor_, base::DoNothing());
+      destination_node->SetSinkDescriptor(sink_descriptor_, base::DoNothing());
     }
     UpdateV8SinkId();
   }
@@ -1180,6 +1169,21 @@ bool AudioContext::IsValidSinkDescriptor(
   return sink_descriptor.Type() ==
              WebAudioSinkDescriptor::AudioSinkType::kSilent ||
          output_device_ids_.Contains(sink_descriptor.SinkId());
+}
+
+void AudioContext::OnRenderError() {
+  if (base::FeatureList::IsEnabled(features::kWebAudioHandleOnRenderError)) {
+    DCHECK(IsMainThread());
+
+    CHECK(GetExecutionContext());
+    LocalDOMWindow* window = To<LocalDOMWindow>(GetExecutionContext());
+    if (window && window->GetFrame()) {
+      window->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+          mojom::blink::ConsoleMessageSource::kOther,
+          mojom::blink::ConsoleMessageLevel::kError,
+          "The AudioContext encountered a render error."));
+    }
+  }
 }
 
 void AudioContext::ResumeOnPrerenderActivation() {

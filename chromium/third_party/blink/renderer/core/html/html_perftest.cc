@@ -5,6 +5,8 @@
 // A benchmark to isolate the HTML parsing done in the Speedometer test,
 // for more stable benchmarking and profiling.
 
+#include <string_view>
+
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "testing/perf/perf_result_reporter.h"
@@ -35,8 +37,8 @@ TEST(HTMLParsePerfTest, Speedometer) {
 
   scoped_refptr<SharedBuffer> serialized =
       test::ReadFromFile(test::CoreTestDataPath(filename));
-  absl::optional<base::Value> json = base::JSONReader::Read(
-      base::StringPiece(serialized->Data(), serialized->size()));
+  std::optional<base::Value> json = base::JSONReader::Read(
+      std::string_view(serialized->Data(), serialized->size()));
   if (!json.has_value()) {
     char msg[256];
     snprintf(msg, sizeof(msg), "Skipping %s test because %s could not be read",

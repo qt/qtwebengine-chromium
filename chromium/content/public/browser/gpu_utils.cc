@@ -5,6 +5,7 @@
 #include "content/public/browser/gpu_utils.h"
 
 #include <string>
+#include <string_view>
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
@@ -26,6 +27,7 @@
 #include "media/base/media_switches.h"
 #include "media/gpu/buildflags.h"
 #include "media/media_buildflags.h"
+#include "third_party/blink/public/common/features.h"
 #include "ui/gfx/switches.h"
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -41,7 +43,7 @@ void KillGpuProcessImpl(content::GpuProcessHost* host) {
 }
 
 bool GetUintFromSwitch(const base::CommandLine* command_line,
-                       const base::StringPiece& switch_string,
+                       const std::string_view& switch_string,
                        uint32_t* value) {
   std::string switch_value(command_line->GetSwitchValueASCII(switch_string));
   return base::StringToUint(switch_value, value);
@@ -176,6 +178,12 @@ const gpu::GpuPreferences GetGpuPreferencesFromCommandLine() {
   gpu_preferences.force_separate_egl_display_for_webgl_testing =
       command_line->HasSwitch(
           switches::kForceSeparateEGLDisplayForWebGLTesting);
+
+  gpu_preferences.enable_webgpu_experimental_features =
+      command_line->HasSwitch(
+          switches::kEnableExperimentalWebPlatformFeatures) ||
+      base::FeatureList::IsEnabled(
+          blink::features::kWebGPUExperimentalFeatures);
 
   // Some of these preferences are set or adjusted in
   // GpuDataManagerImplPrivate::AppendGpuCommandLine.

@@ -8,7 +8,6 @@
 #include <string_view>
 
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/search_engines/default_search_manager.h"
@@ -20,10 +19,10 @@
 
 namespace {
 
-// Converts the C-style string `str` to a base::StringPiece making sure to avoid
+// Converts the C-style string `str` to a std::string_view making sure to avoid
 // dereferencing nullptrs.
-base::StringPiece ToStringPiece(const char* str) {
-  return str ? base::StringPiece(str) : base::StringPiece();
+std::string_view ToStringPiece(const char* str) {
+  return str ? std::string_view(str) : std::string_view();
 }
 
 std::u16string_view ToU16StringView(const char16_t* str) {
@@ -158,7 +157,7 @@ std::unique_ptr<TemplateURLData> TemplateURLDataFromDictionary(
       }
     }
   }
-  absl::optional<bool> safe_for_autoreplace =
+  std::optional<bool> safe_for_autoreplace =
       dict.FindBool(DefaultSearchManager::kSafeForAutoReplace);
   if (safe_for_autoreplace) {
     result->safe_for_autoreplace = *safe_for_autoreplace;
@@ -396,7 +395,7 @@ std::unique_ptr<TemplateURLData> TemplateURLDataFromOverrideDictionary(
   if (string_value) {
     encoding = *string_value;
   }
-  absl::optional<int> id = engine_dict.FindInt("id");
+  std::optional<int> id = engine_dict.FindInt("id");
 
   // The following fields are required for each search engine configuration.
   if (!name.empty() && !keyword.empty() && !search_url.empty() &&

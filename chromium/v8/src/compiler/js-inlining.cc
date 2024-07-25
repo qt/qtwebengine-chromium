@@ -471,7 +471,9 @@ Reduction JSInliner::ReduceJSWasmCall(Node* node) {
   // for wasm gc objects).
   WasmInlineResult inline_result;
   if (inline_wasm_fct_if_supported_ && fct_index != -1 && native_module &&
-      native_module->enabled_features().has_gc()) {
+      // Disable inlining for asm.js functions because we haven't tested it
+      // and most asm.js opcodes aren't supported anyway.
+      native_module->enabled_features() != wasm::WasmFeatures::ForAsmjs()) {
     inline_result = TryWasmInlining(call_node);
   }
 
@@ -765,8 +767,7 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
       FeedbackVector::cast(feedback_cell.object()->value())
               ->invocation_count_before_stable() >
           v8_flags.invocation_count_for_early_optimization) {
-    shared_info->object()->set_cached_tiering_decision(
-        CachedTieringDecision::kNormal);
+    info_->set_could_not_inline_all_candidates();
   }
 
   // Create the subgraph for the inlinee.

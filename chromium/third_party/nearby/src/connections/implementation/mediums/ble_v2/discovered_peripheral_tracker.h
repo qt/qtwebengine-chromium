@@ -29,6 +29,7 @@
 #include "connections/implementation/mediums/ble_v2/ble_advertisement_header.h"
 #include "connections/implementation/mediums/ble_v2/discovered_peripheral_callback.h"
 #include "connections/implementation/mediums/lost_entity_tracker.h"
+#include "internal/platform/ble_v2.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/multi_thread_executor.h"
 #include "internal/platform/mutex.h"
@@ -45,6 +46,9 @@ namespace mediums {
 // compute found and lost peripherals.
 class DiscoveredPeripheralTracker {
  public:
+  static constexpr std::array<char, 23> kDummyAdvertisementValue = {
+      0x51, 0x43, 0x41, 0x41, 0x41, 0x42, 0x41, 0x43, 0x41, 0x41, 0x41, 0x44,
+      0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41};
   // GATT advertisement fetcher.
   // Fetches relevant GATT advertisements for the peripheral found in {@link
   // DiscoveredPeripheralTracker#ProcessFoundBleAdvertisement(}.
@@ -243,6 +247,20 @@ class DiscoveredPeripheralTracker {
   void UpdateCommonStateForFoundBleAdvertisement(
       const BleAdvertisementHeader& advertisement_header)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  // Processes on lost advertisements. Returns true when the advertisement:
+  // 1. Is an Instant On Lost BLE advertisement.
+  // 2. Matches a peripheral's advertisement hash that has previously been
+  // discovered.
+  bool HandleOnLostAdvertisementLocked(
+      BleV2Peripheral peripheral,
+      const ::nearby::api::ble_v2::BleAdvertisementData& advertisement_data)
+      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  // Returns true if the advertisement header met the special conditions of
+  // a legacy device dummy advertisement.
+  static bool IsLegacyDeviceAdvertisementData(
+      const api::ble_v2::BleAdvertisementData& advertisement_data);
 
   Mutex mutex_;
   bool is_extended_advertisement_available_;

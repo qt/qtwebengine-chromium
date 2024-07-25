@@ -50,6 +50,7 @@
 #include "extensions/common/api/messaging/messaging_endpoint.h"
 #include "extensions/common/api/messaging/port_context.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_id.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/externally_connectable.h"
@@ -609,7 +610,7 @@ void MessageService::OpenChannelToTabImpl(
     int tab_id,
     int frame_id,
     const std::string& document_id,
-    const std::string& extension_id,
+    const ExtensionId& extension_id,
     mojom::ChannelType channel_type,
     const std::string& channel_name,
     mojo::PendingAssociatedRemote<extensions::mojom::MessagePort> port,
@@ -720,7 +721,7 @@ void MessageService::OpenChannelImpl(BrowserContext* browser_context,
     // The channel won't open. If this was a pending channel, remove it,
     // because now it will never open. This prevents the pending message
     // from being re-added indefinitely. See https://crbug.com/1231683.
-    // TODO(crbug.com/1296492): This probably isn't the best solution.
+    // TODO(crbug.com/40821724): This probably isn't the best solution.
     // Ideally, we should close the channel before we get to this point
     // if there's no chance it will ever open, remove it from pending
     // channels, and then only try to open the pending channel if it's

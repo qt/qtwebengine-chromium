@@ -206,8 +206,8 @@ std::u16string GenerateMaxEntropyPassword(PasswordRequirementsSpec spec) {
 
   // So far the password contains the minimally required characters at the
   // the beginning. Therefore, we create a random permutation.
-  // TODO(crbug.com/847200): Once the unittests allow controlling the generated
-  // string, test that '--' and '__' are eliminated.
+  // TODO(crbug.com/41391422): Once the unittests allow controlling the
+  // generated string, test that '--' and '__' are eliminated.
   int remaining_attempts = 5;
   do {
     base::RandomShuffle(password.begin(), password.end());
@@ -268,21 +268,29 @@ std::u16string GeneratePassword(const PasswordRequirementsSpec& spec) {
   // For passwords without letters, add the '0' and '1' to the numeric alphabet.
   ConditionallyAddNumericDigitsToAlphabet(&actual_spec);
 
+  std::u16string password;
+
   // For specs that allow dash symbol and can be longer than 8 chars generate a
   // chunked password when `kChunkPassword` variaton of
   // kPasswordGenerationExperiment is enabled.
   if (actual_spec.symbols().character_set().find('-') != std::string::npos &&
       actual_spec.max_length() >= kMinLengthToChunkPassword &&
       ChunkingPasswordExperimentEnabled()) {
-    return GenerateMaxEntropyChunkedPassword(std::move(actual_spec));
+    password = GenerateMaxEntropyChunkedPassword(std::move(actual_spec));
+    CHECK_LE(4u, password.size());
+    return password;
   }
 
-  std::u16string password = GenerateMaxEntropyPassword(std::move(actual_spec));
+  password = GenerateMaxEntropyPassword(std::move(actual_spec));
 
   // Catch cases where supplied spec is infeasible.
-  if (password.empty())
+  // TODO(b/40065733): we should never generate specs for small generated
+  // passwords
+  if (password.size() < 4) {
     password = GenerateMaxEntropyPassword(BuildDefaultSpec());
+  }
 
+  CHECK_LE(4u, password.size());
   return password;
 }
 

@@ -18,6 +18,7 @@
 #include "base/hash/hash.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
+#include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
@@ -65,7 +66,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/context_menu_params.h"
-#include "content/public/browser/notification_details.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/storage_partition.h"
@@ -178,7 +178,8 @@ class PerProcessRenderViewHostSet : public base::SupportsUserData::Data {
 
   static const int kUserDataKey = 0;
 
-  std::unordered_set<const RenderViewHostImpl*> render_view_host_instances_;
+  std::unordered_set<raw_ptr<const RenderViewHostImpl, CtnExperimental>>
+      render_view_host_instances_;
 };
 
 const int PerProcessRenderViewHostSet::kUserDataKey;
@@ -281,7 +282,7 @@ void RenderViewHostImpl::GetPlatformSpecificPrefs(
 #elif BUILDFLAG(IS_FUCHSIA)
   // Make Blink's "focus ring" invisible. The focus ring is a hairline border
   // that's rendered around clickable targets.
-  // TODO(crbug.com/1066605): Consider exposing this as a FIDL parameter.
+  // TODO(crbug.com/40124608): Consider exposing this as a FIDL parameter.
   prefs->focus_ring_color = SK_AlphaTRANSPARENT;
 #endif
 #if BUILDFLAG(IS_OZONE)
@@ -347,8 +348,8 @@ RenderViewHostImpl::RenderViewHostImpl(
   // brief window where the internal ChannelProxy is null. This ensures that the
   // ChannelProxy is re-initialized in such cases so that subsequent messages
   // make their way to the new renderer once its restarted.
-  // TODO(crbug.com/1111231): Should this go via AgentSchedulingGroupHost? Is it
-  // even needed after the migration?
+  // TODO(crbug.com/40142495): Should this go via AgentSchedulingGroupHost? Is
+  // it even needed after the migration?
   GetProcess()->EnableSendQueue();
 
   if (!is_active())
@@ -458,7 +459,7 @@ bool RenderViewHostImpl::CreateRenderView(
       frame_tree_node->current_frame_host()->devtools_frame_token();
   DCHECK_EQ(&frame_tree_node->frame_tree(), frame_tree_);
   params->is_prerendering = frame_tree_->is_prerendering() ||
-                            frame_tree_->page_delegate()->IsInPreviewMode();
+                            frame_tree_->page_delegate()->IsPageInPreviewMode();
   params->attribution_support = delegate_->GetAttributionSupport();
 
   if (main_rfh) {
@@ -594,9 +595,9 @@ bool RenderViewHostImpl::CreateRenderView(
 void RenderViewHostImpl::SetMainFrameRoutingId(int routing_id) {
   main_frame_routing_id_ = routing_id;
   GetWidget()->UpdatePriority();
-  // TODO(crbug.com/419087): If a local main frame is no longer attached to this
-  // `blink::WebView` then the RenderWidgetHostImpl owned by this class should
-  // be informed that its renderer widget is no longer created. The
+  // TODO(crbug.com/40387047): If a local main frame is no longer attached to
+  // this `blink::WebView` then the RenderWidgetHostImpl owned by this class
+  // should be informed that its renderer widget is no longer created. The
   // RenderViewHost will need to track its own live-ness then.
 }
 
@@ -659,7 +660,7 @@ void RenderViewHostImpl::ActivatePrerenderedPage(
     blink::mojom::PrerenderPageActivationParamsPtr
         prerender_page_activation_params,
     base::OnceClosure callback) {
-  // TODO(https://crbug.com/1217977): Consider using a ScopedClosureRunner here
+  // TODO(crbug.com/40185437): Consider using a ScopedClosureRunner here
   // in case the renderer crashes before it can send us the callback. But we
   // can't do that until the linked bug is fixed, or else we can reach
   // DidActivateForPrerendering() outside of a Mojo message dispatch which
@@ -840,14 +841,14 @@ RenderViewHostImpl::GetAssociatedPageBroadcast() {
 void RenderViewHostImpl::RenderWidgetDidForwardMouseEvent(
     const blink::WebMouseEvent& mouse_event) {
   if (mouse_event.GetType() == WebInputEvent::Type::kMouseWheel &&
-      GetWidget()->IsIgnoringInputEvents()) {
+      GetWidget()->IsIgnoringWebInputEvents(mouse_event)) {
     delegate_->OnIgnoredUIEvent();
   }
 }
 
 bool RenderViewHostImpl::MayRenderWidgetForwardKeyboardEvent(
     const NativeWebKeyboardEvent& key_event) {
-  if (GetWidget()->IsIgnoringInputEvents()) {
+  if (GetWidget()->IsIgnoringWebInputEvents(key_event)) {
     if (key_event.GetType() == WebInputEvent::Type::kRawKeyDown)
       delegate_->OnIgnoredUIEvent();
     return false;

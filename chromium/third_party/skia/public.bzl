@@ -26,6 +26,7 @@ SKIA_PUBLIC_HDRS = [
     "include/config/SkUserConfig.h",
     "include/core/SkAlphaType.h",
     "include/core/SkAnnotation.h",
+    "include/core/SkArc.h",
     "include/core/SkBBHFactory.h",
     "include/core/SkBitmap.h",
     "include/core/SkBlendMode.h",
@@ -47,7 +48,6 @@ SKIA_PUBLIC_HDRS = [
     "include/core/SkData.h",
     "include/core/SkDataTable.h",
     "include/core/SkDocument.h",
-    "include/core/SkDrawLooper.h",
     "include/core/SkDrawable.h",
     "include/core/SkExecutor.h",
     "include/core/SkFlattenable.h",
@@ -118,7 +118,6 @@ SKIA_PUBLIC_HDRS = [
     "include/effects/Sk1DPathEffect.h",
     "include/effects/Sk2DPathEffect.h",
     "include/effects/SkBlenders.h",
-    "include/effects/SkBlurDrawLooper.h",
     "include/effects/SkBlurMaskFilter.h",
     "include/effects/SkColorMatrixFilter.h",
     "include/effects/SkColorMatrix.h",
@@ -128,7 +127,6 @@ SKIA_PUBLIC_HDRS = [
     "include/effects/SkGradientShader.h",
     "include/effects/SkHighContrastFilter.h",
     "include/effects/SkImageFilters.h",
-    "include/effects/SkLayerDrawLooper.h",
     "include/effects/SkLumaColorFilter.h",
     "include/effects/SkOverdrawColorFilter.h",
     "include/effects/SkPerlinNoiseShader.h",
@@ -149,18 +147,27 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/ganesh/SkSurfaceGanesh.h",
     "include/gpu/ganesh/gl/GrGLBackendSurface.h",
     "include/gpu/ganesh/gl/GrGLDirectContext.h",
+    "include/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.h",
+    "include/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.h",
+    "include/gpu/ganesh/gl/ios/GrGLMakeIOSInterface.h",
+    "include/gpu/ganesh/gl/mac/GrGLMakeMacInterface.h",
+    "include/gpu/ganesh/mtl/GrMtlBackendContext.h",
+    "include/gpu/ganesh/mtl/GrMtlBackendSemaphore.h",
+    "include/gpu/ganesh/mtl/GrMtlBackendSurface.h",
+    "include/gpu/ganesh/mtl/GrMtlDirectContext.h",
+    "include/gpu/ganesh/mtl/GrMtlTypes.h",
     "include/gpu/ganesh/mtl/SkSurfaceMetal.h",
+    "include/gpu/ganesh/vk/GrBackendDrawableInfo.h",
     "include/gpu/ganesh/vk/GrVkBackendSemaphore.h",
     "include/gpu/ganesh/vk/GrVkBackendSurface.h",
     "include/gpu/ganesh/vk/GrVkDirectContext.h",
-    "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
-    "include/gpu/gl/glx/GrGLMakeGLXInterface.h",
     "include/gpu/gl/GrGLAssembleHelpers.h",
     "include/gpu/gl/GrGLAssembleInterface.h",
     "include/gpu/gl/GrGLConfig.h",
     "include/gpu/gl/GrGLConfig_chrome.h",
+    "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
+    "include/gpu/gl/glx/GrGLMakeGLXInterface.h",
     "include/gpu/GpuTypes.h",
-    "include/gpu/GrBackendDrawableInfo.h",
     "include/gpu/GrBackendSemaphore.h",
     "include/gpu/GrBackendSurface.h",
     "include/gpu/GrContextOptions.h",
@@ -178,8 +185,6 @@ SKIA_PUBLIC_HDRS = [
     "include/gpu/gl/GrGLInterface.h",
     "include/gpu/gl/GrGLTypes.h",
     "include/gpu/mock/GrMockTypes.h",
-    "include/gpu/mtl/GrMtlBackendContext.h",
-    "include/gpu/mtl/GrMtlTypes.h",
     "include/gpu/mtl/MtlMemoryAllocator.h",
     "include/gpu/vk/GrVkBackendContext.h",
     "include/gpu/vk/GrVkExtensions.h",
@@ -197,18 +202,15 @@ SKIA_PUBLIC_HDRS = [
     "include/ports/SkFontMgr_empty.h",
     "include/ports/SkFontMgr_fontconfig.h",
     "include/ports/SkFontMgr_fuchsia.h",
-    "include/ports/SkFontMgr_indirect.h",
     "include/ports/SkFontMgr_mac_ct.h",
     "include/ports/SkImageGeneratorCG.h",
     "include/ports/SkImageGeneratorNDK.h",
     "include/ports/SkImageGeneratorWIC.h",
-    "include/ports/SkRemotableFontMgr.h",
     "include/ports/SkTypeface_mac.h",
     "include/ports/SkTypeface_win.h",
     # We do not want clients to directly include our private headers, so we exclude include/private
     "include/sksl/SkSLDebugTrace.h",
     "include/sksl/SkSLVersion.h",
-    "include/utils/SkAnimCodecPlayer.h",
     "include/utils/SkCanvasStateUtils.h",
     "include/utils/SkCustomTypeface.h",
     "include/utils/SkEventTracer.h",
@@ -247,6 +249,7 @@ BASE_SRCS_ALL = [
     "include/private/SkXmp.h",
     "include/private/base/SingleOwner.h",
     "include/private/base/SkAPI.h",
+    "include/private/base/SkASAN.h",
     "include/private/base/SkAlign.h",
     "include/private/base/SkAlignedStorage.h",
     "include/private/base/SkAnySubclass.h",
@@ -258,7 +261,6 @@ BASE_SRCS_ALL = [
     "include/private/base/SkDeque.h",
     "include/private/base/SkFeatures.h",
     "include/private/base/SkFixed.h",
-    "include/private/base/SkFloatBits.h",
     "include/private/base/SkFloatingPoint.h",
     "include/private/base/SkLoadUserConfig.h",
     "include/private/base/SkMacros.h",
@@ -295,7 +297,6 @@ BASE_SRCS_ALL = [
     "include/private/gpu/ganesh/GrTypesPriv.h",
     "src/android/SkAndroidFrameworkUtils.cpp",
     "src/android/SkAnimatedImage.cpp",
-    "src/base/SkASAN.h",
     "src/base/SkArenaAlloc.cpp",
     "src/base/SkArenaAlloc.h",
     "src/base/SkArenaAllocList.h",
@@ -316,6 +317,8 @@ BASE_SRCS_ALL = [
     "src/base/SkDeque.cpp",
     "src/base/SkEndian.h",
     "src/base/SkEnumBitMask.h",
+    "src/base/SkFixedArray.h",
+    "src/base/SkFloatBits.h",
     "src/base/SkFloatingPoint.cpp",
     "src/base/SkHalf.cpp",
     "src/base/SkHalf.h",
@@ -384,7 +387,6 @@ BASE_SRCS_ALL = [
     "src/core/SkBitmapDevice.h",
     "src/core/SkBitmapProcState.h",  # needed for src/opts/SkBitmapProcState_opts.h
     "src/core/SkBitmapProcState_opts.cpp",
-    "src/core/SkBitmapProcState_opts_hsw.cpp",
     "src/core/SkBitmapProcState_opts_ssse3.cpp",
     "src/core/SkBlendMode.cpp",
     "src/core/SkBlendModeBlender.cpp",
@@ -456,7 +458,6 @@ BASE_SRCS_ALL = [
     "src/core/SkDraw.h",
     "src/core/SkDrawBase.cpp",
     "src/core/SkDrawBase.h",
-    "src/core/SkDrawLooper.cpp",
     "src/core/SkDrawProcs.h",
     "src/core/SkDrawShadowInfo.cpp",
     "src/core/SkDrawShadowInfo.h",
@@ -508,6 +509,8 @@ BASE_SRCS_ALL = [
     "src/core/SkImageInfo.cpp",
     "src/core/SkImageInfoPriv.h",
     "src/core/SkImagePriv.h",
+    "src/core/SkKnownRuntimeEffects.cpp",
+    "src/core/SkKnownRuntimeEffects.h",
     "src/core/SkLRUCache.h",
     "src/core/SkLatticeIter.cpp",
     "src/core/SkLatticeIter.h",
@@ -653,7 +656,6 @@ BASE_SRCS_ALL = [
     "src/core/SkScan_Antihair.cpp",
     "src/core/SkScan_Hairline.cpp",
     "src/core/SkScan_Path.cpp",
-    "src/core/SkScan_SAAPath.cpp",
     "src/core/SkSpecialImage.cpp",
     "src/core/SkSpecialImage.h",
     "src/core/SkSpriteBlitter.h",
@@ -687,8 +689,6 @@ BASE_SRCS_ALL = [
     "src/core/SkTaskGroup.h",
     "src/core/SkTextBlob.cpp",
     "src/core/SkTextBlobPriv.h",
-    "src/core/SkTextBlobTrace.cpp",
-    "src/core/SkTextBlobTrace.h",
     "src/core/SkTextFormatParams.h",
     "src/core/SkTraceEvent.h",
     "src/core/SkTraceEventCommon.h",
@@ -730,7 +730,6 @@ BASE_SRCS_ALL = [
     "src/effects/SkEmbossMaskFilter.cpp",
     "src/effects/SkEmbossMaskFilter.h",
     "src/effects/SkHighContrastFilter.cpp",
-    "src/effects/SkLayerDrawLooper.cpp",
     "src/effects/SkShaderMaskFilterImpl.cpp",
     "src/effects/SkShaderMaskFilterImpl.h",
     "src/effects/SkTableMaskFilter.cpp",
@@ -771,8 +770,6 @@ BASE_SRCS_ALL = [
     "src/effects/imagefilters/SkPictureImageFilter.cpp",
     "src/effects/imagefilters/SkRuntimeImageFilter.cpp",
     "src/effects/imagefilters/SkShaderImageFilter.cpp",
-    "src/fonts/SkFontMgr_indirect.cpp",
-    "src/fonts/SkRemotableFontMgr.cpp",
     "src/gpu/AsyncReadTypes.h",
     "src/gpu/AtlasTypes.cpp",
     "src/gpu/AtlasTypes.h",
@@ -783,6 +780,8 @@ BASE_SRCS_ALL = [
     "src/gpu/BlurUtils.cpp",
     "src/gpu/BlurUtils.h",
     "src/gpu/BufferWriter.h",
+    "src/gpu/DataUtils.cpp",
+    "src/gpu/DataUtils.h",
     "src/gpu/DitherUtils.cpp",
     "src/gpu/DitherUtils.h",
     "src/gpu/GpuRefCnt.h",
@@ -806,6 +805,7 @@ BASE_SRCS_ALL = [
     "src/gpu/SkRenderEngineAbortf.h",
     "src/gpu/Swizzle.cpp",
     "src/gpu/Swizzle.h",
+    "src/gpu/SwizzlePriv.h",
     "src/gpu/TiledTextureUtils.cpp",
     "src/gpu/TiledTextureUtils.h",
     # We include the ganesh files, but leave out any specific backend (e.g. GL, Vulkan)
@@ -1300,7 +1300,7 @@ BASE_SRCS_ALL = [
     "src/opts/SkOpts_RestoreTarget.h",
     "src/opts/SkOpts_SetTarget.h",
     "src/opts/SkRasterPipeline_opts.h",
-    "src/opts/SkSwizzler_opts.h",
+    "src/opts/SkSwizzler_opts.inc",
     "src/pathops/SkAddIntersections.cpp",
     "src/pathops/SkAddIntersections.h",
     "src/pathops/SkDConicLineIntersection.cpp",
@@ -1451,6 +1451,7 @@ BASE_SRCS_ALL = [
     "src/shaders/SkLocalMatrixShader.h",
     "src/shaders/SkPerlinNoiseShaderImpl.cpp",
     "src/shaders/SkPerlinNoiseShaderImpl.h",
+    "src/shaders/SkPerlinNoiseShaderType.h",
     "src/shaders/SkPictureShader.cpp",
     "src/shaders/SkPictureShader.h",
     "src/shaders/SkRuntimeShader.cpp",
@@ -1678,8 +1679,10 @@ BASE_SRCS_ALL = [
     "src/sksl/transform/SkSLEliminateDeadGlobalVariables.cpp",
     "src/sksl/transform/SkSLEliminateDeadLocalVariables.cpp",
     "src/sksl/transform/SkSLEliminateEmptyStatements.cpp",
+    "src/sksl/transform/SkSLEliminateUnnecessaryBraces.cpp",
     "src/sksl/transform/SkSLEliminateUnreachableCode.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinFunctions.cpp",
+    "src/sksl/transform/SkSLFindAndDeclareBuiltinStructs.cpp",
     "src/sksl/transform/SkSLFindAndDeclareBuiltinVariables.cpp",
     "src/sksl/transform/SkSLHoistSwitchVarDeclarationsAtTopLevel.cpp",
     "src/sksl/transform/SkSLProgramWriter.h",
@@ -1717,7 +1720,6 @@ BASE_SRCS_ALL = [
     "src/text/SlugFromBuffer.cpp",
     "src/text/StrikeForGPU.cpp",
     "src/text/StrikeForGPU.h",
-    "src/utils/SkAnimCodecPlayer.cpp",
     "src/utils/SkBitSet.h",
     "src/utils/SkCallableTraits.h",
     "src/utils/SkCanvasStack.cpp",
@@ -1741,7 +1743,6 @@ BASE_SRCS_ALL = [
     "src/utils/SkMatrix22.cpp",
     "src/utils/SkMatrix22.h",
     "src/utils/SkMultiPictureDocument.cpp",
-    "src/utils/SkMultiPictureDocument.h",
     "src/utils/SkMultiPictureDocumentPriv.h",
     "src/utils/SkNullCanvas.cpp",
     "src/utils/SkNWayCanvas.cpp",
@@ -1831,6 +1832,8 @@ CODEC_SRCS_LIMITED = [
     "src/codec/SkJpegCodec.h",
     "src/codec/SkJpegDecoderMgr.cpp",
     "src/codec/SkJpegDecoderMgr.h",
+    "src/codec/SkJpegMetadataDecoderImpl.cpp",
+    "src/codec/SkJpegMetadataDecoderImpl.h",
     "src/codec/SkJpegPriv.h",
     "src/codec/SkJpegSourceMgr.cpp",
     "src/codec/SkJpegSourceMgr.h",
@@ -1853,7 +1856,6 @@ CODEC_SRCS_LIMITED = [
     "src/codec/SkWbmpCodec.cpp",
     "src/codec/SkWbmpCodec.h",
     "src/codec/SkWuffsCodec.cpp",
-    "src/codec/SkWuffsCodec.h",
 ]
 
 CODEC_SRCS_ALL = CODEC_SRCS_LIMITED + [
@@ -1909,6 +1911,7 @@ base_gl_srcs = [
     "src/gpu/ganesh/gl/GrGLCaps.h",
     "src/gpu/ganesh/gl/GrGLContext.cpp",
     "src/gpu/ganesh/gl/GrGLContext.h",
+    "src/gpu/ganesh/gl/GrGLCoreFunctions.h",
     "src/gpu/ganesh/gl/GrGLDefines.h",
     "src/gpu/ganesh/gl/GrGLDirectContext.cpp",
     "src/gpu/ganesh/gl/GrGLExtensions.cpp",
@@ -2039,6 +2042,8 @@ PORTS_SRCS_IOS = [
     "src/utils/mac/SkCreateCGImageRef.cpp",
     "src/utils/mac/SkCTFont.cpp",
     "src/utils/mac/SkCTFont.h",
+    "src/utils/mac/SkCTFontCreateExactCopy.cpp",
+    "src/utils/mac/SkCTFontCreateExactCopy.h",
     "src/utils/mac/SkUniqueCFRef.h",
 ]
 
@@ -2114,10 +2119,13 @@ MTL_HDRS = [
 
 MTL_SRCS = [
     "src/gpu/ganesh/mtl/GrMtlAttachment.mm",
+    "src/gpu/ganesh/mtl/GrMtlBackendSemaphore.mm",
+    "src/gpu/ganesh/mtl/GrMtlBackendSurface.mm",
     "src/gpu/ganesh/mtl/GrMtlBuffer.mm",
     "src/gpu/ganesh/mtl/GrMtlCaps.mm",
     "src/gpu/ganesh/mtl/GrMtlCommandBuffer.mm",
     "src/gpu/ganesh/mtl/GrMtlDepthStencil.mm",
+    "src/gpu/ganesh/mtl/GrMtlDirectContext.mm",
     "src/gpu/ganesh/mtl/GrMtlFramebuffer.mm",
     "src/gpu/ganesh/mtl/GrMtlGpu.mm",
     "src/gpu/ganesh/mtl/GrMtlOpsRenderPass.mm",
@@ -2232,15 +2240,13 @@ BASE_DEFINES = [
     "SK_USE_FREETYPE_EMBOLDEN",
     # Turn on a few Google3-specific build fixes.
     "SK_BUILD_FOR_GOOGLE3",
-    # Required for building dm.
-    "GR_TEST_UTILS",
     # Should remove after we update golden images
     "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
-    # Experiment to diagnose image diffs in Google3
-    "SK_DISABLE_LOWP_RASTER_PIPELINE",
-
     # JPEG is in codec_limited and is included in all
     # builds except the no_codec android build
+    # BMP and WBMP are on by default in this build.
+    "SK_CODEC_DECODES_BMP",
+    "SK_CODEC_DECODES_WBMP",
 ]
 UNIX_DEFINES = [
     "PNG_SKIP_SETJMP_CHECK",
@@ -2282,7 +2288,6 @@ WASM_DEFINES = [
     "SK_DISABLE_LEGACY_SHADERCONTEXT",
     "SK_DISABLE_TRACING",
     "SK_GL",
-    "SK_FORCE_AAA",
     "SK_DISABLE_EFFECT_DESERIALIZATION",
     "SK_FORCE_8_BYTE_ALIGNMENT",
     "SKNX_NO_SIMD",
@@ -2415,7 +2420,11 @@ SKPARAGRAPH_LIB_SRCS = [
 
 SKRESOURCES_LIB_HDRS = ["modules/skresources/include/SkResources.h"]
 
-SKRESOURCES_LIB_SRCS = ["modules/skresources/src/SkResources.cpp"]
+SKRESOURCES_LIB_SRCS = [
+    "modules/skresources/src/SkResources.cpp",
+    "modules/skresources/src/SkAnimCodecPlayer.cpp",
+    "modules/skresources/src/SkAnimCodecPlayer.h",
+]
 
 ################################################################################
 ## skottie_lib
@@ -2513,7 +2522,6 @@ SKOTTIE_LIB_SRCS = [
     "modules/skottie/src/text/Font.h",
     "modules/skottie/src/text/RangeSelector.cpp",
     "modules/skottie/src/text/RangeSelector.h",
-    "modules/skottie/src/text/SkottieShaper.h",
     "modules/skottie/src/text/TextAdapter.cpp",
     "modules/skottie/src/text/TextAdapter.h",
     "modules/skottie/src/text/TextAnimator.cpp",
@@ -2543,8 +2551,6 @@ SKOTTIE_UTILS_SRCS = [
 
 SKOTTIE_SHAPER_HDRS = [
     "modules/skottie/include/TextShaper.h",
-    # transitional
-    "modules/skottie/src/text/SkottieShaper.h",
 ]
 
 SKOTTIE_SHAPER_SRCS = [
@@ -2559,19 +2565,23 @@ SKOTTIE_SHAPER_SRCS = [
 SKUNICODE_ICU_BUILTIN_SRCS = [
     "modules/skunicode/src/SkUnicode.cpp",
     "modules/skunicode/src/SkUnicode_icu.cpp",
-    "modules/skunicode/src/SkUnicode_icu.h",
+    "modules/skunicode/src/SkUnicode_icupriv.h",
     "modules/skunicode/src/SkUnicode_icu_bidi.cpp",
     "modules/skunicode/src/SkUnicode_icu_bidi.h",
     "modules/skunicode/src/SkUnicode_icu_builtin.cpp",
+    "modules/skunicode/src/SkBidiFactory_icu_full.cpp",
+    "modules/skunicode/src/SkBidiFactory_icu_full.h",
 ]
 
 SKUNICODE_ICU_RUNTIME_SRCS = [
     "modules/skunicode/src/SkUnicode.cpp",
     "modules/skunicode/src/SkUnicode_icu.cpp",
-    "modules/skunicode/src/SkUnicode_icu.h",
+    "modules/skunicode/src/SkUnicode_icupriv.h",
     "modules/skunicode/src/SkUnicode_icu_bidi.cpp",
     "modules/skunicode/src/SkUnicode_icu_bidi.h",
     "modules/skunicode/src/SkUnicode_icu_runtime.cpp",
+    "modules/skunicode/src/SkBidiFactory_icu_full.cpp",
+    "modules/skunicode/src/SkBidiFactory_icu_full.h",
 ]
 
 SKUNICODE_CLIENT_SRCS = [
@@ -2579,18 +2589,30 @@ SKUNICODE_CLIENT_SRCS = [
     "modules/skunicode/src/SkUnicode_client.cpp",
     "modules/skunicode/src/SkUnicode_icu_bidi.cpp",
     "modules/skunicode/src/SkUnicode_icu_bidi.h",
+    "modules/skunicode/src/SkBidiFactory_icu_subset.cpp",
+    "modules/skunicode/src/SkBidiFactory_icu_subset.h",
 ]
 
 SKUNICODE_HDRS = [
     "modules/skunicode/include/SkUnicode.h",
+    "modules/skunicode/include/SkUnicode_client.h",
+    "modules/skunicode/include/SkUnicode_icu.h",
+    "modules/skunicode/include/SkUnicode_icu4x.h",
+    "modules/skunicode/include/SkUnicode_libgrapheme.h",
 ]
 
 SKSHAPER_HDRS = [
     "modules/skshaper/include/SkShaper.h",
+    "modules/skshaper/include/SkShaper_coretext.h",
+    "modules/skshaper/include/SkShaper_factory.h",
+    "modules/skshaper/include/SkShaper_harfbuzz.h",
+    "modules/skshaper/include/SkShaper_skunicode.h",
+    "modules/skshaper/utils/FactoryHelpers.h",
 ]
 
 SKSHAPER_HARFBUZZ_SRCS = [
     "modules/skshaper/src/SkShaper.cpp",
+    "modules/skshaper/src/SkShaper_factory.cpp",
     "modules/skshaper/src/SkShaper_harfbuzz.cpp",
     "modules/skshaper/src/SkShaper_primitive.cpp",
     "modules/skshaper/src/SkShaper_skunicode.cpp",
@@ -2599,11 +2621,13 @@ SKSHAPER_HARFBUZZ_SRCS = [
 SKSHAPER_CORETEXT_SRCS = [
     "modules/skshaper/src/SkShaper.cpp",
     "modules/skshaper/src/SkShaper_coretext.cpp",
+    "modules/skshaper/src/SkShaper_factory.cpp",
     "modules/skshaper/src/SkShaper_primitive.cpp",
 ]
 
 SKSHAPER_PRIMITIVE_SRCS = [
     "modules/skshaper/src/SkShaper.cpp",
+    "modules/skshaper/src/SkShaper_factory.cpp",
     "modules/skshaper/src/SkShaper_primitive.cpp",
 ]
 
@@ -2644,6 +2668,7 @@ SVG_LIB_HDRS = [
     "modules/svg/include/SkSVGEllipse.h",
     "modules/svg/include/SkSVGFeBlend.h",
     "modules/svg/include/SkSVGFeColorMatrix.h",
+    "modules/svg/include/SkSVGFeComponentTransfer.h",
     "modules/svg/include/SkSVGFeComposite.h",
     "modules/svg/include/SkSVGFeDisplacementMap.h",
     "modules/svg/include/SkSVGFeFlood.h",
@@ -2652,11 +2677,12 @@ SVG_LIB_HDRS = [
     "modules/svg/include/SkSVGFeImage.h",
     "modules/svg/include/SkSVGFeLighting.h",
     "modules/svg/include/SkSVGFeLightSource.h",
+    "modules/svg/include/SkSVGFeMerge.h",
     "modules/svg/include/SkSVGFeMorphology.h",
     "modules/svg/include/SkSVGFeOffset.h",
     "modules/svg/include/SkSVGFeTurbulence.h",
-    "modules/svg/include/SkSVGFilterContext.h",
     "modules/svg/include/SkSVGFilter.h",
+    "modules/svg/include/SkSVGFilterContext.h",
     "modules/svg/include/SkSVGG.h",
     "modules/svg/include/SkSVGGradient.h",
     "modules/svg/include/SkSVGHiddenContainer.h",
@@ -2693,6 +2719,7 @@ SVG_LIB_SRCS = [
     "modules/svg/src/SkSVGEllipse.cpp",
     "modules/svg/src/SkSVGFeBlend.cpp",
     "modules/svg/src/SkSVGFeColorMatrix.cpp",
+    "modules/svg/src/SkSVGFeComponentTransfer.cpp",
     "modules/svg/src/SkSVGFeComposite.cpp",
     "modules/svg/src/SkSVGFe.cpp",
     "modules/svg/src/SkSVGFeDisplacementMap.cpp",
@@ -2701,6 +2728,7 @@ SVG_LIB_SRCS = [
     "modules/svg/src/SkSVGFeImage.cpp",
     "modules/svg/src/SkSVGFeLighting.cpp",
     "modules/svg/src/SkSVGFeLightSource.cpp",
+    "modules/svg/src/SkSVGFeMerge.cpp",
     "modules/svg/src/SkSVGFeMorphology.cpp",
     "modules/svg/src/SkSVGFeOffset.cpp",
     "modules/svg/src/SkSVGFeTurbulence.cpp",
@@ -2718,6 +2746,7 @@ SVG_LIB_SRCS = [
     "modules/svg/src/SkSVGPoly.cpp",
     "modules/svg/src/SkSVGRadialGradient.cpp",
     "modules/svg/src/SkSVGRect.cpp",
+    "modules/svg/src/SkSVGRectPriv.h",
     "modules/svg/src/SkSVGRenderContext.cpp",
     "modules/svg/src/SkSVGShape.cpp",
     "modules/svg/src/SkSVGStop.cpp",
@@ -2748,5 +2777,8 @@ XML_HDRS = [
 ## EGL support
 ################################################################################
 
-SKIA_EGL_HDRS = ["include/gpu/gl/egl/GrGLMakeEGLInterface.h"]
+SKIA_EGL_HDRS = [
+    "include/gpu/gl/egl/GrGLMakeEGLInterface.h",
+    "include/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.h",
+]
 SKIA_EGL_SRCS = ["src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp"]

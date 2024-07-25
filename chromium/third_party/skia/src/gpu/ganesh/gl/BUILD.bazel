@@ -1,5 +1,9 @@
 load("//bazel:flags.bzl", "bool_flag")
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_cc_library", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "generate_cpp_files_for_headers", "skia_cc_deps", "skia_cc_library", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
@@ -19,6 +23,7 @@ CORE_FILES = [
     "GrGLCaps.h",
     "GrGLContext.cpp",
     "GrGLContext.h",
+    "GrGLCoreFunctions.h",
     "GrGLDefines.h",
     "GrGLDirectContext.cpp",
     "GrGLExtensions.cpp",
@@ -138,7 +143,10 @@ skia_cc_library(
         "//include/gpu/ganesh/gl:public_hdrs",
         "//include/gpu/gl:ganesh_gl_hdrs",
     ],
-    defines = ["SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE"],
+    defines = [
+        "SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE",
+        "SK_GL",
+    ],
     features = ["layering_check"],
     visibility = ["//:__pkg__"],
     deps = [
@@ -148,5 +156,47 @@ skia_cc_library(
         "//src/gpu",
         "//src/gpu/ganesh",
         "//src/sksl/codegen:glsl",
+    ],
+)
+
+skia_cc_library(
+    name = "ganesh_gl_TEST_UTIL",
+    testonly = True,
+    srcs = [
+        ":core_hdrs",
+        ":core_srcs",
+        "//src/gpu/ganesh/gl/builders:private_hdrs",
+        "//src/gpu/ganesh/gl/builders:srcs",
+    ],
+    hdrs = [
+        "//include/gpu:ganesh_hdrs",
+        "//include/gpu/ganesh:ganesh_hdrs",
+        "//include/gpu/ganesh/gl:public_hdrs",
+        "//include/gpu/gl:ganesh_gl_hdrs",
+    ],
+    defines = [
+        "SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE",
+        "GR_TEST_UTILS",
+        "SK_GL",
+    ],
+    features = ["layering_check"],
+    visibility = [
+        "//modules/skottie:__pkg__",
+        "//tools:__subpackages__",
+    ],
+    deps = [
+        "//:core",
+        "//src/base",
+        "//src/core:core_priv",
+        "//src/gpu",
+        "//src/gpu/ganesh:ganesh_TEST_UTIL",
+        "//src/sksl/codegen:glsl",
+    ],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "GrGLBackendSurfacePriv.h",
     ],
 )

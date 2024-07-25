@@ -10,7 +10,12 @@
 #ifndef LIBANGLE_RENDERER_WGPU_CONTEXTWGPU_H_
 #define LIBANGLE_RENDERER_WGPU_CONTEXTWGPU_H_
 
+#include <dawn/webgpu_cpp.h>
+
+#include "image_util/loadimage.h"
 #include "libANGLE/renderer/ContextImpl.h"
+#include "libANGLE/renderer/wgpu/DisplayWgpu.h"
+#include "libANGLE/renderer/wgpu/wgpu_utils.h"
 
 namespace rx
 {
@@ -18,10 +23,12 @@ namespace rx
 class ContextWgpu : public ContextImpl
 {
   public:
-    ContextWgpu(const gl::State &state, gl::ErrorSet *errorSet);
+    ContextWgpu(const gl::State &state, gl::ErrorSet *errorSet, DisplayWgpu *display);
     ~ContextWgpu() override;
 
-    angle::Result initialize() override;
+    angle::Result initialize(const angle::ImageLoadContext &imageLoadContext) override;
+
+    void onDestroy(const gl::Context *context) override;
 
     // Flush and finish.
     angle::Result flush(const gl::Context *context) override;
@@ -249,12 +256,30 @@ class ContextWgpu : public ContextImpl
                      const char *function,
                      unsigned int line);
 
+    const angle::ImageLoadContext &getImageLoadContext() const { return mImageLoadContext; }
+
+    DisplayWgpu *getDisplay() { return mDisplay; }
+    wgpu::Device &getDevice() { return mDisplay->getDevice(); }
+    wgpu::Queue &getQueue() { return mDisplay->getQueue(); }
+    angle::ImageLoadContext &getImageLoadContext() { return mImageLoadContext; }
+    angle::Result startRenderPass(const wgpu::RenderPassDescriptor &desc);
+    angle::Result endRenderPass(webgpu::RenderPassClosureReason closure_reason);
+
+    angle::Result flush();
+
   private:
     gl::Caps mCaps;
     gl::TextureCapsMap mTextureCaps;
     gl::Extensions mExtensions;
     gl::Limitations mLimitations;
     ShPixelLocalStorageOptions mPLSOptions;
+
+    angle::ImageLoadContext mImageLoadContext;
+
+    DisplayWgpu *mDisplay;
+
+    wgpu::CommandEncoder mCurrentCommandEncoder;
+    wgpu::RenderPassEncoder mCurrentRenderPass;
 };
 
 }  // namespace rx

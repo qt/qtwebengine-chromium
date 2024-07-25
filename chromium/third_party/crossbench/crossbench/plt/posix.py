@@ -24,7 +24,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     self._default_tmp_dir = pathlib.Path("")
 
   def app_version(self, app_or_bin: pathlib.Path) -> str:
-    assert app_or_bin.exists(), f"Binary {app_or_bin} does not exist."
+    assert self.exists(app_or_bin), f"Binary {app_or_bin} does not exist."
     return self.sh_stdout(app_or_bin, "--version")
 
   @property
@@ -105,7 +105,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       raise ValueError("Got empty path")
     try:
       maybe_bin = pathlib.Path(self.sh_stdout("which", binary_name).strip())
-      if maybe_bin.exists():
+      if self.exists(maybe_bin):
         return maybe_bin
     except SubprocessError:
       pass
@@ -123,6 +123,13 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       self.sh("rm", "-rf", path)
     else:
       self.sh("rm", path)
+
+  def rename(self, src_path: Union[str, pathlib.Path],
+             dst_path: Union[str, pathlib.Path]) -> None:
+    if not self.is_remote:
+      super().rename(src_path, dst_path)
+    else:
+      self.sh("mv", src_path, dst_path)
 
   def touch(self, path: Union[str, pathlib.Path]) -> None:
     if not self.is_remote:

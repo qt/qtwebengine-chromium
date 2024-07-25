@@ -20,7 +20,6 @@
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
@@ -276,7 +275,7 @@ GURL SavePackage::GetUrlToBeSaved(RenderFrameHost* main_frame) {
   // be different (like having "view-source:" on the front).
   NavigationEntry* visible_entry =
       rfh->frame_tree()->controller().GetVisibleEntry();
-  return visible_entry ? visible_entry->GetURL() : GURL::EmptyGURL();
+  return visible_entry ? visible_entry->GetURL() : GURL();
 }
 
 void SavePackage::Cancel(bool user_action, bool cancel_download_item) {
@@ -339,8 +338,9 @@ bool SavePackage::Init(
   download_manager_->CreateSavePackageDownloadItem(
       saved_main_file_path_, page_url_, GetMimeTypeForSaveType(save_type_),
       frame_host.GetProcess()->GetID(), frame_host.GetRoutingID(),
-      base::BindOnce(&CancelSavePackage, AsWeakPtr()),
-      base::BindOnce(&SavePackage::InitWithDownloadItem, AsWeakPtr(),
+      base::BindOnce(&CancelSavePackage, weak_ptr_factory_.GetWeakPtr()),
+      base::BindOnce(&SavePackage::InitWithDownloadItem,
+                     weak_ptr_factory_.GetWeakPtr(),
                      std::move(download_created_callback)));
   return true;
 }
@@ -737,7 +737,7 @@ void SavePackage::CheckFinish() {
         base::BindOnce(&SaveFileManager::GetSaveFilePaths, file_manager_,
                        std::move(ids_and_final_paths),
                        base::BindOnce(&SavePackage::CheckRenameAllowedForPaths,
-                                      AsWeakPtr())));
+                                      weak_ptr_factory_.GetWeakPtr())));
   } else {
     RenameIfAllowed(true);
   }
@@ -751,7 +751,8 @@ void SavePackage::CheckRenameAllowedForPaths(
   if (delegate) {
     delegate->CheckSavePackageAllowed(
         download_, std::move(tmp_paths_to_final_paths),
-        base::BindOnce(&SavePackage::RenameIfAllowed, AsWeakPtr()));
+        base::BindOnce(&SavePackage::RenameIfAllowed,
+                       weak_ptr_factory_.GetWeakPtr()));
   } else {
     RenameIfAllowed(true);
   }
@@ -1133,9 +1134,10 @@ void SavePackage::GetSerializedHtmlWithLocalLinksForFrame(
   mojo::MakeSelfOwnedReceiver(
       std::make_unique<SavePackageSerializationHandler>(
           base::BindRepeating(&SavePackage::OnDidReceiveSerializedHtmlData,
-                              AsWeakPtr(), target->GetWeakPtr()),
+                              weak_ptr_factory_.GetWeakPtr(),
+                              target->GetWeakPtr()),
           base::BindOnce(&SavePackage::OnDidFinishedSerializingHtmlData,
-                         AsWeakPtr(), target->GetWeakPtr())),
+                         weak_ptr_factory_.GetWeakPtr(), target->GetWeakPtr())),
       serializer_handler.InitWithNewPipeAndPassReceiver());
 
   // Ask target frame to serialize itself.
@@ -1296,8 +1298,8 @@ SaveItem* SavePackage::CreatePendingSaveItem(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   Referrer sanitized_referrer = Referrer::SanitizeForRequest(url, referrer);
   // Use an empty Isolation Info for subresources.
-  // TODO(crbug.com/1513122): Populate the correct site isolation and fetch mode
-  // per-resource.
+  // TODO(crbug.com/41485695): Populate the correct site isolation and fetch
+  // mode per-resource.
   const net::IsolationInfo isolation_info;
   SaveItem* save_item = new SaveItem(
       url, sanitized_referrer, isolation_info,
@@ -1486,7 +1488,8 @@ void SavePackage::ContinueGetSaveInfo(bool can_save_as_complete,
   download_manager_->GetDelegate()->ChooseSavePath(
       GetWebContents(page_.get()), suggested_path, default_extension,
       can_save_as_complete,
-      base::BindOnce(&SavePackage::OnPathPicked, AsWeakPtr()));
+      base::BindOnce(&SavePackage::OnPathPicked,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void SavePackage::OnPathPicked(

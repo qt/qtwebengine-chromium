@@ -101,6 +101,10 @@ BASE_FEATURE(kUseDMSAAForTiles,
 BASE_FEATURE(kUseDMSAAForTilesAndroidGL,
              "UseDMSAAForTilesAndroidGL",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kAndroidNoSurfaceSyncForBrowserControls,
+             "AndroidNoSurfaceSyncForBrowserControls",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 BASE_FEATURE(kUpdateBrowserControlsWithoutProxy,
@@ -121,10 +125,6 @@ BASE_FEATURE(kReclaimResourcesFlushInBackground,
 
 BASE_FEATURE(kReclaimResourcesDelayedFlushInBackground,
              "ReclaimResourcesDelayedFlushInBackground",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kMoreAggressiveSolidColorDetection,
-             "MoreAggressiveSolidColorDetection",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReducedFrameRateEstimation,
@@ -142,21 +142,16 @@ BASE_FEATURE(kReclaimPrepaintTilesWhenIdle,
 // This saves memory on all platforms, but while on Android savings are
 // significant (~10MiB or more of foreground memory), on desktop they were
 // small, so only enable on Android.
+//
+// Disabled 04/2024 as it regresses checkerboarding metrics. Feature kept around
+// to find a better balance between checkerboarding and memory.
 BASE_FEATURE(kSmallerInterestArea,
              "SmallerInterestArea",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
              base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
 
 const base::FeatureParam<int> kInterestAreaSizeInPixels{
     &kSmallerInterestArea, "size_in_pixels", kDefaultInterestAreaSizeInPixels};
-
-BASE_FEATURE(kImageCacheNoCache,
-             "ImageCacheNoCache",
-             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kReclaimOldPrepaintTiles,
              "ReclaimOldPrepaintTiles",
@@ -173,12 +168,47 @@ BASE_FEATURE(kEvictionThrottlesDraw,
              "EvictionThrottlesDraw",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kResetTimerWhenNoActiveTreeLikely,
-             "ResetTimerWhenNoActiveTreeLikely",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kUseRecordedBoundsForTiling,
+             "UseRecordedBoundsForTiling",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAdjustFastMainThreadThreshold,
              "AdjustFastMainThreadThreshold",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kClearCanvasResourcesInBackground,
+             "ClearCanvasResourcesInBackground",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kMetricsTracingCalculationReduction,
+             "MetricsTracingCalculationReduction",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPaintWithGainmapShader,
+             "PaintWithGainmapShader",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPaintWithGlobalToneMapFilter,
+             "PaintWithGlobalToneMapFilter",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kMetricsBackfillAdjustmentHoldback,
+             "MetricsBackfillAdjustmentHoldback",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kWaitForLateScrollEvents,
+             "WaitForLateScrollEvents",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<double> kWaitForLateScrollEventsDeadlineRatio{
+    &kWaitForLateScrollEvents, "deadline_ratio", 0.333};
+
+BASE_FEATURE(kNonBatchedCopySharedImage,
+             "NonBatchedCopySharedImage",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDontAlwaysPushPictureLayerImpls,
+             "DontAlwaysPushPictureLayerImpls",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

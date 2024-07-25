@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "components/privacy_sandbox/privacy_sandbox_settings_impl.h"
+
 #include <cstddef>
 #include <vector>
 
@@ -13,6 +14,8 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/observer_list.h"
 #include "base/ranges/algorithm.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -22,6 +25,7 @@
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/pref_names.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/privacy_sandbox/canonical_topic.h"
@@ -188,6 +192,17 @@ PrivacySandboxSettingsImpl::PrivacySandboxSettingsImpl(
 }
 
 PrivacySandboxSettingsImpl::~PrivacySandboxSettingsImpl() = default;
+
+void PrivacySandboxSettingsImpl::Shutdown() {
+  observers_.Clear();
+  delegate_.reset();
+  host_content_settings_map_ = nullptr;
+  cookie_settings_.reset();
+  tracking_protection_settings_ = nullptr;
+  pref_service_ = nullptr;
+  pref_change_registrar_.Reset();
+  tracking_protection_settings_observation_.Reset();
+}
 
 PrivacySandboxSettingsImpl::Status
 PrivacySandboxSettingsImpl::GetM1TopicAllowedStatus() const {
@@ -521,7 +536,7 @@ void PrivacySandboxSettingsImpl::ClearFledgeJoiningAllowedSettings(
 
   std::vector<std::string> keys_to_remove;
   for (auto entry : pref_data) {
-    absl::optional<base::Time> created_time = base::ValueToTime(entry.second);
+    std::optional<base::Time> created_time = base::ValueToTime(entry.second);
     if (created_time.has_value() && start_time <= created_time &&
         created_time <= end_time) {
       keys_to_remove.push_back(entry.first);
@@ -614,27 +629,61 @@ bool PrivacySandboxSettingsImpl::IsFledgeAllowed(
 bool PrivacySandboxSettingsImpl::IsSharedStorageAllowed(
     const url::Origin& top_frame_origin,
     const url::Origin& accessing_origin,
-    content::RenderFrameHost* console_frame) const {
+    std::string* out_debug_message,
+    content::RenderFrameHost* console_frame,
+    bool* out_block_is_site_setting_specific) const {
   // Check for attestation on the caller's site.
   Status attestation_status =
       PrivacySandboxAttestations::GetInstance()->IsSiteAttested(
           net::SchemefulSite(accessing_origin),
           PrivacySandboxAttestationsGatedAPI::kSharedStorage);
+  SetOutBlockIsSiteSettingSpecificFromStatus(
+      attestation_status, out_block_is_site_setting_specific);
   if (!IsAllowed(attestation_status)) {
     JoinHistogram(kIsSharedStorageAllowedHistogram, attestation_status);
+    std::string error_message =
+        base::StrCat({"Attestation check for Shared Storage on ",
+                      accessing_origin.Serialize(), " failed."});
+    if (out_debug_message) {
+      *out_debug_message = base::StrCat(
+          {error_message, "\nReturned status ",
+           base::NumberToString(int(attestation_status)),
+           "; see `PrivacySandboxSettingsImpl::Status` at ",
+           "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/",
+           "components/privacy_sandbox/privacy_sandbox_settings_impl.h."});
+    }
     if (console_frame) {
       console_frame->AddMessageToConsole(
-          blink::mojom::ConsoleMessageLevel::kError,
-          "Attestation check for Shared Storage on " +
-              accessing_origin.Serialize() + " failed.");
+          blink::mojom::ConsoleMessageLevel::kError, error_message);
     }
     return false;
   }
 
   Status status = GetPrivacySandboxAllowedStatus();
+  SetOutBlockIsSiteSettingSpecificFromStatus(
+      status, out_block_is_site_setting_specific);
   if (IsAllowed(status)) {
     status =
         GetSiteAccessAllowedStatus(top_frame_origin, accessing_origin.GetURL());
+    SetOutBlockIsSiteSettingSpecificFromStatus(
+        status, out_block_is_site_setting_specific);
+    if (out_debug_message) {
+      *out_debug_message = base::StrCat(
+          {"Site access settings returned status ",
+           base::NumberToString(int(status)), " for accessing origin ",
+           accessing_origin.Serialize(), " and top-frame origin ",
+           top_frame_origin.Serialize(),
+           "; see `PrivacySandboxSettingsImpl::Status` at ",
+           "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/",
+           "components/privacy_sandbox/privacy_sandbox_settings_impl.h."});
+    }
+  } else if (out_debug_message) {
+    *out_debug_message = base::StrCat(
+        {"Privacy Sandbox settings returned status ",
+         base::NumberToString(int(status)),
+         "; see `PrivacySandboxSettingsImpl::Status` at ",
+         "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/",
+         "components/privacy_sandbox/privacy_sandbox_settings_impl.h."});
   }
   JoinHistogram(kIsSharedStorageAllowedHistogram, status);
   return IsAllowed(status);
@@ -642,20 +691,37 @@ bool PrivacySandboxSettingsImpl::IsSharedStorageAllowed(
 
 bool PrivacySandboxSettingsImpl::IsSharedStorageSelectURLAllowed(
     const url::Origin& top_frame_origin,
-    const url::Origin& accessing_origin) const {
+    const url::Origin& accessing_origin,
+    std::string* out_debug_message,
+    bool* out_block_is_site_setting_specific) const {
   Status status = GetM1FledgeAllowedStatus(top_frame_origin, accessing_origin);
+  SetOutBlockIsSiteSettingSpecificFromStatus(
+      status, out_block_is_site_setting_specific);
   JoinHistogram(kIsSharedStorageSelectURLAllowedHistogram, status);
+  if (out_debug_message) {
+    *out_debug_message = base::StrCat(
+        {"M1 measurement settings returned status ",
+         base::NumberToString(int(status)), " for accessing origin ",
+         accessing_origin.Serialize(), " and top-frame origin ",
+         top_frame_origin.Serialize(),
+         "; see `PrivacySandboxSettingsImpl::Status` at ",
+         "https://chromium.googlesource.com/chromium/src/+/refs/heads/main/",
+         "components/privacy_sandbox/privacy_sandbox_settings_impl.h."});
+  }
   return IsAllowed(status);
 }
 
 bool PrivacySandboxSettingsImpl::IsPrivateAggregationAllowed(
     const url::Origin& top_frame_origin,
-    const url::Origin& reporting_origin) const {
+    const url::Origin& reporting_origin,
+    bool* out_block_is_site_setting_specific) const {
   // Check for attestation on the worklet's site.
   Status attestation_status =
       PrivacySandboxAttestations::GetInstance()->IsSiteAttested(
           net::SchemefulSite(reporting_origin),
           PrivacySandboxAttestationsGatedAPI::kPrivateAggregation);
+  SetOutBlockIsSiteSettingSpecificFromStatus(
+      attestation_status, out_block_is_site_setting_specific);
   if (!IsAllowed(attestation_status)) {
     JoinHistogram(kIsPrivateAggregationAllowedHistogram, attestation_status);
     return false;
@@ -663,6 +729,8 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationAllowed(
 
   Status status =
       GetM1AdMeasurementAllowedStatus(top_frame_origin, reporting_origin);
+  SetOutBlockIsSiteSettingSpecificFromStatus(
+      status, out_block_is_site_setting_specific);
   JoinHistogram(kIsPrivateAggregationAllowedHistogram, status);
   return IsAllowed(status);
 }
@@ -670,7 +738,9 @@ bool PrivacySandboxSettingsImpl::IsPrivateAggregationAllowed(
 bool PrivacySandboxSettingsImpl::IsPrivateAggregationDebugModeAllowed(
     const url::Origin& top_frame_origin,
     const url::Origin& reporting_origin) const {
-  if (!IsPrivateAggregationAllowed(top_frame_origin, reporting_origin)) {
+  if (!IsPrivateAggregationAllowed(
+          top_frame_origin, reporting_origin,
+          /*out_block_is_site_setting_specific=*/nullptr)) {
     return false;
   }
 
@@ -716,7 +786,7 @@ bool PrivacySandboxSettingsImpl::IsSubjectToM1NoticeRestricted() const {
 }
 
 bool PrivacySandboxSettingsImpl::IsRestrictedNoticeEnabled() const {
-  return privacy_sandbox::kPrivacySandboxSettings4RestrictedNotice.Get();
+  return delegate_->IsRestrictedNoticeEnabled();
 }
 
 void PrivacySandboxSettingsImpl::OnCookiesCleared() {
@@ -847,6 +917,15 @@ bool PrivacySandboxSettingsImpl::AreRelatedWebsiteSetsEnabled() const {
   }
   return pref_service_->GetBoolean(
       prefs::kPrivacySandboxRelatedWebsiteSetsEnabled);
+}
+
+void PrivacySandboxSettingsImpl::SetOutBlockIsSiteSettingSpecificFromStatus(
+    Status status,
+    bool* out_block_is_site_setting_specific) const {
+  if (out_block_is_site_setting_specific != nullptr) {
+    *out_block_is_site_setting_specific =
+        status == Status::kSiteDataAccessBlocked;
+  }
 }
 
 }  // namespace privacy_sandbox

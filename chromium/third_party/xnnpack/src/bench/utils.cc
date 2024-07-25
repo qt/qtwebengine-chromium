@@ -323,7 +323,18 @@ void MultiThreadingParameters(benchmark::internal::Benchmark* benchmark) {
   bool CheckRVV(benchmark::State& state) {
     const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     if (hardware_config == nullptr || !hardware_config->use_riscv_vector) {
-      state.SkipWithError("no V extension");
+      state.SkipWithError("no RVV extension");
+      return false;
+    }
+    return true;
+  }
+#endif  // XNN_ARCH_RISCV
+
+#if XNN_ARCH_RISCV
+  bool CheckRVVFP16ARITH(benchmark::State& state) {
+    const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    if (hardware_config == nullptr || !hardware_config->use_riscv_vector_fp16_arith) {
+      state.SkipWithError("no RVV-FP16-ARITH extension");
       return false;
     }
     return true;
@@ -368,17 +379,6 @@ void MultiThreadingParameters(benchmark::internal::Benchmark* benchmark) {
     const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     if (hardware_config == nullptr || !hardware_config->use_x86_f16c) {
       state.SkipWithError("no F16C extension");
-      return false;
-    }
-    return true;
-  }
-#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
-
-#if XNN_ARCH_X86 || XNN_ARCH_X86_64
-  bool CheckXOP(benchmark::State& state) {
-    const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
-    if (hardware_config == nullptr || !hardware_config->use_x86_xop) {
-      state.SkipWithError("no XOP extension");
       return false;
     }
     return true;
@@ -445,6 +445,39 @@ void MultiThreadingParameters(benchmark::internal::Benchmark* benchmark) {
     const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
     if (hardware_config == nullptr || !hardware_config->use_x86_avx512vnni) {
       state.SkipWithError("no AVX512 VNNI extension");
+      return false;
+    }
+    return true;
+  }
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  bool CheckAVX512AMX(benchmark::State& state) {
+    const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    if (hardware_config == nullptr || !hardware_config->use_x86_avx512amx) {
+      state.SkipWithError("no AVX512 AMX extension");
+      return false;
+    }
+    return true;
+  }
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  bool CheckAVX512FP16(benchmark::State& state) {
+    const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    if (hardware_config == nullptr || !hardware_config->use_x86_avx512fp16) {
+      state.SkipWithError("no AVX512 FP16 extension");
+      return false;
+    }
+    return true;
+  }
+#endif  // XNN_ARCH_X86 || XNN_ARCH_X86_64
+
+#if XNN_ARCH_X86 || XNN_ARCH_X86_64
+  bool CheckAVX512VNNIGFNI(benchmark::State& state) {
+    const xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+    if (hardware_config == nullptr || !hardware_config->use_x86_avx512vnnigfni) {
+      state.SkipWithError("no GFNI extension");
       return false;
     }
     return true;

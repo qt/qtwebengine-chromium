@@ -11,6 +11,10 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
+#if CHECK_SKIPPED_UPDATE_ON_SCROLL()
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#endif
+
 // Design doc for IntersectionObserver implementation:
 //   https://docs.google.com/a/google.com/document/d/1hLK0eyT5_BzyNS4OkjsnoqqFQDYCbKfyBinj94OnLiQ
 
@@ -40,7 +44,7 @@ class IntersectionObserverController
   bool ComputeIntersections(
       unsigned flags,
       LocalFrameUkmAggregator* metrics_aggregator,
-      absl::optional<base::TimeTicks>& monotonic_time,
+      std::optional<base::TimeTicks>& monotonic_time,
       gfx::Vector2dF accumulated_scroll_delta_since_last_update);
 
   // The second argument indicates whether the Element is a target of any
@@ -64,7 +68,9 @@ class IntersectionObserverController
     return tracked_implicit_root_observations_.size();
   }
 
-  void InvalidateCachedRectsIfPaintPropertiesChanged();
+#if CHECK_SKIPPED_UPDATE_ON_SCROLL()
+  const String& DebugInfo() const { return debug_info_; }
+#endif
 
  private:
   void PostTaskToDeliverNotifications();
@@ -83,6 +89,10 @@ class IntersectionObserverController
   // This is 'true' if any tracked node is the target of an observer for
   // which observer->trackVisibility() is true.
   bool needs_occlusion_tracking_;
+
+#if CHECK_SKIPPED_UPDATE_ON_SCROLL()
+  String debug_info_;
+#endif
 };
 
 }  // namespace blink

@@ -5,9 +5,10 @@
 import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_icons.css.js';
 import 'chrome://resources/cr_elements/cr_page_host_style.css.js';
+import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 import 'chrome://resources/cr_elements/cr_toolbar/cr_toolbar.js';
 import 'chrome://resources/cr_elements/cr_hidden_style.css.js';
-import 'chrome://resources/cr_elements/icons.html.js';
+import 'chrome://resources/cr_elements/icons_lit.html.js';
 import 'chrome://resources/cr_elements/cr_shared_style.css.js';
 import './icons.html.js';
 import './strings.m.js';
@@ -19,16 +20,18 @@ import {sanitizeInnerHtml} from 'chrome://resources/js/parse_html_subset.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 // clang-format off
-import {Application, BrowserReportingResponse, Extension, ManagementBrowserProxy, ManagementBrowserProxyImpl, ReportingType, ThreatProtectionInfo} from './management_browser_proxy.js';
+import type {Application, BrowserReportingResponse, Extension, ManagementBrowserProxy, ThreatProtectionInfo} from './management_browser_proxy.js';
+import { ManagementBrowserProxyImpl, ReportingType} from './management_browser_proxy.js';
 // <if expr="is_chromeos">
-import {DeviceReportingResponse, DeviceReportingType} from './management_browser_proxy.js';
+import type {DeviceReportingResponse} from './management_browser_proxy.js';
+import { DeviceReportingType} from './management_browser_proxy.js';
 // </if>
 import {getTemplate} from './management_ui.html.js';
 // clang-format on
 
 interface BrowserReportingData {
   messageIds: string[];
-  icon: string;
+  icon?: string;
 }
 
 const ManagementUiElementBase = WebUiListenerMixin(I18nMixin(PolymerElement));
@@ -58,6 +61,11 @@ class ManagementUiElement extends ManagementUiElementBase {
        * List of messages related to browser reporting.
        */
       browserReportingInfo_: Array,
+
+      /**
+       * List of messages related to profile reporting.
+       */
+      profileReportingInfo_: Array,
 
       /**
        * List of messages related to extension reporting.
@@ -108,6 +116,8 @@ class ManagementUiElement extends ManagementUiElementBase {
 
   private applications_: Application[]|null;
   private browserReportingInfo_: BrowserReportingData[]|null;
+  private profileReportingInfo_: BrowserReportingData[]|null;
+  private reportingInfo_: BrowserReportingData[]|null;
   private extensions_: Extension[]|null;
   private managedWebsites_: string[]|null;
   private managedWebsitesSubtitle_: string;
@@ -142,13 +152,18 @@ class ManagementUiElement extends ManagementUiElementBase {
     document.documentElement.classList.remove('loading');
     this.browserProxy_ = ManagementBrowserProxyImpl.getInstance();
     this.updateManagedFields_();
-    this.initBrowserReportingInfo_();
+    this.initReportingInfo_();
     this.getThreatProtectionInfo_();
 
     this.addWebUiListener(
         'browser-reporting-info-updated',
         (reportingInfo: BrowserReportingResponse[]) =>
             this.onBrowserReportingInfoReceived_(reportingInfo));
+
+    this.addWebUiListener(
+        'profile-reporting-info-updated',
+        (reportingInfo: BrowserReportingResponse[]) =>
+            this.onProfileReportingInfoReceived_(reportingInfo));
 
     // <if expr="is_chromeos">
     this.addWebUiListener(
@@ -174,9 +189,11 @@ class ManagementUiElement extends ManagementUiElementBase {
     // </if>
   }
 
-  private initBrowserReportingInfo_() {
+  private initReportingInfo_() {
     this.browserProxy_!.initBrowserReportingInfo().then(
         reportingInfo => this.onBrowserReportingInfoReceived_(reportingInfo));
+    this.browserProxy_!.initProfileReportingInfo().then(
+        reportingInfo => this.onProfileReportingInfoReceived_(reportingInfo));
   }
 
   private onBrowserReportingInfoReceived_(reportingInfo:
@@ -205,6 +222,14 @@ class ManagementUiElement extends ManagementUiElementBase {
             .map(reportingType => reportingInfoMap[reportingType]);
   }
 
+
+  private onProfileReportingInfoReceived_(reportingInfo:
+                                              BrowserReportingResponse[]) {
+    this.profileReportingInfo_ =
+        reportingInfo.map((info) => ({
+                            messageIds: [info.messageId],
+                          }));
+  }
   private getExtensions_() {
     this.browserProxy_!.getExtensions().then(extensions => {
       this.extensions_ = extensions;
@@ -338,6 +363,15 @@ class ManagementUiElement extends ManagementUiElementBase {
     return !!this.browserReportingInfo_ &&
         this.browserReportingInfo_.length > 0;
   }
+
+  /**
+   * @return Whether there are profile reporting info to show with new format.
+   */
+  private showProfileReportingInfo_(): boolean {
+    return !!this.profileReportingInfo_ &&
+        this.profileReportingInfo_.length > 0;
+  }
+
 
   /**
    * @return Whether there are extension reporting info to show.

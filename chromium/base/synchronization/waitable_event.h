@@ -9,6 +9,7 @@
 
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
+#include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -170,10 +171,11 @@ class BASE_EXPORT WaitableEvent {
  private:
   friend class WaitableEventWatcher;
 
-  // The platform specific portions of Signal and TimedWait (which do the actual
-  // signaling and waiting).
+  // The platform specific portions of Signal, TimedWait, and WaitMany (which do
+  // the actual signaling and waiting).
   void SignalImpl();
   bool TimedWaitImpl(TimeDelta wait_delta);
+  static size_t WaitManyImpl(WaitableEvent** waitables, size_t count);
 
 #if BUILDFLAG(IS_WIN)
   win::ScopedHandle handle_;
@@ -237,7 +239,7 @@ class BASE_EXPORT WaitableEvent {
     base::Lock lock_;
     const bool manual_reset_;
     bool signaled_;
-    std::list<Waiter*> waiters_;
+    std::list<raw_ptr<Waiter, CtnExperimental>> waiters_;
 
    private:
     friend class RefCountedThreadSafe<WaitableEventKernel>;

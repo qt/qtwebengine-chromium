@@ -5,6 +5,7 @@
 #include "content/public/browser/web_ui_url_loader_factory.h"
 
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -16,7 +17,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/ranges/algorithm.h"
-#include "base/strings/string_piece.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/elapsed_timer.h"
@@ -31,6 +31,7 @@
 #include "content/browser/webui/url_data_source_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "mojo/public/cpp/bindings/message.h"
@@ -80,8 +81,7 @@ void ReadData(
   if (replacements) {
     // We won't know the the final output size ahead of time, so we have to
     // use an intermediate string.
-    base::StringPiece input(reinterpret_cast<const char*>(bytes->front()),
-                            bytes->size());
+    auto input = base::as_string_view(*bytes);
     std::string temp_str;
     if (replace_in_js) {
       CHECK(
@@ -100,7 +100,7 @@ void ReadData(
   }
 
   uint32_t output_offset = 0;
-  uint32_t output_size = base::checked_cast<uint32_t>(bytes->size());
+  size_t output_size = bytes->size();
   if (requested_range) {
     if (!requested_range->ComputeBounds(output_size)) {
       CallOnError(std::move(client_remote),
@@ -127,7 +127,7 @@ void ReadData(
   CHECK_EQ(create_result, MOJO_RESULT_OK);
 
   void* buffer = nullptr;
-  uint32_t num_bytes = output_size;
+  size_t num_bytes = output_size;
   MojoResult result = pipe_producer_handle->BeginWriteData(
       &buffer, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE);
   CHECK_EQ(result, MOJO_RESULT_OK);
@@ -351,24 +351,17 @@ class WebUIURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
       DVLOG(1) << "Bad scheme: " << request.url.scheme();
       SCOPED_CRASH_KEY_STRING32("WebUI", "actual_scheme", request.url.scheme());
       SCOPED_CRASH_KEY_STRING32("WebUI", "expected_scheme", scheme_);
+      SCOPED_CRASH_KEY_STRING64("WebUI", "requested_url", request.url.spec());
       mojo::ReportBadMessage("Incorrect scheme");
       mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
           ->OnComplete(network::URLLoaderCompletionStatus(net::ERR_FAILED));
       return;
     }
 
-    if (!allowed_hosts_.empty() &&
-        (!request.url.has_host() ||
-         allowed_hosts_.find(request.url.host()) == allowed_hosts_.end())) {
-      // Temporary reporting the bad WebUI host for for http://crbug.com/837328.
-      SCOPED_CRASH_KEY_STRING64("WebUIURLLoader", "url", request.url.spec());
-
-      DVLOG(1) << "Bad host: \"" << request.url.host() << '"';
-      mojo::ReportBadMessage("Incorrect host");
-      mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
-          ->OnComplete(network::URLLoaderCompletionStatus(net::ERR_FAILED));
-      return;
-    }
+    CHECK(allowed_hosts_.empty() ||
+          (request.url.has_host() &&
+           allowed_hosts_.find(request.url.host()) != allowed_hosts_.end()))
+        << "Incorrect host: " << request.url.host();
 
     if (request.url.host_piece() == kChromeUIBlobInternalsHost) {
       GetIOThreadTaskRunner({})->PostTask(

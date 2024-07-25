@@ -12,7 +12,6 @@
 #include "base/power_monitor/power_monitor.h"
 #include "base/win/windows_types.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/scheduler.h"
 #include "gpu/command_buffer/service/scheduler_task_runner.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_backing.h"
@@ -72,6 +71,7 @@ class DCOMPTextureBacking : public ClearTrackingSharedImageBacking {
                                         kTopLeft_GrSurfaceOrigin,
                                         kPremul_SkAlphaType,
                                         gpu::SHARED_IMAGE_USAGE_SCANOUT,
+                                        {},
                                         /*estimated_size=*/0,
                                         /*is_thread_safe=*/false),
         dcomp_surface_proxy_(std::move(dcomp_surface_proxy)) {

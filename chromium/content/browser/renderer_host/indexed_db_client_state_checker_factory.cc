@@ -24,12 +24,18 @@ using IndexedDBDisallowActivationReason =
 DisallowActivationReasonId ConvertToDisallowActivationReasonId(
     IndexedDBDisallowActivationReason reason) {
   switch (reason) {
-    case IndexedDBDisallowActivationReason::kClientEventIsTriggered:
+    case IndexedDBDisallowActivationReason::kVersionChangeEvent:
       return DisallowActivationReasonId::kIndexedDBEvent;
     case IndexedDBDisallowActivationReason::kTransactionIsAcquiringLocks:
       return DisallowActivationReasonId::kIndexedDBTransactionIsAcquiringLocks;
-    case IndexedDBDisallowActivationReason::kTransactionIsBlockingOthers:
-      return DisallowActivationReasonId::kIndexedDBTransactionIsBlockingOthers;
+    case IndexedDBDisallowActivationReason::
+        kTransactionIsStartingWhileBlockingOthers:
+      return DisallowActivationReasonId::
+          kIndexedDBTransactionIsStartingWhileBlockingOthers;
+    case IndexedDBDisallowActivationReason::
+        kTransactionIsOngoingAndBlockingOthers:
+      return DisallowActivationReasonId::
+          kIndexedDBTransactionIsOngoingAndBlockingOthers;
   }
 }
 
@@ -115,8 +121,9 @@ class DocumentIndexedDBClientStateChecker final
     if (was_active && keep_active.is_valid()) {
       // This is the only reason that we need to prevent the client from
       // inactive state.
-      CHECK_EQ(reason, storage::mojom::DisallowInactiveClientReason::
-                           kClientEventIsTriggered);
+      CHECK_EQ(
+          reason,
+          storage::mojom::DisallowInactiveClientReason::kVersionChangeEvent);
       // If the document is active, we need to register a non sticky feature to
       // prevent putting it into BFCache until the IndexedDB connection is
       // successfully closed and the context is automatically destroyed.

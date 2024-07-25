@@ -6,6 +6,7 @@
 
 #include "base/test/scoped_feature_list.h"
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
+#include "components/autofill/core/browser/heuristic_source.h"
 #include "components/autofill/core/common/autofill_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -37,8 +38,8 @@ std::vector<std::unique_ptr<AutofillField>> CreateFields(
   for (const auto& t : field_templates) {
     const auto& f =
         result.emplace_back(std::make_unique<AutofillField>(FormFieldData()));
-    f->name = t.name;
-    f->label = t.label;
+    f->set_name(t.name);
+    f->set_label(t.label);
     f->SetTypeTo(AutofillType(t.field_type));
     DCHECK_EQ(f->Type().GetStorableType(), t.field_type);
   }
@@ -201,7 +202,7 @@ TEST(FormStructureRationalizationEngine,
       kMXContext, requires_address_line1_type, field));
 
   // Non-matching type.
-  field.set_heuristic_type(HeuristicSource::kLegacy, NAME_FIRST);
+  field.set_heuristic_type(GetActiveHeuristicSource(), NAME_FIRST);
   ASSERT_EQ(field.Type().GetStorableType(), NAME_FIRST);
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, no_possible_types_required, field));
@@ -209,7 +210,7 @@ TEST(FormStructureRationalizationEngine,
       kMXContext, requires_address_line1_type, field));
 
   // Matching type.
-  field.set_heuristic_type(HeuristicSource::kLegacy, ADDRESS_HOME_LINE1);
+  field.set_heuristic_type(GetActiveHeuristicSource(), ADDRESS_HOME_LINE1);
   ASSERT_EQ(field.Type().GetStorableType(), ADDRESS_HOME_LINE1);
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, no_possible_types_required, field));
@@ -231,7 +232,7 @@ TEST(FormStructureRationalizationEngine,
   };
 
   AutofillField field;
-  field.label = u"";
+  field.set_label(u"");
 
   // Empty label.
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
@@ -240,22 +241,22 @@ TEST(FormStructureRationalizationEngine,
       kMXContext, requires_dependent_locality_match, field));
 
   // Non-matching label.
-  field.label = u"foobar";
+  field.set_label(u"foobar");
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, no_regex_match_required, field));
   EXPECT_FALSE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, requires_dependent_locality_match, field));
 
   // Matching label.
-  field.label = u"colonia";
+  field.set_label(u"colonia");
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, no_regex_match_required, field));
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, requires_dependent_locality_match, field));
 
   // Matching label but incorrect type.
-  field.label = u"colonia";
-  field.form_control_type = FormControlType::kInputMonth;
+  field.set_label(u"colonia");
+  field.set_form_control_type(FormControlType::kInputMonth);
   EXPECT_TRUE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, no_regex_match_required, field));
   EXPECT_FALSE(IsFieldConditionFulfilledIgnoringLocation(
@@ -267,7 +268,7 @@ TEST(FormStructureRationalizationEngine,
   // This matches the positive pattern due to "nombre.*dirección" but also
   // the negataive pattern due to "correo". Therefore, the condition should not
   // be considered fulfilled.
-  field.label = u"nombre de usuario/dirección de correo electrónico";
+  field.set_label(u"nombre de usuario/dirección de correo electrónico");
   EXPECT_FALSE(IsFieldConditionFulfilledIgnoringLocation(
       kMXContext, regex_with_negative_pattern, field));
 }
@@ -418,6 +419,34 @@ TEST(FormStructureRationalizationEngine,
                   /*changed*/ ADDRESS_HOME_STREET_ADDRESS, UNKNOWN_TYPE,
                   /*changed*/ ADDRESS_HOME_DEPENDENT_LOCALITY, ADDRESS_HOME_ZIP,
                   ADDRESS_HOME_CITY, ADDRESS_HOME_STATE));
+}
+
+// Test that the actions are applied if all conditions are met.
+TEST(FormStructureRationalizationEngine, TestDEOverflowRuleIsApplied) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      {kTestFeatureForFormStructureRationalizationEngine,
+       features::kAutofillUseDEAddressModel},
+      {});
+
+  std::vector<std::unique_ptr<AutofillField>> fields = CreateFields({
+      {u"Name", u"n", NAME_FIRST},
+      {u"Nachname", u"a", NAME_LAST},
+      {u"Straße und Hausnummer", u"addressline1", ADDRESS_HOME_STREET_LOCATION},
+      {u"Adresszusatz", u"adresszusatz", ADDRESS_HOME_OVERFLOW},
+      {u"PLZ", u"plz", ADDRESS_HOME_ZIP},
+      {u"Ort", u"ort", ADDRESS_HOME_CITY},
+  });
+
+  GeoIpCountryCode kDE = GeoIpCountryCode("DE");
+  ParsingContext kDEContext(kDE, LanguageCode("de"), PatternSource::kLegacy);
+  ApplyRationalizationEngineRules(kDEContext, fields, nullptr);
+
+  EXPECT_THAT(GetTypes(fields),
+              ElementsAre(NAME_FIRST, NAME_LAST,
+                          /*changed*/ ADDRESS_HOME_LINE1,
+                          /*changed*/ ADDRESS_HOME_LINE2, ADDRESS_HOME_ZIP,
+                          ADDRESS_HOME_CITY));
 }
 
 }  // namespace

@@ -23,6 +23,7 @@
 #include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom.h"
 #include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom.h"
 #include "content/services/auction_worklet/public/mojom/private_aggregation_request.mojom.h"
+#include "content/services/auction_worklet/public/mojom/real_time_reporting.mojom.h"
 #include "content/services/auction_worklet/public/mojom/seller_worklet.mojom.h"
 #include "mojo/public/cpp/bindings/associated_receiver_set.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -80,6 +81,7 @@ void MockBidderWorklet::BeginGenerateBid(
     auction_worklet::mojom::BiddingBrowserSignalsPtr bidding_browser_signals,
     base::Time auction_start_time,
     const std::optional<blink::AdSize>& requested_ad_size,
+    uint16_t multi_bid_limit,
     uint64_t trace_id,
     mojo::PendingAssociatedRemote<auction_worklet::mojom::GenerateBidClient>
         generate_bid_client,
@@ -144,6 +146,7 @@ void MockBidderWorklet::ReportWin(
     uint8_t browser_signal_recency,
     const url::Origin& browser_signal_seller_origin,
     const std::optional<url::Origin>& browser_signal_top_level_seller_origin,
+    const std::optional<base::TimeDelta> browser_signal_reporting_timeout,
     std::optional<uint32_t> bidding_signals_data_version,
     uint64_t trace_id,
     ReportWinCallback report_win_callback) {
@@ -210,7 +213,8 @@ void MockBidderWorklet::InvokeGenerateBidCallback(
     std::optional<double> bid,
     const std::optional<blink::AdCurrency>& bid_currency,
     const blink::AdDescriptor& ad_descriptor,
-    auction_worklet::mojom::BidderWorkletKAnonEnforcedBidPtr mojo_kanon_bid,
+    auction_worklet::mojom::BidRole bid_role,
+    std::vector<auction_worklet::mojom::BidderWorkletBidPtr> further_bids,
     std::optional<std::vector<blink::AdDescriptor>> ad_component_descriptors,
     base::TimeDelta duration,
     const std::optional<uint32_t>& bidding_signals_data_version,
@@ -218,6 +222,8 @@ void MockBidderWorklet::InvokeGenerateBidCallback(
     const std::optional<GURL>& debug_win_report_url,
     std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>
         pa_requests,
+    std::vector<auction_worklet::mojom::RealTimeReportingContributionPtr>
+        real_time_contributions,
     auction_worklet::mojom::GenerateBidDependencyLatenciesPtr
         dependency_latencies,
     auction_worklet::mojom::RejectReason reject_reason) {
@@ -227,7 +233,7 @@ void MockBidderWorklet::InvokeGenerateBidCallback(
   generate_bid_client_->OnBiddingSignalsReceived(
       /*priority_vector=*/{},
       /*trusted_signals_fetch_latency=*/trusted_signals_fetch_latency_,
-      run_loop.QuitClosure());
+      /*update_if_older_than=*/std::nullopt, run_loop.QuitClosure());
   run_loop.Run();
 
   if (!dependency_latencies) {
@@ -239,20 +245,20 @@ void MockBidderWorklet::InvokeGenerateBidCallback(
             /*trusted_bidding_signals_latency=*/std::nullopt);
   }
 
+  std::vector<auction_worklet::mojom::BidderWorkletBidPtr> bids;
   if (!bid.has_value()) {
+    DCHECK(further_bids.empty());
     generate_bid_client_->OnGenerateBidComplete(
-        /*bid=*/nullptr,
-        /*kanon_bid=*/std::move(mojo_kanon_bid),
-        /*bidding_signals_data_version=*/0,
-        /*has_bidding_signals_data_version=*/false, debug_loss_report_url,
+        /*bids=*/std::move(bids),
+        /*bidding_signals_data_version=*/std::nullopt, debug_loss_report_url,
         /*debug_win_report_url=*/std::nullopt,
-        /*set_priority=*/0,
-        /*has_set_priority=*/false,
+        /*set_priority=*/std::nullopt,
         /*update_priority_signals_overrides=*/
         base::flat_map<std::string,
                        auction_worklet::mojom::PrioritySignalsDoublePtr>(),
         /*pa_requests=*/std::move(pa_requests),
         /*non_kanon_pa_requests=*/{},
+        /*real_time_contributions=*/{},
         /*bidding_latency=*/bidding_latency_,
         /*generate_bid_dependency_latencies=*/std::move(dependency_latencies),
         reject_reason,
@@ -260,22 +266,23 @@ void MockBidderWorklet::InvokeGenerateBidCallback(
     return;
   }
 
+  bids.push_back(auction_worklet::mojom::BidderWorkletBid::New(
+      bid_role, "ad", *bid, bid_currency, /*ad_cost=*/std::nullopt,
+      std::move(ad_descriptor), ad_component_descriptors,
+      /*modeling_signals=*/std::nullopt, duration));
+  bids.insert(bids.end(), std::make_move_iterator(further_bids.begin()),
+              std::make_move_iterator(further_bids.end()));
+
   generate_bid_client_->OnGenerateBidComplete(
-      auction_worklet::mojom::BidderWorkletBid::New(
-          "ad", *bid, bid_currency, /*ad_cost=*/std::nullopt,
-          std::move(ad_descriptor), ad_component_descriptors,
-          /*modeling_signals=*/std::nullopt, duration),
-      /*kanon_bid=*/std::move(mojo_kanon_bid),
-      bidding_signals_data_version.value_or(0),
-      bidding_signals_data_version.has_value(), debug_loss_report_url,
+      std::move(bids), bidding_signals_data_version, debug_loss_report_url,
       debug_win_report_url,
-      /*set_priority=*/0,
-      /*has_set_priority=*/false,
+      /*set_priority=*/std::nullopt,
       /*update_priority_signals_overrides=*/
       base::flat_map<std::string,
                      auction_worklet::mojom::PrioritySignalsDoublePtr>(),
       /*pa_requests=*/std::move(pa_requests),
       /*non_kanon_pa_requests=*/{},
+      /*real_time_contributions=*/std::move(real_time_contributions),
       /*bidding_latency=*/bidding_latency_,
       /*generate_bid_dependency_latencies=*/std::move(dependency_latencies),
       reject_reason,
@@ -362,6 +369,7 @@ void MockSellerWorklet::ScoreAd(
     const GURL& browser_signal_render_url,
     const std::vector<GURL>& browser_signal_ad_components,
     uint32_t browser_signal_bidding_duration_msecs,
+    const std::optional<blink::AdSize>& browser_signal_render_size,
     bool browser_signal_for_debugging_only_in_cooldown_or_lockout,
     const std::optional<base::TimeDelta> seller_timeout,
     uint64_t trace_id,
@@ -418,8 +426,7 @@ void MockSellerWorklet::ReportResult(
         browser_signal_highest_scoring_other_bid_currency,
     auction_worklet::mojom::ComponentAuctionReportResultParamsPtr
         browser_signals_component_auction_report_result_params,
-    uint32_t browser_signal_data_version,
-    bool browser_signal_has_data_version,
+    std::optional<uint32_t> browser_signal_data_version,
     uint64_t trace_id,
     ReportResultCallback report_result_callback) {
   report_result_callback_ = std::move(report_result_callback);
@@ -535,8 +542,7 @@ void MockAuctionProcessManager::LoadBidderWorklet(
     const url::Origin& top_window_origin,
     auction_worklet::mojom::AuctionWorkletPermissionsPolicyStatePtr
         permissions_policy_state,
-    bool has_experiment_group_id,
-    uint16_t experiment_group_id) {
+    std::optional<uint16_t> experiment_group_id) {
   // Make sure this request came over the right pipe.
   url::Origin owner = url::Origin::Create(script_source_url);
   EXPECT_EQ(receiver_display_name_map_[receiver_set_.current_receiver()],
@@ -566,8 +572,7 @@ void MockAuctionProcessManager::LoadSellerWorklet(
     const url::Origin& top_window_origin,
     auction_worklet::mojom::AuctionWorkletPermissionsPolicyStatePtr
         permissions_policy_state,
-    bool has_experiment_group_id,
-    uint16_t experiment_group_id) {
+    std::optional<uint16_t> experiment_group_id) {
   EXPECT_EQ(0u, seller_worklets_.count(script_source_url));
 
   // Make sure this request came over the right pipe.

@@ -7,9 +7,10 @@
 
 #include <cups/cups.h>
 
+#include <string_view>
+
 #include "base/component_export.h"
-#include "base/memory/raw_ptr.h"
-#include "base/strings/string_piece.h"
+#include "printing/backend/cups_deleters.h"
 
 class GURL;
 
@@ -42,15 +43,15 @@ class COMPONENT_EXPORT(PRINT_BACKEND) HttpConnectionCUPS {
   http_t* http();
 
  private:
-  raw_ptr<http_t> http_;
+  ScopedHttpPtr http_;
 };
 
 // Helper function to parse and convert PPD capabilitites to
 // semantic options.
 COMPONENT_EXPORT(PRINT_BACKEND)
 bool ParsePpdCapabilities(cups_dest_t* dest,
-                          base::StringPiece locale,
-                          base::StringPiece printer_capabilities,
+                          std::string_view locale,
+                          std::string_view printer_capabilities,
                           PrinterSemanticCapsAndDefaults* printer_info);
 
 }  // namespace printing

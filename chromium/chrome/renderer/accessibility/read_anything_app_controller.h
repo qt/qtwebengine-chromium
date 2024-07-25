@@ -12,9 +12,9 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/safe_ref.h"
 #include "chrome/common/accessibility/read_anything.mojom.h"
 #include "chrome/renderer/accessibility/read_anything_app_model.h"
-#include "components/services/screen_ai/buildflags/buildflags.h"
 #include "gin/wrappable.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -25,7 +25,6 @@
 #include "ui/accessibility/ax_node_position.h"
 #include "ui/accessibility/ax_position.h"
 #include "ui/accessibility/ax_tree_update_forward.h"
-#include "url/gurl.h"
 
 namespace content {
 class RenderFrame;
@@ -36,6 +35,10 @@ class AXNode;
 class AXSerializableTree;
 class AXTree;
 }  // namespace ui
+
+namespace ukm {
+class MojoUkmRecorder;
+}  // namespace ukm
 
 class AXTreeDistiller;
 class ReadAnythingAppControllerTest;
@@ -75,42 +78,6 @@ class ReadAnythingAppController
   // to page.
   static ReadAnythingAppController* Install(content::RenderFrame* render_frame);
 
-  // A current segment of text that will be consumed by Read Aloud.
-  struct ReadAloudTextSegment {
-    // The AXNodeID associated with this particular text segment.
-    ui::AXNodeID id;
-
-    // The starting index for the text with the node of the given id.
-    int text_start;
-
-    // The ending index for the text with the node of the given id.
-    int text_end;
-  };
-
-  // A representation of multiple ReadAloudTextSegments that are processed
-  // by Read Aloud at a single moment. For example, when using sentence
-  // granularity, the list of ReadAloudTextSegments in a
-  // ReadAloudCurrentGranularity will include all ReadAloudTextSegments
-  // necessary to represent a single sentence.
-  struct ReadAloudCurrentGranularity {
-    ReadAloudCurrentGranularity();
-    ReadAloudCurrentGranularity(const ReadAloudCurrentGranularity& other);
-    ~ReadAloudCurrentGranularity();
-
-    // Adds a segment to the current granularity.
-    void AddSegment(ReadAloudTextSegment segment) {
-      segments[segment.id] = segment;
-      node_ids.push_back(segment.id);
-    }
-
-    // All of the ReadAloudTextSegments in the current granularity.
-    std::map<ui::AXNodeID, ReadAloudTextSegment> segments;
-
-    // Because GetNextText returns a vector of node ids to be used by
-    // TypeScript also store the node ids as a vector for easier retrieval.
-    std::vector<ui::AXNodeID> node_ids;
-  };
-
  private:
   friend ReadAnythingAppControllerTest;
 
@@ -128,8 +95,7 @@ class ReadAnythingAppController
       const std::vector<ui::AXEvent>& events) override;
   void OnActiveAXTreeIDChanged(const ui::AXTreeID& tree_id,
                                ukm::SourceId ukm_source_id,
-                               const GURL& hostname,
-                               bool force_update_state) override;
+                               bool is_pdf) override;
   void OnAXTreeDestroyed(const ui::AXTreeID& tree_id) override;
   void OnThemeChanged(
       read_anything::mojom::ReadAnythingThemePtr new_theme) override;
@@ -142,41 +108,14 @@ class ReadAnythingAppController
       read_anything::mojom::Colors color,
       double speech_rate,
       base::Value::Dict voices,
+      base::Value::List languages_enabled_in_pref,
       read_anything::mojom::HighlightGranularity granularity) override;
+  void SetLanguageCode(const std::string& code) override;
   void SetDefaultLanguageCode(const std::string& code) override;
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   void ScreenAIServiceReady() override;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  void OnDeviceLocked() override;
 #endif
-
-  // Returns the next valid AXNodePosition.
-  ui::AXNodePosition::AXPositionInstance
-  GetNextValidPositionFromCurrentPosition(
-      ReadAnythingAppController::ReadAloudCurrentGranularity
-          current_granularity);
-
-  // Uses the current AXNodePosition to return the next node that should be
-  // spoken by Read Aloud.
-  ui::AXNode* GetNodeFromCurrentPosition();
-
-  // Returns true if the node was previously spoken or we expect to speak it
-  // to be spoken once the current run of #GetNextText which called
-  // #NodeBeenOrWillBeSpoken finishes executing. Because AXPosition
-  // sometimes returns leaf nodes, we sometimes need to use the parent of a
-  // node returned by AXPosition instead of the node itself. Because of this,
-  // we need to double-check that the node has not been used or currently
-  // in use.
-  // Example:
-  // parent node: id=5
-  //    child node: id=6
-  //    child node: id =7
-  // node: id = 10
-  // Where AXPosition will return nodes in order of 6, 7, 10, but Reading Mode
-  // process them as 5, 10. Without checking for previously spoken nodes,
-  // id 5 will be spoken twice.
-  bool NodeBeenOrWillBeSpoken(
-      ReadAnythingAppController::ReadAloudCurrentGranularity
-          current_granularity,
-      ui::AXNodeID id);
 
   // gin templates:
   ui::AXNodeID RootId() const;
@@ -191,6 +130,7 @@ class ReadAnythingAppController
   float SpeechRate() const;
   void OnFontSizeChanged(bool increase);
   void OnFontSizeReset();
+  void OnLinksEnabledToggled();
   SkColor ForegroundColor() const;
   float LetterSpacing() const;
   float LineSpacing() const;
@@ -208,7 +148,8 @@ class ReadAnythingAppController
   int DarkTheme() const;
   int YellowTheme() const;
   int BlueTheme() const;
-  std::string GetStoredVoice(const std::string& lang) const;
+  std::string GetStoredVoice() const;
+  std::vector<std::string> GetLanguagesEnabledInPref() const;
   std::vector<ui::AXNodeID> GetChildren(ui::AXNodeID ax_node_id) const;
   std::string GetDataFontCss(ui::AXNodeID ax_node_id) const;
   std::string GetHtmlTag(ui::AXNodeID ax_node_id) const;
@@ -217,6 +158,13 @@ class ReadAnythingAppController
   std::string GetTextContent(ui::AXNodeID ax_node_id) const;
   std::string GetTextDirection(ui::AXNodeID ax_node_id) const;
   std::string GetUrl(ui::AXNodeID ax_node_id) const;
+  std::string GetAltText(ui::AXNodeID ax_node_id) const;
+  void SendGetVoicePackInfoRequest(const std::string& language) const;
+  void OnGetVoicePackInfoResponse(
+      read_anything::mojom::VoicePackInfoPtr voice_pack_info);
+  void SendInstallVoicePackRequest(const std::string& language) const;
+  void OnInstallVoicePackResponse(
+      read_anything::mojom::VoicePackInfoPtr voice_pack_info);
   bool ShouldBold(ui::AXNodeID ax_node_id) const;
   bool IsOverline(ui::AXNodeID ax_node_id) const;
   bool IsLeafNode(ui::AXNodeID ax_node_id) const;
@@ -229,10 +177,13 @@ class ReadAnythingAppController
                          ui::AXNodeID focus_node_id,
                          int focus_offset) const;
   void OnCollapseSelection() const;
-  bool IsSelectable() const;
+  bool IsGoogleDocs() const;
   bool IsWebUIToolbarEnabled() const;
   bool IsReadAloudEnabled() const;
-  bool IsGoogleDocs() const;
+  bool IsChromeOsAsh() const;
+  bool IsAutoVoiceSwitchingEnabled() const;
+  bool IsLanguagePackDownloadingEnabled() const;
+  bool IsAutomaticWordHighlightingEnabled() const;
   void OnStandardLineSpacing();
   void OnLooseLineSpacing();
   void OnVeryLooseLineSpacing();
@@ -247,79 +198,97 @@ class ReadAnythingAppController
   void OnFontChange(const std::string& font);
   void OnSpeechRateChange(double rate);
   void OnVoiceChange(const std::string& voice, const std::string& lang);
+  void OnLanguagePrefChange(const std::string& lang, bool enabled);
+  bool RequiresDistillation();
   void TurnedHighlightOn();
   void TurnedHighlightOff();
   double GetLineSpacingValue(int line_spacing) const;
   double GetLetterSpacingValue(int letter_spacing) const;
   std::vector<std::string> GetSupportedFonts() const;
-
-  std::string GetHtmlTagForPDF(ui::AXNode* ax_node, std::string html_tag) const;
-  std::string GetHeadingHtmlTagForPDF(ui::AXNode* ax_node,
-                                      std::string html_tag) const;
-  std::string GetAriaLevel(ui::AXNode* ax_node) const;
+  void RequestImageDataUrl(ui::AXNodeID node_id) const;
+  std::string GetImageDataUrl(ui::AXNodeID node_id) const;
+  void OnSpeechPlayingStateChanged(bool paused);
 
   // The language code that should be used to determine which voices are
   // supported for speech.
   const std::string& GetLanguageCodeForSpeech() const;
 
+  // The fallback language code if GetLanguageCodeForSpeech has an error.
+  // However, this may be the same value as GetLanguageCodeForSpeech.
+  const std::string& GetDefaultLanguageCodeForSpeech() const;
+
+  const std::string GetDisplayNameForLocale(
+      const std::string& locale,
+      const std::string& display_locale) const;
+
   void Distill();
   void Draw();
   void DrawSelection();
 
-  void ExecuteJavaScript(std::string script);
-
-  void UnserializeUpdates(std::vector<ui::AXTreeUpdate> updates,
-                          const ui::AXTreeID& tree_id);
+  void ExecuteJavaScript(const std::string& script);
 
   // Called when distillation has completed.
   void OnAXTreeDistilled(const ui::AXTreeID& tree_id,
                          const std::vector<ui::AXNodeID>& content_node_ids);
 
-  void PostProcessSelection();
+  // Returns true if a draw occured.
+  bool PostProcessSelection();
 
   // Signals that the side panel has finished loading and it's safe to show
   // the UI to avoid loading artifacts.
   void ShouldShowUI();
 
   // Inits the AXPosition with a starting node.
-  // TODO(crbug.com/1474951): We should be able to use AXPosition in a way
+  // TODO(crbug.com/40927698): We should be able to use AXPosition in a way
   // where this isn't needed.
-  void InitAXPositionWithNode(const ui::AXNodeID starting_node_id);
+  void InitAXPositionWithNode(const ui::AXNodeID& starting_node_id);
 
   // Returns a list of AXNodeIds representing the next nodes that should be
-  // spoken and highlighted with Read Aloud. GetNextTextStartIndex and
-  // GetNextTextEndIndex called with an AXNodeID return by GetNextText will
-  // return the starting text and ending text indices for specific text that
-  // should be referenced within the node.
-  std::vector<ui::AXNodeID> GetNextText(int max_text_length);
+  // spoken and highlighted with Read Aloud.
+  // This defaults to returning the first granularity until
+  // MovePositionTo<Next,Previous>Granularity() moves the position.
+  // If the the current processed_granularity_index_ has not been calculated
+  // yet, GetNextNodes() is called which updates the AXPosition.
+  // GetCurrentTextStartIndex and GetCurrentTextEndIndex called with an AXNodeID
+  // return by GetCurrentText will return the starting text and ending text
+  // indices for specific text that should be referenced within the node.
+  std::vector<ui::AXNodeID> GetCurrentText();
 
-  // Helper method for GetNextText.
-  ReadAloudCurrentGranularity GetNextNodes(int max_text_length);
+  // TODO(crbug.com/40927698): Random access to processed nodes might not always
+  // work (e.g. if we're switching granularities or jumping to a specific node),
+  // so we should implement a method of retrieving previous text from
+  // AXPosition.
 
-  // Returns a list of triples representing the previous nodes that should be
-  // spoken and highlighted with Read Aloud. Each triple contains three numbers:
-  // the AXNodeID, the starting text index, and the ending text index. This
-  // list of triples is represented as a double array.
-  std::vector<ui::AXNodeID> GetPreviousText(int max_text_length);
+  // Increments the processed_granularity_index_, updating ReadAloud's state of
+  // the current granularity to refer to the next granularity. The current
+  // behavior allows the client to increment past the end of the page's content.
+  void MovePositionToNextGranularity();
+
+  // Decrements the processed_granularity_index_,updating ReadAloud's state of
+  // the current granularity to refer to the previous granularity
+  void MovePositionToPreviousGranularity();
+
+  int GetAccessibleBoundary(const std::u16string& text, int max_text_length);
 
   // Returns the Read Aloud starting text index for a node. For example,
   // if the entire text of the node should be read by Read Aloud at a particular
   // moment, this will return 0. Returns -1 if the node isn't in the current
   // segment.
-  int GetNextTextStartIndex(ui::AXNodeID node_id);
+  int GetCurrentTextStartIndex(ui::AXNodeID node_id);
 
   // Returns the Read Aloud ending text index for a node. For example,
   // if the entire text of the node should be read by Read Aloud at a particular
   // moment, this will return the length of the node's text. Returns -1 if the
   // node isn't in the current segment.
-  int GetNextTextEndIndex(ui::AXNodeID node_id);
+  int GetCurrentTextEndIndex(ui::AXNodeID node_id);
 
-  // Returns the index of the next sentence of the given text, such that the
-  // next sentence is equivalent to text.substr(0, <returned_index>).
-  // If the sentence exceeds the maximum text length, the sentence will be
-  // cropped to the nearest word boundary that doesn't exceed the maximum
-  // text length.
-  int GetNextSentence(const std::u16string& text, int max_text_length);
+  // Records the number of selections that occurred for the active page. Called
+  // when the active tree changes.
+  void RecordNumSelections();
+
+  ui::AXNodeID GetNodeIdForCurrentSegmentIndex(int index);
+
+  int GetNextWordHighlightLength(int index);
 
   // SetContentForTesting, SetThemeForTesting, and SetLanguageForTesting are
   // used by ReadAnythingAppTest and thus need to be kept in
@@ -353,6 +322,14 @@ class ReadAnythingAppController
                           int letter_spacing);
   void SetLanguageForTesting(const std::string& language_code);
 
+  // Helpers for logging UmaHistograms based on times recorded in WebUI.
+  void LogUmaHistogramTimes(int64_t time, std::string metric);
+  void LogUmaHistogramLongTimes(int64_t time, std::string metric);
+  void IncrementMetricCount(std::string metric);
+  void LogSpeechEventCounts();
+
+  void LogSpeechErrorEvent(std::string error_code);
+
   content::RenderFrame* GetRenderFrame();
 
   const blink::LocalFrameToken frame_token_;
@@ -362,26 +339,18 @@ class ReadAnythingAppController
   mojo::Remote<read_anything::mojom::UntrustedPageHandler> page_handler_;
   mojo::Receiver<read_anything::mojom::UntrustedPage> receiver_{this};
 
-  // TODO(crbug.com/1474951): Move Read Aloud state to Read Anything App Model.
-  // Read Aloud state
-  ui::AXNodePosition::AXPositionInstance ax_position_;
-  // The current text index within the given node.
-  int current_text_index_ = 0;
-
-  // TODO(crbug.com/1474951): Clear this when granularity changes.
-  // TODO(crbug.com/1474951): Use this to assist in navigating forwards /
-  // backwards.
-  // Previously processed granularities on the current page.
-  std::vector<ReadAloudCurrentGranularity>
-      processed_granularities_on_current_page_;
-
-  // Our current index within processed_granularities_on_current_page_. If it is
-  // equal to the size of the triples - 1, we're not navigating through
-  // previously processed text.
-  size_t processed_granularity_index_ = -1;
-
   // Model that holds state for this controller.
   ReadAnythingAppModel model_;
+
+  // For metrics logging
+
+  std::unique_ptr<ukm::MojoUkmRecorder> ukm_recorder_;
+
+  // The time when the renderer constructor is first triggered.
+  base::TimeTicks renderer_load_triggered_time_ms_;
+
+  // The time when the WebUI connects i.e. when onConnected is called.
+  base::TimeTicks web_ui_connected_time_ms_;
 
   base::WeakPtrFactory<ReadAnythingAppController> weak_ptr_factory_{this};
 };

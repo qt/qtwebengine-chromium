@@ -63,6 +63,7 @@ set(HEADERS
     GLSL.ext.AMD.h
     GLSL.ext.NV.h
     GLSL.ext.ARM.h
+    GLSL.ext.QCOM.h
     NonSemanticDebugPrintf.h
     NonSemanticShaderDebugInfo100.h)
 
@@ -118,7 +119,7 @@ if(WIN32)
     source_group("Source" FILES ${SPVREMAP_SOURCES} ${SPVREMAP_HEADERS})
 endif()
 
-if(PROJECT_IS_TOP_LEVEL)
+if(GLSLANG_ENABLE_INSTALL)
     if (ENABLE_SPVREMAPPER)
         install(TARGETS SPVRemapper EXPORT glslang-targets)
     endif()

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
 #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 namespace {
@@ -107,7 +108,8 @@ TEST_F(CSSPrimitiveValueTest, ClampTimeToNonNegative) {
 TEST_F(CSSPrimitiveValueTest, ClampAngleToNonNegative) {
   UnitValue a = {89, UnitType::kDegrees};
   UnitValue b = {0.25, UnitType::kTurns};
-  EXPECT_EQ(0.0, CreateNonNegativeSubtraction(a, b)->ComputeDegrees());
+  EXPECT_EQ(0.0, CreateNonNegativeSubtraction(a, b)->ComputeDegrees(
+                     CSSToLengthConversionData()));
 }
 
 TEST_F(CSSPrimitiveValueTest, IsResolution) {
@@ -261,8 +263,6 @@ TEST_F(CSSPrimitiveValueTest, HasContainerRelativeUnits) {
 }
 
 TEST_F(CSSPrimitiveValueTest, HasStaticViewportUnits) {
-  ScopedCSSViewportUnits4ForTest scoped_feature(true);
-
   // v*
   EXPECT_TRUE(HasStaticViewportUnits("1vw"));
   EXPECT_TRUE(HasStaticViewportUnits("1vh"));
@@ -313,7 +313,6 @@ TEST_F(CSSPrimitiveValueTest, HasStaticViewportUnits) {
 }
 
 TEST_F(CSSPrimitiveValueTest, HasDynamicViewportUnits) {
-  ScopedCSSViewportUnits4ForTest scoped_feature(true);
   // dv*
   EXPECT_TRUE(HasDynamicViewportUnits("1dvw"));
   EXPECT_TRUE(HasDynamicViewportUnits("1dvh"));
@@ -329,6 +328,48 @@ TEST_F(CSSPrimitiveValueTest, HasDynamicViewportUnits) {
   EXPECT_FALSE(HasDynamicViewportUnits("calc(1px + 1px)"));
   EXPECT_FALSE(HasDynamicViewportUnits("calc(1px + 1em)"));
   EXPECT_FALSE(HasDynamicViewportUnits("calc(1px + 1svh)"));
+}
+
+TEST_F(CSSPrimitiveValueTest, ComputeMethodsWithLengthResolver) {
+  {
+    auto* pxs = CSSMathExpressionNumericLiteral::Create(
+        12.0, CSSPrimitiveValue::UnitType::kPixels);
+    auto* ems = CSSMathExpressionNumericLiteral::Create(
+        1.0, CSSPrimitiveValue::UnitType::kEms);
+    auto* subtraction = CSSMathExpressionOperation::CreateArithmeticOperation(
+        pxs, ems, CSSMathOperator::kSubtract);
+    auto* sign = CSSMathExpressionOperation::CreateSignRelatedFunction(
+        {subtraction}, CSSValueID::kSign);
+    auto* degs = CSSMathExpressionNumericLiteral::Create(
+        10.0, CSSPrimitiveValue::UnitType::kDegrees);
+    auto* expression = CSSMathExpressionOperation::CreateArithmeticOperation(
+        sign, degs, CSSMathOperator::kMultiply);
+    CSSPrimitiveValue* value = CSSMathFunctionValue::Create(expression);
+
+    Font font;
+    CSSToLengthConversionData length_resolver = CSSToLengthConversionData();
+    length_resolver.SetFontSizes(
+        CSSToLengthConversionData::FontSizes(10.0f, 10.0f, &font, 1.0f));
+    EXPECT_EQ(10.0, value->ComputeDegrees(length_resolver));
+    EXPECT_EQ("calc(sign(-1em + 12px) * 10deg)", value->CustomCSSText());
+  }
+}
+
+TEST_F(CSSPrimitiveValueTest, ContainerProgressTreeScope) {
+  ScopedCSSProgressNotationForTest scoped_feature(true);
+  const CSSValue* value = css_test_helpers::ParseValue(
+      GetDocument(), "<number>",
+      "container-progress(width of my-container from 0px to 1px)");
+  ASSERT_TRUE(value);
+
+  const CSSValue& scoped_value = value->EnsureScopedValue(&GetDocument());
+  EXPECT_NE(value, &scoped_value);
+  EXPECT_TRUE(scoped_value.IsScopedValue());
+  // Don't crash:
+  const CSSValue& scoped_value2 =
+      scoped_value.EnsureScopedValue(&GetDocument());
+  EXPECT_TRUE(scoped_value2.IsScopedValue());
+  EXPECT_EQ(&scoped_value, &scoped_value2);
 }
 
 }  // namespace

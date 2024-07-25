@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <vector>
-
-#include "base/test/scoped_feature_list.h"
-#include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/manual_testing_import.h"
 
 #include <optional>
+#include <vector>
+
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/values.h"
+#include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -303,7 +303,7 @@ TEST_F(ManualTestingImportTest, LoadProfilesFromFile_InvalidInitialCreatorId) {
   EXPECT_FALSE(LoadProfilesFromFile(file_path2).has_value());
 }
 
-// TODO(1445454): Re-enable this test.
+// TODO(crbug.com/40268162): Re-enable this test.
 // Tests that the conversion fails for non-fully structured profiles.
 TEST_F(ManualTestingImportTest,
        DISABLED_LoadProfilesFromFile_Invalid_NotFullyStructured) {
@@ -321,8 +321,16 @@ TEST_F(ManualTestingImportTest,
 
 class ManualTestingImportTesti18n : public ManualTestingImportTest {
  public:
-  base::test::ScopedFeatureList features_{
-      features::kAutofillUseI18nAddressModel};
+  ManualTestingImportTesti18n() {
+    features_.InitWithFeatures({features::kAutofillUseI18nAddressModel,
+                                features::kAutofillUseAUAddressModel,
+                                features::kAutofillUseBRAddressModel,
+                                features::kAutofillUseDEAddressModel,
+                                features::kAutofillUseINAddressModel,
+                                features::kAutofillUseMXAddressModel},
+                               {});
+  }
+  base::test::ScopedFeatureList features_;
 };
 
 // Tests that i18n profiles are converted correctly.

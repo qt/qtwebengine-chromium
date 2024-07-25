@@ -16,6 +16,13 @@ import {
   computeExecutablePath,
 } from '@puppeteer/browsers';
 
+import {
+  firstValueFrom,
+  from,
+  map,
+  race,
+  timer,
+} from '../../third_party/rxjs/rxjs.js';
 import type {Browser, BrowserCloseCallback} from '../api/Browser.js';
 import {CdpBrowser} from '../cdp/Browser.js';
 import {Connection} from '../cdp/Connection.js';
@@ -91,6 +98,12 @@ export abstract class ProductLauncher {
 
     const launchArgs = await this.computeLaunchArguments(options);
 
+    if (!existsSync(launchArgs.executablePath)) {
+      throw new Error(
+        `Browser was not found at the configured executablePath (${launchArgs.executablePath})`
+      );
+    }
+
     const usePipe = launchArgs.args.includes('--remote-debugging-pipe');
 
     const onProcessExit = async () => {
@@ -98,6 +111,18 @@ export abstract class ProductLauncher {
         isTemp: launchArgs.isTempUserDataDir,
       });
     };
+
+    if (
+      this.#product === 'firefox' &&
+      protocol !== 'webDriverBiDi' &&
+      this.puppeteer.configuration.logLevel === 'warn'
+    ) {
+      console.warn(
+        `Chrome DevTools Protocol (CDP) support for Firefox is deprecated in Puppeteer ` +
+          `and it will be eventually removed. ` +
+          `Use WebDriver BiDi instead (see https://pptr.dev/webdriver-bidi#get-started).`
+      );
+    }
 
     const browserProcess = launch({
       executablePath: launchArgs.executablePath,
@@ -236,7 +261,17 @@ export abstract class ProductLauncher {
         await browserProcess.close();
       }
     } else {
-      await browserProcess.close();
+      // Wait for a possible graceful shutdown.
+      await firstValueFrom(
+        race(
+          from(browserProcess.hasClosed()),
+          timer(5000).pipe(
+            map(() => {
+              return from(browserProcess.close());
+            })
+          )
+        )
+      );
     }
   }
 
@@ -376,7 +411,7 @@ export abstract class ProductLauncher {
   /**
    * @internal
    */
-  protected resolveExecutablePath(): string {
+  protected resolveExecutablePath(headless?: boolean | 'shell'): string {
     let executablePath = this.puppeteer.configuration.executablePath;
     if (executablePath) {
       if (!existsSync(executablePath)) {
@@ -387,9 +422,12 @@ export abstract class ProductLauncher {
       return executablePath;
     }
 
-    function productToBrowser(product?: Product) {
+    function productToBrowser(product?: Product, headless?: boolean | 'shell') {
       switch (product) {
         case 'chrome':
+          if (headless === 'shell') {
+            return InstalledBrowser.CHROMEHEADLESSSHELL;
+          }
           return InstalledBrowser.CHROME;
         case 'firefox':
           return InstalledBrowser.FIREFOX;
@@ -399,7 +437,7 @@ export abstract class ProductLauncher {
 
     executablePath = computeExecutablePath({
       cacheDir: this.puppeteer.defaultDownloadPath!,
-      browser: productToBrowser(this.product),
+      browser: productToBrowser(this.product, headless),
       buildId: this.puppeteer.browserRevision,
     });
 

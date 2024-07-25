@@ -160,6 +160,14 @@ double MediaValuesDynamic::ContainerHeight() const {
   return SmallViewportHeight();
 }
 
+double MediaValuesDynamic::ContainerWidth(const ScopedCSSName&) const {
+  return SmallViewportWidth();
+}
+
+double MediaValuesDynamic::ContainerHeight(const ScopedCSSName&) const {
+  return SmallViewportHeight();
+}
+
 int MediaValuesDynamic::DeviceWidth() const {
   return CalculateDeviceWidth(frame_);
 }
@@ -275,8 +283,7 @@ int MediaValuesDynamic::GetVerticalViewportSegments() const {
   return CalculateVerticalViewportSegments(frame_);
 }
 
-device::mojom::blink::DevicePostureType MediaValuesDynamic::GetDevicePosture()
-    const {
+mojom::blink::DevicePostureType MediaValuesDynamic::GetDevicePosture() const {
   return CalculateDevicePosture(frame_);
 }
 

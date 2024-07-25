@@ -540,7 +540,11 @@ void QuicSession::OnPacketReceived(const QuicSocketAddress& /*self_address*/,
   }
 }
 
-void QuicSession::OnPathDegrading() {}
+void QuicSession::OnPathDegrading() {
+  if (visitor_) {
+    visitor_->OnPathDegrading();
+  }
+}
 
 void QuicSession::OnForwardProgressMadeAfterPathDegrading() {}
 
@@ -679,6 +683,10 @@ void QuicSession::OnCanWrite() {
              quic_no_write_control_frame_upon_connection_close) &&
          !connection_->connected()) ||
         crypto_stream->HasBufferedCryptoFrames()) {
+      if (!connection_->connected()) {
+        QUIC_RELOADABLE_FLAG_COUNT(
+            quic_no_write_control_frame_upon_connection_close);
+      }
       // Cannot finish writing buffered crypto frames, connection is either
       // write blocked or closed.
       return;
@@ -921,14 +929,6 @@ bool QuicSession::WriteControlFrame(const QuicFrame& frame,
   if (!IsEncryptionEstablished()) {
     // Suppress the write before encryption gets established.
     return false;
-  }
-  if (GetQuicRestartFlag(quic_allow_control_frames_while_procesing)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_allow_control_frames_while_procesing, 1, 3);
-  } else {
-    if (connection_->framer().is_processing_packet()) {
-      // The frame will be sent when OnCanWrite() is called.
-      return false;
-    }
   }
   SetTransmissionType(type);
   QuicConnection::ScopedEncryptionLevelContext context(
@@ -1384,15 +1384,15 @@ void QuicSession::OnConfigNegotiated() {
 
   if (perspective_ == Perspective::IS_SERVER && version().HasIetfQuicFrames() &&
       connection_->effective_peer_address().IsInitialized()) {
-    if (config_.HasClientSentConnectionOption(kSPAD, perspective_)) {
+    if (config_.SupportsServerPreferredAddress(perspective_)) {
       quiche::IpAddressFamily address_family =
           connection_->effective_peer_address()
               .Normalized()
               .host()
               .address_family();
-      std::optional<QuicSocketAddress> preferred_address =
-          config_.GetPreferredAddressToSend(address_family);
-      if (preferred_address.has_value()) {
+      std::optional<QuicSocketAddress> expected_preferred_address =
+          config_.GetMappedAlternativeServerAddress(address_family);
+      if (expected_preferred_address.has_value()) {
         // Set connection ID and token if SPAD has received and a preferred
         // address of the same address family is configured.
         std::optional<QuicNewConnectionIdFrame> frame =
@@ -1401,7 +1401,8 @@ void QuicSession::OnConfigNegotiated() {
           config_.SetPreferredAddressConnectionIdAndTokenToSend(
               frame->connection_id, frame->stateless_reset_token);
         }
-        connection_->set_sent_server_preferred_address(*preferred_address);
+        connection_->set_expected_server_preferred_address(
+            *expected_preferred_address);
       }
       // Clear the alternative address of the other address family in the
       // config.
@@ -2485,13 +2486,14 @@ HandshakeState QuicSession::GetHandshakeState() const {
 }
 
 QuicByteCount QuicSession::GetFlowControlSendWindowSize(QuicStreamId id) {
-  QuicStream* stream = GetActiveStream(id);
-  if (stream == nullptr) {
+  QUICHE_DCHECK(GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data5));
+  auto it = stream_map_.find(id);
+  if (it == stream_map_.end()) {
     // No flow control for invalid or inactive stream ids. Returning uint64max
     // allows QuicPacketCreator to write as much data as possible.
     return std::numeric_limits<QuicByteCount>::max();
   }
-  return stream->CalculateSendWindowSize();
+  return it->second->CalculateSendWindowSize();
 }
 
 WriteStreamDataResult QuicSession::WriteStreamData(QuicStreamId id,

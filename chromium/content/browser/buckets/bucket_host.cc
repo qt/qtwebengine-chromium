@@ -173,12 +173,10 @@ void BucketHost::GetIdbFactory(
   GlobalRenderFrameHostId rfh_id =
       bucket_context->GetAssociatedRenderFrameHostId();
 
-  bucket_manager_host_->GetStoragePartition()
-      ->GetIndexedDBControl()
-      .BindIndexedDB(
-          bucket_info_.ToBucketLocator(),
-          IndexedDBClientStateCheckerFactory::InitializePendingRemote(rfh_id),
-          std::move(receiver));
+  bucket_manager_host_->GetStoragePartition()->BindIndexedDB(
+      bucket_info_.ToBucketLocator(),
+      IndexedDBClientStateCheckerFactory::InitializePendingRemote(rfh_id),
+      std::move(receiver));
 }
 
 void BucketHost::GetCaches(

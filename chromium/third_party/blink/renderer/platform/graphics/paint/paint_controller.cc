@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_under_invalidation_checker.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/text/text_stream.h"
 #include "third_party/skia/include/core/SkTextBlob.h"
 
 namespace blink {
@@ -25,10 +26,10 @@ PaintController::CounterForTesting* PaintController::counter_for_testing_ =
 PaintController::PaintController(Usage usage)
     : usage_(usage),
       current_paint_artifact_(usage == kMultiplePaints
-                                  ? base::MakeRefCounted<PaintArtifact>()
+                                  ? MakeGarbageCollected<PaintArtifact>()
                                   : nullptr),
-      new_paint_artifact_(base::MakeRefCounted<PaintArtifact>()),
-      paint_chunker_(new_paint_artifact_->PaintChunks()) {
+      new_paint_artifact_(MakeGarbageCollected<PaintArtifact>()),
+      paint_chunker_(new_paint_artifact_->GetPaintChunks()) {
   // frame_first_paints_ should have one null frame since the beginning, so
   // that PaintController is robust even if it paints outside of BeginFrame
   // and EndFrame cycles. It will also enable us to combine the first paint
@@ -40,12 +41,28 @@ PaintController::PaintController(Usage usage)
 PaintController::~PaintController() {
 #if DCHECK_IS_ON()
   if (usage_ == kMultiplePaints) {
-    // New display items should have been committed.
-    DCHECK(new_paint_artifact_->IsEmpty());
     // And the committed_ flag should have been cleared by FinishCycle().
     DCHECK(!committed_);
   }
 #endif
+}
+
+void PaintController::Trace(Visitor* visitor) const {
+  visitor->Trace(current_paint_artifact_);
+  visitor->Trace(new_paint_artifact_);
+  visitor->Trace(clients_to_validate_);
+  visitor->Trace(under_invalidation_checker_);
+}
+
+void PaintController::clear() {
+  if (current_paint_artifact_) {
+    current_paint_artifact_->clear();
+  }
+  if (new_paint_artifact_) {
+    new_paint_artifact_->clear();
+  }
+  new_subsequences_.tree.clear();
+  new_subsequences_.map.clear();
 }
 
 void PaintController::ReserveCapacity() {
@@ -56,8 +73,8 @@ void PaintController::ReserveCapacity() {
       display_item_list_capacity =
           current_paint_artifact_->GetDisplayItemList().size();
     }
-    new_paint_artifact_->PaintChunks().reserve(
-        current_paint_artifact_->PaintChunks().size());
+    new_paint_artifact_->GetPaintChunks().reserve(
+        current_paint_artifact_->GetPaintChunks().size());
     new_subsequences_.tree.reserve(current_subsequences_.tree.size());
     new_subsequences_.map.ReserveCapacityForSize(
         current_subsequences_.map.size());
@@ -106,17 +123,19 @@ void PaintController::RecordScrollHitTestData(
     const DisplayItemClient& client,
     DisplayItem::Type type,
     const TransformPaintPropertyNode* scroll_translation,
-    const gfx::Rect& rect) {
+    const gfx::Rect& rect,
+    cc::HitTestOpaqueness hit_test_opaqueness) {
   PaintChunk::Id id(client.Id(), type, current_fragment_);
   CheckNewChunkId(id);
   ValidateNewChunkClient(client);
-  paint_chunker_.CreateScrollHitTestChunk(id, client, scroll_translation, rect);
+  paint_chunker_.CreateScrollHitTestChunk(id, client, scroll_translation, rect,
+                                          hit_test_opaqueness);
   CheckNewChunk();
 }
 
 void PaintController::RecordSelection(
-    absl::optional<PaintedSelectionBound> start,
-    absl::optional<PaintedSelectionBound> end,
+    std::optional<PaintedSelectionBound> start,
+    std::optional<PaintedSelectionBound> end,
     String debug_info) {
   DCHECK(start.has_value() || end.has_value());
   paint_chunker_.AddSelectionToCurrentChunk(start, end, debug_info);
@@ -260,10 +279,10 @@ bool PaintController::UseCachedSubsequenceIfPossible(
   const auto& markers = current_subsequences_.tree[subsequence_index];
   DCHECK_EQ(markers.client_id, client.Id());
   wtf_size_t start_item_index =
-      current_paint_artifact_->PaintChunks()[markers.start_chunk_index]
+      current_paint_artifact_->GetPaintChunks()[markers.start_chunk_index]
           .begin_index;
   wtf_size_t end_item_index =
-      current_paint_artifact_->PaintChunks()[markers.end_chunk_index - 1]
+      current_paint_artifact_->GetPaintChunks()[markers.end_chunk_index - 1]
           .end_index;
   if (end_item_index > start_item_index &&
       current_paint_artifact_->GetDisplayItemList()[start_item_index]
@@ -272,7 +291,7 @@ bool PaintController::UseCachedSubsequenceIfPossible(
     // created multiple subsequences. If DCHECK_IS_ON(), then we should have
     // encountered the DCHECK at the end of EndSubsequence() during the previous
     // paint.
-    NOTREACHED();
+    DUMP_WILL_BE_NOTREACHED_NORETURN();
     return false;
   }
 
@@ -326,7 +345,7 @@ PaintController::GetSubsequenceMarkers(DisplayItemClientId client_id) const {
 wtf_size_t PaintController::BeginSubsequence(const DisplayItemClient& client) {
   RecordDebugInfo(client);
   // Force new paint chunk which is required for subsequence caching.
-  SetWillForceNewChunk(true);
+  paint_chunker_.SetWillForceNewChunk();
   new_subsequences_.tree.push_back(
       SubsequenceMarkers{client.Id(), NumNewChunks()});
   return new_subsequences_.tree.size() - 1;
@@ -351,7 +370,7 @@ void PaintController::EndSubsequence(wtf_size_t subsequence_index) {
   }
 
   // Force new paint chunk which is required for subsequence caching.
-  SetWillForceNewChunk(true);
+  paint_chunker_.SetWillForceNewChunk();
 
 #if DCHECK_IS_ON()
   DCHECK(!new_subsequences_.map.Contains(markers.client_id))
@@ -386,13 +405,31 @@ void PaintController::CheckNewItem(DisplayItem& display_item) {
                                         new_display_item_list);
     if (index != kNotFound) {
       ShowDebugData();
-      NOTREACHED() << "DisplayItem "
-                   << display_item.AsDebugString(*new_paint_artifact_).Utf8()
-                   << " has duplicated id with previous "
-                   << new_display_item_list[index]
-                          .AsDebugString(*new_paint_artifact_)
-                          .Utf8()
-                   << " (index=" << index << ")";
+      const auto& chunks = new_paint_artifact_->GetPaintChunks();
+      const PaintChunk* chunk =
+          std::upper_bound(chunks.begin(), chunks.end(), index,
+                           [](wtf_size_t index, const PaintChunk& chunk) {
+                             return index < chunk.end_index;
+                           });
+      DCHECK_NE(chunk, chunks.end());
+      NOTREACHED()
+          << "DisplayItem "
+          << display_item.AsDebugString(*new_paint_artifact_).Utf8()
+          << " (index="
+          << new_display_item_list.size()
+          // The last chunk might not be the chunk the new item would
+          // be in because the new item might start a new chunk.
+          << " last chunk "
+          << chunks.back()
+                 .ToString(*new_paint_artifact_, /*concise=*/true)
+                 .Utf8()
+          << ")\n has duplicated id with previous "
+          << new_display_item_list[index]
+                 .AsDebugString(*new_paint_artifact_)
+                 .Utf8()
+          << " (index=" << index << " in chunk "
+          << chunk->ToString(*new_paint_artifact_, /*concise=*/true).Utf8()
+          << ")";
     }
     AddToIdIndexMap(display_item.GetId(), new_display_item_list.size() - 1,
                     new_display_item_id_index_map_);
@@ -443,10 +480,11 @@ void PaintController::CheckNewChunkId(const PaintChunk::Id& id) {
   auto it = new_paint_chunk_id_index_map_.find(id.AsHashKey());
   if (it != new_paint_chunk_id_index_map_.end()) {
     ShowDebugData();
-    NOTREACHED() << "New paint chunk id " << id.ToString(*new_paint_artifact_)
-                 << " is already used by a previous chuck "
-                 << new_paint_artifact_->PaintChunks()[it->value].ToString(
-                        *new_paint_artifact_);
+    DUMP_WILL_BE_NOTREACHED_NORETURN()
+        << "New paint chunk id " << id.ToString(*new_paint_artifact_)
+        << " is already used by a previous chuck "
+        << new_paint_artifact_->GetPaintChunks()[it->value].ToString(
+               *new_paint_artifact_);
   }
 #endif
 }
@@ -454,7 +492,7 @@ void PaintController::CheckNewChunkId(const PaintChunk::Id& id) {
 void PaintController::CheckNewChunk() {
 #if DCHECK_IS_ON()
   if (usage_ == kMultiplePaints) {
-    auto& chunks = new_paint_artifact_->PaintChunks();
+    auto& chunks = new_paint_artifact_->GetPaintChunks();
     if (chunks.back().is_cacheable) {
       AddToIdIndexMap(chunks.back().id, chunks.size() - 1,
                       new_paint_chunk_id_index_map_);
@@ -468,7 +506,7 @@ void PaintController::CheckNewChunk() {
 
 void PaintController::InvalidateAllForTesting() {
   CheckNoNewPaint();
-  current_paint_artifact_ = base::MakeRefCounted<PaintArtifact>();
+  current_paint_artifact_ = MakeGarbageCollected<PaintArtifact>();
   current_subsequences_.map.clear();
   current_subsequences_.tree.clear();
   cache_is_all_invalid_ = true;
@@ -619,14 +657,14 @@ void PaintController::AppendSubsequenceByMoving(const DisplayItemClient& client,
   auto new_start_chunk_index = NumNewChunks();
   auto new_subsequence_index = BeginSubsequence(client);
 
-  auto& current_chunks = current_paint_artifact_->PaintChunks();
+  auto& current_chunks = current_paint_artifact_->GetPaintChunks();
   for (auto chunk_index = start_chunk_index; chunk_index < end_chunk_index;
        ++chunk_index) {
     auto& cached_chunk = current_chunks[chunk_index];
     CheckNewChunkId(cached_chunk.id);
     paint_chunker_.AppendByMoving(std::move(cached_chunk));
     if (record_debug_info_) {
-      auto& new_chunk = new_paint_artifact_->PaintChunks().back();
+      auto& new_chunk = new_paint_artifact_->GetPaintChunks().back();
       new_paint_artifact_->RecordDebugInfo(
           new_chunk.id.client_id,
           current_paint_artifact_->ClientDebugName(new_chunk.id.client_id),
@@ -718,7 +756,7 @@ void PaintController::CommitNewDisplayItems() {
   cache_is_all_invalid_ = false;
   committed_ = true;
 
-  under_invalidation_checker_.reset();
+  under_invalidation_checker_ = nullptr;
 
   DCHECK_EQ(new_subsequences_.map.size(), new_subsequences_.tree.size());
   current_subsequences_.map.clear();
@@ -727,8 +765,8 @@ void PaintController::CommitNewDisplayItems() {
 
   current_paint_artifact_ = std::move(new_paint_artifact_);
   if (usage_ == kMultiplePaints) {
-    new_paint_artifact_ = base::MakeRefCounted<PaintArtifact>();
-    paint_chunker_.ResetChunks(&new_paint_artifact_->PaintChunks());
+    new_paint_artifact_ = MakeGarbageCollected<PaintArtifact>();
+    paint_chunker_.ResetChunks(&new_paint_artifact_->GetPaintChunks());
   } else {
     new_paint_artifact_ = nullptr;
     paint_chunker_.ResetChunks(nullptr);
@@ -792,8 +830,9 @@ void PaintController::FinishCycle() {
   CheckNoNewPaint();
   committed_ = false;
 
-  for (auto& chunk : current_paint_artifact_->PaintChunks())
+  for (auto& chunk : current_paint_artifact_->GetPaintChunks()) {
     chunk.client_is_just_created = false;
+  }
 }
 
 size_t PaintController::ApproximateUnsharedMemoryUsage() const {
@@ -829,7 +868,7 @@ PaintController::EnsureUnderInvalidationChecker() {
   DCHECK(RuntimeEnabledFeatures::PaintUnderInvalidationCheckingEnabled());
   if (!under_invalidation_checker_) {
     under_invalidation_checker_ =
-        std::make_unique<PaintUnderInvalidationChecker>(*this);
+        MakeGarbageCollected<PaintUnderInvalidationChecker>(*this);
   }
   return *under_invalidation_checker_;
 }
@@ -881,6 +920,26 @@ void PaintController::ValidateNewChunkClient(const DisplayItemClient& client) {
 void PaintController::SetBenchmarkMode(PaintBenchmarkMode mode) {
   DCHECK(new_paint_artifact_->IsEmpty());
   benchmark_mode_ = mode;
+}
+
+PaintControllerCycleScope::PaintControllerCycleScope(
+    PaintController& controller,
+    bool record_debug_info)
+    : controller_(controller),
+      old_paint_artifact_(controller.current_paint_artifact_.Get()) {
+  controller.StartCycle(record_debug_info);
+}
+
+PaintControllerCycleScope::~PaintControllerCycleScope() {
+  controller_.FinishCycle();
+  // After the cycle scope, the old paint artifact should not be referenced by
+  // anyone and the backing store can be freed. This is especially helpful
+  // when PaintArtifact is garbage collected while the vectors are not. See
+  // crbug.com/330072757.
+  if (old_paint_artifact_ &&
+      old_paint_artifact_ != controller_.current_paint_artifact_.Get()) {
+    old_paint_artifact_->clear();
+  }
 }
 
 }  // namespace blink

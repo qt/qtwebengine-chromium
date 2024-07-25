@@ -192,6 +192,13 @@
     "font-format",
 
     //
+    // font-variant-emoji
+    // normal
+    // text
+    "emoji",
+    "unicode",
+
+    //
     // font-palette animation
     //
     "palette-mix",
@@ -776,6 +783,19 @@
     "no-autospace",
 
     //
+    // text-box-edge
+    //
+    // "alphabetic",
+    // "text"
+    //
+    // not implemented
+    // "ideographic",
+    // "ideographic-ink",
+    "cap",
+    "ex",
+    "leading",
+
+    //
     // text-overflow
     //
     "clip",
@@ -863,13 +883,6 @@
     "square-button",
     "slider-horizontal",
     "searchfield-cancel-button",
-    // TODO(crbug/924486) All appearance values that should not be accepted by the parser (low usage).
-    "media-slider",
-    "media-sliderthumb",
-    "media-volume-slider",
-    "media-volume-sliderthumb",
-    "sliderthumb-horizontal",
-    "sliderthumb-vertical",
     // TODO(crbug/1426629) All appearance values that should not be accepted by the parser (special case).
     "slider-vertical",
     //
@@ -878,6 +891,10 @@
     // stretch
     // repeat
     "round",
+    // TODO(crbug.com/1511354): "base-select" is a temporary name for stylable
+    // <select>. It should be renamed when a standardized name is chosen.
+    "base-select",
+    "-internal-appearance-auto-base-select",
 
     //
     // background-clip/background-origin
@@ -1114,6 +1131,7 @@
     "browser",
     "window-controls-overlay",
     "tabbed",
+    "picture-in-picture",
 
     // (display-state:) media feature
     // normal
@@ -1379,7 +1397,7 @@
     "lch",
     "oklch",
     // "color",
-    "-internal-light-dark",
+    "light-dark",
 
     // color spaces
     // "srgb", included in color-interpolation
@@ -1465,6 +1483,12 @@
     "max",
     "clamp",
 
+    // proposed math function
+    // https://github.com/w3c/csswg-drafts/issues/626
+    "calc-size",
+    // value that goes within calc-size()
+    "any",
+
     // Trigonometic functions
     "sin",
     "cos",
@@ -1548,6 +1572,9 @@
     "var",
     "-internal-variable-value",
     "env",
+
+    // CSS Functions
+    "arg",
 
     // break-before, break-after, break-inside
     "avoid-page",
@@ -1694,8 +1721,6 @@
 
     // anchor positioning
     "anchor",
-    // auto,
-    "auto-same",
     // top,
     // left,
     // right,
@@ -1713,12 +1738,9 @@
     "self-block",
     "self-inline",
 
-    // anchor-default
+    // position-anchor
     "implicit",
     // none,
-
-    // position-fallback-bounds
-    // normal,
 
     // animation-[end-]delay
     // contain
@@ -1757,24 +1779,58 @@
 
     // inset-area
     // none,
-    // all,
-    // center,
-    // start,
-    // end,
-    // self-start,
-    // self-end,
-    // top,
-    // bottom,
     // left,
+    // center,
     // right,
+    "span-left",
+    "span-right",
     "x-start",
     "x-end",
-    "y-start",
-    "y-end",
+    "span-x-start",
+    "span-x-end",
     "x-self-start",
     "x-self-end",
+    "span-x-self-start",
+    "span-x-self-end",
+    "span-all",
+    // top,
+    // bottom,
+    "span-top",
+    "span-bottom",
+    "y-start",
+    "y-end",
+    "span-y-start",
+    "span-y-end",
     "y-self-start",
     "y-self-end",
+    "span-y-self-start",
+    "span-y-self-end",
+    "block-start",
+    "block-end",
+    "span-block-start",
+    "span-block-end",
+    "self-block-start",
+    "self-block-end",
+    "span-self-block-start",
+    "span-self-block-end",
+    // inline-start,
+    // inline-end,
+    "span-inline-start",
+    "span-inline-end",
+    "self-inline-start",
+    "self-inline-end",
+    "span-self-inline-start",
+    "span-self-inline-end",
+    // start,
+    // end,
+    "span-start",
+    "span-end",
+    // self-start,
+    // self-end,
+    "span-self-start",
+    "span-self-end",
+    // inset-area()
+    "inset-area",
 
     // resize
     // none
@@ -1785,5 +1841,44 @@
     // inline
     // auto (legacy version of -internal-textarea-auto)
     "-internal-textarea-auto",
+
+    // position-try-order
+    // normal
+    "most-width",
+    "most-height",
+    "most-block-size",
+    "most-inline-size",
+
+    // position-try-options
+    // none
+    "flip-block",
+    "flip-inline",
+    "flip-start",
+
+    // position-visibility
+    // always
+    // TODO(crbug.com/332933527): Support anchors-valid.
+    // "anchors-valid",
+    "anchors-visible",
+    "no-overflow",
+
+    // reading-order-items
+    // normal
+    "flex-visual",
+    "flex-flow",
+    "grid-rows",
+    "grid-columns",
+    "grid-order",
+
+    // fill / stroke
+    "context-fill",
+    "context-stroke",
+
+    // media-progress()
+    "media-progress",
+
+    // container-progress()
+    "container-progress",
+    "of",
   ],
 }

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/sync_socket.h"
 
 #include <limits.h>
@@ -11,6 +16,7 @@
 
 #include "base/containers/span.h"
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/rand_util.h"
 #include "base/threading/scoped_blocking_call.h"
@@ -50,7 +56,7 @@ bool CreatePairImpl(ScopedHandle* socket_a,
 
   do {
     unsigned long rnd_name;
-    RandBytes(&rnd_name, sizeof(rnd_name));
+    RandBytes(byte_span_from_ref(rnd_name));
 
     swprintf(name, kPipePathMax,
              kPipeNameFormat,
@@ -70,7 +76,7 @@ bool CreatePairImpl(ScopedHandle* socket_a,
   } while (!handle_a.is_valid() && (GetLastError() == ERROR_PIPE_BUSY));
 
   if (!handle_a.is_valid()) {
-    NOTREACHED();
+    NOTREACHED_IN_MIGRATION();
     return false;
   }
 

@@ -88,6 +88,8 @@ OverlayTransformFlatlandProperties OverlayTransformToFlatlandProperties(
           .orientation = fuchsia::ui::composition::Orientation::CCW_0_DEGREES,
           .image_flip = fuchsia::ui::composition::ImageFlip::UP_DOWN,
       };
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
     case gfx::OVERLAY_TRANSFORM_INVALID:
       break;
   }
@@ -246,7 +248,7 @@ void FlatlandSurface::Present(
   child_transforms_[0] = primary_plane_transform_id_;
   flatland_.flatland()->SetContent(primary_plane_transform_id_,
                                    primary_plane_image_id);
-  // TODO(crbug.com/1330950): We should set SRC blend mode when Chrome has a
+  // TODO(crbug.com/42050483): We should set SRC blend mode when Chrome has a
   // reliable signal for opaque background.
   flatland_.flatland()->SetImageBlendingFunction(
       primary_plane_image_id, fuchsia::ui::composition::BlendMode::SRC_OVER);

@@ -27,6 +27,8 @@ namespace calendar {
 
 namespace {
 const char kTestCalendarColorId[] = "5";
+const char kTestPrimaryCalendarColorId[] = "14";
+const char kTestPrimaryCalendarSummary[] = "test1@google.com";
 const char kTestUserAgent[] = "test-user-agent";
 }
 
@@ -110,11 +112,14 @@ TEST_F(CalendarApiRequestsTest, GetCalendarListRequest) {
   EXPECT_EQ(
       "/calendar/v3/users/me/calendarList"
       "?maxResults=250"
-      "&fields=etag%2Ckind%2Citems(id%2CcolorId%2Cselected%2Cprimary)",
+      "&fields=etag%2Ckind%2Citems"
+      "(kind%2Cid%2Csummary%2CcolorId%2Cselected%2Cprimary)",
       http_request_.relative_url);
 
   ASSERT_TRUE(calendars.get());
   EXPECT_EQ("calendar#calendarList", calendars->kind());
+  EXPECT_EQ(kTestPrimaryCalendarSummary, calendars->items()[0]->summary());
+  EXPECT_EQ(kTestPrimaryCalendarColorId, calendars->items()[0]->color_id());
   EXPECT_EQ(true, calendars->items()[0]->selected());
   EXPECT_EQ(true, calendars->items()[0]->primary());
 }
@@ -167,11 +172,14 @@ TEST_F(CalendarApiRequestsTest, GetEventListRequest) {
   base::Time::Exploded exploded;
   events->items()[0]->start_time().date_time().LocalExplode(&exploded);
   EXPECT_EQ(exploded.month, 11);
+  // Verifies that events containing a colorId do not have their color IDs
+  // replaced by calendar_color_id.
   EXPECT_EQ(events->items()[0]->color_id(), "3");
   EXPECT_EQ(events->items()[1]->color_id(), "3");
   // Verifies that an event without a colorId in the response yields an event
-  // object with a color ID equal to calendar_color_id.
-  EXPECT_EQ(events->items()[2]->color_id(), kTestCalendarColorId);
+  // object with a color ID equal to calendar_color_id (prepended by a marker).
+  EXPECT_EQ(events->items()[2]->color_id(),
+            calendar::kInjectedColorIdPrefix + kTestCalendarColorId);
 }
 
 // Tests that CalendarApiEventsRequest can generate the correct url and get the
@@ -227,6 +235,49 @@ TEST_F(CalendarApiRequestsTest,
   // Verifies that an event without a colorId in the response yields an event
   // object with an empty colorId if no calendar_color_id is passed.
   EXPECT_EQ(events->items()[2]->color_id(), "");
+}
+
+// Tests that CalendarApiEventsRequest can generate the correct url when
+// attachments are requested.
+TEST_F(CalendarApiRequestsTest, GetEventListRequestWithAttachments) {
+  ApiErrorCode error = OTHER_ERROR;
+  std::unique_ptr<EventList> events;
+  base::Time start;
+  base::Time end;
+
+  EXPECT_TRUE(base::Time::FromString("13 Jun 2021 10:00 GMT", &start));
+  EXPECT_TRUE(base::Time::FromString("16 Jun 2021 10:00 GMT", &end));
+
+  {
+    base::RunLoop run_loop;
+    auto request = std::make_unique<CalendarApiEventsRequest>(
+        request_sender_.get(), *url_generator_,
+        test_util::CreateQuitCallback(
+            &run_loop, test_util::CreateCopyResultCallback(&error, &events)),
+        start, end, /*include_attachments=*/true);
+
+    request_sender_->StartRequestWithAuthRetry(std::move(request));
+    run_loop.Run();
+  }
+
+  EXPECT_EQ(HTTP_SUCCESS, error);
+  EXPECT_EQ(net::test_server::METHOD_GET, http_request_.method);
+  EXPECT_EQ(
+      "/calendar/v3/calendars/primary/events"
+      "?timeMin=2021-06-13T10%3A00%3A00.000Z"
+      "&timeMax=2021-06-16T10%3A00%3A00.000Z"
+      "&singleEvents=true"
+      "&maxAttendees=1"
+      "&maxResults=2500"
+      "&fields=timeZone%2Cetag%2Ckind%2Citems(id%2Ckind"
+      "%2Csummary%2CcolorId%2Cstatus"
+      "%2Cstart(date)%2Cend(date)"
+      "%2Cstart(dateTime)%2Cend(dateTime)"
+      "%2ChtmlLink%2Cattendees(responseStatus%2Cself)%2CattendeesOmitted"
+      "%2CconferenceData(conferenceId%2CentryPoints(entryPointType%2Curi))"
+      "%2Ccreator(self)"
+      "%2Cattachments(title%2CfileUrl%2CiconLink%2CfileId))",
+      http_request_.relative_url);
 }
 
 }  // namespace calendar

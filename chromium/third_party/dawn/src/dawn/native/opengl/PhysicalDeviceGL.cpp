@@ -144,6 +144,15 @@ bool PhysicalDevice::SupportsExternalImages() const {
 MaybeError PhysicalDevice::InitializeImpl() {
     if (mFunctions.GetVersion().IsES()) {
         DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGLES);
+
+        // WebGPU requires being able to render to f16 and being able to blend f16
+        // which EXT_color_buffer_half_float provides.
+        DAWN_INVALID_IF(!mFunctions.IsGLExtensionSupported("GL_EXT_color_buffer_half_float"),
+                        "GL_EXT_color_buffer_half_float is required");
+
+        // WebGPU requires being able to render to f32 but does not require being able to blend f32
+        DAWN_INVALID_IF(!mFunctions.IsGLExtensionSupported("GL_EXT_color_buffer_float"),
+                        "GL_EXT_color_buffer_float is required");
     } else {
         DAWN_ASSERT(GetBackendType() == wgpu::BackendType::OpenGL);
     }
@@ -169,6 +178,8 @@ MaybeError PhysicalDevice::InitializeImpl() {
 }
 
 void PhysicalDevice::InitializeSupportedFeaturesImpl() {
+    EnableFeature(Feature::StaticSamplers);
+
     // TextureCompressionBC
     {
         // BC1, BC2 and BC3 are not supported in OpenGL or OpenGL ES core features.
@@ -233,8 +244,10 @@ void PhysicalDevice::InitializeSupportedFeaturesImpl() {
         EnableFeature(Feature::DualSourceBlending);
     }
 
-    // Norm16TextureFormats
+    // Unorm16TextureFormats, Snorm16TextureFormats and Norm16TextureFormats
     if (mFunctions.IsGLExtensionSupported("GL_EXT_texture_norm16")) {
+        EnableFeature(Feature::Unorm16TextureFormats);
+        EnableFeature(Feature::Snorm16TextureFormats);
         EnableFeature(Feature::Norm16TextureFormats);
     }
 }
@@ -283,6 +296,11 @@ MaybeError PhysicalDevice::InitializeSupportedLimitsImpl(CombinedLimits* limits)
     limits->v1.minStorageBufferOffsetAlignment = Get(gl, GL_SHADER_STORAGE_BUFFER_OFFSET_ALIGNMENT);
     limits->v1.maxVertexBuffers = Get(gl, GL_MAX_VERTEX_ATTRIB_BINDINGS);
     limits->v1.maxBufferSize = kAssumedMaxBufferSize;
+    // The code that handles adding the index buffer offset to first_index
+    // used in drawIndexedIndirect can not handle a max buffer size larger than 4gig.
+    // See IndirectDrawValidationEncoder.cpp
+    static_assert(kAssumedMaxBufferSize < 0x100000000u);
+
     limits->v1.maxVertexAttributes = Get(gl, GL_MAX_VERTEX_ATTRIBS);
     limits->v1.maxVertexBufferArrayStride = Get(gl, GL_MAX_VERTEX_ATTRIB_STRIDE);
     limits->v1.maxInterStageShaderComponents = Get(gl, GL_MAX_VARYING_COMPONENTS);
@@ -343,6 +361,10 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
     bool supportsSampleVariables = gl.IsAtLeastGL(4, 0) || gl.IsAtLeastGLES(3, 2) ||
                                    gl.IsGLExtensionSupported("GL_OES_sample_variables");
 
+    // Decide whether glTexSubImage2D/3D accepts GL_STENCIL_INDEX or not.
+    bool supportsStencilWriteTexture =
+        gl.GetVersion().IsDesktop() || gl.IsGLExtensionSupported("GL_OES_texture_stencil8");
+
     // TODO(crbug.com/dawn/343): We can support the extension variants, but need to load the EXT
     // procs without the extension suffix.
     // We'll also need emulation of shader builtins gl_BaseVertex and gl_BaseInstance.
@@ -397,12 +419,19 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
 
     // Use a blit to emulate stencil-only buffer-to-texture copies.
     deviceToggles->Default(Toggle::UseBlitForBufferToStencilTextureCopy, true);
+
+    // Use a blit to emulate write to stencil textures.
+    deviceToggles->Default(Toggle::UseBlitForStencilTextureWrite, !supportsStencilWriteTexture);
+
+    // Use T2B and B2T copies to emulate a T2T copy between sRGB and non-sRGB textures.
+    deviceToggles->Default(Toggle::UseT2B2TForSRGBTextureCopy, true);
 }
 
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     AdapterBase* adapter,
     const UnpackedPtr<DeviceDescriptor>& descriptor,
-    const TogglesState& deviceToggles) {
+    const TogglesState& deviceToggles,
+    Ref<DeviceBase::DeviceLostEvent>&& lostEvent) {
     EGLenum api =
         GetBackendType() == wgpu::BackendType::OpenGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API;
     std::unique_ptr<Device::Context> context;
@@ -415,11 +444,43 @@ ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
 
     DAWN_TRY_ASSIGN(context,
                     ContextEGL::Create(mEGLFunctions, api, mDisplay, useANGLETextureSharing));
-    return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles);
+    return Device::Create(adapter, descriptor, mFunctions, std::move(context), deviceToggles,
+                          std::move(lostEvent));
 }
 
 bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel featureLevel) const {
     return featureLevel == FeatureLevel::Compatibility;
+}
+
+ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapabilities(
+    const Surface*) const {
+    PhysicalDeviceSurfaceCapabilities capabilities;
+
+    // Formats
+
+    // This is the only supported format in native mode (see crbug.com/dawn/160).
+#if DAWN_PLATFORM_IS(ANDROID)
+    capabilities.formats.push_back(wgpu::TextureFormat::RGBA8Unorm);
+#else
+    capabilities.formats.push_back(wgpu::TextureFormat::BGRA8Unorm);
+#endif  // !DAWN_PLATFORM_IS(ANDROID)
+
+    // Present Modes
+
+    capabilities.presentModes = {
+        wgpu::PresentMode::Fifo,
+        wgpu::PresentMode::Immediate,
+        wgpu::PresentMode::Mailbox,
+    };
+
+    // Alpha Modes
+
+    capabilities.alphaModes = {
+        wgpu::CompositeAlphaMode::Opaque,
+        wgpu::CompositeAlphaMode::Auto,
+    };
+
+    return capabilities;
 }
 
 FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(

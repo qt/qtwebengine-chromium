@@ -14,12 +14,12 @@ import("//build/config/compiler/compiler.gni")
 import("//build/config/cronet/config.gni")
 import("//build/config/dcheck_always_on.gni")
 import("//build/config/features.gni")
+import("//build/config/ios/config.gni")
 import("//build/config/rust.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
 import("//build/gn_logs.gni")
 import("//build/util/generate_wrapper.gni")
-import("//chrome/browser/buildflags.gni")
 import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/nacl/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
@@ -46,6 +46,8 @@ if (is_fuchsia) {
   import("//build/config/fuchsia/generate_runner_scripts.gni")
   import("//third_party/fuchsia-gn-sdk/src/component.gni")
   import("//third_party/fuchsia-gn-sdk/src/package.gni")
+} else {
+  import("//chrome/browser/buildflags.gni")
 }
 
 if (is_linux) {
@@ -106,7 +108,7 @@ group("gn_all") {
       "//third_party/angle/src/tests:angle_end2end_tests",
       "//third_party/angle/src/tests:angle_unittests",
       "//third_party/angle/src/tests:angle_white_box_tests",
-      "//third_party/distributed_point_functions:distributed_point_functions_unittests",
+      "//third_party/distributed_point_functions/shim:distributed_point_functions_shim_unittests",
       "//third_party/flatbuffers:flatbuffers_unittests",
       "//third_party/liburlpattern:liburlpattern_unittests",
       "//tools/binary_size:binary_size_trybot_py",
@@ -161,7 +163,7 @@ group("gn_all") {
       deps += [ "//chrome/installer" ]
     }
 
-    if (enable_updater) {
+    if (!is_fuchsia && enable_updater) {
       deps += [ "//chrome/updater" ]
     }
 
@@ -170,10 +172,6 @@ group("gn_all") {
         "//ppapi:ppapi_unittests",
         "//ppapi/examples",
       ]
-    }
-
-    if (is_chromeos_lacros) {
-      deps += [ "//chrome/test:lacros_chrome_unittests" ]
     }
 
     if (!is_ios && !is_castos) {
@@ -298,7 +296,7 @@ group("gn_all") {
     if (enable_pdf) {
       deps += [
         "//pdf/pdfium/fuzzers",
-        "//third_party/pdfium/samples:pdfium_test",
+        "//third_party/pdfium/testing:pdfium_test",
       ]
     }
 
@@ -346,6 +344,12 @@ group("gn_all") {
         "//chrome/credential_provider",
         "//chrome/credential_provider/test:gcp_unittests",
       ]
+
+      if (enable_platform_experience) {
+        deps += [
+          "//chrome/browser/platform_experience/win:platform_experience_helper",
+        ]
+      }
     }
 
     if (is_mac) {
@@ -371,12 +375,11 @@ group("gn_all") {
         "//build/config/android/test/proto:test_build_protos",
         "//build/private_code_test:private_paths",
         "//chrome/android/monochrome:monochrome_public_apk_checker",
-        "//chrome/android/webapk/shell_apk:maps_go_webapk",
         "//chrome/android/webapk/shell_apk:webapk",
         "//chrome/android/webapk/shell_apk/prepare_upload_dir:prepare_webapk_shell_upload_dir",
         "//chrome/test:android_browsertests",
         "//components:components_junit_tests",
-        "//components/ip_protection_auth/javatests:ip_protection_auth_test_apk",
+        "//components/ip_protection/android_auth_client_lib/javatests:ip_protection_auth_test_apk",
         "//content/public/android:content_junit_tests",
         "//content/shell/android:content_shell_apk",
         "//device:device_junit_tests",
@@ -387,7 +390,7 @@ group("gn_all") {
         "//third_party/android_build_tools/lint:custom_lint_java",
         "//third_party/androidx_javascriptengine",
         "//third_party/catapult/devil",
-        "//third_party/jni_zero/samples:jni_generator_tests",
+        "//third_party/jni_zero:jni_zero_tests",
         "//third_party/r8:custom_d8_java",
         "//tools/android:android_tools",
         "//tools/android:memconsumer",
@@ -549,8 +552,6 @@ group("gn_all") {
           "//courgette:courgette_fuzz",
           "//courgette:courgette_minimal_tool",
           "//courgette:courgette_unittests",
-          "//media/cast:generate_barcode_video",
-          "//media/cast:generate_timecode_audio",
           "//net:crash_cache",
           "//net:net_watcher",  # TODO(GYP): This should be conditional on
                                 # use_v8_in_net
@@ -609,8 +610,6 @@ group("gn_all") {
     if (is_linux || is_chromeos_lacros) {
       deps += [
         "//gpu/khronos_glcts_support:khronos_glcts_test",
-        "//media/cast:cast_benchmarks",
-        "//media/cast:tap_proxy",
         "//skia:filter_fuzz_stub",
         "//skia:image_operations_bench",
         "//ui/snapshot:snapshot_unittests",
@@ -730,7 +729,6 @@ group("gn_all") {
         "//components/constrained_window:unit_tests",
         "//components/metrics:serialization",
         "//components/sessions:unit_tests",
-        "//media/cast:udp_proxy",
         "//storage/browser:dump_file_system",
         "//third_party/angle:libANGLE",
         "//third_party/angle:libEGL",
@@ -1117,7 +1115,7 @@ if (use_blink && !is_cronet_build) {
         "//third_party/blink/tools:wpt_tests_isolate",
       ]
     }
-    script_test("content_shell_wpt") {
+    script_test("headless_shell_wpt") {
       script = "//third_party/blink/tools/run_wpt_tests.py"
       args = [
         "--test-type",
@@ -1125,13 +1123,17 @@ if (use_blink && !is_cronet_build) {
         "reftest",
         "crashtest",
         "print-reftest",
-        "--product=content_shell",
+        "--product=headless_shell",
+        "--no-virtual-tests",
+        "--no-wpt-internal",
         "--no-show-results",
         "--zero-tests-executed-ok",
       ]
       data_deps = [
         ":blink_web_tests_expectations",
         ":blink_web_tests_support_data",
+        "//chrome:chrome",
+        "//chrome/test/chromedriver:chromedriver_server",
         "//third_party/blink/tools:wpt_tests_isolate",
       ]
     }
@@ -1228,7 +1230,7 @@ if (use_blink && !is_cronet_build) {
       data_deps += [ "//build/win:copy_cdb_to_output" ]
     }
 
-    if (is_mac) {
+    if (is_mac || (is_ios && target_environment == "simulator")) {
       data += [
         "//third_party/apache-mac/",
         "//third_party/apache-mac-arm64/",
@@ -1258,9 +1260,17 @@ if (use_blink && !is_cronet_build) {
       "@WrappedPath(.)",
     ]
   } else {
-    _common_web_test_args = [ "@WrappedPath(" + rebase_path(
-                                  "//third_party/blink/tools/run_web_tests.py",
-                                  root_build_dir) + ")" ]
+    base_out_dir = rebase_path(get_path_info(root_build_dir, "dir"), ".")
+    out_dir = get_path_info(root_build_dir, "name")
+    _common_web_test_args = [
+      "@WrappedPath(" +
+          rebase_path("//third_party/blink/tools/run_web_tests.py",
+                      root_build_dir) + ")",
+      "--build-directory",
+      base_out_dir,
+      "--target",
+      out_dir,
+    ]
   }
   if (is_debug) {
     _common_web_test_args += [ "--debug" ]
@@ -1443,7 +1453,9 @@ if (use_blink && !is_cronet_build) {
         "//third_party/blink/web_tests/platform/mac-mac11-arm64/",
         "//third_party/blink/web_tests/platform/mac-mac12/",
         "//third_party/blink/web_tests/platform/mac-mac12-arm64/",
+        "//third_party/blink/web_tests/platform/mac-mac13/",
         "//third_party/blink/web_tests/platform/mac-mac13-arm64/",
+        "//third_party/blink/web_tests/platform/mac-mac14-arm64/",
       ]
     }
 
@@ -1687,10 +1699,10 @@ if (!is_ios && !is_android && !is_castos && !is_cronet_build) {
       deps += [ "//tools/ipc_fuzzer:ipc_fuzzer_all" ]
     }
     if (!is_chromeos_ash) {
-      deps += [
-        "//third_party/pdfium/samples:pdfium_test",
-        "//v8:v8_shell($v8_snapshot_toolchain)",
-      ]
+      deps += [ "//v8:v8_shell($v8_snapshot_toolchain)" ]
+      if (enable_pdf) {
+        deps += [ "//third_party/pdfium/testing:pdfium_test" ]
+      }
     }
 
     if (!is_component_build) {

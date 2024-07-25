@@ -1353,13 +1353,6 @@ void ComputeDrawPropertiesOfVisibleLayers(const LayerImplList* layer_list,
         LayerDrawableContentRect(layer, visible_bounds_in_target_space,
                                  layer->draw_properties().clip_rect);
   }
-
-  // Make sure that the layers push their properties. This isn't necessary for
-  // picture layers that always push their properties, but is important for
-  // other layers to invalidate the active tree.
-  for (LayerImpl* layer : *layer_list) {
-    layer->SetNeedsPushProperties();
-  }
 }
 
 #if DCHECK_IS_ON()
@@ -1469,21 +1462,7 @@ void FindLayersThatNeedUpdates(LayerTreeImpl* layer_tree_impl,
 
 void ComputeTransforms(TransformTree* transform_tree,
                        const ViewportPropertyIds& viewport_property_ids) {
-  if (!transform_tree->needs_update()) {
-#if DCHECK_IS_ON()
-    // If the transform tree does not need an update, no TransformNode should
-    // need a local transform update.
-    for (int i = kContentsRootPropertyNodeId;
-         i < static_cast<int>(transform_tree->size()); ++i) {
-      DCHECK(!transform_tree->Node(i)->needs_local_transform_update);
-    }
-#endif
-    return;
-  }
-  for (int i = kContentsRootPropertyNodeId;
-       i < static_cast<int>(transform_tree->size()); ++i)
-    transform_tree->UpdateTransforms(i, &viewport_property_ids);
-  transform_tree->set_needs_update(false);
+  transform_tree->UpdateAllTransforms(viewport_property_ids);
 }
 
 void ComputeEffects(EffectTree* effect_tree) {

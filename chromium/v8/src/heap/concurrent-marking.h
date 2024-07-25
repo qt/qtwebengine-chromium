@@ -5,6 +5,7 @@
 #ifndef V8_HEAP_CONCURRENT_MARKING_H_
 #define V8_HEAP_CONCURRENT_MARKING_H_
 
+#include <atomic>
 #include <memory>
 
 #include "include/v8-platform.h"
@@ -30,7 +31,7 @@ namespace internal {
 class Heap;
 class Isolate;
 class NonAtomicMarkingState;
-class MemoryChunk;
+class MutablePageMetadata;
 class WeakObjects;
 
 struct MemoryChunkData {
@@ -43,8 +44,9 @@ struct MemoryChunkData {
 // common case where the requested element is the same as the one previously
 // tried.
 class MemoryChunkDataMap final {
-  using MemoryChunkDataMapT = std::unordered_map<MemoryChunk*, MemoryChunkData,
-                                                 base::hash<MemoryChunk*>>;
+  using MemoryChunkDataMapT =
+      std::unordered_map<MutablePageMetadata*, MemoryChunkData,
+                         base::hash<MutablePageMetadata*>>;
 
  public:
   MemoryChunkDataMapT::mapped_type& operator[](
@@ -141,7 +143,7 @@ class V8_EXPORT_PRIVATE ConcurrentMarking {
   void FlushMemoryChunkData();
   // This function is called for a new space page that was cleared after
   // scavenge and is going to be re-used.
-  void ClearMemoryChunkData(MemoryChunk* chunk);
+  void ClearMemoryChunkData(MutablePageMetadata* chunk);
   // Flushes pretenuring feedback.
   void FlushPretenuringFeedback();
 
@@ -163,6 +165,12 @@ class V8_EXPORT_PRIVATE ConcurrentMarking {
   }
 
   bool IsWorkLeft() const;
+
+  size_t FetchAndResetConcurrencyEstimate() {
+    const size_t estimate =
+        estimate_concurrency_.exchange(0, std::memory_order_relaxed);
+    return estimate ? estimate : 1;
+  }
 
  private:
   struct TaskState;
@@ -190,6 +198,7 @@ class V8_EXPORT_PRIVATE ConcurrentMarking {
   std::atomic<bool> another_ephemeron_iteration_{false};
   base::Optional<uint64_t> current_job_trace_id_;
   std::unique_ptr<MinorMarkingState> minor_marking_state_;
+  std::atomic<size_t> estimate_concurrency_{0};
 
   friend class Heap;
 };

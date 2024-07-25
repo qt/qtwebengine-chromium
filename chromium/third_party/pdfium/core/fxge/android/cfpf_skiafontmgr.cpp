@@ -4,12 +4,18 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxge/android/cfpf_skiafontmgr.h"
 
 #include <algorithm>
 #include <iterator>
 #include <utility>
 
+#include "core/fxcrt/containers/adapters.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_folder.h"
@@ -18,7 +24,6 @@
 #include "core/fxge/android/cfpf_skiapathfont.h"
 #include "core/fxge/freetype/fx_freetype.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/containers/adapters.h"
 
 namespace {
 
@@ -264,7 +269,7 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView bsFamilyname,
   int32_t nMax = -1;
   int32_t nGlyphNum = 0;
   for (const std::unique_ptr<CFPF_SkiaPathFont>& font :
-       pdfium::base::Reversed(m_FontFaces)) {
+       pdfium::Reversed(m_FontFaces)) {
     if (!(font->charsets() & FPF_SkiaGetCharset(uCharset)))
       continue;
     int32_t nFind = 0;
@@ -335,7 +340,7 @@ RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(ByteStringView bsFile,
   if (!face)
     return nullptr;
 
-  FT_Set_Pixel_Sizes(face->GetRec(), 0, 64);
+  face->SetPixelSize(0, 64);
   return face;
 }
 
@@ -389,7 +394,7 @@ std::unique_ptr<CFPF_SkiaPathFont> CFPF_SkiaFontMgr::ReportFace(
   }
 
   uint32_t charset = FPF_SKIACHARSET_Default;
-  absl::optional<std::array<uint32_t, 2>> code_page_range =
+  std::optional<std::array<uint32_t, 2>> code_page_range =
       face->GetOs2CodePageRange();
   if (code_page_range.has_value()) {
     if (code_page_range.value()[0] & (1 << 31)) {
@@ -398,7 +403,7 @@ std::unique_ptr<CFPF_SkiaPathFont> CFPF_SkiaFontMgr::ReportFace(
     charset |= FPF_SkiaGetFaceCharset(code_page_range.value()[0]);
   }
 
-  absl::optional<std::array<uint8_t, 2>> panose = face->GetOs2Panose();
+  std::optional<std::array<uint8_t, 2>> panose = face->GetOs2Panose();
   if (panose.has_value() && panose.value()[0] == 2) {
     uint8_t serif = panose.value()[1];
     if ((serif > 1 && serif < 10) || serif > 13) {

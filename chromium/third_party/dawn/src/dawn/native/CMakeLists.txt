@@ -31,7 +31,7 @@ DawnJSONGenerator(
     RESULT_VARIABLE "DAWN_NATIVE_UTILS_GEN_SOURCES"
 )
 
-add_library(dawn_native ${DAWN_PLACEHOLDER_FILE})
+add_library(dawn_native)
 common_compile_options(dawn_native)
 
 target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_IMPLEMENTATION")
@@ -113,8 +113,8 @@ target_sources(dawn_native
     "ComputePipeline.h"
     "CopyTextureForBrowserHelper.cpp"
     "CopyTextureForBrowserHelper.h"
-    "CreatePipelineAsyncTask.cpp"
-    "CreatePipelineAsyncTask.h"
+    "CreatePipelineAsyncEvent.cpp"
+    "CreatePipelineAsyncEvent.h"
     "Device.cpp"
     "Device.h"
     "DynamicUploader.cpp"
@@ -131,6 +131,7 @@ target_sources(dawn_native
     "ErrorInjector.h"
     "ErrorScope.cpp"
     "ErrorScope.h"
+    "ErrorSink.h"
     "EventManager.cpp"
     "EventManager.h"
     "Features.cpp"
@@ -185,7 +186,6 @@ target_sources(dawn_native
     "QuerySet.h"
     "Queue.cpp"
     "Queue.h"
-    "RefCountedWithExternalCount.cpp"
     "RefCountedWithExternalCount.h"
     "RenderBundle.cpp"
     "RenderBundle.h"
@@ -210,8 +210,12 @@ target_sources(dawn_native
     "Serializable.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
+    "SharedBufferMemory.cpp"
+    "SharedBufferMemory.h"
     "SharedFence.cpp"
     "SharedFence.h"
+    "SharedResourceMemory.cpp"
+    "SharedResourceMemory.h"
     "SharedTextureMemory.cpp"
     "SharedTextureMemory.h"
     "Subresource.cpp"
@@ -257,6 +261,7 @@ target_link_libraries(dawn_native
             absl_str_format_internal
             absl_flat_hash_map
             absl_flat_hash_set
+            absl_inlined_vector
 )
 
 target_include_directories(dawn_native PRIVATE ${DAWN_ABSEIL_DIR})
@@ -311,6 +316,8 @@ if (DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
         "d3d/ExternalImageDXGIImpl.cpp"
         "d3d/ExternalImageDXGIImpl.h"
         "d3d/Forward.h"
+        "d3d/KeyedMutex.cpp"
+        "d3d/KeyedMutex.h"
         "d3d/PhysicalDeviceD3D.cpp"
         "d3d/PhysicalDeviceD3D.h"
         "d3d/PlatformFunctions.cpp"
@@ -403,8 +410,6 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/BufferD3D12.h"
         "d3d12/CPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/CPUDescriptorHeapAllocationD3D12.h"
-        "d3d12/CommandAllocatorManager.cpp"
-        "d3d12/CommandAllocatorManager.h"
         "d3d12/CommandBufferD3D12.cpp"
         "d3d12/CommandBufferD3D12.h"
         "d3d12/CommandRecordingContext.cpp"
@@ -455,6 +460,8 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
         "d3d12/StagingDescriptorAllocatorD3D12.cpp"
         "d3d12/StagingDescriptorAllocatorD3D12.h"
+        "d3d12/SharedBufferMemoryD3D12.cpp"
+        "d3d12/SharedBufferMemoryD3D12.h"
         "d3d12/SharedFenceD3D12.cpp"
         "d3d12/SharedFenceD3D12.h"
         "d3d12/SharedTextureMemoryD3D12.cpp"
@@ -575,6 +582,7 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/BindGroupGL.h"
         "opengl/BindGroupLayoutGL.cpp"
         "opengl/BindGroupLayoutGL.h"
+        "opengl/BindingPoint.h"
         "opengl/BufferGL.cpp"
         "opengl/BufferGL.h"
         "opengl/CommandBufferGL.cpp"
@@ -761,10 +769,16 @@ DawnJSONGenerator(
     RESULT_VARIABLE "WEBGPU_DAWN_NATIVE_PROC_GEN"
 )
 
-add_library(webgpu_dawn ${DAWN_PLACEHOLDER_FILE})
+# A convenience target that bundles dawn_native and procs calling it directly so that
+# applications link against it and have WebGPU work without jumping through more hoops.
+# Note that this library name is referenced in several places, search for it and things like:
+# "{{.*}}_dawn" when you rename it.
+add_library(webgpu_dawn)
 common_compile_options(webgpu_dawn)
-target_link_libraries(webgpu_dawn PRIVATE dawn_native)
-target_link_libraries(webgpu_dawn PUBLIC dawn_headers)
+target_link_libraries(webgpu_dawn
+    PRIVATE dawn_native
+    PUBLIC dawn_headers
+)
 target_compile_definitions(webgpu_dawn PRIVATE "WGPU_IMPLEMENTATION")
 if(BUILD_SHARED_LIBS)
     target_compile_definitions(webgpu_dawn PRIVATE "WGPU_SHARED_LIBRARY")

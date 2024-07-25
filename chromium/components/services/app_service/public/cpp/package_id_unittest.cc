@@ -12,21 +12,30 @@ namespace apps {
 using PackageIdTest = testing::Test;
 
 TEST_F(PackageIdTest, FromStringValidWeb) {
-  absl::optional<PackageId> id =
+  std::optional<PackageId> id =
       PackageId::FromString("web:https://www.app.com/");
 
   ASSERT_TRUE(id.has_value());
-  ASSERT_EQ(id->app_type(), AppType::kWeb);
+  ASSERT_EQ(id->package_type(), PackageType::kWeb);
   ASSERT_EQ(id->identifier(), "https://www.app.com/");
 }
 
 TEST_F(PackageIdTest, FromStringValidAndroid) {
-  absl::optional<PackageId> id =
+  std::optional<PackageId> id =
       PackageId::FromString("android:com.google.android.apps.photos");
 
   ASSERT_TRUE(id.has_value());
-  ASSERT_EQ(id->app_type(), AppType::kArc);
+  ASSERT_EQ(id->package_type(), PackageType::kArc);
   ASSERT_EQ(id->identifier(), "com.google.android.apps.photos");
+}
+
+TEST_F(PackageIdTest, FromStringValidChromeApp) {
+  std::optional<PackageId> id =
+      PackageId::FromString("chromeapp:mmfbcljfglbokpmkimbfghdkjmjhdgbg");
+
+  ASSERT_TRUE(id.has_value());
+  ASSERT_EQ(id->package_type(), PackageType::kChromeApp);
+  ASSERT_EQ(id->identifier(), "mmfbcljfglbokpmkimbfghdkjmjhdgbg");
 }
 
 TEST_F(PackageIdTest, FromStringInvalidFormat) {
@@ -37,21 +46,39 @@ TEST_F(PackageIdTest, FromStringInvalidFormat) {
 }
 
 TEST_F(PackageIdTest, FromStringInvalidType) {
-  absl::optional<PackageId> id = PackageId::FromString("coolplatform:myapp");
+  std::optional<PackageId> id = PackageId::FromString("coolplatform:myapp");
+
+  ASSERT_FALSE(id.has_value());
+}
+
+TEST_F(PackageIdTest, FromStringUnknownType) {
+  std::optional<PackageId> id = PackageId::FromString("unknown:foo");
 
   ASSERT_FALSE(id.has_value());
 }
 
 TEST_F(PackageIdTest, ToStringWeb) {
-  PackageId id(AppType::kWeb, "https://www.app.com/");
+  PackageId id(PackageType::kWeb, "https://www.app.com/");
 
   ASSERT_EQ(id.ToString(), "web:https://www.app.com/");
 }
 
 TEST_F(PackageIdTest, ToStringAndroid) {
-  PackageId id(AppType::kArc, "com.google.android.apps.photos");
+  PackageId id(PackageType::kArc, "com.google.android.apps.photos");
 
   ASSERT_EQ(id.ToString(), "android:com.google.android.apps.photos");
+}
+
+TEST_F(PackageIdTest, ToStringChromeApp) {
+  PackageId id(PackageType::kChromeApp, "mmfbcljfglbokpmkimbfghdkjmjhdgbg");
+
+  ASSERT_EQ(id.ToString(), "chromeapp:mmfbcljfglbokpmkimbfghdkjmjhdgbg");
+}
+
+TEST_F(PackageIdTest, ToStringUnknown) {
+  PackageId id(PackageType::kUnknown, "someapp");
+
+  ASSERT_EQ(id.ToString(), "unknown:someapp");
 }
 
 }  // namespace apps

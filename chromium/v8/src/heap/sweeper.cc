@@ -27,7 +27,7 @@
 #include "src/heap/marking-state.h"
 #include "src/heap/memory-allocator.h"
 #include "src/heap/memory-chunk-layout.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/new-spaces.h"
 #include "src/heap/page-inl.h"
 #include "src/heap/paged-spaces.h"
@@ -54,7 +54,7 @@ class Sweeper::ConcurrentMajorSweeper final {
     DCHECK(IsValidSweepingSpace(identity));
     DCHECK_NE(NEW_SPACE, identity);
     while (!delegate->ShouldYield()) {
-      Page* page = sweeper_->GetSweepingPageSafe(identity);
+      PageMetadata* page = sweeper_->GetSweepingPageSafe(identity);
       if (page == nullptr) return true;
       local_sweeper_.ParallelSweepPage(page, identity,
                                        SweepingMode::kLazyOrConcurrent);
@@ -71,17 +71,20 @@ class Sweeper::ConcurrentMajorSweeper final {
   LocalSweeper local_sweeper_;
 };
 
+static constexpr auto kNewSpace =
+    v8_flags.sticky_mark_bits.value() ? OLD_SPACE : NEW_SPACE;
+
 class Sweeper::ConcurrentMinorSweeper final {
  public:
   explicit ConcurrentMinorSweeper(Sweeper* sweeper)
       : sweeper_(sweeper), local_sweeper_(sweeper_) {}
 
   bool ConcurrentSweepSpace(JobDelegate* delegate) {
-    DCHECK(IsValidSweepingSpace(NEW_SPACE));
+    DCHECK(IsValidSweepingSpace(kNewSpace));
     while (!delegate->ShouldYield()) {
-      Page* page = sweeper_->GetSweepingPageSafe(NEW_SPACE);
+      PageMetadata* page = sweeper_->GetSweepingPageSafe(kNewSpace);
       if (page == nullptr) return true;
-      local_sweeper_.ParallelSweepPage(page, NEW_SPACE,
+      local_sweeper_.ParallelSweepPage(page, kNewSpace,
                                        SweepingMode::kLazyOrConcurrent);
     }
     TRACE_GC_NOTE("Sweeper::ConcurrentMinorSweeper Preempted");
@@ -89,11 +92,8 @@ class Sweeper::ConcurrentMinorSweeper final {
   }
 
   bool ConcurrentSweepPromotedPages(JobDelegate* delegate) {
-    while (!delegate->ShouldYield()) {
-      MemoryChunk* chunk = sweeper_->GetPromotedPageSafe();
-      if (chunk == nullptr) return true;
-      local_sweeper_.ParallelIterateAndSweepPromotedPage(chunk);
-    }
+    if (local_sweeper_.ParallelIterateAndSweepPromotedPages(delegate))
+      return true;
     TRACE_GC_NOTE("Sweeper::ConcurrentMinorSweeper Preempted");
     return false;
   }
@@ -117,8 +117,7 @@ class Sweeper::MajorSweeperJob final : public JobTask {
         concurrent_sweepers(
             sweeper_->major_sweeping_state_.concurrent_sweepers()),
         tracer_(isolate->heap()->tracer()),
-        trace_id_(reinterpret_cast<uint64_t>(this) ^
-                  tracer_->CurrentEpoch(GCTracer::Scope::MC_SWEEP)) {
+        trace_id_(sweeper_->major_sweeping_state_.background_trace_id()) {
     DCHECK_LE(concurrent_sweepers.size(), kMaxTasks);
   }
 
@@ -139,8 +138,6 @@ class Sweeper::MajorSweeperJob final : public JobTask {
             (sweeper_->ConcurrentMajorSweepingPageCount() + kPagePerTask - 1) /
                 kPagePerTask);
   }
-
-  uint64_t trace_id() const { return trace_id_; }
 
  private:
   void RunImpl(JobDelegate* delegate, bool is_joining_thread) {
@@ -183,8 +180,7 @@ class Sweeper::MinorSweeperJob final : public JobTask {
         concurrent_sweepers(
             sweeper_->minor_sweeping_state_.concurrent_sweepers()),
         tracer_(isolate->heap()->tracer()),
-        trace_id_(reinterpret_cast<uint64_t>(this) ^
-                  tracer_->CurrentEpoch(GCTracer::Scope::MINOR_MS_SWEEP)) {
+        trace_id_(sweeper_->minor_sweeping_state_.background_trace_id()) {
     DCHECK_LE(concurrent_sweepers.size(), kMaxTasks);
   }
 
@@ -205,8 +201,6 @@ class Sweeper::MinorSweeperJob final : public JobTask {
             (sweeper_->ConcurrentMinorSweepingPageCount() + kPagePerTask - 1) /
                 kPagePerTask);
   }
-
-  uint64_t trace_id() const { return trace_id_; }
 
  private:
   void RunImpl(JobDelegate* delegate, bool is_joining_thread) {
@@ -264,12 +258,18 @@ void Sweeper::SweepingState<scope>::InitializeSweeping() {
   DCHECK(!HasValidJob());
   DCHECK(!in_progress_);
   DCHECK(concurrent_sweepers_.empty());
-  should_reduce_memory_ = sweeper_->heap_->ShouldReduceMemory();
+  DCHECK_IMPLIES(scope == Sweeper::SweepingScope::kMinor, v8_flags.minor_ms);
+  DCHECK_IMPLIES(scope == Sweeper::SweepingScope::kMinor,
+                 !sweeper_->heap_->ShouldReduceMemory());
+  should_reduce_memory_ = (scope != Sweeper::SweepingScope::kMinor) &&
+                          sweeper_->heap_->ShouldReduceMemory();
   trace_id_ =
-      reinterpret_cast<uint64_t>(sweeper_) ^
-      sweeper_->heap_->tracer()->CurrentEpoch(
-          scope == SweepingScope::kMajor ? GCTracer::Scope::MC_SWEEP
-                                         : GCTracer::Scope::MINOR_MS_SWEEP);
+      (reinterpret_cast<uint64_t>(sweeper_) ^
+       sweeper_->heap_->tracer()->CurrentEpoch(
+           scope == SweepingScope::kMajor ? GCTracer::Scope::MC_SWEEP
+                                          : GCTracer::Scope::MINOR_MS_SWEEP))
+      << 1;
+  background_trace_id_ = trace_id_ + 1;
 }
 
 template <Sweeper::SweepingScope scope>
@@ -278,6 +278,7 @@ void Sweeper::SweepingState<scope>::StartSweeping() {
   DCHECK(!in_progress_);
   DCHECK(concurrent_sweepers_.empty());
   DCHECK_NE(0, trace_id_);
+  DCHECK_NE(0, background_trace_id_);
   in_progress_ = true;
 }
 
@@ -293,8 +294,8 @@ void Sweeper::SweepingState<scope>::StartConcurrentSweeping() {
         scope == SweepingScope::kMinor
             ? GCTracer::Scope::MINOR_MS_SWEEP_START_JOBS
             : GCTracer::Scope::MC_SWEEP_START_JOBS;
-    TRACE_GC_WITH_FLOW(sweeper_->heap_->tracer(), scope_id, job->trace_id(),
-                       TRACE_EVENT_FLAG_FLOW_OUT);
+    TRACE_GC_WITH_FLOW(sweeper_->heap_->tracer(), scope_id,
+                       background_trace_id(), TRACE_EVENT_FLAG_FLOW_OUT);
     DCHECK_IMPLIES(v8_flags.minor_ms, concurrent_sweepers_.empty());
     int max_concurrent_sweeper_count =
         std::min(SweeperJob::kMaxTasks,
@@ -319,13 +320,8 @@ void Sweeper::SweepingState<scope>::JoinSweeping() {
 template <Sweeper::SweepingScope scope>
 void Sweeper::SweepingState<scope>::FinishSweeping() {
   DCHECK(in_progress_);
-
-  if (HasValidJob()) job_handle_->Join();
-
-  // Discard all pooled pages on memory-reducing GCs.
-  if (should_reduce_memory_) {
-    sweeper_->heap_->memory_allocator()->pool()->ReleasePooledChunks();
-  }
+  // Sweeping jobs were already joined.
+  DCHECK(!HasValidJob());
 
   concurrent_sweepers_.clear();
   in_progress_ = false;
@@ -337,6 +333,7 @@ void Sweeper::SweepingState<scope>::Pause() {
 
   DCHECK(v8_flags.concurrent_sweeping);
   job_handle_->Cancel();
+  job_handle_.reset();
 }
 
 template <Sweeper::SweepingScope scope>
@@ -347,35 +344,36 @@ void Sweeper::SweepingState<scope>::Resume() {
       std::make_unique<SweeperJob>(sweeper_->heap_->isolate(), sweeper_));
 }
 
-void Sweeper::LocalSweeper::ContributeAndWaitForPromotedPagesIteration() {
-  if (!sweeper_->sweeping_in_progress()) return;
-  if (!sweeper_->IsIteratingPromotedPages()) return;
-  ParallelIterateAndSweepPromotedPages();
-  base::MutexGuard guard(
-      &sweeper_->promoted_pages_iteration_notification_mutex_);
-  // Check again that iteration is not yet finished.
-  if (!sweeper_->IsIteratingPromotedPages()) return;
-  sweeper_->promoted_pages_iteration_notification_variable_.Wait(
-      &sweeper_->promoted_pages_iteration_notification_mutex_);
-}
-
-void Sweeper::LocalSweeper::ParallelSweepSpace(AllocationSpace identity,
+bool Sweeper::LocalSweeper::ParallelSweepSpace(AllocationSpace identity,
                                                SweepingMode sweeping_mode,
-                                               int max_pages) {
-  int pages_freed = 0;
-  Page* page = nullptr;
+                                               uint32_t max_pages) {
+  uint32_t pages_swept = 0;
+  bool found_usable_pages = false;
+  PageMetadata* page = nullptr;
   while ((page = sweeper_->GetSweepingPageSafe(identity)) != nullptr) {
     ParallelSweepPage(page, identity, sweeping_mode);
-    ++pages_freed;
-    if (page->IsFlagSet(Page::NEVER_ALLOCATE_ON_PAGE)) {
-      // Free list of a never-allocate page will be dropped later on.
-      continue;
+    if (!page->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE)) {
+      found_usable_pages = true;
+#if DEBUG
+    } else {
+      // All remaining pages are also marked with NEVER_ALLOCATE_ON_PAGE.
+      base::MutexGuard guard(&sweeper_->mutex_);
+      int space_index = GetSweepSpaceIndex(identity);
+      Sweeper::SweepingList& sweeping_list =
+          sweeper_->sweeping_list_[space_index];
+      DCHECK(std::all_of(sweeping_list.begin(), sweeping_list.end(),
+                         [](const PageMetadata* p) {
+                           return p->Chunk()->IsFlagSet(
+                               MemoryChunk::NEVER_ALLOCATE_ON_PAGE);
+                         }));
+#endif  // DEBUG
     }
-    if ((max_pages > 0) && (pages_freed >= max_pages)) return;
+    if (++pages_swept >= max_pages) break;
   }
+  return found_usable_pages;
 }
 
-void Sweeper::LocalSweeper::ParallelSweepPage(Page* page,
+void Sweeper::LocalSweeper::ParallelSweepPage(PageMetadata* page,
                                               AllocationSpace identity,
                                               SweepingMode sweeping_mode) {
   DCHECK(IsValidSweepingSpace(identity));
@@ -383,24 +381,20 @@ void Sweeper::LocalSweeper::ParallelSweepPage(Page* page,
   // The Scavenger may add already swept pages back.
   if (page->SweepingDone()) return;
 
-  base::Optional<CodePageHeaderModificationScope> code_page_scope;
-  if (page->owner_identity() == CODE_SPACE)
-    code_page_scope.emplace("SweepPage needs to write page flags.");
-
   {
     base::MutexGuard guard(page->mutex());
     DCHECK(!page->SweepingDone());
-    DCHECK_EQ(Page::ConcurrentSweepingState::kPending,
+    DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kPending,
               page->concurrent_sweeping_state());
     page->set_concurrent_sweeping_state(
-        Page::ConcurrentSweepingState::kInProgress);
+        PageMetadata::ConcurrentSweepingState::kInProgress);
     const FreeSpaceTreatmentMode free_space_treatment_mode =
         heap::ShouldZapGarbage() ? FreeSpaceTreatmentMode::kZapFreeSpace
                                  : FreeSpaceTreatmentMode::kIgnoreFreeSpace;
     sweeper_->RawSweep(
         page, free_space_treatment_mode, sweeping_mode,
-        identity == NEW_SPACE
-            ? sweeper_->minor_sweeping_state_.should_reduce_memory()
+        v8_flags.minor_ms
+            ? false
             : sweeper_->major_sweeping_state_.should_reduce_memory(),
         false /* is_promoted_page */);
     sweeper_->AddSweptPage(page, identity);
@@ -408,25 +402,39 @@ void Sweeper::LocalSweeper::ParallelSweepPage(Page* page,
   }
 }
 
-void Sweeper::LocalSweeper::ParallelIterateAndSweepPromotedPages() {
-  MemoryChunk* chunk = nullptr;
-  while ((chunk = sweeper_->GetPromotedPageSafe()) != nullptr) {
-    ParallelIterateAndSweepPromotedPage(chunk);
-  }
+bool Sweeper::LocalSweeper::ContributeAndWaitForPromotedPagesIteration(
+    JobDelegate* delegate) {
+  return ContributeAndWaitForPromotedPagesIterationImpl(
+      [delegate]() { return delegate->ShouldYield(); });
+}
+
+bool Sweeper::LocalSweeper::ContributeAndWaitForPromotedPagesIteration() {
+  return ContributeAndWaitForPromotedPagesIterationImpl([]() { return false; });
+}
+
+bool Sweeper::LocalSweeper::ParallelIterateAndSweepPromotedPages(
+    JobDelegate* delegate) {
+  return ParallelIterateAndSweepPromotedPagesImpl(
+      [delegate]() { return delegate->ShouldYield(); });
+}
+
+bool Sweeper::LocalSweeper::ParallelIterateAndSweepPromotedPages() {
+  return ParallelIterateAndSweepPromotedPagesImpl([]() { return false; });
 }
 
 namespace {
 class PromotedPageRecordMigratedSlotVisitor final
     : public NewSpaceVisitor<PromotedPageRecordMigratedSlotVisitor> {
  public:
-  explicit PromotedPageRecordMigratedSlotVisitor(MemoryChunk* host_chunk)
+  explicit PromotedPageRecordMigratedSlotVisitor(MutablePageMetadata* host_page)
       : NewSpaceVisitor<PromotedPageRecordMigratedSlotVisitor>(
-            host_chunk->heap()->isolate()),
-        host_chunk_(host_chunk),
+            host_page->heap()->isolate()),
+        host_chunk_(host_page->Chunk()),
+        host_page_(host_page),
         ephemeron_remembered_set_(
-            host_chunk->heap()->ephemeron_remembered_set()) {
-    DCHECK(host_chunk->owner_identity() == OLD_SPACE ||
-           host_chunk->owner_identity() == LO_SPACE);
+            host_page->heap()->ephemeron_remembered_set()) {
+    DCHECK(host_page->owner_identity() == OLD_SPACE ||
+           host_page->owner_identity() == LO_SPACE);
   }
 
   void Process(Tagged<HeapObject> object) {
@@ -487,9 +495,11 @@ class PromotedPageRecordMigratedSlotVisitor final
       Tagged<HeapObject> key_object;
       if (!key.GetHeapObject(&key_object)) continue;
 #ifdef THREAD_SANITIZER
-      BasicMemoryChunk::FromHeapObject(key_object)->SynchronizedHeapLoad();
+      MemoryChunk::FromHeapObject(key_object)->SynchronizedLoad();
 #endif  // THREAD_SANITIZER
-      if (Heap::InYoungGeneration(key_object)) {
+      // With sticky mark-bits we don't need to update the remembered set for
+      // just promoted objects, since everything is promoted.
+      if (!v8_flags.sticky_mark_bits && Heap::InYoungGeneration(key_object)) {
         indices.insert(i.as_int());
       }
     }
@@ -518,8 +528,8 @@ class PromotedPageRecordMigratedSlotVisitor final
   V8_INLINE void VerifyHost(Tagged<HeapObject> host) {
     DCHECK(!InWritableSharedSpace(host));
     DCHECK(!Heap::InYoungGeneration(host));
-    DCHECK(!MemoryChunk::FromHeapObject(host)->SweepingDone());
-    DCHECK_EQ(MemoryChunk::FromHeapObject(host), host_chunk_);
+    DCHECK(!MutablePageMetadata::FromHeapObject(host)->SweepingDone());
+    DCHECK_EQ(MutablePageMetadata::FromHeapObject(host), host_page_);
   }
 
   template <typename TObject>
@@ -528,17 +538,18 @@ class PromotedPageRecordMigratedSlotVisitor final
     Tagged<HeapObject> value_heap_object;
     if (!object.GetHeapObject(&value_heap_object)) return;
 
-    BasicMemoryChunk* value_chunk =
-        BasicMemoryChunk::FromHeapObject(value_heap_object);
+    MemoryChunk* value_chunk = MemoryChunk::FromHeapObject(value_heap_object);
 #ifdef THREAD_SANITIZER
-    value_chunk->SynchronizedHeapLoad();
+    value_chunk->SynchronizedLoad();
 #endif  // THREAD_SANITIZER
-    if (value_chunk->InYoungGeneration()) {
+    // With sticky mark-bits we don't need to update the remembered set for
+    // just promoted objects, since everything is promoted.
+    if (!v8_flags.sticky_mark_bits && value_chunk->InYoungGeneration()) {
       RememberedSet<OLD_TO_NEW_BACKGROUND>::Insert<AccessMode::ATOMIC>(
-          host_chunk_, slot);
+          host_page_, host_chunk_->Offset(slot));
     } else if (value_chunk->InWritableSharedSpace()) {
-      RememberedSet<OLD_TO_SHARED>::Insert<AccessMode::ATOMIC>(host_chunk_,
-                                                               slot);
+      RememberedSet<OLD_TO_SHARED>::Insert<AccessMode::ATOMIC>(
+          host_page_, host_chunk_->Offset(slot));
     }
   }
 
@@ -554,41 +565,44 @@ class PromotedPageRecordMigratedSlotVisitor final
   }
 
   MemoryChunk* const host_chunk_;
+  MutablePageMetadata* const host_page_;
   EphemeronRememberedSet* ephemeron_remembered_set_;
 };
 
 }  // namespace
 
 void Sweeper::LocalSweeper::ParallelIterateAndSweepPromotedPage(
-    MemoryChunk* chunk) {
+    MutablePageMetadata* page) {
   DCHECK(v8_flags.minor_ms);
-  DCHECK_NOT_NULL(chunk);
+  DCHECK_NOT_NULL(page);
   {
-    base::MutexGuard guard(chunk->mutex());
-    DCHECK(!chunk->SweepingDone());
-    DCHECK_EQ(Page::ConcurrentSweepingState::kPending,
-              chunk->concurrent_sweeping_state());
-    chunk->set_concurrent_sweeping_state(
-        Page::ConcurrentSweepingState::kInProgress);
-    if (chunk->IsLargePage()) {
-      DCHECK_EQ(LO_SPACE, chunk->owner_identity());
+    base::MutexGuard guard(page->mutex());
+    DCHECK(!page->SweepingDone());
+    DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kPending,
+              page->concurrent_sweeping_state());
+    page->set_concurrent_sweeping_state(
+        PageMetadata::ConcurrentSweepingState::kInProgress);
+    if (page->Chunk()->IsLargePage()) {
+      DCHECK_EQ(LO_SPACE, page->owner_identity());
       // Iterate over the page using the live objects and free the memory before
       // the given live object.
-      PromotedPageRecordMigratedSlotVisitor record_visitor(chunk);
-      record_visitor.Process(LargePage::cast(chunk)->GetObject());
-      chunk->ClearLiveness();
+      PromotedPageRecordMigratedSlotVisitor record_visitor(page);
+      record_visitor.Process(LargePageMetadata::cast(page)->GetObject());
+      page->ReleaseSlotSet(SURVIVOR_TO_EXTERNAL_POINTER);
+      if (!v8_flags.sticky_mark_bits) {
+        page->ClearLiveness();
+      }
     } else {
       const FreeSpaceTreatmentMode free_space_treatment_mode =
           heap::ShouldZapGarbage() ? FreeSpaceTreatmentMode::kZapFreeSpace
                                    : FreeSpaceTreatmentMode::kIgnoreFreeSpace;
-      sweeper_->RawSweep(static_cast<Page*>(chunk), free_space_treatment_mode,
-                         SweepingMode::kLazyOrConcurrent,
-                         sweeper_->minor_sweeping_state_.should_reduce_memory(),
-                         true /* is_promoted_page */);
-      sweeper_->AddSweptPage(Page::cast(chunk), OLD_SPACE);
-      DCHECK(chunk->SweepingDone());
+      sweeper_->RawSweep(
+          static_cast<PageMetadata*>(page), free_space_treatment_mode,
+          SweepingMode::kLazyOrConcurrent, false, true /* is_promoted_page */);
+      sweeper_->AddSweptPage(PageMetadata::cast(page), OLD_SPACE);
+      DCHECK(page->SweepingDone());
     }
-    sweeper_->NotifyPromotedPageIterationFinished(chunk);
+    sweeper_->NotifyPromotedPageIterationFinished(page);
   }
 }
 
@@ -612,6 +626,19 @@ void Sweeper::InitializeMinorSweeping() {
   minor_sweeping_state_.InitializeSweeping();
 }
 
+namespace {
+V8_INLINE bool ComparePagesForSweepingOrder(const PageMetadata* a,
+                                            const PageMetadata* b) {
+  // Prioritize pages that can be allocated on.
+  if (a->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE) !=
+      b->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE))
+    return a->Chunk()->IsFlagSet(MemoryChunk::NEVER_ALLOCATE_ON_PAGE);
+  // We sort in descending order of live bytes, i.e., ascending order of
+  // free bytes, because GetSweepingPageSafe returns pages in reverse order.
+  return a->live_bytes() > b->live_bytes();
+}
+}  // namespace
+
 void Sweeper::StartMajorSweeping() {
   DCHECK_EQ(GarbageCollector::MARK_COMPACTOR,
             heap_->tracer()->GetCurrentCollector());
@@ -623,13 +650,10 @@ void Sweeper::StartMajorSweeping() {
     // evacuating a page, already swept pages will have enough free bytes to
     // hold the objects to move (and therefore, we won't need to wait for more
     // pages to be swept in order to move those objects).
-    // We sort in descending order of live bytes, i.e., ascending order of
-    // free bytes, because GetSweepingPageSafe returns pages in reverse order.
     int space_index = GetSweepSpaceIndex(space);
     DCHECK_IMPLIES(space == NEW_SPACE, sweeping_list_[space_index].empty());
-    std::sort(
-        sweeping_list_[space_index].begin(), sweeping_list_[space_index].end(),
-        [](Page* a, Page* b) { return a->live_bytes() > b->live_bytes(); });
+    std::sort(sweeping_list_[space_index].begin(),
+              sweeping_list_[space_index].end(), ComparePagesForSweepingOrder);
   });
 }
 
@@ -637,15 +661,20 @@ void Sweeper::StartMinorSweeping() {
   DCHECK_EQ(GarbageCollector::MINOR_MARK_SWEEPER,
             heap_->tracer()->GetCurrentCollector());
   minor_sweeping_state_.StartSweeping();
-  int new_space_index = GetSweepSpaceIndex(NEW_SPACE);
+  int new_space_index = GetSweepSpaceIndex(kNewSpace);
   std::sort(sweeping_list_[new_space_index].begin(),
             sweeping_list_[new_space_index].end(),
-            [](Page* a, Page* b) { return a->live_bytes() > b->live_bytes(); });
+            ComparePagesForSweepingOrder);
 }
 
 namespace {
 bool ShouldUpdateRememberedSets(Heap* heap) {
   DCHECK_EQ(0, heap->new_lo_space()->Size());
+  if (v8_flags.sticky_mark_bits) {
+    // TODO(333906585): Update OLD_TO_SHARED remembered set for promoted
+    // objects.
+    return false;
+  }
   if (heap->new_space()->Size() > 0) {
     // Keep track of OLD_TO_NEW slots
     return true;
@@ -682,10 +711,10 @@ void Sweeper::StartMinorSweeperTasks() {
   minor_sweeping_state_.StartConcurrentSweeping();
 }
 
-Page* Sweeper::GetSweptPageSafe(PagedSpaceBase* space) {
+PageMetadata* Sweeper::GetSweptPageSafe(PagedSpaceBase* space) {
   base::MutexGuard guard(&mutex_);
   SweptList& list = swept_list_[GetSweepSpaceIndex(space->identity())];
-  Page* page = nullptr;
+  PageMetadata* page = nullptr;
   if (!list.empty()) {
     page = list.back();
     list.pop_back();
@@ -712,7 +741,7 @@ void Sweeper::FinishMajorJobs() {
   ForAllSweepingSpaces([this](AllocationSpace space) {
     if (space == NEW_SPACE) return;
     main_thread_local_sweeper_.ParallelSweepSpace(
-        space, SweepingMode::kLazyOrConcurrent, 0);
+        space, SweepingMode::kLazyOrConcurrent);
   });
 
   // Join all concurrent tasks.
@@ -748,8 +777,16 @@ void Sweeper::EnsureMajorCompleted() {
         ThreadKind::kMain,
         GetTraceIdForFlowEvent(GCTracer::Scope::MC_COMPLETE_SWEEPING),
         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
+    // Discard all pooled pages on memory-reducing GCs.
+    if (major_sweeping_state_.should_reduce_memory()) {
+      heap_->memory_allocator()->pool()->ReleasePooledChunks();
+    }
     FinishMajorJobs();
     major_sweeping_state_.FinishSweeping();
+    // Sweeping should not add pages to the pool.
+    DCHECK_IMPLIES(
+        major_sweeping_state_.should_reduce_memory(),
+        heap_->memory_allocator()->pool()->NumberOfCommittedChunks() == 0);
   }
 }
 
@@ -757,7 +794,7 @@ void Sweeper::FinishMinorJobs() {
   if (!minor_sweeping_in_progress()) return;
 
   main_thread_local_sweeper_.ParallelSweepSpace(
-      NEW_SPACE, SweepingMode::kLazyOrConcurrent, 0);
+      kNewSpace, SweepingMode::kLazyOrConcurrent);
   // Array buffer sweeper may have grabbed a page for iteration to contribute.
   // Wait until it has finished iterating.
   main_thread_local_sweeper_.ContributeAndWaitForPromotedPagesIteration();
@@ -767,8 +804,8 @@ void Sweeper::FinishMinorJobs() {
   // All jobs are done but we still remain in sweeping state here.
   DCHECK(minor_sweeping_in_progress());
 
-  CHECK(sweeping_list_[GetSweepSpaceIndex(NEW_SPACE)].empty());
-  DCHECK(IsSweepingDoneForSpace(NEW_SPACE));
+  CHECK(sweeping_list_[GetSweepSpaceIndex(kNewSpace)].empty());
+  DCHECK(IsSweepingDoneForSpace(kNewSpace));
 
   DCHECK_EQ(promoted_pages_for_iteration_count_,
             iterated_promoted_pages_count_);
@@ -778,6 +815,7 @@ void Sweeper::FinishMinorJobs() {
 void Sweeper::EnsureMinorCompleted() {
   if (!minor_sweeping_in_progress()) return;
 
+  DCHECK(!minor_sweeping_state_.should_reduce_memory());
   FinishMinorJobs();
   minor_sweeping_state_.FinishSweeping();
 
@@ -785,18 +823,16 @@ void Sweeper::EnsureMinorCompleted() {
   iterated_promoted_pages_count_ = 0;
 }
 
-void Sweeper::DrainSweepingWorklistForSpace(AllocationSpace space) {
-  if (!sweeping_in_progress_for_space(space)) return;
-  main_thread_local_sweeper_.ParallelSweepSpace(
-      space, SweepingMode::kLazyOrConcurrent, 0);
-}
-
-bool Sweeper::AreMinorSweeperTasksRunning() {
+bool Sweeper::AreMinorSweeperTasksRunning() const {
   return minor_sweeping_state_.HasActiveJob();
 }
 
-bool Sweeper::AreMajorSweeperTasksRunning() {
+bool Sweeper::AreMajorSweeperTasksRunning() const {
   return major_sweeping_state_.HasActiveJob();
+}
+
+bool Sweeper::UsingMajorSweeperTasks() const {
+  return major_sweeping_state_.HasValidJob();
 }
 
 namespace {
@@ -816,7 +852,7 @@ V8_INLINE void AtomicZapBlock(Address addr, size_t size_in_bytes) {
 }  // namespace
 
 V8_INLINE size_t Sweeper::FreeAndProcessFreedMemory(
-    Address free_start, Address free_end, Page* page, Space* space,
+    Address free_start, Address free_end, PageMetadata* page, Space* space,
     FreeSpaceTreatmentMode free_space_treatment_mode,
     bool should_reduce_memory) {
   CHECK_GT(free_end, free_start);
@@ -830,12 +866,21 @@ V8_INLINE size_t Sweeper::FreeAndProcessFreedMemory(
       free_start, size);
   if (should_reduce_memory) page->DiscardUnusedMemory(free_start, size);
 
+  if (v8_flags.sticky_mark_bits) {
+    // Clear the bitmap, since fillers or slack may still be marked from black
+    // allocation.
+    page->marking_bitmap()->ClearRange<AccessMode::NON_ATOMIC>(
+        MarkingBitmap::AddressToIndex(free_start),
+        MarkingBitmap::AddressToIndex(free_end));
+  }
+
   return freed_bytes;
 }
 
 V8_INLINE void Sweeper::CleanupRememberedSetEntriesForFreedMemory(
-    Address free_start, Address free_end, Page* page, bool record_free_ranges,
-    TypedSlotSet::FreeRangesMap* free_ranges_map, SweepingMode sweeping_mode) {
+    Address free_start, Address free_end, PageMetadata* page,
+    bool record_free_ranges, TypedSlotSet::FreeRangesMap* free_ranges_map,
+    SweepingMode sweeping_mode) {
   DCHECK_LE(free_start, free_end);
   if (sweeping_mode == SweepingMode::kEagerDuringGC) {
     // New space and in consequence the old-to-new remembered set is always
@@ -852,8 +897,11 @@ V8_INLINE void Sweeper::CleanupRememberedSetEntriesForFreedMemory(
     // with old-to-old slots in free memory with e.g. right-trimming of objects.
     RememberedSet<OLD_TO_OLD>::RemoveRange(page, free_start, free_end,
                                            SlotSet::KEEP_EMPTY_BUCKETS);
+    RememberedSet<TRUSTED_TO_TRUSTED>::RemoveRange(page, free_start, free_end,
+                                                   SlotSet::KEEP_EMPTY_BUCKETS);
   } else {
     DCHECK_NULL(page->slot_set<OLD_TO_OLD>());
+    DCHECK_NULL(page->slot_set<TRUSTED_TO_TRUSTED>());
   }
 
   // Old-to-shared isn't reset after a full GC, so needs to be cleaned both
@@ -862,14 +910,15 @@ V8_INLINE void Sweeper::CleanupRememberedSetEntriesForFreedMemory(
                                             SlotSet::KEEP_EMPTY_BUCKETS);
 
   if (record_free_ranges) {
+    MemoryChunk* chunk = page->Chunk();
     free_ranges_map->insert(std::pair<uint32_t, uint32_t>(
-        static_cast<uint32_t>(free_start - page->address()),
-        static_cast<uint32_t>(free_end - page->address())));
+        static_cast<uint32_t>(chunk->Offset(free_start)),
+        static_cast<uint32_t>(chunk->Offset(free_end))));
   }
 }
 
 void Sweeper::CleanupTypedSlotsInFreeMemory(
-    Page* page, const TypedSlotSet::FreeRangesMap& free_ranges_map,
+    PageMetadata* page, const TypedSlotSet::FreeRangesMap& free_ranges_map,
     SweepingMode sweeping_mode) {
   if (sweeping_mode == SweepingMode::kEagerDuringGC) {
     page->ClearTypedSlotsInFreeMemory<OLD_TO_NEW>(free_ranges_map);
@@ -892,16 +941,18 @@ void Sweeper::CleanupTypedSlotsInFreeMemory(
   page->ClearTypedSlotsInFreeMemory<OLD_TO_SHARED>(free_ranges_map);
 }
 
-void Sweeper::ClearMarkBitsAndHandleLivenessStatistics(Page* page,
+void Sweeper::ClearMarkBitsAndHandleLivenessStatistics(PageMetadata* page,
                                                        size_t live_bytes) {
-  page->marking_bitmap()->Clear<AccessMode::NON_ATOMIC>();
+  if (!v8_flags.sticky_mark_bits) {
+    page->marking_bitmap()->Clear<AccessMode::NON_ATOMIC>();
+  }
   // Keep the old live bytes counter of the page until RefillFreeList, where
   // the space size is refined.
   // The allocated_bytes() counter is precisely the total size of objects.
   DCHECK_EQ(live_bytes, page->allocated_bytes());
 }
 
-void Sweeper::RawSweep(Page* p,
+void Sweeper::RawSweep(PageMetadata* p,
                        FreeSpaceTreatmentMode free_space_treatment_mode,
                        SweepingMode sweeping_mode, bool should_reduce_memory,
                        bool is_promoted_page) {
@@ -911,7 +962,7 @@ void Sweeper::RawSweep(Page* p,
          space->identity() == SHARED_SPACE ||
          space->identity() == TRUSTED_SPACE ||
          (space->identity() == NEW_SPACE && v8_flags.minor_ms));
-  DCHECK(!p->IsEvacuationCandidate());
+  DCHECK(!p->Chunk()->IsEvacuationCandidate());
   DCHECK(!p->SweepingDone());
   DCHECK_IMPLIES(space->identity() == NEW_SPACE || is_promoted_page,
                  !heap_->incremental_marking()->IsMinorMarking());
@@ -928,7 +979,7 @@ void Sweeper::RawSweep(Page* p,
     active_system_pages_after_sweeping = ActiveSystemPages();
     active_system_pages_after_sweeping->Init(
         MemoryChunkLayout::kMemoryChunkHeaderSize,
-        MemoryAllocator::GetCommitPageSizeBits(), Page::kPageSize);
+        MemoryAllocator::GetCommitPageSizeBits(), PageMetadata::kPageSize);
   }
 
   // Phase 2: Free the non-live memory and clean-up the regular remembered set
@@ -974,8 +1025,9 @@ void Sweeper::RawSweep(Page* p,
     free_start = free_end + size;
 
     if (active_system_pages_after_sweeping) {
+      MemoryChunk* chunk = p->Chunk();
       active_system_pages_after_sweeping->Add(
-          free_end - p->address(), free_start - p->address(),
+          chunk->Offset(free_end), chunk->Offset(free_start),
           MemoryAllocator::GetCommitPageSizeBits());
     }
   }
@@ -991,6 +1043,7 @@ void Sweeper::RawSweep(Page* p,
   }
 
   // Phase 3: Post process the page.
+  p->ReleaseSlotSet(SURVIVOR_TO_EXTERNAL_POINTER);
   CleanupTypedSlotsInFreeMemory(p, free_ranges_map, sweeping_mode);
   ClearMarkBitsAndHandleLivenessStatistics(p, live_bytes);
 
@@ -1010,11 +1063,12 @@ void Sweeper::ContributeAndWaitForPromotedPagesIteration() {
   main_thread_local_sweeper_.ContributeAndWaitForPromotedPagesIteration();
 }
 
-void Sweeper::NotifyPromotedPageIterationFinished(MemoryChunk* chunk) {
+void Sweeper::NotifyPromotedPageIterationFinished(MutablePageMetadata* chunk) {
   if (++iterated_promoted_pages_count_ == promoted_pages_for_iteration_count_) {
     NotifyPromotedPagesIterationFinished();
   }
-  chunk->set_concurrent_sweeping_state(Page::ConcurrentSweepingState::kDone);
+  chunk->set_concurrent_sweeping_state(
+      PageMetadata::ConcurrentSweepingState::kDone);
   base::MutexGuard guard(&mutex_);
   cv_page_swept_.NotifyAll();
 }
@@ -1050,14 +1104,15 @@ size_t Sweeper::ConcurrentMajorSweepingPageCount() {
   return count;
 }
 
-void Sweeper::ParallelSweepSpace(AllocationSpace identity,
-                                 SweepingMode sweeping_mode, int max_pages) {
+bool Sweeper::ParallelSweepSpace(AllocationSpace identity,
+                                 SweepingMode sweeping_mode,
+                                 uint32_t max_pages) {
   DCHECK_IMPLIES(identity == NEW_SPACE, heap_->IsMainThread());
-  main_thread_local_sweeper_.ParallelSweepSpace(identity, sweeping_mode,
-                                                max_pages);
+  return main_thread_local_sweeper_.ParallelSweepSpace(identity, sweeping_mode,
+                                                       max_pages);
 }
 
-void Sweeper::EnsurePageIsSwept(Page* page) {
+void Sweeper::EnsurePageIsSwept(PageMetadata* page) {
   DCHECK(heap_->IsMainThread());
   if (!sweeping_in_progress() || page->SweepingDone()) return;
   AllocationSpace space = page->owner_identity();
@@ -1087,7 +1142,7 @@ void Sweeper::EnsurePageIsSwept(Page* page) {
   CHECK(page->SweepingDone());
 }
 
-void Sweeper::WaitForPageToBeSwept(Page* page) {
+void Sweeper::WaitForPageToBeSwept(PageMetadata* page) {
   DCHECK(heap_->IsMainThread());
   DCHECK(sweeping_in_progress());
 
@@ -1097,7 +1152,8 @@ void Sweeper::WaitForPageToBeSwept(Page* page) {
   }
 }
 
-bool Sweeper::TryRemoveSweepingPageSafe(AllocationSpace space, Page* page) {
+bool Sweeper::TryRemoveSweepingPageSafe(AllocationSpace space,
+                                        PageMetadata* page) {
   base::MutexGuard guard(&mutex_);
   DCHECK(IsValidSweepingSpace(space));
   int space_index = GetSweepSpaceIndex(space);
@@ -1113,7 +1169,7 @@ bool Sweeper::TryRemoveSweepingPageSafe(AllocationSpace space, Page* page) {
   return true;
 }
 
-bool Sweeper::TryRemovePromotedPageSafe(MemoryChunk* chunk) {
+bool Sweeper::TryRemovePromotedPageSafe(MutablePageMetadata* chunk) {
   base::MutexGuard guard(&mutex_);
   auto position =
       std::find(sweeping_list_for_promoted_page_iteration_.begin(),
@@ -1124,12 +1180,12 @@ bool Sweeper::TryRemovePromotedPageSafe(MemoryChunk* chunk) {
   return true;
 }
 
-void Sweeper::AddPage(AllocationSpace space, Page* page) {
+void Sweeper::AddPage(AllocationSpace space, PageMetadata* page) {
   DCHECK_NE(NEW_SPACE, space);
   AddPageImpl(space, page);
 }
 
-void Sweeper::AddNewSpacePage(Page* page) {
+void Sweeper::AddNewSpacePage(PageMetadata* page) {
   DCHECK_EQ(NEW_SPACE, page->owner_identity());
   DCHECK_LE(page->AgeInNewSpace(), v8_flags.minor_ms_max_page_age);
   size_t live_bytes = page->live_bytes();
@@ -1139,7 +1195,7 @@ void Sweeper::AddNewSpacePage(Page* page) {
   page->IncrementAgeInNewSpace();
 }
 
-void Sweeper::AddPageImpl(AllocationSpace space, Page* page) {
+void Sweeper::AddPageImpl(AllocationSpace space, PageMetadata* page) {
   DCHECK(heap_->IsMainThread());
   DCHECK(IsValidSweepingSpace(space));
   DCHECK_IMPLIES(v8_flags.concurrent_sweeping && (space != NEW_SPACE),
@@ -1147,14 +1203,14 @@ void Sweeper::AddPageImpl(AllocationSpace space, Page* page) {
   DCHECK_IMPLIES(v8_flags.concurrent_sweeping,
                  !minor_sweeping_state_.HasValidJob());
   PrepareToBeSweptPage(space, page);
-  DCHECK_EQ(Page::ConcurrentSweepingState::kPending,
+  DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kPending,
             page->concurrent_sweeping_state());
   sweeping_list_[GetSweepSpaceIndex(space)].push_back(page);
   has_sweeping_work_[GetSweepSpaceIndex(space)].store(
       true, std::memory_order_release);
 }
 
-void Sweeper::AddPromotedPage(MemoryChunk* chunk) {
+void Sweeper::AddPromotedPage(MutablePageMetadata* chunk) {
   DCHECK(heap_->IsMainThread());
   DCHECK(chunk->owner_identity() == OLD_SPACE ||
          chunk->owner_identity() == LO_SPACE);
@@ -1164,15 +1220,16 @@ void Sweeper::AddPromotedPage(MemoryChunk* chunk) {
   DCHECK_GE(chunk->area_size(), live_bytes);
   heap_->IncrementPromotedObjectsSize(live_bytes);
   heap_->IncrementYoungSurvivorsCounter(live_bytes);
-  DCHECK_EQ(Page::ConcurrentSweepingState::kDone,
+  DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kDone,
             chunk->concurrent_sweeping_state());
-  if (!chunk->IsLargePage()) {
-    PrepareToBeSweptPage(chunk->owner_identity(), static_cast<Page*>(chunk));
+  if (!chunk->Chunk()->IsLargePage()) {
+    PrepareToBeSweptPage(chunk->owner_identity(),
+                         static_cast<PageMetadata*>(chunk));
   } else {
     chunk->set_concurrent_sweeping_state(
-        Page::ConcurrentSweepingState::kPending);
+        PageMetadata::ConcurrentSweepingState::kPending);
   }
-  DCHECK_EQ(Page::ConcurrentSweepingState::kPending,
+  DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kPending,
             chunk->concurrent_sweeping_state());
   // This method is called only from the main thread while sweeping tasks have
   // not yet started, thus a mutex is not needed.
@@ -1180,16 +1237,17 @@ void Sweeper::AddPromotedPage(MemoryChunk* chunk) {
   promoted_pages_for_iteration_count_++;
 }
 
-void Sweeper::PrepareToBeSweptPage(AllocationSpace space, Page* page) {
+void Sweeper::PrepareToBeSweptPage(AllocationSpace space, PageMetadata* page) {
 #ifdef DEBUG
   DCHECK_GE(page->area_size(), static_cast<size_t>(page->live_bytes()));
-  DCHECK_EQ(Page::ConcurrentSweepingState::kDone,
+  DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kDone,
             page->concurrent_sweeping_state());
   page->ForAllFreeListCategories([page](FreeListCategory* category) {
     DCHECK(!category->is_linked(page->owner()->free_list()));
   });
 #endif  // DEBUG
-  page->set_concurrent_sweeping_state(Page::ConcurrentSweepingState::kPending);
+  page->set_concurrent_sweeping_state(
+      PageMetadata::ConcurrentSweepingState::kPending);
   PagedSpaceBase* paged_space;
   if (space == NEW_SPACE) {
     DCHECK(v8_flags.minor_ms);
@@ -1205,11 +1263,11 @@ void Sweeper::PrepareToBeSweptPage(AllocationSpace space, Page* page) {
   page->ResetAllocationStatistics();
 }
 
-Page* Sweeper::GetSweepingPageSafe(AllocationSpace space) {
+PageMetadata* Sweeper::GetSweepingPageSafe(AllocationSpace space) {
   base::MutexGuard guard(&mutex_);
   DCHECK(IsValidSweepingSpace(space));
   int space_index = GetSweepSpaceIndex(space);
-  Page* page = nullptr;
+  PageMetadata* page = nullptr;
   SweepingList& sweeping_list = sweeping_list_[space_index];
   if (!sweeping_list.empty()) {
     page = sweeping_list.back();
@@ -1222,9 +1280,9 @@ Page* Sweeper::GetSweepingPageSafe(AllocationSpace space) {
   return page;
 }
 
-MemoryChunk* Sweeper::GetPromotedPageSafe() {
+MutablePageMetadata* Sweeper::GetPromotedPageSafe() {
   base::MutexGuard guard(&mutex_);
-  MemoryChunk* chunk = nullptr;
+  MutablePageMetadata* chunk = nullptr;
   if (!sweeping_list_for_promoted_page_iteration_.empty()) {
     chunk = sweeping_list_for_promoted_page_iteration_.back();
     sweeping_list_for_promoted_page_iteration_.pop_back();
@@ -1232,9 +1290,10 @@ MemoryChunk* Sweeper::GetPromotedPageSafe() {
   return chunk;
 }
 
-std::vector<MemoryChunk*> Sweeper::GetAllPromotedPagesForIterationSafe() {
+std::vector<MutablePageMetadata*>
+Sweeper::GetAllPromotedPagesForIterationSafe() {
   base::MutexGuard guard(&mutex_);
-  std::vector<MemoryChunk*> pages;
+  std::vector<MutablePageMetadata*> pages;
   pages.swap(sweeping_list_for_promoted_page_iteration_);
   DCHECK(sweeping_list_for_promoted_page_iteration_.empty());
   return pages;
@@ -1255,9 +1314,10 @@ bool Sweeper::IsSweepingDoneForSpace(AllocationSpace space) const {
       std::memory_order_acquire);
 }
 
-void Sweeper::AddSweptPage(Page* page, AllocationSpace identity) {
+void Sweeper::AddSweptPage(PageMetadata* page, AllocationSpace identity) {
   base::MutexGuard guard(&mutex_);
-  page->set_concurrent_sweeping_state(Page::ConcurrentSweepingState::kDone);
+  page->set_concurrent_sweeping_state(
+      PageMetadata::ConcurrentSweepingState::kDone);
   swept_list_[GetSweepSpaceIndex(identity)].push_back(page);
   has_swept_pages_[GetSweepSpaceIndex(identity)].store(
       true, std::memory_order_release);
@@ -1270,18 +1330,22 @@ bool Sweeper::ShouldRefillFreelistForSpace(AllocationSpace space) const {
       std::memory_order_acquire);
 }
 
-void Sweeper::SweepEmptyNewSpacePage(Page* page) {
+void Sweeper::SweepEmptyNewSpacePage(PageMetadata* page) {
   DCHECK(v8_flags.minor_ms);
-  DCHECK_EQ(NEW_SPACE, page->owner_identity());
+  DCHECK_EQ(kNewSpace, page->owner_identity());
   DCHECK_EQ(0, page->live_bytes());
   DCHECK(page->marking_bitmap()->IsClean());
   DCHECK(heap_->IsMainThread());
   DCHECK(heap_->tracer()->IsInAtomicPause());
-  DCHECK_EQ(Page::ConcurrentSweepingState::kDone,
+  DCHECK_EQ(PageMetadata::ConcurrentSweepingState::kDone,
             page->concurrent_sweeping_state());
 
-  PagedSpaceBase* paged_space =
-      PagedNewSpace::From(heap_->new_space())->paged_space();
+  PagedSpaceBase* paged_space = nullptr;
+  if (v8_flags.sticky_mark_bits) {
+    paged_space = heap_->sticky_space();
+  } else {
+    paged_space = PagedNewSpace::From(heap_->new_space())->paged_space();
+  }
 
   Address start = page->area_start();
   size_t size = page->area_size();
@@ -1298,7 +1362,8 @@ void Sweeper::SweepEmptyNewSpacePage(Page* page) {
 
   page->ResetAllocationStatistics();
   page->ResetAgeInNewSpace();
-  page->ClearFlag(Page::NEVER_ALLOCATE_ON_PAGE);
+  page->ReleaseSlotSet(SURVIVOR_TO_EXTERNAL_POINTER);
+  page->Chunk()->ClearFlagNonExecutable(MemoryChunk::NEVER_ALLOCATE_ON_PAGE);
   paged_space->FreeDuringSweep(start, size);
   paged_space->IncreaseAllocatedBytes(0, page);
   paged_space->RelinkFreeListCategories(page);
@@ -1309,7 +1374,7 @@ void Sweeper::SweepEmptyNewSpacePage(Page* page) {
     ActiveSystemPages active_system_pages_after_sweeping;
     active_system_pages_after_sweeping.Init(
         MemoryChunkLayout::kMemoryChunkHeaderSize,
-        MemoryAllocator::GetCommitPageSizeBits(), Page::kPageSize);
+        MemoryAllocator::GetCommitPageSizeBits(), PageMetadata::kPageSize);
     // Decrement accounted memory for discarded memory.
     paged_space->ReduceActiveSystemPages(page,
                                          active_system_pages_after_sweeping);
@@ -1318,7 +1383,7 @@ void Sweeper::SweepEmptyNewSpacePage(Page* page) {
 
 Sweeper::PauseMajorSweepingScope::PauseMajorSweepingScope(Sweeper* sweeper)
     : sweeper_(sweeper),
-      resume_on_exit_(sweeper->major_sweeping_in_progress()) {
+      resume_on_exit_(sweeper->AreMajorSweeperTasksRunning()) {
   DCHECK(v8_flags.minor_ms);
   DCHECK_IMPLIES(resume_on_exit_, v8_flags.concurrent_sweeping);
   sweeper_->major_sweeping_state_.Pause();
@@ -1336,6 +1401,22 @@ uint64_t Sweeper::GetTraceIdForFlowEvent(
              ? minor_sweeping_state_.trace_id()
              : major_sweeping_state_.trace_id();
 }
+
+#if DEBUG
+bool Sweeper::HasUnsweptPagesForMajorSweeping() const {
+  DCHECK(heap_->IsMainThread());
+  DCHECK(!AreMajorSweeperTasksRunning());
+  bool has_unswept_pages = false;
+  ForAllSweepingSpaces([this, &has_unswept_pages](AllocationSpace space) {
+    DCHECK_EQ(IsSweepingDoneForSpace(space),
+              sweeping_list_[GetSweepSpaceIndex(space)].empty());
+    if (space == NEW_SPACE) return;
+    if (!sweeping_list_[GetSweepSpaceIndex(space)].empty())
+      has_unswept_pages = true;
+  });
+  return has_unswept_pages;
+}
+#endif  // DEBUG
 
 }  // namespace internal
 }  // namespace v8

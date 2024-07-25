@@ -20,16 +20,21 @@
  * limitations under the License.
  */
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "fxbarcode/oned/BC_OnedCodaBarWriter.h"
 
 #include <iterator>
 
+#include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/fx_extension.h"
 #include "fxbarcode/BC_Writer.h"
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/oned/BC_OneDimWriter.h"
-#include "third_party/base/containers/contains.h"
 
 namespace {
 

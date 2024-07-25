@@ -6,6 +6,7 @@
 #define DEVICE_FIDO_ENCLAVE_ENCLAVE_WEBSOCKET_CLIENT_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,12 +14,12 @@
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
 #include "base/sequence_checker.h"
+#include "device/fido/network_context_factory.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/websocket.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace device::enclave {
@@ -34,13 +35,13 @@ class EnclaveWebSocketClient : public network::mojom::WebSocketHandshakeClient,
 
   using OnResponseCallback =
       base::RepeatingCallback<void(SocketStatus,
-                                   absl::optional<std::vector<uint8_t>>)>;
+                                   std::optional<std::vector<uint8_t>>)>;
 
-  EnclaveWebSocketClient(
-      const GURL& service_url,
-      std::string access_token,
-      raw_ptr<network::mojom::NetworkContext> network_context,
-      OnResponseCallback on_reponse);
+  EnclaveWebSocketClient(const GURL& service_url,
+                         std::string access_token,
+                         std::optional<std::string> reauthentication_token,
+                         NetworkContextFactory network_context_factory,
+                         OnResponseCallback on_reponse);
   ~EnclaveWebSocketClient() override;
 
   EnclaveWebSocketClient(const EnclaveWebSocketClient&) = delete;
@@ -90,7 +91,8 @@ class EnclaveWebSocketClient : public network::mojom::WebSocketHandshakeClient,
   State state_;
   const GURL service_url_;
   const std::string access_token_;
-  const raw_ptr<network::mojom::NetworkContext> network_context_;
+  const std::optional<std::string> reauthentication_token_;
+  NetworkContextFactory network_context_factory_;
   OnResponseCallback on_response_;
 
   // pending_read_data_ contains a partial message that is being reassembled.
@@ -105,7 +107,7 @@ class EnclaveWebSocketClient : public network::mojom::WebSocketHandshakeClient,
 
   // pending_write_data_ contains a message to be sent which can be delayed if
   // the socket is still connecting.
-  absl::optional<std::vector<uint8_t>> pending_write_data_;
+  std::optional<std::vector<uint8_t>> pending_write_data_;
 
   mojo::Receiver<network::mojom::WebSocketHandshakeClient> handshake_receiver_{
       this};

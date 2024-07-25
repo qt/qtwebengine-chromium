@@ -26,6 +26,7 @@ mojom("mojom_platform") {
   generate_java = true
   sources = [
     "ad_tagging/ad_evidence.mojom",
+    "aggregation_service/aggregatable_report.mojom",
     "annotation/annotation.mojom",
     "app_banner/app_banner.mojom",
     "array_buffer/array_buffer_contents.mojom",
@@ -38,6 +39,7 @@ mojom("mojom_platform") {
     "browser_interface_broker.mojom",
     "browsing_topics/browsing_topics.mojom",
     "cache_storage/cache_storage.mojom",
+    "call_stack_generator/call_stack_generator.mojom",
     "choosers/color_chooser.mojom",
     "choosers/date_time_chooser.mojom",
     "choosers/file_chooser.mojom",
@@ -59,6 +61,8 @@ mojom("mojom_platform") {
     "css/preferred_contrast.mojom",
     "data_transfer/data_transfer.mojom",
     "device/device.mojom",
+    "device_posture/device_posture_provider.mojom",
+    "device_posture/device_posture_provider_automation.mojom",
     "devtools/console_message.mojom",
     "devtools/devtools_agent.mojom",
     "devtools/devtools_frontend.mojom",
@@ -75,13 +79,13 @@ mojom("mojom_platform") {
     "fetch/fetch_api_response.mojom",
     "file/file_utilities.mojom",
     "file_system_access/file_system_access_access_handle_host.mojom",
-    "file_system_access/file_system_access_capacity_allocation_host.mojom",
     "file_system_access/file_system_access_cloud_identifier.mojom",
     "file_system_access/file_system_access_data_transfer_token.mojom",
     "file_system_access/file_system_access_directory_handle.mojom",
     "file_system_access/file_system_access_error.mojom",
     "file_system_access/file_system_access_file_delegate_host.mojom",
     "file_system_access/file_system_access_file_handle.mojom",
+    "file_system_access/file_system_access_file_modification_host.mojom",
     "file_system_access/file_system_access_file_writer.mojom",
     "file_system_access/file_system_access_manager.mojom",
     "file_system_access/file_system_access_observer.mojom",
@@ -98,6 +102,7 @@ mojom("mojom_platform") {
     "input/focus_type.mojom",
     "input/gesture_event.mojom",
     "input/handwriting_gesture_result.mojom",
+    "input/ime_host.mojom",
     "input/input_event.mojom",
     "input/input_event_result.mojom",
     "input/input_handler.mojom",
@@ -158,6 +163,8 @@ mojom("mojom_platform") {
     "navigation/was_activated_option.mojom",
     "notifications/notification.mojom",
     "notifications/notification_service.mojom",
+    "on_device_translation/translation_manager.mojom",
+    "on_device_translation/translator.mojom",
     "oom_intervention/oom_intervention.mojom",
     "opengraph/metadata.mojom",
     "origin_trials/origin_trials_settings.mojom",
@@ -179,7 +186,6 @@ mojom("mojom_platform") {
     "preloading/anchor_element_interaction_host.mojom",
     "prerender/prerender.mojom",
     "presentation/presentation.mojom",
-    "private_aggregation/aggregatable_report.mojom",
     "private_aggregation/private_aggregation_host.mojom",
     "push_messaging/push_messaging.mojom",
     "push_messaging/push_messaging_status.mojom",
@@ -188,6 +194,7 @@ mojom("mojom_platform") {
     "renderer_preferences.mojom",
     "reporting/reporting.mojom",
     "safe_url_pattern.mojom",
+    "script_source_location.mojom",
     "scroll/scroll_enums.mojom",
     "scroll/scroll_into_view_params.mojom",
     "scroll/scrollbar_mode.mojom",
@@ -233,6 +240,7 @@ mojom("mojom_platform") {
     "web_launch/web_launch.mojom",
     "webaudio/audio_context_manager.mojom",
     "webdatabase/web_database.mojom",
+    "webid/digital_identity_request.mojom",
     "webid/federated_auth_request.mojom",
     "webid/federated_auth_request_automation.mojom",
     "webpreferences/web_preferences.mojom",
@@ -271,6 +279,10 @@ mojom("mojom_platform") {
     sources += [ "chromeos/diagnostics/cros_diagnostics.mojom" ]
   }
 
+  if (use_blink_extensions_webview) {
+    sources += [ "webview/webview_media_integrity.mojom" ]
+  }
+
   public_deps = [
     ":android_mojo_bindings",
     ":authenticator_test_mojo_bindings",
@@ -280,6 +292,7 @@ mojom("mojom_platform") {
     ":web_feature_mojo_bindings",
     "//cc/mojom",
     "//components/attribution_reporting:mojom",
+    "//components/attribution_reporting:registration_header_error_mojom",
     "//components/attribution_reporting:registration_mojom",
     "//components/payments/mojom",
     "//components/schema_org/common:mojom",
@@ -759,6 +772,26 @@ mojom("mojom_platform") {
     {
       types = [
         {
+          mojom = "blink.mojom.AdKeywordReplacement"
+          cpp = "::blink::AuctionConfig::AdKeywordReplacement"
+        },
+      ]
+      traits_headers = [ "//third_party/blink/public/common/interest_group/auction_config_mojom_traits.h" ]
+      traits_public_deps = [ "//url/mojom:mojom_traits" ]
+    },
+    {
+      types = [
+        {
+          mojom = "blink.mojom.AuctionAdConfigMaybePromiseDeprecatedRenderURLReplacements"
+          cpp = "::blink::AuctionConfig::MaybePromiseDeprecatedRenderURLReplacements"
+        },
+      ]
+      traits_headers = [ "//third_party/blink/public/common/interest_group/auction_config_mojom_traits.h" ]
+      traits_public_deps = [ "//url/mojom:mojom_traits" ]
+    },
+    {
+      types = [
+        {
           mojom = "blink.mojom.AuctionAdConfigBuyerCurrencies"
           cpp = "::blink::AuctionConfig::BuyerCurrencies"
         },
@@ -1056,7 +1089,10 @@ mojom("mojom_platform") {
         traits_sources =
             [ "//chrome/browser/printing/web_api/web_printing_mojom_traits.cc" ]
         traits_public_deps = [ "//printing" ]
-        traits_deps = [ "//printing/mojom" ]
+        traits_deps = [
+          "//printing/backend",
+          "//printing/mojom",
+        ]
       },
     ]
   }
@@ -1166,7 +1202,7 @@ mojom("android_mojo_bindings") {
   # generating the snapshot for android, blink is compiled with
   # current_os="linux" and target_os="android". Using target_os is necessary as
   # we need to compile in the same way as would happen when current_os="android".
-  if (target_os == "android") {
+  if (target_os_is_android) {
     sources += [ "remote_objects/remote_objects.mojom" ]
 
     # Direct deps (instead of transitive deps) are necessary for java targets.
@@ -1292,7 +1328,6 @@ mojom("mojom_core") {
     "frame/intrinsic_sizing_info.mojom",
     "frame/lifecycle.mojom",
     "frame/media_player_action.mojom",
-    "frame/pending_beacon.mojom",
     "frame/policy_container.mojom",
     "frame/remote_frame.mojom",
     "frame/reporting_observer.mojom",
@@ -1306,6 +1341,7 @@ mojom("mojom_core") {
     "frame/viewport_intersection_state.mojom",
     "page/browsing_context_group_info.mojom",
     "page/display_cutout.mojom",
+    "page/draggable_region.mojom",
     "page/page.mojom",
     "page/page_visibility_state.mojom",
     "page/widget.mojom",
@@ -1843,6 +1879,7 @@ mojom_component("web_feature_mojo_bindings") {
   sources = [
     "use_counter/metrics/css_property_id.mojom",
     "use_counter/metrics/web_feature.mojom",
+    "use_counter/metrics/webdx_feature.mojom",
   ]
 
   macro_prefix = "WEB_FEATURE_MOJO_BINDINGS_MOJOM"

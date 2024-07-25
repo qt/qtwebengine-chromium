@@ -26,10 +26,11 @@
 #include "base/auto_reset.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/stack_allocated.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/container_selector.h"
 #include "third_party/blink/renderer/core/css/css_rule_list.h"
-#include "third_party/blink/renderer/core/css/resolver/element_resolve_context.h"
+#include "third_party/blink/renderer/core/css/part_names.h"
 #include "third_party/blink/renderer/core/css/resolver/match_request.h"
 #include "third_party/blink/renderer/core/css/resolver/match_result.h"
 #include "third_party/blink/renderer/core/css/selector_checker.h"
@@ -42,9 +43,9 @@
 namespace blink {
 
 class Element;
+class ElementResolveContext;
 class ElementRuleCollector;
 class HTMLSlotElement;
-class PartNames;
 class RuleData;
 class SelectorFilter;
 class StyleRuleUsageTracker;
@@ -157,7 +158,7 @@ class CORE_EXPORT ElementRuleCollector {
   void CollectMatchingShadowHostRules(const MatchRequest&);
   void CollectMatchingSlottedRules(const MatchRequest&);
   void CollectMatchingPartPseudoRules(const MatchRequest&,
-                                      PartNames&,
+                                      PartNames*,
                                       bool for_shadow_pseudo);
   void SortAndTransferMatchedRules(CascadeOrigin origin,
                                    bool is_vtt_embedded_style,
@@ -183,7 +184,8 @@ class CORE_EXPORT ElementRuleCollector {
                                  CascadeOrigin,
                                  bool is_cacheable = true,
                                  bool is_inline_style = false);
-  void AddTryStyleProperties(const CSSPropertyValueSet*);
+  void AddTryStyleProperties();
+  void AddTryTacticsStyleProperties();
   void BeginAddingAuthorRulesForTreeScope(const TreeScope& tree_scope) {
     current_matching_tree_scope_ = &tree_scope;
     result_.BeginAddingAuthorRulesForTreeScope(tree_scope);
@@ -241,7 +243,10 @@ class CORE_EXPORT ElementRuleCollector {
 
  private:
   struct PartRequest {
-    PartNames& part_names;
+    STACK_ALLOCATED();
+
+   public:
+    PartNames* part_names;
     // If this is true, we're matching for a pseudo-element of the part, such as
     // ::placeholder.
     bool for_shadow_pseudo = false;
@@ -263,12 +268,14 @@ class CORE_EXPORT ElementRuleCollector {
   bool CollectMatchingRulesInternal(const MatchRequest&);
 
   template <bool stop_at_first_match, bool perf_trace_enabled>
-  bool CollectMatchingRulesForListInternal(base::span<const RuleData>,
-                                           const MatchRequest&,
-                                           const RuleSet*,
-                                           int,
-                                           const SelectorChecker&,
-                                           PartRequest* = nullptr);
+  bool CollectMatchingRulesForListInternal(
+      base::span<const RuleData>,
+      const MatchRequest&,
+      const RuleSet*,
+      int,
+      const SelectorChecker&,
+      SelectorChecker::SelectorCheckingContext&,
+      PartRequest* = nullptr);
 
   template <bool stop_at_first_match>
   bool CollectMatchingRulesForList(base::span<const RuleData>,
@@ -276,6 +283,7 @@ class CORE_EXPORT ElementRuleCollector {
                                    const RuleSet*,
                                    int,
                                    const SelectorChecker&,
+                                   SelectorChecker::SelectorCheckingContext&,
                                    PartRequest* = nullptr);
 
   bool Match(SelectorChecker&,

@@ -36,7 +36,6 @@ namespace cc {
 class DisplayItemList;
 class DrawImage;
 class ImageProvider;
-class PictureLayerTilingClient;
 
 class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
  public:
@@ -60,7 +59,6 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
 
     raw_ptr<ImageProvider> image_provider = nullptr;
   };
-  constexpr static int kDefault = 1;
 
   RasterSource(const RasterSource&) = delete;
   RasterSource& operator=(const RasterSource&) = delete;
@@ -86,10 +84,14 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   // this raster source, as well as the solid color value.
   //
   // If max_ops_to_analyze is set, changes the default maximum number of
-  // operations to analyze before giving up.
+  // operations to analyze before giving up. Careful: even very simple lists can
+  // have more than one operation, so 1 may not be the value you're looking
+  // for. For instance, solid color tiles generated for views have 3
+  // operations. See comments in TileManager::AssignGpuMemoryToTils() for
+  // details.
   bool PerformSolidColorAnalysis(gfx::Rect content_rect,
                                  SkColor4f* color,
-                                 int max_ops_to_analyze = kDefault) const;
+                                 int max_ops_to_analyze = 1) const;
 
   // Returns true iff the whole raster source is of solid color.
   bool IsSolidColor() const;
@@ -99,7 +101,7 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   SkColor4f GetSolidColor() const;
 
   // Returns the recorded layer size of this raster source.
-  gfx::Size GetSize() const;
+  gfx::Size size() const { return size_; }
 
   // Returns the content size of this raster source at a particular scale.
   gfx::Size GetContentSize(const gfx::Vector2dF& content_scale) const;
@@ -111,14 +113,18 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
 
   // Return true iff this raster source can raster the given rect in layer
   // space.
-  bool IntersectsRect(const gfx::Rect& layer_rect,
-                      const PictureLayerTilingClient& client) const;
+  bool IntersectsRect(const gfx::Rect& layer_rect) const;
 
   // Returns true if this raster source has anything to rasterize.
   bool HasRecordings() const;
 
   // Valid rectangle in which everything is recorded and can be rastered from.
-  gfx::Rect RecordedViewport() const;
+  gfx::Rect recorded_bounds() const {
+    // TODO(crbug.com/41490692): Create tiling for directly composited images
+    // based on the recorded bounds.
+    return directly_composited_image_info_ ? gfx::Rect(size_)
+                                           : recorded_bounds_;
+  }
 
   // Tracing functionality.
   void DidBeginTracing();
@@ -138,6 +144,11 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   TakeDecodingModeMap();
 
   size_t* max_op_size_hint() { return &max_op_size_hint_; }
+
+  const std::optional<DirectlyCompositedImageInfo>&
+  directly_composited_image_info() const {
+    return directly_composited_image_info_;
+  }
 
   void set_debug_name(const std::string& name) { debug_name_ = name; }
   const std::string& debug_name() const { return debug_name_; }
@@ -176,10 +187,11 @@ class CC_EXPORT RasterSource : public base::RefCountedThreadSafe<RasterSource> {
   const bool requires_clear_;
   const bool is_solid_color_;
   const SkColor4f solid_color_;
-  const gfx::Rect recorded_viewport_;
+  const gfx::Rect recorded_bounds_;
   const gfx::Size size_;
   const int slow_down_raster_scale_factor_for_debug_;
   const float recording_scale_factor_;
+  std::optional<DirectlyCompositedImageInfo> directly_composited_image_info_;
   // Used for debugging and tracing.
   std::string debug_name_;
 };

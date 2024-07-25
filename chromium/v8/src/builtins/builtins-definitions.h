@@ -162,9 +162,9 @@ namespace internal {
   ASM(JSConstructEntry, JSEntry)                                               \
   ASM(JSRunMicrotasksEntry, RunMicrotasksEntry)                                \
   /* Call a JSValue. */                                                        \
-  ASM(JSEntryTrampoline, JSTrampoline)                                         \
+  ASM(JSEntryTrampoline, JSEntry)                                              \
   /* Construct a JSValue. */                                                   \
-  ASM(JSConstructEntryTrampoline, JSTrampoline)                                \
+  ASM(JSConstructEntryTrampoline, JSEntry)                                     \
   ASM(ResumeGeneratorTrampoline, ResumeGenerator)                              \
                                                                                \
   /* String helpers */                                                         \
@@ -429,6 +429,12 @@ namespace internal {
   TFS(CloneFastJSArray, NeedsContext::kYes, kSource)                           \
   TFS(CloneFastJSArrayFillingHoles, NeedsContext::kYes, kSource)               \
   TFS(ExtractFastJSArray, NeedsContext::kYes, kSource, kBegin, kCount)         \
+  TFS(CreateArrayFromSlowBoilerplate, NeedsContext::kYes, kFeedbackVector,     \
+      kSlot, kBoilerplateDescriptor, kFlags)                                   \
+  TFS(CreateObjectFromSlowBoilerplate, NeedsContext::kYes, kFeedbackVector,    \
+      kSlot, kBoilerplateDescriptor, kFlags)                                   \
+  TFC(CreateArrayFromSlowBoilerplateHelper, CreateFromSlowBoilerplateHelper)   \
+  TFC(CreateObjectFromSlowBoilerplateHelper, CreateFromSlowBoilerplateHelper)  \
   /* ES6 #sec-array.prototype.entries */                                       \
   TFJ(ArrayPrototypeEntries, kJSArgcReceiverSlots, kReceiver)                  \
   /* ES6 #sec-array.prototype.keys */                                          \
@@ -454,10 +460,7 @@ namespace internal {
   TFS(AsyncFunctionReject, NeedsContext::kYes, kAsyncFunctionObject, kReason)  \
   TFS(AsyncFunctionResolve, NeedsContext::kYes, kAsyncFunctionObject, kValue)  \
   TFC(AsyncFunctionLazyDeoptContinuation, AsyncFunctionStackParameter)         \
-  TFS(AsyncFunctionAwaitCaught, NeedsContext::kYes, kAsyncFunctionObject,      \
-      kValue)                                                                  \
-  TFS(AsyncFunctionAwaitUncaught, NeedsContext::kYes, kAsyncFunctionObject,    \
-      kValue)                                                                  \
+  TFS(AsyncFunctionAwait, NeedsContext::kYes, kAsyncFunctionObject, kValue)    \
   TFJ(AsyncFunctionAwaitRejectClosure, kJSArgcReceiverSlots + 1, kReceiver,    \
       kSentError)                                                              \
   TFJ(AsyncFunctionAwaitResolveClosure, kJSArgcReceiverSlots + 1, kReceiver,   \
@@ -594,6 +597,11 @@ namespace internal {
   CPP(DatePrototypeToJson)                                                     \
   CPP(DateUTC)                                                                 \
                                                                                \
+  /* DisposabeStack*/                                                          \
+  CPP(DisposableStackConstructor)                                              \
+  CPP(DisposableStackPrototypeUse)                                             \
+  CPP(DisposableStackPrototypeDispose)                                         \
+                                                                               \
   /* Error */                                                                  \
   CPP(ErrorConstructor)                                                        \
   CPP(ErrorCaptureStackTrace)                                                  \
@@ -657,15 +665,19 @@ namespace internal {
   TFH(LoadSuperIC, LoadWithReceiverAndVector)                                  \
   TFH(LoadSuperICBaseline, LoadWithReceiverBaseline)                           \
   TFH(KeyedLoadIC, KeyedLoadWithVector)                                        \
+  TFH(EnumeratedKeyedLoadIC, EnumeratedKeyedLoad)                              \
   TFH(KeyedLoadIC_Megamorphic, KeyedLoadWithVector)                            \
   TFH(KeyedLoadICTrampoline, KeyedLoad)                                        \
   TFH(KeyedLoadICBaseline, KeyedLoadBaseline)                                  \
+  TFH(EnumeratedKeyedLoadICBaseline, EnumeratedKeyedLoadBaseline)              \
   TFH(KeyedLoadICTrampoline_Megamorphic, KeyedLoad)                            \
   TFH(StoreGlobalIC, StoreGlobalWithVector)                                    \
   TFH(StoreGlobalICTrampoline, StoreGlobal)                                    \
   TFH(StoreGlobalICBaseline, StoreGlobalBaseline)                              \
   TFH(StoreIC, StoreWithVector)                                                \
+  TFH(StoreIC_Megamorphic, StoreWithVector)                                    \
   TFH(StoreICTrampoline, Store)                                                \
+  TFH(StoreICTrampoline_Megamorphic, Store)                                    \
   TFH(StoreICBaseline, StoreBaseline)                                          \
   TFH(DefineNamedOwnIC, StoreWithVector)                                       \
   TFH(DefineNamedOwnICTrampoline, Store)                                       \
@@ -892,8 +904,8 @@ namespace internal {
       kMatchInfo)                                                              \
   TFS(RegExpExecInternal, NeedsContext::kYes, kRegExp, kString, kLastIndex,    \
       kMatchInfo)                                                              \
-  ASM(RegExpInterpreterTrampoline, CCall)                                      \
-  ASM(RegExpExperimentalTrampoline, CCall)                                     \
+  ASM(RegExpInterpreterTrampoline, RegExpTrampoline)                           \
+  ASM(RegExpExperimentalTrampoline, RegExpTrampoline)                          \
                                                                                \
   /* Set */                                                                    \
   TFS(FindOrderedHashSetEntry, NeedsContext::kYes, kTable, kKey)               \
@@ -1012,8 +1024,8 @@ namespace internal {
   IF_WASM(TFC, WasmToJsWrapperCSA, WasmToJSWrapper)                            \
   IF_WASM(TFC, WasmToJsWrapperInvalidSig, WasmToJSWrapper)                     \
   IF_WASM(ASM, WasmSuspend, WasmSuspend)                                       \
-  IF_WASM(ASM, WasmResume, WasmDummy)                                          \
-  IF_WASM(ASM, WasmReject, WasmDummy)                                          \
+  IF_WASM(ASM, WasmResume, WasmDummyWithJSLinkage)                             \
+  IF_WASM(ASM, WasmReject, WasmDummyWithJSLinkage)                             \
   IF_WASM(ASM, WasmTrapHandlerLandingPad, WasmDummy)                           \
   IF_WASM(ASM, WasmCompileLazy, WasmDummy)                                     \
   IF_WASM(ASM, WasmLiftoffFrameSetup, WasmDummy)                               \
@@ -1023,6 +1035,7 @@ namespace internal {
   IF_WASM(TFC, WasmFloat64ToNumber, WasmFloat64ToTagged)                       \
   IF_WASM(TFC, WasmFloat64ToString, WasmFloat64ToTagged)                       \
   IF_WASM(TFC, JSToWasmLazyDeoptContinuation, SingleParameterOnStack)          \
+  IF_WASM(ASM, WasmToOnHeapWasmToJsTrampoline, WasmDummy)                      \
                                                                                \
   /* WeakMap */                                                                \
   TFJ(WeakMapConstructor, kDontAdaptArgumentsSentinel)                         \
@@ -1052,20 +1065,24 @@ namespace internal {
   CPP(AtomicsMutexConstructor)                                                 \
   CPP(AtomicsMutexIsMutex)                                                     \
   CPP(AtomicsMutexLock)                                                        \
+  CPP(AtomicsMutexLockAsync)                                                   \
   CPP(AtomicsMutexLockWithTimeout)                                             \
   CPP(AtomicsMutexTryLock)                                                     \
+  CPP(AtomicsMutexAsyncUnlockResolveHandler)                                   \
+  CPP(AtomicsMutexAsyncUnlockRejectHandler)                                    \
   CPP(AtomicsConditionConstructor)                                             \
+  CPP(AtomicsConditionAcquireLock)                                             \
   CPP(AtomicsConditionIsCondition)                                             \
   CPP(AtomicsConditionWait)                                                    \
   CPP(AtomicsConditionNotify)                                                  \
+  CPP(AtomicsConditionWaitAsync)                                               \
                                                                                \
   /* AsyncGenerator */                                                         \
                                                                                \
   TFS(AsyncGeneratorResolve, NeedsContext::kYes, kGenerator, kValue, kDone)    \
   TFS(AsyncGeneratorReject, NeedsContext::kYes, kGenerator, kValue)            \
-  TFS(AsyncGeneratorYieldWithAwait, NeedsContext::kYes, kGenerator, kValue,    \
-      kIsCaught)                                                               \
-  TFS(AsyncGeneratorReturn, NeedsContext::kYes, kGenerator, kValue, kIsCaught) \
+  TFS(AsyncGeneratorYieldWithAwait, NeedsContext::kYes, kGenerator, kValue)    \
+  TFS(AsyncGeneratorReturn, NeedsContext::kYes, kGenerator, kValue)            \
   TFS(AsyncGeneratorResumeNext, NeedsContext::kYes, kGenerator)                \
                                                                                \
   /* AsyncGeneratorFunction( p1, p2, ... pn, body ) */                         \
@@ -1083,10 +1100,7 @@ namespace internal {
                                                                                \
   /* Await (proposal-async-iteration/#await), with resume behaviour */         \
   /* specific to Async Generators. Internal / Not exposed to JS code. */       \
-  TFS(AsyncGeneratorAwaitCaught, NeedsContext::kYes, kAsyncGeneratorObject,    \
-      kValue)                                                                  \
-  TFS(AsyncGeneratorAwaitUncaught, NeedsContext::kYes, kAsyncGeneratorObject,  \
-      kValue)                                                                  \
+  TFS(AsyncGeneratorAwait, NeedsContext::kYes, kAsyncGeneratorObject, kValue)  \
   TFJ(AsyncGeneratorAwaitResolveClosure, kJSArgcReceiverSlots + 1, kReceiver,  \
       kValue)                                                                  \
   TFJ(AsyncGeneratorAwaitRejectClosure, kJSArgcReceiverSlots + 1, kReceiver,   \
@@ -1110,6 +1124,9 @@ namespace internal {
   TFJ(AsyncFromSyncIteratorPrototypeThrow, kDontAdaptArgumentsSentinel)        \
   /* #sec-%asyncfromsynciteratorprototype%.return */                           \
   TFJ(AsyncFromSyncIteratorPrototypeReturn, kDontAdaptArgumentsSentinel)       \
+  /* #sec-asyncfromsynciteratorcontinuation */                                 \
+  TFJ(AsyncFromSyncIteratorCloseSyncAndRethrow, kJSArgcReceiverSlots + 1,      \
+      kReceiver, kError)                                                       \
   /* #sec-async-iterator-value-unwrap-functions */                             \
   TFJ(AsyncIteratorValueUnwrap, kJSArgcReceiverSlots + 1, kReceiver, kValue)   \
                                                                                \
@@ -2009,11 +2026,9 @@ namespace internal {
   V(AsyncFromSyncIteratorPrototypeNext)              \
   V(AsyncFromSyncIteratorPrototypeReturn)            \
   V(AsyncFromSyncIteratorPrototypeThrow)             \
-  V(AsyncFunctionAwaitCaught)                        \
-  V(AsyncFunctionAwaitUncaught)                      \
+  V(AsyncFunctionAwait)                              \
   V(AsyncGeneratorResolve)                           \
-  V(AsyncGeneratorAwaitCaught)                       \
-  V(AsyncGeneratorAwaitUncaught)                     \
+  V(AsyncGeneratorAwait)                             \
   V(PromiseAll)                                      \
   V(PromiseAny)                                      \
   V(PromiseConstructor)                              \
@@ -2029,14 +2044,6 @@ namespace internal {
   BUILTIN_LIST(V, IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, \
                IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN)
 
-#define BUILTIN_LIST_A(V)                                                      \
-  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, \
-               IGNORE_BUILTIN, IGNORE_BUILTIN, V)
-
-#define BUILTIN_LIST_TFS(V)                                       \
-  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, V, \
-               IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN)
-
 #define BUILTIN_LIST_TFJ(V)                                       \
   BUILTIN_LIST(IGNORE_BUILTIN, V, IGNORE_BUILTIN, IGNORE_BUILTIN, \
                IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN)
@@ -2044,6 +2051,22 @@ namespace internal {
 #define BUILTIN_LIST_TFC(V)                                       \
   BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, V, IGNORE_BUILTIN, \
                IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN)
+
+#define BUILTIN_LIST_TFS(V)                                       \
+  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, V, \
+               IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN)
+
+#define BUILTIN_LIST_TFH(V)                                                    \
+  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, \
+               V, IGNORE_BUILTIN, IGNORE_BUILTIN)
+
+#define BUILTIN_LIST_BCH(V)                                                    \
+  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, \
+               IGNORE_BUILTIN, V, IGNORE_BUILTIN)
+
+#define BUILTIN_LIST_A(V)                                                      \
+  BUILTIN_LIST(IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, IGNORE_BUILTIN, \
+               IGNORE_BUILTIN, IGNORE_BUILTIN, V)
 
 }  // namespace internal
 }  // namespace v8

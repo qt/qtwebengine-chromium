@@ -61,14 +61,14 @@ class TestView : public View {
   bool fix_area() const { return fix_area_; }
 
   int GetHeightForWidth(int width) const override {
-    const gfx::Size preferred_size = GetPreferredSize();
+    const gfx::Size preferred_size = GetPreferredSize({width, {}});
     return fix_area_ ? preferred_size.height() * preferred_size.width() /
                            std::max(1, width)
                      : preferred_size.height();
   }
 
  private:
-  absl::optional<gfx::Size> minimum_size_;
+  std::optional<gfx::Size> minimum_size_;
   bool fix_area_ = false;
 };
 
@@ -111,8 +111,26 @@ class SmartFillLayout : public FillLayout {
 
     gfx::Size preferred_size;
     for (View* child : host->children()) {
-      if (child->GetVisible())
-        preferred_size.SetToMax(child->GetPreferredSize());
+      if (child->GetVisible()) {
+        preferred_size.SetToMax(child->GetPreferredSize({}));
+      }
+    }
+    gfx::Rect rect(preferred_size);
+    rect.Inset(-host->GetInsets());
+    return rect.size();
+  }
+
+  gfx::Size GetPreferredSize(const View* host,
+                             const SizeBounds& available_size) const override {
+    if (host->children().empty()) {
+      return gfx::Size();
+    }
+
+    gfx::Size preferred_size;
+    for (View* child : host->children()) {
+      if (child->GetVisible()) {
+        preferred_size.SetToMax(child->GetPreferredSize({}));
+      }
     }
     gfx::Rect rect(preferred_size);
     rect.Inset(-host->GetInsets());
@@ -246,7 +264,7 @@ class AnimatingLayoutManagerTest : public testing::Test {
 
   void SizeAndLayout() {
     // If the layout of |view| is invalid or the size changes, this will
-    // automatically call |view->Layout()| as well.
+    // automatically lay out the view as well.
     view_->SizeToPreferredSize();
   }
 
@@ -259,7 +277,7 @@ class AnimatingLayoutManagerTest : public testing::Test {
   const bool enable_animations_;
   ProposedLayout layout1_;
   ProposedLayout layout2_;
-  raw_ptr<View> view_ = nullptr;
+  raw_ptr<View, DanglingUntriaged> view_ = nullptr;
   std::vector<raw_ptr<TestView, VectorExperimental>> children_;
   base::test::TaskEnvironment task_environment_;
   std::unique_ptr<gfx::AnimationContainerTestApi> container_test_api_;
@@ -2139,7 +2157,7 @@ TEST_F(AnimatingLayoutManagerTest, FlexLayout_FadeOut_IgnoreChildView) {
   EXPECT_FALSE(layout()->is_animating());
   EnsureLayout(expected_start);
 
-  layout()->SetChildViewIgnoredByLayout(child(0), true);
+  child(0)->SetProperty(kViewIgnoredByLayoutKey, true);
 
   test::RunScheduledLayout(view());
   EXPECT_TRUE(layout()->is_animating());
@@ -2644,8 +2662,7 @@ TEST_F(AnimatingLayoutManagerTest, PostOrQueueAction_MayPostImmediately) {
   EXPECT_TRUE(action2_called);
 
   // Test that callbacks are not posted between a layout reset and the
-  // subsequent call to Layout(), but are posted at the end of the Layout()
-  // call.
+  // subsequent layout, but are posted at the end of the layout.
   test_layout->SetLayout(layout1());
   layout()->ResetLayout();
   layout()->PostOrQueueAction(
@@ -2788,7 +2805,7 @@ TEST_F(AnimatingLayoutManagerTest, ConstrainedSpace_StopsAnimation) {
   // Advance the animation.
   animation_api()->IncrementTime(base::Milliseconds(500));
   // Layout 2 is 200 across. Halfway is 150. Getting less should halt the
-  // animation. Note that calling SetSize() should result in a Layout() call.
+  // animation. Note that calling SetSize() should result in a layout.
   view()->SetSize({140, 200});
   EXPECT_FALSE(layout()->is_animating());
 }
@@ -2815,7 +2832,7 @@ TEST_F(AnimatingLayoutManagerTest, ConstrainedSpace_TriggersDelayedAction) {
   // Advance the animation.
   animation_api()->IncrementTime(base::Milliseconds(500));
   // Layout 2 is 200 across. Halfway is 150. Getting less should halt the
-  // animation. Note that calling SetSize() should result in a Layout() call.
+  // animation. Note that calling SetSize() should result in a layout.
   view()->SetSize({140, 200});
   // This should post the delayed actions, so make sure it actually runs.
   RunCurrentTasks();
@@ -2838,7 +2855,7 @@ TEST_F(AnimatingLayoutManagerTest, ConstrainedSpace_SubsequentAnimation) {
   // Advance the animation.
   animation_api()->IncrementTime(base::Milliseconds(500));
   // Layout 2 is 200 across. Halfway is 150. Getting less should halt the
-  // animation. Note that calling SetSize() should result in a Layout() call.
+  // animation. Note that calling SetSize() should result in a layout.
   view()->SetSize({140, 200});
 
   // This should attempt to restart the animation.
@@ -3014,8 +3031,8 @@ TEST_F(AnimatingLayoutManagerNoAnimationsTest, ActionsPostedAfterLayout) {
   RunCurrentTasks();
   EXPECT_TRUE(cb1);
 
-  // Changing the layout puts us in a state where we're awaiting an actual call
-  // to Layout(), so actions will not post yet.
+  // Changing the layout puts us in a state where we're waiting for the layout
+  // to be performed, so actions will not post yet.
   UseFixedLayout(layout2());
   layout()->PostOrQueueAction(
       base::BindLambdaForTesting([&]() { cb2 = true; }));
@@ -3026,7 +3043,7 @@ TEST_F(AnimatingLayoutManagerNoAnimationsTest, ActionsPostedAfterLayout) {
   EXPECT_FALSE(cb2);
   EXPECT_FALSE(cb3);
 
-  // Layout() will post the pending actions.
+  // Layout will post the pending actions.
   SizeAndLayout();
   RunCurrentTasks();
   EXPECT_TRUE(cb2);
@@ -3086,14 +3103,14 @@ class ImmediateLayoutManager : public LayoutManagerBase {
       child_layout.available_size = size_bounds_;
       switch (bounds_animation_mode_) {
         case AnimatingLayoutManager::BoundsAnimationMode::kAnimateBothAxes:
-          child_layout.bounds = gfx::Rect(
-              ConstrainSizeToBounds(child->GetPreferredSize(), size_bounds_));
+          child_layout.bounds = gfx::Rect(ConstrainSizeToBounds(
+              child->GetPreferredSize(bounds), size_bounds_));
           break;
         case AnimatingLayoutManager::BoundsAnimationMode::kAnimateMainAxis: {
           // Start with the preferred size constrained to the bounds, then force
           // the cross axis.
-          gfx::Size size =
-              ConstrainSizeToBounds(child->GetPreferredSize(), size_bounds_);
+          gfx::Size size = ConstrainSizeToBounds(
+              child->GetPreferredSize(bounds), size_bounds_);
           SetCrossAxis(&size, orientation_,
                        GetCrossAxis(orientation_, child->bounds().size()));
           child_layout.bounds = gfx::Rect(size);
@@ -3220,7 +3237,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest, AvailableSize_LimitsExpansion) {
 
   // Verify the initial layout.
   EXPECT_FALSE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize({}));
   EXPECT_EQ(gfx::Size(20, 20), view()->size());
   EXPECT_EQ(gfx::Rect(5, 5, 10, 10), child(0)->bounds());
 
@@ -3231,7 +3248,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest, AvailableSize_LimitsExpansion) {
 
   // Animation should have started.
   EXPECT_TRUE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize({}));
 
   // Complete the animation.
   AnimationEventLogger logger(layout());
@@ -3284,7 +3301,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest,
   EXPECT_TRUE(layout()->is_animating());
   animation_api()->IncrementTime(base::Milliseconds(1000));
   EXPECT_FALSE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(50, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(50, 20), view()->GetPreferredSize({}));
   EXPECT_EQ(gfx::Size(50, 20), view()->size());
 
   const std::vector<bool> expected_events{false, true, false};
@@ -3332,7 +3349,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest,
   EXPECT_TRUE(layout()->is_animating());
   animation_api()->IncrementTime(base::Milliseconds(1000));
   EXPECT_FALSE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(20, 50), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(20, 50), view()->GetPreferredSize({}));
   EXPECT_EQ(gfx::Size(20, 50), view()->size());
   EXPECT_TRUE(child(0)->GetVisible());
   EXPECT_EQ(gfx::Rect(5, 5, 10, 10), child(0)->bounds());
@@ -3566,7 +3583,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest,
 
   // Verify the initial layout.
   EXPECT_FALSE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize({}));
   EXPECT_EQ(gfx::Size(20, 20), view()->size());
   EXPECT_EQ(gfx::Rect(5, 5, 10, 10), child(0)->bounds());
 
@@ -3577,7 +3594,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest,
 
   // Animation should have started.
   EXPECT_TRUE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(20, 20), view()->GetPreferredSize({}));
 
   // Complete the animation.
   AnimationEventLogger logger(layout());
@@ -3632,7 +3649,7 @@ TEST_F(AnimatingLayoutManagerAvailableSizeTest,
   EXPECT_TRUE(layout()->is_animating());
   animation_api()->IncrementTime(base::Milliseconds(1000));
   EXPECT_FALSE(layout()->is_animating());
-  EXPECT_EQ(gfx::Size(50, 20), view()->GetPreferredSize());
+  EXPECT_EQ(gfx::Size(50, 20), view()->GetPreferredSize({}));
   EXPECT_EQ(gfx::Size(50, 20), view()->size());
 
   const std::vector<bool> expected_events{false, true, false};
@@ -4180,7 +4197,7 @@ class AnimatingLayoutManagerFlexRuleTest : public AnimatingLayoutManagerTest {
 
   void InitLayout(LayoutOrientation orientation,
                   const FlexSpecification& default_flex,
-                  const absl::optional<gfx::Size>& minimum_size,
+                  const std::optional<gfx::Size>& minimum_size,
                   bool fix_child_size) {
     for (size_t i = 0; i < num_children(); ++i) {
       if (minimum_size)
@@ -4397,7 +4414,7 @@ class AnimatingLayoutManagerInFlexLayoutTest
  private:
   raw_ptr<FlexLayout> root_layout_;
   raw_ptr<FlexLayout> target_layout_;
-  raw_ptr<TestView> other_view_;
+  raw_ptr<TestView, DanglingUntriaged> other_view_;
 };
 
 TEST_F(AnimatingLayoutManagerInFlexLayoutTest, NoAnimation) {
@@ -4805,7 +4822,7 @@ TEST_F(AnimatingLayoutManagerInFlexLayoutNoAnimationTest, ShrinkAndGrow) {
 
   constexpr gfx::Size kFullSize = {60, 20};
   constexpr gfx::Size kReducedSize = {59, 20};
-  EXPECT_EQ(kFullSize, root_view()->GetPreferredSize());
+  EXPECT_EQ(kFullSize, root_view()->GetPreferredSize({}));
 
   root_view()->SetSize(kFullSize);
   layout()->ResetLayout();
@@ -5195,9 +5212,9 @@ class AnimatingLayoutManagerSequenceTest : public ViewsTestBase {
 
   using WidgetAutoclosePtr = std::unique_ptr<Widget, WidgetCloser>;
 
-  raw_ptr<View> child_view_ = nullptr;
-  raw_ptr<View> parent_view_ = nullptr;
-  raw_ptr<View> layout_view_ = nullptr;
+  raw_ptr<View, DanglingUntriaged> child_view_ = nullptr;
+  raw_ptr<View, DanglingUntriaged> parent_view_ = nullptr;
+  raw_ptr<View, DanglingUntriaged> layout_view_ = nullptr;
   std::unique_ptr<View> parent_view_ptr_;
   std::unique_ptr<View> layout_view_ptr_;
   WidgetAutoclosePtr widget_;

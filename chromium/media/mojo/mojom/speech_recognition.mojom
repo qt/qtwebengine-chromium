@@ -9,7 +9,7 @@ import "mojo/public/mojom/base/time.mojom";
 import "mojo/public/mojom/base/unguessable_token.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 
-// Next MinVersion: 4
+// Next MinVersion: 5
 
 // Corresponds to the LangIdEvent.ConfidenceInterval defined in
 // http://google3/speech/soda/public/soda_event.proto.
@@ -283,7 +283,7 @@ struct SpeechRecognitionOptions {
   bool enable_formatting;
 
   // The BCP-47 localized language code to use (e.g. "en-US").
-  // TODO(crbug.com/1161569): Language needs to be required when multiple
+  // TODO(crbug.com/40162502): Language needs to be required when multiple
   // languages are supported by SODA, so that each SpeechRecognitionRecognizer
   // can use its own language. Right now Language is only used by Projector
   // and Dictation via OnDeviceSpeechRecognizer in Chrome OS.
@@ -302,4 +302,7 @@ struct SpeechRecognitionOptions {
   // Set to false if accurate TimingInfo relative to the start of captioning is
   // needed.
   [MinVersion=4] bool skip_continuously_empty_audio = false;
+
+  // The optional experiment recognizer routing key for current request.
+  [MinVersion=5] string? experiment_recognizer_routing_key;
 };

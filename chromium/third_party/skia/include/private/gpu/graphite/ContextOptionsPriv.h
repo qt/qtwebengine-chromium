@@ -27,6 +27,13 @@ enum class PathRendererStrategy {
     kComputeAnalyticAA,
 
     /**
+     * All paths are rasterized into coverage masks using a GPU compute approach. This method
+     * supports 16 and 8 sample multi-sampled anti-aliasing.
+     */
+    kComputeMSAA16,
+    kComputeMSAA8,
+
+    /**
      * All paths are rasterized into coverage masks using the CPU raster backend.
      */
     kRasterAA,

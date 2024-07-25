@@ -16,11 +16,14 @@
 #include "base/test/test_future.h"
 #include "components/ml/webnn/features.mojom-features.h"
 #include "components/ml/webnn/graph_validation_utils.h"
+#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "mojo/public/cpp/bindings/self_owned_associated_receiver.h"
 #include "mojo/public/cpp/system/functions.h"
+#include "services/webnn/error.h"
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "services/webnn/public/mojom/webnn_graph.mojom.h"
+#include "services/webnn/webnn_buffer_impl.h"
 #include "services/webnn/webnn_context_impl.h"
 #include "services/webnn/webnn_context_provider_impl.h"
 #include "services/webnn/webnn_test_utils.h"
@@ -35,18 +38,21 @@ namespace {
 // computing graph message.
 class FakeWebNNGraphImpl final : public WebNNGraphImpl {
  public:
-  explicit FakeWebNNGraphImpl(ComputeResourceInfo compute_resource_info)
-      : WebNNGraphImpl(std::move(compute_resource_info)) {}
+  explicit FakeWebNNGraphImpl(WebNNContextImpl* context,
+                              ComputeResourceInfo compute_resource_info)
+      : WebNNGraphImpl(context, std::move(compute_resource_info)) {}
   ~FakeWebNNGraphImpl() override = default;
 
   static void CreateAndBuild(
+      WebNNContextImpl* context,
       const mojom::GraphInfoPtr& graph_info,
       mojom::WebNNContext::CreateGraphCallback callback) {
-    mojo::PendingRemote<mojom::WebNNGraph> blink_remote;
+    mojo::PendingAssociatedRemote<mojom::WebNNGraph> blink_remote;
     // The receiver bound to FakeWebNNGraphImpl.
-    mojo::MakeSelfOwnedReceiver<mojom::WebNNGraph>(
-        std::make_unique<FakeWebNNGraphImpl>(ComputeResourceInfo(graph_info)),
-        blink_remote.InitWithNewPipeAndPassReceiver());
+    context->OnWebNNGraphImplCreated(
+        blink_remote.InitWithNewEndpointAndPassReceiver(),
+        std::make_unique<FakeWebNNGraphImpl>(context,
+                                             ComputeResourceInfo(graph_info)));
     std::move(callback).Run(
         mojom::CreateGraphResult::NewGraphRemote(std::move(blink_remote)));
   }
@@ -60,6 +66,32 @@ class FakeWebNNGraphImpl final : public WebNNGraphImpl {
     std::move(callback).Run(
         mojom::ComputeResult::NewNamedOutputs(std::move(named_outputs)));
   }
+
+  // Return nothing for testing the validation of inputs and outputs in
+  // `WebNNGraphImpl::Dispatch()` function.
+  void DispatchImpl(
+      const base::flat_map<std::string_view, WebNNBufferImpl*>& named_inputs,
+      const base::flat_map<std::string_view, WebNNBufferImpl*>& named_outputs)
+      override {}
+};
+
+// A fake WebNNBuffer Mojo interface implementation that binds a pipe for
+// buffer creation message.
+class FakeWebNNBufferImpl final : public WebNNBufferImpl {
+ public:
+  explicit FakeWebNNBufferImpl(
+      mojo::PendingAssociatedReceiver<mojom::WebNNBuffer> receiver,
+      WebNNContextImpl* context,
+      uint64_t size,
+      const base::UnguessableToken& buffer_handle)
+      : WebNNBufferImpl(std::move(receiver), context, size, buffer_handle) {}
+  ~FakeWebNNBufferImpl() override = default;
+
+ private:
+  // Read/write nothing for testing the validation of inputs and outputs in
+  // `WebNNGraphImpl::Dispatch()` function.
+  void ReadBufferImpl(ReadBufferCallback callback) override {}
+  void WriteBufferImpl(mojo_base::BigBuffer src_buffer) override {}
 };
 
 // A fake WebNNContext Mojo interface implementation that binds a pipe for
@@ -75,8 +107,16 @@ class FakeWebNNContextImpl final : public WebNNContextImpl {
   void CreateGraphImpl(
       mojom::GraphInfoPtr graph_info,
       mojom::WebNNContext::CreateGraphCallback callback) override {
-    FakeWebNNGraphImpl::CreateAndBuild(std::move(graph_info),
+    FakeWebNNGraphImpl::CreateAndBuild(this, std::move(graph_info),
                                        std::move(callback));
+  }
+
+  std::unique_ptr<WebNNBufferImpl> CreateBufferImpl(
+      mojo::PendingAssociatedReceiver<mojom::WebNNBuffer> receiver,
+      mojom::BufferInfoPtr buffer_info,
+      const base::UnguessableToken& buffer_handle) override {
+    return std::make_unique<FakeWebNNBufferImpl>(
+        std::move(receiver), this, buffer_info->size, buffer_handle);
   }
 };
 
@@ -104,7 +144,7 @@ bool ValidateInputsForComputing(
     base::flat_map<std::string, mojo_base::BigBuffer> inputs) {
   // Creates WebNN Context mojo interface with the provider.
   mojo::Remote<mojom::WebNNContextProvider> provider_remote;
-  WebNNContextProviderImpl::Create(
+  WebNNContextProviderImpl::CreateForTesting(
       provider_remote.BindNewPipeAndPassReceiver());
 
   base::test::TestFuture<mojom::CreateContextResultPtr> create_context_future;
@@ -121,7 +161,7 @@ bool ValidateInputsForComputing(
   webnn_context->CreateGraph(std::move(graph_info),
                              create_graph_future.GetCallback());
   mojom::CreateGraphResultPtr create_graph_result = create_graph_future.Take();
-  mojo::Remote<mojom::WebNNGraph> webnn_graph;
+  mojo::AssociatedRemote<mojom::WebNNGraph> webnn_graph;
   webnn_graph.Bind(std::move(create_graph_result->get_graph_remote()));
 
   // Validate the inputs in the `Compute` function.
@@ -139,6 +179,94 @@ bool ValidateInputsForComputing(
   webnn_graph->Compute(std::move(inputs), compute_future.GetCallback());
   EXPECT_TRUE(compute_future.Wait());
 
+  mojo::SetDefaultProcessErrorHandler(base::NullCallback());
+  return valid;
+}
+
+struct WebNNBufferInfo {
+  base::UnguessableToken buffer_handle;
+  uint64_t size;
+  bool create_buffer;
+};
+
+WebNNBufferInfo CreateWebNNBufferInfo(uint64_t size,
+                                      bool create_buffer = true) {
+  return {base::UnguessableToken::Create(), size, create_buffer};
+}
+
+// Converts inputs and outputs to MLBuffer then dispatches them.
+bool ValidateDispatch(mojom::GraphInfoPtr graph_info,
+                      base::flat_map<std::string, WebNNBufferInfo> inputs,
+                      base::flat_map<std::string, WebNNBufferInfo> outputs) {
+  // Creates WebNN Context mojo interface with the provider.
+  mojo::Remote<mojom::WebNNContextProvider> provider_remote;
+  WebNNContextProviderImpl::CreateForTesting(
+      provider_remote.BindNewPipeAndPassReceiver());
+
+  base::test::TestFuture<mojom::CreateContextResultPtr> create_context_future;
+  provider_remote->CreateWebNNContext(mojom::CreateContextOptions::New(),
+                                      create_context_future.GetCallback());
+  mojom::CreateContextResultPtr create_context_result =
+      create_context_future.Take();
+  mojo::Remote<mojom::WebNNContext> webnn_context;
+  webnn_context.Bind(std::move(create_context_result->get_context_remote()));
+
+  // Creates WebNN Graph mojo interface with the graph information which is
+  // validated before compiling.
+  base::test::TestFuture<mojom::CreateGraphResultPtr> create_graph_future;
+  webnn_context->CreateGraph(std::move(graph_info),
+                             create_graph_future.GetCallback());
+  mojom::CreateGraphResultPtr create_graph_result = create_graph_future.Take();
+  mojo::AssociatedRemote<mojom::WebNNGraph> webnn_graph;
+  webnn_graph.Bind(std::move(create_graph_result->get_graph_remote()));
+
+  // Validate the inputs in the `Dispatch` function.
+  bool valid = true;
+  // Set up the error handler for bad mojo messages.
+  mojo::SetDefaultProcessErrorHandler(
+      base::BindLambdaForTesting([&](const std::string& error_message) {
+        EXPECT_EQ(error_message, kBadMessageInvalidBuffer);
+        valid = false;
+      }));
+
+  // Create buffers for the inputs.
+  std::vector<mojo::AssociatedRemote<mojom::WebNNBuffer>> input_buffers(
+      inputs.size());
+  base::flat_map<std::string, base::UnguessableToken> dispatch_inputs;
+  for (const auto& [name, buffer_info] : inputs) {
+    if (buffer_info.create_buffer) {
+      mojo::AssociatedRemote<mojom::WebNNBuffer> webnn_buffer;
+      webnn_context->CreateBuffer(webnn_buffer.BindNewEndpointAndPassReceiver(),
+                                  mojom::BufferInfo::New(buffer_info.size),
+                                  buffer_info.buffer_handle);
+      input_buffers.push_back(std::move(webnn_buffer));
+    }
+    dispatch_inputs.emplace(name, buffer_info.buffer_handle);
+  }
+
+  // Create buffers for the outputs.
+  std::vector<mojo::AssociatedRemote<mojom::WebNNBuffer>> output_buffers(
+      outputs.size());
+  base::flat_map<std::string, base::UnguessableToken> dispatch_outputs;
+  for (const auto& [name, buffer_info] : outputs) {
+    if (buffer_info.create_buffer) {
+      mojo::AssociatedRemote<mojom::WebNNBuffer> webnn_buffer;
+      webnn_context->CreateBuffer(webnn_buffer.BindNewEndpointAndPassReceiver(),
+                                  mojom::BufferInfo::New(buffer_info.size),
+                                  buffer_info.buffer_handle);
+      output_buffers.push_back(std::move(webnn_buffer));
+    }
+    dispatch_outputs.emplace(name, buffer_info.buffer_handle);
+  }
+
+  // Ensure CreateBuffer messages have a chance to finish before calling
+  // Dispatch().
+  webnn_context.FlushForTesting();
+  webnn_graph->Dispatch(dispatch_inputs, dispatch_outputs);
+
+  // Ensure Dispatch message has a chance to finish before removing the error
+  // handler.
+  webnn_graph.FlushForTesting();
   mojo::SetDefaultProcessErrorHandler(base::NullCallback());
   return valid;
 }
@@ -411,8 +539,8 @@ TEST_F(WebNNGraphImplTest, ClampTest) {
 
 struct HardSigmoidTester {
   OperandInfo input;
-  absl::optional<float> alpha;
-  absl::optional<float> beta;
+  std::optional<float> alpha;
+  std::optional<float> beta;
   OperandInfo output;
   bool expected;
 
@@ -482,28 +610,27 @@ TEST_F(WebNNGraphImplTest, HardSigmoidTest) {
 
 struct Activation {
   mojom::Activation::Tag kind;
-  absl::optional<ClampTester::ClampAttributes> clamp_attributes;
-  absl::optional<float> elu_alpha;
-  absl::optional<float> hard_sigmoid_alpha;
-  absl::optional<float> hard_sigmoid_beta;
-  absl::optional<float> leaky_relu_alpha;
-  absl::optional<float> linear_alpha;
-  absl::optional<float> linear_beta;
-  absl::optional<float> softplus_steepness;
+  std::optional<ClampTester::ClampAttributes> clamp_attributes;
+  std::optional<float> elu_alpha;
+  std::optional<float> hard_sigmoid_alpha;
+  std::optional<float> hard_sigmoid_beta;
+  std::optional<float> leaky_relu_alpha;
+  std::optional<float> linear_alpha;
+  std::optional<float> linear_beta;
 };
 
 struct BatchNormalizationTester {
   OperandInfo input;
   OperandInfo mean;
   OperandInfo variance;
-  absl::optional<OperandInfo> scale;
-  absl::optional<OperandInfo> bias;
+  std::optional<OperandInfo> scale;
+  std::optional<OperandInfo> bias;
   struct BatchNormalizationAttributes {
-    absl::optional<uint64_t> scale_operand_id;
-    absl::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> scale_operand_id;
+    std::optional<uint64_t> bias_operand_id;
     uint32_t axis = 1;
     float epsilon = 1e-5;
-    absl::optional<Activation> activation;
+    std::optional<Activation> activation;
   };
   BatchNormalizationAttributes attributes;
   OperandInfo output;
@@ -617,6 +744,21 @@ TEST_F(WebNNGraphImplTest, BatchNormalizationTest) {
         .Test();
   }
   {
+    // Test batchNormalization with gelu activation.
+    BatchNormalizationTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {1, 2, 3, 3}},
+        .mean = {.type = mojom::Operand::DataType::kFloat32, .dimensions = {2}},
+        .variance = {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {2}},
+        .attributes = {.activation =
+                           Activation{.kind = mojom::Activation::Tag::kGelu}},
+        .output = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {1, 2, 3, 3}},
+        .expected = true}
+        .Test();
+  }
+  {
     // Test batchNormalization with hard_sigmoid activation.
     BatchNormalizationTester{
         .input = {.type = mojom::Operand::DataType::kFloat32,
@@ -724,8 +866,8 @@ TEST_F(WebNNGraphImplTest, BatchNormalizationTest) {
         .variance = {.type = mojom::Operand::DataType::kFloat32,
                      .dimensions = {2}},
         .attributes = {.activation =
-                           Activation{.kind = mojom::Activation::Tag::kSoftplus,
-                                      .softplus_steepness = 1.0}},
+                           Activation{.kind =
+                                          mojom::Activation::Tag::kSoftplus}},
         .output = {.type = mojom::Operand::DataType::kFloat32,
                    .dimensions = {1, 2, 3, 3}},
         .expected = true}
@@ -1151,7 +1293,7 @@ TEST_F(WebNNGraphImplTest, ConcatTest) {
 }
 
 struct Conv2dTester {
-  mojom::Conv2d_Type type;
+  mojom::Conv2d::Kind type;
   OperandInfo input;
   OperandInfo filter;
   struct Conv2dAttributes {
@@ -1161,8 +1303,8 @@ struct Conv2dTester {
     uint32_t groups = 1;
     mojom::InputOperandLayout input_layout =
         mojom::InputOperandLayout::kChannelsFirst;
-    absl::optional<OperandInfo> bias;
-    absl::optional<Activation> activation;
+    std::optional<OperandInfo> bias;
+    std::optional<Activation> activation;
   };
   Conv2dAttributes attributes;
   OperandInfo output;
@@ -1176,7 +1318,7 @@ struct Conv2dTester {
     uint64_t filter_operand_id =
         builder.BuildInput("filter", filter.dimensions, filter.type);
 
-    absl::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> bias_operand_id;
     if (attributes.bias) {
       bias_operand_id = builder.BuildInput("bias", attributes.bias->dimensions,
                                            attributes.bias->type);
@@ -1194,7 +1336,7 @@ struct Conv2dTester {
 TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with default attributes.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1206,53 +1348,53 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   }
   {
     // Test conv2d for same upper or lower padding.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
-                 .input = {.type = mojom::Operand::DataType::kInt8,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = mojom::Operand::DataType::kFloat16,
                            .dimensions = {1, 1, 5, 5}},
-                 .filter = {.type = mojom::Operand::DataType::kInt8,
+                 .filter = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 3, 3}},
                  .attributes = {.padding = {1, 1, 1, 1}},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 5, 5}},
                  .expected = true}
         .Test();
   }
   {
     // Test conv2d with strides=2 and padding=1.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
-                 .input = {.type = mojom::Operand::DataType::kInt8,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = mojom::Operand::DataType::kFloat16,
                            .dimensions = {1, 1, 5, 5}},
-                 .filter = {.type = mojom::Operand::DataType::kInt8,
+                 .filter = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 3, 3}},
                  .attributes = {.padding = {1, 1, 1, 1}, .strides = {2, 2}},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 3, 3}},
                  .expected = true}
         .Test();
   }
   {
     // Test depthwise conv2d by setting groups to input channels.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
-                 .input = {.type = mojom::Operand::DataType::kInt8,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = mojom::Operand::DataType::kFloat16,
                            .dimensions = {1, 4, 2, 2}},
-                 .filter = {.type = mojom::Operand::DataType::kInt8,
+                 .filter = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {4, 1, 2, 2}},
                  .attributes = {.groups = 4},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 4, 1, 1}},
                  .expected = true}
         .Test();
   }
   {
     // Test conv2d with inputLayout="nchw" and filterLayout="oihw".
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
-                 .input = {.type = mojom::Operand::DataType::kInt8,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = mojom::Operand::DataType::kFloat16,
                            .dimensions = {1, 2, 5, 5}},
-                 .filter = {.type = mojom::Operand::DataType::kInt8,
+                 .filter = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 2, 3, 3}},
                  .attributes = {.input_layout =
                                     mojom::InputOperandLayout::kChannelsFirst},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 3, 3}},
                  .expected = true}
         .Test();
@@ -1260,7 +1402,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with clamp activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1292,9 +1434,23 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
         .Test();
   }
   {
+    // Test conv2d with gelu activation.
+    Conv2dTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {1, 1, 5, 5}},
+        .filter = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {1, 1, 3, 3}},
+        .attributes = {.activation =
+                           Activation{.kind = mojom::Activation::Tag::kGelu}},
+        .output = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {1, 1, 3, 3}},
+        .expected = true}
+        .Test();
+  }
+  {
     // Test conv2d with hardSigmoid activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1344,7 +1500,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with relu activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1359,7 +1515,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with sigmoid activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1375,7 +1531,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with softmax activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1391,14 +1547,14 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with softplus activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
                    .dimensions = {1, 1, 3, 3}},
         .attributes = {.activation =
-                           Activation{.kind = mojom::Activation::Tag::kSoftplus,
-                                      .softplus_steepness = 1.5}},
+                           Activation{.kind =
+                                          mojom::Activation::Tag::kSoftplus}},
         .output = {.type = mojom::Operand::DataType::kFloat32,
                    .dimensions = {1, 1, 3, 3}},
         .expected = true}
@@ -1407,7 +1563,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with softsign activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1423,7 +1579,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test conv2d with tanh activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1452,7 +1608,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   }
   {
     // Test the invalid graph when the input is not a 4-D tensor.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1463,8 +1619,20 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
         .Test();
   }
   {
+    // Test the invalid graph when the input data type is not floating point.
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
+                 .input = {.type = mojom::Operand::DataType::kInt8,
+                           .dimensions = {1, 1, 5, 5}},
+                 .filter = {.type = mojom::Operand::DataType::kInt8,
+                            .dimensions = {1, 1, 3, 3}},
+                 .output = {.type = mojom::Operand::DataType::kInt8,
+                            .dimensions = {1, 1, 3, 3}},
+                 .expected = false}
+        .Test();
+  }
+  {
     // Test the invalid graph when the filter is not a 4-D tensor.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1477,7 +1645,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test the invalid graph when the filter type doesn't match the input
     // type.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kInt32,
@@ -1490,7 +1658,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test the invalid graph when the bias type doesn't match input type.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1507,7 +1675,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
     // Test the invalid graph when the bias shape is not equal to
     // [output_channels].
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1524,7 +1692,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test the invalid graph when the number of filter input channels
     // doesn't match the result of input channels divided by groups
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1538,7 +1706,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   {
     // Test the invalid graph when the max value is less than the min value.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kDirect,
+        .type = mojom::Conv2d::Kind::kDirect,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 5, 5}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1556,7 +1724,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   }
   {
     // Test the invalid graph for the output shapes are not expected.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1568,12 +1736,12 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
   }
   {
     // Test the invalid graph for output types don't match.
-    Conv2dTester{.type = mojom::Conv2d_Type::kDirect,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kDirect,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
                             .dimensions = {1, 1, 3, 3}},
-                 .output = {.type = mojom::Operand::DataType::kInt32,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 1, 3, 3}},
                  .expected = false}
         .Test();
@@ -1586,9 +1754,9 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
     uint64_t filter_operand_id = builder.BuildInput(
         "filter", {1, 1, 3, 3}, mojom::Operand::DataType::kFloat32);
 
-    builder.BuildConv2d(mojom::Conv2d_Type::kDirect, input_operand_id,
+    builder.BuildConv2d(mojom::Conv2d::Kind::kDirect, input_operand_id,
                         filter_operand_id, input_operand_id,
-                        Conv2dTester::Conv2dAttributes{}, absl::nullopt);
+                        Conv2dTester::Conv2dAttributes{}, std::nullopt);
 
     EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
   }
@@ -1600,9 +1768,9 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
     uint64_t filter_operand_id = builder.BuildInput(
         "filter", {1, 1, 3, 3}, mojom::Operand::DataType::kFloat32);
 
-    builder.BuildConv2d(mojom::Conv2d_Type::kDirect, input_operand_id,
+    builder.BuildConv2d(mojom::Conv2d::Kind::kDirect, input_operand_id,
                         filter_operand_id, filter_operand_id,
-                        Conv2dTester::Conv2dAttributes{}, absl::nullopt);
+                        Conv2dTester::Conv2dAttributes{}, std::nullopt);
 
     EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
   }
@@ -1611,7 +1779,7 @@ TEST_F(WebNNGraphImplTest, Conv2dTest) {
 TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with default attributes.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1623,7 +1791,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test convTranspose2d with input_layout = kChannelsLast.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 3, 3, 1}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1637,7 +1805,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test convTranspose2d with padding = [1, 1, 1, 1].
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1650,7 +1818,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test convTranspose2d with strides = [2, 2].
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1664,7 +1832,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with strides = [2, 2] and padding = [1, 1, 1,
     // 1].
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1677,7 +1845,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test convTranspose2d with group = 3.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1691,7 +1859,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with clamp activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1710,7 +1878,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with relu activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1725,7 +1893,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with sigmoid activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1741,7 +1909,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with softmax activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1757,14 +1925,14 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with softplus activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
                    .dimensions = {1, 1, 3, 3}},
         .attributes = {.activation =
-                           Activation{.kind = mojom::Activation::Tag::kSoftplus,
-                                      .softplus_steepness = 1.5}},
+                           Activation{.kind =
+                                          mojom::Activation::Tag::kSoftplus}},
         .output = {.type = mojom::Operand::DataType::kFloat32,
                    .dimensions = {1, 1, 5, 5}},
         .expected = true}
@@ -1773,7 +1941,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test convTranspose2d with tanh activation.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1787,7 +1955,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test the invalid graph for output types don't match.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 5, 5}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1799,7 +1967,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test the invalid graph for the input is not a 4-D tensor.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1811,7 +1979,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   }
   {
     // Test the invalid graph for the filter is not a 4-D tensor.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1824,7 +1992,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test the invalid graph when the number of input channels is not equal
     // to the number of filter input channels.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1838,7 +2006,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test the invalid graph when the number of output channels doesn't
     // match the result of filter output channels multiplied by groups
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1852,7 +2020,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test the invalid graph when the filter type doesn't match the input
     // type.
-    Conv2dTester{.type = mojom::Conv2d_Type::kTransposed,
+    Conv2dTester{.type = mojom::Conv2d::Kind::kTransposed,
                  .input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 1, 3, 3}},
                  .filter = {.type = mojom::Operand::DataType::kInt32,
@@ -1865,7 +2033,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test the invalid graph when the bias type doesn't match input type.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1882,7 +2050,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
     // Test the invalid graph when the bias shape is not equal to
     // [output_channels].
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1899,7 +2067,7 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
   {
     // Test the invalid graph when the max value is less than the min value.
     Conv2dTester{
-        .type = mojom::Conv2d_Type::kTransposed,
+        .type = mojom::Conv2d::Kind::kTransposed,
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 1, 3, 3}},
         .filter = {.type = mojom::Operand::DataType::kFloat32,
@@ -1923,9 +2091,9 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
     uint64_t filter_operand_id = builder.BuildInput(
         "filter", {1, 1, 3, 3}, mojom::Operand::DataType::kFloat32);
 
-    builder.BuildConv2d(mojom::Conv2d_Type::kTransposed, input_operand_id,
+    builder.BuildConv2d(mojom::Conv2d::Kind::kTransposed, input_operand_id,
                         filter_operand_id, input_operand_id,
-                        Conv2dTester::Conv2dAttributes{}, absl::nullopt);
+                        Conv2dTester::Conv2dAttributes{}, std::nullopt);
 
     EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
   }
@@ -1937,9 +2105,9 @@ TEST_F(WebNNGraphImplTest, ConvTranspose2dTest) {
     uint64_t filter_operand_id = builder.BuildInput(
         "filter", {1, 1, 3, 3}, mojom::Operand::DataType::kFloat32);
 
-    builder.BuildConv2d(mojom::Conv2d_Type::kTransposed, input_operand_id,
+    builder.BuildConv2d(mojom::Conv2d::Kind::kTransposed, input_operand_id,
                         filter_operand_id, filter_operand_id,
-                        Conv2dTester::Conv2dAttributes{}, absl::nullopt);
+                        Conv2dTester::Conv2dAttributes{}, std::nullopt);
 
     EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
   }
@@ -2776,12 +2944,75 @@ TEST_F(WebNNGraphImplTest, GatherTest) {
   }
 }
 
+struct GeluTester {
+  OperandInfo input;
+  OperandInfo output;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t output_operand_id =
+        builder.BuildOutput("output", output.dimensions, output.type);
+    builder.BuildGelu(input_operand_id, output_operand_id);
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, GeluTest) {
+  {
+    // Test gelu operator for 3-D tensor with float32 input.
+    GeluTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                         .dimensions = {2, 6, 4}},
+               .output = {.type = mojom::Operand::DataType::kFloat32,
+                          .dimensions = {2, 6, 4}},
+               .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the input has data type int32.
+    GeluTester{
+        .input = {.type = mojom::Operand::DataType::kInt32, .dimensions = {}},
+        .output = {.type = mojom::Operand::DataType::kInt32, .dimensions = {}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph for the output shapes are not expected.
+    GeluTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                         .dimensions = {4, 2}},
+               .output = {.type = mojom::Operand::DataType::kFloat32,
+                          .dimensions = {2}},
+               .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph for output types don't match.
+    GeluTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {2}},
+        .output = {.type = mojom::Operand::DataType::kInt32, .dimensions = {2}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the input has the same id as the output.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", {1}, mojom::Operand::DataType::kFloat16);
+    builder.BuildGelu(input_operand_id, input_operand_id);
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
 struct GemmTester {
   OperandInfo a;
   OperandInfo b;
-  absl::optional<OperandInfo> c;
+  std::optional<OperandInfo> c;
   struct GemmAttributes {
-    absl::optional<uint64_t> c_operand_id;
+    std::optional<uint64_t> c_operand_id;
     float alpha = 1.0;
     float beta = 1.0;
     bool a_transpose = false;
@@ -2900,6 +3131,16 @@ TEST_F(WebNNGraphImplTest, GemmTest) {
         .Test();
   }
   {
+    // Test the invalid graph if the input is not floating point.
+    GemmTester{
+        .a = {.type = mojom::Operand::DataType::kInt32, .dimensions = {2, 3}},
+        .b = {.type = mojom::Operand::DataType::kInt32, .dimensions = {3, 4}},
+        .output = {.type = mojom::Operand::DataType::kInt32,
+                   .dimensions = {2, 4}},
+        .expected = false}
+        .Test();
+  }
+  {
     // Test the invalid graph for the output shapes are not expected.
     GemmTester{
         .a = {.type = mojom::Operand::DataType::kFloat32, .dimensions = {2, 3}},
@@ -2921,13 +3162,732 @@ TEST_F(WebNNGraphImplTest, GemmTest) {
   }
 }
 
+struct GruTester {
+  struct GruAttributes {
+    std::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> recurrent_bias_operand_id;
+    std::optional<uint64_t> initial_hidden_state_operand_id;
+    bool reset_after = true;
+    bool return_sequence = false;
+    mojom::RecurrentNetworkDirection direction =
+        mojom::RecurrentNetworkDirection::kForward;
+    mojom::GruWeightLayout layout = mojom::GruWeightLayout::kZrn;
+    std::vector<Activation> activations = {
+        Activation{.kind = mojom::Activation::Tag::kSigmoid},
+        Activation{.kind = mojom::Activation::Tag::kTanh}};
+  };
+
+  OperandInfo input;
+  OperandInfo weight;
+  OperandInfo recurrent_weight;
+  uint32_t steps;
+  uint32_t hidden_size;
+  std::optional<OperandInfo> bias;
+  std::optional<OperandInfo> recurrent_bias;
+  std::optional<OperandInfo> initial_hidden_state;
+  GruAttributes attributes;
+  std::vector<OperandInfo> outputs;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", weight.dimensions, weight.type);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", recurrent_weight.dimensions, recurrent_weight.type);
+
+    std::vector<uint64_t> output_operand_ids;
+    output_operand_ids.reserve(outputs.size());
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      output_operand_ids.push_back(
+          builder.BuildOutput(base::StringPrintf("output%zu", i),
+                              outputs[i].dimensions, outputs[i].type));
+    }
+
+    if (bias.has_value()) {
+      attributes.bias_operand_id =
+          builder.BuildInput("bias", bias->dimensions, bias->type);
+    }
+    if (recurrent_bias.has_value()) {
+      attributes.recurrent_bias_operand_id = builder.BuildInput(
+          "recurrentBias", recurrent_bias->dimensions, recurrent_bias->type);
+    }
+    if (initial_hidden_state.has_value()) {
+      attributes.initial_hidden_state_operand_id = builder.BuildInput(
+          "initialHiddenState", initial_hidden_state->dimensions,
+          initial_hidden_state->type);
+    }
+
+    builder.BuildGru(input_operand_id, weight_operand_id,
+                     recurrent_weight_operand_id, std::move(output_operand_ids),
+                     steps, hidden_size, std::move(attributes));
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, GruTest) {
+  {
+    // Test the gru operator.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 2;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 3 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .bias = OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {num_directions, 3 * hidden_size}},
+        .recurrent_bias =
+            OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                        .dimensions = {num_directions, 3 * hidden_size}},
+        .initial_hidden_state =
+            OperandInfo{
+                .type = mojom::Operand::DataType::kFloat32,
+                .dimensions = {num_directions, batch_size, hidden_size}},
+        .attributes = {.reset_after = true,
+                       .return_sequence = true,
+                       .direction = mojom::RecurrentNetworkDirection::kBoth},
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {steps, num_directions, batch_size,
+                                    hidden_size}}},
+        .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of weight is incorrect.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 4 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size, hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the the number of activation is not 2.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 3 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .attributes =
+            {.direction = mojom::RecurrentNetworkDirection::kBackward,
+             .activations = {Activation{.kind =
+                                            mojom::Activation::Tag::kSigmoid},
+                             Activation{.kind = mojom::Activation::Tag::kTanh},
+                             Activation{
+                                 .kind = mojom::Activation::Tag::kClamp,
+                                 .clamp_attributes =
+                                     ClampTester::ClampAttributes{
+                                         .min_value = 2.0, .max_value = 3.0}}}},
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size, hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the clamp activation has incorrect
+    // attributes.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 3 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .attributes =
+            {.direction = mojom::RecurrentNetworkDirection::kBackward,
+             .activations = {Activation{.kind =
+                                            mojom::Activation::Tag::kSigmoid},
+                             Activation{
+                                 .kind = mojom::Activation::Tag::kClamp,
+                                 .clamp_attributes =
+                                     ClampTester::ClampAttributes{
+                                         .min_value = 3.0, .max_value = 2.0}}}},
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size, hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output shape is incorrect.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 3 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size,
+                                    3 * hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output number is incorrect.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+    GruTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {num_directions, 3 * hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {num_directions, 3 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {num_directions, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {steps, num_directions, batch_size,
+                                    hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the initial hidden state has the same id as
+    // one of the outputs.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t num_directions = 1;
+
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", {steps, batch_size, input_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t weight_operand_id = builder.BuildInput(
+        "weight", {num_directions, 3 * hidden_size, input_size},
+        mojom::Operand::DataType::kFloat32);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", {num_directions, 3 * hidden_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+
+    uint64_t initial_hidden_state_operand_id = builder.BuildInput(
+        "initialHiddenState", {num_directions, batch_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+
+    builder.BuildGru(
+        input_operand_id, weight_operand_id, recurrent_weight_operand_id,
+        {initial_hidden_state_operand_id}, steps, hidden_size,
+        GruTester::GruAttributes{.initial_hidden_state_operand_id =
+                                     initial_hidden_state_operand_id});
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
+struct GruCellTester {
+  struct GruCellAttributes {
+    std::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> recurrent_bias_operand_id;
+    bool reset_after = true;
+    mojom::GruWeightLayout layout = mojom::GruWeightLayout::kZrn;
+    std::vector<Activation> activations = {
+        Activation{.kind = mojom::Activation::Tag::kSigmoid},
+        Activation{.kind = mojom::Activation::Tag::kTanh}};
+  };
+
+  OperandInfo input;
+  OperandInfo weight;
+  OperandInfo recurrent_weight;
+  OperandInfo hidden_state;
+  uint32_t hidden_size;
+  std::optional<OperandInfo> bias;
+  std::optional<OperandInfo> recurrent_bias;
+  GruCellAttributes attributes;
+  OperandInfo output;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", weight.dimensions, weight.type);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", recurrent_weight.dimensions, recurrent_weight.type);
+    uint64_t hidden_state_operand_id = builder.BuildInput(
+        "hiddenState", hidden_state.dimensions, hidden_state.type);
+
+    if (bias.has_value()) {
+      attributes.bias_operand_id =
+          builder.BuildInput("bias", bias->dimensions, bias->type);
+    }
+    if (recurrent_bias.has_value()) {
+      attributes.recurrent_bias_operand_id = builder.BuildInput(
+          "recurrentBias", recurrent_bias->dimensions, recurrent_bias->type);
+    }
+
+    uint64_t output_operand_id =
+        builder.BuildOutput("output", output.dimensions, output.type);
+
+    builder.BuildGruCell(input_operand_id, weight_operand_id,
+                         recurrent_weight_operand_id, hidden_state_operand_id,
+                         output_operand_id, hidden_size, std::move(attributes));
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, GruCellTest) {
+  uint32_t batch_size = 2;
+  uint32_t input_size = 4;
+  uint32_t hidden_size = 6;
+
+  OperandInfo valid_input = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {batch_size, input_size}};
+  OperandInfo valid_weight = {.type = mojom::Operand::DataType::kFloat32,
+                              .dimensions = {3 * hidden_size, input_size}};
+  OperandInfo valid_recurrent_weight = {
+      .type = mojom::Operand::DataType::kFloat32,
+      .dimensions = {3 * hidden_size, hidden_size}};
+  OperandInfo valid_hidden_state = {.type = mojom::Operand::DataType::kFloat32,
+                                    .dimensions = {batch_size, hidden_size}};
+  OperandInfo valid_bias = {.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {3 * hidden_size}};
+  OperandInfo valid_recurrent_bias = {
+      .type = mojom::Operand::DataType::kFloat32,
+      .dimensions = {3 * hidden_size}};
+  OperandInfo valid_output = {.type = mojom::Operand::DataType::kFloat32,
+                              .dimensions = {batch_size, hidden_size}};
+
+  {
+    // Test the valid gruCell operator.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the input is incorrect.
+    GruCellTester{.input = {.type = mojom::Operand::DataType::kInt8,
+                            .dimensions = {batch_size, input_size}},
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the input is incorrect.
+    GruCellTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {1, input_size}},
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the input is incorrect.
+    GruCellTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {input_size}},
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the weight is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = {.type = mojom::Operand::DataType::kInt8,
+                             .dimensions = {3 * hidden_size, input_size}},
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the weight is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {4 * hidden_size, input_size}},
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the weight is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {3 * hidden_size}},
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the recurrent weight is
+    // incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = {.type = mojom::Operand::DataType::kInt8,
+                             .dimensions = {3 * hidden_size, hidden_size}},
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = valid_bias,
+        .recurrent_bias = valid_recurrent_bias,
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the recurrent weight is
+    // incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {3 * hidden_size, input_size}},
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = valid_bias,
+        .recurrent_bias = valid_recurrent_bias,
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the recurrent weight is
+    // incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {3 * hidden_size}},
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = valid_bias,
+        .recurrent_bias = valid_recurrent_bias,
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the hidden_size is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = 1000,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the bias is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = OperandInfo{.type = mojom::Operand::DataType::kUint8,
+                                      .dimensions = {3 * hidden_size}},
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the bias is incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {4 * hidden_size}},
+        .recurrent_bias = valid_recurrent_bias,
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the bias is incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {3 * hidden_size, hidden_size}},
+        .recurrent_bias = valid_recurrent_bias,
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the recurrent bias is
+    // incorrect.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .bias = valid_bias,
+        .recurrent_bias = OperandInfo{.type = mojom::Operand::DataType::kUint8,
+                                      .dimensions = {3 * hidden_size}},
+        .attributes = {.reset_after = true},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the recurrent bias is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias =
+                      OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                                  .dimensions = {4 * hidden_size}},
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the recurrent bias is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias =
+                      OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                                  .dimensions = {3 * hidden_size, hidden_size}},
+                  .attributes = {.reset_after = true},
+                  .output = valid_output,
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the the number of activation is not 2.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .attributes = {.activations =
+                           {Activation{.kind =
+                                           mojom::Activation::Tag::kSigmoid},
+                            Activation{.kind = mojom::Activation::Tag::kTanh},
+                            Activation{.kind = mojom::Activation::Tag::kTanh}}},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the clamp activation has incorrect
+    // attributes.
+    GruCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .hidden_size = hidden_size,
+        .attributes =
+            {.activations = {Activation{.kind =
+                                            mojom::Activation::Tag::kSigmoid},
+                             Activation{
+                                 .kind = mojom::Activation::Tag::kClamp,
+                                 .clamp_attributes =
+                                     ClampTester::ClampAttributes{
+                                         .min_value = 3.0, .max_value = 2.0}}}},
+        .output = valid_output,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output data type is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = {.type = mojom::Operand::DataType::kInt32,
+                             .dimensions = {batch_size, hidden_size}},
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output shape is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {batch_size, 3 * hidden_size}},
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output rank is incorrect.
+    GruCellTester{.input = valid_input,
+                  .weight = valid_weight,
+                  .recurrent_weight = valid_recurrent_weight,
+                  .hidden_state = valid_hidden_state,
+                  .hidden_size = hidden_size,
+                  .bias = valid_bias,
+                  .recurrent_bias = valid_recurrent_bias,
+                  .attributes = {.reset_after = true},
+                  .output = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {hidden_size}},
+                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the hidden state has the same id as the
+    // output.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id = builder.BuildInput(
+        "input", {batch_size, input_size}, mojom::Operand::DataType::kFloat32);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", {3 * hidden_size, input_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t recurrent_weight_operand_id =
+        builder.BuildInput("recurrentWeight", {3 * hidden_size, hidden_size},
+                           mojom::Operand::DataType::kFloat32);
+
+    uint64_t hidden_state_operand_id =
+        builder.BuildInput("hiddenState", {batch_size, hidden_size},
+                           mojom::Operand::DataType::kFloat32);
+
+    builder.BuildGruCell(input_operand_id, weight_operand_id,
+                         recurrent_weight_operand_id, hidden_state_operand_id,
+                         hidden_state_operand_id, hidden_size,
+                         GruCellTester::GruCellAttributes{.reset_after = true});
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
 struct InstanceNormalizationTester {
   OperandInfo input;
-  absl::optional<OperandInfo> scale;
-  absl::optional<OperandInfo> bias;
+  std::optional<OperandInfo> scale;
+  std::optional<OperandInfo> bias;
   struct InstanceNormalizationAttributes {
-    absl::optional<uint64_t> scale_operand_id;
-    absl::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> scale_operand_id;
+    std::optional<uint64_t> bias_operand_id;
     mojom::InputOperandLayout layout =
         mojom::InputOperandLayout::kChannelsFirst;
     float epsilon = 1e-5;
@@ -3125,11 +4085,11 @@ TEST_F(WebNNGraphImplTest, InstanceNormalizationTest) {
 
 struct LayerNormalizationTester {
   OperandInfo input;
-  absl::optional<OperandInfo> scale;
-  absl::optional<OperandInfo> bias;
+  std::optional<OperandInfo> scale;
+  std::optional<OperandInfo> bias;
   struct LayerNormalizationAttributes {
-    absl::optional<uint64_t> scale_operand_id;
-    absl::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> scale_operand_id;
+    std::optional<uint64_t> bias_operand_id;
     std::vector<uint32_t> axes;
     float epsilon = 1e-5;
   };
@@ -3320,6 +4280,598 @@ TEST_F(WebNNGraphImplTest, LayerNormalizationTest) {
   }
 }
 
+struct LstmTester {
+  struct LstmAttributes {
+    std::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> recurrent_bias_operand_id;
+    std::optional<uint64_t> peephole_weight_operand_id;
+    std::optional<uint64_t> initial_hidden_state_operand_id;
+    std::optional<uint64_t> initial_cell_state_operand_id;
+    bool return_sequence = false;
+    mojom::RecurrentNetworkDirection direction =
+        mojom::RecurrentNetworkDirection::kForward;
+    mojom::LstmWeightLayout layout = mojom::LstmWeightLayout::kIofg;
+    std::vector<Activation> activations = {
+        Activation{.kind = mojom::Activation::Tag::kSigmoid},
+        Activation{.kind = mojom::Activation::Tag::kTanh},
+        Activation{.kind = mojom::Activation::Tag::kTanh}};
+  };
+
+  OperandInfo input;
+  OperandInfo weight;
+  OperandInfo recurrent_weight;
+  uint32_t steps;
+  uint32_t hidden_size;
+  std::optional<OperandInfo> bias;
+  std::optional<OperandInfo> recurrent_bias;
+  std::optional<OperandInfo> peephole_weight;
+  std::optional<OperandInfo> initial_hidden_state;
+  std::optional<OperandInfo> initial_cell_state;
+  LstmAttributes attributes;
+  std::vector<OperandInfo> outputs;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", weight.dimensions, weight.type);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", recurrent_weight.dimensions, recurrent_weight.type);
+
+    std::vector<uint64_t> output_operand_ids;
+    output_operand_ids.reserve(outputs.size());
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      output_operand_ids.push_back(
+          builder.BuildOutput(base::StringPrintf("output%zu", i),
+                              outputs[i].dimensions, outputs[i].type));
+    }
+
+    if (bias.has_value()) {
+      attributes.bias_operand_id =
+          builder.BuildInput("bias", bias->dimensions, bias->type);
+    }
+    if (recurrent_bias.has_value()) {
+      attributes.recurrent_bias_operand_id = builder.BuildInput(
+          "recurrentBias", recurrent_bias->dimensions, recurrent_bias->type);
+    }
+    if (peephole_weight.has_value()) {
+      attributes.peephole_weight_operand_id = builder.BuildInput(
+          "peepholeWeight", peephole_weight->dimensions, peephole_weight->type);
+    }
+    if (initial_hidden_state.has_value()) {
+      attributes.initial_hidden_state_operand_id = builder.BuildInput(
+          "initialHiddenState", initial_hidden_state->dimensions,
+          initial_hidden_state->type);
+    }
+    if (initial_cell_state.has_value()) {
+      attributes.initial_cell_state_operand_id =
+          builder.BuildInput("initialCellState", initial_cell_state->dimensions,
+                             initial_cell_state->type);
+    }
+
+    builder.BuildLstm(input_operand_id, weight_operand_id,
+                      recurrent_weight_operand_id,
+                      std::move(output_operand_ids), steps, hidden_size,
+                      std::move(attributes));
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, LstmTest) {
+  {
+    // Test the lstm operator.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 2;
+    LstmTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {direction_count, 4 * hidden_size,
+                                  input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {direction_count, 4 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .bias = OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {direction_count, 4 * hidden_size}},
+        .recurrent_bias =
+            OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                        .dimensions = {direction_count, 4 * hidden_size}},
+        .peephole_weight =
+            OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                        .dimensions = {direction_count, 3 * hidden_size}},
+        .initial_hidden_state =
+            OperandInfo{
+                .type = mojom::Operand::DataType::kFloat32,
+                .dimensions = {direction_count, batch_size, hidden_size}},
+        .initial_cell_state =
+            OperandInfo{
+                .type = mojom::Operand::DataType::kFloat32,
+                .dimensions = {direction_count, batch_size, hidden_size}},
+        .attributes = {.return_sequence = true,
+                       .direction = mojom::RecurrentNetworkDirection::kBoth},
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {steps, direction_count, batch_size,
+                                    hidden_size}}},
+        .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of weight is incorrect.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 1;
+    LstmTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {direction_count, 4 * hidden_size, 1000}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {direction_count, 4 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the clamp activation has incorrect
+    // attributes.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 1;
+    LstmTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {direction_count, 4 * hidden_size,
+                                  input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {direction_count, 4 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .attributes =
+            {.direction = mojom::RecurrentNetworkDirection::kBackward,
+             .activations = {Activation{.kind =
+                                            mojom::Activation::Tag::kSigmoid},
+                             Activation{.kind = mojom::Activation::Tag::kTanh},
+                             Activation{
+                                 .kind = mojom::Activation::Tag::kClamp,
+                                 .clamp_attributes =
+                                     ClampTester::ClampAttributes{
+                                         .min_value = 3.0, .max_value = 2.0}}}},
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output is incorrect.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 1;
+    LstmTester{
+        .input = {.type = mojom::Operand::DataType::kFloat32,
+                  .dimensions = {steps, batch_size, input_size}},
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {direction_count, 4 * hidden_size,
+                                  input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {direction_count, 4 * hidden_size,
+                                            hidden_size}},
+        .steps = steps,
+        .hidden_size = hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {direction_count, batch_size, 1000}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the recurrent weight has the same id as
+    // one of the outputs.
+    uint32_t steps = 2;
+    uint32_t batch_size = 16;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 1;
+
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", {steps, batch_size, input_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t weight_operand_id = builder.BuildInput(
+        "weight", {direction_count, 4 * hidden_size, input_size},
+        mojom::Operand::DataType::kFloat32);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", {direction_count, 4 * hidden_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+
+    uint64_t output_operand_id = builder.BuildOutput(
+        "output", {direction_count, batch_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+    builder.BuildLstm(input_operand_id, weight_operand_id,
+                      recurrent_weight_operand_id,
+                      {output_operand_id, recurrent_weight_operand_id}, steps,
+                      hidden_size, LstmTester::LstmAttributes{});
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+  {
+    // Test the invalid graph when the initial cell state has the same id as
+    // one of the outputs.
+    uint32_t steps = 2;
+    uint32_t batch_size = 1;
+    uint32_t input_size = 3;
+    uint32_t hidden_size = 4;
+    uint32_t direction_count = 1;
+
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", {steps, batch_size, input_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t weight_operand_id = builder.BuildInput(
+        "weight", {direction_count, 4 * hidden_size, input_size},
+        mojom::Operand::DataType::kFloat32);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", {direction_count, 4 * hidden_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+
+    uint64_t initial_cell_state_operand_id = builder.BuildInput(
+        "initialCellState", {direction_count, batch_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+    uint64_t output_operand_id = builder.BuildOutput(
+        "output", {direction_count, batch_size, hidden_size},
+        mojom::Operand::DataType::kFloat32);
+
+    builder.BuildLstm(
+        input_operand_id, weight_operand_id, recurrent_weight_operand_id,
+        {initial_cell_state_operand_id, output_operand_id}, steps, hidden_size,
+        LstmTester::LstmAttributes{.initial_cell_state_operand_id =
+                                       initial_cell_state_operand_id});
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
+struct LstmCellTester {
+  struct LstmCellAttributes {
+    std::optional<uint64_t> bias_operand_id;
+    std::optional<uint64_t> recurrent_bias_operand_id;
+    std::optional<uint64_t> peephole_weight_operand_id;
+    mojom::LstmWeightLayout layout = mojom::LstmWeightLayout::kIofg;
+    std::vector<Activation> activations = {
+        Activation{.kind = mojom::Activation::Tag::kSigmoid},
+        Activation{.kind = mojom::Activation::Tag::kTanh},
+        Activation{.kind = mojom::Activation::Tag::kTanh}};
+  };
+
+  OperandInfo input;
+  OperandInfo weight;
+  OperandInfo recurrent_weight;
+  OperandInfo hidden_state;
+  OperandInfo cell_state;
+  uint32_t hidden_size;
+  std::optional<OperandInfo> bias;
+  std::optional<OperandInfo> recurrent_bias;
+  std::optional<OperandInfo> peephole_weight;
+  LstmCellAttributes attributes;
+  std::vector<OperandInfo> outputs;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", weight.dimensions, weight.type);
+    uint64_t recurrent_weight_operand_id = builder.BuildInput(
+        "recurrentWeight", recurrent_weight.dimensions, recurrent_weight.type);
+    uint64_t hidden_state_operand_id = builder.BuildInput(
+        "hiddenState", hidden_state.dimensions, hidden_state.type);
+    uint64_t cell_state_operand_id =
+        builder.BuildInput("cellState", cell_state.dimensions, cell_state.type);
+
+    std::vector<uint64_t> output_operand_ids;
+    output_operand_ids.reserve(outputs.size());
+    for (size_t i = 0; i < outputs.size(); ++i) {
+      output_operand_ids.push_back(
+          builder.BuildOutput(base::StringPrintf("output%zu", i),
+                              outputs[i].dimensions, outputs[i].type));
+    }
+
+    if (bias.has_value()) {
+      attributes.bias_operand_id =
+          builder.BuildInput("bias", bias->dimensions, bias->type);
+    }
+    if (recurrent_bias.has_value()) {
+      attributes.recurrent_bias_operand_id = builder.BuildInput(
+          "recurrentBias", recurrent_bias->dimensions, recurrent_bias->type);
+    }
+    if (peephole_weight.has_value()) {
+      attributes.peephole_weight_operand_id = builder.BuildInput(
+          "peepholeWeight", peephole_weight->dimensions, peephole_weight->type);
+    }
+
+    builder.BuildLstmCell(input_operand_id, weight_operand_id,
+                          recurrent_weight_operand_id, hidden_state_operand_id,
+                          cell_state_operand_id, std::move(output_operand_ids),
+                          hidden_size, std::move(attributes));
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, LstmCellTest) {
+  uint32_t batch_size = 15;
+  uint32_t input_size = 12;
+  uint32_t hidden_size = 20;
+
+  OperandInfo valid_input = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {batch_size, input_size}};
+  OperandInfo valid_weight = {.type = mojom::Operand::DataType::kFloat32,
+                              .dimensions = {4 * hidden_size, input_size}};
+  OperandInfo valid_recurrent_weight = {
+      .type = mojom::Operand::DataType::kFloat32,
+      .dimensions = {4 * hidden_size, hidden_size}};
+  OperandInfo valid_hidden_state = {.type = mojom::Operand::DataType::kFloat32,
+                                    .dimensions = {batch_size, hidden_size}};
+  OperandInfo valid_cell_state = {.type = mojom::Operand::DataType::kFloat32,
+                                  .dimensions = {batch_size, hidden_size}};
+  OperandInfo valid_bias = {.type = mojom::Operand::DataType::kFloat32,
+                            .dimensions = {4 * hidden_size}};
+  OperandInfo valid_recurrent_bias = {
+      .type = mojom::Operand::DataType::kFloat32,
+      .dimensions = {4 * hidden_size}};
+  OperandInfo valid_peephole_weight = {
+      .type = mojom::Operand::DataType::kFloat32,
+      .dimensions = {3 * hidden_size}};
+  std::vector<OperandInfo> valid_outputs = {
+      {.type = mojom::Operand::DataType::kFloat32,
+       .dimensions = {batch_size, hidden_size}},
+      {.type = mojom::Operand::DataType::kFloat32,
+       .dimensions = {batch_size, hidden_size}}};
+  {
+    // Test a valid lstmCell operator.
+    LstmCellTester{.input = valid_input,
+                   .weight = valid_weight,
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = valid_hidden_state,
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .bias = valid_bias,
+                   .recurrent_bias = valid_recurrent_bias,
+                   .peephole_weight = valid_peephole_weight,
+                   .outputs = valid_outputs,
+                   .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the input is not one of the
+    // floating point types.
+    LstmCellTester{.input = {.type = mojom::Operand::DataType::kUint32,
+                             .dimensions = {batch_size, input_size}},
+                   .weight = valid_weight,
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = valid_hidden_state,
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .outputs = valid_outputs,
+                   .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the weight is incorrect.
+    LstmCellTester{.input = valid_input,
+                   .weight = {.type = mojom::Operand::DataType::kFloat16,
+                              .dimensions = {4 * hidden_size, input_size}},
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = valid_hidden_state,
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .outputs = valid_outputs,
+                   .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the recurrent weight is
+    // incorrect.
+    LstmCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {4 * hidden_size}},
+        .hidden_state = valid_hidden_state,
+        .cell_state = valid_cell_state,
+        .hidden_size = hidden_size,
+        .outputs = valid_outputs,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the hidden state is incorrect.
+    LstmCellTester{.input = valid_input,
+                   .weight = valid_weight,
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = {.type = mojom::Operand::DataType::kFloat32,
+                                    .dimensions = {batch_size, 1000}},
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .outputs = valid_outputs,
+                   .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the rank of the cell state is incorrect.
+    LstmCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .cell_state = {.type = mojom::Operand::DataType::kFloat32,
+                       .dimensions = {batch_size, hidden_size, 1000}},
+        .hidden_size = hidden_size,
+        .outputs = valid_outputs,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the bias incorrect.
+    LstmCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .cell_state = valid_cell_state,
+        .hidden_size = hidden_size,
+        .bias = OperandInfo{.type = mojom::Operand::DataType::kUint32,
+                            .dimensions = {4 * hidden_size}},
+        .outputs = valid_outputs,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the shape of the recurrent bias is incorrect.
+    LstmCellTester{.input = valid_input,
+                   .weight = valid_weight,
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = valid_hidden_state,
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .recurrent_bias =
+                       OperandInfo{.type = mojom::Operand::DataType::kFloat32,
+                                   .dimensions = {1000}},
+                   .outputs = valid_outputs,
+                   .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the data type of the peephole weight is
+    // incorrect.
+    LstmCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .cell_state = valid_cell_state,
+        .hidden_size = hidden_size,
+        .peephole_weight = OperandInfo{.type = mojom::Operand::DataType::kInt64,
+                                       .dimensions = {3 * hidden_size}},
+        .outputs = valid_outputs,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the output data type is incorrect.
+    LstmCellTester{.input = valid_input,
+                   .weight = valid_weight,
+                   .recurrent_weight = valid_recurrent_weight,
+                   .hidden_state = valid_hidden_state,
+                   .cell_state = valid_cell_state,
+                   .hidden_size = hidden_size,
+                   .outputs = {{.type = mojom::Operand::DataType::kInt8,
+                                .dimensions = {batch_size, hidden_size}},
+                               {.type = mojom::Operand::DataType::kInt8,
+                                .dimensions = {batch_size, hidden_size}}},
+                   .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the elu activation has incorrect
+    // attributes.
+    LstmCellTester{
+        .input = valid_input,
+        .weight = valid_weight,
+        .recurrent_weight = valid_recurrent_weight,
+        .hidden_state = valid_hidden_state,
+        .cell_state = valid_cell_state,
+        .hidden_size = hidden_size,
+        .attributes =
+            {.activations = {Activation{.kind =
+                                            mojom::Activation::Tag::kSigmoid},
+                             Activation{.kind = mojom::Activation::Tag::kTanh},
+                             Activation{.kind = mojom::Activation::Tag::kElu,
+                                        .elu_alpha = -1.0}}},
+        .outputs = valid_outputs,
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the hidden size is too large.
+    uint32_t invalid_hidden_size = 1431655765;
+    LstmCellTester{
+        .input = valid_input,
+        .weight = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {4 * invalid_hidden_size, input_size}},
+        .recurrent_weight = {.type = mojom::Operand::DataType::kFloat32,
+                             .dimensions = {4 * invalid_hidden_size,
+                                            invalid_hidden_size}},
+        .hidden_state = {.type = mojom::Operand::DataType::kFloat32,
+                         .dimensions = {batch_size, invalid_hidden_size}},
+        .cell_state = {.type = mojom::Operand::DataType::kFloat32,
+                       .dimensions = {batch_size, invalid_hidden_size}},
+        .hidden_size = invalid_hidden_size,
+        .outputs = {{.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {batch_size, invalid_hidden_size}},
+                    {.type = mojom::Operand::DataType::kFloat32,
+                     .dimensions = {batch_size, invalid_hidden_size}}},
+        .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the cell state has the same id as
+    // one of the outputs.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id = builder.BuildInput(
+        "input", {batch_size, input_size}, mojom::Operand::DataType::kFloat32);
+    uint64_t weight_operand_id =
+        builder.BuildInput("weight", {4 * hidden_size, input_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t recurrent_weight_operand_id =
+        builder.BuildInput("recurrentWeight", {4 * hidden_size, hidden_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t hidden_state_operand_id =
+        builder.BuildInput("hiddenState", {batch_size, hidden_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t cell_state_operand_id =
+        builder.BuildInput("cellState", {batch_size, hidden_size},
+                           mojom::Operand::DataType::kFloat32);
+    uint64_t output_operand_id =
+        builder.BuildOutput("output", {batch_size, hidden_size},
+                            mojom::Operand::DataType::kFloat32);
+
+    builder.BuildLstmCell(input_operand_id, weight_operand_id,
+                          recurrent_weight_operand_id, hidden_state_operand_id,
+                          cell_state_operand_id,
+                          {cell_state_operand_id, output_operand_id},
+                          hidden_size, LstmTester::LstmAttributes{});
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
 struct MatmulTester {
   OperandInfo a;
   OperandInfo b;
@@ -3402,6 +4954,16 @@ TEST_F(WebNNGraphImplTest, MatmulTest) {
                  .output = {.type = mojom::Operand::DataType::kFloat32,
                             .dimensions = {3, 4}},
                  .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph if the input is not floating point.
+    MatmulTester{
+        .a = {.type = mojom::Operand::DataType::kUint8, .dimensions = {2, 3}},
+        .b = {.type = mojom::Operand::DataType::kUint8, .dimensions = {3, 4}},
+        .output = {.type = mojom::Operand::DataType::kUint8,
+                   .dimensions = {2, 4}},
+        .expected = false}
         .Test();
   }
   {
@@ -3569,6 +5131,7 @@ struct Pool2dTester {
 
   void Test() {
     Test(mojom::Pool2d::Kind::kAveragePool2d);
+    Test(mojom::Pool2d::Kind::kL2Pool2d);
     Test(mojom::Pool2d::Kind::kMaxPool2d);
   }
 
@@ -3598,34 +5161,34 @@ TEST_F(WebNNGraphImplTest, Pool2dTest) {
   }
   {
     // Test pool2d with window dimensions.
-    Pool2dTester{.input = {.type = mojom::Operand::DataType::kInt8,
+    Pool2dTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 3, 5, 5}},
                  .attributes = {.window_dimensions = {2, 2}, .strides = {2, 2}},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat32,
                             .dimensions = {1, 3, 3, 3}},
                  .expected = true}
         .Test();
   }
   {
     // Test pool2d with strides=2, padding=1 and floor rounding.
-    Pool2dTester{.input = {.type = mojom::Operand::DataType::kInt8,
+    Pool2dTester{.input = {.type = mojom::Operand::DataType::kFloat16,
                            .dimensions = {1, 3, 7, 7}},
                  .attributes = {.window_dimensions = {4, 4},
                                 .padding = {1, 1, 1, 1},
                                 .strides = {2, 2}},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 3, 3, 3}},
                  .expected = true}
         .Test();
   }
   {
     // Test pool2d with strides=2, padding=1 and ceil rounding.
-    Pool2dTester{.input = {.type = mojom::Operand::DataType::kInt8,
+    Pool2dTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 3, 7, 7}},
                  .attributes = {.window_dimensions = {4, 4},
                                 .padding = {1, 1, 1, 1},
                                 .strides = {2, 2}},
-                 .output = {.type = mojom::Operand::DataType::kInt8,
+                 .output = {.type = mojom::Operand::DataType::kFloat32,
                             .dimensions = {1, 3, 4, 4}},
                  .expected = true}
         .Test();
@@ -3633,12 +5196,12 @@ TEST_F(WebNNGraphImplTest, Pool2dTest) {
   {
     // Test pool2d with layout="nhwc".
     Pool2dTester{
-        .input = {.type = mojom::Operand::DataType::kInt8,
+        .input = {.type = mojom::Operand::DataType::kFloat16,
                   .dimensions = {1, 5, 5, 2}},
         .attributes = {.window_dimensions = {3, 3},
                        .strides = {1, 1},
                        .layout = mojom::InputOperandLayout::kChannelsLast},
-        .output = {.type = mojom::Operand::DataType::kInt8,
+        .output = {.type = mojom::Operand::DataType::kFloat16,
                    .dimensions = {1, 3, 3, 2}},
         .expected = true}
         .Test();
@@ -3702,10 +5265,32 @@ TEST_F(WebNNGraphImplTest, Pool2dTest) {
     Pool2dTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                            .dimensions = {1, 3, 4, 4}},
                  .attributes = {.window_dimensions = {4, 4}, .strides = {1, 1}},
-                 .output = {.type = mojom::Operand::DataType::kInt32,
+                 .output = {.type = mojom::Operand::DataType::kFloat16,
                             .dimensions = {1, 3, 1, 1}},
                  .expected = false}
         .Test();
+  }
+  {
+    // Test the invalid graph if the input data type is not floating point for
+    // averagePool2d.
+    Pool2dTester{.input = {.type = mojom::Operand::DataType::kInt32,
+                           .dimensions = {1, 3, 4, 4}},
+                 .attributes = {.window_dimensions = {4, 4}, .strides = {1, 1}},
+                 .output = {.type = mojom::Operand::DataType::kInt32,
+                            .dimensions = {1, 3, 1, 1}},
+                 .expected = false}
+        .Test(mojom::Pool2d::Kind::kAveragePool2d);
+  }
+  {
+    // Test the invalid graph if the input data type is not floating point for
+    // l2Pool2d.
+    Pool2dTester{.input = {.type = mojom::Operand::DataType::kInt8,
+                           .dimensions = {1, 3, 4, 4}},
+                 .attributes = {.window_dimensions = {4, 4}, .strides = {1, 1}},
+                 .output = {.type = mojom::Operand::DataType::kInt8,
+                            .dimensions = {1, 3, 1, 1}},
+                 .expected = false}
+        .Test(mojom::Pool2d::Kind::kL2Pool2d);
   }
 }
 
@@ -3764,14 +5349,36 @@ TEST_F(WebNNGraphImplTest, PreluTest) {
         .Test();
   }
   {
-    // Test the invalid graph when the datatype isn't floating point.
+    // Test prelu operator with input data type and slope data type = int32.
     PreluTester{.input = {.type = mojom::Operand::DataType::kInt32,
                           .dimensions = {3, 2, 5}},
                 .slope = {.type = mojom::Operand::DataType::kInt32,
                           .dimensions = {3, 2, 5}},
                 .output = {.type = mojom::Operand::DataType::kInt32,
                            .dimensions = {3, 2, 5}},
-                .expected = false}
+                .expected = true}
+        .Test();
+  }
+  {
+    // Test prelu operator with input data type and slope data type = float16.
+    PreluTester{.input = {.type = mojom::Operand::DataType::kFloat16,
+                          .dimensions = {3, 2, 5}},
+                .slope = {.type = mojom::Operand::DataType::kFloat16,
+                          .dimensions = {3, 2, 5}},
+                .output = {.type = mojom::Operand::DataType::kFloat16,
+                           .dimensions = {3, 2, 5}},
+                .expected = true}
+        .Test();
+  }
+  {
+    // Test prelu operator with input data type and slope data type = int8.
+    PreluTester{.input = {.type = mojom::Operand::DataType::kInt8,
+                          .dimensions = {3, 2, 5}},
+                .slope = {.type = mojom::Operand::DataType::kInt8,
+                          .dimensions = {3, 2, 5}},
+                .output = {.type = mojom::Operand::DataType::kInt8,
+                           .dimensions = {3, 2, 5}},
+                .expected = true}
         .Test();
   }
   {
@@ -3782,6 +5389,18 @@ TEST_F(WebNNGraphImplTest, PreluTest) {
                 .slope = {.type = mojom::Operand::DataType::kFloat32,
                           .dimensions = {3, 2, 5}},
                 .output = {.type = mojom::Operand::DataType::kFloat16,
+                           .dimensions = {3, 2, 5}},
+                .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph when the input data type and slope data type =
+    // uint32.
+    PreluTester{.input = {.type = mojom::Operand::DataType::kUint32,
+                          .dimensions = {3, 2, 5}},
+                .slope = {.type = mojom::Operand::DataType::kUint32,
+                          .dimensions = {3, 2, 5}},
+                .output = {.type = mojom::Operand::DataType::kUint32,
                            .dimensions = {3, 2, 5}},
                 .expected = false}
         .Test();
@@ -4074,6 +5693,15 @@ TEST_F(WebNNGraphImplTest, ReluTest) {
         .Test();
   }
   {
+    // Test the invalid graph if the data type is not supported.
+    ReluTester{.input = {.type = mojom::Operand::DataType::kUint32,
+                         .dimensions = {4, 2}},
+               .output = {.type = mojom::Operand::DataType::kUint32,
+                          .dimensions = {4, 2}},
+               .expected = false}
+        .Test();
+  }
+  {
     // Test the invalid graph for the output shapes are not expected.
     ReluTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                          .dimensions = {4, 2}},
@@ -4098,7 +5726,7 @@ struct Resample2dTester {
   struct Resample2dAttributes {
     mojom::Resample2d::InterpolationMode mode =
         mojom::Resample2d::InterpolationMode::kNearestNeighbor;
-    absl::optional<std::vector<float>> scales;
+    std::optional<std::vector<float>> scales;
     std::vector<uint32_t> axes = {2, 3};
   };
   Resample2dAttributes attributes;
@@ -4129,7 +5757,7 @@ TEST_F(WebNNGraphImplTest, Resample2dTest) {
   }
   {
     // Test resample2d with "Linear" mode, axes = [1, 2] and explicit scales
-    // = [2, 2].
+    // = [2, 2], input_data_type = float32.
     Resample2dTester{
         .input = {.type = mojom::Operand::DataType::kFloat32,
                   .dimensions = {1, 2, 4, 1}},
@@ -4137,6 +5765,20 @@ TEST_F(WebNNGraphImplTest, Resample2dTest) {
                        .scales = std::vector<float>{2, 2},
                        .axes = {1, 2}},
         .output = {.type = mojom::Operand::DataType::kFloat32,
+                   .dimensions = {1, 4, 8, 1}},
+        .expected = true}
+        .Test();
+  }
+  {
+    // Test resample2d with "Linear" mode, axes = [1, 2] and explicit scales
+    // = [2, 2], input_data_type = float16.
+    Resample2dTester{
+        .input = {.type = mojom::Operand::DataType::kFloat16,
+                  .dimensions = {1, 2, 4, 1}},
+        .attributes = {.mode = mojom::Resample2d::InterpolationMode::kLinear,
+                       .scales = std::vector<float>{2, 2},
+                       .axes = {1, 2}},
+        .output = {.type = mojom::Operand::DataType::kFloat16,
                    .dimensions = {1, 4, 8, 1}},
         .expected = true}
         .Test();
@@ -4160,6 +5802,15 @@ TEST_F(WebNNGraphImplTest, Resample2dTest) {
     Resample2dTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                                .dimensions = {1, 1, 2, 4}},
                      .output = {.type = mojom::Operand::DataType::kFloat16,
+                                .dimensions = {1, 1, 4, 8}},
+                     .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph if the input is not floating point.
+    Resample2dTester{.input = {.type = mojom::Operand::DataType::kInt32,
+                               .dimensions = {1, 1, 2, 4}},
+                     .output = {.type = mojom::Operand::DataType::kInt32,
                                 .dimensions = {1, 1, 4, 8}},
                      .expected = false}
         .Test();
@@ -4487,7 +6138,13 @@ TEST_F(WebNNGraphImplTest, SliceTest) {
   }
 }
 
-enum class FloatingPointUnaryKind { kLeakyRelu, kLinear, kSigmoid, kTanh };
+enum class FloatingPointUnaryKind {
+  kHardSwish,
+  kLeakyRelu,
+  kLinear,
+  kSigmoid,
+  kTanh
+};
 
 struct FloatingPointUnaryTester {
   OperandInfo input;
@@ -4495,6 +6152,7 @@ struct FloatingPointUnaryTester {
   bool expected;
 
   void Test() {
+    Test(FloatingPointUnaryKind::kHardSwish);
     Test(FloatingPointUnaryKind::kLeakyRelu);
     Test(FloatingPointUnaryKind::kLinear);
     Test(FloatingPointUnaryKind::kSigmoid);
@@ -4509,6 +6167,9 @@ struct FloatingPointUnaryTester {
     uint64_t output_operand_id =
         builder.BuildOutput("output", output.dimensions, output.type);
     switch (kind) {
+      case FloatingPointUnaryKind::kHardSwish:
+        builder.BuildHardSwish(input_operand_id, output_operand_id);
+        break;
       case FloatingPointUnaryKind::kLeakyRelu:
         builder.BuildLeakyRelu(input_operand_id, output_operand_id,
                                /*alpha*/ 1.0);
@@ -4732,7 +6393,6 @@ TEST_F(WebNNGraphImplTest, SoftmaxTest) {
 struct SoftplusTester {
   OperandInfo input;
   OperandInfo output;
-  float steepness = 1.0;
   bool expected;
 
   void Test() {
@@ -4742,19 +6402,18 @@ struct SoftplusTester {
         builder.BuildInput("input", input.dimensions, input.type);
     uint64_t output_operand_id =
         builder.BuildOutput("output", output.dimensions, output.type);
-    builder.BuildSoftplus(input_operand_id, output_operand_id, steepness);
+    builder.BuildSoftplus(input_operand_id, output_operand_id);
     EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
   }
 };
 
 TEST_F(WebNNGraphImplTest, SoftplusTest) {
   {
-    // Test softplus operator with `steepness` = 1.5.
+    // Test softplus operator.
     SoftplusTester{.input = {.type = mojom::Operand::DataType::kFloat32,
                              .dimensions = {2, 2}},
                    .output = {.type = mojom::Operand::DataType::kFloat32,
                               .dimensions = {2, 2}},
-                   .steepness = 1.5,
                    .expected = true}
         .Test();
   }
@@ -4764,16 +6423,6 @@ TEST_F(WebNNGraphImplTest, SoftplusTest) {
                              .dimensions = {4, 2}},
                    .output = {.type = mojom::Operand::DataType::kInt32,
                               .dimensions = {4, 2}},
-                   .expected = false}
-        .Test();
-  }
-  {
-    // Test the invalid graph for `steepness` is NAN.
-    SoftplusTester{.input = {.type = mojom::Operand::DataType::kFloat16,
-                             .dimensions = {4, 2}},
-                   .output = {.type = mojom::Operand::DataType::kFloat16,
-                              .dimensions = {4, 2}},
-                   .steepness = NAN,
                    .expected = false}
         .Test();
   }
@@ -4800,9 +6449,7 @@ TEST_F(WebNNGraphImplTest, SoftplusTest) {
     GraphInfoBuilder builder;
     uint64_t input_operand_id =
         builder.BuildInput("input", {4, 6}, mojom::Operand::DataType::kFloat32);
-
-    builder.BuildSoftplus(input_operand_id, input_operand_id,
-                          /*steepness*/ 1.0);
+    builder.BuildSoftplus(input_operand_id, input_operand_id);
     EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
   }
 }
@@ -5070,6 +6717,68 @@ TEST_F(WebNNGraphImplTest, TransposeTest) {
   }
 }
 
+struct TriangularTester {
+  OperandInfo input;
+  bool upper = true;
+  int32_t diagonal = 0;
+  OperandInfo output;
+  bool expected;
+
+  void Test() {
+    // Build the graph with mojo type.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", input.dimensions, input.type);
+    uint64_t output_operand_id =
+        builder.BuildOutput("output", output.dimensions, output.type);
+    builder.BuildTriangular(input_operand_id, output_operand_id, upper,
+                            diagonal);
+    EXPECT_EQ(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()), expected);
+  }
+};
+
+TEST_F(WebNNGraphImplTest, TriangularTest) {
+  {
+    // Test triangular operator with upper = true and diagonal = 2.
+    TriangularTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                               .dimensions = {2, 2}},
+                     .upper = true,
+                     .diagonal = 2,
+                     .output = {.type = mojom::Operand::DataType::kFloat32,
+                                .dimensions = {2, 2}},
+                     .expected = true}
+        .Test();
+  }
+  {
+    // Test the invalid graph for the output shapes are not expected.
+    TriangularTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                               .dimensions = {4, 2}},
+                     .output = {.type = mojom::Operand::DataType::kFloat32,
+                                .dimensions = {2}},
+                     .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph for output types don't match.
+    TriangularTester{.input = {.type = mojom::Operand::DataType::kFloat32,
+                               .dimensions = {2, 5}},
+                     .output = {.type = mojom::Operand::DataType::kFloat16,
+                                .dimensions = {2, 5}},
+                     .expected = false}
+        .Test();
+  }
+  {
+    // Test the invalid graph for input operand == output operand.
+    GraphInfoBuilder builder;
+    uint64_t input_operand_id =
+        builder.BuildInput("input", {4, 6}, mojom::Operand::DataType::kFloat32);
+
+    builder.BuildTriangular(input_operand_id, input_operand_id,
+                            /*upper*/ true, /*diagonal*/ -1);
+    EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+  }
+}
+
 struct WhereTester {
   OperandInfo condition;
   OperandInfo true_value;
@@ -5331,6 +7040,192 @@ TEST_F(WebNNGraphImplTest, ValidateInputsTest) {
   }
 }
 
+TEST_F(WebNNGraphImplTest, ValidateDispatchTest) {
+  const std::vector<uint32_t> dimensions = {3, 5};
+  // Build the graph with mojo type.
+  GraphInfoBuilder builder;
+  const uint64_t lhs_operand_id =
+      builder.BuildInput("lhs", dimensions, mojom::Operand::DataType::kUint8);
+  const uint64_t rhs_operand_id =
+      builder.BuildInput("rhs", dimensions, mojom::Operand::DataType::kUint8);
+  const uint64_t output_1_operand_id = builder.BuildOutput(
+      "output1", dimensions, mojom::Operand::DataType::kUint8);
+  builder.BuildElementWiseBinary(mojom::ElementWiseBinary::Kind::kAdd,
+                                 lhs_operand_id, rhs_operand_id,
+                                 output_1_operand_id);
+  const uint64_t output_2_operand_id = builder.BuildOutput(
+      "output2", dimensions, mojom::Operand::DataType::kUint8);
+  builder.BuildElementWiseBinary(mojom::ElementWiseBinary::Kind::kAdd,
+                                 lhs_operand_id, rhs_operand_id,
+                                 output_2_operand_id);
+  EXPECT_TRUE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+
+  const size_t byte_length =
+      ValidateAndCalculateByteLength(sizeof(uint8_t), dimensions).value();
+
+  {
+    // Validate the inputs match the expected.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_TRUE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                 std::move(outputs)));
+  }
+  {
+    // Test the invalid inputs for invalid input size.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid outputs for invalid output size.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    outputs["a_different_output_name"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid inputs for invalid input name.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["a_different_input_name"] = {base::UnguessableToken::Create(),
+                                        byte_length};
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid outputs for invalid input name.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["a_different_output_name"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid inputs for invalid first input byte length.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(/*size=*/20);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid outputs for invalid first output byte length.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(/*size=*/20);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid inputs for invalid second input byte length.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(/*size=*/20);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the invalid outputs for invalid second output byte length.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(/*size=*/20);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the inputs using the same buffer more than once.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    const WebNNBufferInfo& input_buffer = CreateWebNNBufferInfo(byte_length);
+    inputs["lhs"] = input_buffer;
+    inputs["rhs"] = {input_buffer.buffer_handle, byte_length,
+                     /*create_buffer=*/false};
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_TRUE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                 std::move(outputs)));
+  }
+  {
+    // Test the invalid outputs when using the same buffer more than once.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    const WebNNBufferInfo& output_buffer = CreateWebNNBufferInfo(byte_length);
+    outputs["output1"] = output_buffer;
+    outputs["output2"] = {output_buffer.buffer_handle, byte_length,
+                          /*create_buffer=*/false};
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the inputs and outputs are invalid when using the same buffer.
+    const WebNNBufferInfo& input_and_output_buffer = {
+        base::UnguessableToken::Create(), byte_length};
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = input_and_output_buffer;
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = input_and_output_buffer;
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the inputs are invalid when using a invalid buffer.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length, false);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+  {
+    // Test the outputs are invalid when using a invalid buffer.
+    base::flat_map<std::string, WebNNBufferInfo> inputs;
+    inputs["lhs"] = CreateWebNNBufferInfo(byte_length);
+    inputs["rhs"] = CreateWebNNBufferInfo(byte_length);
+    base::flat_map<std::string, WebNNBufferInfo> outputs;
+    outputs["output1"] = CreateWebNNBufferInfo(byte_length);
+    outputs["output2"] = CreateWebNNBufferInfo(byte_length, false);
+    EXPECT_FALSE(ValidateDispatch(builder.CloneGraphInfo(), std::move(inputs),
+                                  std::move(outputs)));
+  }
+}
+
 struct ConstantOperandTester {
   std::vector<uint8_t> values;
   bool expected;
@@ -5442,6 +7337,20 @@ TEST_F(WebNNGraphImplTest, BuildMultipleConstantsAppendingInputs) {
   builder.BuildGemm(intermediate_1_operand_id, intermediate_2_operand_id,
                     output_operand_id, GemmTester::GemmAttributes());
   EXPECT_TRUE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
+}
+
+TEST_F(WebNNGraphImplTest, BuildOperationWithNonexistentInputs) {
+  GraphInfoBuilder builder;
+  uint64_t input_operand_id =
+      builder.BuildInput("input_a", {2, 2}, mojom::Operand::DataType::kFloat32);
+
+  uint64_t intermediate_operand_id = builder.BuildIntermediateOperand(
+      {2, 2}, mojom::Operand::DataType::kFloat32);
+  uint64_t output_operand_id =
+      builder.BuildOutput("output", {2, 2}, mojom::Operand::DataType::kUint8);
+  builder.BuildRelu(intermediate_operand_id, output_operand_id);
+  builder.BuildRelu(input_operand_id, intermediate_operand_id);
+  EXPECT_FALSE(WebNNGraphImpl::ValidateGraph(builder.GetGraphInfo()));
 }
 
 }  // namespace webnn

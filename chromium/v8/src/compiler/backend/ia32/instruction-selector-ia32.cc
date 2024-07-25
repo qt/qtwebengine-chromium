@@ -500,8 +500,6 @@ class IA32OperandGeneratorT final : public OperandGeneratorT<Adapter> {
                                        register_mode);
   }
 
-  DECLARE_UNREACHABLE_TURBOSHAFT_FALLBACK(AddressingMode,
-                                          GetEffectiveAddressMemoryOperand)
   AddressingMode GetEffectiveAddressMemoryOperand(
       node_t node, InstructionOperand inputs[], size_t* input_count,
       RegisterMode register_mode = RegisterMode::kRegister) {
@@ -548,13 +546,11 @@ class IA32OperandGeneratorT final : public OperandGeneratorT<Adapter> {
         // modes for the scale.
         UNIMPLEMENTED();
       } else {
-        const turboshaft::Operation& op = this->turboshaft_graph()->Get(node);
-        DCHECK_GE(op.input_count, 2);
-
-        inputs[(*input_count)++] =
-            UseRegisterWithMode(op.input(0), register_mode);
-        inputs[(*input_count)++] =
-            UseRegisterWithMode(op.input(1), register_mode);
+        // TODO(nicohartmann@): Turn this into a `DCHECK` once we have some
+        // coverage.
+        CHECK_EQ(m->displacement, 0);
+        inputs[(*input_count)++] = UseRegisterWithMode(m->base, register_mode);
+        inputs[(*input_count)++] = UseRegisterWithMode(m->index, register_mode);
         return kMode_MR1;
       }
     } else {
@@ -609,7 +605,6 @@ class IA32OperandGeneratorT final : public OperandGeneratorT<Adapter> {
     }
   }
 
-  DECLARE_UNREACHABLE_TURBOSHAFT_FALLBACK(bool, CanBeBetterLeftOperand)
   bool CanBeBetterLeftOperand(node_t node) const {
     return !selector()->IsLive(node);
   }
@@ -645,6 +640,7 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kSimd256:            // Fall through.
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
+    case MachineRepresentation::kProtectedPointer:   // Fall through.
     case MachineRepresentation::kIndirectPointer:    // Fall through.
     case MachineRepresentation::kSandboxedPointer:   // Fall through.
     case MachineRepresentation::kWord64:             // Fall through.
@@ -882,7 +878,8 @@ void VisitI8x16Shift(InstructionSelectorT<Adapter>* selector,
 template <typename Adapter>
 void InstructionSelectorT<Adapter>::VisitStackSlot(node_t node) {
   StackSlotRepresentation rep = this->stack_slot_representation_of(node);
-  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
+  int slot =
+      frame_->AllocateSpillSlot(rep.size(), rep.alignment(), rep.is_tagged());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -1136,6 +1133,7 @@ ArchOpcode GetStoreOpcode(MachineRepresentation rep) {
     case MachineRepresentation::kSimd256:            // Fall through.
     case MachineRepresentation::kCompressedPointer:  // Fall through.
     case MachineRepresentation::kCompressed:         // Fall through.
+    case MachineRepresentation::kProtectedPointer:   // Fall through.
     case MachineRepresentation::kIndirectPointer:    // Fall through.
     case MachineRepresentation::kSandboxedPointer:   // Fall through.
     case MachineRepresentation::kWord64:             // Fall through.
@@ -1165,7 +1163,7 @@ template <typename Adapter>
 void VisitAtomicExchange(InstructionSelectorT<Adapter>* selector,
                          typename Adapter::node_t node, ArchOpcode opcode,
                          MachineRepresentation rep) {
-  using node_t = Adapter::node_t;
+  using node_t = typename Adapter::node_t;
   IA32OperandGeneratorT<Adapter> g(selector);
   node_t base = selector->input_at(node, 0);
   node_t index = selector->input_at(node, 1);
@@ -1736,7 +1734,7 @@ template <typename Adapter>
 void VisitWord32PairShift(InstructionSelectorT<Adapter>* selector,
                           InstructionCode opcode,
                           typename Adapter::node_t node) {
-  using node_t = Adapter::node_t;
+  using node_t = typename Adapter::node_t;
   IA32OperandGeneratorT<Adapter> g(selector);
 
   node_t shift = selector->input_at(node, 2);
@@ -1943,7 +1941,7 @@ void InstructionSelectorT<Adapter>::VisitWord32ReverseBytes(node_t node) {
 }
 
 template <typename Adapter>
-void InstructionSelectorT<Adapter>::VisitSimd128ReverseBytes(Node* node) {
+void InstructionSelectorT<Adapter>::VisitSimd128ReverseBytes(node_t node) {
   UNREACHABLE();
 }
 
@@ -2175,7 +2173,6 @@ void InstructionSelectorT<Adapter>::EmitPrepareArguments(
   IA32OperandGeneratorT<Adapter> g(this);
 
   {  // Temporary scope to minimize indentation change churn below.
-
     // Prepare for C function call.
     if (call_descriptor->IsCFunctionCall()) {
       InstructionOperand temps[] = {g.TempRegister()};
@@ -2265,43 +2262,6 @@ void InstructionSelectorT<Adapter>::EmitPrepareResults(
 template <typename Adapter>
 bool InstructionSelectorT<Adapter>::IsTailCallAddressImmediate() {
   return true;
-}
-
-template <>
-Node* InstructionSelectorT<TurbofanAdapter>::FindProjection(
-    Node* node, size_t projection_index) {
-  return NodeProperties::FindProjection(node, projection_index);
-}
-
-template <>
-TurboshaftAdapter::node_t
-InstructionSelectorT<TurboshaftAdapter>::FindProjection(
-    node_t node, size_t projection_index) {
-  using namespace turboshaft;  // NOLINT(build/namespaces)
-  const turboshaft::Graph* graph = this->turboshaft_graph();
-  // Projections are always emitted right after the operation.
-  for (OpIndex next = graph->NextIndex(node); next.valid();
-       next = graph->NextIndex(next)) {
-    const ProjectionOp* projection = graph->Get(next).TryCast<ProjectionOp>();
-    if (projection == nullptr) break;
-    if (projection->index == projection_index) return next;
-  }
-
-  // If there is no Projection with index {projection_index} following the
-  // operation, then there shouldn't be any such Projection in the graph. We
-  // verify this in Debug mode.
-#ifdef DEBUG
-  for (OpIndex use : turboshaft_uses(node)) {
-    if (const ProjectionOp* projection =
-            this->Get(use).TryCast<ProjectionOp>()) {
-      DCHECK_EQ(projection->input(), node);
-      if (projection->index == projection_index) {
-        UNREACHABLE();
-      }
-    }
-  }
-#endif  // DEBUG
-  return OpIndex::Invalid();
 }
 
 namespace {
@@ -2511,7 +2471,7 @@ template <typename Adapter>
 void VisitAtomicBinOp(InstructionSelectorT<Adapter>* selector,
                       typename Adapter::node_t node, ArchOpcode opcode,
                       MachineRepresentation rep) {
-  using node_t = Adapter::node_t;
+  using node_t = typename Adapter::node_t;
   AddressingMode addressing_mode;
   IA32OperandGeneratorT<Adapter> g(selector);
   node_t base = selector->input_at(node, 0);
@@ -2532,7 +2492,7 @@ void VisitAtomicBinOp(InstructionSelectorT<Adapter>* selector,
 template <typename Adapter>
 void VisitPairAtomicBinOp(InstructionSelectorT<Adapter>* selector,
                           typename Adapter::node_t node, ArchOpcode opcode) {
-  using node_t = Adapter::node_t;
+  using node_t = typename Adapter::node_t;
   IA32OperandGeneratorT<Adapter> g(selector);
   node_t base = selector->input_at(node, 0);
   node_t index = selector->input_at(node, 1);
@@ -2577,14 +2537,8 @@ void InstructionSelectorT<TurboshaftAdapter>::VisitWordCompareZero(
     node_t user, node_t value, FlagsContinuation* cont) {
   using namespace turboshaft;  // NOLINT(build/namespaces)
   // Try to combine with comparisons against 0 by simply inverting the branch.
-  while (const ComparisonOp* equal = TryCast<Opmask::kWord32Equal>(value)) {
-    if (!CanCover(user, value)) break;
-    if (!MatchIntegralZero(equal->right())) break;
+  ConsumeEqualZero(&user, &value, cont);
 
-    user = value;
-    value = equal->left();
-    cont->Negate();
-  }
   if (CanCover(user, value)) {
     const Operation& value_op = Get(value);
     if (const ComparisonOp* comparison = value_op.TryCast<ComparisonOp>()) {
@@ -3013,7 +2967,7 @@ MachineType AtomicOpType(InstructionSelectorT<TurboshaftAdapter>* selector,
                          turboshaft::OpIndex node) {
   const turboshaft::AtomicRMWOp& atomic_op =
       selector->Get(node).template Cast<turboshaft::AtomicRMWOp>();
-  return atomic_op.input_rep.ToMachineType();
+  return atomic_op.memory_rep.ToMachineType();
 }
 
 MachineType AtomicOpType(InstructionSelectorT<TurbofanAdapter>* selector,

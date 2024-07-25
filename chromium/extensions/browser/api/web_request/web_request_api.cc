@@ -28,6 +28,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/browser/api/declarative_net_request/utils.h"
 #include "extensions/browser/api/web_request/extension_web_request_event_router.h"
 #include "extensions/browser/api/web_request/web_request_api_constants.h"
 #include "extensions/browser/api/web_request/web_request_api_helpers.h"
@@ -240,6 +241,13 @@ void WebRequestAPI::ProxySet::MaybeProxyAuthRequest(
                            request_id.request_id, std::move(callback));
 }
 
+void WebRequestAPI::ProxySet::OnDNRExtensionUnloaded(
+    const Extension* extension) {
+  for (const auto& proxy : proxies_) {
+    proxy->OnDNRExtensionUnloaded(extension);
+  }
+}
+
 WebRequestAPI::RequestIDGenerator::RequestIDGenerator() = default;
 WebRequestAPI::RequestIDGenerator::~RequestIDGenerator() = default;
 
@@ -273,7 +281,7 @@ WebRequestAPI::WebRequestAPI(content::BrowserContext* context)
       proxies_(std::make_unique<ProxySet>()),
       may_have_proxies_(MayHaveProxies()) {
   EventRouter* event_router = EventRouter::Get(browser_context_);
-  // TODO(crbug.com/433136): Once ExtensionWebRequestEventRouter is a per-
+  // TODO(crbug.com/40393861): Once ExtensionWebRequestEventRouter is a per-
   // BrowserContext instance, it can observe these events itself. That's a
   // bit tricky right now because the singleton instance would need to
   // observe the EventRouter for each BrowserContext that has webRequest
@@ -291,7 +299,7 @@ void WebRequestAPI::Shutdown() {
   proxies_.reset();
   EventRouter::Get(browser_context_)->UnregisterObserver(this);
   extensions::ExtensionRegistry::Get(browser_context_)->RemoveObserver(this);
-  // TODO(https://crbug.com/1433136): Remove this once WebRequestEventRouter
+  // TODO(crbug.com/40264286): Remove this once WebRequestEventRouter
   // implements `KeyedService::Shutdown` correctly.
   WebRequestEventRouter::Get(browser_context_)
       ->OnBrowserContextShutdown(browser_context_);
@@ -371,7 +379,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
     URLLoaderFactoryType type,
     std::optional<int64_t> navigation_id,
     ukm::SourceIdObj ukm_source_id,
-    mojo::PendingReceiver<network::mojom::URLLoaderFactory>* factory_receiver,
+    network::URLLoaderFactoryBuilder& factory_builder,
     mojo::PendingRemote<network::mojom::TrustedURLLoaderHeaderClient>*
         header_client,
     scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -381,7 +389,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
     bool use_proxy = false;
     // There are a few internal WebUIs that use WebView tag that are allowlisted
     // for webRequest.
-    // TODO(https://crbug.com/1500060): Remove the scheme check once we're sure
+    // TODO(crbug.com/40288053): Remove the scheme check once we're sure
     // that WebUIs with WebView run in real WebUI processes and check the
     // context type using |IsAvailableToWebViewEmbedderFrame()| below.
     if (WebViewGuest::IsGuest(frame)) {
@@ -407,7 +415,7 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
     // installed with webRequest permissions. This allows the extension
     // requests to be intercepted for CRX telemetry service if enabled.
     // Only proxy if the new RHC interception logic is disabled.
-    // TODO(crbug.com/1447587): Clean up collection logic here once new RHC
+    // TODO(crbug.com/40913716): Clean up collection logic here once new RHC
     // interception logic is fully launched.
     const std::string& request_scheme = request_initiator.scheme();
     if (extensions::kExtensionScheme == request_scheme &&
@@ -424,10 +432,6 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
       return false;
     }
   }
-
-  auto proxied_receiver = std::move(*factory_receiver);
-  mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory_remote;
-  *factory_receiver = target_factory_remote.InitWithNewPipeAndPassReceiver();
 
   std::unique_ptr<ExtensionNavigationUIData> navigation_ui_data;
   const bool is_navigation = (type == URLLoaderFactoryType::kNavigation);
@@ -460,9 +464,9 @@ bool WebRequestAPI::MaybeProxyURLLoaderFactory(
       frame ? frame->GetRoutingID() : MSG_ROUTING_NONE,
       frame ? frame->GetRenderViewHost()->GetRoutingID() : MSG_ROUTING_NONE,
       &request_id_generator_, std::move(navigation_ui_data),
-      std::move(navigation_id), ukm_source_id, std::move(proxied_receiver),
-      std::move(target_factory_remote), std::move(header_client_receiver),
-      proxies_.get(), type, std::move(navigation_response_task_runner));
+      std::move(navigation_id), ukm_source_id, factory_builder,
+      std::move(header_client_receiver), proxies_.get(), type,
+      std::move(navigation_response_task_runner));
   return true;
 }
 
@@ -564,7 +568,7 @@ bool WebRequestAPI::MayHaveProxies() const {
 }
 
 bool WebRequestAPI::MayHaveWebsocketProxiesForExtensionTelemetry() const {
-  // TODO(crbug.com/1447587): Clean up once new RHC interception logic is fully
+  // TODO(crbug.com/40913716): Clean up once new RHC interception logic is fully
   // launched.
   return ExtensionsBrowserClient::Get()->IsExtensionTelemetryServiceEnabled(
              browser_context_) &&
@@ -633,6 +637,10 @@ void WebRequestAPI::OnExtensionUnloaded(
   if (HasAnyWebRequestPermissions(extension)) {
     --web_request_extension_count_;
     UpdateMayHaveProxies();
+  }
+
+  if (declarative_net_request::HasAnyDNRPermission(*extension)) {
+    proxies_->OnDNRExtensionUnloaded(extension);
   }
 }
 

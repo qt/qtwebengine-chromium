@@ -9,6 +9,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "base/compiler_specific.h"
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -24,7 +26,6 @@
 #include "services/preferences/tracked/interceptable_pref_filter.h"
 #include "services/preferences/tracked/pref_hash_store.h"
 #include "services/preferences/tracked/tracked_preference.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class PrefService;
 
@@ -45,7 +46,7 @@ class PrefRegistrySyncable;
 // Intercepts preference values as they are loaded from disk and verifies them
 // using a PrefHashStore. Keeps the PrefHashStore contents up to date as values
 // are changed.
-class PrefHashFilter : public InterceptablePrefFilter {
+class PrefHashFilter final : public InterceptablePrefFilter {
  public:
   using StoreContentsPair = std::pair<std::unique_ptr<PrefHashStore>,
                                       std::unique_ptr<HashStoreContents>>;
@@ -109,6 +110,8 @@ class PrefHashFilter : public InterceptablePrefFilter {
       base::Value::Dict pref_store_contents,
       bool prefs_altered) override;
 
+  base::WeakPtr<InterceptablePrefFilter> AsWeakPtr() override;
+
   // Helper function to generate FilterSerializeData()'s pre-write and
   // post-write callbacks. The returned callbacks are thread-safe.
   OnWriteCallbackPair GetOnWriteSynchronousCallbacks(
@@ -147,7 +150,7 @@ class PrefHashFilter : public InterceptablePrefFilter {
   // A store and contents on which to perform extra validations without
   // triggering resets.
   // Will be null if the platform does not support external validation.
-  absl::optional<StoreContentsPair> external_validation_hash_store_pair_;
+  std::optional<StoreContentsPair> external_validation_hash_store_pair_;
 
   // Notified if a reset occurs in a call to FilterOnLoad.
   mojo::Remote<prefs::mojom::ResetOnLoadObserver> reset_on_load_observer_;
@@ -160,6 +163,8 @@ class PrefHashFilter : public InterceptablePrefFilter {
   // The set of all paths whose value has changed since the last call to
   // FilterSerializeData.
   ChangedPathsMap changed_paths_;
+
+  base::WeakPtrFactory<InterceptablePrefFilter> weak_ptr_factory_{this};
 };
 
 #endif  // SERVICES_PREFERENCES_TRACKED_PREF_HASH_FILTER_H_

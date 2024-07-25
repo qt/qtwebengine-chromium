@@ -115,7 +115,6 @@ ast::transform::Transform::ApplyResult VectorizeMatrixConversions::Apply(
         if (TINT_UNLIKELY(!(src_type->rows() == dst_type->rows() &&
                             src_type->columns() == dst_type->columns()))) {
             TINT_ICE() << "source and destination matrix has different shape in matrix conversion";
-            return nullptr;
         }
 
         auto build_vectorized_conversion_expression = [&](auto&& src_expression_builder) {
@@ -137,7 +136,7 @@ ast::transform::Transform::ApplyResult VectorizeMatrixConversions::Apply(
             });
         } else {
             // If has side effects, use a helper function.
-            auto fn = tint::GetOrCreate(matrix_convs, HelperFunctionKey{{src_type, dst_type}}, [&] {
+            auto fn = tint::GetOrAdd(matrix_convs, HelperFunctionKey{{src_type, dst_type}}, [&] {
                 auto name = b.Symbols().New("convert_mat" + std::to_string(src_type->columns()) +
                                             "x" + std::to_string(src_type->rows()) + "_" +
                                             src_type->type()->FriendlyName() + "_" +

@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "crossbench"
-version = "0.0.1"
+version = "1.0.2"
 authors = [ "Camillo Bruni <cbruni@chromium.org>" ]
-description = "A cross-browser, cross-system benchmark runner"
+description = "A cross-browser, cross-system web benchmark runner"
 readme = "README.md"
 license = "BSD-3-Clause"
 classifiers = [
@@ -12,8 +12,12 @@ classifiers = [
 ]
 
 [tool.poetry.urls]
-"Homepage" = "https://chromium.googlesource.com/crossbench"
-"Bug Tracker" = "https://bugs.chromium.org/p/chromium/issues/list?q=crossbench"
+"Homepage" = "http://crossben.ch"
+"Bug Tracker" = "http://bugs.crossben.ch"
+"Source" = "http://source.crossben.ch"
+"User Mailing list" = "http://mail.crossben.ch"
+
+[tool.poetry_bumpversion.file."crossbench/__init__.py"]
 
 [tool.poetry.dependencies]
 python = ">=3.8"
@@ -42,8 +46,8 @@ pytest-subtests = "^0.11.0"
 mypy = "^1.2"
 
 [tool.poetry.group.dev-pytype.dependencies]
-python = ">=3.8,<3.11"
-pytype = "^2023.4.18"
+python = ">=3.8,<=3.11"
+pytype = "^2023.10.24"
 
 [build-system]
 requires = ["poetry_core>=1.1.5"]

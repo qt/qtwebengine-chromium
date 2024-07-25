@@ -7,10 +7,11 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
+#include <xnnpack/common.h>
 #include <xnnpack/microfnptr.h>
 #include <xnnpack/microparams.h>
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,16 +41,19 @@ struct xnn_hardware_config {
   bool use_x86_avx;
   bool use_x86_f16c;
   bool use_x86_fma3;
-  bool use_x86_xop;
   bool use_x86_avx2;
   bool use_x86_avx512f;
   bool use_x86_avx512vbmi;
   bool use_x86_avx512skx;
   bool use_x86_avx512vnni;
+  bool use_x86_avx512vnnigfni;
+  bool use_x86_avx512amx;
+  bool use_x86_avx512fp16;
   bool use_x86_avxvnni;
 #endif
 #if XNN_ARCH_RISCV
   bool use_riscv_vector;
+  bool use_riscv_vector_fp16_arith;
   // vlenb CSR (VLEN/8). 0 if vector extension is unsupported.
   uint32_t vlenb;
 #endif
@@ -211,6 +215,7 @@ struct xnn_unary_elementwise_config {
     xnn_init_f16_lrelu_params_fn f16_lrelu;
     xnn_init_f16_neg_params_fn f16_neg;
     xnn_init_f16_minmax_params_fn f16_minmax;
+    xnn_init_f16_rsqrt_params_fn f16_rsqrt;
     xnn_init_f16_sigmoid_params_fn f16_sigmoid;
     xnn_init_f16_sqrt_params_fn f16_sqrt;
     xnn_init_f16_tanh_params_fn f16_tanh;
@@ -225,6 +230,7 @@ struct xnn_unary_elementwise_config {
     xnn_init_f32_qs8_cvt_params_fn f32_qs8_cvt;
     xnn_init_f32_qu8_cvt_params_fn f32_qu8_cvt;
     xnn_init_f32_rnd_params_fn f32_rnd;
+    xnn_init_f32_rsqrt_params_fn f32_rsqrt;
     xnn_init_f32_sigmoid_params_fn f32_sigmoid;
     xnn_init_f32_sqrt_params_fn f32_sqrt;
     xnn_init_f32_tanh_params_fn f32_tanh;
@@ -258,6 +264,8 @@ XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_rndd_config
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_rndne_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_rndu_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_rndz_config();
+XNN_INTERNAL const struct xnn_unary_elementwise_config*
+xnn_init_f16_rsqrt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_sigmoid_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_sqr_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f16_sqrt_config();
@@ -275,6 +283,8 @@ XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_rndd_config
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_rndne_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_rndu_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_rndz_config();
+XNN_INTERNAL const struct xnn_unary_elementwise_config*
+xnn_init_f32_rsqrt_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_sigmoid_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_sqr_config();
 XNN_INTERNAL const struct xnn_unary_elementwise_config* xnn_init_f32_sqrt_config();
@@ -633,9 +643,9 @@ static inline bool xnn_is_hmp_igemm_ukernel(struct xnn_hmp_igemm_ukernel ukernel
 #endif
 }
 
-// Largest GEMM/IGEMM MR used in init.c is 7 (x86 AVX512).
+// Largest GEMM/IGEMM MR used in init.c is 16 (x86 AVX512AMX).
 // Largest GEMM/IGEMM MR is 8 in e2e benchmarks.
-#define XNN_MAX_MR 8
+#define XNN_MAX_MR 16
 
 struct gemm_fused_ukernels {
   union {
@@ -743,7 +753,6 @@ XNN_INTERNAL struct xnn_gemm_config* xnn_init_qd8_f16_qc8w_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qd8_f32_qc4w_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qd8_f32_qc8w_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qs8_qc8w_gemm_config();
-XNN_INTERNAL struct xnn_gemm_config* xnn_init_qs8_gemm_config();
 XNN_INTERNAL struct xnn_gemm_config* xnn_init_qu8_gemm_config();
 
 struct xnn_maxpool_config {

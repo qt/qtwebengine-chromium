@@ -37,8 +37,10 @@ import type * as Protocol from '../../../../generated/protocol.js';
 import * as Bindings from '../../../../models/bindings/bindings.js';
 import * as Breakpoints from '../../../../models/breakpoints/breakpoints.js';
 import * as TextUtils from '../../../../models/text_utils/text_utils.js';
+import type * as TraceEngine from '../../../../models/trace/trace.js';
 import * as Workspace from '../../../../models/workspace/workspace.js';
 import type * as IconButton from '../../../components/icon_button/icon_button.js';
+import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
 
 const UIStrings = {
@@ -79,7 +81,7 @@ let decorator: LinkDecorator|null = null;
 
 const anchorsByUISourceCode = new WeakMap<Workspace.UISourceCode.UISourceCode, Set<Element>>();
 
-const infoByAnchor = new WeakMap<Node, _LinkInfo>();
+const infoByAnchor = new WeakMap<Node, LinkInfo>();
 
 const textByAnchor = new WeakMap<Node, string>();
 
@@ -232,6 +234,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       tabStop: options?.tabStop,
       inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       userMetric: options?.userMetric,
+      jslogContext: options?.jslogContext || 'script-source-url',
     };
     const {columnNumber, className = ''} = linkifyURLOptions;
     if (sourceURL) {
@@ -256,8 +259,9 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       return fallbackAnchor;
     }
 
-    const createLinkOptions: _CreateLinkOptions = {
+    const createLinkOptions: CreateLinkOptions = {
       tabStop: options?.tabStop,
+      jslogContext: 'script-location',
     };
     const {link, linkInfo} = Linkifier.createLink(
         fallbackAnchor && fallbackAnchor.textContent ? fallbackAnchor.textContent : '', className, createLinkOptions);
@@ -305,6 +309,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       inlineFrameIndex: options?.inlineFrameIndex ?? 0,
       tabStop: options?.tabStop,
       userMetric: options?.userMetric,
+      jslogContext: options?.jslogContext || 'script-source-url',
     };
 
     return scriptLink || Linkifier.linkifyURL(sourceURL, linkifyURLOptions);
@@ -322,16 +327,17 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
   }
 
   maybeLinkifyConsoleCallFrame(
-      target: SDK.Target.Target|null, callFrame: Protocol.Runtime.CallFrame, options?: LinkifyOptions): HTMLElement
-      |null {
+      target: SDK.Target.Target|null,
+      callFrame: Protocol.Runtime.CallFrame|TraceEngine.Types.TraceEvents.TraceEventCallFrame,
+      options?: LinkifyOptions): HTMLElement|null {
     const linkifyOptions: LinkifyOptions = {
       ...options,
       columnNumber: callFrame.columnNumber,
       inlineFrameIndex: options?.inlineFrameIndex ?? 0,
     };
     return this.maybeLinkifyScriptLocation(
-        target, callFrame.scriptId, callFrame.url as Platform.DevToolsPath.UrlString, callFrame.lineNumber,
-        linkifyOptions);
+        target, String(callFrame.scriptId) as Protocol.Runtime.ScriptId,
+        callFrame.url as Platform.DevToolsPath.UrlString, callFrame.lineNumber, linkifyOptions);
   }
 
   linkifyStackTraceTopFrame(target: SDK.Target.Target|null, stackTrace: Protocol.Runtime.StackTrace): HTMLElement {
@@ -345,6 +351,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       inlineFrameIndex: 0,
       maxLength: this.maxLength,
       preventClick: true,
+      jslogContext: 'script-source-url',
     });
 
     // HAR imported network logs have no associated NetworkManager.
@@ -388,8 +395,9 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
   }
 
   linkifyCSSLocation(rawLocation: SDK.CSSModel.CSSLocation, classes?: string): Element {
-    const createLinkOptions: _CreateLinkOptions = {
+    const createLinkOptions: CreateLinkOptions = {
       tabStop: true,
+      jslogContext: 'css-location',
     };
     const {link, linkInfo} = Linkifier.createLink('', classes || '', createLinkOptions);
     linkInfo.enableDecorator = this.useLinkDecorator;
@@ -449,12 +457,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
             event.consume(true);
             void Common.Revealer.reveal(header.ownerNode || null);
           }, false);
-          // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-          // This workaround is needed to make stylelint happy
-          Linkifier.setTrimmedText(
-              anchor,
-              '<' +
-                  'style>');
+          Linkifier.setTrimmedText(anchor, '<style>');
         }
       }
 
@@ -539,7 +542,15 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       }
     }
     const title = linkText !== url ? url : '';
-    const linkOptions = {maxLength, title, href: url, preventClick, tabStop: options.tabStop, bypassURLTrimming};
+    const linkOptions = {
+      maxLength,
+      title,
+      href: url,
+      preventClick,
+      tabStop: options.tabStop,
+      bypassURLTrimming,
+      jslogContext: options.jslogContext || 'url',
+    };
     const {link, linkInfo} = Linkifier.createLink(linkText, className, linkOptions);
     if (lineNumber) {
       linkInfo.lineNumber = lineNumber;
@@ -553,25 +564,29 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
 
   static linkifyRevealable(
       revealable: Object, text: string|HTMLElement, fallbackHref?: Platform.DevToolsPath.UrlString, title?: string,
-      className?: string): HTMLElement {
-    const createLinkOptions: _CreateLinkOptions = {
+      className?: string, jslogContext?: string): HTMLElement {
+    const createLinkOptions: CreateLinkOptions = {
       maxLength: UI.UIUtils.MaxLengthForDisplayedURLs,
       href: (fallbackHref),
       title,
+      jslogContext,
     };
     const {link, linkInfo} = Linkifier.createLink(text, className || '', createLinkOptions);
     linkInfo.revealable = revealable;
     return link;
   }
 
-  private static createLink(text: string|HTMLElement, className: string, options: _CreateLinkOptions = {}):
-      {link: HTMLElement, linkInfo: _LinkInfo} {
-    const {maxLength, title, href, preventClick, tabStop, bypassURLTrimming} = options;
-    const link = document.createElement('span');
+  private static createLink(text: string|HTMLElement, className: string, options: CreateLinkOptions = {}):
+      {link: HTMLElement, linkInfo: LinkInfo} {
+    const {maxLength, title, href, preventClick, tabStop, bypassURLTrimming, jslogContext} = options;
+    const link = document.createElement(options.preventClick ? 'span' : 'button');
     if (className) {
       link.className = className;
     }
     link.classList.add('devtools-link');
+    if (!options.preventClick) {
+      link.classList.add('text-button', 'link-style');
+    }
     if (title) {
       UI.Tooltip.Tooltip.install(link, title);
     }
@@ -579,6 +594,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       // @ts-ignore
       link.href = href;
     }
+    link.setAttribute('jslog', `${VisualLogging.link(jslogContext).track({click: true})}`);
 
     if (text instanceof HTMLElement) {
       link.appendChild(text);
@@ -607,11 +623,6 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     if (!preventClick) {
       link.addEventListener('click', event => {
         if (Linkifier.handleClick(event)) {
-          event.consume(true);
-        }
-      }, false);
-      link.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && Linkifier.handleClick(event)) {
           event.consume(true);
         }
       }, false);
@@ -673,8 +684,8 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     return textByAnchor.get(node) || node.textContent || '';
   }
 
-  static linkInfo(link: Element|null): _LinkInfo|null {
-    return link ? infoByAnchor.get(link) || null : null as _LinkInfo | null;
+  static linkInfo(link: Element|null): LinkInfo|null {
+    return link ? infoByAnchor.get(link) || null : null as LinkInfo | null;
   }
 
   private static handleClick(event: Event): boolean {
@@ -689,11 +700,11 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     return Linkifier.invokeFirstAction(linkInfo);
   }
 
-  static handleClickFromNewComponentLand(linkInfo: _LinkInfo): void {
+  static handleClickFromNewComponentLand(linkInfo: LinkInfo): void {
     Linkifier.invokeFirstAction(linkInfo);
   }
 
-  static invokeFirstAction(linkInfo: _LinkInfo): boolean {
+  static invokeFirstAction(linkInfo: LinkInfo): boolean {
     const actions = Linkifier.linkActions(linkInfo);
     if (actions.length) {
       void actions[0].handler.call(null);
@@ -708,7 +719,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
   static linkHandlerSetting(): Common.Settings.Setting<string> {
     if (!linkHandlerSettingInstance) {
       linkHandlerSettingInstance =
-          Common.Settings.Settings.instance().createSetting('openLinkHandler', i18nString(UIStrings.auto));
+          Common.Settings.Settings.instance().createSetting('open-link-handler', i18nString(UIStrings.auto));
     }
     return linkHandlerSettingInstance;
   }
@@ -728,14 +739,16 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
     return info ? info.uiLocation : null;
   }
 
-  static linkActions(info: _LinkInfo): {
+  static linkActions(info: LinkInfo): {
     section: string,
     title: string,
+    jslogContext: string,
     handler: () => Promise<void>| void,
   }[] {
     const result: {
       section: string,
       title: string,
+      jslogContext: string,
       handler: () => Promise<void>| void,
     }[] = [];
 
@@ -764,7 +777,8 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       result.push({
         section: 'reveal',
         title: destination ? i18nString(UIStrings.revealInS, {PH1: destination}) : i18nString(UIStrings.reveal),
-        handler: (): Promise<void> => {
+        jslogContext: 'reveal',
+        handler: () => {
           if (revealable instanceof Breakpoints.BreakpointManager.BreakpointLocation) {
             Host.userMetrics.breakpointEditDialogRevealedFrom(
                 Host.UserMetrics.BreakpointEditDialogRevealedFrom.Linkifier);
@@ -783,6 +797,7 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
         const action = {
           section: 'reveal',
           title: i18nString(UIStrings.openUsingS, {PH1: title}),
+          jslogContext: 'open-using',
           handler: handler.bind(null, contentProvider, lineNumber),
         };
         if (title === Linkifier.linkHandlerSetting().get()) {
@@ -796,12 +811,14 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       result.push({
         section: 'reveal',
         title: UI.UIUtils.openLinkExternallyLabel(),
-        handler: (): void => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(url),
+        jslogContext: 'open-in-new-tab',
+        handler: () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(url),
       });
       result.push({
         section: 'clipboard',
         title: UI.UIUtils.copyLinkAddressLabel(),
-        handler: (): void => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(url),
+        jslogContext: 'copy-link-address',
+        handler: () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(url),
       });
     }
 
@@ -810,8 +827,8 @@ export class Linkifier extends Common.ObjectWrapper.ObjectWrapper<EventTypes> im
       result.push({
         section: 'clipboard',
         title: UI.UIUtils.copyFileNameLabel(),
-        handler: (): void =>
-            Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName()),
+        jslogContext: 'copy-file-name',
+        handler: () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName()),
       });
     }
 
@@ -847,7 +864,7 @@ export class LinkContextMenuProvider implements UI.ContextMenu.Provider<Node> {
 
     const actions = Linkifier.linkActions(linkInfo);
     for (const action of actions) {
-      contextMenu.section(action.section).appendItem(action.title, action.handler);
+      contextMenu.section(action.section).appendItem(action.title, action.handler, {jslogContext: action.jslogContext});
     }
   }
 }
@@ -914,7 +931,7 @@ function listenForNewComponentLinkifierEvents(): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unknownEvent = (event as any);
     const eventWithData = (unknownEvent as {
-      data: _LinkInfo,
+      data: LinkInfo,
     });
     Linkifier.handleClickFromNewComponentLand(eventWithData.data);
   });
@@ -940,7 +957,8 @@ export class ContentProviderContextMenuProvider implements
           () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
               contentUrl.endsWith(':formatted') ?
                   Common.ParsedURL.ParsedURL.slice(contentUrl, 0, contentUrl.lastIndexOf(':')) :
-                  contentUrl));
+                  contentUrl),
+          {jslogContext: 'open-in-new-tab'});
     }
     for (const title of linkHandlers.keys()) {
       const handler = linkHandlers.get(title);
@@ -948,7 +966,8 @@ export class ContentProviderContextMenuProvider implements
         continue;
       }
       contextMenu.revealSection().appendItem(
-          i18nString(UIStrings.openUsingS, {PH1: title}), handler.bind(null, contentProvider, 0));
+          i18nString(UIStrings.openUsingS, {PH1: title}), handler.bind(null, contentProvider, 0),
+          {jslogContext: 'open-using'});
     }
     if (contentProvider instanceof SDK.NetworkRequest.NetworkRequest) {
       return;
@@ -956,24 +975,25 @@ export class ContentProviderContextMenuProvider implements
 
     contextMenu.clipboardSection().appendItem(
         UI.UIUtils.copyLinkAddressLabel(),
-        () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentUrl));
+        () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentUrl),
+        {jslogContext: 'copy-link-address'});
 
     // TODO(bmeurer): `displayName` should be an accessor/data property consistently.
     if (contentProvider instanceof Workspace.UISourceCode.UISourceCode) {
       contextMenu.clipboardSection().appendItem(
           UI.UIUtils.copyFileNameLabel(),
-          () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName()));
+          () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName()),
+          {jslogContext: 'copy-file-name'});
     } else {
       contextMenu.clipboardSection().appendItem(
           UI.UIUtils.copyFileNameLabel(),
-          () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName));
+          () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(contentProvider.displayName),
+          {jslogContext: 'copy-file-name'});
     }
   }
 }
 
-// TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export interface _LinkInfo {
+interface LinkInfo {
   icon: IconButton.Icon.Icon|null;
   enableDecorator: boolean;
   uiLocation: Workspace.UISourceCode.UILocation|null;
@@ -985,6 +1005,7 @@ export interface _LinkInfo {
   revealable: Object|null;
   fallback: Element|null;
   userMetric?: Host.UserMetrics.Action;
+  jslogContext?: string;
 }
 
 export interface LinkifyURLOptions {
@@ -999,6 +1020,7 @@ export interface LinkifyURLOptions {
   tabStop?: boolean;
   bypassURLTrimming?: boolean;
   userMetric?: Host.UserMetrics.Action;
+  jslogContext?: string;
 }
 
 export interface LinkifyOptions {
@@ -1008,6 +1030,7 @@ export interface LinkifyOptions {
   inlineFrameIndex: number;
   tabStop?: boolean;
   userMetric?: Host.UserMetrics.Action;
+  jslogContext?: string;
 
   /**
    * {@link LinkDisplayOptions.revealBreakpoint}
@@ -1015,15 +1038,14 @@ export interface LinkifyOptions {
   revealBreakpoint?: boolean;
 }
 
-// TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export interface _CreateLinkOptions {
+interface CreateLinkOptions {
   maxLength?: number;
   title?: string;
   href?: Platform.DevToolsPath.UrlString;
   preventClick?: boolean;
   tabStop?: boolean;
   bypassURLTrimming?: boolean;
+  jslogContext?: string;
 }
 
 interface LinkDisplayOptions {

@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 """Definitions of builders used by Tricium for Chromium."""
 
-load("//lib/builders.star", "os", "reclient", "xcode")
+load("//lib/builders.star", "os", "reclient")
 load("//lib/consoles.star", "consoles")
 load("//lib/gn_args.star", "gn_args")
 load("//lib/try.star", "SOURCELESS_BUILDER_CACHES", "try_")
+load("//lib/xcode.star", "xcode")
 
 try_.defaults.set(
     executable = try_.DEFAULT_EXECUTABLE,
@@ -17,6 +18,7 @@ try_.defaults.set(
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     orchestrator_cores = 2,
     reclient_instance = reclient.instance.DEFAULT_UNTRUSTED,
+    # TODO: b/336209927 - Migrate tricium_clang_tidy_script.py to Siso.
     reclient_jobs = reclient.jobs.LOW_JOBS_FOR_CQ,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
 
@@ -101,7 +103,7 @@ try_.builder(
     ),
     builderless = False,
     os = os.LINUX_DEFAULT,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
 )
 
 try_.builder(
@@ -116,7 +118,7 @@ try_.builder(
         ],
     ),
     os = os.LINUX_DEFAULT,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
 )
 
 try_.builder(
@@ -131,7 +133,7 @@ try_.builder(
     cores = None,
     os = os.MAC_DEFAULT,
     ssd = True,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
     # TODO(gbiv): Determine why this needs a system xcode and things like `Mac
     # Builder` don't.
     xcode = xcode.x13main,

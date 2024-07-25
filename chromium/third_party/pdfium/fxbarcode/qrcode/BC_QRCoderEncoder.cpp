@@ -20,15 +20,23 @@
  * limitations under the License.
  */
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "fxbarcode/qrcode/BC_QRCoderEncoder.h"
 
 #include <stdint.h>
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/span_util.h"
@@ -42,9 +50,6 @@
 #include "fxbarcode/qrcode/BC_QRCoderMatrixUtil.h"
 #include "fxbarcode/qrcode/BC_QRCoderMode.h"
 #include "fxbarcode/qrcode/BC_QRCoderVersion.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
 
 using ModeStringPair = std::pair<CBC_QRCoderMode*, ByteString>;
 
@@ -206,7 +211,7 @@ int32_t CalculateMaskPenalty(CBC_CommonByteMatrix* matrix) {
          CBC_QRCoderMaskUtil::ApplyMaskPenaltyRule4(matrix);
 }
 
-absl::optional<int32_t> ChooseMaskPattern(
+std::optional<int32_t> ChooseMaskPattern(
     CBC_QRCoderBitVector* bits,
     const CBC_QRCoderErrorCorrectionLevel* ecLevel,
     int32_t version,
@@ -217,7 +222,7 @@ absl::optional<int32_t> ChooseMaskPattern(
        maskPattern++) {
     if (!CBC_QRCoderMatrixUtil::BuildMatrix(bits, ecLevel, version, maskPattern,
                                             matrix)) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     int32_t penalty = CalculateMaskPenalty(matrix);
     if (penalty < minPenalty) {
@@ -400,7 +405,7 @@ bool CBC_QRCoderEncoder::Encode(WideStringView content,
 
   auto matrix = std::make_unique<CBC_CommonByteMatrix>(
       qrCode->GetMatrixWidth(), qrCode->GetMatrixWidth());
-  absl::optional<int32_t> maskPattern = ChooseMaskPattern(
+  std::optional<int32_t> maskPattern = ChooseMaskPattern(
       &finalBits, qrCode->GetECLevel(), qrCode->GetVersion(), matrix.get());
   if (!maskPattern.has_value())
     return false;

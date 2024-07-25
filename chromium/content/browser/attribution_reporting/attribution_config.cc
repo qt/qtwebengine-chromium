@@ -4,41 +4,9 @@
 
 #include "content/browser/attribution_reporting/attribution_config.h"
 
-#include "base/metrics/field_trial_params.h"
 #include "base/time/time.h"
-#include "components/attribution_reporting/features.h"
 
 namespace content {
-
-namespace {
-
-const base::FeatureParam<int> kMaxReportingOriginsPerSiteParam{
-    &attribution_reporting::features::kConversionMeasurement,
-    "max_reporting_origins_per_source_reporting_site",
-    AttributionConfig::RateLimitConfig::
-        kDefaultMaxReportingOriginsPerSourceReportingSite};
-
-const base::FeatureParam<base::TimeDelta> kAggregateReportMinDelay{
-    &attribution_reporting::features::kConversionMeasurement,
-    "aggregate_report_min_delay",
-    AttributionConfig::AggregateLimit::kDefaultMinDelay};
-
-const base::FeatureParam<base::TimeDelta> kAggregateReportDelaySpan{
-    &attribution_reporting::features::kConversionMeasurement,
-    "aggregate_report_delay_span",
-    AttributionConfig::AggregateLimit::kDefaultDelaySpan};
-
-const base::FeatureParam<double> kNavigationMaxInfoGain{
-    &attribution_reporting::features::kConversionMeasurement,
-    "navigation_max_info_gain",
-    AttributionConfig::EventLevelLimit::kDefaultMaxNavigationInfoGain};
-
-const base::FeatureParam<double> kEventMaxInfoGain{
-    &attribution_reporting::features::kConversionMeasurement,
-    "event_max_info_gain",
-    AttributionConfig::EventLevelLimit::kDefaultMaxEventInfoGain};
-
-}  // namespace
 
 bool AttributionConfig::Validate() const {
   if (max_sources_per_origin <= 0) {
@@ -68,14 +36,7 @@ bool AttributionConfig::Validate() const {
   return true;
 }
 
-AttributionConfig::RateLimitConfig::RateLimitConfig()
-    : max_reporting_origins_per_source_reporting_site(
-          kMaxReportingOriginsPerSiteParam.Get()) {
-  if (max_reporting_origins_per_source_reporting_site <= 0) {
-    max_reporting_origins_per_source_reporting_site =
-        kDefaultMaxReportingOriginsPerSourceReportingSite;
-  }
-}
+AttributionConfig::RateLimitConfig::RateLimitConfig() = default;
 
 AttributionConfig::RateLimitConfig::~RateLimitConfig() = default;
 
@@ -154,9 +115,7 @@ AttributionConfig& AttributionConfig::operator=(const AttributionConfig&) =
     default;
 AttributionConfig& AttributionConfig::operator=(AttributionConfig&&) = default;
 
-AttributionConfig::EventLevelLimit::EventLevelLimit()
-    : max_navigation_info_gain(kNavigationMaxInfoGain.Get()),
-      max_event_info_gain(kEventMaxInfoGain.Get()) {}
+AttributionConfig::EventLevelLimit::EventLevelLimit() = default;
 
 AttributionConfig::EventLevelLimit::EventLevelLimit(const EventLevelLimit&) =
     default;
@@ -169,16 +128,7 @@ AttributionConfig::EventLevelLimit::operator=(const EventLevelLimit&) = default;
 AttributionConfig::EventLevelLimit&
 AttributionConfig::EventLevelLimit::operator=(EventLevelLimit&&) = default;
 
-AttributionConfig::AggregateLimit::AggregateLimit()
-    : min_delay(kAggregateReportMinDelay.Get()),
-      delay_span(kAggregateReportDelaySpan.Get()) {
-  if (min_delay.is_negative()) {
-    min_delay = kDefaultMinDelay;
-  }
-  if (delay_span.is_negative()) {
-    delay_span = kDefaultDelaySpan;
-  }
-}
+AttributionConfig::AggregateLimit::AggregateLimit() = default;
 
 bool AttributionConfig::DestinationRateLimit::Validate() const {
   if (max_per_reporting_site <= 0) {

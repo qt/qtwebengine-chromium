@@ -11,10 +11,10 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <optional>
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -266,15 +266,9 @@ class LayerTreeHostImpl::ImageDecodeCacheHolder {
   ImageDecodeCacheHolder(const ImageDecodeCacheHolder&) = delete;
   ImageDecodeCacheHolder& operator=(const ImageDecodeCacheHolder&) = delete;
 
-  ~ImageDecodeCacheHolder() {
-    image_decode_cache_ptr_ = nullptr;
-    image_decode_cache_.reset();
-  }
-
  private:
-  raw_ptr<ImageDecodeCache, DanglingUntriaged> image_decode_cache_ptr_ =
-      nullptr;
   std::unique_ptr<ImageDecodeCache> image_decode_cache_;
+  raw_ptr<ImageDecodeCache> image_decode_cache_ptr_ = nullptr;
 };
 
 void LayerTreeHostImpl::DidUpdateScrollAnimationCurve() {
@@ -315,12 +309,20 @@ void LayerTreeHostImpl::DidUpdatePinchZoom() {
 
 void LayerTreeHostImpl::DidStartScroll() {
   scroll_affects_scroll_handler_ = active_tree()->have_scroll_event_handlers();
+  if (!settings().single_thread_proxy_scheduler) {
+    client_->SetHasActiveThreadedScroll(true);
+  }
   client_->RenewTreePriority();
 }
 
 void LayerTreeHostImpl::DidEndScroll() {
   scroll_affects_scroll_handler_ = false;
   current_scroll_did_checkerboard_large_area_ = false;
+
+  if (!settings().single_thread_proxy_scheduler) {
+    client_->SetHasActiveThreadedScroll(false);
+    client_->SetWaitingForScrollEvent(false);
+  }
 
 #if BUILDFLAG(IS_ANDROID)
   if (render_frame_metadata_observer_) {
@@ -427,6 +429,7 @@ LayerTreeHostImpl::LayerTreeHostImpl(
                     is_synchronous_single_threaded_
                         ? std::numeric_limits<size_t>::max()
                         : settings.scheduled_raster_task_limit,
+                    RunningOnRendererProcess(),
                     settings.ToTileManagerSettings()),
       memory_history_(MemoryHistory::Create()),
       debug_rect_history_(DebugRectHistory::Create()),
@@ -571,23 +574,12 @@ const InputHandler& LayerTreeHostImpl::GetInputHandler() const {
   return static_cast<const InputHandler&>(*input_delegate_.get());
 }
 
-void LayerTreeHostImpl::DidSendBeginMainFrame(const viz::BeginFrameArgs& args) {
-  frame_trackers_.NotifyBeginMainFrame(args);
-}
-
 void LayerTreeHostImpl::BeginMainFrameAborted(
     CommitEarlyOutReason reason,
     std::vector<std::unique_ptr<SwapPromise>> swap_promises,
     const viz::BeginFrameArgs& args,
     bool next_bmf,
     bool scroll_and_viewport_changes_synced) {
-  if (reason == CommitEarlyOutReason::kAbortedNotVisible ||
-      reason == CommitEarlyOutReason::kFinishedNoUpdates) {
-    frame_trackers_.NotifyMainFrameCausedNoDamage(args, true);
-  } else {
-    frame_trackers_.NotifyMainFrameProcessed(args);
-  }
-
   // If the begin frame data was handled, then scroll and scale set was applied
   // by the main thread, so the active tree needs to be updated as if these sent
   // values were applied and committed.
@@ -619,7 +611,6 @@ void LayerTreeHostImpl::ReadyToCommit(
     bool scroll_and_viewport_changes_synced,
     const BeginMainFrameMetrics* begin_main_frame_metrics,
     bool commit_timeout) {
-  frame_trackers_.NotifyMainFrameProcessed(commit_args);
   if (!is_measuring_smoothness_ &&
       ((begin_main_frame_metrics &&
         begin_main_frame_metrics->should_measure_smoothness) ||
@@ -1433,7 +1424,15 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
 
   if (GetActivelyScrollingType() != ActivelyScrollingType::kNone &&
       checkerboarded_no_recording_content_area > 0) {
-    SetCurrentScrollCheckerboardsDueToNoRecording();
+    CHECK(base::FeatureList::IsEnabled(features::kUseRecordedBoundsForTiling));
+    // TODO(crbug.com/41490692): With UseRecordedBoundsForTiling enabled,
+    // checkerboarded_no_recording_content_area means differently from its
+    // original meaning (which was some tiles out of blink interest rect has
+    // become visible) before CompositeAfterPaint. Calling
+    // SetCurrentScrollCheckerboardsDueToNoRecording() may cause unexpected
+    // consequences. Disable it for now, and will clean up after checking
+    // finch data of UseRecordedBoundsForTiling.
+    // SetCurrentScrollCheckerboardsDueToNoRecording();
   }
 
   // If CommitToActiveTree() is true, then we wait to draw until
@@ -1519,7 +1518,7 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
   // trigger this DCHECK.
   DCHECK(!have_copy_request || draw_result == DrawResult::kSuccess);
 
-  // TODO(crbug.com/564832): This workaround to prevent creating unnecessarily
+  // TODO(crbug.com/40447355): This workaround to prevent creating unnecessarily
   // persistent render passes. When a copy request is made, it may force a
   // separate render pass for the layer, which will persist until a new commit
   // removes it. Force a commit after copy requests, to remove extra render
@@ -1582,7 +1581,7 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
   if (!downsample_metrics_ ||
       metrics_subsampler_.ShouldSample(kSamplingFrequency)) {
     // These metrics are only for the renderer process.
-    if (!settings().single_thread_proxy_scheduler) {
+    if (RunningOnRendererProcess()) {
       UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Compositing.Renderer.NumActiveLayers",
           base::saturated_cast<int>(active_tree_->NumLayers()), 1, 1000, 20);
@@ -2403,6 +2402,16 @@ viz::CompositorFrameMetadata LayerTreeHostImpl::MakeCompositorFrameMetadata() {
   }
 
   metadata.capture_bounds = CollectRegionCaptureBounds();
+
+  if (!screenshot_destination_.is_empty()) {
+    metadata.screenshot_destination =
+        blink::SameDocNavigationScreenshotDestinationToken(
+            screenshot_destination_);
+    screenshot_destination_ = base::UnguessableToken();
+  }
+
+  metadata.is_software = !layer_tree_frame_sink_->context_provider();
+
   return metadata;
 }
 
@@ -2484,6 +2493,25 @@ RenderFrameMetadata LayerTreeHostImpl::MakeRenderFrameMetadata(
            metadata.top_controls_height ||
        last_draw_render_frame_metadata_->top_controls_shown_ratio !=
            metadata.top_controls_shown_ratio);
+#elif BUILDFLAG(IS_ANDROID)
+      last_draw_render_frame_metadata_ &&
+      (last_draw_render_frame_metadata_->top_controls_height !=
+           metadata.top_controls_height ||
+       last_draw_render_frame_metadata_->bottom_controls_height !=
+           metadata.bottom_controls_height ||
+       last_draw_render_frame_metadata_->selection != metadata.selection ||
+       last_draw_render_frame_metadata_->has_transparent_background !=
+           metadata.has_transparent_background);
+
+  if (!base::FeatureList::IsEnabled(
+          features::kAndroidNoSurfaceSyncForBrowserControls)) {
+    allocate_new_local_surface_id |=
+        last_draw_render_frame_metadata_ &&
+        (last_draw_render_frame_metadata_->top_controls_shown_ratio !=
+             metadata.top_controls_shown_ratio ||
+         last_draw_render_frame_metadata_->bottom_controls_shown_ratio !=
+             metadata.bottom_controls_shown_ratio);
+  }
 #else
       last_draw_render_frame_metadata_ &&
       (last_draw_render_frame_metadata_->top_controls_height !=
@@ -2517,10 +2545,6 @@ std::optional<LayerTreeHostImpl::SubmitInfo> LayerTreeHostImpl::DrawLayers(
 
   if (frame->has_no_damage) {
     DCHECK(!resourceless_software_draw_);
-
-    frame_trackers_.NotifyImplFrameCausedNoDamage(frame->begin_frame_ack);
-    frame_trackers_.NotifyMainFrameCausedNoDamage(
-        frame->origin_begin_main_frame_args, false);
     TRACE_EVENT_INSTANT0("cc", "EarlyOut_NoDamage", TRACE_EVENT_SCOPE_THREAD);
     active_tree()->BreakSwapPromises(SwapPromise::SWAP_FAILS);
     active_tree()->ResetAllChangeTracking();
@@ -2582,15 +2606,6 @@ std::optional<LayerTreeHostImpl::SubmitInfo> LayerTreeHostImpl::DrawLayers(
     DCHECK_EQ(bfargs.frame_id, begin_frame_ack_frame_id);
   }
 #endif
-
-  // In some cases (e.g. for android-webviews), the frame-submission happens
-  // outside of begin-impl frame pipeline. Avoid notifying the trackers in such
-  // cases.
-  if (impl_thread_phase_ == ImplThreadPhase::INSIDE_IMPL_FRAME) {
-    frame_trackers_.NotifySubmitFrame(frame_token, frame->has_missing_content,
-                                      frame->begin_frame_ack,
-                                      frame->origin_begin_main_frame_args);
-  }
 
   if (!mutator_host_->NextFrameHasPendingRAF())
     frame_trackers_.StopSequence(FrameSequenceTrackerType::kRAF);
@@ -2703,30 +2718,30 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
 
   viz::CompositorFrameMetadata metadata = MakeCompositorFrameMetadata();
 
-  ViewTransitionRequest::SharedElementMap shared_element_render_pass_id_map;
+  ViewTransitionRequest::ViewTransitionElementMap view_transition_element_map;
   for (RenderSurfaceImpl* render_surface : *frame->render_surface_list) {
-    const auto& shared_element_id =
-        render_surface->GetViewTransitionElementId();
-    if (!shared_element_id.valid())
+    const auto& view_transition_element_resource_id =
+        render_surface->OwningEffectNode()->view_transition_element_resource_id;
+    if (!view_transition_element_resource_id.IsValid()) {
       continue;
+    }
 
-    DCHECK(
-        !base::Contains(shared_element_render_pass_id_map, shared_element_id))
-        << "Cannot map " << shared_element_id.ToString() << " to render pass "
+    DCHECK(!base::Contains(view_transition_element_map,
+                           view_transition_element_resource_id))
+        << "Cannot map " << view_transition_element_resource_id.ToString()
+        << " to render pass "
         << render_surface->render_pass_id().GetUnsafeValue()
         << "; It already maps to render pass "
-        << shared_element_render_pass_id_map[shared_element_id]
-               .render_pass_id.GetUnsafeValue();
+        << view_transition_element_map[view_transition_element_resource_id]
+               .GetUnsafeValue();
 
-    shared_element_render_pass_id_map[shared_element_id].render_pass_id =
+    view_transition_element_map[view_transition_element_resource_id] =
         render_surface->render_pass_id();
-    shared_element_render_pass_id_map[shared_element_id].resource_id =
-        render_surface->OwningEffectNode()->view_transition_element_resource_id;
   }
 
   for (auto& request : active_tree_->TakeViewTransitionRequests()) {
     metadata.transition_directives.push_back(
-        request->ConstructDirective(shared_element_render_pass_id_map));
+        request->ConstructDirective(view_transition_element_map));
   }
 
   PopulateMetadataContentColorUsage(frame, &metadata);
@@ -2842,6 +2857,17 @@ viz::CompositorFrame LayerTreeHostImpl::GenerateCompositorFrame(
 
   last_draw_local_surface_id_ =
       child_local_surface_id_allocator_.GetCurrentLocalSurfaceId();
+
+  if (const char* client_name = GetClientNameForMetrics()) {
+    size_t total_quad_count = 0;
+    for (const auto& pass : compositor_frame.render_pass_list) {
+      total_quad_count += pass->quad_list.size();
+    }
+    UMA_HISTOGRAM_COUNTS_1000(
+        base::StringPrintf("Compositing.%s.CompositorFrame.Quads", client_name),
+        total_quad_count);
+  }
+
   return compositor_frame;
 }
 
@@ -2852,8 +2878,9 @@ void LayerTreeHostImpl::DidDrawAllLayers(const FrameData& frame) {
     layer->DidDraw(resource_provider_.get());
   }
 
-  for (auto* it : video_frame_controllers_)
+  for (VideoFrameController* it : video_frame_controllers_) {
     it->DidDrawFrame();
+  }
 }
 
 int LayerTreeHostImpl::RequestedMSAASampleCount() const {
@@ -2896,10 +2923,10 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
   auto* context_provider = layer_tree_frame_sink_->context_provider();
   auto* worker_context_provider =
       layer_tree_frame_sink_->worker_context_provider();
+  CHECK_EQ(!!worker_context_provider, !!context_provider);
 
-  if (!context_provider) {
+  if (!worker_context_provider) {
     // No context provider means software raster + compositing.
-    CHECK(!worker_context_provider);
     raster_caps_.max_texture_size = settings_.max_render_buffer_bounds_for_sw;
 
     // Software compositing always uses the native skia RGBA N32 format, but we
@@ -2911,14 +2938,6 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
         layer_tree_frame_sink_->shared_image_interface()
             ? viz::SinglePlaneFormat::kBGRA_8888
             : viz::SinglePlaneFormat::kRGBA_8888;
-    return;
-  }
-
-  if (!worker_context_provider) {
-    // For Android UI it's possible to only have a compositor context and no
-    // worker context. Raster is not supported in this mode.
-    raster_caps_.max_texture_size =
-        context_provider->ContextCapabilities().max_texture_size;
     return;
   }
 
@@ -2935,7 +2954,6 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
   raster_caps_.tile_overlay_candidate =
       settings_.use_gpu_memory_buffer_resources &&
       shared_image_caps.supports_scanout_shared_images;
-  raster_caps_.tile_texture_target = GL_TEXTURE_2D;
 
   if (settings_.gpu_rasterization_disabled || !context_caps.gpu_rasterization) {
     // This is the GPU compositing but software rasterization path. Pick the
@@ -2944,15 +2962,6 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
         settings_.use_rgba_4444
             ? viz::SinglePlaneFormat::kRGBA_4444
             : viz::PlatformColor::BestSupportedTextureFormat(context_caps);
-
-    if (raster_caps_.tile_overlay_candidate) {
-      raster_caps_.tile_texture_target = gpu::GetBufferTextureTarget(
-          gfx::BufferUsage::SCANOUT,
-          viz::SinglePlaneSharedImageFormatToBufferFormat(
-              raster_caps_.tile_format),
-          context_caps);
-    }
-
     return;
   }
 
@@ -2966,14 +2975,6 @@ void LayerTreeHostImpl::UpdateRasterCapabilities() {
       settings_.use_rgba_4444
           ? viz::SinglePlaneFormat::kRGBA_4444
           : viz::PlatformColor::BestSupportedRenderBufferFormat(context_caps);
-
-  if (raster_caps_.tile_overlay_candidate) {
-    raster_caps_.tile_texture_target = gpu::GetBufferTextureTarget(
-        gfx::BufferUsage::SCANOUT,
-        viz::SinglePlaneSharedImageFormatToBufferFormat(
-            raster_caps_.tile_format),
-        context_caps);
-  }
 }
 
 ImageDecodeCache* LayerTreeHostImpl::GetImageDecodeCache() const {
@@ -2994,8 +2995,10 @@ void LayerTreeHostImpl::RegisterMainThreadPresentationTimeCallbackForTesting(
 void LayerTreeHostImpl::
     RegisterMainThreadSuccessfulPresentationTimeCallbackForTesting(
         uint32_t frame_token,
-        PresentationTimeCallbackBuffer::SuccessfulCallback callback) {
-  std::vector<PresentationTimeCallbackBuffer::SuccessfulCallback> as_vector;
+        PresentationTimeCallbackBuffer::SuccessfulCallbackWithDetails
+            callback) {
+  std::vector<PresentationTimeCallbackBuffer::SuccessfulCallbackWithDetails>
+      as_vector;
   as_vector.push_back(std::move(callback));
   presentation_time_callbacks_.RegisterMainThreadSuccessfulCallbacks(
       frame_token, std::move(as_vector));
@@ -3012,6 +3015,11 @@ void LayerTreeHostImpl::
 }
 
 bool LayerTreeHostImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
+  if (!settings().single_thread_proxy_scheduler) {
+    client_->SetWaitingForScrollEvent(input_delegate_ &&
+                                      input_delegate_->IsCurrentlyScrolling() &&
+                                      !input_delegate_->HasQueuedInput());
+  }
   impl_thread_phase_ = ImplThreadPhase::INSIDE_IMPL_FRAME;
   current_begin_frame_tracker_.Start(args);
   frame_trackers_.NotifyBeginImplFrame(args);
@@ -3053,8 +3061,9 @@ bool LayerTreeHostImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
 
   image_animation_controller_.WillBeginImplFrame(args);
 
-  for (auto* it : video_frame_controllers_)
+  for (VideoFrameController* it : video_frame_controllers_) {
     it->OnBeginFrame(args);
+  }
 
   bool recent_frame_had_no_damage =
       consecutive_frame_with_damage_count_ < settings_.damaged_frame_limit;
@@ -3081,30 +3090,15 @@ void LayerTreeHostImpl::DidFinishImplFrame(const viz::BeginFrameArgs& args) {
   frame_trackers_.NotifyFrameEnd(current_begin_frame_tracker_.Current(), args);
   impl_thread_phase_ = ImplThreadPhase::IDLE;
   current_begin_frame_tracker_.Finish();
+  if (input_delegate_) {
+    input_delegate_->DidFinishImplFrame();
+  }
 }
 
 void LayerTreeHostImpl::DidNotProduceFrame(const viz::BeginFrameAck& ack,
                                            FrameSkippedReason reason) {
   if (layer_tree_frame_sink_)
     layer_tree_frame_sink_->DidNotProduceFrame(ack, reason);
-
-  // If a frame was not submitted because there was no damage, or the scheduler
-  // hit the frame-deadline while waiting for the main-thread, notify the
-  // trackers.
-  if (reason != FrameSkippedReason::kRecoverLatency &&
-      impl_thread_phase_ == ImplThreadPhase::INSIDE_IMPL_FRAME) {
-    // It is possible that |ack| is for a 'future frame', i.e. for the next
-    // frame from the one currently being handled by the compositor (represented
-    // by the BeginFrameArgs instance in |current_begin_frame_tracker_|). This
-    // can happen, for example, when a frame is skipped early for
-    // latency-recovery, while the previous frame is still being processed.
-    // Notify the trackers only when this is *not* the case (since the trackers
-    // are not notified about the start of the future frame either).
-    const auto& args = current_begin_frame_tracker_.Current();
-    if (args.frame_id == ack.frame_id) {
-      frame_trackers_.NotifyImplFrameCausedNoDamage(ack);
-    }
-  }
 }
 
 void LayerTreeHostImpl::SynchronouslyInitializeAllTiles() {
@@ -3172,17 +3166,16 @@ std::optional<viz::HitTestRegionList> LayerTreeHostImpl::BuildHitTestData() {
   // a result we do async hit test on any surface layers that
   bool assume_overlap = false;
   for (const auto* layer : base::Reversed(*active_tree())) {
-    // Viz hit test needs to collect information for pointer-events: none OOPIFs
-    // as well. Now Layer::HitTestable ignores pointer-events property, but this
-    // early out will not work correctly if we integrate has_pointer_events_none
-    // into Layer::HitTestable, so we make sure we don't skip surface layers
-    // that draws content but has pointer-events: none property.
-    if (!(layer->HitTestable() ||
-          (layer->is_surface_layer() && layer->draws_content())))
-      continue;
-
     if (layer->is_surface_layer()) {
       const auto* surface_layer = static_cast<const SurfaceLayerImpl*>(layer);
+      // We should not skip a non-hit-testable surface layer if
+      // - it has pointer-events: none because viz hit test needs to know the
+      //   information to ensure all descendant OOPIFs to ignore hit tests; or
+      // - it draws content to track overlaps.
+      if (!layer->HitTestable() && !layer->draws_content() &&
+          !surface_layer->has_pointer_events_none()) {
+        continue;
+      }
       // If a surface layer is created not by child frame compositor or the
       // frame owner has pointer-events: none property, the surface layer
       // becomes not hit testable. We should not generate data for it.
@@ -3243,6 +3236,11 @@ std::optional<viz::HitTestRegionList> LayerTreeHostImpl::BuildHitTestData() {
                             device_scale_factor);
       continue;
     }
+
+    if (!layer->HitTestable()) {
+      continue;
+    }
+
     // TODO(sunxd): Submit all overlapping layer bounds as hit test regions.
     // Also investigate if we can use visible layer rect as overlapping regions.
     num_iterated_layers++;
@@ -3462,6 +3460,17 @@ void LayerTreeHostImpl::ActivateSyncTree() {
   if (!active_tree_->picture_layers().empty())
     DidModifyTilePriorities();
 
+  auto screenshot_token = active_tree()->TakeScreenshotDestinationToken();
+  if (child_local_surface_id_allocator_.GetCurrentLocalSurfaceId().is_valid()) {
+    // Since the screenshot will be issued against the previous `viz::Surface`
+    // we need to make sure the renderer has at least embedded a valid surface
+    // previously.
+    screenshot_destination_ = std::move(screenshot_token);
+  } else if (!screenshot_token.is_empty()) {
+    LOG(ERROR)
+        << "Cannot issue a copy because the previous surface is invalid.";
+  }
+
   // Update the child's LocalSurfaceId.
   if (active_tree()->local_surface_id_from_parent().is_valid()) {
     child_local_surface_id_allocator_.UpdateFromParent(
@@ -3519,7 +3528,7 @@ void LayerTreeHostImpl::OnMemoryPressure(
   if (!ImageDecodeCacheUtils::ShouldEvictCaches(level))
     return;
 
-    // TODO(crbug.com/1189208): Unlocking decoded-image-tracker images causes
+    // TODO(crbug.com/42050253): Unlocking decoded-image-tracker images causes
     // flickering in visible trees if Out-Of-Process rasterization is enabled.
 #if BUILDFLAG(IS_FUCHSIA)
   if (use_gpu_rasterization() && visible())
@@ -3575,7 +3584,7 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
   // If we just became visible, we have to ensure that we draw high res tiles,
   // to prevent checkerboard/low res flashes.
   if (visible_) {
-    // TODO(crbug.com/469175): Replace with RequiresHighResToDraw.
+    // TODO(crbug.com/40410467): Replace with RequiresHighResToDraw.
     SetRequiresHighResToDraw();
     // Prior CompositorFrame may have been discarded and thus we need to ensure
     // that we submit a new one, even if there are no tiles. Therefore, force a
@@ -3594,6 +3603,8 @@ void LayerTreeHostImpl::SetVisible(bool visible) {
     PrepareTiles();
     tile_manager_.decoded_image_tracker().UnlockAllImages();
   }
+
+  active_tree_->SetVisible(visible);
   resource_provider_->SetVisible(visible);
 }
 
@@ -3734,7 +3745,6 @@ LayerTreeHostImpl::CreateRasterBufferProvider() {
       caps.max_copy_texture_chromium_size;
   return std::make_unique<OneCopyRasterBufferProvider>(
       GetTaskRunner(), compositor_context_provider, worker_context_provider,
-      layer_tree_frame_sink_->gpu_memory_buffer_manager(),
       max_copy_texture_chromium_size, settings_.use_partial_raster,
       settings_.max_staging_buffer_usage_in_bytes, raster_caps_);
 }
@@ -3799,7 +3809,7 @@ void LayerTreeHostImpl::ClearCaches() {
   // comes with an invalidation and the image ids are never re-used.
   bool can_clear_decode_policy_tracking = true;
   tile_manager_.ClearCheckerImageTracking(can_clear_decode_policy_tracking);
-  // TODO(crbug.com/1378247): add tracking for which clients have used an image
+  // TODO(crbug.com/40243840): add tracking for which clients have used an image
   // and remove entries used by only one client when the URL on that client
   // changes. This should be fixed to correctly clear caches for web contents.
   // This is only a problem when
@@ -3967,7 +3977,7 @@ bool LayerTreeHostImpl::InitializeFrameSink(
   // There will not be anything to draw here, so set high res
   // to avoid checkerboards, typically when we are recovering
   // from lost context.
-  // TODO(crbug.com/469175): Replace with RequiresHighResToDraw.
+  // TODO(crbug.com/40410467): Replace with RequiresHighResToDraw.
   SetRequiresHighResToDraw();
 
   // Always allocate a new viz::LocalSurfaceId when we get a new
@@ -4139,8 +4149,12 @@ void LayerTreeHostImpl::DidScrollContent(ElementId element_id, bool animated) {
   // We may wish to prioritize smoothness over raster when the user is
   // interacting with content, but this needs to be evaluated only for direct
   // user scrolls, not for programmatic scrolls.
-  if (input_delegate_->IsCurrentlyScrolling())
+  if (input_delegate_->IsCurrentlyScrolling()) {
+    if (!settings().single_thread_proxy_scheduler) {
+      client_->SetWaitingForScrollEvent(false);
+    }
     client_->RenewTreePriority();
+  }
 
   if (!animated) {
     // SetNeedsRedraw is only called in non-animated cases since an animation
@@ -4351,14 +4365,14 @@ bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
   const bool animated = mutator_host_->TickAnimations(
       monotonic_time, scroll_tree, is_active_tree);
 
-  // TODO(crbug.com/551134): Only do this if the animations are on the active
+  // TODO(crbug.com/40443202): Only do this if the animations are on the active
   // tree, or if they are on the pending tree waiting for some future time to
   // start.
-  // TODO(crbug.com/551138): We currently have a single signal from the
+  // TODO(crbug.com/40443205): We currently have a single signal from the
   // animation_host, so on the last frame of an animation we will
   // still request an extra SetNeedsAnimate here.
   if (animated) {
-    // TODO(crbug.com/1039750): If only scroll animations present, schedule a
+    // TODO(crbug.com/40667010): If only scroll animations present, schedule a
     // frame only if scroll changes.
     SetNeedsOneBeginImplFrame();
     frame_trackers_.StartSequence(
@@ -4376,8 +4390,8 @@ bool LayerTreeHostImpl::AnimateLayers(base::TimeTicks monotonic_time,
         FrameSequenceTrackerType::kSETCompositorAnimation);
   }
 
-  // TODO(crbug.com/551138): We could return true only if the animations are on
-  // the active tree. There's no need to cause a draw to take place from
+  // TODO(crbug.com/40443205): We could return true only if the animations are
+  // on the active tree. There's no need to cause a draw to take place from
   // animations starting/ticking on the pending tree.
   return animated;
 }
@@ -4659,23 +4673,19 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
   // UIResource will be uploaded into it.
   scoped_refptr<gpu::ClientSharedImage> client_shared_image;
   uint32_t shared_image_usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
-  // For gpu compositing, we also calculate the GL texture target.
-  // TODO(ericrk): Remove references to GL from this code.
-  GLenum texture_target = GL_TEXTURE_2D;
   // For software compositing, shared memory will be allocated and the
   // UIResource will be copied into it.
   base::MappedReadOnlyRegion shm;
   base::WritableSharedMemoryMapping shared_mapping;
-  std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> scoped_mapping;
   viz::SharedBitmapId shared_bitmap_id;
   bool overlay_candidate = false;
   // Use sharedImage for software composition;
-  bool use_shared_image = layer_tree_frame_sink_->shared_image_interface();
+  bool use_shared_image_software =
+      !!layer_tree_frame_sink_->shared_image_interface();
 
   if (layer_tree_frame_sink_->context_provider()) {
     viz::RasterContextProvider* context_provider =
         layer_tree_frame_sink_->context_provider();
-    const auto& caps = context_provider->ContextCapabilities();
     const auto& shared_image_caps =
         context_provider->SharedImageInterface()->GetCapabilities();
     overlay_candidate =
@@ -4684,24 +4694,21 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
         viz::CanCreateGpuMemoryBufferForSinglePlaneSharedImageFormat(format);
     if (overlay_candidate) {
       shared_image_usage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
-      texture_target = gpu::GetBufferTextureTarget(
-          gfx::BufferUsage::SCANOUT,
-          viz::SinglePlaneSharedImageFormatToBufferFormat(format), caps);
     }
-  } else if (use_shared_image) {
+  } else if (use_shared_image_software) {
     DCHECK_EQ(bitmap.GetFormat(), UIResourceBitmap::RGBA8);
     // Must not include gpu::SHARED_IMAGE_USAGE_DISPLAY_READ here because
     // DISPLAY_READ means gpu composition.
     shared_image_usage = gpu::SHARED_IMAGE_USAGE_CPU_WRITE;
-    auto* sii = layer_tree_frame_sink_->shared_image_interface();
+    auto sii = layer_tree_frame_sink_->shared_image_interface();
     CHECK(sii);
 
-    client_shared_image = sii->CreateSharedImage(
-        format, upload_size, color_space, kTopLeft_GrSurfaceOrigin,
-        kPremul_SkAlphaType, shared_image_usage, "LayerTreeHostUIResource");
+    auto shared_image_mapping =
+        sii->CreateSharedImage({format, upload_size, color_space,
+                                shared_image_usage, "LayerTreeHostUIResource"});
+    client_shared_image = std::move(shared_image_mapping.shared_image);
+    shared_mapping = std::move(shared_image_mapping.mapping);
     CHECK(client_shared_image);
-    scoped_mapping = client_shared_image->Map();
-    CHECK(scoped_mapping);
   } else {
     shm = viz::bitmap_allocation::AllocateSharedBitmap(upload_size, format);
     shared_mapping = std::move(shm.mapping);
@@ -4716,8 +4723,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
           layer_tree_frame_sink_->context_provider();
       auto* sii = context_provider->SharedImageInterface();
       client_shared_image = sii->CreateSharedImage(
-          format, upload_size, color_space, kTopLeft_GrSurfaceOrigin,
-          kPremul_SkAlphaType, shared_image_usage, "LayerTreeHostUIResource",
+          {format, upload_size, color_space, shared_image_usage,
+           "LayerTreeHostUIResource"},
           base::span<const uint8_t>(bitmap.GetPixels(), bitmap.SizeInBytes()));
       CHECK(client_shared_image);
     } else {
@@ -4726,11 +4733,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
           SkImageInfo::MakeN32Premul(gfx::SizeToSkISize(source_size));
       SkImageInfo dst_info =
           SkImageInfo::MakeN32Premul(gfx::SizeToSkISize(upload_size));
-
-      void* pixels =
-          scoped_mapping ? scoped_mapping->Memory(0) : shared_mapping.memory();
-      sk_sp<SkSurface> surface =
-          SkSurfaces::WrapPixels(dst_info, pixels, dst_info.minRowBytes());
+      sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(
+          dst_info, shared_mapping.memory(), dst_info.minRowBytes());
       surface->getCanvas()->writePixels(
           src_info, const_cast<uint8_t*>(bitmap.GetPixels()),
           bitmap.row_bytes(), 0, 0);
@@ -4766,10 +4770,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
     } else {
       SkImageInfo dst_info =
           SkImageInfo::MakeN32Premul(gfx::SizeToSkISize(upload_size));
-      void* pixels =
-          scoped_mapping ? scoped_mapping->Memory(0) : shared_mapping.memory();
-      scaled_surface =
-          SkSurfaces::WrapPixels(dst_info, pixels, dst_info.minRowBytes());
+      scaled_surface = SkSurfaces::WrapPixels(dst_info, shared_mapping.memory(),
+                                              dst_info.minRowBytes());
       CHECK(scaled_surface);  // This could fail on invalid parameters.
     }
     SkCanvas* scaled_canvas = scaled_surface->getCanvas();
@@ -4788,8 +4790,8 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
           layer_tree_frame_sink_->context_provider();
       auto* sii = context_provider->SharedImageInterface();
       client_shared_image = sii->CreateSharedImage(
-          format, upload_size, color_space, kTopLeft_GrSurfaceOrigin,
-          kPremul_SkAlphaType, shared_image_usage, "LayerTreeHostUIResource",
+          {format, upload_size, color_space, shared_image_usage,
+           "LayerTreeHostUIResource"},
           base::span<const uint8_t>(
               reinterpret_cast<const uint8_t*>(pixmap.addr()),
               pixmap.computeByteSize()));
@@ -4810,19 +4812,21 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
                                     ->SharedImageInterface()
                                     ->GenUnverifiedSyncToken();
 
+    GLenum texture_target =
+        client_shared_image->GetTextureTarget(gfx::BufferUsage::SCANOUT);
     transferable = viz::TransferableResource::MakeGpu(
         client_shared_image, texture_target, sync_token, upload_size, format,
         overlay_candidate, viz::TransferableResource::ResourceSource::kUI);
-  } else if (use_shared_image) {
-    auto* sii = layer_tree_frame_sink_->shared_image_interface();
+  } else if (use_shared_image_software) {
+    auto sii = layer_tree_frame_sink_->shared_image_interface();
     gpu::SyncToken sync_token = sii->GenVerifiedSyncToken();
-    transferable = viz::TransferableResource::MakeSoftware(
-        client_shared_image->mailbox(), sync_token, upload_size, format,
+    transferable = viz::TransferableResource::MakeSoftwareSharedImage(
+        client_shared_image, sync_token, upload_size, format,
         viz::TransferableResource::ResourceSource::kUI);
   } else {
     layer_tree_frame_sink_->DidAllocateSharedBitmap(std::move(shm.region),
                                                     shared_bitmap_id);
-    transferable = viz::TransferableResource::MakeSoftware(
+    transferable = viz::TransferableResource::MakeSoftwareSharedBitmap(
         shared_bitmap_id, gpu::SyncToken(), upload_size, format,
         viz::TransferableResource::ResourceSource::kUI);
   }
@@ -4838,7 +4842,7 @@ void LayerTreeHostImpl::CreateUIResource(UIResourceId uid,
 
   UIResourceData data;
   data.opaque = bitmap.GetOpaque();
-  if (!use_shared_image) {
+  if (!use_shared_image_software) {
     data.shared_bitmap_id = shared_bitmap_id;
     data.shared_mapping = std::move(shared_mapping);
   }
@@ -4872,15 +4876,23 @@ void LayerTreeHostImpl::DeleteUIResourceBacking(
     const gpu::SyncToken& sync_token) {
   // Resources are either software or gpu backed, not both.
   DCHECK(!(data.shared_mapping.IsValid() && data.shared_image));
-  if (data.shared_mapping.IsValid())
+
+  if (data.shared_mapping.IsValid()) {
     layer_tree_frame_sink_->DidDeleteSharedBitmap(data.shared_bitmap_id);
+  }
+
   if (data.shared_image) {
-    auto* sii =
-        layer_tree_frame_sink_->context_provider()
-            ? layer_tree_frame_sink_->context_provider()->SharedImageInterface()
-            : layer_tree_frame_sink_->shared_image_interface();
-    if (sii) {
-      sii->DestroySharedImage(sync_token, std::move(data.shared_image));
+    if (layer_tree_frame_sink_->context_provider()) {
+      auto* sii =
+          layer_tree_frame_sink_->context_provider()->SharedImageInterface();
+      if (sii) {
+        sii->DestroySharedImage(sync_token, std::move(data.shared_image));
+      }
+    } else {
+      auto sii = layer_tree_frame_sink_->shared_image_interface();
+      if (sii) {
+        sii->DestroySharedImage(sync_token, std::move(data.shared_image));
+      }
     }
   }
   // |data| goes out of scope and deletes anything it owned.
@@ -4982,8 +4994,10 @@ void LayerTreeHostImpl::RemoveLatencyInfoSwapPromiseMonitor(
 }
 
 void LayerTreeHostImpl::NotifyLatencyInfoSwapPromiseMonitors() {
-  for (auto* monitor : latency_info_swap_promise_monitor_)
+  for (LatencyInfoSwapPromiseMonitor* monitor :
+       latency_info_swap_promise_monitor_) {
     monitor->OnSetNeedsRedrawOnImpl();
+  }
 }
 
 bool LayerTreeHostImpl::IsOwnerThread() const {
@@ -5035,7 +5049,7 @@ void LayerTreeHostImpl::SetTreeLayerScrollOffsetMutated(
                     element_id));
   const ScrollNode* scroll_node =
       property_trees->scroll_tree().FindNodeFromElementId(element_id);
-  // TODO(crbug.com/1307498): We should aim to prevent this condition from
+  // TODO(crbug.com/40828469): We should aim to prevent this condition from
   // happening and either remove this check or make it fatal.
   DCHECK(scroll_node);
   if (!scroll_node)
@@ -5256,8 +5270,6 @@ void LayerTreeHostImpl::NotifyDidPresentCompositorFrameOnImplThread(
     uint32_t frame_token,
     std::vector<PresentationTimeCallbackBuffer::SuccessfulCallback> callbacks,
     const viz::FrameTimingDetails& details) {
-  frame_trackers_.NotifyFramePresented(frame_token,
-                                       details.presentation_feedback);
   for (auto& callback : callbacks)
     std::move(callback).Run(details.presentation_feedback.timestamp);
 }
@@ -5325,6 +5337,13 @@ void LayerTreeHostImpl::ApplyFirstScrollTracking(const ui::LatencyInfo& latency,
   // to the given `frame_token`.
   presentation_time_callbacks_.RegisterCompositorThreadSuccessfulCallbacks(
       frame_token, std::move(callbacks));
+}
+
+bool LayerTreeHostImpl::RunningOnRendererProcess() const {
+  // The browser process uses |SingleThreadProxy| whereas the renderers use
+  // |ProxyMain|. This is more of an implementation detail, but we can use
+  // that here to determine the process type.
+  return !settings().single_thread_proxy_scheduler;
 }
 
 }  // namespace cc

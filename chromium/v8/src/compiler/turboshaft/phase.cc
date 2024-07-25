@@ -9,30 +9,30 @@
 #include "src/compiler/js-heap-broker.h"
 #include "src/compiler/turboshaft/graph-visualizer.h"
 #include "src/diagnostics/code-tracer.h"
+#include "src/utils/ostreams.h"
 
 namespace v8::internal::compiler::turboshaft {
 
-void PrintTurboshaftGraph(Zone* temp_zone, CodeTracer* code_tracer,
-                          const char* phase_name) {
-  const PipelineData& data = PipelineData::Get();
-  if (data.info()->trace_turbo_json()) {
-    UnparkedScopeIfNeeded scope(data.broker());
+void PrintTurboshaftGraph(PipelineData* data, Zone* temp_zone,
+                          CodeTracer* code_tracer, const char* phase_name) {
+  if (data->info()->trace_turbo_json()) {
+    UnparkedScopeIfNeeded scope(data->broker());
     AllowHandleDereference allow_deref;
-    turboshaft::Graph& graph = data.graph();
+    turboshaft::Graph& graph = data->graph();
 
-    TurboJsonFile json_of(data.info(), std::ios_base::app);
+    TurboJsonFile json_of(data->info(), std::ios_base::app);
     PrintTurboshaftGraphForTurbolizer(json_of, graph, phase_name,
-                                      data.node_origins(), temp_zone);
+                                      data->node_origins(), temp_zone);
   }
 
-  if (data.info()->trace_turbo_graph()) {
+  if (data->info()->trace_turbo_graph()) {
     DCHECK(code_tracer);
-    UnparkedScopeIfNeeded scope(data.broker());
+    UnparkedScopeIfNeeded scope(data->broker());
     AllowHandleDereference allow_deref;
 
     CodeTracer::StreamScope tracing_scope(code_tracer);
     tracing_scope.stream() << "\n----- " << phase_name << " -----\n"
-                           << data.graph();
+                           << data->graph();
   }
 }
 
@@ -65,6 +65,14 @@ void PrintTurboshaftGraphForTurbolizer(std::ofstream& stream,
         return false;
       });
   PrintTurboshaftCustomDataPerOperation(
+      stream, "Representations", graph,
+      [](std::ostream& stream, const turboshaft::Graph& graph,
+         turboshaft::OpIndex index) -> bool {
+        const Operation& op = graph.Get(index);
+        stream << PrintCollection(op.outputs_rep());
+        return true;
+      });
+  PrintTurboshaftCustomDataPerOperation(
       stream, "Use Count (saturated)", graph,
       [](std::ostream& stream, const turboshaft::Graph& graph,
          turboshaft::OpIndex index) -> bool {
@@ -89,5 +97,3 @@ void PrintTurboshaftGraphForTurbolizer(std::ofstream& stream,
 }
 
 }  // namespace v8::internal::compiler::turboshaft
-
-EXPORT_CONTEXTUAL_VARIABLE(v8::internal::compiler::turboshaft::PipelineData)

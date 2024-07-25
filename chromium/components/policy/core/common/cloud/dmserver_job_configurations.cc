@@ -32,7 +32,7 @@ const char* JobTypeToRequestType(
     case DeviceManagementService::JobConfiguration::TYPE_REGISTRATION:
       return dm_protocol::kValueRequestRegister;
     case DeviceManagementService::JobConfiguration::TYPE_OIDC_REGISTRATION:
-      return dm_protocol::kValueRequestOidcRegister;
+      return dm_protocol::kValueRequestRegisterProfile;
     case DeviceManagementService::JobConfiguration::TYPE_POLICY_FETCH:
       return dm_protocol::kValueRequestPolicy;
     case DeviceManagementService::JobConfiguration::TYPE_API_AUTH_CODE_FETCH:
@@ -61,13 +61,16 @@ const char* JobTypeToRequestType(
         TYPE_CERT_BASED_REGISTRATION:
       return dm_protocol::kValueRequestCertBasedRegister;
     case DeviceManagementService::JobConfiguration::
+        TYPE_TOKEN_BASED_DEVICE_REGISTRATION:
+      return dm_protocol::kValueRequestTokenBasedRegister;
+    case DeviceManagementService::JobConfiguration::
         TYPE_ACTIVE_DIRECTORY_ENROLL_PLAY_USER:
       return dm_protocol::kValueRequestActiveDirectoryEnrollPlayUser;
     case DeviceManagementService::JobConfiguration::
         TYPE_ACTIVE_DIRECTORY_PLAY_ACTIVITY:
       return dm_protocol::kValueRequestActiveDirectoryPlayActivity;
-    case DeviceManagementService::JobConfiguration::TYPE_TOKEN_ENROLLMENT:
-      return dm_protocol::kValueRequestTokenEnrollment;
+    case DeviceManagementService::JobConfiguration::TYPE_BROWSER_REGISTRATION:
+      return dm_protocol::kValueRequestRegisterBrowser;
     case DeviceManagementService::JobConfiguration::TYPE_CHROME_DESKTOP_REPORT:
       return dm_protocol::kValueRequestChromeDesktopReport;
     case DeviceManagementService::JobConfiguration::
@@ -151,7 +154,7 @@ DMServerJobConfiguration::CreateParams::WithParams(
     const std::string& client_id,
     bool critical,
     DMAuth auth_data,
-    absl::optional<std::string> oauth_token,
+    std::optional<std::string> oauth_token,
     scoped_refptr<network::SharedURLLoaderFactory> factory,
     Callback callback) {
   DMServerJobConfiguration::CreateParams params;
@@ -200,7 +203,7 @@ DMServerJobConfiguration::DMServerJobConfiguration(
     const std::string& client_id,
     bool critical,
     DMAuth auth_data,
-    absl::optional<std::string>&& oauth_token,
+    std::optional<std::string>&& oauth_token,
     scoped_refptr<network::SharedURLLoaderFactory> factory,
     Callback callback)
     : DMServerJobConfiguration(CreateParams::WithParams(service,
@@ -217,7 +220,7 @@ DMServerJobConfiguration::DMServerJobConfiguration(
     CloudPolicyClient* client,
     bool critical,
     DMAuth auth_data,
-    absl::optional<std::string>&& oauth_token,
+    std::optional<std::string>&& oauth_token,
     Callback callback)
     : DMServerJobConfiguration(
           CreateParams::WithParams(client->service(),

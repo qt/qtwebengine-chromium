@@ -83,7 +83,7 @@ TEST_F(AutofillFieldTest, IsFieldFillable) {
 
   // Field has autocomplete="off" set. Since autofill was able to make a
   // prediction, it is still considered a fillable field.
-  field.should_autocomplete = false;
+  field.set_should_autocomplete(false);
   EXPECT_TRUE(field.IsFieldFillable());
 }
 
@@ -99,15 +99,7 @@ struct PrecedenceOverAutocompleteParams {
 };
 
 class PrecedenceOverAutocompleteTest
-    : public testing::TestWithParam<PrecedenceOverAutocompleteParams> {
-  base::test::ScopedFeatureList scoped_feature_list;
-
- public:
-  PrecedenceOverAutocompleteTest() {
-    scoped_feature_list.InitAndEnableFeature(
-        features::kAutofillStreetNameOrHouseNumberPrecedenceOverAutocomplete);
-  }
-};
+    : public testing::TestWithParam<PrecedenceOverAutocompleteParams> {};
 
 // Tests giving StreetName or HouseNumber predictions, by heuristic or server,
 // precedence over HtmlFieldType::kAddressLine(1|2) autocomplete prediction.
@@ -308,7 +300,17 @@ INSTANTIATE_TEST_SUITE_P(
             .html_field_type = HtmlFieldType::kUnspecified,
             .server_type = ADDRESS_HOME_CITY,
             .heuristic_type = ADDRESS_HOME_APT_NUM,
-            .expected_result = ADDRESS_HOME_CITY}));
+            .expected_result = ADDRESS_HOME_CITY},
+        AutofillLocalHeuristicsOverridesParams{
+            .html_field_type = HtmlFieldType::kUnspecified,
+            .server_type = ADDRESS_HOME_HOUSE_NUMBER,
+            .heuristic_type = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
+            .expected_result = ADDRESS_HOME_HOUSE_NUMBER_AND_APT},
+        AutofillLocalHeuristicsOverridesParams{
+            .html_field_type = HtmlFieldType::kUnspecified,
+            .server_type = ADDRESS_HOME_APT_NUM,
+            .heuristic_type = ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
+            .expected_result = ADDRESS_HOME_HOUSE_NUMBER_AND_APT}));
 
 // Tests that consecutive identical events are not added twice to the event log.
 TEST(AutofillFieldLogEventTypeTest, AppendLogEventIfNotRepeated) {

@@ -57,8 +57,8 @@ class DepthTest extends TextureTestMixin(GPUTest) {
       colorAttachments: [
         {
           view: renderTarget.createView(),
-          storeOp: 'store',
           loadOp: 'load',
+          storeOp: 'store',
         },
       ],
       depthStencilAttachment,
@@ -410,9 +410,9 @@ g.test('depth_compare_func')
       colorAttachments: [
         {
           view: colorAttachmentView,
-          storeOp: 'store',
           clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
           loadOp: 'clear',
+          storeOp: 'store',
         },
       ],
       depthStencilAttachment,
@@ -467,13 +467,8 @@ g.test('reverse_depth')
             @vertex fn main(
               @builtin(vertex_index) VertexIndex : u32,
               @builtin(instance_index) InstanceIndex : u32) -> Output {
-              // TODO: remove workaround for Tint unary array access broke
-              var zv : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
-                  vec2<f32>(0.2, 0.2),
-                  vec2<f32>(0.3, 0.3),
-                  vec2<f32>(-0.1, -0.1),
-                  vec2<f32>(1.1, 1.1));
-              let z : f32 = zv[InstanceIndex].x;
+              let zv = array(0.2, 0.3, -0.1, 1.1);
+              let z = zv[InstanceIndex];
 
               var output : Output;
               output.Position = vec4<f32>(0.5, 0.5, z, 1.0);
@@ -517,9 +512,9 @@ g.test('reverse_depth')
       colorAttachments: [
         {
           view: colorAttachmentView,
-          storeOp: 'store',
           clearValue: { r: 0.5, g: 0.5, b: 0.5, a: 1.0 },
           loadOp: 'clear',
+          storeOp: 'store',
         },
       ],
       depthStencilAttachment: {

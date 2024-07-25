@@ -5,7 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Platform from '../../core/platform/platform.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
@@ -93,14 +93,6 @@ const UIStrings = {
    */
   isThisPageOptimizedForSearch: 'Is this page optimized for search engine results ranking',
   /**
-   *@description Text of checkbox to include running the Ad speed and quality audits in Lighthouse
-   */
-  publisherAds: 'Publisher Ads',
-  /**
-   *@description Tooltip text of checkbox to include running the Ad speed and quality audits in Lighthouse
-   */
-  isThisPageOptimizedForAdSpeedAnd: 'Is this page optimized for ad speed and quality',
-  /**
    *@description ARIA label for a radio button input to emulate mobile device behavior when running audits in Lighthouse.
    */
   applyMobileEmulation: 'Apply mobile emulation',
@@ -176,7 +168,17 @@ const UIStrings = {
   resetStorageLocalstorage:
       'Reset storage (`cache`, `service workers`, etc) before auditing. (Good for performance & `PWA` testing)',
   /**
-   *@description Explanation for user that Ligthhouse can only audit when JavaScript is enabled
+   * @description Text of checkbox to enable JavaScript sampling while running audits in Lighthouse
+   */
+  enableSampling: 'Enable JS sampling',
+  /**
+   * @description Tooltip text of checkbox to enable JavaScript sampling while running audits in
+   * Lighthouse. Resetting the storage clears/empties it to a neutral state.
+   */
+  enableJavaScriptSampling:
+      'Enable JavaScript sampling during the Lighthouse run. This will provide more execution details in the performance panel when you view the trace, but has higher CPU overhead and may impact the performance of the page.',
+  /**
+   *@description Explanation for user that Lighthouse can only audit when JavaScript is enabled
    */
   javaScriptDisabled:
       'JavaScript is disabled. You need to enable JavaScript to audit this page. Open the Command Menu and run the Enable JavaScript command to enable JavaScript.',
@@ -220,7 +222,7 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
       runtimeSetting.setting.addChangeListener(this.recomputePageAuditability.bind(this));
     }
 
-    const javaScriptDisabledSetting = Common.Settings.Settings.instance().moduleSetting('javaScriptDisabled');
+    const javaScriptDisabledSetting = Common.Settings.Settings.instance().moduleSetting('java-script-disabled');
     javaScriptDisabledSetting.addChangeListener(this.recomputePageAuditability.bind(this));
 
     SDK.TargetManager.TargetManager.instance().observeModels(SDK.ServiceWorkerManager.ServiceWorkerManager, this);
@@ -329,12 +331,12 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
   }
 
   private javaScriptDisabled(): boolean {
-    return Common.Settings.Settings.instance().moduleSetting('javaScriptDisabled').get();
+    return Common.Settings.Settings.instance().moduleSetting('java-script-disabled').get();
   }
 
   private async hasImportantResourcesNotCleared(): Promise<string> {
     const clearStorageSetting =
-        RuntimeSettings.find(runtimeSetting => runtimeSetting.setting.name === 'lighthouse.clear_storage');
+        RuntimeSettings.find(runtimeSetting => runtimeSetting.setting.name === 'lighthouse.clear-storage');
     if (clearStorageSetting && !clearStorageSetting.setting.get()) {
       return '';
     }
@@ -364,10 +366,11 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
   }
 
   private async evaluateInspectedURL(): Promise<Platform.DevToolsPath.UrlString> {
-    if (!this.manager) {
-      return Platform.DevToolsPath.EmptyUrlString;
+    const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    if (!mainTarget) {
+      throw new Error('Unable to find main target required for Lighthouse');
     }
-    const mainTarget = this.manager.target();
+
     // target.inspectedURL is reliably populated, however it lacks any url #hash
     const inspectedURL = mainTarget.inspectedURL();
 
@@ -628,63 +631,48 @@ export const Presets: Preset[] = [
   // configID maps to Lighthouse's Object.keys(config.categories)[0] value
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_perf', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.cat-perf', true, Common.Settings.SettingStorageType.Synced),
     configID: 'performance',
     title: i18nLazyString(UIStrings.performance),
     description: i18nLazyString(UIStrings.howLongDoesThisAppTakeToShow),
-    plugin: false,
     supportedModes: ['navigation', 'timespan', 'snapshot'],
     userMetric: Host.UserMetrics.LighthouseCategoryUsed.Performance,
   },
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_a11y', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.cat-a11y', true, Common.Settings.SettingStorageType.Synced),
     configID: 'accessibility',
     title: i18nLazyString(UIStrings.accessibility),
     description: i18nLazyString(UIStrings.isThisPageUsableByPeopleWith),
-    plugin: false,
     supportedModes: ['navigation', 'snapshot'],
     userMetric: Host.UserMetrics.LighthouseCategoryUsed.Accessibility,
   },
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_best_practices', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.cat-best-practices', true, Common.Settings.SettingStorageType.Synced),
     configID: 'best-practices',
     title: i18nLazyString(UIStrings.bestPractices),
     description: i18nLazyString(UIStrings.doesThisPageFollowBestPractices),
-    plugin: false,
     supportedModes: ['navigation', 'timespan', 'snapshot'],
     userMetric: Host.UserMetrics.LighthouseCategoryUsed.BestPractices,
   },
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_seo', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.cat-seo', true, Common.Settings.SettingStorageType.Synced),
     configID: 'seo',
     title: i18nLazyString(UIStrings.seo),
     description: i18nLazyString(UIStrings.isThisPageOptimizedForSearch),
-    plugin: false,
     supportedModes: ['navigation', 'snapshot'],
     userMetric: Host.UserMetrics.LighthouseCategoryUsed.SEO,
   },
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_pwa', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.cat-pwa', true, Common.Settings.SettingStorageType.Synced),
     configID: 'pwa',
     title: i18nLazyString(UIStrings.progressiveWebApp),
     description: i18nLazyString(UIStrings.doesThisPageMeetTheStandardOfA),
-    plugin: false,
     supportedModes: ['navigation'],
     userMetric: Host.UserMetrics.LighthouseCategoryUsed.PWA,
-  },
-  {
-    setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.cat_pubads', false, Common.Settings.SettingStorageType.Synced),
-    plugin: true,
-    configID: 'lighthouse-plugin-publisher-ads',
-    title: i18nLazyString(UIStrings.publisherAds),
-    description: i18nLazyString(UIStrings.isThisPageOptimizedForAdSpeedAnd),
-    supportedModes: ['navigation'],
-    userMetric: Host.UserMetrics.LighthouseCategoryUsed.PubAds,
   },
 ];
 
@@ -695,10 +683,10 @@ export type Flags = {
 export const RuntimeSettings: RuntimeSetting[] = [
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.device_type', 'mobile', Common.Settings.SettingStorageType.Synced),
+        'lighthouse.device-type', 'mobile', Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.applyMobileEmulation),
     description: i18nLazyString(UIStrings.applyMobileEmulationDuring),
-    setFlags: (flags: Flags, value: string|boolean): void => {
+    setFlags: (flags: Flags, value: string|boolean) => {
       // See Audits.AuditsPanel._setupEmulationAndProtocolConnection()
       flags.formFactor = value;
     },
@@ -713,7 +701,7 @@ export const RuntimeSettings: RuntimeSetting[] = [
         'lighthouse.mode', 'navigation', Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.lighthouseMode),
     description: i18nLazyString(UIStrings.runLighthouseInMode),
-    setFlags: (flags: Flags, value: string|boolean): void => {
+    setFlags: (flags: Flags, value: string|boolean) => {
       flags.mode = value;
     },
     options: [
@@ -746,7 +734,7 @@ export const RuntimeSettings: RuntimeSetting[] = [
         'https://github.com/GoogleChrome/lighthouse/blob/master/docs/throttling.md#devtools-lighthouse-panel-throttling' as
         Platform.DevToolsPath.UrlString,
     description: i18nLazyString(UIStrings.simulateASlowerPageLoadBasedOn),
-    setFlags: (flags: Flags, value: string|boolean): void => {
+    setFlags: (flags: Flags, value: string|boolean) => {
       if (typeof value === 'string') {
         flags.throttlingMethod = value;
       } else {
@@ -760,11 +748,26 @@ export const RuntimeSettings: RuntimeSetting[] = [
   },
   {
     setting: Common.Settings.Settings.instance().createSetting(
-        'lighthouse.clear_storage', true, Common.Settings.SettingStorageType.Synced),
+        'lighthouse.clear-storage', true, Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.clearStorage),
     description: i18nLazyString(UIStrings.resetStorageLocalstorage),
-    setFlags: (flags: Flags, value: string|boolean): void => {
+    setFlags: (flags: Flags, value: string|boolean) => {
       flags.disableStorageReset = !value;
+    },
+    options: undefined,
+    learnMore: undefined,
+  },
+  {
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.enable-sampling', false, Common.Settings.SettingStorageType.Synced),
+    title: i18nLazyString(UIStrings.enableSampling),
+    description: i18nLazyString(UIStrings.enableJavaScriptSampling),
+    setFlags: (flags: Flags, value: string|boolean) => {
+      if (value) {
+        flags.additionalTraceCategories = 'disabled-by-default-v8.cpu_profiler';
+      } else {
+        flags.additionalTraceCategories = '';
+      }
     },
     options: undefined,
     learnMore: undefined,
@@ -800,7 +803,6 @@ export interface Preset {
   configID: string;
   title: () => Common.UIString.LocalizedString;
   description: () => Common.UIString.LocalizedString;
-  plugin: boolean;
   supportedModes: string[];
   userMetric: Host.UserMetrics.LighthouseCategoryUsed;
 }

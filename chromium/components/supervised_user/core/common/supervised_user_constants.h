@@ -26,10 +26,25 @@ enum class WebFilterType {
   // The web filter is set to "Only allow certain sites".
   kCertainSites = 2,
 
+  // Used for UMA only. There are multiple web filters on the device.
+  kMixed = 3,
+
   // Used for UMA. Update kMaxValue to the last value. Add future entries
   // above this comment. Sync with enums.xml.
-  kMaxValue = kCertainSites,
+  kMaxValue = kMixed,
 };
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// LINT.IfChange(ToggleState)
+enum class ToggleState {
+  kDisabled = 0,
+  kEnabled = 1,
+  kMixed = 2,
+  kMaxValue = kMixed,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/families/enums.xml:SupervisedUserToggleState)
 
 // These values corresponds to SupervisedUserSafetyFilterResult in
 // tools/metrics/histograms/enums.xml. If you change anything here, make
@@ -75,11 +90,11 @@ extern const char kContentPackDefaultFilteringBehavior[];
 extern const char kContentPackManualBehaviorHosts[];
 extern const char kContentPackManualBehaviorURLs[];
 extern const char kCookiesAlwaysAllowed[];
-extern const char kForceSafeSearch[];
 extern const char kGeolocationDisabled[];
 extern const char kSafeSitesEnabled[];
 extern const char kSigninAllowed[];
 extern const char kSigninAllowedOnNextStartup[];
+extern const char kSkipParentApprovalToInstallExtensions[];
 
 // A special supervised user ID used for child accounts.
 extern const char kChildAccountSUID[];
@@ -106,12 +121,25 @@ GURL KidsManagementClassifyURLRequestURL();
 // Histogram name to log FamilyLink user type segmentation.
 extern const char kFamilyLinkUserLogSegmentHistogramName[];
 
+// Histogram name to log Family Link user web filter type segmentation.
+// This filter only applies to supervised user accounts.
+extern const char kFamilyLinkUserLogSegmentWebFilterHistogramName[];
+
+// Histogram name to log Family Link extensions permissions toggle state.
+extern const char kSkipParentApprovalToInstallExtensionsHistogramName[];
+
 // Histogram name to log URL filtering results with reason for filter and page
 // transition.
 extern const char kSupervisedUserURLFilteringResultHistogramName[];
 
 // Histogram name to log top level URL filtering results with reason for filter.
 extern const char kSupervisedUserTopLevelURLFilteringResultHistogramName[];
+
+// The URL which the "Managed by your parent" UI links to.
+extern const char kManagedByParentUiMoreInfoUrl[];
+
+// Feedback source name for family member role in Family Link.
+extern const char kFamilyMemberRoleFeedbackTag[];
 
 }  // namespace supervised_user
 

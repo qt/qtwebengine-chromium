@@ -17,15 +17,13 @@
 
 namespace openscreen::cast {
 
-CompoundRtcpBuilder::CompoundRtcpBuilder(RtcpSession* session)
-    : session_(session) {
-  OSP_DCHECK(session_);
-}
+CompoundRtcpBuilder::CompoundRtcpBuilder(RtcpSession& session)
+    : session_(session) {}
 
 CompoundRtcpBuilder::~CompoundRtcpBuilder() = default;
 
 void CompoundRtcpBuilder::SetCheckpointFrame(FrameId frame_id) {
-  OSP_DCHECK_GE(frame_id, checkpoint_frame_id_);
+  OSP_CHECK_GE(frame_id, checkpoint_frame_id_);
   checkpoint_frame_id_ = frame_id;
 }
 
@@ -124,7 +122,7 @@ void CompoundRtcpBuilder::AppendReceiverReportPacket(ByteBuffer& buffer) {
     header.with.report_count = 0;
   }
   header.AppendFields(buffer);
-  AppendField<uint32_t>(session_->receiver_ssrc(), buffer);
+  AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
   if (receiver_report_for_next_packet_) {
     receiver_report_for_next_packet_->AppendFields(buffer);
     receiver_report_for_next_packet_ = std::nullopt;
@@ -140,12 +138,12 @@ void CompoundRtcpBuilder::AppendReceiverReferenceTimeReportPacket(
                         kRtcpExtendedReportBlockHeaderSize +
                         kRtcpReceiverReferenceTimeReportBlockSize;
   header.AppendFields(buffer);
-  AppendField<uint32_t>(session_->receiver_ssrc(), buffer);
+  AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
   AppendField<uint8_t>(kRtcpReceiverReferenceTimeReportBlockType, buffer);
   AppendField<uint8_t>(0 /* reserved/unused byte */, buffer);
   AppendField<uint16_t>(
       kRtcpReceiverReferenceTimeReportBlockSize / sizeof(uint32_t), buffer);
-  AppendField<uint64_t>(session_->ntp_converter().ToNtpTimestamp(send_time),
+  AppendField<uint64_t>(session_.ntp_converter().ToNtpTimestamp(send_time),
                         buffer);
 }
 
@@ -155,8 +153,8 @@ void CompoundRtcpBuilder::AppendPictureLossIndicatorPacket(ByteBuffer& buffer) {
   header.with.subtype = RtcpSubtype::kPictureLossIndicator;
   header.payload_size = kRtcpPictureLossIndicatorHeaderSize;
   header.AppendFields(buffer);
-  AppendField<uint32_t>(session_->receiver_ssrc(), buffer);
-  AppendField<uint32_t>(session_->sender_ssrc(), buffer);
+  AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
+  AppendField<uint32_t>(session_.sender_ssrc(), buffer);
 }
 
 void CompoundRtcpBuilder::AppendCastFeedbackPacket(ByteBuffer& buffer) {
@@ -166,23 +164,23 @@ void CompoundRtcpBuilder::AppendCastFeedbackPacket(ByteBuffer& buffer) {
   uint8_t* const feedback_fields_begin = buffer.data();
 
   // Append the mandatory fields.
-  AppendField<uint32_t>(session_->receiver_ssrc(), buffer);
-  AppendField<uint32_t>(session_->sender_ssrc(), buffer);
+  AppendField<uint32_t>(session_.receiver_ssrc(), buffer);
+  AppendField<uint32_t>(session_.sender_ssrc(), buffer);
   AppendField<uint32_t>(kRtcpCastIdentifierWord, buffer);
   AppendField<uint8_t>(checkpoint_frame_id_.lower_8_bits(), buffer);
   // The |loss_count_field| will be set after the Loss Fields are generated
   // and the total count is known.
   uint8_t* const loss_count_field =
       ReserveSpace(sizeof(uint8_t), buffer).data();
-  OSP_DCHECK_GT(playout_delay_.count(), 0);
-  OSP_DCHECK_LE(playout_delay_.count(), std::numeric_limits<uint16_t>::max());
+  OSP_CHECK_GT(playout_delay_.count(), 0);
+  OSP_CHECK_LE(playout_delay_.count(), std::numeric_limits<uint16_t>::max());
   AppendField<uint16_t>(playout_delay_.count(), buffer);
 
   // Try to include as many Loss Fields as possible. Some of the NACKs might
   // be dropped if the remaining space in the buffer is insufficient to
   // include them all.
   const int num_loss_fields = AppendCastFeedbackLossFields(buffer);
-  OSP_DCHECK_LE(num_loss_fields, std::numeric_limits<uint8_t>::max());
+  OSP_CHECK_LE(num_loss_fields, std::numeric_limits<uint8_t>::max());
   *loss_count_field = num_loss_fields;
 
   // Try to include the CST2 header and ACK bit vector. Again, some of the
@@ -312,7 +310,7 @@ void CompoundRtcpBuilder::AppendCastFeedbackAckFields(ByteBuffer& buffer) {
 
   // Now that the total size of the ACK bit vector is known, go back and set the
   // octet count field.
-  OSP_DCHECK_LE(num_ack_bitvector_octets, std::numeric_limits<uint8_t>::max());
+  OSP_CHECK_LE(num_ack_bitvector_octets, std::numeric_limits<uint8_t>::max());
   *octet_count_field = num_ack_bitvector_octets;
 
   acks_for_next_packet_.clear();

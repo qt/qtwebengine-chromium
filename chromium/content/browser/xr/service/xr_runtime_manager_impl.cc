@@ -71,6 +71,56 @@ bool IsEnabled(const base::CommandLine* command_line,
 }
 #endif
 
+bool IsForcedRuntime(const base::CommandLine* command_line,
+                     const std::string& name) {
+  return (base::CompareCaseInsensitiveASCII(
+              command_line->GetSwitchValueASCII(switches::kWebXrForceRuntime),
+              name) == 0);
+}
+
+std::optional<device::mojom::XRDeviceId> GetForcedRuntime(
+    device::mojom::XRSessionMode mode) {
+  auto* cmd_line = base::CommandLine::ForCurrentProcess();
+  if (!cmd_line->HasSwitch(switches::kWebXrForceRuntime)) {
+    return std::nullopt;
+  }
+
+  switch (mode) {
+    case device::mojom::XRSessionMode::kImmersiveAr:
+#if BUILDFLAG(ENABLE_ARCORE)
+      if (IsForcedRuntime(cmd_line, switches::kWebXrRuntimeArCore)) {
+        return device::mojom::XRDeviceId::ARCORE_DEVICE_ID;
+      }
+#endif
+#if BUILDFLAG(ENABLE_OPENXR)
+      if (IsForcedRuntime(cmd_line, switches::kWebXrRuntimeOpenXr)) {
+        return device::mojom::XRDeviceId::OPENXR_DEVICE_ID;
+      }
+#endif
+      break;
+    case device::mojom::XRSessionMode::kImmersiveVr:
+#if BUILDFLAG(ENABLE_OPENXR)
+      if (IsForcedRuntime(cmd_line, switches::kWebXrRuntimeOpenXr)) {
+        return device::mojom::XRDeviceId::OPENXR_DEVICE_ID;
+      }
+#endif
+#if BUILDFLAG(ENABLE_CARDBOARD)
+      if (IsForcedRuntime(cmd_line, switches::kWebXrRuntimeCardboard)) {
+        return device::mojom::XRDeviceId::CARDBOARD_DEVICE_ID;
+      }
+#endif
+      break;
+    case device::mojom::XRSessionMode::kInline:
+      if (IsForcedRuntime(cmd_line,
+                          switches::kWebXrRuntimeOrientationSensors)) {
+        return device::mojom::XRDeviceId::ORIENTATION_DEVICE_ID;
+      }
+      break;
+  }
+
+  return device::mojom::XRDeviceId::FAKE_DEVICE_ID;
+}
+
 std::unique_ptr<device::XrFrameSinkClient> FrameSinkClientFactory(
     int32_t render_process_id,
     int32_t render_frame_id) {
@@ -218,10 +268,8 @@ BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetRuntimeForOptions(
       runtime = GetImmersiveVrRuntime();
       break;
     case device::mojom::XRSessionMode::kInline:
-      // Try the orientation provider if it exists.
-      // If we don't have an orientation provider, then we don't have an
-      // explicit runtime to back a non-immersive session.
-      runtime = GetRuntime(device::mojom::XRDeviceId::ORIENTATION_DEVICE_ID);
+      runtime = GetInlineRuntime();
+      break;
   }
 
   // Return the runtime from above if we got one and it supports all required
@@ -232,6 +280,12 @@ BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetRuntimeForOptions(
 }
 
 BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetImmersiveVrRuntime() {
+  std::optional<device::mojom::XRDeviceId> maybe_runtime =
+      GetForcedRuntime(device::mojom::XRSessionMode::kImmersiveVr);
+  if (maybe_runtime.has_value()) {
+    return GetRuntime(maybe_runtime.value());
+  }
+
 // OpenXR is the highest priority if it's available.
 #if BUILDFLAG(ENABLE_OPENXR)
   auto* openxr = GetRuntime(device::mojom::XRDeviceId::OPENXR_DEVICE_ID);
@@ -253,11 +307,17 @@ BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetImmersiveVrRuntime() {
 }
 
 BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetImmersiveArRuntime() {
+  std::optional<device::mojom::XRDeviceId> maybe_runtime =
+      GetForcedRuntime(device::mojom::XRSessionMode::kImmersiveAr);
+  if (maybe_runtime.has_value()) {
+    auto* runtime = GetRuntime(maybe_runtime.value());
+    return runtime && runtime->SupportsArBlendMode() ? runtime : nullptr;
+  }
+
 #if BUILDFLAG(ENABLE_OPENXR)
   // If OpenXR is available and the runtime supports an AR blend mode, prefer
   // it over ARCore to unify VR/AR rendering paths.
-  if (base::FeatureList::IsEnabled(
-          device::features::kOpenXrExtendedFeatureSupport)) {
+  if (device::features::IsOpenXrArEnabled()) {
     auto* openxr = GetRuntime(device::mojom::XRDeviceId::OPENXR_DEVICE_ID);
     if (openxr && openxr->SupportsArBlendMode())
       return openxr;
@@ -273,6 +333,19 @@ BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetImmersiveArRuntime() {
 #endif
 
   return nullptr;
+}
+
+BrowserXRRuntimeImpl* XRRuntimeManagerImpl::GetInlineRuntime() {
+  std::optional<device::mojom::XRDeviceId> maybe_runtime =
+      GetForcedRuntime(device::mojom::XRSessionMode::kInline);
+  if (maybe_runtime.has_value()) {
+    return GetRuntime(maybe_runtime.value());
+  }
+
+  // Try the orientation provider if it exists.
+  // If we don't have an orientation provider, then we don't have an
+  // explicit runtime to back a non-immersive session.
+  return GetRuntime(device::mojom::XRDeviceId::ORIENTATION_DEVICE_ID);
 }
 
 BrowserXRRuntimeImpl*
@@ -489,7 +562,7 @@ void XRRuntimeManagerImpl::InitializeProviders(
 
   for (const auto& provider : providers_) {
     if (!provider) {
-      // TODO(crbug.com/1050470): Remove this logging after investigation.
+      // TODO(crbug.com/40673158): Remove this logging after investigation.
       LOG(ERROR) << __func__ << " got null XR provider";
       continue;
     }

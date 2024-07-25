@@ -323,25 +323,6 @@ inline bool IsUndefinedOrNull(v8::Local<v8::Value> value) {
 PLATFORM_EXPORT v8::Local<v8::Function> GetBoundFunction(
     v8::Local<v8::Function>);
 
-// FIXME: This will be soon embedded in the generated code.
-template <typename Collection>
-static void IndexedPropertyEnumerator(
-    const v8::PropertyCallbackInfo<v8::Array>& info) {
-  Collection* collection =
-      ToScriptWrappable(info.Holder())->ToImpl<Collection>();
-  int length = collection->length();
-  v8::Local<v8::Array> properties = v8::Array::New(info.GetIsolate(), length);
-  v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
-  for (int i = 0; i < length; ++i) {
-    v8::Local<v8::Integer> integer = v8::Integer::New(info.GetIsolate(), i);
-    bool created;
-    if (!properties->CreateDataProperty(context, i, integer).To(&created))
-      return;
-    DCHECK(created);
-  }
-  V8SetReturnValue(info, properties);
-}
-
 // Freeze a V8 object. The type of the first parameter and the return value is
 // intentionally v8::Value so that this function can wrap ToV8().
 // If the argument isn't an object, this will crash.
@@ -365,6 +346,27 @@ enum class NamedPropertyDeleterResult {
   kDeleted,          // Successfully deleted.
   kDidNotDelete,     // Intercepted but failed to delete.
 };
+
+constexpr v8::Intercepted BlinkInterceptorResultToV8Intercepted(
+    IndexedPropertySetterResult value) {
+  return value == IndexedPropertySetterResult::kDidNotIntercept
+             ? v8::Intercepted::kNo
+             : v8::Intercepted::kYes;
+}
+
+constexpr v8::Intercepted BlinkInterceptorResultToV8Intercepted(
+    NamedPropertySetterResult value) {
+  return value == NamedPropertySetterResult::kDidNotIntercept
+             ? v8::Intercepted::kNo
+             : v8::Intercepted::kYes;
+}
+
+constexpr v8::Intercepted BlinkInterceptorResultToV8Intercepted(
+    NamedPropertyDeleterResult value) {
+  return value == NamedPropertyDeleterResult::kDidNotIntercept
+             ? v8::Intercepted::kNo
+             : v8::Intercepted::kYes;
+}
 
 // Gets the url of the currently executing script. Returns empty string, if no
 // script is executing (e.g. during parsing of a meta tag in markup), or the

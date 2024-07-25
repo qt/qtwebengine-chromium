@@ -8,6 +8,7 @@
 #include "src/base/macros.h"
 #include "src/common/globals.h"
 #include "src/objects/instance-type.h"
+#include "src/objects/slots.h"
 #include "src/objects/tagged-field.h"
 #include "src/sandbox/indirect-pointer-tag.h"
 #include "src/sandbox/isolate.h"
@@ -103,16 +104,16 @@ V8_OBJECT class HeapObjectLayout {
 
 static_assert(sizeof(HeapObjectLayout) == kTaggedSize);
 
-inline bool operator==(const HeapObjectLayout* obj, TaggedBase ptr) {
+inline bool operator==(const HeapObjectLayout* obj, StrongTaggedBase ptr) {
   return Tagged<HeapObject>(obj) == ptr;
 }
-inline bool operator==(TaggedBase ptr, const HeapObjectLayout* obj) {
+inline bool operator==(StrongTaggedBase ptr, const HeapObjectLayout* obj) {
   return ptr == Tagged<HeapObject>(obj);
 }
-inline bool operator!=(const HeapObjectLayout* obj, TaggedBase ptr) {
+inline bool operator!=(const HeapObjectLayout* obj, StrongTaggedBase ptr) {
   return Tagged<HeapObject>(obj) != ptr;
 }
-inline bool operator!=(TaggedBase ptr, const HeapObjectLayout* obj) {
+inline bool operator!=(StrongTaggedBase ptr, const HeapObjectLayout* obj) {
   return ptr != Tagged<HeapObject>(obj);
 }
 
@@ -304,6 +305,15 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   template <ExternalPointerTag tag>
   inline Address ReadExternalPointerField(size_t offset,
                                           IsolateForSandbox isolate) const;
+  // Same as `ReadExternalPointerField()` with returning kNullAddress on
+  // encountering a 0-handle (instead of crashing). Will use the
+  // CppHeapPointerTable for access.
+  template <ExternalPointerTag tag>
+  inline Address TryReadCppHeapPointerField(
+      size_t offset, IsolateForPointerCompression isolate) const;
+  inline Address TryReadCppHeapPointerField(
+      size_t offset, IsolateForPointerCompression isolate,
+      ExternalPointerTag tag) const;
   template <ExternalPointerTag tag>
   inline void WriteExternalPointerField(size_t offset,
                                         IsolateForSandbox isolate,
@@ -313,7 +323,15 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline void WriteLazilyInitializedExternalPointerField(
       size_t offset, IsolateForSandbox isolate, Address value);
 
-  inline void ResetLazilyInitializedExternalPointerField(size_t offset);
+  inline void SetupLazilyInitializedExternalPointerField(size_t offset);
+  inline void SetupLazilyInitializedCppHeapPointerField(size_t offset);
+
+  template <ExternalPointerTag tag>
+  inline void WriteLazilyInitializedCppHeapPointerField(
+      size_t offset, IsolateForPointerCompression isolate, Address value);
+  inline void WriteLazilyInitializedCppHeapPointerField(
+      size_t offset, IsolateForPointerCompression isolate, Address value,
+      ExternalPointerTag tag);
 
   //
   // Indirect pointers.
@@ -379,6 +397,8 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   inline MaybeObjectSlot RawMaybeWeakField(int byte_offset) const;
   inline InstructionStreamSlot RawInstructionStreamField(int byte_offset) const;
   inline ExternalPointerSlot RawExternalPointerField(
+      int byte_offset, ExternalPointerTag tag) const;
+  inline CppHeapPointerSlot RawCppHeapPointerField(
       int byte_offset, ExternalPointerTag tag) const;
   inline IndirectPointerSlot RawIndirectPointerField(
       int byte_offset, IndirectPointerTag tag) const;
@@ -520,6 +540,7 @@ constexpr HeapObject Tagged<HeapObject>::ToRawPtr() const {
 HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
 IS_TYPE_FUNCTION_DECL(HashTableBase)
 IS_TYPE_FUNCTION_DECL(SmallOrderedHashTable)
+IS_TYPE_FUNCTION_DECL(PropertyDictionary)
 #undef IS_TYPE_FUNCTION_DECL
 
 // Most calls to Is<Oddball> should go via the Tagged<Object> overloads, withst
@@ -550,6 +571,17 @@ STRUCT_LIST(DECL_STRUCT_PREDICATE)
 V8_INLINE bool InAnySharedSpace(Tagged<HeapObject> obj);
 V8_INLINE bool InWritableSharedSpace(Tagged<HeapObject> obj);
 V8_INLINE bool InReadOnlySpace(Tagged<HeapObject> obj);
+// Whether the object is located outside of the sandbox or in read-only
+// space. Currently only needed due to Code objects. Once they are fully
+// migrated into trusted space, this can be replaced by !InsideSandbox().
+static_assert(!kAllCodeObjectsLiveInTrustedSpace);
+V8_INLINE bool OutsideSandboxOrInReadonlySpace(Tagged<HeapObject> obj);
+
+// Returns true if obj is guaranteed to be a read-only object or a specific
+// (small) Smi. If the method returns false, we need more checks for RO space
+// objects or Smis. This can be used for a fast RO space/Smi check which are
+// objects for e.g. GC than can be exlucded for processing.
+V8_INLINE constexpr bool FastInReadOnlySpaceOrSmallSmi(Tagged_t obj);
 
 }  // namespace internal
 }  // namespace v8

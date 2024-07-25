@@ -5,6 +5,8 @@
 #ifndef NET_SPDY_SPDY_HTTP_UTILS_H_
 #define NET_SPDY_SPDY_HTTP_UTILS_H_
 
+#include <optional>
+
 #include "base/memory/ref_counted.h"
 #include "base/types/expected.h"
 #include "net/base/net_export.h"
@@ -12,7 +14,6 @@
 #include "net/third_party/quiche/src/quiche/spdy/core/http2_header_block.h"
 #include "net/third_party/quiche/src/quiche/spdy/core/spdy_framer.h"
 #include "net/third_party/quiche/src/quiche/spdy/core/spdy_protocol.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -39,14 +40,14 @@ NET_EXPORT int SpdyHeadersToHttpResponse(const spdy::Http2HeaderBlock& headers,
 // by creating a string with embedded nul bytes instead of newlines and then
 // parsing it to the HttpResponseHeaders constructor to be parsed. Exposed for
 // testing.
-// TODO(https://crbug.com/1485670): Remove this once it is no longer needed.
+// TODO(crbug.com/40282642): Remove this once it is no longer needed.
 NET_EXPORT_PRIVATE base::expected<scoped_refptr<HttpResponseHeaders>, int>
 SpdyHeadersToHttpResponseHeadersUsingRawString(
     const spdy::Http2HeaderBlock& headers);
 
 // Converts a spdy::Http2HeaderBlock object into an HttpResponseHeaders object
 // by using the HttpResponseHeaders::Builder API. Exposed for testing.
-// TODO(https://crbug.com/1485670): Merge this back into
+// TODO(crbug.com/40282642): Merge this back into
 // SpdyHeadersToHttpResponse() when
 // SpdyHeadersToHttpResponseHeadersUsingRawString() is removed.
 NET_EXPORT_PRIVATE base::expected<scoped_refptr<HttpResponseHeaders>, int>
@@ -57,7 +58,17 @@ SpdyHeadersToHttpResponseHeadersUsingBuilder(
 // HttpRequestHeaders.
 NET_EXPORT void CreateSpdyHeadersFromHttpRequest(
     const HttpRequestInfo& info,
-    absl::optional<RequestPriority> priority,
+    std::optional<RequestPriority> priority,
+    const HttpRequestHeaders& request_headers,
+    spdy::Http2HeaderBlock* headers);
+
+// Create a spdy::Http2HeaderBlock from HttpRequestInfo and
+// HttpRequestHeaders, with the given protocol for extended CONNECT.
+// The request's method must be `CONNECT`.
+NET_EXPORT void CreateSpdyHeadersFromHttpRequestForExtendedConnect(
+    const HttpRequestInfo& info,
+    std::optional<RequestPriority> priority,
+    const std::string& ext_connect_protocol,
     const HttpRequestHeaders& request_headers,
     spdy::Http2HeaderBlock* headers);
 

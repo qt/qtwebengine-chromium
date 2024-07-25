@@ -9,6 +9,7 @@
 
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/mtl/MtlBlitCommandEncoder.h"
@@ -59,17 +60,22 @@ bool MtlCommandBuffer::setNewCommandBufferResources() {
 
 bool MtlCommandBuffer::createNewMTLCommandBuffer() {
     SkASSERT(fCommandBuffer == nil);
-    if (@available(macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
-        sk_cfp<MTLCommandBufferDescriptor*> desc([[MTLCommandBufferDescriptor alloc] init]);
-        (*desc).retainedReferences = NO;
+
+    // Inserting a pool here so the autorelease occurs when we return and the
+    // only remaining ref is the retain below.
+    @autoreleasepool {
+        if (@available(macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
+            sk_cfp<MTLCommandBufferDescriptor*> desc([[MTLCommandBufferDescriptor alloc] init]);
+            (*desc).retainedReferences = NO;
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
-        (*desc).errorOptions = MTLCommandBufferErrorOptionEncoderExecutionStatus;
+            (*desc).errorOptions = MTLCommandBufferErrorOptionEncoderExecutionStatus;
 #endif
-        // We add a retain here because the command buffer is set to autorelease (not alloc or copy)
-        fCommandBuffer.reset([[fQueue commandBufferWithDescriptor:desc.get()] retain]);
-    } else {
-        // We add a retain here because the command buffer is set to autorelease (not alloc or copy)
-        fCommandBuffer.reset([[fQueue commandBufferWithUnretainedReferences] retain]);
+            // We add a retain here because the command buffer is set to autorelease (not alloc or copy)
+            fCommandBuffer.reset([[fQueue commandBufferWithDescriptor:desc.get()] retain]);
+        } else {
+            // We add a retain here because the command buffer is set to autorelease (not alloc or copy)
+            fCommandBuffer.reset([[fQueue commandBufferWithUnretainedReferences] retain]);
+        }
     }
     return fCommandBuffer != nil;
 }
@@ -78,12 +84,6 @@ bool MtlCommandBuffer::commit() {
     SkASSERT(!fActiveRenderCommandEncoder);
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
-#ifdef SK_BUILD_FOR_IOS
-    if (MtlIsAppInBackground()) {
-        NSLog(@"CommandBuffer: Tried to commit command buffer while in background.\n");
-        return false;
-    }
-#endif
     [(*fCommandBuffer) commit];
 
     if ((*fCommandBuffer).status == MTLCommandBufferStatusError) {
@@ -171,7 +171,7 @@ bool MtlCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
     return true;
 }
 
-bool MtlCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
+bool MtlCommandBuffer::onAddComputePass(DispatchGroupSpan groups) {
     this->beginComputePass();
     for (const auto& group : groups) {
         group->addResourceRefs(this);
@@ -196,8 +196,16 @@ bool MtlCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
                         SkAlignTo(wgBuf.size, 16),
                         wgBuf.index);
             }
-            this->dispatchThreadgroups(dispatch.fParams.fGlobalDispatchSize,
-                                       dispatch.fParams.fLocalDispatchSize);
+            if (const WorkgroupSize* globalSize =
+                        std::get_if<WorkgroupSize>(&dispatch.fGlobalSizeOrIndirect)) {
+                this->dispatchThreadgroups(*globalSize, dispatch.fLocalSize);
+            } else {
+                SkASSERT(std::holds_alternative<BufferView>(dispatch.fGlobalSizeOrIndirect));
+                const BufferView& indirect =
+                        *std::get_if<BufferView>(&dispatch.fGlobalSizeOrIndirect);
+                this->dispatchThreadgroupsIndirect(
+                        dispatch.fLocalSize, indirect.fInfo.fBuffer, indirect.fInfo.fOffset);
+            }
         }
     }
     this->endComputePass();
@@ -211,12 +219,6 @@ bool MtlCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
     SkASSERT(!fActiveRenderCommandEncoder);
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
-#ifdef SK_BUILD_FOR_IOS
-    if (MtlIsAppInBackground()) {
-        NSLog(@"CommandBuffer: tried to create MTLRenderCommandEncoder while in background.\n");
-        return false;
-    }
-#endif
 
     const static MTLLoadAction mtlLoadAction[] {
         MTLLoadActionLoad,
@@ -444,12 +446,6 @@ MtlBlitCommandEncoder* MtlCommandBuffer::getBlitCommandEncoder() {
     if (fActiveBlitCommandEncoder) {
         return fActiveBlitCommandEncoder.get();
     }
-#ifdef SK_BUILD_FOR_IOS
-    if (MtlIsAppInBackground()) {
-        NSLog(@"CommandBuffer: tried to create MTLBlitCommandEncoder while in background.\n");
-        return nullptr;
-    }
-#endif
 
     fActiveBlitCommandEncoder = MtlBlitCommandEncoder::Make(fSharedContext, fCommandBuffer.get());
 
@@ -759,6 +755,16 @@ void MtlCommandBuffer::dispatchThreadgroups(const WorkgroupSize& globalSize,
                                             const WorkgroupSize& localSize) {
     SkASSERT(fActiveComputeCommandEncoder);
     fActiveComputeCommandEncoder->dispatchThreadgroups(globalSize, localSize);
+}
+
+void MtlCommandBuffer::dispatchThreadgroupsIndirect(const WorkgroupSize& localSize,
+                                                    const Buffer* indirectBuffer,
+                                                    size_t indirectBufferOffset) {
+    SkASSERT(fActiveComputeCommandEncoder);
+
+    id<MTLBuffer> mtlIndirectBuffer = static_cast<const MtlBuffer*>(indirectBuffer)->mtlBuffer();
+    fActiveComputeCommandEncoder->dispatchThreadgroupsWithIndirectBuffer(
+            mtlIndirectBuffer, indirectBufferOffset, localSize);
 }
 
 void MtlCommandBuffer::endComputePass() {

@@ -25,7 +25,6 @@
 #include "components/supervised_user/core/browser/list_family_members_service.h"
 #include "components/supervised_user/core/browser/permission_request_creator_impl.h"
 #include "components/supervised_user/core/browser/proto/families_common.pb.h"
-#include "components/supervised_user/core/browser/proto/kidschromemanagement_messages.pb.h"
 #include "components/supervised_user/core/browser/proto_fetcher.h"
 #include "components/supervised_user/core/browser/supervised_user_preferences.h"
 #include "components/supervised_user/core/browser/supervised_user_service.h"
@@ -72,7 +71,7 @@ void ChildAccountService::Init() {
   identity_manager_->AddObserver(this);
 
   std::move(check_user_child_status_callback_)
-      .Run(supervised_user::IsChildAccount(user_prefs_.get()));
+      .Run(supervised_user::IsSubjectToParentalControls(user_prefs_.get()));
 
   // If we're already signed in, check the account immediately just to be sure.
   // (We might have missed an update before registering as an observer.)
@@ -127,7 +126,8 @@ base::CallbackListSubscription ChildAccountService::ObserveGoogleAuthState(
 }
 
 void ChildAccountService::SetActive(bool active) {
-  if (!supervised_user::IsChildAccount(user_prefs_.get()) && !active_) {
+  if (!supervised_user::IsSubjectToParentalControls(user_prefs_.get()) &&
+      !active_) {
     return;
   }
   if (active_ == active) {
@@ -149,7 +149,7 @@ void ChildAccountService::SetActive(bool active) {
 
 void ChildAccountService::SetSupervisionStatusAndNotifyObservers(
     bool supervision_status) {
-  if (supervised_user::IsChildAccount(user_prefs_.get()) !=
+  if (supervised_user::IsSubjectToParentalControls(user_prefs_.get()) !=
       supervision_status) {
     if (supervision_status) {
       EnableParentalControls(user_prefs_.get());
@@ -177,7 +177,7 @@ void ChildAccountService::OnPrimaryAccountChanged(
     // Otherwise OnExtendedAccountInfoUpdated will be notified once
     // the account info is available.
   } else if (event_type == signin::PrimaryAccountChangeEvent::Type::kCleared) {
-// TODO(crbug.com/1462004): This causes test failure on win-rel.
+// TODO(crbug.com/40274689): This causes test failure on win-rel.
 #if BUILDFLAG(IS_IOS)
     SetSupervisionStatusAndNotifyObservers(false);
 #endif  // BUILDFLAG(IS_IOS)
@@ -189,11 +189,6 @@ void ChildAccountService::OnExtendedAccountInfoUpdated(
   // This method may get called when the account info isn't complete yet.
   // We deliberately don't check for that, as we are only interested in the
   // child account status.
-
-  if (!supervised_user::IsChildAccountSupervisionEnabled()) {
-    SetSupervisionStatusAndNotifyObservers(false);
-    return;
-  }
 
   // This class doesn't care about browser sync consent.
   CoreAccountId auth_account_id =
@@ -213,7 +208,7 @@ void ChildAccountService::OnExtendedAccountInfoRemoved(
       identity_manager_->GetPrimaryAccountId(signin::ConsentLevel::kSignin)) {
     return;
   }
-  // TODO(crbug.com/1462004): This is not reached on iOS.
+  // TODO(crbug.com/40274689): This is not reached on iOS.
   SetSupervisionStatusAndNotifyObservers(false);
 }
 

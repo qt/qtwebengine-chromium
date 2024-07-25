@@ -63,13 +63,13 @@ class YoungGenerationRememberedSetsMarkingWorklist {
    public:
     enum class SlotsType { kRegularSlots, kTypedSlots };
 
-    MarkingItem(MemoryChunk* chunk, SlotsType slots_type, SlotSet* slot_set,
-                SlotSet* background_slot_set)
+    MarkingItem(MutablePageMetadata* chunk, SlotsType slots_type,
+                SlotSet* slot_set, SlotSet* background_slot_set)
         : chunk_(chunk),
           slots_type_(slots_type),
           slot_set_(slot_set),
           background_slot_set_(background_slot_set) {}
-    MarkingItem(MemoryChunk* chunk, SlotsType slots_type,
+    MarkingItem(MutablePageMetadata* chunk, SlotsType slots_type,
                 TypedSlotSet* typed_slot_set)
         : chunk_(chunk),
           slots_type_(slots_type),
@@ -79,6 +79,7 @@ class YoungGenerationRememberedSetsMarkingWorklist {
     template <typename Visitor>
     void Process(Visitor* visitor);
     void MergeAndDeleteRememberedSets();
+    void DeleteRememberedSets();
 
     void DeleteSetsOnTearDown();
 
@@ -93,7 +94,7 @@ class YoungGenerationRememberedSetsMarkingWorklist {
     V8_INLINE SlotCallbackResult CheckAndMarkObject(Visitor* visitor,
                                                     TSlot slot);
 
-    MemoryChunk* const chunk_;
+    MutablePageMetadata* const chunk_;
     const SlotsType slots_type_;
     union {
       SlotSet* slot_set_;
@@ -195,6 +196,7 @@ class MinorMarkSweepCollector final {
       YoungGenerationRootMarkingVisitor& root_visitor);
   void MarkRootsFromConservativeStack(
       YoungGenerationRootMarkingVisitor& root_visitor);
+  void EvacuateExternalPointerReferences(MutablePageMetadata* p);
 
   void TraceFragmentation();
   void ClearNonLiveReferences();
@@ -206,6 +208,7 @@ class MinorMarkSweepCollector final {
   // 'StartSweepNewSpace' and 'SweepNewLargeSpace' return true if any pages were
   // promoted.
   bool StartSweepNewSpace();
+  void StartSweepNewSpaceWithStickyBits();
   bool SweepNewLargeSpace();
 
   void Finish();

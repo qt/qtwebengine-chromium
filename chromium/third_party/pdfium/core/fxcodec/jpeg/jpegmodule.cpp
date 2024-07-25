@@ -4,26 +4,31 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxcodec/jpeg/jpegmodule.h"
 
 #include <setjmp.h>
-#include <stdint.h>
-#include <string.h>
 
 #include <memory>
+#include <optional>
+#include <type_traits>
 #include <utility>
 
 #include "build/build_config.h"
 #include "core/fxcodec/cfx_codec_memory.h"
 #include "core/fxcodec/jpeg/jpeg_common.h"
 #include "core/fxcodec/scanlinedecoder.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/raw_span.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
 
 static pdfium::span<const uint8_t> JpegScanSOI(
     pdfium::span<const uint8_t> src_span) {
@@ -154,22 +159,22 @@ class JpegDecoder final : public ScanlineDecoder {
   static constexpr size_t kSofMarkerByteOffset = 5;
 
   jmp_buf m_JmpBuf;
-  jpeg_decompress_struct m_Cinfo;
-  jpeg_error_mgr m_Jerr;
-  jpeg_source_mgr m_Src;
-  pdfium::span<const uint8_t> m_SrcSpan;
+  jpeg_decompress_struct m_Cinfo = {};
+  jpeg_error_mgr m_Jerr = {};
+  jpeg_source_mgr m_Src = {};
+  pdfium::raw_span<const uint8_t> m_SrcSpan;
   DataVector<uint8_t> m_ScanlineBuf;
   bool m_bInited = false;
   bool m_bStarted = false;
   bool m_bJpegTransform = false;
   uint32_t m_nDefaultScaleDenom = 1;
+
+  static_assert(std::is_aggregate_v<decltype(m_Cinfo)>);
+  static_assert(std::is_aggregate_v<decltype(m_Jerr)>);
+  static_assert(std::is_aggregate_v<decltype(m_Src)>);
 };
 
-JpegDecoder::JpegDecoder() {
-  memset(&m_Cinfo, 0, sizeof(m_Cinfo));
-  memset(&m_Jerr, 0, sizeof(m_Jerr));
-  memset(&m_Src, 0, sizeof(m_Src));
-}
+JpegDecoder::JpegDecoder() = default;
 
 JpegDecoder::~JpegDecoder() {
   if (m_bInited)
@@ -190,7 +195,7 @@ bool JpegDecoder::InitDecode(bool bAcceptKnownBadHeader) {
   m_bInited = true;
 
   if (setjmp(m_JmpBuf) == -1) {
-    absl::optional<size_t> known_bad_header_offset;
+    std::optional<size_t> known_bad_header_offset;
     if (bAcceptKnownBadHeader) {
       for (size_t offset : kKnownBadHeaderWithInvalidHeightByteOffsetStarts) {
         if (HasKnownBadHeaderWithInvalidHeight(offset)) {
@@ -389,15 +394,15 @@ std::unique_ptr<ScanlineDecoder> JpegModule::CreateDecoder(
   if (!pDecoder->Create(src_span, width, height, nComps, ColorTransform))
     return nullptr;
 
-  return std::move(pDecoder);
+  return pDecoder;
 }
 
 // static
-absl::optional<JpegModule::ImageInfo> JpegModule::LoadInfo(
+std::optional<JpegModule::ImageInfo> JpegModule::LoadInfo(
     pdfium::span<const uint8_t> src_span) {
   ImageInfo info;
   if (!JpegLoadInfo(src_span, &info))
-    return absl::nullopt;
+    return std::nullopt;
 
   return info;
 }
@@ -413,15 +418,15 @@ bool JpegModule::JpegEncode(const RetainPtr<const CFX_DIBBase>& pSource,
   jerr.format_message = error_do_nothing_char;
   jerr.reset_error_mgr = error_do_nothing;
 
-  jpeg_compress_struct cinfo;
-  memset(&cinfo, 0, sizeof(cinfo));
+  jpeg_compress_struct cinfo = {};  // Aggregate initialization.
+  static_assert(std::is_aggregate_v<decltype(cinfo)>);
   cinfo.err = &jerr;
   jpeg_create_compress(&cinfo);
   int Bpp = pSource->GetBPP() / 8;
   uint32_t nComponents = Bpp >= 3 ? 3 : 1;
   uint32_t pitch = pSource->GetPitch();
-  uint32_t width = pdfium::base::checked_cast<uint32_t>(pSource->GetWidth());
-  uint32_t height = pdfium::base::checked_cast<uint32_t>(pSource->GetHeight());
+  uint32_t width = pdfium::checked_cast<uint32_t>(pSource->GetWidth());
+  uint32_t height = pdfium::checked_cast<uint32_t>(pSource->GetHeight());
   FX_SAFE_UINT32 safe_buf_len = width;
   safe_buf_len *= height;
   safe_buf_len *= nComponents;

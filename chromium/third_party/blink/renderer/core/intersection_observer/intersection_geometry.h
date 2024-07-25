@@ -13,6 +13,11 @@
 #include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 
+#define CHECK_SKIPPED_UPDATE_ON_SCROLL() DCHECK_IS_ON()
+#if CHECK_SKIPPED_UPDATE_ON_SCROLL()
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#endif
+
 namespace blink {
 
 class Element;
@@ -46,12 +51,13 @@ class CORE_EXPORT IntersectionGeometry {
     // instead of BorderBoundingBox().
     kUseOverflowClipEdge = 1 << 5,
     kRespectFilters = 1 << 6,
+    kScrollAndVisibilityOnly = 1 << 7,
 
     // These flags will be computed
-    kShouldUseCachedRects = 1 << 7,
-    kRootIsImplicit = 1 << 8,
-    kDidComputeGeometry = 1 << 9,
-    kIsVisible = 1 << 10
+    kShouldUseCachedRects = 1 << 8,
+    kRootIsImplicit = 1 << 9,
+    kDidComputeGeometry = 1 << 10,
+    kIsVisible = 1 << 11,
   };
 
   struct RootGeometry {
@@ -85,6 +91,25 @@ class CORE_EXPORT IntersectionGeometry {
     bool pre_margin_target_rect_is_empty = false;
     // Invalidation flag
     bool valid = false;
+
+#if CHECK_SKIPPED_UPDATE_ON_SCROLL()
+    // These are here just for debugging crbug.com/1519303.
+    gfx::Vector2dF computed_min_scroll_delta_to_update;
+    gfx::RectF local_root_rect;
+    gfx::RectF root_rect;
+    gfx::RectF target_rect;
+    gfx::RectF intersection_rect;
+    gfx::RectF unclipped_intersection_rect;
+    gfx::Transform target_to_view_transform;
+    gfx::Transform root_to_view_transform;
+    int relationship = 0;
+    bool root_scrolls_target = false;
+    String clip_tree;
+    String transform_tree;
+    String scroll_tree;
+
+    String ToString() const;
+#endif
   };
 
   static const LayoutObject* GetTargetLayoutObject(
@@ -103,7 +128,7 @@ class CORE_EXPORT IntersectionGeometry {
                        const Vector<Length>& target_margin,
                        const Vector<Length>& scroll_margin,
                        unsigned flags,
-                       absl::optional<RootGeometry>& root_geometry,
+                       std::optional<RootGeometry>& root_geometry,
                        CachedRects* cached_rects = nullptr);
 
   IntersectionGeometry(const IntersectionGeometry&) = default;
@@ -208,6 +233,7 @@ class CORE_EXPORT IntersectionGeometry {
                   const Vector<Length>& scroll_margin,
                   CachedRects* cached_rects);
   bool ApplyClip(const LayoutObject* target,
+                 const LayoutBox* local_ancestor,
                  const LayoutObject* root,
                  const gfx::RectF& root_rect,
                  gfx::RectF& unclipped_intersection_rect,

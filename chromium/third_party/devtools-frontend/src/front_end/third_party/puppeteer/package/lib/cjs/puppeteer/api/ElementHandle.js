@@ -127,7 +127,7 @@ const JSHandle_js_1 = require("./JSHandle.js");
  * @public
  */
 let ElementHandle = (() => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5;
     let _classSuper = JSHandle_js_1.JSHandle;
     let _instanceExtraInitializers = [];
     let _getProperty_decorators;
@@ -135,11 +135,9 @@ let ElementHandle = (() => {
     let _jsonValue_decorators;
     let _$_decorators;
     let _$$_decorators;
-    let _$x_decorators;
     let _waitForSelector_decorators;
     let _isVisible_decorators;
     let _isHidden_decorators;
-    let _waitForXPath_decorators;
     let _toElement_decorators;
     let _clickablePoint_decorators;
     let _hover_decorators;
@@ -170,43 +168,39 @@ let ElementHandle = (() => {
             _jsonValue_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_c = ElementHandle).bindIsolatedHandle.bind(_c)];
             _$_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_d = ElementHandle).bindIsolatedHandle.bind(_d)];
             _$$_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_e = ElementHandle).bindIsolatedHandle.bind(_e)];
-            _$x_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_f = ElementHandle).bindIsolatedHandle.bind(_f)];
-            _waitForSelector_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_g = ElementHandle).bindIsolatedHandle.bind(_g)];
-            _isVisible_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_h = ElementHandle).bindIsolatedHandle.bind(_h)];
-            _isHidden_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_j = ElementHandle).bindIsolatedHandle.bind(_j)];
-            _waitForXPath_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_k = ElementHandle).bindIsolatedHandle.bind(_k)];
-            _toElement_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_l = ElementHandle).bindIsolatedHandle.bind(_l)];
-            _clickablePoint_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_m = ElementHandle).bindIsolatedHandle.bind(_m)];
-            _hover_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_o = ElementHandle).bindIsolatedHandle.bind(_o)];
-            _click_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_p = ElementHandle).bindIsolatedHandle.bind(_p)];
-            _drag_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_q = ElementHandle).bindIsolatedHandle.bind(_q)];
-            _dragEnter_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_r = ElementHandle).bindIsolatedHandle.bind(_r)];
-            _dragOver_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_s = ElementHandle).bindIsolatedHandle.bind(_s)];
-            _drop_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_t = ElementHandle).bindIsolatedHandle.bind(_t)];
-            _dragAndDrop_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_u = ElementHandle).bindIsolatedHandle.bind(_u)];
-            _select_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_v = ElementHandle).bindIsolatedHandle.bind(_v)];
-            _tap_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_w = ElementHandle).bindIsolatedHandle.bind(_w)];
-            _touchStart_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_x = ElementHandle).bindIsolatedHandle.bind(_x)];
-            _touchMove_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_y = ElementHandle).bindIsolatedHandle.bind(_y)];
-            _touchEnd_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_z = ElementHandle).bindIsolatedHandle.bind(_z)];
-            _focus_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_0 = ElementHandle).bindIsolatedHandle.bind(_0)];
-            _type_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_1 = ElementHandle).bindIsolatedHandle.bind(_1)];
-            _press_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_2 = ElementHandle).bindIsolatedHandle.bind(_2)];
-            _boundingBox_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_3 = ElementHandle).bindIsolatedHandle.bind(_3)];
-            _boxModel_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_4 = ElementHandle).bindIsolatedHandle.bind(_4)];
-            _screenshot_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_5 = ElementHandle).bindIsolatedHandle.bind(_5)];
-            _isIntersectingViewport_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_6 = ElementHandle).bindIsolatedHandle.bind(_6)];
-            _scrollIntoView_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_7 = ElementHandle).bindIsolatedHandle.bind(_7)];
+            _waitForSelector_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_f = ElementHandle).bindIsolatedHandle.bind(_f)];
+            _isVisible_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_g = ElementHandle).bindIsolatedHandle.bind(_g)];
+            _isHidden_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_h = ElementHandle).bindIsolatedHandle.bind(_h)];
+            _toElement_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_j = ElementHandle).bindIsolatedHandle.bind(_j)];
+            _clickablePoint_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_k = ElementHandle).bindIsolatedHandle.bind(_k)];
+            _hover_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_l = ElementHandle).bindIsolatedHandle.bind(_l)];
+            _click_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_m = ElementHandle).bindIsolatedHandle.bind(_m)];
+            _drag_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_o = ElementHandle).bindIsolatedHandle.bind(_o)];
+            _dragEnter_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_p = ElementHandle).bindIsolatedHandle.bind(_p)];
+            _dragOver_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_q = ElementHandle).bindIsolatedHandle.bind(_q)];
+            _drop_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_r = ElementHandle).bindIsolatedHandle.bind(_r)];
+            _dragAndDrop_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_s = ElementHandle).bindIsolatedHandle.bind(_s)];
+            _select_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_t = ElementHandle).bindIsolatedHandle.bind(_t)];
+            _tap_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_u = ElementHandle).bindIsolatedHandle.bind(_u)];
+            _touchStart_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_v = ElementHandle).bindIsolatedHandle.bind(_v)];
+            _touchMove_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_w = ElementHandle).bindIsolatedHandle.bind(_w)];
+            _touchEnd_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_x = ElementHandle).bindIsolatedHandle.bind(_x)];
+            _focus_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_y = ElementHandle).bindIsolatedHandle.bind(_y)];
+            _type_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_z = ElementHandle).bindIsolatedHandle.bind(_z)];
+            _press_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_0 = ElementHandle).bindIsolatedHandle.bind(_0)];
+            _boundingBox_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_1 = ElementHandle).bindIsolatedHandle.bind(_1)];
+            _boxModel_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_2 = ElementHandle).bindIsolatedHandle.bind(_2)];
+            _screenshot_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_3 = ElementHandle).bindIsolatedHandle.bind(_3)];
+            _isIntersectingViewport_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_4 = ElementHandle).bindIsolatedHandle.bind(_4)];
+            _scrollIntoView_decorators = [(0, decorators_js_1.throwIfDisposed)(), (_5 = ElementHandle).bindIsolatedHandle.bind(_5)];
             __esDecorate(this, null, _getProperty_decorators, { kind: "method", name: "getProperty", static: false, private: false, access: { has: obj => "getProperty" in obj, get: obj => obj.getProperty }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _getProperties_decorators, { kind: "method", name: "getProperties", static: false, private: false, access: { has: obj => "getProperties" in obj, get: obj => obj.getProperties }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _jsonValue_decorators, { kind: "method", name: "jsonValue", static: false, private: false, access: { has: obj => "jsonValue" in obj, get: obj => obj.jsonValue }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _$_decorators, { kind: "method", name: "$", static: false, private: false, access: { has: obj => "$" in obj, get: obj => obj.$ }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _$$_decorators, { kind: "method", name: "$$", static: false, private: false, access: { has: obj => "$$" in obj, get: obj => obj.$$ }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _$x_decorators, { kind: "method", name: "$x", static: false, private: false, access: { has: obj => "$x" in obj, get: obj => obj.$x }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _waitForSelector_decorators, { kind: "method", name: "waitForSelector", static: false, private: false, access: { has: obj => "waitForSelector" in obj, get: obj => obj.waitForSelector }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _isVisible_decorators, { kind: "method", name: "isVisible", static: false, private: false, access: { has: obj => "isVisible" in obj, get: obj => obj.isVisible }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _isHidden_decorators, { kind: "method", name: "isHidden", static: false, private: false, access: { has: obj => "isHidden" in obj, get: obj => obj.isHidden }, metadata: _metadata }, null, _instanceExtraInitializers);
-            __esDecorate(this, null, _waitForXPath_decorators, { kind: "method", name: "waitForXPath", static: false, private: false, access: { has: obj => "waitForXPath" in obj, get: obj => obj.waitForXPath }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _toElement_decorators, { kind: "method", name: "toElement", static: false, private: false, access: { has: obj => "toElement" in obj, get: obj => obj.toElement }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _clickablePoint_decorators, { kind: "method", name: "clickablePoint", static: false, private: false, access: { has: obj => "clickablePoint" in obj, get: obj => obj.clickablePoint }, metadata: _metadata }, null, _instanceExtraInitializers);
             __esDecorate(this, null, _hover_decorators, { kind: "method", name: "hover", static: false, private: false, access: { has: obj => "hover" in obj, get: obj => obj.hover }, metadata: _metadata }, null, _instanceExtraInitializers);
@@ -232,6 +226,12 @@ let ElementHandle = (() => {
             if (_metadata) Object.defineProperty(this, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
         }
         /**
+         * @internal
+         * Cached isolatedHandle to prevent
+         * trying to adopt it multiple times
+         */
+        isolatedHandle = (__runInitializers(this, _instanceExtraInitializers), void 0);
+        /**
          * A given method will have it's `this` replaced with an isolated version of
          * `this` when decorated with this decorator.
          *
@@ -241,54 +241,52 @@ let ElementHandle = (() => {
          */
         static bindIsolatedHandle(target, _) {
             return async function (...args) {
-                const env_1 = { stack: [], error: void 0, hasError: false };
-                try {
-                    // If the handle is already isolated, then we don't need to adopt it
-                    // again.
-                    if (this.realm === this.frame.isolatedRealm()) {
-                        return await target.call(this, ...args);
-                    }
-                    const adoptedThis = __addDisposableResource(env_1, await this.frame.isolatedRealm().adoptHandle(this), false);
-                    const result = await target.call(adoptedThis, ...args);
-                    // If the function returns `adoptedThis`, then we return `this`.
-                    if (result === adoptedThis) {
-                        return this;
-                    }
-                    // If the function returns a handle, transfer it into the current realm.
-                    if (result instanceof JSHandle_js_1.JSHandle) {
-                        return await this.realm.transferHandle(result);
-                    }
-                    // If the function returns an array of handlers, transfer them into the
-                    // current realm.
-                    if (Array.isArray(result)) {
-                        await Promise.all(result.map(async (item, index, result) => {
-                            if (item instanceof JSHandle_js_1.JSHandle) {
-                                result[index] = await this.realm.transferHandle(item);
-                            }
-                        }));
-                    }
-                    if (result instanceof Map) {
-                        await Promise.all([...result.entries()].map(async ([key, value]) => {
-                            if (value instanceof JSHandle_js_1.JSHandle) {
-                                result.set(key, await this.realm.transferHandle(value));
-                            }
-                        }));
-                    }
-                    return result;
+                // If the handle is already isolated, then we don't need to adopt it
+                // again.
+                if (this.realm === this.frame.isolatedRealm()) {
+                    return await target.call(this, ...args);
                 }
-                catch (e_1) {
-                    env_1.error = e_1;
-                    env_1.hasError = true;
+                let adoptedThis;
+                if (this['isolatedHandle']) {
+                    adoptedThis = this['isolatedHandle'];
                 }
-                finally {
-                    __disposeResources(env_1);
+                else {
+                    this['isolatedHandle'] = adoptedThis = await this.frame
+                        .isolatedRealm()
+                        .adoptHandle(this);
                 }
+                const result = await target.call(adoptedThis, ...args);
+                // If the function returns `adoptedThis`, then we return `this`.
+                if (result === adoptedThis) {
+                    return this;
+                }
+                // If the function returns a handle, transfer it into the current realm.
+                if (result instanceof JSHandle_js_1.JSHandle) {
+                    return await this.realm.transferHandle(result);
+                }
+                // If the function returns an array of handlers, transfer them into the
+                // current realm.
+                if (Array.isArray(result)) {
+                    await Promise.all(result.map(async (item, index, result) => {
+                        if (item instanceof JSHandle_js_1.JSHandle) {
+                            result[index] = await this.realm.transferHandle(item);
+                        }
+                    }));
+                }
+                if (result instanceof Map) {
+                    await Promise.all([...result.entries()].map(async ([key, value]) => {
+                        if (value instanceof JSHandle_js_1.JSHandle) {
+                            result.set(key, await this.realm.transferHandle(value));
+                        }
+                    }));
+                }
+                return result;
             };
         }
         /**
          * @internal
          */
-        handle = (__runInitializers(this, _instanceExtraInitializers), void 0);
+        handle;
         /**
          * @internal
          */
@@ -414,21 +412,21 @@ let ElementHandle = (() => {
          * @returns A promise to the result of the function.
          */
         async $eval(selector, pageFunction, ...args) {
-            const env_2 = { stack: [], error: void 0, hasError: false };
+            const env_1 = { stack: [], error: void 0, hasError: false };
             try {
                 pageFunction = (0, util_js_1.withSourcePuppeteerURLIfNone)(this.$eval.name, pageFunction);
-                const elementHandle = __addDisposableResource(env_2, await this.$(selector), false);
+                const elementHandle = __addDisposableResource(env_1, await this.$(selector), false);
                 if (!elementHandle) {
                     throw new Error(`Error: failed to find element matching selector "${selector}"`);
                 }
                 return await elementHandle.evaluate(pageFunction, ...args);
             }
-            catch (e_2) {
-                env_2.error = e_2;
-                env_2.hasError = true;
+            catch (e_1) {
+                env_1.error = e_1;
+                env_1.hasError = true;
             }
             finally {
-                __disposeResources(env_2);
+                __disposeResources(env_1);
             }
         }
         /**
@@ -465,11 +463,11 @@ let ElementHandle = (() => {
          * @returns A promise to the result of the function.
          */
         async $$eval(selector, pageFunction, ...args) {
-            const env_3 = { stack: [], error: void 0, hasError: false };
+            const env_2 = { stack: [], error: void 0, hasError: false };
             try {
                 pageFunction = (0, util_js_1.withSourcePuppeteerURLIfNone)(this.$$eval.name, pageFunction);
                 const results = await this.$$(selector);
-                const elements = __addDisposableResource(env_3, await this.evaluateHandle((_, ...elements) => {
+                const elements = __addDisposableResource(env_2, await this.evaluateHandle((_, ...elements) => {
                     return elements;
                 }, ...results), false);
                 const [result] = await Promise.all([
@@ -480,31 +478,13 @@ let ElementHandle = (() => {
                 ]);
                 return result;
             }
-            catch (e_3) {
-                env_3.error = e_3;
-                env_3.hasError = true;
+            catch (e_2) {
+                env_2.error = e_2;
+                env_2.hasError = true;
             }
             finally {
-                __disposeResources(env_3);
+                __disposeResources(env_2);
             }
-        }
-        /**
-         * @deprecated Use {@link ElementHandle.$$} with the `xpath` prefix.
-         *
-         * Example: `await elementHandle.$$('xpath/' + xpathExpression)`
-         *
-         * The method evaluates the XPath expression relative to the elementHandle.
-         * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-         * automatically.
-         *
-         * If there are no such elements, the method will resolve to an empty array.
-         * @param expression - Expression to {@link https://developer.mozilla.org/en-US/docs/Web/API/Document/evaluate | evaluate}
-         */
-        async $x(expression) {
-            if (expression.startsWith('//')) {
-                expression = `.${expression}`;
-            }
-            return await this.$$(`xpath/${expression}`);
         }
         /**
          * Wait for an element matching the given selector to appear in the current
@@ -569,74 +549,6 @@ let ElementHandle = (() => {
             return await this.#checkVisibility(false);
         }
         /**
-         * @deprecated Use {@link ElementHandle.waitForSelector} with the `xpath`
-         * prefix.
-         *
-         * Example: `await elementHandle.waitForSelector('xpath/' + xpathExpression)`
-         *
-         * The method evaluates the XPath expression relative to the elementHandle.
-         *
-         * Wait for the `xpath` within the element. If at the moment of calling the
-         * method the `xpath` already exists, the method will return immediately. If
-         * the `xpath` doesn't appear after the `timeout` milliseconds of waiting, the
-         * function will throw.
-         *
-         * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-         * automatically.
-         *
-         * @example
-         * This method works across navigation.
-         *
-         * ```ts
-         * import puppeteer from 'puppeteer';
-         * (async () => {
-         *   const browser = await puppeteer.launch();
-         *   const page = await browser.newPage();
-         *   let currentURL;
-         *   page
-         *     .waitForXPath('//img')
-         *     .then(() => console.log('First URL with image: ' + currentURL));
-         *   for (currentURL of [
-         *     'https://example.com',
-         *     'https://google.com',
-         *     'https://bbc.com',
-         *   ]) {
-         *     await page.goto(currentURL);
-         *   }
-         *   await browser.close();
-         * })();
-         * ```
-         *
-         * @param xpath - A
-         * {@link https://developer.mozilla.org/en-US/docs/Web/XPath | xpath} of an
-         * element to wait for
-         * @param options - Optional waiting parameters
-         * @returns Promise which resolves when element specified by xpath string is
-         * added to DOM. Resolves to `null` if waiting for `hidden: true` and xpath is
-         * not found in DOM, otherwise resolves to `ElementHandle`.
-         * @remarks
-         * The optional Argument `options` have properties:
-         *
-         * - `visible`: A boolean to wait for element to be present in DOM and to be
-         *   visible, i.e. to not have `display: none` or `visibility: hidden` CSS
-         *   properties. Defaults to `false`.
-         *
-         * - `hidden`: A boolean wait for element to not be found in the DOM or to be
-         *   hidden, i.e. have `display: none` or `visibility: hidden` CSS properties.
-         *   Defaults to `false`.
-         *
-         * - `timeout`: A number which is maximum time to wait for in milliseconds.
-         *   Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The
-         *   default value can be changed by using the {@link Page.setDefaultTimeout}
-         *   method.
-         */
-        async waitForXPath(xpath, options = {}) {
-            if (xpath.startsWith('//')) {
-                xpath = `.${xpath}`;
-            }
-            return await this.waitForSelector(`xpath/${xpath}`, options);
-        }
-        /**
          * Converts the current handle to the given element type.
          *
          * @example
@@ -684,7 +596,7 @@ let ElementHandle = (() => {
         }
         /**
          * This method scrolls element into view if needed, and then
-         * uses {@link Page} to hover over the center of the element.
+         * uses {@link Page.mouse} to hover over the center of the element.
          * If the element is detached from DOM, the method throws an error.
          */
         async hover() {
@@ -694,7 +606,7 @@ let ElementHandle = (() => {
         }
         /**
          * This method scrolls element into view if needed, and then
-         * uses {@link Page | Page.mouse} to click in the center of the element.
+         * uses {@link Page.mouse} to click in the center of the element.
          * If the element is detached from DOM, the method throws an error.
          */
         async click(options = {}) {
@@ -939,9 +851,9 @@ let ElementHandle = (() => {
             let frame = this.frame;
             let parentFrame;
             while ((parentFrame = frame?.parentFrame())) {
-                const env_4 = { stack: [], error: void 0, hasError: false };
+                const env_3 = { stack: [], error: void 0, hasError: false };
                 try {
-                    const handle = __addDisposableResource(env_4, await frame.frameElement(), false);
+                    const handle = __addDisposableResource(env_3, await frame.frameElement(), false);
                     if (!handle) {
                         throw new Error('Unsupported frame type');
                     }
@@ -971,12 +883,12 @@ let ElementHandle = (() => {
                     await handle.#intersectBoundingBoxesWithFrame(boxes);
                     frame = parentFrame;
                 }
-                catch (e_4) {
-                    env_4.error = e_4;
-                    env_4.hasError = true;
+                catch (e_3) {
+                    env_3.error = e_3;
+                    env_3.hasError = true;
                 }
                 finally {
-                    __disposeResources(env_4);
+                    __disposeResources(env_3);
                 }
             }
             const box = boxes.find(box => {
@@ -1140,9 +1052,9 @@ let ElementHandle = (() => {
             let frame = this.frame;
             let parentFrame;
             while ((parentFrame = frame?.parentFrame())) {
-                const env_5 = { stack: [], error: void 0, hasError: false };
+                const env_4 = { stack: [], error: void 0, hasError: false };
                 try {
-                    const handle = __addDisposableResource(env_5, await frame.frameElement(), false);
+                    const handle = __addDisposableResource(env_4, await frame.frameElement(), false);
                     if (!handle) {
                         throw new Error('Unsupported frame type');
                     }
@@ -1169,25 +1081,24 @@ let ElementHandle = (() => {
                     point.y += parentBox.top;
                     frame = parentFrame;
                 }
-                catch (e_5) {
-                    env_5.error = e_5;
-                    env_5.hasError = true;
+                catch (e_4) {
+                    env_4.error = e_4;
+                    env_4.hasError = true;
                 }
                 finally {
-                    __disposeResources(env_5);
+                    __disposeResources(env_4);
                 }
             }
             return point;
         }
         async screenshot(options = {}) {
-            const { scrollIntoView = true } = options;
-            let clip = await this.#nonEmptyVisibleBoundingBox();
+            const { scrollIntoView = true, clip } = options;
             const page = this.frame.page();
+            // Only scroll the element into view if the user wants it.
             if (scrollIntoView) {
                 await this.scrollIntoViewIfNeeded();
-                // We measure again just in case.
-                clip = await this.#nonEmptyVisibleBoundingBox();
             }
+            const elementClip = await this.#nonEmptyVisibleBoundingBox();
             const [pageLeft, pageTop] = await this.evaluate(() => {
                 if (!window.visualViewport) {
                     throw new Error('window.visualViewport is not supported.');
@@ -1197,9 +1108,15 @@ let ElementHandle = (() => {
                     window.visualViewport.pageTop,
                 ];
             });
-            clip.x += pageLeft;
-            clip.y += pageTop;
-            return await page.screenshot({ ...options, clip });
+            elementClip.x += pageLeft;
+            elementClip.y += pageTop;
+            if (clip) {
+                elementClip.x += clip.x;
+                elementClip.y += clip.y;
+                elementClip.height = clip.height;
+                elementClip.width = clip.width;
+            }
+            return await page.screenshot({ ...options, clip: elementClip });
         }
         async #nonEmptyVisibleBoundingBox() {
             const box = await this.boundingBox();
@@ -1245,12 +1162,12 @@ let ElementHandle = (() => {
          * (full intersection). Defaults to 1.
          */
         async isIntersectingViewport(options = {}) {
-            const env_6 = { stack: [], error: void 0, hasError: false };
+            const env_5 = { stack: [], error: void 0, hasError: false };
             try {
                 await this.assertConnectedElement();
                 // eslint-disable-next-line rulesdir/use-using -- Returns `this`.
                 const handle = await this.#asSVGElementHandle();
-                const target = __addDisposableResource(env_6, handle && (await handle.#getOwnerSVGElement()), false);
+                const target = __addDisposableResource(env_5, handle && (await handle.#getOwnerSVGElement()), false);
                 return await (target ?? this).evaluate(async (element, threshold) => {
                     const visibleRatio = await new Promise(resolve => {
                         const observer = new IntersectionObserver(entries => {
@@ -1262,12 +1179,12 @@ let ElementHandle = (() => {
                     return threshold === 1 ? visibleRatio === 1 : visibleRatio > threshold;
                 }, options.threshold ?? 0);
             }
-            catch (e_6) {
-                env_6.error = e_6;
-                env_6.hasError = true;
+            catch (e_5) {
+                env_5.error = e_5;
+                env_5.hasError = true;
             }
             finally {
-                __disposeResources(env_6);
+                __disposeResources(env_5);
             }
         }
         /**

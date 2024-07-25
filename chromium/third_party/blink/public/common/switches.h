@@ -31,7 +31,6 @@ BLINK_COMMON_EXPORT extern const char
     kForcePermissionPolicyUnloadDefaultEnabled[];
 BLINK_COMMON_EXPORT extern const char kDisableImageAnimationResync[];
 BLINK_COMMON_EXPORT extern const char kDisableLowResTiling[];
-BLINK_COMMON_EXPORT extern const char kDisableNewBaseUrlInheritanceBehavior[];
 BLINK_COMMON_EXPORT extern const char kDisablePartialRaster[];
 BLINK_COMMON_EXPORT extern const char kDisablePreferCompositingToLCDText[];
 BLINK_COMMON_EXPORT extern const char kDisableRGBA4444Textures[];
@@ -39,6 +38,7 @@ BLINK_COMMON_EXPORT extern const char kDisableZeroCopy[];
 BLINK_COMMON_EXPORT extern const char kDumpRuntimeCallStats[];
 BLINK_COMMON_EXPORT extern const char
     kEnableGpuMemoryBufferCompositorResources[];
+BLINK_COMMON_EXPORT extern const char kEnableLeakDetectionHeapSnapshot[];
 BLINK_COMMON_EXPORT extern const char kEnableLowResTiling[];
 BLINK_COMMON_EXPORT extern const char kEnablePreferCompositingToLCDText[];
 BLINK_COMMON_EXPORT extern const char kEnableRasterSideDarkModeForImages[];
@@ -54,17 +54,15 @@ BLINK_COMMON_EXPORT extern const char kLegacyTechReportPolicyEnabled[];
 BLINK_COMMON_EXPORT extern const char kJavaScriptFlags[];
 BLINK_COMMON_EXPORT extern const char kMaxUntiledLayerHeight[];
 BLINK_COMMON_EXPORT extern const char kMaxUntiledLayerWidth[];
+BLINK_COMMON_EXPORT extern const char kMutationEventsEnabled[];
 BLINK_COMMON_EXPORT extern const char kMinHeightForGpuRasterTile[];
 BLINK_COMMON_EXPORT extern const char kNetworkQuietTimeout[];
 BLINK_COMMON_EXPORT extern const char kSharedArrayBufferAllowedOrigins[];
 BLINK_COMMON_EXPORT extern const char kShowLayoutShiftRegions[];
 BLINK_COMMON_EXPORT extern const char kShowPaintRects[];
-BLINK_COMMON_EXPORT extern const char
-    kDisableThrottleNonVisibleCrossOriginIframes[];
 BLINK_COMMON_EXPORT extern const char kTouchTextSelectionStrategy[];
 BLINK_COMMON_EXPORT extern const char kTouchTextSelectionStrategy_Character[];
 BLINK_COMMON_EXPORT extern const char kTouchTextSelectionStrategy_Direction[];
-BLINK_COMMON_EXPORT extern const char kWebSQLAccess[];
 
 }  // namespace switches
 }  // namespace blink

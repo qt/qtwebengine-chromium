@@ -48,14 +48,17 @@ struct AXTreeUpdate;
 namespace blink {
 
 class AbstractInlineTextBox;
+class AriaNotifications;
 class AriaNotificationOptions;
 class AXObject;
 class AccessibleNode;
+class ComputedAccessibleNode;
 class HTMLCanvasElement;
 class HTMLOptionElement;
 class HTMLFrameOwnerElement;
 class HTMLSelectElement;
 struct PhysicalRect;
+class WebPluginContainer;
 
 class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
  public:
@@ -79,6 +82,8 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
   virtual void Thaw() = 0;
   virtual bool IsFrozen() const = 0;
 
+  virtual void SetSerializationResetToken(uint32_t token) = 0;
+
   // Ensure that accessibility is clean and up-to-date for both the main and
   // popup document. Ensures layout is clean as well.
   virtual void UpdateAXForAllDocuments() = 0;
@@ -94,7 +99,6 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
   virtual void ListboxActiveIndexChanged(HTMLSelectElement*) = 0;
   virtual void SetMenuListOptionsBounds(HTMLSelectElement*,
                                         const WTF::Vector<gfx::Rect>&) = 0;
-  virtual void LocationChanged(const LayoutObject*) = 0;
   virtual void ImageLoaded(const LayoutObject*) = 0;
 
   // Removes AXObject backed by passed-in object, if there is one.
@@ -145,7 +149,6 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
   virtual void DidHideMenuListPopup(LayoutObject*) = 0;
   virtual void HandleLoadStart(Document*) = 0;
   virtual void HandleLoadComplete(Document*) = 0;
-  virtual void HandleLayoutComplete(Document*) = 0;
   virtual void HandleClicked(Node*) = 0;
   virtual void HandleValidationMessageVisibilityChanged(Node* form_control) = 0;
   virtual void HandleEventListenerAdded(Node& node,
@@ -162,6 +165,15 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
   virtual void HandleAttributeChanged(const QualifiedName& attr_name,
                                       AccessibleNode*) = 0;
 
+  // Handles a notification from the `ariaNotify` API.
+  virtual void HandleAriaNotification(const Node*,
+                                      const String&,
+                                      const AriaNotificationOptions*) = 0;
+
+  // Retrieves the `AriaNotifications` associated to a given `AXObject`.
+  // Ownership of these notifications must be transferred to the caller.
+  virtual AriaNotifications RetrieveAriaNotifications(const AXObject*) = 0;
+
   // Called when a HTMLFrameOwnerElement (such as an iframe element) changes the
   // embedding token of its child frame.
   virtual void EmbeddingTokenChanged(HTMLFrameOwnerElement*) = 0;
@@ -177,10 +189,6 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
 
   virtual void HandleScrolledToAnchor(const Node* anchor_node) = 0;
 
-  // Called when the frame rect changes, which can sometimes happen
-  // without producing any layout or other notifications.
-  virtual void HandleFrameRectsChanged(Document&) = 0;
-
   // Called when a layout object's bounding box may have changed.
   virtual void InvalidateBoundingBox(const LayoutObject*) = 0;
 
@@ -189,27 +197,15 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
 
   virtual void OnTouchAccessibilityHover(const gfx::Point&) = 0;
 
-  // Gets the AXID of the given Node. If there is not yet an associated
-  // AXObject, this method will create one (along with its parent chain) and
-  // return the id.
-  virtual AXID GetAXID(Node*) = 0;
-
-  // Crash dumps have shown there are times where AXID's are queried
-  // 'out-of-band' where we may not be in a state where creating AXObjects and
-  // repairing parent chains is possible. This will look for the current
-  // AXObject associated with the given node and return its id without creating
-  // or recomputing any state.
-  virtual AXID GetExistingAXID(Node*) = 0;
-
   virtual AXObject* ObjectFromAXID(AXID) const = 0;
+
+  virtual AXObject* FirstObjectWithRole(ax::mojom::blink::Role role) = 0;
 
   virtual AXObject* Root() = 0;
 
   virtual AXID GenerateAXID() const = 0;
 
-  virtual void AddAriaNotification(Node*,
-                                   const String,
-                                   const AriaNotificationOptions*) = 0;
+  virtual ComputedAccessibleNode* GetOrCreateComputedAccessibleNode(AXID) = 0;
 
   typedef AXObjectCache* (*AXObjectCacheCreateFunction)(Document&,
                                                         const ui::AXMode&);
@@ -220,10 +216,6 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
 
   // Returns true if there are any pending updates that need processing.
   virtual bool IsDirty() = 0;
-
-  virtual void SerializeLocationChanges(uint32_t reset_token) = 0;
-
-  virtual AXObject* GetPluginRoot() = 0;
 
   // Serialize entire tree, returning true if successful.
   virtual bool SerializeEntireTree(
@@ -249,27 +241,6 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
 
   virtual void MarkElementDirty(const Node*) = 0;
 
-  // Notifies that an AXObject is dirty and its state needs
-  // to be serialized again. If |subtree| is true, the entire subtree is
-  // dirty.
-  // |event_from| and |event_from_action| annotate this node change with info
-  // about the event which caused the change. For example, an event from a user
-  // or an event from a focus action.
-  virtual void AddDirtyObjectToSerializationQueue(
-      AXObject* obj,
-      bool subtree,
-      ax::mojom::blink::EventFrom event_from,
-      ax::mojom::blink::Action event_from_action,
-      const std::vector<ui::AXEventIntent>& event_intents) = 0;
-
-  virtual void SerializeDirtyObjectsAndEvents(
-      bool has_plugin_tree_source,
-      std::vector<ui::AXTreeUpdate>& updates,
-      std::vector<ui::AXEvent>& events,
-      bool& had_end_of_test_event,
-      bool& had_load_complete_messages,
-      bool& need_to_send_location_changes) = 0;
-
   // Returns a vector of the images found in |updates|.
   virtual void GetImagesToAnnotate(ui::AXTreeUpdate& updates,
                                    std::vector<ui::AXNodeData*>&) = 0;
@@ -278,17 +249,12 @@ class CORE_EXPORT AXObjectCache : public GarbageCollected<AXObjectCache> {
   // become dirty.
   virtual bool HasDirtyObjects() const = 0;
 
-  // Adds the event to a list of pending events that is cleared out by
-  // a subsequent call to  duplicates are not represented.. Returns false if
-  // the event is already pending; duplicates are not represented.
-  virtual bool AddPendingEvent(const ui::AXEvent& event,
-                               bool insert_at_beginning) = 0;
-
   // Ensure that a call to ProcessDeferredAccessibilityEvents() will occur soon.
   virtual void ScheduleAXUpdate() const = 0;
 
-  // Ensure that a call to RenderAccessibilityImpl::AXReadyCallback() will occur
-  // as soon as possible.
+  // Ensure that a call to
+  // RenderAccessibilityImpl::SendAccessibilitySerialization() will occur as
+  // soon as possible.
   virtual void ScheduleImmediateSerialization() = 0;
 
   // Add an event to the queue of events to be processed as well as mark as

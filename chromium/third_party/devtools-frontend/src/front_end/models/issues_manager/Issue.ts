@@ -111,7 +111,7 @@ export function unionIssueKind(a: IssueKind, b: IssueKind): IssueKind {
 }
 
 export function getShowThirdPartyIssuesSetting(): Common.Settings.Setting<boolean> {
-  return Common.Settings.Settings.instance().createSetting('showThirdPartyIssues', true);
+  return Common.Settings.Settings.instance().createSetting('show-third-party-issues', true);
 }
 
 export interface AffectedElement {
@@ -207,6 +207,10 @@ export abstract class Issue<IssueCode extends string = string> {
 
   setHidden(hidden: boolean): void {
     this.#hidden = hidden;
+  }
+
+  maybeCreateConsoleMessage(): SDK.ConsoleModel.ConsoleMessage|undefined {
+    return;
   }
 }
 

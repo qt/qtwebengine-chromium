@@ -103,8 +103,7 @@ class FormFetcher {
   GetAllRelevantMatches() const = 0;
 
   // Nonblocklisted matches obtained from the backend.
-  virtual const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-  GetBestMatches() const = 0;
+  virtual base::span<const PasswordForm> GetBestMatches() const = 0;
 
   // Pointer to a preferred entry in the vector returned by GetBestMatches().
   virtual const PasswordForm* GetPreferredMatch() const = 0;
@@ -122,6 +121,9 @@ class FormFetcher {
   // account store.
   virtual std::optional<PasswordStoreBackendError> GetAccountStoreBackendError()
       const = 0;
+
+  // Returns if grouped credentials were fetched but were ignored.
+  virtual bool WereGroupedCredentialsAvailable() const = 0;
 };
 
 }  // namespace password_manager

@@ -11,7 +11,6 @@
 #include "components/blocklist/opt_out_blocklist/opt_out_blocklist_delegate.h"
 #include "components/blocklist/opt_out_blocklist/opt_out_blocklist_item.h"
 #include "components/blocklist/opt_out_blocklist/opt_out_store.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace blocklist {
 

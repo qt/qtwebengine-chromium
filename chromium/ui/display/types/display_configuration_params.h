@@ -7,7 +7,8 @@
 
 #include <stdint.h>
 
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include <optional>
+
 #include "ui/display/types/display_mode.h"
 #include "ui/display/types/display_types_export.h"
 #include "ui/gfx/geometry/point.h"
@@ -20,16 +21,14 @@ struct DISPLAY_TYPES_EXPORT DisplayConfigurationParams {
   DisplayConfigurationParams(DisplayConfigurationParams&& other);
   DisplayConfigurationParams(int64_t id,
                              const gfx::Point& origin,
-                             const display::DisplayMode* pmode);
-  DisplayConfigurationParams(int64_t id,
-                             const gfx::Point& origin,
                              const display::DisplayMode* pmode,
-                             bool enable_vrr);
+                             bool enable_vrr = false);
   ~DisplayConfigurationParams();
 
   int64_t id = 0;
   gfx::Point origin = gfx::Point();
-  absl::optional<std::unique_ptr<display::DisplayMode>> mode = absl::nullopt;
+  // Set to nullptr to indicate that no mode is set.
+  std::unique_ptr<display::DisplayMode> mode = nullptr;
   bool enable_vrr = false;
 };
 

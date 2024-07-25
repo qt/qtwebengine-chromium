@@ -12,14 +12,14 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GrContextOptions.h"
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/private/gpu/graphite/ContextOptionsPriv.h"
 #endif
 
 namespace skwindow {
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(SK_GRAPHITE)
 struct GraphiteContextOptions {
     GraphiteContextOptions() {
         fOptions.fOptionsPriv = &fPriv;
@@ -52,7 +52,6 @@ struct DisplayParams {
         , fSurfaceProps(0, kRGB_H_SkPixelGeometry)
         , fDisableVsync(false)
         , fDelayDrawableAcquisition(false)
-        , fEnableBinaryArchive(false)
         , fCreateProtectedNativeBackend(false)
     {}
 
@@ -60,13 +59,15 @@ struct DisplayParams {
     sk_sp<SkColorSpace>    fColorSpace;
     int                    fMSAASampleCount;
     GrContextOptions       fGrContextOptions;
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(SK_GRAPHITE)
     GraphiteContextOptions fGraphiteContextOptions;
+#if defined(SK_DAWN)
+    bool fDisableTintSymbolRenaming = false;
+#endif
 #endif
     SkSurfaceProps         fSurfaceProps;
     bool                   fDisableVsync;
     bool                   fDelayDrawableAcquisition;
-    bool                   fEnableBinaryArchive;
     bool                   fCreateProtectedNativeBackend = false;
 };
 

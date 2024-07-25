@@ -78,7 +78,6 @@ class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
   void SetFrameRect(const gfx::Rect&);
   const gfx::Rect& FrameRect() const { return frame_rect_; }
 
-  ScrollbarOverlayColorTheme GetScrollbarOverlayColorTheme() const;
   bool HasTickmarks() const;
   Vector<gfx::Rect> GetTickmarks() const;
   bool IsScrollableAreaActive() const;
@@ -210,8 +209,8 @@ class CORE_EXPORT Scrollbar : public GarbageCollected<Scrollbar>,
   // scrollbar-width CSS property
   EScrollbarWidth CSSScrollbarWidth() const;
   // scrollbar-color CSS property
-  absl::optional<blink::Color> ScrollbarThumbColor() const;
-  absl::optional<blink::Color> ScrollbarTrackColor() const;
+  std::optional<blink::Color> ScrollbarThumbColor() const;
+  std::optional<blink::Color> ScrollbarTrackColor() const;
 
   virtual bool IsOpaque() const;
 

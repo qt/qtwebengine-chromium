@@ -33,7 +33,6 @@
  */
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -67,7 +66,7 @@ const UIStrings = {
    *@description Tree element expand all button element button text content in Elements Tree Outline of the Elements panel
    *@example {3} PH1
    */
-  showAllNodesDMore: 'Show All Nodes ({PH1} More)',
+  showAllNodesDMore: 'Show all nodes ({PH1} more)',
   /**
    *@description Link text content in Elements Tree Outline of the Elements panel
    */
@@ -130,7 +129,7 @@ export class ElementsTreeOutline extends
 
     this.treeElementByNode = new WeakMap();
     const shadowContainer = document.createElement('div');
-    this.shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
+    this.shadowRoot = UI.UIUtils.createShadowRootWithCoreStyles(
         shadowContainer,
         {cssFile: [elementsTreeOutlineStyles, CodeHighlighter.Style.default], delegatesFocus: undefined});
     const outlineDisclosureElement = this.shadowRoot.createChild('div', 'elements-disclosure');
@@ -159,7 +158,7 @@ export class ElementsTreeOutline extends
 
     outlineDisclosureElement.appendChild(this.elementInternal);
     this.element = shadowContainer;
-    this.element.setAttribute('jslog', `${VisualLogging.tree().context('elements-tree-outline')}`);
+    this.contentElement.setAttribute('jslog', `${VisualLogging.tree('elements')}`);
 
     this.includeRootDOMNode = !omitRootDOMNode;
     this.selectEnabled = selectEnabled;
@@ -196,7 +195,7 @@ export class ElementsTreeOutline extends
 
     this.decoratorExtensions = null;
 
-    this.showHTMLCommentsSetting = Common.Settings.Settings.instance().moduleSetting('showHTMLComments');
+    this.showHTMLCommentsSetting = Common.Settings.Settings.instance().moduleSetting('show-html-comments');
     this.showHTMLCommentsSetting.addChangeListener(this.onShowHTMLCommentsChange.bind(this));
     this.setUseLightSelectionColor(true);
     if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.HIGHLIGHT_ERRORS_ELEMENTS_PANEL)) {
@@ -233,7 +232,7 @@ export class ElementsTreeOutline extends
 
         return {
           box: hoveredNode.boxInWindow(),
-          show: async(popover: UI.GlassPane.GlassPane): Promise<boolean> => {
+          show: async (popover: UI.GlassPane.GlassPane) => {
             popover.setIgnoreLeftMargin(true);
             const openIssueEvent = (): Promise<void> => Common.Revealer.reveal(issue);
             viewIssueElement.addEventListener('click', () => openIssueEvent());
@@ -242,7 +241,7 @@ export class ElementsTreeOutline extends
             return true;
           },
         };
-      });
+      }, 'elements.issue');
       this.#popupHelper.setTimeout(300);
       this.#popupHelper.setHasPadding(true);
     }
@@ -1791,10 +1790,10 @@ export class ShortcutTreeElement extends UI.TreeOutline.TreeElement {
     adorner.data = {
       name,
       content: adornerContent,
+      jslogContext: 'reveal',
     };
     this.listItemElement.appendChild(adorner);
-    const onClick = (((): void => {
-                       Host.userMetrics.badgeActivated(Host.UserMetrics.BadgeType.REVEAL);
+    const onClick = ((() => {
                        this.nodeShortcut.deferredNode.resolve(
                            node => {
                              void Common.Revealer.reveal(node);

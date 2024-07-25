@@ -53,7 +53,7 @@
 #include "ui/ozone/platform/wayland/host/wayland_shm.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
 #include "ui/ozone/platform/wayland/host/wayland_window_drag_controller.h"
-#include "ui/ozone/platform/wayland/host/wayland_zaura_output_manager.h"
+#include "ui/ozone/platform/wayland/host/wayland_zaura_output_manager_v2.h"
 #include "ui/ozone/platform/wayland/host/wayland_zaura_shell.h"
 #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
 #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
@@ -110,8 +110,9 @@ int64_t ConvertTimespecToMicros(const struct timespec& ts) {
 int64_t ConvertTimespecResultToMicros(uint32_t tv_sec_hi,
                                       uint32_t tv_sec_lo,
                                       uint32_t tv_nsec) {
-  base::CheckedNumeric<int64_t> result =
-      (static_cast<int64_t>(tv_sec_hi) << 32) + tv_sec_lo;
+  base::CheckedNumeric<int64_t> result(tv_sec_hi);
+  result <<= 32;
+  result += tv_sec_lo;
   result *= base::Time::kMicrosecondsPerSecond;
   result += (tv_nsec / base::Time::kNanosecondsPerMicrosecond);
   return result.ValueOrDie();
@@ -148,8 +149,8 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
                               &SinglePixelBuffer::Instantiate);
   RegisterGlobalObjectFactory(SurfaceAugmenter::kInterfaceName,
                               &SurfaceAugmenter::Instantiate);
-  RegisterGlobalObjectFactory(WaylandZAuraOutputManager::kInterfaceName,
-                              &WaylandZAuraOutputManager::Instantiate);
+  RegisterGlobalObjectFactory(WaylandZAuraOutputManagerV2::kInterfaceName,
+                              &WaylandZAuraOutputManagerV2::Instantiate);
   RegisterGlobalObjectFactory(WaylandDataDeviceManager::kInterfaceName,
                               &WaylandDataDeviceManager::Instantiate);
   RegisterGlobalObjectFactory(WaylandDrm::kInterfaceName,
@@ -317,12 +318,9 @@ void WaylandConnection::SetCursorBitmap(const std::vector<SkBitmap>& bitmaps,
 
 bool WaylandConnection::IsDragInProgress() const {
   // |data_drag_controller_| can be null when running on headless weston.
-  return (data_drag_controller_ &&
-          data_drag_controller_->state() !=
-              WaylandDataDragController::State::kIdle) ||
+  return (data_drag_controller_ && data_drag_controller_->IsDragInProgress()) ||
          (window_drag_controller_ &&
-          window_drag_controller_->state() !=
-              WaylandWindowDragController::State::kIdle);
+          window_drag_controller_->IsDragInProgress());
 }
 
 bool WaylandConnection::SupportsSetWindowGeometry() const {
@@ -437,7 +435,8 @@ void WaylandConnection::CreateDataObjectsIfReady() {
 
     DCHECK(!window_drag_controller_);
     window_drag_controller_ = std::make_unique<WaylandWindowDragController>(
-        this, data_device_manager_.get(), event_source(), event_source());
+        this, data_device_manager_.get(), event_source(), event_source(),
+        event_source());
 
     DCHECK(!clipboard_);
     clipboard_ =
@@ -463,9 +462,8 @@ base::TimeTicks WaylandConnection::ConvertPresentationTime(uint32_t tv_sec_hi,
   if (ret < 0) {
     presentation_now.tv_sec = 0;
     presentation_now.tv_nsec = 0;
-    LOG(ERROR) << "Error: failure to read the wp_presentation clock "
-               << presentation_clk_id_ << ": '" << strerror(errno) << "' "
-               << errno;
+    PLOG(ERROR) << "Error: failure to read the wp_presentation clock "
+                << presentation_clk_id_;
     return base::TimeTicks::Now();
   }
 
@@ -520,14 +518,35 @@ void WaylandConnection::DumpState(std::ostream& out) const {
     out << std::endl;
   }
 
-  if (zaura_output_manager_) {
-    zaura_output_manager_->DumpState(out);
+  if (zaura_output_manager_v2_) {
+    zaura_output_manager_v2_->DumpState(out);
     out << std::endl;
   }
 }
 
 bool WaylandConnection::ShouldUseOverlayDelegation() const {
-  return IsWaylandOverlayDelegationEnabled() && !overlay_delegation_disabled_;
+  // Since using fractional_scale_v1 requires using viewport to rescale the
+  // window to Wayland logical coordinates, using overlays in conjunction with
+  // fractional_scale_v1 would require support for subpixel viewport
+  // destination sizes and subpixel subsurface positions, which currently
+  // isn't present on any non-exo Wayland compositors.
+  bool should_use_overlay_delegation =
+      IsWaylandOverlayDelegationEnabled() && !fractional_scale_manager_v1();
+#if BUILDFLAG(IS_LINUX)
+  // Overlay delegation also requires a single-pixel-buffer protocol, which
+  // allows creation of non-backed solid color buffers. Even though only video
+  // overlays can be supported on Linux, these color buffers are still needed
+  // due to a peculiarity of the design of the Ozone/Wayland with the
+  // WaylandOverlayDelegation feature enabled, which implies usage of a
+  // transparent background buffer for a root surface while the content itself
+  // is attached to a subsurface.
+  should_use_overlay_delegation &= !!single_pixel_buffer();
+#endif
+  return should_use_overlay_delegation;
+}
+
+bool WaylandConnection::IsUsingZAuraOutputManager() const {
+  return !!zaura_output_manager_v2_;
 }
 
 // static
@@ -546,6 +565,13 @@ void WaylandConnection::OnGlobalRemove(void* data,
                                        wl_registry* registry,
                                        uint32_t name) {
   auto* self = static_cast<WaylandConnection*>(data);
+
+  if (self->zaura_output_manager_v2_) {
+    // Removal will be handled by the aura output manager and the end of the
+    // output-change transaction.
+    self->zaura_output_manager_v2_->ScheduleRemoveWaylandOutput(name);
+    return;
+  }
   // The Wayland protocol distinguishes global objects by unique numeric names,
   // which the WaylandOutputManager uses as unique output ids. But, it is only
   // possible to figure out, what global object is going to be removed on the
@@ -709,9 +735,9 @@ void WaylandConnection::HandleGlobal(wl_registry* registry,
   } else if (!xdg_output_manager_ &&
              strcmp(interface, "zxdg_output_manager_v1") == 0) {
     // Responsibilities of zxdg_output_manager_v1 have been subsumed into the
-    // zaura_output_manager. If using the zaura_output_manager avoid binding
-    // unnecessarily.
-    if (zaura_output_manager_) {
+    // zaura output manager extensions. If using the either extensions avoid
+    // binding unnecessarily.
+    if (IsUsingZAuraOutputManager()) {
       LOG(WARNING) << "Skipping bind to zxdg_output_manager_v1";
       return;
     }

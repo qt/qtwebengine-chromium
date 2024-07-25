@@ -19,10 +19,7 @@ import {
   PluginDescriptor,
 } from '../../public';
 
-import {
-  ActiveCPUCountTrack,
-  addActiveCPUCountTrack,
-} from './active_cpu_count';
+import {ActiveCPUCountTrack, addActiveCPUCountTrack} from './active_cpu_count';
 import {
   addRunnableThreadCountTrack,
   RunnableThreadCountTrack,
@@ -32,30 +29,33 @@ class SchedPlugin implements Plugin {
   async onTraceLoad(ctx: PluginContextTrace) {
     ctx.registerTrack({
       uri: RunnableThreadCountTrack.kind,
-      track: (trackCtx) => new RunnableThreadCountTrack(
-          {engine: ctx.engine, trackKey: trackCtx.trackKey}),
+      trackFactory: (trackCtx) =>
+        new RunnableThreadCountTrack({
+          engine: ctx.engine,
+          trackKey: trackCtx.trackKey,
+        }),
     });
     ctx.registerTrack({
       uri: ActiveCPUCountTrack.kind,
-      track: (trackCtx) => new ActiveCPUCountTrack(trackCtx, ctx.engine),
+      trackFactory: (trackCtx) => new ActiveCPUCountTrack(trackCtx, ctx.engine),
     });
   }
 
   onActivate(ctx: PluginContext): void {
     ctx.registerCommand({
       id: 'dev.perfetto.Sched.AddRunnableThreadCountTrackCommand',
-      name: 'Add runnable thread count track',
+      name: 'Add track: runnable thread count',
       callback: () => addRunnableThreadCountTrack(),
     });
     ctx.registerCommand({
       id: 'dev.perfetto.Sched.AddActiveCPUCountTrackCommand',
-      name: 'Add active CPU count track',
+      name: 'Add track: active CPU count',
       callback: () => addActiveCPUCountTrack(),
     });
     for (const cpuType of ['big', 'little', 'mid']) {
       ctx.registerCommand({
         id: `dev.perfetto.Sched.AddActiveCPUCountTrackCommand.${cpuType}`,
-        name: `Add active ${cpuType} CPU count track`,
+        name: `Add track: active ${cpuType} CPU count`,
         callback: () => addActiveCPUCountTrack(cpuType),
       });
     }

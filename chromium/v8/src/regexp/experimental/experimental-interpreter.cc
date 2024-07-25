@@ -351,12 +351,12 @@ class NfaInterpreter {
     for (InterpreterThread t : blocked_threads_) {
       DestroyThread(t);
     }
-    blocked_threads_.DropAndClear();
+    blocked_threads_.Rewind(0);
 
     for (InterpreterThread t : active_threads_) {
       DestroyThread(t);
     }
-    active_threads_.DropAndClear();
+    active_threads_.Rewind(0);
 
     if (best_match_registers_.has_value()) {
       FreeRegisterArray(best_match_registers_->begin());
@@ -422,7 +422,12 @@ class NfaInterpreter {
   //   the current input index. All remaining `active_threads_` are discarded.
   void RunActiveThread(InterpreterThread t) {
     while (true) {
-      if (IsPcProcessed(t.pc, t.consumed_since_last_quantifier)) return;
+      SBXCHECK_GE(t.pc, 0);
+      SBXCHECK_LT(t.pc, bytecode_.length());
+      if (IsPcProcessed(t.pc, t.consumed_since_last_quantifier)) {
+        DestroyThread(t);
+        return;
+      }
       MarkPcProcessed(t.pc, t.consumed_since_last_quantifier);
 
       RegExpInstruction inst = bytecode_[t.pc];
@@ -463,9 +468,9 @@ class NfaInterpreter {
           best_match_registers_ = GetRegisterArray(t);
 
           for (InterpreterThread s : active_threads_) {
-            FreeRegisterArray(s.register_array_begin);
+            DestroyThread(s);
           }
-          active_threads_.DropAndClear();
+          active_threads_.Rewind(0);
           return;
         case RegExpInstruction::SET_REGISTER_TO_CP:
           GetRegisterArray(t)[inst.payload.register_index] = input_index_;
@@ -496,6 +501,8 @@ class NfaInterpreter {
           // Reaching this instruction means that the current lookbehind thread
           // has found a match and needs to be destroyed. Since the lookbehind
           // is verified at this position, we update the `lookbehind_table_`.
+          SBXCHECK_GE(inst.payload.looktable_index, 0);
+          SBXCHECK_LT(inst.payload.looktable_index, lookbehind_table_.length());
           lookbehind_table_[inst.payload.looktable_index] = true;
           DestroyThread(t);
           return;
@@ -505,8 +512,11 @@ class NfaInterpreter {
           // not the lookbehind is positive). The thread's priority ensures that
           // all the threads of the lookbehind have already been run at this
           // position.
-          if (lookbehind_table_[inst.payload.read_lookbehind
-                                    .lookbehind_index()] !=
+          const int32_t lookbehind_index =
+              inst.payload.read_lookbehind.lookbehind_index();
+          SBXCHECK_GE(lookbehind_index, 0);
+          SBXCHECK_LT(lookbehind_index, lookbehind_table_.length());
+          if (lookbehind_table_[lookbehind_index] !=
               inst.payload.read_lookbehind.is_positive()) {
             DestroyThread(t);
             return;
@@ -548,7 +558,7 @@ class NfaInterpreter {
         DestroyThread(t);
       }
     }
-    blocked_threads_.DropAndClear();
+    blocked_threads_.Rewind(0);
   }
 
   bool FoundMatch() const { return best_match_registers_.has_value(); }

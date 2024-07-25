@@ -7,15 +7,8 @@
 
 #include "dm/DMJsonWriter.h"
 #include "dm/DMSrcSink.h"
-#include "include/codec/SkBmpDecoder.h"
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkEncodedImageFormat.h"
-#include "include/codec/SkGifDecoder.h"
-#include "include/codec/SkIcoDecoder.h"
-#include "include/codec/SkJpegDecoder.h"
-#include "include/codec/SkPngDecoder.h"
-#include "include/codec/SkWbmpDecoder.h"
-#include "include/codec/SkWebpDecoder.h"
 #include "include/core/SkBBHFactory.h"
 #include "include/core/SkColorPriv.h"
 #include "include/core/SkColorSpace.h"
@@ -39,6 +32,7 @@
 #include "tests/Test.h"
 #include "tests/TestHarness.h"
 #include "tools/AutoreleasePool.h"
+#include "tools/CodecUtils.h"
 #include "tools/HashAndEncode.h"
 #include "tools/ProcStats.h"
 #include "tools/Resources.h"
@@ -72,22 +66,6 @@
 
 #if defined(SK_ENABLE_SVG)
     #include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
-#endif
-
-#ifdef SK_CODEC_DECODES_AVIF
-#include "include/codec/SkAvifDecoder.h"
-#endif
-
-#ifdef SK_HAS_HEIF_LIBRARY
-#include "include/android/SkHeifDecoder.h"
-#endif
-
-#ifdef SK_CODEC_DECODES_JPEGXL
-#include "include/codec/SkJpegxlDecoder.h"
-#endif
-
-#ifdef SK_CODEC_DECODES_RAW
-#include "include/codec/SkRawDecoder.h"
 #endif
 
 using namespace skia_private;
@@ -275,29 +253,6 @@ static void dump_json() {
     }
 }
 
-static void register_codecs() {
-    SkCodecs::Register(SkPngDecoder::Decoder());
-    SkCodecs::Register(SkJpegDecoder::Decoder());
-    SkCodecs::Register(SkWebpDecoder::Decoder());
-    SkCodecs::Register(SkGifDecoder::Decoder());
-    SkCodecs::Register(SkBmpDecoder::Decoder());
-    SkCodecs::Register(SkWbmpDecoder::Decoder());
-    SkCodecs::Register(SkIcoDecoder::Decoder());
-
-#ifdef SK_CODEC_DECODES_AVIF
-    SkCodecs::Register(SkAvifDecoder::Decoder());
-#endif
-#ifdef SK_HAS_HEIF_LIBRARY
-    SkCodecs::Register(SkHeifDecoder::Decoder());
-#endif
-#ifdef SK_CODEC_DECODES_JPEGXL
-    SkCodecs::Register(SkJpegxlDecoder::Decoder());
-#endif
-#ifdef SK_CODEC_DECODES_RAW
-    SkCodecs::Register(SkRawDecoder::Decoder());
-#endif
-}
-
 // We use a spinlock to make locking this in a signal handler _somewhat_ safe.
 static SkSpinlock                      gMutex;
 static int                             gPending;
@@ -307,7 +262,9 @@ static SkNoDestructor<TArray<Running>> gRunning;
 
 static void done(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
-    vlog("[%d/%d] %s done\n", gTotalCounts - gPending, gTotalCounts, id.c_str());
+    bool updateDueToProgress;
+    double lastUpdate;
+    int totalCounts;
     int pending;
     {
         SkAutoSpinlock lock(gMutex);
@@ -317,14 +274,19 @@ static void done(const char* config, const char* src, const char* srcOptions, co
                 break;
             }
         }
-        pending = --gPending;
+        --gPending;
+        updateDueToProgress = gPending % 500 == 0;
+        lastUpdate = gLastUpdate;
+        totalCounts = gTotalCounts;
+        pending = gPending;
     }
+    vlog("[%d/%d] %s done\n", totalCounts - pending, totalCounts, id.c_str());
 
     // We write out dm.json file and print out a progress update every once in a while.
     // Notice this also handles the final dm.json and progress update when pending == 0.
-    double lastUpdate = gLastUpdate;
     double now = SkTime::GetNSecs();
-    if (pending % 500 == 0 || now - lastUpdate > 4e9) {
+    bool updateDueToTime = now - lastUpdate > 4e9;
+    if (updateDueToProgress || updateDueToTime) {
         dump_json();
 
         int curr = sk_tools::getCurrResidentSetSizeMB(),
@@ -1043,10 +1005,17 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
 #if defined(SK_GRAPHITE)
     if (FLAGS_graphite) {
         if (const SkCommandLineConfigGraphite *graphiteConfig = config->asConfigGraphite()) {
-            return new GraphiteSink(graphiteConfig);
+#if defined(SK_ENABLE_PRECOMPILE)
+            if (graphiteConfig->getTestPrecompile()) {
+                return new GraphitePrecompileTestingSink(graphiteConfig);
+            } else
+#endif // SK_ENABLE_PRECOMPILE
+            {
+                return new GraphiteSink(graphiteConfig);
+            }
         }
     }
-#endif
+#endif // SK_GRAPHITE
     if (const SkCommandLineConfigSvg* svgConfig = config->asConfigSvg()) {
         int pageIndex = svgConfig->getPageIndex();
         return new SVGSink(pageIndex);
@@ -1499,6 +1468,7 @@ struct Task {
 // Unit tests don't fit so well into the Src/Sink model, so we give them special treatment.
 
 static SkTDArray<skiatest::Test>* gCPUTests = new SkTDArray<skiatest::Test>;
+static SkTDArray<skiatest::Test>* gCPUSerialTests = new SkTDArray<skiatest::Test>;
 static SkTDArray<skiatest::Test>* gGaneshTests = new SkTDArray<skiatest::Test>;
 static SkTDArray<skiatest::Test>* gGraphiteTests = new SkTDArray<skiatest::Test>;
 
@@ -1519,6 +1489,8 @@ static void gather_tests() {
             gGraphiteTests->push_back(test);
         } else if (test.fTestType == TestType::kCPU && FLAGS_cpu) {
             gCPUTests->push_back(test);
+        } else if (test.fTestType == TestType::kCPUSerial && FLAGS_cpu) {
+            gCPUSerialTests->push_back(test);
         }
     }
 }
@@ -1595,7 +1567,6 @@ int main(int argc, char** argv) {
     setbuf(stdout, nullptr);
     setup_crash_handler();
 
-    CommonFlags::SetAnalyticAA();
     skiatest::SetFontTestDataDirectory();
 
     gSkForceRasterPipelineBlitter     = FLAGS_forceRasterPipelineHP || FLAGS_forceRasterPipeline;
@@ -1626,7 +1597,7 @@ int main(int argc, char** argv) {
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif
     SkTaskGroup::Enabler enabled(FLAGS_threads);
-    register_codecs();
+    CodecUtils::RegisterAllAvailable();
 
     if (nullptr == GetResourceAsData("images/color_wheel.png")) {
         info("Some resources are missing.  Do you need to set --resourcePath?\n");
@@ -1648,7 +1619,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     gather_tests();
-    int testCount = gCPUTests->size() + gGaneshTests->size() + gGraphiteTests->size();
+    int testCount = gCPUTests->size() + gCPUSerialTests->size() +
+                    gGaneshTests->size() + gGraphiteTests->size();
     gPending = gSrcs->size() * gSinks->size() + testCount;
     gTotalCounts = gPending;
     gLastUpdate = SkTime::GetNSecs();
@@ -1657,6 +1629,9 @@ int main(int argc, char** argv) {
          gPending);
 
     // Kick off as much parallel work as we can, making note of any serial work we'll need to do.
+    // However, execute all CPU-serial tests first so that they don't have races with parallel tests
+    for (skiatest::Test& test : *gCPUSerialTests) { run_cpu_test(test); }
+
     SkTaskGroup parallel;
     TArray<Task> serial;
 

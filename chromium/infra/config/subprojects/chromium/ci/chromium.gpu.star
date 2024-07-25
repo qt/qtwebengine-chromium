@@ -25,6 +25,8 @@ ci.defaults.set(
     reclient_jobs = reclient.jobs.DEFAULT,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    siso_enabled = True,
+    siso_remote_jobs = reclient.jobs.DEFAULT,
     thin_tester_cores = 2,
     tree_closing_notifiers = ci.gpu.TREE_CLOSING_NOTIFIERS,
 )
@@ -91,6 +93,10 @@ ci.gpu.linux_builder(
             config = "chromium",
             apply_configs = [
                 "use_clang_coverage",
+                # This is not necessary for this builder itself, but is
+                # necessary in order to keep configs in sync with
+                # "ci/Linux Builder" in order for mirroring to work correctly.
+                "chromium_with_telemetry_dependencies",
             ],
         ),
         chromium_config = builder_config.chromium_config(
@@ -100,6 +106,7 @@ ci.gpu.linux_builder(
             ],
             build_config = builder_config.build_config.RELEASE,
             target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),
@@ -130,6 +137,7 @@ ci.gpu.linux_builder(
             ],
             build_config = builder_config.build_config.DEBUG,
             target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),
@@ -154,6 +162,10 @@ ci.gpu.mac_builder(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = [
+                # This is not necessary for this builder itself, but is
+                # necessary in order to keep configs in sync with
+                # "ci/Mac Builder" in order for mirroring to work correctly.
+                "chromium_with_telemetry_dependencies",
                 "use_clang_coverage",
             ],
         ),
@@ -223,6 +235,10 @@ ci.gpu.windows_builder(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = [
+                # This is not necessary for this builder itself, but is
+                # necessary in order to keep configs in sync with
+                # "ci/Mac Builder" in order for mirroring to work correctly.
+                "chromium_with_telemetry_dependencies",
                 "use_clang_coverage",
             ],
         ),
@@ -266,6 +282,7 @@ ci.gpu.windows_builder(
             ],
             build_config = builder_config.build_config.DEBUG,
             target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),
@@ -299,6 +316,7 @@ ci.thin_tester(
             ],
             build_config = builder_config.build_config.DEBUG,
             target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),
@@ -328,6 +346,7 @@ ci.thin_tester(
             ],
             build_config = builder_config.build_config.RELEASE,
             target_bits = 64,
+            target_platform = builder_config.target_platform.LINUX,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),
@@ -455,6 +474,7 @@ ci.thin_tester(
             ],
             build_config = builder_config.build_config.DEBUG,
             target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
         ),
         build_gs_bucket = "chromium-gpu-archive",
     ),

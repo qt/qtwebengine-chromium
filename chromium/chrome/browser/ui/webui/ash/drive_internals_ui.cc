@@ -12,6 +12,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -100,6 +101,14 @@ size_t LogMarkToLogLevelNameIndex(char mark) {
 template <typename T>
 std::string ToString(const T x) {
   return (std::ostringstream() << drivefs::pinning::NiceNum << x).str();
+}
+
+std::string ToString(const drive::FileError error) {
+  std::string s = drive::FileErrorToString(error);
+  if (const std::string_view prefix = "FILE_ERROR_"; s.starts_with(prefix)) {
+    s.erase(0, prefix.size());
+  }
+  return s;
 }
 
 template <typename T>
@@ -220,7 +229,7 @@ std::pair<ino_t, Value::List> GetServiceLogContents(const FilePath& log_path,
         continue;
       }
 
-      base::StringPiece log_line = line;
+      std::string_view log_line = line;
       size_t severity_index = 0;
       if (base::MatchPattern(log_line.substr(0, pattern_length),
                              kTimestampPattern) &&
@@ -440,17 +449,17 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler,
   }
 
   void UpdateAboutResourceSection() {
-    // TODO(crbug.com/896123): Maybe worth implementing.
+    // TODO(crbug.com/41421123): Maybe worth implementing.
     SetSectionEnabled("account-information-section", false);
   }
 
   void UpdateDeltaUpdateStatusSection() {
-    // TODO(crbug.com/896123): Maybe worth implementing.
+    // TODO(crbug.com/41421123): Maybe worth implementing.
     SetSectionEnabled("delta-update-status-section", false);
   }
 
   void UpdateInFlightOperationsSection() {
-    // TODO(crbug.com/896123): Maybe worth implementing.
+    // TODO(crbug.com/41421123): Maybe worth implementing.
     SetSectionEnabled("in-flight-operations-section", false);
   }
 
@@ -542,9 +551,8 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler,
       return;
     }
     for (const FilePath& sync_path : paths) {
-      MaybeCallJavascript(
-          "onAddSyncPath", Value(sync_path.value()),
-          Value(drive::FileErrorToString(drive::FILE_ERROR_OK)));
+      MaybeCallJavascript("onAddSyncPath", Value(sync_path.value()),
+                          Value(ToString(drive::FILE_ERROR_OK)));
     }
   }
 
@@ -572,12 +580,12 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler,
 
   void OnAddSyncPath(const FilePath& sync_path, drive::FileError status) {
     MaybeCallJavascript("onAddSyncPath", Value(sync_path.value()),
-                        Value(drive::FileErrorToString(status)));
+                        Value(ToString(status)));
   }
 
   void OnRemoveSyncPath(const FilePath& sync_path, drive::FileError status) {
     MaybeCallJavascript("onRemoveSyncPath", Value(sync_path.value()),
-                        Value(drive::FileErrorToString(status)));
+                        Value(ToString(status)));
   }
 
   void UpdateBulkPinningDeveloperSection() {
@@ -777,7 +785,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler,
   }
 
   void UpdateCacheContentsSection() {
-    // TODO(crbug.com/896123): Maybe worth implementing.
+    // TODO(crbug.com/41421123): Maybe worth implementing.
     SetSectionEnabled("cache-contents-section", false);
   }
 

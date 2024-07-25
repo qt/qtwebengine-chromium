@@ -9,6 +9,7 @@ import os
 import pathlib
 from typing import Any, Dict, Optional
 
+from .base import SubprocessError
 from .posix import PosixPlatform
 
 
@@ -38,9 +39,12 @@ class LinuxPlatform(PosixPlatform):
   @property
   def device(self) -> str:
     if not self._device:
-      vendor = self.cat("/sys/devices/virtual/dmi/id/sys_vendor").strip()
-      product = self.cat("/sys/devices/virtual/dmi/id/product_name").strip()
-      self._device = f"{vendor} {product}"
+      try:
+        vendor = self.cat("/sys/devices/virtual/dmi/id/sys_vendor").strip()
+        product = self.cat("/sys/devices/virtual/dmi/id/product_name").strip()
+        self._device = f"{vendor} {product}"
+      except (FileNotFoundError, SubprocessError):
+        self._device = "UNKNOWN"
     return self._device
 
   @property

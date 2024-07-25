@@ -123,7 +123,7 @@ NativeWidgetMac::NativeWidgetMac(internal::NativeWidgetDelegate* delegate)
 
 NativeWidgetMac::~NativeWidgetMac() {
   if (ownership_ == Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET)
-    delete delegate_;
+    delegate_.ClearAndDelete();
   else
     CloseNow();
 }
@@ -310,14 +310,14 @@ void NativeWidgetMac::ReparentNativeViewImpl(gfx::NativeView new_parent) {
   // previous parent.
   Widget::Widgets widgets;
   GetAllChildWidgets(child, &widgets);
-  for (auto* widget : widgets) {
+  for (Widget* widget : widgets) {
     widget->NotifyNativeViewHierarchyWillChange();
   }
 
   child_window_host->SetParent(parent_window_host);
 
   // And now, notify them that they have a brand new parent.
-  for (auto* widget : widgets) {
+  for (Widget* widget : widgets) {
     widget->NotifyNativeViewHierarchyChanged();
   }
 }
@@ -787,6 +787,13 @@ void NativeWidgetMac::RunShellDrag(View* view,
     return;
   ns_window_host_->drag_drop_client()->StartDragAndDrop(view, std::move(data),
                                                         operation, source);
+}
+
+void NativeWidgetMac::CancelShellDrag(View* view) {
+  if (!ns_window_host_) {
+    return;
+  }
+  ns_window_host_->drag_drop_client()->EndDrag();
 }
 
 void NativeWidgetMac::SchedulePaintInRect(const gfx::Rect& rect) {

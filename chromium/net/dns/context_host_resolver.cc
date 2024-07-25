@@ -32,8 +32,8 @@ ContextHostResolver::ContextHostResolver(
     HostResolverManager* manager,
     std::unique_ptr<ResolveContext> resolve_context)
     : manager_(manager), resolve_context_(std::move(resolve_context)) {
-  DCHECK(manager_);
-  DCHECK(resolve_context_);
+  CHECK(manager_);
+  CHECK(resolve_context_);
 
   manager_->RegisterResolveContext(resolve_context_.get());
 }
@@ -58,11 +58,11 @@ ContextHostResolver::~ContextHostResolver() {
 void ContextHostResolver::OnShutdown() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  DCHECK(resolve_context_);
+  CHECK(resolve_context_);
   manager_->DeregisterResolveContext(resolve_context_.get());
   resolve_context_.reset();
 
-  DCHECK(!shutting_down_);
+  CHECK(!shutting_down_);
   shutting_down_ = true;
 }
 
@@ -74,11 +74,11 @@ ContextHostResolver::CreateRequest(
     std::optional<ResolveHostParameters> optional_parameters) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // TODO(crbug.com/1520189): `resolve_context_` should never be nullptr when
-  // `shutting_down_` is true.
-  if (shutting_down_ || !resolve_context_) {
+  if (shutting_down_) {
     return HostResolver::CreateFailingRequest(ERR_CONTEXT_SHUT_DOWN);
   }
+
+  CHECK(resolve_context_);
 
   return manager_->CreateRequest(
       Host(std::move(host)), std::move(network_anonymization_key),
@@ -94,23 +94,43 @@ ContextHostResolver::CreateRequest(
     const std::optional<ResolveHostParameters>& optional_parameters) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // TODO(crbug.com/1520189): `resolve_context_` should never be nullptr when
-  // `shutting_down_` is true.
-  if (shutting_down_ || !resolve_context_) {
+  if (shutting_down_) {
     return HostResolver::CreateFailingRequest(ERR_CONTEXT_SHUT_DOWN);
   }
+
+  CHECK(resolve_context_);
 
   return manager_->CreateRequest(host, network_anonymization_key,
                                  source_net_log, optional_parameters,
                                  resolve_context_.get());
 }
 
+std::unique_ptr<HostResolver::ServiceEndpointRequest>
+ContextHostResolver::CreateServiceEndpointRequest(
+    Host host,
+    NetworkAnonymizationKey network_anonymization_key,
+    NetLogWithSource net_log,
+    ResolveHostParameters parameters) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // TODO(crbug.com/41493696): The ServiceEndpoint API only supports schemeful
+  // hosts for now.
+  CHECK(host.HasScheme());
+
+  // ServiceEndpointRequestImpl::Start() takes care of context shut down.
+  return manager_->CreateServiceEndpointRequest(
+      host.AsSchemeHostPort(), std::move(network_anonymization_key),
+      std::move(net_log), std::move(parameters), resolve_context_.get());
+}
+
 std::unique_ptr<HostResolver::ProbeRequest>
 ContextHostResolver::CreateDohProbeRequest() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (shutting_down_)
+  if (shutting_down_) {
     return HostResolver::CreateFailingProbeRequest(ERR_CONTEXT_SHUT_DOWN);
+  }
+
+  CHECK(resolve_context_);
 
   return manager_->CreateDohProbeRequest(resolve_context_.get());
 }
@@ -131,8 +151,8 @@ base::Value::Dict ContextHostResolver::GetDnsConfigAsValue() const {
 
 void ContextHostResolver::SetRequestContext(
     URLRequestContext* request_context) {
-  DCHECK(!shutting_down_);
-  DCHECK(resolve_context_);
+  CHECK(!shutting_down_);
+  CHECK(resolve_context_);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   resolve_context_->set_url_request_context(request_context);

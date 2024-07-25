@@ -10,7 +10,9 @@
 #include <stdio.h>
 
 #include <memory>
+#include <ostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -234,7 +236,6 @@ bool StaticSocketDataHelper::VerifyWriteData(const std::string& data,
   //   This is a success, and the function returns true.
   std::string expected_data(next_write.data, next_write.data_len);
   std::string actual_data(data.substr(0, next_write.data_len));
-  EXPECT_GE(data.length(), expected_data.length());
   if (printer) {
     EXPECT_TRUE(actual_data == expected_data)
         << "Actual formatted write data:\n"
@@ -249,6 +250,60 @@ bool StaticSocketDataHelper::VerifyWriteData(const std::string& data,
         << HexDump(expected_data);
   }
   return expected_data == actual_data;
+}
+
+void StaticSocketDataHelper::ExpectAllReadDataConsumed(
+    SocketDataPrinter* printer) const {
+  if (AllReadDataConsumed()) {
+    return;
+  }
+
+  std::ostringstream msg;
+  if (read_index_ < read_count()) {
+    msg << "Unconsumed reads:\n";
+    for (size_t i = read_index_; i < read_count(); i++) {
+      msg << (reads_[i].mode == ASYNC ? "ASYNC" : "SYNC") << " MockRead seq "
+          << reads_[i].sequence_number << ":\n";
+      if (reads_[i].result != OK) {
+        msg << "Result: " << reads_[i].result << "\n";
+      }
+      if (reads_[i].data) {
+        std::string data(reads_[i].data, reads_[i].data_len);
+        if (printer) {
+          msg << printer->PrintWrite(data);
+        }
+        msg << HexDump(data);
+      }
+    }
+  }
+  EXPECT_TRUE(AllReadDataConsumed()) << msg.str();
+}
+
+void StaticSocketDataHelper::ExpectAllWriteDataConsumed(
+    SocketDataPrinter* printer) const {
+  if (AllWriteDataConsumed()) {
+    return;
+  }
+
+  std::ostringstream msg;
+  if (write_index_ < write_count()) {
+    msg << "Unconsumed writes:\n";
+    for (size_t i = write_index_; i < write_count(); i++) {
+      msg << (writes_[i].mode == ASYNC ? "ASYNC" : "SYNC") << " MockWrite seq "
+          << writes_[i].sequence_number << ":\n";
+      if (writes_[i].result != OK) {
+        msg << "Result: " << writes_[i].result << "\n";
+      }
+      if (writes_[i].data) {
+        std::string data(writes_[i].data, writes_[i].data_len);
+        if (printer) {
+          msg << printer->PrintWrite(data);
+        }
+        msg << HexDump(data);
+      }
+    }
+  }
+  EXPECT_TRUE(AllWriteDataConsumed()) << msg.str();
 }
 
 const MockWrite& StaticSocketDataHelper::PeekRealWrite() const {
@@ -547,6 +602,14 @@ void SequencedSocketData::CancelPendingRead() {
 
 bool SequencedSocketData::AllWriteDataConsumed() const {
   return helper_.AllWriteDataConsumed();
+}
+
+void SequencedSocketData::ExpectAllReadDataConsumed() const {
+  helper_.ExpectAllReadDataConsumed(printer_.get());
+}
+
+void SequencedSocketData::ExpectAllWriteDataConsumed() const {
+  helper_.ExpectAllWriteDataConsumed(printer_.get());
 }
 
 bool SequencedSocketData::IsIdle() const {
@@ -848,10 +911,6 @@ std::unique_ptr<SSLClientSocket> MockClientSocketFactory::CreateSSLClientSocket(
     EXPECT_EQ(*next_ssl_data->expected_network_anonymization_key,
               ssl_config.network_anonymization_key);
   }
-  if (next_ssl_data->expected_disable_sha1_server_signatures) {
-    EXPECT_EQ(*next_ssl_data->expected_disable_sha1_server_signatures,
-              ssl_config.disable_sha1_server_signatures);
-  }
   if (next_ssl_data->expected_ech_config_list) {
     EXPECT_EQ(*next_ssl_data->expected_ech_config_list,
               ssl_config.ech_config_list);
@@ -937,7 +996,8 @@ void MockClientSocket::RunCallback(CompletionOnceCallback callback,
 MockTCPClientSocket::MockTCPClientSocket(const AddressList& addresses,
                                          net::NetLog* net_log,
                                          SocketDataProvider* data)
-    : MockClientSocket(NetLogWithSource::Make(net_log, NetLogSourceType::NONE)),
+    : MockClientSocket(
+          NetLogWithSource::Make(net_log, NetLogSourceType::SOCKET)),
       addresses_(addresses),
       data_(data),
       read_data_(SYNCHRONOUS, ERR_UNEXPECTED) {
@@ -1405,13 +1465,12 @@ NextProto MockSSLClientSocket::GetNegotiatedProtocol() const {
   return data_->next_proto;
 }
 
-absl::optional<base::StringPiece>
+std::optional<std::string_view>
 MockSSLClientSocket::GetPeerApplicationSettings() const {
   return data_->peer_application_settings;
 }
 
 bool MockSSLClientSocket::GetSSLInfo(SSLInfo* requested_ssl_info) {
-  requested_ssl_info->Reset();
   *requested_ssl_info = data_->ssl_info;
   return true;
 }
@@ -1457,9 +1516,9 @@ void MockSSLClientSocket::GetSSLCertRequestInfo(
   }
 }
 
-int MockSSLClientSocket::ExportKeyingMaterial(base::StringPiece label,
+int MockSSLClientSocket::ExportKeyingMaterial(std::string_view label,
                                               bool has_context,
-                                              base::StringPiece context,
+                                              std::string_view context,
                                               unsigned char* out,
                                               unsigned int outlen) {
   memset(out, 'A', outlen);
@@ -1500,7 +1559,8 @@ MockUDPClientSocket::MockUDPClientSocket(SocketDataProvider* data,
     : data_(data),
       read_data_(SYNCHRONOUS, ERR_UNEXPECTED),
       source_host_(IPAddress(192, 0, 2, 33)),
-      net_log_(NetLogWithSource::Make(net_log, NetLogSourceType::NONE)) {
+      net_log_(NetLogWithSource::Make(net_log,
+                                      NetLogSourceType::UDP_CLIENT_SOCKET)) {
   if (data_) {
     data_->Initialize(this);
     peer_addr_ = data->connect_data().peer_addr;
@@ -1531,6 +1591,7 @@ int MockUDPClientSocket::Read(IOBuffer* buf,
 
   if (need_read_data_) {
     read_data_ = data_->OnRead();
+    last_tos_ = read_data_.tos;
     // ERR_IO_PENDING means that the SocketDataProvider is taking responsibility
     // to complete the async IO manually later (via OnReadComplete).
     if (read_data_.result == ERR_IO_PENDING) {
@@ -1585,7 +1646,11 @@ int MockUDPClientSocket::SetDoNotFragment() {
   return OK;
 }
 
-int MockUDPClientSocket::SetRecvEcn() {
+int MockUDPClientSocket::SetRecvTos() {
+  return OK;
+}
+
+int MockUDPClientSocket::SetTos(DiffServCodePoint dscp, EcnCodePoint ecn) {
   return OK;
 }
 
@@ -1712,6 +1777,10 @@ void MockUDPClientSocket::ApplySocketTag(const SocketTag& tag) {
   tag_ = tag;
 }
 
+DscpAndEcn MockUDPClientSocket::GetLastTos() const {
+  return TosToDscpAndEcn(last_tos_);
+}
+
 void MockUDPClientSocket::OnReadComplete(const MockRead& data) {
   if (!data_)
     return;
@@ -1725,6 +1794,7 @@ void MockUDPClientSocket::OnReadComplete(const MockRead& data) {
   DCHECK(need_read_data_);
 
   read_data_ = data;
+  last_tos_ = data.tos;
   need_read_data_ = false;
 
   // The caller is simulating that this IO completes right now.  Don't
@@ -1944,7 +2014,7 @@ MockTransportClientSocketPool::~MockTransportClientSocketPool() = default;
 int MockTransportClientSocketPool::RequestSocket(
     const ClientSocketPool::GroupId& group_id,
     scoped_refptr<ClientSocketPool::SocketParams> socket_params,
-    const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
+    const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
     RequestPriority priority,
     const SocketTag& socket_tag,
     RespectLimits respect_limits,

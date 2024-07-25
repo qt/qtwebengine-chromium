@@ -11,24 +11,44 @@
 namespace v8 {
 namespace internal {
 
-// Defines the list of possible indirect pointer tags.
+// Defines the list of valid indirect pointer tags.
 //
-// When accessing an indirect pointer, an IndirectPointerTag must be provided
-// which expresses the expected instance type of the pointed-to object. When
-// the sandbox is enabled, this tag is used to ensure type-safe access to
-// objects referenced via indirect pointers. As IndirectPointerTags are derived
-// from instance types, conversion between the two types is possible and
-// supported through routines defined in this file.
+// When accessing a trusted/indirect pointer, an IndirectPointerTag must be
+// provided which indicates the expected instance type of the pointed-to
+// object. When the sandbox is enabled, this tag is used to ensure type-safe
+// access to objects referenced via trusted pointers: if the provided tag
+// doesn't match the tag of the object in the trusted pointer table, an
+// inaccessible pointer will be returned.
+//
+// We use the shifted instance type as tag and an AND-based type-checking
+// mechanism in the TrustedPointerTable, similar to the one used by the
+// ExternalPointerTable: the entry in the table is ORed with the tag and then
+// ANDed with the inverse of the tag upon access. This has the benefit that the
+// type check and the removal of the marking bit can be folded into a single
+// bitwise operations. However, it is not technically guaranteed that simply
+// using the instance type as tag works for this scheme as the bits of one
+// instance type may happen to be a superset of those of another instance type,
+// thereby causing the type check to incorrectly pass. As such, the chance of
+// getting "incompabitle" tags increases when adding more tags here so we may
+// at some point want to consider manually assigning tag values that are
+// guaranteed to work (similar for how we do it for ExternalPointerTags).
 
 constexpr int kIndirectPointerTagShift = 48;
-constexpr uint64_t kIndirectPointerTagMask = 0xffff000000000000;
+constexpr uint64_t kIndirectPointerTagMask = 0x3fff000000000000;
+constexpr uint64_t kTrustedPointerTableMarkBit = 0x8000000000000000;
+constexpr uint64_t kTrustedPointerTableFreeEntryBit = 0x4000000000000000;
 
 #define INDIRECT_POINTER_TAG_LIST(V)                           \
   V(kCodeIndirectPointerTag, CODE_TYPE)                        \
   V(kBytecodeArrayIndirectPointerTag, BYTECODE_ARRAY_TYPE)     \
   V(kInterpreterDataIndirectPointerTag, INTERPRETER_DATA_TYPE) \
   IF_WASM(V, kWasmTrustedInstanceDataIndirectPointerTag,       \
-          WASM_TRUSTED_INSTANCE_DATA_TYPE)
+          WASM_TRUSTED_INSTANCE_DATA_TYPE)                     \
+  IF_WASM(V, kWasmApiFunctionRefIndirectPointerTag,            \
+          WASM_API_FUNCTION_REF_TYPE)                          \
+  IF_WASM(V, kWasmInternalFunctionIndirectPointerTag,          \
+          WASM_INTERNAL_FUNCTION_TYPE)                         \
+  IF_WASM(V, kWasmFunctionDataIndirectPointerTag, WASM_FUNCTION_DATA_TYPE)
 
 #define MAKE_TAG(instance_type) \
   (uint64_t{instance_type} << kIndirectPointerTagShift)
@@ -71,12 +91,20 @@ enum IndirectPointerTag : uint64_t {
   //
   kUnknownIndirectPointerTag = kIndirectPointerTagMask,
 
+  // Tag used internally by the trusted pointer table to mark free entries.
+  kFreeTrustedPointerTableEntryTag = kTrustedPointerTableFreeEntryBit,
+
 // "Regular" tags. One per supported instance type.
 #define INDIRECT_POINTER_TAG_ENUM_DECL(name, instance_type) \
   name = MAKE_TAG(instance_type),
   INDIRECT_POINTER_TAG_LIST(INDIRECT_POINTER_TAG_ENUM_DECL)
 #undef INDIRECT_POINTER_TAG_ENUM_DECL
 };
+
+#define VALIDATE_INDIRECT_POINTER_TAG(name, instance_type) \
+  static_assert((name & kIndirectPointerTagMask) == name);
+INDIRECT_POINTER_TAG_LIST(VALIDATE_INDIRECT_POINTER_TAG)
+#undef VALIDATE_INDIRECT_POINTER_TAG
 
 V8_INLINE constexpr bool IsValidIndirectPointerTag(IndirectPointerTag tag) {
 #define VALID_INDIRECT_POINTER_TAG_CASE(tag, instance_type) case tag:
@@ -97,7 +125,7 @@ V8_INLINE constexpr bool IsValidIndirectPointerTag(IndirectPointerTag tag) {
 // objects that are in the process of being migrated into trusted space.
 V8_INLINE constexpr bool IsTrustedSpaceMigrationInProgressForObjectsWithTag(
     IndirectPointerTag tag) {
-  return tag == kInterpreterDataIndirectPointerTag;
+  return false;
 }
 
 // The null tag is also considered an invalid tag since no indirect pointer
@@ -106,9 +134,27 @@ static_assert(!IsValidIndirectPointerTag(kIndirectPointerNullTag));
 
 V8_INLINE IndirectPointerTag
 IndirectPointerTagFromInstanceType(InstanceType instance_type) {
-  auto tag = static_cast<IndirectPointerTag>(MAKE_TAG(instance_type));
-  DCHECK(IsValidIndirectPointerTag(tag));
-  return tag;
+  uint64_t raw = 0;
+  switch (instance_type) {
+#define CASE(name, instance_type)  \
+  case instance_type:              \
+    raw = MAKE_TAG(instance_type); \
+    break;
+    INDIRECT_POINTER_TAG_LIST(CASE)
+#undef CASE
+#if V8_ENABLE_WEBASSEMBLY
+    case WASM_EXPORTED_FUNCTION_DATA_TYPE:
+    case WASM_JS_FUNCTION_DATA_TYPE:
+    case WASM_CAPI_FUNCTION_DATA_TYPE:
+      // TODO(saelo): Consider adding support for inheritance hierarchies in
+      // our tag checking mechanism.
+      raw = kWasmFunctionDataIndirectPointerTag;
+      break;
+#endif  // V8_ENABLE_WEBASSEMBLY
+    default:
+      UNREACHABLE();
+  }
+  return static_cast<IndirectPointerTag>(raw);
 }
 
 V8_INLINE InstanceType

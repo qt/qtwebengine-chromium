@@ -337,6 +337,10 @@ MaybeHandle<Object> RegExp::Exec(Isolate* isolate, Handle<JSRegExp> regexp,
       return ExperimentalRegExp::Exec(isolate, regexp, subject, index,
                                       last_match_info, exec_quirks);
   }
+  // This UNREACHABLE() is necessary because we don't return a value here,
+  // which causes the compiler to emit potentially unsafe code for the switch
+  // above. See the commit message and b/326086002 for more details.
+  UNREACHABLE();
 }
 
 // RegExp Atom implementation: Simple string search using indexOf.
@@ -1209,6 +1213,15 @@ int32_t* RegExpGlobalCache::FetchNext() {
     if (num_matches_ <= 0) {
       return nullptr;
     }
+
+    // Number of matches can't exceed maximum matches.
+    // This check is enough to prevent OOB accesses to register_array_ in the
+    // else branch below, since current_match_index < num_matches_ in this
+    // branch, it follows that current_match_index < max_matches_. And since
+    // max_matches_ = register_array_size_ / registers_per_match it follows
+    // that current_match_index * registers_per_match_ < register_array_size_.
+    SBXCHECK_LE(num_matches_, max_matches_);
+
     current_match_index_ = 0;
     return register_array_;
   } else {

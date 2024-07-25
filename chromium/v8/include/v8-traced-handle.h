@@ -62,11 +62,11 @@ class TracedReferenceBase : public api_internal::IndirectHandleBase {
   V8_INLINE void Reset();
 
   /**
-   * Construct a Local<Value> from this handle.
+   * Construct a Local<Data> from this handle.
    */
-  V8_INLINE Local<Value> Get(Isolate* isolate) const {
-    if (IsEmpty()) return Local<Value>();
-    return Local<Value>::New(isolate, this->value<Value>());
+  V8_INLINE Local<Data> Get(Isolate* isolate) const {
+    if (IsEmpty()) return Local<Data>();
+    return Local<Data>::New(isolate, this->value<Data>());
   }
 
   /**
@@ -76,19 +76,6 @@ class TracedReferenceBase : public api_internal::IndirectHandleBase {
   bool IsEmptyThreadSafe() const {
     return this->GetSlotThreadSafe() == nullptr;
   }
-
-  /**
-   * Assigns a wrapper class ID to the handle.
-   */
-  V8_DEPRECATED("Embedders need to maintain state for references themselves.")
-  V8_INLINE void SetWrapperClassId(uint16_t class_id);
-
-  /**
-   * Returns the class ID previously assigned to this handle or 0 if no class ID
-   * was previously assigned.
-   */
-  V8_DEPRECATED("Embedders need to maintain state for references themselves.")
-  V8_INLINE uint16_t WrapperClassId() const;
 
  protected:
   V8_INLINE TracedReferenceBase() = default;
@@ -148,7 +135,7 @@ class BasicTracedReference : public TracedReferenceBase {
         const_cast<BasicTracedReference<T>&>(*this));
   }
 
-  V8_DEPRECATE_SOON("Use Get to convert to Local instead")
+  V8_DEPRECATED("Use Get to convert to Local instead")
   V8_INLINE T* operator->() const {
 #ifdef V8_ENABLE_CHECKS
     CheckValue();
@@ -156,7 +143,7 @@ class BasicTracedReference : public TracedReferenceBase {
     return this->template value<T>();
   }
 
-  V8_DEPRECATE_SOON("Use Get to convert to Local instead")
+  V8_DEPRECATED("Use Get to convert to Local instead")
   V8_INLINE T* operator*() const { return this->operator->(); }
 
  private:
@@ -438,22 +425,6 @@ TracedReference<T>& TracedReference<T>::operator=(const TracedReference& rhs) {
     }
   }
   return *this;
-}
-
-void TracedReferenceBase::SetWrapperClassId(uint16_t class_id) {
-  using I = internal::Internals;
-  if (IsEmpty()) return;
-  uint8_t* addr =
-      reinterpret_cast<uint8_t*>(slot()) + I::kTracedNodeClassIdOffset;
-  *reinterpret_cast<uint16_t*>(addr) = class_id;
-}
-
-uint16_t TracedReferenceBase::WrapperClassId() const {
-  using I = internal::Internals;
-  if (IsEmpty()) return 0;
-  uint8_t* addr =
-      reinterpret_cast<uint8_t*>(slot()) + I::kTracedNodeClassIdOffset;
-  return *reinterpret_cast<uint16_t*>(addr);
 }
 
 }  // namespace v8

@@ -354,8 +354,9 @@ void AuctionProcessManager::OnWorkletProcessUnusable(
     return;
 
   // All the pending requests for the same origin as the oldest pending request.
-  std::set<ProcessHandle*>* pending_requests = &(*GetPendingRequestMap(
-      worklet_process->worklet_type()))[queue->front()->origin_];
+  std::set<raw_ptr<ProcessHandle, SetExperimental>>* pending_requests =
+      &(*GetPendingRequestMap(
+          worklet_process->worklet_type()))[queue->front()->origin_];
 
   // Walk through all requests that can be served by the same process as the
   // next bidder process in the queue, assigning them a process. This code does
@@ -380,7 +381,7 @@ void AuctionProcessManager::OnWorkletProcessUnusable(
     // created for the first request. Could cache the process returned by the
     // first request and reuse it, but doesn't seem worth the effort.
     bool process_created = TryCreateOrGetProcessForHandle(process_handle);
-    DCHECK(process_created);
+    CHECK(process_created);
     --num_matching_requests;
 
     // Nothing else to do after assigning the process - assigning a process
@@ -429,7 +430,7 @@ RenderProcessHost* DedicatedAuctionProcessManager::LaunchProcess(
       ServiceProcessHost::Options()
           .WithDisplayName(display_name)
 #if BUILDFLAG(IS_MAC)
-          // TODO(https://crbug.com/1281311) add a utility helper for Jit.
+          // TODO(crbug.com/40812055) add a utility helper for Jit.
           .WithChildFlags(ChildProcessHost::CHILD_RENDERER)
 #endif
           .WithProcessCallback(base::BindOnce(

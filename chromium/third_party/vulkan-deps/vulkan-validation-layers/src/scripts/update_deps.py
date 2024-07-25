@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 # Copyright 2017 The Glslang Authors. All rights reserved.
-# Copyright (c) 2018-2023 Valve Corporation
-# Copyright (c) 2018-2023 LunarG, Inc.
+# Copyright (c) 2018-2024 Valve Corporation
+# Copyright (c) 2018-2024 LunarG, Inc.
 # Copyright (c) 2023-2023 RasterGrid Kft.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -281,7 +281,10 @@ def command_output(cmd, directory):
     if VERBOSE:
         print('In {d}: {cmd}'.format(d=directory, cmd=cmd))
 
-    result = subprocess.run(cmd, cwd=directory, capture_output=True, text=True)
+    # errors='replace' affects only how the text output is decoded, and indicates that
+    # 8-bit characters that aren't recognized by the UTF decoder will be replaced with
+    # an "unknown character" glyph instead of crashing.
+    result = subprocess.run(cmd, cwd=directory, capture_output=True, text=True, errors='replace')
 
     if result.returncode != 0:
         print(f'{result.stderr}', file=sys.stderr)
@@ -295,10 +298,14 @@ def run_cmake_command(cmake_cmd):
     # NOTE: Because CMake is an exectuable that runs executables
     # stdout/stderr are mixed together. So this combines the outputs
     # and prints them properly in case there is a non-zero exit code.
+    # errors='replace' affects only how the text output is decoded, and indicates that
+    # 8-bit characters that aren't recognized by the UTF decoder will be replaced with
+    # an "unknown character" glyph instead of crashing.
     result = subprocess.run(cmake_cmd, 
         stdout = subprocess.PIPE,
         stderr = subprocess.STDOUT,
-        text = True
+        text = True,
+        errors='replace'
     )
 
     if VERBOSE:
@@ -499,11 +506,12 @@ class GoodRepo(object):
         # Use the CMake -A option to select the platform architecture
         # without needing a Visual Studio generator.
         if platform.system() == 'Windows' and self._args.generator != "Ninja":
+            cmake_cmd.append('-A')
             if self._args.arch.lower() == '64' or self._args.arch == 'x64' or self._args.arch == 'win64':
-                cmake_cmd.append('-A')
                 cmake_cmd.append('x64')
+            elif self._args.arch == 'arm64':
+                cmake_cmd.append('arm64')
             else:
-                cmake_cmd.append('-A')
                 cmake_cmd.append('Win32')
 
         # Apply a generator, if one is specified.  This can be used to supply
@@ -684,7 +692,7 @@ def main():
     parser.add_argument(
         '--arch',
         dest='arch',
-        choices=['32', '64', 'x86', 'x64', 'win32', 'win64'],
+        choices=['32', '64', 'x86', 'x64', 'win32', 'win64', 'arm64'],
         type=str.lower,
         help="Set build files architecture (Visual Studio Generator Only)",
         default='64')

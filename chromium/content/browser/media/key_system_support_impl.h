@@ -12,9 +12,10 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/memory/weak_ptr.h"
-#include "base/no_destructor.h"
 #include "content/browser/media/cdm_registry_impl.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/document_user_data.h"
+#include "content/public/browser/render_frame_host.h"
 #include "media/mojo/mojom/key_system_support.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -22,20 +23,13 @@
 
 namespace content {
 
-// TODO(xhwang): Use StructTraits to convert to KeySystemCapabilities to avoid
-// this type.
-using KeySystemCapabilityPtrMap =
-    base::flat_map<std::string, media::mojom::KeySystemCapabilityPtr>;
-
-// A singleton class living in the browser process handling all KeySystemSupport
-// requests.
+// A class living in the browser process per render frame handling all
+// KeySystemSupport requests for that frame.
 class CONTENT_EXPORT KeySystemSupportImpl final
-    : public media::mojom::KeySystemSupport {
+    : public DocumentUserData<KeySystemSupportImpl>,
+      public media::mojom::KeySystemSupport {
  public:
-  static KeySystemSupportImpl* GetInstance();
-
-  static void BindReceiver(
-      mojo::PendingReceiver<media::mojom::KeySystemSupport> receiver);
+  ~KeySystemSupportImpl() final;
 
   KeySystemSupportImpl(const KeySystemSupportImpl&) = delete;
   KeySystemSupportImpl& operator=(const KeySystemSupportImpl&) = delete;
@@ -55,21 +49,16 @@ class CONTENT_EXPORT KeySystemSupportImpl final
                        observer) final;
 
  private:
-  friend class base::NoDestructor<KeySystemSupportImpl>;
   friend class KeySystemSupportImplTest;
+  friend class DocumentUserData<KeySystemSupportImpl>;
 
-  KeySystemSupportImpl();
-  ~KeySystemSupportImpl() final;
+  explicit KeySystemSupportImpl(RenderFrameHost* rfh);
+  DOCUMENT_USER_DATA_KEY_DECL();
 
   void ObserveKeySystemCapabilities();
 
   void OnKeySystemCapabilitiesUpdated(
       KeySystemCapabilities key_system_capabilities);
-
-  // `KeySystemSupport` uses `media::mojom::KeySystemCapability` while the mojom
-  // interface uses `media::mojom::KeySystemCapabilityPtr`. This function does
-  // the conversion.
-  KeySystemCapabilityPtrMap CloneKeySystemCapabilities();
 
   GetKeySystemCapabilitiesUpdateCB get_support_cb_for_testing_;
   bool is_observing_ = false;

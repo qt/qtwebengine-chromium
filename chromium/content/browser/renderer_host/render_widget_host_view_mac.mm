@@ -142,7 +142,7 @@ display::ScreenInfo RenderWidgetHostViewMac::GetCurrentScreenInfo() const {
 
 void RenderWidgetHostViewMac::SetCurrentDeviceScaleFactor(
     float device_scale_factor) {
-  // TODO(https://crbug.com/1337094): does this need to be upscaled by
+  // TODO(crbug.com/40229152): does this need to be upscaled by
   // scale_override_for_capture_ for HiDPI capture mode?
   screen_infos_.mutable_current().device_scale_factor = device_scale_factor;
 }
@@ -301,7 +301,7 @@ void RenderWidgetHostViewMac::MigrateNSViewBridge(
     // be an observer, and calling AddObserver here would cause a CHECK to fail.
     // To workaround that case, this code removes the observer first, which is a
     // safe no-op if the bridge is already not an observer.
-    // TODO(crbug.com/1204273): Maybe recreate `in_process_ns_view_bridge_`?
+    // TODO(crbug.com/40179941): Maybe recreate `in_process_ns_view_bridge_`?
     display::Screen::GetScreen()->RemoveObserver(
         in_process_ns_view_bridge_.get());
     display::Screen::GetScreen()->AddObserver(in_process_ns_view_bridge_.get());
@@ -335,7 +335,7 @@ void RenderWidgetHostViewMac::MigrateNSViewBridge(
 
   // End local display::Screen observation via `in_process_ns_view_bridge_`;
   // the remote NSWindow's display::Screen information will be sent by Mojo.
-  // TODO(crbug.com/1204273): Maybe just destroy `in_process_ns_view_bridge_`?
+  // TODO(crbug.com/40179941): Maybe just destroy `in_process_ns_view_bridge_`?
   display::Screen::GetScreen()->RemoveObserver(
       in_process_ns_view_bridge_.get());
 
@@ -604,8 +604,8 @@ gfx::Rect RenderWidgetHostViewMac::GetViewBounds() {
          window_frame_in_screen_dip_.OffsetFromOrigin();
 }
 
-bool RenderWidgetHostViewMac::IsMouseLocked() {
-  return mouse_locked_;
+bool RenderWidgetHostViewMac::IsPointerLocked() {
+  return pointer_locked_;
 }
 
 void RenderWidgetHostViewMac::UpdateCursor(const ui::Cursor& cursor) {
@@ -789,7 +789,7 @@ void RenderWidgetHostViewMac::OnGestureEvent(
 
 void RenderWidgetHostViewMac::OnRenderFrameMetadataChangedAfterActivation(
     base::TimeTicks activation_time) {
-  // TODO(crbug/1308932): Remove toSkColor and make all SkColor4f.
+  // TODO(crbug.com/40219248): Remove toSkColor and make all SkColor4f.
   last_frame_root_background_color_ = host()
                                           ->render_frame_metadata_provider()
                                           ->LastRenderFrameMetadata()
@@ -805,8 +805,8 @@ void RenderWidgetHostViewMac::Destroy() {
 
   // Unlock the mouse in the NSView's process before destroying our bridge to
   // it.
-  if (mouse_locked_) {
-    mouse_locked_ = false;
+  if (pointer_locked_) {
+    pointer_locked_ = false;
     ns_view_->SetCursorLocked(false);
   }
 
@@ -909,7 +909,7 @@ void RenderWidgetHostViewMac::UpdateScreenInfo() {
         view_bounds_in_window_dip_.size());
   }
 
-  // TODO(crbug.com/1169312): Unify display info caching and change detection.
+  // TODO(crbug.com/40165361): Unify display info caching and change detection.
   // Notify the associated RenderWidgetHostImpl when screen info has changed.
   // That will synchronize visual properties needed for frame tree rendering
   // and for web platform APIs that expose screen and window info and events.
@@ -1041,8 +1041,8 @@ void RenderWidgetHostViewMac::CopyFromSurface(
                            ->GetDelegatedFrameHost()
                            ->GetWeakPtr();
   }
-  // TODO(crbug.com/1169321): Resolve potential differences between display info
-  // caches in RenderWidgetHostViewMac and BrowserCompositorMac.
+  // TODO(crbug.com/40743791): Resolve potential differences between display
+  // info caches in RenderWidgetHostViewMac and BrowserCompositorMac.
   RenderWidgetHostViewBase::CopyMainAndPopupFromSurface(
       host()->GetWeakPtr(),
       browser_compositor_->GetDelegatedFrameHost()->GetWeakPtr(), popup_host,
@@ -1086,6 +1086,10 @@ void RenderWidgetHostViewMac::TakeFallbackContentFrom(
 
 bool RenderWidgetHostViewMac::IsHTMLFormPopup() const {
   return !!popup_parent_host_view_;
+}
+
+uint64_t RenderWidgetHostViewMac::GetNSViewId() const {
+  return ns_view_id_;
 }
 
 bool RenderWidgetHostViewMac::GetLineBreakIndex(
@@ -1324,17 +1328,18 @@ gfx::Rect RenderWidgetHostViewMac::GetBoundsInRootWindow() {
   return window_frame_in_screen_dip_;
 }
 
-blink::mojom::PointerLockResult RenderWidgetHostViewMac::LockMouse(
+blink::mojom::PointerLockResult RenderWidgetHostViewMac::LockPointer(
     bool request_unadjusted_movement) {
-  if (mouse_locked_)
+  if (pointer_locked_) {
     return blink::mojom::PointerLockResult::kSuccess;
+  }
 
   if (request_unadjusted_movement && !IsUnadjustedMouseMovementSupported()) {
     return blink::mojom::PointerLockResult::kUnsupportedOptions;
   }
 
-  mouse_locked_ = true;
-  mouse_lock_unadjusted_movement_ = request_unadjusted_movement;
+  pointer_locked_ = true;
+  pointer_lock_unadjusted_movement_ = request_unadjusted_movement;
 
   // Lock position of mouse cursor and hide it.
   ns_view_->SetCursorLockedUnacceleratedMovement(request_unadjusted_movement);
@@ -1346,31 +1351,32 @@ blink::mojom::PointerLockResult RenderWidgetHostViewMac::LockMouse(
   return blink::mojom::PointerLockResult::kSuccess;
 }
 
-blink::mojom::PointerLockResult RenderWidgetHostViewMac::ChangeMouseLock(
+blink::mojom::PointerLockResult RenderWidgetHostViewMac::ChangePointerLock(
     bool request_unadjusted_movement) {
   if (request_unadjusted_movement && !IsUnadjustedMouseMovementSupported()) {
     return blink::mojom::PointerLockResult::kUnsupportedOptions;
   }
 
-  mouse_lock_unadjusted_movement_ = request_unadjusted_movement;
+  pointer_lock_unadjusted_movement_ = request_unadjusted_movement;
   ns_view_->SetCursorLockedUnacceleratedMovement(request_unadjusted_movement);
   return blink::mojom::PointerLockResult::kSuccess;
 }
 
-void RenderWidgetHostViewMac::UnlockMouse() {
-  if (!mouse_locked_)
+void RenderWidgetHostViewMac::UnlockPointer() {
+  if (!pointer_locked_) {
     return;
-  mouse_locked_ = false;
-  mouse_lock_unadjusted_movement_ = false;
+  }
+  pointer_locked_ = false;
+  pointer_lock_unadjusted_movement_ = false;
   ns_view_->SetCursorLocked(false);
   ns_view_->SetCursorLockedUnacceleratedMovement(false);
 
   if (host())
-    host()->LostMouseLock();
+    host()->LostPointerLock();
 }
 
-bool RenderWidgetHostViewMac::GetIsMouseLockedUnadjustedMovementForTesting() {
-  return mouse_locked_ && mouse_lock_unadjusted_movement_;
+bool RenderWidgetHostViewMac::GetIsPointerLockedUnadjustedMovementForTesting() {
+  return pointer_locked_ && pointer_lock_unadjusted_movement_;
 }
 
 bool RenderWidgetHostViewMac::IsUnadjustedMouseMovementSupported() {
@@ -1386,7 +1392,7 @@ bool RenderWidgetHostViewMac::IsUnadjustedMouseMovementSupported() {
   return false;
 }
 
-bool RenderWidgetHostViewMac::CanBeMouseLocked() {
+bool RenderWidgetHostViewMac::CanBePointerLocked() {
   return HasFocus() && is_window_key_;
 }
 
@@ -1547,7 +1553,7 @@ bool RenderWidgetHostViewMac::HasFallbackSurface() const {
 
 bool RenderWidgetHostViewMac::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
-    RenderWidgetHostViewBase* target_view,
+    RenderWidgetHostViewInput* target_view,
     gfx::PointF* transformed_point) {
   if (target_view == this) {
     *transformed_point = point;
@@ -1589,7 +1595,7 @@ void RenderWidgetHostViewMac::SetActive(bool active) {
   if (HasFocus())
     SetTextInputActive(active);
   if (!active)
-    UnlockMouse();
+    UnlockPointer();
 }
 
 void RenderWidgetHostViewMac::ShowDefinitionForSelection() {
@@ -1615,6 +1621,11 @@ std::optional<SkColor> RenderWidgetHostViewMac::GetBackgroundColor() {
   // https://crbug.com/735407
   std::optional<SkColor> color = RenderWidgetHostViewBase::GetBackgroundColor();
   return (color && *color == SK_ColorTRANSPARENT) ? SK_ColorWHITE : color;
+}
+
+viz::SurfaceId RenderWidgetHostViewMac::GetFallbackSurfaceIdForTesting() const {
+  return browser_compositor_->GetDelegatedFrameHost()
+      ->GetFallbackSurfaceIdForTesting();  // IN-TEST
 }
 
 void RenderWidgetHostViewMac::SetBackgroundLayerColor(SkColor color) {
@@ -1677,6 +1688,10 @@ void RenderWidgetHostViewMac::ShowSharePicker(
 ///////////////////////////////////////////////////////////////////////////////
 // RenderWidgetHostNSViewHostHelper and mojom::RenderWidgetHostNSViewHost
 // implementation:
+
+id RenderWidgetHostViewMac::GetAccessibilityElement() {
+  return GetNativeViewAccessible();
+}
 
 id RenderWidgetHostViewMac::GetRootBrowserAccessibilityElement() {
   if (auto* manager = host()->GetRootBrowserAccessibilityManager())
@@ -1894,8 +1909,8 @@ void RenderWidgetHostViewMac::GestureBegin(blink::WebGestureEvent begin_event,
   // If the page is at the minimum zoom level, require a threshold be reached
   // before the pinch has an effect. Synthetic pinches are not subject to this
   // threshold.
-  // TODO(crbug.com/1038683): |page_at_minimum_scale_| is always true, should it
-  // be removed or correctly set based on RenderFrameMetadata?
+  // TODO(crbug.com/40666440): |page_at_minimum_scale_| is always true, should
+  // it be removed or correctly set based on RenderFrameMetadata?
   if (page_at_minimum_scale_) {
     pinch_has_reached_zoom_threshold_ = is_synthetically_injected;
     pinch_unused_amount_ = 1;
@@ -2014,9 +2029,17 @@ void RenderWidgetHostViewMac::LookUpDictionaryOverlayAtPoint(
   root_point.Scale(GetDeviceScaleFactor());
 
   gfx::PointF transformed_point;
-  RenderWidgetHostImpl* widget_host =
-      host()->delegate()->GetInputEventRouter()->GetRenderWidgetHostAtPoint(
-          this, root_point, &transformed_point);
+  auto* view = host()
+                   ->delegate()
+                   ->GetInputEventRouter()
+                   ->GetRenderWidgetHostViewInputAtPoint(this, root_point,
+                                                         &transformed_point);
+  if (!view) {
+    return;
+  }
+
+  RenderWidgetHostImpl* widget_host = RenderWidgetHostImpl::From(
+      static_cast<RenderWidgetHostViewBase*>(view)->GetRenderWidgetHost());
   if (!widget_host)
     return;
 
@@ -2043,9 +2066,17 @@ bool RenderWidgetHostViewMac::SyncGetCharacterIndexAtPoint(
     return true;
 
   gfx::PointF transformed_point;
-  RenderWidgetHostImpl* widget_host =
-      host()->delegate()->GetInputEventRouter()->GetRenderWidgetHostAtPoint(
-          this, root_point, &transformed_point);
+  auto* view = host()
+                   ->delegate()
+                   ->GetInputEventRouter()
+                   ->GetRenderWidgetHostViewInputAtPoint(this, root_point,
+                                                         &transformed_point);
+  if (!view) {
+    return true;
+  }
+
+  RenderWidgetHostImpl* widget_host = RenderWidgetHostImpl::From(
+      static_cast<RenderWidgetHostViewBase*>(view)->GetRenderWidgetHost());
   if (!widget_host)
     return true;
 
@@ -2194,6 +2225,15 @@ void RenderWidgetHostViewMac::StartSpeaking() {
 
 void RenderWidgetHostViewMac::StopSpeaking() {
   ui::TextServicesContextMenu::StopSpeaking();
+}
+
+void RenderWidgetHostViewMac::GetRenderWidgetAccessibilityToken(
+    GetRenderWidgetAccessibilityTokenCallback callback) {
+  base::ProcessId pid = getpid();
+  id element_id = GetNativeViewAccessible();
+  std::vector<uint8_t> token =
+      ui::RemoteAccessibility::GetTokenForLocalElement(element_id);
+  std::move(callback).Run(pid, token);
 }
 
 void RenderWidgetHostViewMac::SetRemoteAccessibilityWindowToken(

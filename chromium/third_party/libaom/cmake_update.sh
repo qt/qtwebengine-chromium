@@ -123,14 +123,15 @@ trap '{
 all_platforms="-DCONFIG_SIZE_LIMIT=1"
 all_platforms+=" -DDECODE_HEIGHT_LIMIT=16384 -DDECODE_WIDTH_LIMIT=16384"
 all_platforms+=" -DCONFIG_AV1_ENCODER=1"
-all_platforms+=" -DCONFIG_MAX_DECODE_PROFILE=0"
-all_platforms+=" -DCONFIG_NORMAL_TILE_MODE=1"
+all_platforms+=" -DCONFIG_AV1_DECODER=0"
 all_platforms+=" -DCONFIG_LIBYUV=0"
 # Use low bit depth.
 all_platforms+=" -DCONFIG_AV1_HIGHBITDEPTH=0"
 # Use real-time only build.
 all_platforms+=" -DCONFIG_REALTIME_ONLY=1"
 all_platforms+=" -DCONFIG_AV1_TEMPORAL_DENOISING=1"
+# Disable Quantization Matrix.
+all_platforms+=" -DCONFIG_QUANT_MATRIX=0"
 # avx2 optimizations account for ~0.3mb of the decoder.
 #all_platforms+=" -DENABLE_AVX2=0"
 toolchain="-DCMAKE_TOOLCHAIN_FILE=${SRC}/build/cmake/toolchains"

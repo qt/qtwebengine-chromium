@@ -49,9 +49,10 @@
 #endif
 
 #if BUILDFLAG(IS_WIN)
+#include <windows.h>
+
 #include <netfw.h>
 #include <shlobj.h>
-#include <windows.h>
 #include <wrl/client.h>
 
 #include "base/test/test_reg_util_win.h"
@@ -122,6 +123,7 @@ class EnterpriseReportingPrivateGetDeviceIdTest : public ExtensionApiUnittest {
 
   void SetClientId(const std::string& client_id) {
     storage_.SetClientId(client_id);
+    storage_.ResetForTesting();
   }
 
  private:

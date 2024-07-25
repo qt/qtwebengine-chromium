@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #import "base/message_loop/message_pump_apple.h"
 
 #import <Foundation/Foundation.h>
@@ -9,6 +14,7 @@
 #include <atomic>
 #include <limits>
 #include <memory>
+#include <optional>
 
 #include "base/apple/call_with_eh_frame.h"
 #include "base/apple/scoped_cftyperef.h"
@@ -26,7 +32,6 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 #if !BUILDFLAG(IS_IOS)
 #import <AppKit/AppKit.h>
@@ -78,7 +83,7 @@ class OptionalAutoreleasePool {
   OptionalAutoreleasePool& operator=(const OptionalAutoreleasePool&) = delete;
 
  private:
-  absl::optional<base::apple::ScopedNSAutoreleasePool> pool_;
+  std::optional<base::apple::ScopedNSAutoreleasePool> pool_;
 };
 
 class MessagePumpCFRunLoopBase::ScopedModeEnabler {
@@ -385,7 +390,7 @@ void MessagePumpCFRunLoopBase::PushWorkItemScope() {
   if (delegate_) {
     stack_.push(delegate_->BeginWorkItem());
   } else {
-    stack_.push(absl::nullopt);
+    stack_.push(std::nullopt);
   }
 }
 
@@ -729,11 +734,11 @@ MessagePumpUIApplication::MessagePumpUIApplication()
 MessagePumpUIApplication::~MessagePumpUIApplication() = default;
 
 void MessagePumpUIApplication::DoRun(Delegate* delegate) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 bool MessagePumpUIApplication::DoQuit() {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return false;
 }
 

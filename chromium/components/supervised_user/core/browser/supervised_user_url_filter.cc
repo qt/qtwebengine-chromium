@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/check.h"
@@ -22,8 +23,8 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/supervised_user/core/browser/kids_chrome_management_url_checker_client.h"
 #include "components/supervised_user/core/browser/supervised_user_preferences.h"
+#include "components/supervised_user/core/browser/supervised_user_utils.h"
 #include "components/supervised_user/core/common/supervised_user_constants.h"
-#include "components/supervised_user/core/common/supervised_user_utils.h"
 #include "components/url_matcher/url_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -62,7 +63,7 @@ bool IsNonStandardUrlScheme(const GURL& effective_url) {
 
 bool IsAlwaysAllowedHost(const GURL& effective_url) {
   // Allow navigations to allowed origins.
-  constexpr auto kAllowedHosts = base::MakeFixedFlatSet<base::StringPiece>(
+  constexpr auto kAllowedHosts = base::MakeFixedFlatSet<std::string_view>(
       {"accounts.google.com", "families.google.com", "familylink.google.com",
        "myaccount.google.com", "policies.google.com", "support.google.com"});
 
@@ -90,15 +91,22 @@ bool IsAlwaysAllowedUrlPrefix(const GURL& effective_url) {
 
 bool IsPlayStoreTermsOfServiceUrl(const GURL& effective_url) {
   // Play Store terms of service path:
-  static const char* kPlayStoreHost = "play.google.com";
-  static const char* kPlayTermsPath = "/about/play-terms";
+  // TODO(b/322186372): Remove old host and path after some time.
+  static const char* kPlayStoreHostOld = "play.google.com";
+  static const char* kPlayStoreHostNew = "play.google";
+  static const char* kPlayTermsPathOld = "/about/play-terms";
+  static const char* kPlayTermsPathNew = "/play-terms";
   // Check Play Store terms of service.
   // path_piece is checked separately from the host to match international pages
-  // like https://play.google.com/intl/pt-BR_pt/about/play-terms/.
+  // like https://play.google.com/intl/pt-BR_pt/about/play-terms/ or
+  // https://play.google/intl/pt-BR_pt/play-terms/.
   return effective_url.SchemeIs(url::kHttpsScheme) &&
-         effective_url.host_piece() == kPlayStoreHost &&
-         (effective_url.path_piece().find(kPlayTermsPath) !=
-          base::StringPiece::npos);
+         ((effective_url.host_piece() == kPlayStoreHostOld &&
+           (effective_url.path_piece().find(kPlayTermsPathOld) !=
+            std::string_view::npos)) ||
+          (effective_url.host_piece() == kPlayStoreHostNew &&
+           (effective_url.path_piece().find(kPlayTermsPathNew) !=
+            std::string_view::npos)));
 }
 
 namespace {
@@ -226,11 +234,12 @@ std::optional<FilteringSubdomainConflictType> AddConflict(
 
 SupervisedUserURLFilter::SupervisedUserURLFilter(
     PrefService& user_prefs,
-    ValidateURLSupportCallback check_webstore_url_callback,
-    std::unique_ptr<Delegate> service_delegate)
+    std::unique_ptr<safe_search_api::URLCheckerClient> url_checker_client,
+    ValidateURLSupportCallback check_webstore_url_callback)
     : default_behavior_(FilteringBehavior::kAllow),
       user_prefs_(user_prefs),
-      service_delegate_(std::move(service_delegate)),
+      async_url_checker_(std::make_unique<safe_search_api::URLChecker>(
+          std::move(url_checker_client))),
       check_webstore_url_callback_(std::move(check_webstore_url_callback)) {}
 
 SupervisedUserURLFilter::~SupervisedUserURLFilter() {
@@ -353,6 +362,8 @@ std::string SupervisedUserURLFilter::WebFilterTypeToDisplayString(
       return "allow_certain_sites";
     case WebFilterType::kTryToBlockMatureSites:
       return "block_mature_sites";
+    case WebFilterType::kMixed:
+      NOTREACHED_NORETURN();
   }
 }
 
@@ -600,7 +611,7 @@ bool SupervisedUserURLFilter::GetFilteringBehaviorForURLWithAsyncChecks(
     // Any non-default reason trumps the async checker.
     // Also, if we're blocking anyway, then there's no need to check it.
     if (reason != supervised_user::FilteringBehaviorReason::DEFAULT ||
-        behavior == FilteringBehavior::kBlock || !async_url_checker_) {
+        behavior == FilteringBehavior::kBlock) {
       std::move(callback).Run(behavior, reason, false);
       for (Observer& observer : observers_) {
         observer.OnURLChecked(url, behavior, reason, false);
@@ -609,7 +620,7 @@ bool SupervisedUserURLFilter::GetFilteringBehaviorForURLWithAsyncChecks(
     }
   }
 
-  // Runs mature url filter if the |async_url_checker_| exists.
+  // Runs mature url filter.
   return RunAsyncChecker(url, std::move(callback));
 }
 
@@ -642,7 +653,7 @@ bool SupervisedUserURLFilter::GetFilteringBehaviorForSubFrameURLWithAsyncChecks(
     return true;
   }
 
-  // Runs mature url filter if the |async_url_checker_| exists.
+  // Runs mature url filter.
   return RunAsyncChecker(url, std::move(callback));
 }
 
@@ -673,30 +684,13 @@ void SupervisedUserURLFilter::SetManualHosts(
   }
 }
 
+bool SupervisedUserURLFilter::IsManualHostsEmpty() const {
+  return allowed_host_list_.empty() && blocked_host_list_.empty();
+}
+
 void SupervisedUserURLFilter::SetManualURLs(std::map<GURL, bool> url_map) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   url_map_ = std::move(url_map);
-}
-
-void SupervisedUserURLFilter::InitAsyncURLChecker(
-    signin::IdentityManager* identity_manager,
-    scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) {
-  DCHECK(service_delegate_);
-  std::string country = service_delegate_->GetCountryCode();
-
-  std::unique_ptr<safe_search_api::URLCheckerClient> url_checker_client =
-      std::make_unique<KidsChromeManagementURLCheckerClient>(
-          identity_manager, url_loader_factory, country);
-  async_url_checker_ = std::make_unique<safe_search_api::URLChecker>(
-      std::move(url_checker_client));
-}
-
-void SupervisedUserURLFilter::ClearAsyncURLChecker() {
-  async_url_checker_.reset();
-}
-
-bool SupervisedUserURLFilter::HasAsyncURLChecker() const {
-  return async_url_checker_.get() != nullptr;
 }
 
 void SupervisedUserURLFilter::Clear() {
@@ -704,7 +698,6 @@ void SupervisedUserURLFilter::Clear() {
   url_map_.clear();
   allowed_host_list_.clear();
   blocked_host_list_.clear();
-  async_url_checker_.reset();
   is_filter_initialized_ = false;
 }
 
@@ -792,9 +785,8 @@ void SupervisedUserURLFilter::SetFilterInitialized(bool is_filter_initialized) {
 bool SupervisedUserURLFilter::RunAsyncChecker(
     const GURL& url,
     FilteringBehaviorCallback callback) const {
-  // The parental setting may allow all sites to be visited. In such case, the
-  // |async_url_checker_| will not be created.
-  if (!async_url_checker_) {
+  // The parental setting may allow all sites to be visited.
+  if (GetWebFilterType() == WebFilterType::kAllowAllSites) {
     std::move(callback).Run(FilteringBehavior::kAllow,
                             supervised_user::FilteringBehaviorReason::DEFAULT,
                             false);
@@ -805,6 +797,16 @@ bool SupervisedUserURLFilter::RunAsyncChecker(
       url_matcher::util::Normalize(url),
       base::BindOnce(&SupervisedUserURLFilter::CheckCallback,
                      base::Unretained(this), std::move(callback)));
+}
+
+void SupervisedUserURLFilter::SetURLCheckerClientForTesting(
+    std::unique_ptr<safe_search_api::URLCheckerClient> url_checker_client) {
+  async_url_checker_.reset(
+      new safe_search_api::URLChecker(std::move(url_checker_client)));
+}
+
+bool SupervisedUserURLFilter::IsHostInBlocklist(const std::string& host) const {
+  return blocked_host_list_.contains(host);
 }
 
 void SupervisedUserURLFilter::CheckCallback(

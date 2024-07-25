@@ -46,6 +46,7 @@ namespace compiler {
   V(Arm64StrWPair)                                         \
   V(Arm64LdrDecompressTaggedSigned)                        \
   V(Arm64LdrDecompressTagged)                              \
+  V(Arm64LdrDecompressProtected)                           \
   V(Arm64StrCompressTagged)                                \
   V(Arm64Word64AtomicLoadUint64)                           \
   V(Arm64Word64AtomicStoreWord64)
@@ -111,6 +112,8 @@ namespace compiler {
   V(Arm64S8x16Concat)                   \
   V(Arm64I8x16Swizzle)                  \
   V(Arm64I8x16Shuffle)                  \
+  V(Arm64S32x4Reverse)                  \
+  V(Arm64S32x4OneLaneSwizzle)           \
   V(Arm64S32x2Reverse)                  \
   V(Arm64S16x4Reverse)                  \
   V(Arm64S16x2Reverse)                  \
@@ -340,6 +343,7 @@ namespace compiler {
   V(Arm64Uint64ToFloat64)                            \
   V(Arm64Float64ExtractLowWord32)                    \
   V(Arm64Float64ExtractHighWord32)                   \
+  V(Arm64Float64FromWord32Pair)                      \
   V(Arm64Float64InsertLowWord32)                     \
   V(Arm64Float64InsertHighWord32)                    \
   V(Arm64Float64MoveU64)                             \

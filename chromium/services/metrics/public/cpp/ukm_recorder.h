@@ -5,6 +5,8 @@
 #ifndef SERVICES_METRICS_PUBLIC_CPP_UKM_RECORDER_H_
 #define SERVICES_METRICS_PUBLIC_CPP_UKM_RECORDER_H_
 
+#include <set>
+
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
 #include "base/observer_list.h"
@@ -17,9 +19,11 @@
 #include "services/metrics/public/mojom/ukm_interface.mojom-forward.h"
 #include "url/gurl.h"
 
+class ChromePermissionsClient;
 class DIPSNavigationHandle;
 class DIPSService;
 class PermissionUmaUtil;
+class PlatformNotificationServiceImpl;
 
 namespace apps {
 class WebsiteMetrics;
@@ -57,6 +61,9 @@ enum class AppType {
   kCrostini,
   kBorealis,
 };
+
+// TODO(b/316357582): Remove this when the actual enum lands.
+enum class DummyWebFeatures { kFeature1 = 0, kFeature2, kMaxCount };
 
 namespace internal {
 class SourceUrlRecorderWebContentsObserver;
@@ -141,6 +148,19 @@ class METRICS_EXPORT UkmRecorder {
       base::PassKey<apps::WebsiteMetrics>,
       const GURL& chromeos_website_url);
 
+  // Gets a new SourceId of NOTIFICATION_ID type. This should only be
+  // used for recording Permission UKM events related to persistent and
+  // nonpersistent notifications. `origin` is the domain that uses the Push API.
+  static SourceId GetSourceIdForNotificationPermission(
+      base::PassKey<ChromePermissionsClient>,
+      const GURL& origin);
+
+  // Gets a new SourceId of NOTIFICATION_ID type. This should only be used
+  // for recording persistent and nonpersistent notification UKM events.
+  static SourceId GetSourceIdForNotificationEvent(
+      base::PassKey<PlatformNotificationServiceImpl>,
+      const GURL& origin);
+
   // This method should be called when the system is about to shutdown, but
   // `UkmRecorder` is still available to record metrics.
   // Calls `OnStartingShutdown` on each observer from `observers_`.
@@ -151,6 +171,17 @@ class METRICS_EXPORT UkmRecorder {
 
   // Add an entry to the UkmEntry list.
   virtual void AddEntry(mojom::UkmEntryPtr entry) = 0;
+
+  // Associates web feature usage data with the UkmSource keyed by `source_id`.
+  // This function can be called more than once for a given `source_id`. The
+  // effects are additive. For example, after the following calls:
+  //   RecordWebFeature(100, {a, b});
+  //   RecordWebFeature(100, {b, c});
+  // The UKM recorder understands that the source identified by `source_id` 100
+  // is using features {a, b, c}.
+  virtual void RecordWebFeatures(
+      SourceId source_id,
+      const std::set<DummyWebFeatures>& features) = 0;
 
   // Controls sampling for testing purposes. Sampling is 1-in-N (N==rate).
   virtual void SetSamplingForTesting(int rate) {}

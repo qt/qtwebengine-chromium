@@ -18,7 +18,7 @@ class LocalizedValuesBuilder;
 
 namespace ash {
 
-class QuickStartView : public base::SupportsWeakPtr<QuickStartView> {
+class QuickStartView {
  public:
   inline constexpr static StaticOobeScreenId kScreenId{"quick-start",
                                                        "QuickStartScreen"};
@@ -36,15 +36,17 @@ class QuickStartView : public base::SupportsWeakPtr<QuickStartView> {
   virtual void ShowConfirmGoogleAccount() = 0;
   virtual void ShowSigningInStep() = 0;
   virtual void ShowCreatingAccountStep() = 0;
-  virtual void ShowSetupCompleteStep() = 0;
+  virtual void ShowSetupCompleteStep(const bool did_transfer_wifi) = 0;
   virtual void SetUserEmail(const std::string email) = 0;
   virtual void SetUserFullName(const std::string full_name) = 0;
   virtual void SetUserAvatar(const std::string avatar_url) = 0;
+  virtual void SetWillRequestWiFi(const bool will_request_wifi) = 0;
+  virtual base::WeakPtr<QuickStartView> AsWeakPtr() = 0;
 };
 
 // WebUI implementation of QuickStartView.
-class QuickStartScreenHandler : public QuickStartView,
-                                public BaseScreenHandler {
+class QuickStartScreenHandler final : public QuickStartView,
+                                      public BaseScreenHandler {
  public:
   using TView = QuickStartView;
 
@@ -67,14 +69,19 @@ class QuickStartScreenHandler : public QuickStartView,
   void ShowConfirmGoogleAccount() override;
   void ShowSigningInStep() override;
   void ShowCreatingAccountStep() override;
-  void ShowSetupCompleteStep() override;
+  void ShowSetupCompleteStep(const bool did_transfer_wifi) override;
   void SetUserEmail(const std::string email) override;
   void SetUserFullName(const std::string full_name) override;
   void SetUserAvatar(const std::string avatar_url) override;
+  void SetWillRequestWiFi(const bool will_request_wifi) override;
+  base::WeakPtr<QuickStartView> AsWeakPtr() override;
 
   // BaseScreenHandler:
   void DeclareLocalizedValues(
       ::login::LocalizedValuesBuilder* builder) override;
+
+ private:
+  base::WeakPtrFactory<QuickStartView> weak_ptr_factory_{this};
 };
 
 }  // namespace ash

@@ -167,10 +167,17 @@ std::optional<BiddingAndAuctionResponse> BiddingAndAuctionResponse::TryParse(
     if (buyer_reporting) {
       output.buyer_reporting = ReportingURLs::TryParse(buyer_reporting);
     }
-    base::Value::Dict* seller_reporting =
+    base::Value::Dict* top_level_seller_reporting =
         win_reporting_urls->FindDict("topLevelSellerReportingURLs");
-    if (seller_reporting) {
-      output.seller_reporting = ReportingURLs::TryParse(seller_reporting);
+    if (top_level_seller_reporting) {
+      output.top_level_seller_reporting =
+          ReportingURLs::TryParse(top_level_seller_reporting);
+    }
+    base::Value::Dict* component_seller_reporting =
+        win_reporting_urls->FindDict("componentSellerReportingURLs");
+    if (component_seller_reporting) {
+      output.component_seller_reporting =
+          ReportingURLs::TryParse(component_seller_reporting);
     }
   }
   std::string* maybe_top_level_seller =
@@ -186,6 +193,16 @@ std::optional<BiddingAndAuctionResponse> BiddingAndAuctionResponse::TryParse(
   std::string* maybe_ad_metadata = input_dict->FindString("adMetadata");
   if (maybe_ad_metadata) {
     output.ad_metadata = *maybe_ad_metadata;
+  }
+  std::string* maybe_buyer_reporting_id =
+      input_dict->FindString("buyerReportingId");
+  if (maybe_buyer_reporting_id) {
+    output.buyer_reporting_id = *maybe_buyer_reporting_id;
+  }
+  std::string* maybe_buyer_and_seller_reporting_id =
+      input_dict->FindString("buyerAndSellerReportingId");
+  if (maybe_buyer_and_seller_reporting_id) {
+    output.buyer_and_seller_reporting_id = *maybe_buyer_and_seller_reporting_id;
   }
 
   output.result = AuctionResult::kSuccess;

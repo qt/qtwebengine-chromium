@@ -150,6 +150,12 @@ chromium-metrics-reviews@google.com.
   </int>
 </enum>
 
+<enum name="LinkPreviewUsage">
+  <int value="0" label="Not used"/>
+  <int value="1" label="Used but not promited"/>
+  <int value="2" label="Used and promoted"/>
+</enum>
+
 <enum name="MhtmlLoadResult">
   <int value="0" label="Success">Archive loaded successfully</int>
   <int value="1" label="Empty file">
@@ -164,6 +170,22 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="Missing main resource">
     Failed to load archive because it had no main resource
   </int>
+</enum>
+
+<enum name="OriginTrialStatusChange">
+  <int value="0"
+      label="kDisabled: Origin-specific origin trial token was disabled (i.e.
+             removed from the top-level site's partition)"/>
+  <int value="1"
+      label="kDisabled_MatchesSubdomains: Subdomain-matching origin trial
+             token was disabled (i.e. removed from the top-level site's
+             partition)"/>
+  <int value="2"
+      label="kEnabled: Origin-specific token was used to enable the origin
+             trial"/>
+  <int value="3"
+      label="kEnabled_MatchesSubdomains: Subdomain-matching token was used to
+             enable the origin trial"/>
 </enum>
 
 <enum name="PageActionCTREvent">
@@ -185,8 +207,8 @@ chromium-metrics-reviews@google.com.
   <int value="10" label="Price Tracking"/>
   <int value="11" label="PWA Install"/>
   <int value="12" label="QR Code Generator"/>
-  <int value="13" label="Reader Mode"/>
-  <int value="14" label="Save Autofill Address"/>
+  <int value="13" label="(Deprecated) Reader Mode"/>
+  <int value="14" label="Autofill Address"/>
   <int value="15" label="Save Card"/>
   <int value="16" label="Send Tab to Self"/>
   <int value="17" label="Sharing Hub"/>
@@ -199,6 +221,9 @@ chromium-metrics-reviews@google.com.
   <int value="24" label="Save IBAN"/>
   <int value="25" label="Mandatory Reauth"/>
   <int value="26" label="Price Insights"/>
+  <int value="27" label="Read Anything"/>
+  <int value="28" label="Product Specifications"/>
+  <int value="29" label="Lens Overlay"/>
 </enum>
 
 <enum name="PageActionPageEvent">
@@ -311,21 +336,61 @@ chromium-metrics-reviews@google.com.
 </enum>
 
 <enum name="ThirdPartyCookieAllowMechanism">
-  <int value="0" label="No allow mechanism apply (Not recorded)"/>
+  <int value="0" label="kNone: No allow mechanism applied (Not recorded)."/>
   <int value="1"
-      label="Allow by explicit cookie content setting (e.g. Enterprise
-             Policy: CookiesAllowedForUrls, UserBypass)"/>
+      label="kAllowByExplicitSetting: Allowed by explicit cookie content
+             setting (e.g. UserBypass)."/>
   <int value="2"
-      label="Allow by global 3p cookie setting setting (e.g. Enterprise
-             Policy: BlockThirdPartyCookies, UX, Default allow)"/>
+      label="kAllowByGlobalSetting: Allowed by global 3p cookie setting
+             setting (e.g. Enterprise Policy: BlockThirdPartyCookies, UX,
+             Default allow)."/>
   <int value="3"
-      label="Allow by 3PCD metadata grants content settings (Global
-             Allowlist)"/>
-  <int value="4" label="Allow by third-party deprecation trial"/>
-  <int value="5" label="Allow by 3PCD heuristics"/>
-  <int value="6" label="Allow by Storage access API"/>
-  <int value="7" label="Allow by top-level Storage access API"/>
-  <int value="8" label="Allow by opting into CORS protections"/>
+      label="kAllowBy3PCDMetadata: (Deprecated) Allowed by 3PCD metadata
+             grants content settings (Global Allowlist)."/>
+  <int value="4"
+      label="kAllowBy3PCD: Allowed by third-party deprecation trial."/>
+  <int value="5" label="kAllowBy3PCDHeuristics: Allowed by 3PCD heuristics."/>
+  <int value="6" label="kAllowByStorageAccess: Allowed by Storage access API."/>
+  <int value="7"
+      label="kAllowByTopLevelStorageAccess: Allowed by top-level Storage
+             access API."/>
+  <int value="8"
+      label="kAllowByCORSException: Allowed by opting into CORS protections."/>
+  <int value="9"
+      label="kAllowByTopLevel3PCD: Allowed by top-level third-party
+             deprecation trial."/>
+  <int value="10"
+      label="kAllowByEnterprisePolicyCookieAllowedForUrls: Allowed by
+             CookiesAllowedForUrls Enterprise Policy."/>
+  <int value="11"
+      label="kAllowBy3PCDMetadataSourceUnspecified: Allowed by entries with
+             unspecified source within the 3PCD metadata grants content
+             settings (Global Allowlist)."/>
+  <int value="12"
+      label="kAllowBy3PCDMetadataSourceTest: Allowed by test entries within
+             the 3PCD metadata grants content settings (Global Allowlist)."/>
+  <int value="13"
+      label="kAllowBy3PCDMetadataSource1pDt: Allowed by 1P DT entries within
+             the 3PCD metadata grants content settings (Global Allowlist)."/>
+  <int value="14"
+      label="kAllowBy3PCDMetadataSource3pDt: Allowed by 3P DT entries within
+             the 3PCD metadata grants content settings (Global Allowlist)"/>
+  <int value="15"
+      label="kAllowBy3PCDMetadataSourceDogFood: Allowed by dogfood entries
+             within the 3PCD metadata grants content settings (Global
+             Allowlist)."/>
+  <int value="16"
+      label="kAllowBy3PCDMetadataSourceCriticalSector: Allowed by critical
+             sector entries within the 3PCD metadata grants content settings
+             (Global Allowlist)."/>
+  <int value="17"
+      label="kAllowBy3PCDMetadataSourceCuj: Allowed by critical user journey
+             entries within the 3PCD metadata grants content settings (Global
+             Allowlist)."/>
+  <int value="18"
+      label="kAllowBy3PCDMetadataSourceGovEduTld: Allowed by government and
+             education TLD entries within the 3PCD metadata grants content
+             settings (Global Allowlist)."/>
 </enum>
 
 </enums>

@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_AUDIO_CONTEXT_H_
 
 #include "base/gtest_prod_util.h"
+#include "base/time/time.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
 #include "third_party/blink/public/mojom/webaudio/audio_context_manager.mojom-blink.h"
@@ -29,14 +30,15 @@ namespace blink {
 
 class AudioContextOptions;
 class AudioTimestamp;
-class ExecutionContext;
 class ExceptionState;
+class ExecutionContext;
 class HTMLMediaElement;
 class LocalDOMWindow;
 class MediaElementAudioSourceNode;
 class MediaStream;
 class MediaStreamAudioDestinationNode;
 class MediaStreamAudioSourceNode;
+class RealtimeAudioDestinationNode;
 class ScriptState;
 class WebAudioLatencyHint;
 
@@ -54,7 +56,7 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
 
   AudioContext(LocalDOMWindow&,
                const WebAudioLatencyHint&,
-               absl::optional<float> sample_rate,
+               std::optional<float> sample_rate,
                WebAudioSinkDescriptor sink_descriptor);
   ~AudioContext() override;
 
@@ -66,11 +68,14 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
   void ContextDestroyed() final;
   bool HasPendingActivity() const override;
 
-  ScriptPromise closeContext(ScriptState*, ExceptionState&);
+  // Cannot be called from the audio thread.
+  RealtimeAudioDestinationNode* GetRealtimeAudioDestinationNode() const;
+
+  ScriptPromise<IDLUndefined> closeContext(ScriptState*, ExceptionState&);
   bool IsContextCleared() const final;
 
-  ScriptPromise suspendContext(ScriptState*, ExceptionState&);
-  ScriptPromise resumeContext(ScriptState*, ExceptionState&);
+  ScriptPromise<IDLUndefined> suspendContext(ScriptState*, ExceptionState&);
+  ScriptPromise<IDLUndefined> resumeContext(ScriptState*, ExceptionState&);
 
   bool HasRealtimeConstraint() final { return true; }
 
@@ -104,6 +109,10 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
 
   AudioCallbackMetric GetCallbackMetric() const;
 
+  // Returns the audio buffer duration of the output driving playout of
+  // AudioDestination.
+  base::TimeDelta PlatformBufferDuration() const;
+
   // mojom::blink::PermissionObserver
   void OnPermissionStatusChange(mojom::blink::PermissionStatus) override;
 
@@ -111,9 +120,9 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
 
   WebAudioSinkDescriptor GetSinkDescriptor() const { return sink_descriptor_; }
 
-  ScriptPromise setSinkId(ScriptState*,
-                          const V8UnionAudioSinkOptionsOrString*,
-                          ExceptionState&);
+  ScriptPromise<IDLUndefined> setSinkId(ScriptState*,
+                                        const V8UnionAudioSinkOptionsOrString*,
+                                        ExceptionState&);
 
   void NotifySetSinkIdBegins();
   void NotifySetSinkIdIsDone(WebAudioSinkDescriptor);
@@ -129,6 +138,8 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
   // A helper function to validate the given sink descriptor. See:
   // webaudio.github.io/web-audio-api/#validating-sink-identifier
   bool IsValidSinkDescriptor(const WebAudioSinkDescriptor&);
+
+  void OnRenderError();
 
  protected:
   void Uninitialize() final;
@@ -233,7 +244,7 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
   void ResumeOnPrerenderActivation();
 
   unsigned context_id_;
-  Member<ScriptPromiseResolver> close_resolver_;
+  Member<ScriptPromiseResolver<IDLUndefined>> close_resolver_;
 
   AudioIOPosition output_position_;
   AudioCallbackMetric callback_metric_;
@@ -248,12 +259,12 @@ class MODULES_EXPORT AudioContext : public BaseAudioContext,
   // Autoplay status associated with this AudioContext, if any.
   // Will only be set if there is an autoplay policy in place.
   // Will never be set for OfflineAudioContext.
-  absl::optional<AutoplayStatus> autoplay_status_;
+  std::optional<AutoplayStatus> autoplay_status_;
 
   // Autoplay unlock type for this AudioContext.
   // Will only be set if there is an autoplay policy in place.
   // Will never be set for OfflineAudioContext.
-  absl::optional<AutoplayUnlockType> autoplay_unlock_type_;
+  std::optional<AutoplayUnlockType> autoplay_unlock_type_;
 
   // Records if start() was ever called for any source node in this context.
   bool source_node_started_ = false;

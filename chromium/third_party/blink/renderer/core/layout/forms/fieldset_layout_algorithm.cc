@@ -148,9 +148,9 @@ const LayoutResult* FieldsetLayoutAlgorithm::Layout() {
   OutOfFlowLayoutPart(Node(), GetConstraintSpace(), &container_builder_).Run();
 
   const auto& style = Style();
-  if (style.LogicalHeight().IsPercentOrCalc() ||
-      style.LogicalMinHeight().IsPercentOrCalc() ||
-      style.LogicalMaxHeight().IsPercentOrCalc()) {
+  if (style.LogicalHeight().MayHavePercentDependence() ||
+      style.LogicalMinHeight().MayHavePercentDependence() ||
+      style.LogicalMaxHeight().MayHavePercentDependence()) {
     // The height of the fieldset content box depends on the percent-height of
     // the fieldset. So we should assume the fieldset has a percent-height
     // descendant.
@@ -456,7 +456,7 @@ MinMaxSizesResult FieldsetLayoutAlgorithm::ComputeMinMaxSizes(
   bool has_inline_size_containment = Node().ShouldApplyInlineSizeContainment();
   if (has_inline_size_containment) {
     // Size containment does not consider the legend for sizing.
-    absl::optional<MinMaxSizesResult> result_without_children =
+    std::optional<MinMaxSizesResult> result_without_children =
         CalculateMinMaxSizesIgnoringChildren(Node(), BorderScrollbarPadding());
     if (result_without_children)
       return *result_without_children;

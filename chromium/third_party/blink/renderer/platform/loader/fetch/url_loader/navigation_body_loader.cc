@@ -82,10 +82,10 @@ class BodyReader {
 void ReadFromDataPipeImpl(BodyReader& reader,
                           mojo::ScopedDataPipeConsumerHandle& handle,
                           mojo::SimpleWatcher& handle_watcher) {
-  uint32_t num_bytes_consumed = 0;
+  size_t num_bytes_consumed = 0;
   while (reader.ShouldContinueReading()) {
     const void* buffer = nullptr;
-    uint32_t available = 0;
+    size_t available = 0;
     MojoResult result =
         handle->BeginReadData(&buffer, &available, MOJO_READ_DATA_FLAG_NONE);
     if (result == MOJO_RESULT_SHOULD_WAIT) {
@@ -100,7 +100,7 @@ void ReadFromDataPipeImpl(BodyReader& reader,
       reader.FinishedReading(/*has_error=*/true);
       return;
     }
-    const uint32_t chunk_size = network::features::GetLoaderChunkSize();
+    const size_t chunk_size = network::features::GetLoaderChunkSize();
     DCHECK_LE(num_bytes_consumed, chunk_size);
     available = std::min(available, chunk_size - num_bytes_consumed);
     if (available == 0) {
@@ -362,7 +362,7 @@ void NavigationBodyLoader::OnReceiveEarlyHints(
 void NavigationBodyLoader::OnReceiveResponse(
     network::mojom::URLResponseHeadPtr head,
     mojo::ScopedDataPipeConsumerHandle body,
-    absl::optional<mojo_base::BigBuffer> cached_metadata) {
+    std::optional<mojo_base::BigBuffer> cached_metadata) {
   // This has already happened in the browser process.
   NOTREACHED();
 }
@@ -528,7 +528,7 @@ void NavigationBodyLoader::NotifyCompletionIfAppropriate() {
 
   handle_watcher_.Cancel();
 
-  absl::optional<WebURLError> error;
+  std::optional<WebURLError> error;
   if (status_.error_code != net::OK) {
     error = WebURLError::Create(status_, original_url_);
   }

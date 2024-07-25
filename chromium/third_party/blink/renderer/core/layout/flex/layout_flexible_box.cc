@@ -4,7 +4,10 @@
 
 #include "third_party/blink/renderer/core/layout/flex/layout_flexible_box.h"
 
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
+#include "third_party/blink/renderer/core/html/html_slot_element.h"
 #include "third_party/blink/renderer/core/inspector/inspector_trace_events.h"
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
@@ -66,10 +69,23 @@ bool LayoutFlexibleBox::IsChildAllowed(LayoutObject* object,
                                        const ComputedStyle& style) const {
   const auto* select = DynamicTo<HTMLSelectElement>(GetNode());
   if (UNLIKELY(select && select->UsesMenuList())) {
-    // For a size=1 <select>, we only render the active option label through the
-    // InnerElement. We do not allow adding layout objects for options and
-    // optgroups.
-    return object->GetNode() == &select->InnerElement();
+    if (select->IsAppearanceBaseSelect()) {
+      CHECK(RuntimeEnabledFeatures::StylableSelectEnabled());
+      if (IsA<HTMLOptionElement>(object->GetNode())) {
+        // TODO(crbug.com/1511354): Remove this when <option>s are slotted into
+        // the UA <datalist>, which will be hidden by default as a popover.
+        return false;
+      }
+      // For appearance:base-select <select>, we want to render all children.
+      // However, the InnerElement is only used for rendering in
+      // appearance:auto, so don't include that one.
+      return object->GetNode() != &select->InnerElementForAppearanceAuto();
+    } else {
+      // For a size=1 appearance:auto <select>, we only render the active option
+      // label through the InnerElement. We do not allow adding layout objects
+      // for options and optgroups.
+      return object->GetNode() == &select->InnerElementForAppearanceAuto();
+    }
   }
   return LayoutBlock::IsChildAllowed(object, style);
 }

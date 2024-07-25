@@ -120,9 +120,10 @@ export class SidenavItem extends LitElement {
     }
 
     :host([separator])::before {
-      border-bottom: 1px solid var(--cros-separator-color);
+      border-top: 1px solid var(--cros-separator-color);
       content: '';
       display: block;
+      padding-bottom: 8px;
       width: 100%;
     }
 

@@ -4,14 +4,15 @@
 
 import {assert} from 'chrome://resources/js/assert.js';
 
-import {ACMatchClassification, AutocompleteControllerType, AutocompleteMatch, DictionaryEntry, OmniboxResponse, Signals} from './omnibox.mojom-webui.js';
+import type {ACMatchClassification, AutocompleteControllerType, AutocompleteMatch, DictionaryEntry, OmniboxResponse, Signals} from './omnibox.mojom-webui.js';
 import {OmniboxElement} from './omnibox_element.js';
-import {DisplayInputs, OmniboxInput} from './omnibox_input.js';
+import type {DisplayInputs} from './omnibox_input.js';
+import {OmniboxInput} from './omnibox_input.js';
 // @ts-ignore:next-line
-import outputColumnWidthSheet from './omnibox_output_column_widths.css' assert {type : 'css'};
+import outputColumnWidthSheet from './omnibox_output_column_widths.css' with {type : 'css'};
 import {clearChildren, createEl} from './omnibox_util.js';
 // @ts-ignore:next-line
-import outputResultsGroupSheet from './output_results_group.css' assert {type : 'css'};
+import outputResultsGroupSheet from './output_results_group.css' with {type : 'css'};
 
 interface ResultsDetails {
   cursorPosition: number;

@@ -4,7 +4,6 @@
 
 #include "content/browser/background_fetch/background_fetch_scheduler.h"
 
-#include "base/containers/cxx20_erase.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/field_trial_params.h"
@@ -33,7 +32,7 @@ constexpr int kMaxActiveRegistrationsDefaultValue = 2;
 
 // The maximum number of downloads the Download Service can process at the same
 // time.
-// TODO(crbug.com/919864): Figure out how to keep this in sync with the
+// TODO(crbug.com/40608586): Figure out how to keep this in sync with the
 // Download Service value.
 constexpr char kMaxRunningDownloads[] = "max_running_downloads";
 constexpr int kMaxRunningDownloadsDefaultValue = 2;

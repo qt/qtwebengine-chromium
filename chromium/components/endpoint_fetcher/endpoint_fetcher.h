@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_ENDPOINT_FETCHER_ENDPOINT_FETCHER_H_
 #define COMPONENTS_ENDPOINT_FETCHER_ENDPOINT_FETCHER_H_
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,10 @@
 #include "components/signin/public/identity_manager/scope_set.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/data_decoder/public/cpp/json_sanitizer.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+
+namespace base {
+class TimeDelta;
+}  // namespace base
 
 namespace network {
 struct ResourceRequest;
@@ -40,14 +44,16 @@ enum class FetchErrorType {
 struct EndpointResponse {
   std::string response;
   int http_status_code{-1};
-  absl::optional<FetchErrorType> error_type;
+  std::optional<FetchErrorType> error_type;
 };
 
 using EndpointFetcherCallback =
     base::OnceCallback<void(std::unique_ptr<EndpointResponse>)>;
 
-// EndpointFetcher calls an endpoint and returns the response.
-// EndpointFetcher is not thread safe and it is up to the caller
+// TODO(crbug.com/284531303) EndpointFetcher would benefit from
+// re-design/rethinking the APIs.
+// EndpointFetcher calls an endpoint and returns
+// the response. EndpointFetcher is not thread safe and it is up to the caller
 // to wait until the callback function passed to Fetch() completes
 // before invoking Fetch() again.
 // Destroying an EndpointFetcher will result in the in-flight request being
@@ -56,7 +62,7 @@ using EndpointFetcherCallback =
 // Chrome.
 // If the request times out an empty response will be returned. There will also
 // be an error code indicating timeout once more detailed error messaging is
-// added TODO(crbug.com/993393).
+// added TODO(crbug.com/40640190).
 class EndpointFetcher {
  public:
   // Preferred constructor - forms identity_manager and url_loader_factory.
@@ -68,7 +74,7 @@ class EndpointFetcher {
       const std::string& http_method,
       const std::string& content_type,
       const std::vector<std::string>& scopes,
-      int64_t timeout_ms,
+      const base::TimeDelta& timeout,
       const std::string& post_data,
       const net::NetworkTrafficAnnotationTag& annotation_tag,
       signin::IdentityManager* identity_manager,
@@ -80,9 +86,10 @@ class EndpointFetcher {
       const GURL& url,
       const std::string& http_method,
       const std::string& content_type,
-      int64_t timeout_ms,
+      const base::TimeDelta& timeout,
       const std::string& post_data,
       const std::vector<std::string>& headers,
+      const std::vector<std::string>& cors_exempt_headers,
       const net::NetworkTrafficAnnotationTag& annotation_tag,
       bool is_stable_channel);
 
@@ -100,7 +107,7 @@ class EndpointFetcher {
       const std::string& http_method,
       const std::string& content_type,
       const std::vector<std::string>& scopes,
-      int64_t timeout_ms,
+      const base::TimeDelta& timeout,
       const std::string& post_data,
       const net::NetworkTrafficAnnotationTag& annotation_tag,
       const scoped_refptr<network::SharedURLLoaderFactory>& url_loader_factory,
@@ -112,7 +119,7 @@ class EndpointFetcher {
       const GURL& url,
       const std::string& http_method,
       const std::string& content_type,
-      int64_t timeout_ms,
+      const base::TimeDelta& timeout,
       const std::string& post_data,
       const std::vector<std::string>& headers,
       const std::vector<std::string>& cors_exempt_headers,
@@ -126,7 +133,7 @@ class EndpointFetcher {
 
   virtual ~EndpointFetcher();
 
-  // TODO(crbug.com/999256) enable cancellation support
+  // TODO(crbug.com/40642723) enable cancellation support
   virtual void Fetch(EndpointFetcherCallback callback);
   virtual void PerformRequest(EndpointFetcherCallback endpoint_fetcher_callback,
                               const char* key);
@@ -157,7 +164,7 @@ class EndpointFetcher {
   const GURL url_;
   const std::string http_method_;
   const std::string content_type_;
-  int64_t timeout_ms_;
+  base::TimeDelta timeout_;
   const std::string post_data_;
   const std::vector<std::string> headers_;
   const std::vector<std::string> cors_exempt_headers_;
@@ -172,7 +179,7 @@ class EndpointFetcher {
       identity_manager_;
   // `consent_level_` is used together with `identity_manager_`, so it can be
   // null if `identity_manager_` is null.
-  const absl::optional<signin::ConsentLevel> consent_level_;
+  const std::optional<signin::ConsentLevel> consent_level_;
   bool sanitize_response_;
   bool is_stable_channel_;
 

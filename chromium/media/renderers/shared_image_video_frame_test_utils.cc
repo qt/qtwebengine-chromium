@@ -56,18 +56,15 @@ scoped_refptr<VideoFrame> CreateSharedImageFrame(
     const gfx::Size& natural_size,
     base::TimeDelta timestamp,
     base::OnceClosure destroyed_callback) {
-  gpu::MailboxHolder mailboxes_for_frame[VideoFrame::kMaxPlanes] = {};
-  size_t i = 0;
-  for (const auto& shared_image : shared_images) {
-    mailboxes_for_frame[i++] =
-        gpu::MailboxHolder(shared_image->mailbox(), sync_token, texture_target);
-  }
+  scoped_refptr<gpu::ClientSharedImage>
+      shared_images_for_frame[VideoFrame::kMaxPlanes] = {};
+  base::ranges::copy(shared_images, shared_images_for_frame);
   auto callback =
       base::BindOnce(&DestroySharedImages, std::move(context_provider),
                      std::move(shared_images), std::move(destroyed_callback));
-  return VideoFrame::WrapNativeTextures(format, mailboxes_for_frame,
-                                        std::move(callback), coded_size,
-                                        visible_rect, natural_size, timestamp);
+  return VideoFrame::WrapSharedImages(
+      format, shared_images_for_frame, sync_token, texture_target,
+      std::move(callback), coded_size, visible_rect, natural_size, timestamp);
 }
 
 scoped_refptr<VideoFrame> CreateSharedImageRGBAFrame(
@@ -96,9 +93,9 @@ scoped_refptr<VideoFrame> CreateSharedImageRGBAFrame(
 
   auto* sii = context_provider->SharedImageInterface();
   auto shared_image = sii->CreateSharedImage(
-      viz::SinglePlaneFormat::kRGBA_8888, coded_size, gfx::ColorSpace(),
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
-      gpu::SHARED_IMAGE_USAGE_GLES2_READ, "RGBAVideoFrame", pixels);
+      {viz::SinglePlaneFormat::kRGBA_8888, coded_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "RGBAVideoFrame"},
+      pixels);
 
   return CreateSharedImageFrame(
       std::move(context_provider), VideoPixelFormat::PIXEL_FORMAT_ABGR,
@@ -144,16 +141,16 @@ scoped_refptr<VideoFrame> CreateSharedImageI420Frame(
                           : viz::SinglePlaneFormat::kLUMINANCE_8;
   auto* sii = context_provider->SharedImageInterface();
   auto y_shared_image = sii->CreateSharedImage(
-      plane_format, coded_size, gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin,
-      kPremul_SkAlphaType, gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_Y",
+      {plane_format, coded_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_Y"},
       y_pixels);
   auto u_shared_image = sii->CreateSharedImage(
-      plane_format, uv_size, gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin,
-      kPremul_SkAlphaType, gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_U",
+      {plane_format, uv_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_U"},
       u_pixels);
   auto v_shared_image = sii->CreateSharedImage(
-      plane_format, uv_size, gfx::ColorSpace(), kTopLeft_GrSurfaceOrigin,
-      kPremul_SkAlphaType, gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_V",
+      {plane_format, uv_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "I420Frame_V"},
       v_pixels);
 
   return CreateSharedImageFrame(
@@ -201,13 +198,13 @@ scoped_refptr<VideoFrame> CreateSharedImageNV12Frame(
 
   auto* sii = context_provider->SharedImageInterface();
   auto y_shared_image = sii->CreateSharedImage(
-      viz::SinglePlaneFormat::kR_8, coded_size, gfx::ColorSpace(),
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
-      gpu::SHARED_IMAGE_USAGE_GLES2_READ, "NV12Frame_Y", y_pixels);
+      {viz::SinglePlaneFormat::kR_8, coded_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "NV12Frame_Y"},
+      y_pixels);
   auto uv_shared_image = sii->CreateSharedImage(
-      viz::SinglePlaneFormat::kRG_88, uv_size, gfx::ColorSpace(),
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType,
-      gpu::SHARED_IMAGE_USAGE_GLES2_READ, "NV12Frame_UV", uv_pixels);
+      {viz::SinglePlaneFormat::kRG_88, uv_size, gfx::ColorSpace(),
+       gpu::SHARED_IMAGE_USAGE_GLES2_READ, "NV12Frame_UV"},
+      uv_pixels);
   return CreateSharedImageFrame(
       std::move(context_provider), VideoPixelFormat::PIXEL_FORMAT_NV12,
       {y_shared_image, uv_shared_image}, {}, GL_TEXTURE_2D, coded_size,

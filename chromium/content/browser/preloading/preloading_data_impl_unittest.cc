@@ -7,6 +7,7 @@
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "content/browser/preloading/preloading.h"
+#include "content/browser/preloading/preloading_confidence.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/test/mock_navigation_handle.h"
 #include "content/public/test/navigation_simulator.h"
@@ -94,22 +95,29 @@ TEST_F(PreloadingDataImplTest, PredictorPrecisionAndRecall) {
   PreloadingPredictor predictor_2{
       preloading_predictor::kUrlPointerHoverOnAnchor};
   PreloadingPredictor predictor_3{preloading_predictor::kLinkRel};
+  ukm::SourceId triggered_primary_page_source_id =
+      GetWebContents()->GetPrimaryMainFrame()->GetPageUkmSourceId();
   preloading_data->AddPreloadingPrediction(
-      predictor_1,
-      /*confidence=*/100, PreloadingData::GetSameURLMatcher(url_1));
+      predictor_1, PreloadingConfidence{100},
+      PreloadingData::GetSameURLMatcher(url_1),
+      triggered_primary_page_source_id);
   preloading_data->AddPreloadingPrediction(
-      predictor_1,
-      /*confidence=*/100, PreloadingData::GetSameURLMatcher(url_1));
+      predictor_1, PreloadingConfidence{100},
+      PreloadingData::GetSameURLMatcher(url_1),
+      triggered_primary_page_source_id);
   preloading_data->AddPreloadingPrediction(
-      predictor_1,
-      /*confidence=*/100, PreloadingData::GetSameURLMatcher(url_2));
+      predictor_1, PreloadingConfidence{100},
+      PreloadingData::GetSameURLMatcher(url_2),
+      triggered_primary_page_source_id);
 
   preloading_data->AddPreloadingPrediction(
-      predictor_2,
-      /*confidence=*/100, PreloadingData::GetSameURLMatcher(url_2));
+      predictor_2, PreloadingConfidence{100},
+      PreloadingData::GetSameURLMatcher(url_2),
+      triggered_primary_page_source_id);
   preloading_data->AddPreloadingPrediction(
-      predictor_2,
-      /*confidence=*/100, PreloadingData::GetSameURLMatcher(url_3));
+      predictor_2, PreloadingConfidence{100},
+      PreloadingData::GetSameURLMatcher(url_3),
+      triggered_primary_page_source_id);
 
   NavigationSimulator::NavigateAndCommitFromBrowser(GetWebContents(), target);
 

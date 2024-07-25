@@ -432,8 +432,8 @@ TEST_F(EventHandlerTest, dragSelectionAfterScroll) {
 
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsRange());
   Range* range =
-      CreateRange(EphemeralRange(Selection().GetSelectionInDOMTree().Base(),
-                                 Selection().GetSelectionInDOMTree().Extent()));
+      CreateRange(EphemeralRange(Selection().GetSelectionInDOMTree().Anchor(),
+                                 Selection().GetSelectionInDOMTree().Focus()));
   ASSERT_TRUE(range);
   EXPECT_EQ("Line 1\nLine 2", range->GetText());
 
@@ -456,7 +456,7 @@ TEST_F(EventHandlerTest, multiClickSelectionFromTap) {
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       single_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsCaret());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
 
   // Multi-tap events on editable elements should trigger selection, just
   // like multi-click events.
@@ -464,15 +464,15 @@ TEST_F(EventHandlerTest, multiClickSelectionFromTap) {
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       double_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsRange());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
   if (GetDocument()
           .GetFrame()
           ->GetEditor()
           .IsSelectTrailingWhitespaceEnabled()) {
-    EXPECT_EQ(Position(line, 4), Selection().GetSelectionInDOMTree().Extent());
+    EXPECT_EQ(Position(line, 4), Selection().GetSelectionInDOMTree().Focus());
     EXPECT_EQ("One ", Selection().SelectedText().Utf8());
   } else {
-    EXPECT_EQ(Position(line, 3), Selection().GetSelectionInDOMTree().Extent());
+    EXPECT_EQ(Position(line, 3), Selection().GetSelectionInDOMTree().Focus());
     EXPECT_EQ("One", Selection().SelectedText().Utf8());
   }
 
@@ -480,8 +480,8 @@ TEST_F(EventHandlerTest, multiClickSelectionFromTap) {
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       triple_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsRange());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
-  EXPECT_EQ(Position(line, 13), Selection().GetSelectionInDOMTree().Extent());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
+  EXPECT_EQ(Position(line, 13), Selection().GetSelectionInDOMTree().Focus());
   EXPECT_EQ("One Two Three", Selection().SelectedText().Utf8());
 }
 
@@ -497,20 +497,20 @@ TEST_F(EventHandlerTest, multiClickSelectionFromTapDisabledIfNotEditable) {
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       single_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsCaret());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
 
   // As the text is readonly, multi-tap events should not trigger selection.
   TapEventBuilder double_tap_event(gfx::PointF(0, 0), 2);
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       double_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsCaret());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
 
   TapEventBuilder triple_tap_event(gfx::PointF(0, 0), 3);
   GetDocument().GetFrame()->GetEventHandler().HandleGestureEvent(
       triple_tap_event);
   ASSERT_TRUE(Selection().GetSelectionInDOMTree().IsCaret());
-  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Base());
+  EXPECT_EQ(Position(line, 0), Selection().GetSelectionInDOMTree().Anchor());
 }
 
 TEST_F(EventHandlerTest, draggedInlinePositionTest) {
@@ -989,10 +989,11 @@ TEST_F(EventHandlerTest, sendContextMenuEventWithHover) {
       "event.preventDefault());");
   GetDocument().body()->AppendChild(script);
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
-  GetDocument().GetFrame()->Selection().SetSelectionAndEndTyping(
+  GetDocument().GetFrame()->Selection().SetSelection(
       SelectionInDOMTree::Builder()
           .Collapse(Position(GetDocument().body(), 0))
-          .Build());
+          .Build(),
+      SetSelectionOptions());
   WebMouseEvent mouse_down_event(
       WebMouseEvent::Type::kMouseDown, gfx::PointF(0, 0), gfx::PointF(100, 200),
       WebPointerProperties::Button::kRight, 1,
@@ -3487,7 +3488,7 @@ TEST_F(EventHandlerSimTest, TestScrollendFiresOnKeyUpAfterScrollInstant) {
 TEST_F(EventHandlerSimTest, DiscardEventsToRecentlyMovedIframe) {
   base::FieldTrialParams field_trial_params;
   field_trial_params["time_ms"] = "500";
-  field_trial_params["distance"] = "50";
+  field_trial_params["distance_factor"] = "0.5";
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeatureWithParameters(
       features::kDiscardInputEventsToRecentlyMovedFrames, field_trial_params);
@@ -3536,41 +3537,42 @@ TEST_F(EventHandlerSimTest, DiscardEventsToRecentlyMovedIframe) {
 
   // Move iframe, but within the threshold for discarding. Events should not be
   // discarded.
-  iframe->SetInlineStyleProperty(CSSPropertyID::kMarginLeft, "40px");
+  iframe->SetInlineStyleProperty(CSSPropertyID::kMarginLeft, "70px");
+  iframe->SetInlineStyleProperty(CSSPropertyID::kMarginTop, "40px");
   Compositor().BeginFrame();
   event_result =
       GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
-          WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(100, 50),
-                        gfx::PointF(100, 50),
+          WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(170, 90),
+                        gfx::PointF(170, 90),
                         WebPointerProperties::Button::kLeft, 1,
                         WebInputEvent::Modifiers::kLeftButtonDown,
                         base::TimeTicks::Now()));
   EXPECT_NE(event_result, WebInputEventResult::kHandledSuppressed);
   event_result =
       GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
-          WebMouseEvent(WebInputEvent::Type::kMouseUp, gfx::PointF(100, 50),
-                        gfx::PointF(100, 50),
+          WebMouseEvent(WebInputEvent::Type::kMouseUp, gfx::PointF(170, 90),
+                        gfx::PointF(170, 90),
                         WebPointerProperties::Button::kLeft, 1,
                         WebInputEvent::kNoModifiers, base::TimeTicks::Now()));
   EXPECT_NE(event_result, WebInputEventResult::kHandledSuppressed);
 
   // Move iframe past threshold for discarding; events should be discarded.
-  iframe->SetInlineStyleProperty(CSSPropertyID::kMarginLeft, "60px");
+  iframe->SetInlineStyleProperty(CSSPropertyID::kMarginLeft, "200px");
   Compositor().BeginFrame();
   base::TimeTicks event_time =
       Compositor().LastFrameTime() + base::Milliseconds(400);
 
   event_result =
       GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
-          WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(100, 50),
-                        gfx::PointF(100, 50),
+          WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(300, 90),
+                        gfx::PointF(300, 90),
                         WebPointerProperties::Button::kLeft, 1,
                         WebInputEvent::Modifiers::kLeftButtonDown, event_time));
   EXPECT_EQ(event_result, WebInputEventResult::kHandledSuppressed);
   event_result =
       GetDocument().GetFrame()->GetEventHandler().HandleMouseReleaseEvent(
-          WebMouseEvent(WebInputEvent::Type::kMouseUp, gfx::PointF(100, 50),
-                        gfx::PointF(100, 50),
+          WebMouseEvent(WebInputEvent::Type::kMouseUp, gfx::PointF(300, 90),
+                        gfx::PointF(300, 90),
                         WebPointerProperties::Button::kLeft, 1,
                         WebInputEvent::kNoModifiers, event_time));
   EXPECT_EQ(event_result, WebInputEventResult::kHandledSuppressed);
@@ -3585,8 +3587,8 @@ TEST_F(EventHandlerSimTest, DiscardEventsToRecentlyMovedIframe) {
           .IsCounted(
               WebFeature::kInputEventToRecentlyMovedIframeMistakenlyDiscarded));
   GetDocument().GetFrame()->GetEventHandler().HandleMousePressEvent(
-      WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(100, 50),
-                    gfx::PointF(100, 50), WebPointerProperties::Button::kLeft,
+      WebMouseEvent(WebInputEvent::Type::kMouseDown, gfx::PointF(300, 90),
+                    gfx::PointF(300, 90), WebPointerProperties::Button::kLeft,
                     1, WebInputEvent::Modifiers::kLeftButtonDown, event_time));
   EXPECT_TRUE(
       To<HTMLIFrameElement>(iframe)

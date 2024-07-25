@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 
 #include <stdint.h>
@@ -11,16 +16,24 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <type_traits>
 #include <utility>
 
 #include "build/build_config.h"
+#include "core/fxcrt/byteorder.h"
 #include "core/fxcrt/cfx_read_only_vector_stream.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/compiler_specific.h"
+#include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fixed_size_data_vector.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontmapper.h"
@@ -28,12 +41,12 @@
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_fontencoding.h"
-#include "third_party/base/check.h"
-#include "third_party/base/containers/contains.h"
-#include "third_party/base/containers/span.h"
-#include "third_party/base/numerics/safe_conversions.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "core/fxcrt/win/win_util.h"
+#endif
 
 namespace {
 
@@ -176,13 +189,14 @@ int32_t CALLBACK GdiFontEnumProc(ENUMLOGFONTEX* lpelfe,
   const LOGFONTW& lf = ((LPENUMLOGFONTEXW)lpelfe)->elfLogFont;
   if (lf.lfFaceName[0] == L'@')
     return 1;
-  FX_FONTDESCRIPTOR font;
-  memset(&font, 0, sizeof(FX_FONTDESCRIPTOR));
+  FX_FONTDESCRIPTOR font = {};  // Aggregate initialization.
+  static_assert(std::is_aggregate_v<decltype(font)>);
   font.uCharSet = FX_GetCharsetFromInt(lf.lfCharSet);
   font.dwFontStyles = GetGdiFontStyles(lf);
   FXSYS_wcsncpy(font.wsFontFace, (const wchar_t*)lf.lfFaceName, 31);
   font.wsFontFace[31] = 0;
-  memcpy(&font.FontSignature, &lpntme->ntmFontSig, sizeof(lpntme->ntmFontSig));
+  FXSYS_memcpy(&font.FontSignature, &lpntme->ntmFontSig,
+               sizeof(lpntme->ntmFontSig));
   reinterpret_cast<std::deque<FX_FONTDESCRIPTOR>*>(lParam)->push_back(font);
   return 1;
 }
@@ -190,8 +204,14 @@ int32_t CALLBACK GdiFontEnumProc(ENUMLOGFONTEX* lpelfe,
 std::deque<FX_FONTDESCRIPTOR> EnumGdiFonts(const wchar_t* pwsFaceName,
                                            wchar_t wUnicode) {
   std::deque<FX_FONTDESCRIPTOR> fonts;
-  LOGFONTW lfFind;
-  memset(&lfFind, 0, sizeof(lfFind));
+  if (!pdfium::IsUser32AndGdi32Available()) {
+    // Without GDI32 and User32, GetDC / EnumFontFamiliesExW / ReleaseDC all
+    // fail.
+    return fonts;
+  }
+
+  LOGFONTW lfFind = {};  // Aggregate initialization.
+  static_assert(std::is_aggregate_v<decltype(lfFind)>);
   lfFind.lfCharSet = DEFAULT_CHARSET;
   if (pwsFaceName) {
     FXSYS_wcsncpy(lfFind.lfFaceName, pwsFaceName, 31);
@@ -252,8 +272,8 @@ const FX_FONTDESCRIPTOR* CFGAS_FontMgr::FindFont(const wchar_t* pszFontFamily,
                                                  FX_CodePage wCodePage,
                                                  uint32_t dwUSB,
                                                  wchar_t wUnicode) {
-  FX_FONTMATCHPARAMS params;
-  memset(&params, 0, sizeof(params));
+  FX_FONTMATCHPARAMS params = {};  // Aggregate initialization.
+  static_assert(std::is_aggregate_v<decltype(params)>);
   params.dwUSB = dwUSB;
   params.wUnicode = wUnicode;
   params.wCodePage = wCodePage;
@@ -370,8 +390,7 @@ uint16_t FX_GetUnicodeBit(wchar_t wcUnicode) {
 
 uint16_t ReadUInt16FromSpanAtOffset(pdfium::span<const uint8_t> data,
                                     size_t offset) {
-  const uint8_t* p = &data[offset];
-  return FXSYS_UINT16_GET_MSBFIRST(p);
+  return fxcrt::GetUInt16MSBFirst(data.subspan(offset));
 }
 
 extern "C" {
@@ -385,9 +404,12 @@ unsigned long ftStreamRead(FXFT_StreamRec* stream,
 
   IFX_SeekableReadStream* pFile =
       static_cast<IFX_SeekableReadStream*>(stream->descriptor.pointer);
-  if (!pFile->ReadBlockAtOffset({buffer, count}, offset))
-    return 0;
 
+  // SAFETY: required from caller.
+  if (!pFile->ReadBlockAtOffset(
+          UNSAFE_BUFFERS(pdfium::make_span(buffer, count), offset))) {
+    return 0;
+  }
   return count;
 }
 
@@ -444,13 +466,13 @@ uint32_t GetFlags(const RetainPtr<CFX_Face>& face) {
     flags |= FXFONT_FIXED_PITCH;
   }
 
-  absl::optional<std::array<uint32_t, 2>> code_page_range =
+  std::optional<std::array<uint32_t, 2>> code_page_range =
       face->GetOs2CodePageRange();
   if (code_page_range.has_value() && (code_page_range.value()[0] & (1 << 31))) {
     flags |= FXFONT_SYMBOLIC;
   }
 
-  absl::optional<std::array<uint8_t, 2>> panose = face->GetOs2Panose();
+  std::optional<std::array<uint8_t, 2>> panose = face->GetOs2Panose();
   if (panose.has_value() && panose.value()[0] == 2) {
     uint8_t serif = panose.value()[1];
     if ((serif > 1 && serif < 10) || serif > 13) {
@@ -499,7 +521,7 @@ RetainPtr<CFX_Face> LoadFace(
   // https://bugs.chromium.org/p/pdfium/issues/detail?id=690
   FXFT_StreamRec* ftStream =
       static_cast<FXFT_StreamRec*>(ft_scalloc(sizeof(FXFT_StreamRec), 1));
-  memset(ftStream, 0, sizeof(FXFT_StreamRec));
+  FXSYS_memset(ftStream, 0, sizeof(FXFT_StreamRec));
   ftStream->base = nullptr;
   ftStream->descriptor.pointer = static_cast<void*>(pFontStream.Get());
   ftStream->pos = 0;
@@ -507,8 +529,8 @@ RetainPtr<CFX_Face> LoadFace(
   ftStream->read = ftStreamRead;
   ftStream->close = ftStreamClose;
 
-  FT_Open_Args ftArgs;
-  memset(&ftArgs, 0, sizeof(FT_Open_Args));
+  FT_Open_Args ftArgs = {};  // Aggregate initialization.
+  static_assert(std::is_aggregate_v<decltype(ftArgs)>);
   ftArgs.flags |= FT_OPEN_STREAM;
   ftArgs.stream = ftStream;
 
@@ -517,7 +539,7 @@ RetainPtr<CFX_Face> LoadFace(
     ft_sfree(ftStream);
     return nullptr;
   }
-  FT_Set_Pixel_Sizes(pFace->GetRec(), 0, 64);
+  pFace->SetPixelSize(0, 64);
   return pFace;
 }
 
@@ -722,7 +744,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
 
   // TODO(crbug.com/pdfium/2085): Use make_span() in fewer places after updating
   // pdfium::span.
-  absl::optional<std::array<uint32_t, 4>> unicode_range =
+  std::optional<std::array<uint32_t, 4>> unicode_range =
       pFace->GetOs2UnicodeRange();
   auto usb_span = pdfium::make_span(pFont->m_dwUsb);
   if (unicode_range.has_value()) {
@@ -731,7 +753,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
     fxcrt::spanclr(usb_span);
   }
 
-  absl::optional<std::array<uint32_t, 2>> code_page_range =
+  std::optional<std::array<uint32_t, 2>> code_page_range =
       pFace->GetOs2CodePageRange();
   auto csb_span = pdfium::make_span(pFont->m_dwCsb);
   if (code_page_range.has_value()) {
@@ -756,7 +778,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
       WideString::FromUTF8(pFace->GetRec()->family_name));
   pFont->m_wsFaceName = wsFaceName;
   pFont->m_nFaceIndex =
-      pdfium::base::checked_cast<int32_t>(pFace->GetRec()->face_index);
+      pdfium::checked_cast<int32_t>(pFace->GetRec()->face_index);
   m_InstalledFonts.push_back(std::move(pFont));
 }
 
@@ -771,8 +793,7 @@ void CFGAS_FontMgr::RegisterFaces(
       continue;
     // All faces keep number of faces. It can be retrieved from any one face.
     if (num_faces == 0) {
-      num_faces =
-          pdfium::base::checked_cast<int32_t>(pFace->GetRec()->num_faces);
+      num_faces = pdfium::checked_cast<int32_t>(pFace->GetRec()->num_faces);
     }
     RegisterFace(pFace, wsFaceName);
     pFace->ClearExternalStream();

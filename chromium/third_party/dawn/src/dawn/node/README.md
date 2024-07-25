@@ -30,13 +30,7 @@ cp scripts/standalone-with-node.gclient .gclient
 gclient sync
 ```
 
-Optionally, on Linux install X11-xcb support:
-
-```sh
-sudo apt-get install libx11-xcb-dev
-```
-
-If you don't have those supporting libraries, then you must use the
+If you don't have the `libx11-xbc-dev` supporting library, then you must use the
 `-DDAWN_USE_X11=OFF` flag on CMake (see below).
 
 ### Build
@@ -57,6 +51,23 @@ mkdir <build-output-path>
 cd <build-output-path>
 cmake <dawn-root-path> -DDAWN_BUILD_NODE_BINDINGS=1
 cmake --build . --target dawn_node
+```
+### Running JavaScript that uses `navigator.gpu`
+
+To use `node` to run JavaScript that uses `navigator.gpu`:
+
+1. [Build](#build) the `dawn.node` NodeJS module.
+2. Add the following to the top of the JS file:
+
+```js
+const { create, globals } = require('./dawn.node');
+Object.assign(globalThis, globals); // Provides constants like GPUBufferUsage.MAP_READ
+let navigator = { gpu: create([]), };
+```
+
+You can specify Dawn options to the `create` method. For example:
+```js
+let navigator = { gpu: create(['enable-dawn-features=allow_unsafe_apis,dump_shaders,disable_symbol_renaming']), };
 ```
 
 ### Running WebGPU CTS

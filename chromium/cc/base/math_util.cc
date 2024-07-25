@@ -11,9 +11,9 @@
 #include <xmmintrin.h>
 #endif
 
+#include "base/numerics/angle_conversions.h"
 #include "base/trace_event/traced_value.h"
 #include "base/values.h"
-#include "ui/gfx/geometry/angle_conversions.h"
 #include "ui/gfx/geometry/linear_gradient.h"
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect.h"
@@ -112,7 +112,7 @@ static gfx::PointF ComputeClippedCartesianPoint2dForEdge(
   // This assertion isn't really as strong as it looks because
   // std::isfinite(h1.w()) or std::isfinite(h2.w()) might not be true
   // (and they could be NaN).
-  // TODO(crbug.com/1219622): We should be able to assert something
+  // TODO(crbug.com/40186138): We should be able to assert something
   // stronger here, and avoid dependencies on undefined floating point
   // behavior.
   DCHECK_NE(h1.w() <= 0, h2.w() <= 0);
@@ -171,7 +171,7 @@ static gfx::Point3F ComputeClippedCartesianPoint3dForEdge(
   // This assertion isn't really as strong as it looks because
   // std::isfinite(h1.w()) or std::isfinite(h2.w()) might not be true
   // (and they could be NaN).
-  // TODO(crbug.com/1219622): We should be able to assert something
+  // TODO(crbug.com/40186138): We should be able to assert something
   // stronger here, and avoid dependencies on undefined floating point
   // behavior.
   DCHECK_NE(h1.w() <= 0, h2.w() <= 0);
@@ -766,7 +766,7 @@ float MathUtil::SmallestAngleBetweenVectors(const gfx::Vector2dF& v1,
   double dot_product = gfx::DotProduct(v1, v2) / v1.Length() / v2.Length();
   // Clamp to compensate for rounding errors.
   dot_product = std::clamp(dot_product, -1.0, 1.0);
-  return static_cast<float>(gfx::RadToDeg(std::acos(dot_product)));
+  return static_cast<float>(base::RadToDeg(std::acos(dot_product)));
 }
 
 gfx::Vector2dF MathUtil::ProjectVector(const gfx::Vector2dF& source,

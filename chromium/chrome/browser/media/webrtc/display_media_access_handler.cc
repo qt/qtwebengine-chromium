@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/strings/utf_string_conversions.h"
@@ -155,7 +154,8 @@ void DisplayMediaAccessHandler::HandleRequest(
 #endif  // BUILDFLAG(IS_MAC)
 
   if (request.request_type == blink::MEDIA_DEVICE_UPDATE) {
-    DCHECK(!request.requested_video_device_id.empty());
+    CHECK(!request.requested_video_device_ids.empty());
+    CHECK(!request.requested_video_device_ids.front().empty());
     ProcessChangeSourceRequest(web_contents, request, std::move(callback));
     return;
   }
@@ -368,11 +368,11 @@ void DisplayMediaAccessHandler::ProcessQueuedChangeSourceRequest(
     const content::MediaStreamRequest& request,
     content::WebContents* web_contents) {
   DCHECK(web_contents);
-  DCHECK(!request.requested_video_device_id.empty());
+  DCHECK(!request.requested_video_device_ids.empty());
 
   content::WebContentsMediaCaptureId web_contents_id;
   if (!content::WebContentsMediaCaptureId::Parse(
-          request.requested_video_device_id, &web_contents_id)) {
+          request.requested_video_device_ids.front(), &web_contents_id)) {
     RejectRequest(web_contents,
                   blink::mojom::MediaStreamRequestResult::INVALID_STATE);
     return;
@@ -434,7 +434,8 @@ void DisplayMediaAccessHandler::AcceptRequest(
   std::unique_ptr<content::MediaStreamUI> ui = GetDevicesForDesktopCapture(
       pending_request.request, web_contents, media_id, media_id.audio_share,
       disable_local_echo, pending_request.request.suppress_local_audio_playback,
-      display_notification_, GetApplicationTitle(web_contents), stream_devices);
+      display_notification_, GetApplicationTitle(web_contents),
+      pending_request.request.captured_surface_control_active, stream_devices);
   UpdateTarget(pending_request.request, media_id);
 
   std::move(pending_request.callback)

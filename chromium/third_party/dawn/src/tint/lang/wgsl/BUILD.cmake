@@ -41,6 +41,7 @@ include(lang/wgsl/helpers/BUILD.cmake)
 include(lang/wgsl/inspector/BUILD.cmake)
 include(lang/wgsl/intrinsic/BUILD.cmake)
 include(lang/wgsl/ir/BUILD.cmake)
+include(lang/wgsl/ls/BUILD.cmake)
 include(lang/wgsl/program/BUILD.cmake)
 include(lang/wgsl/reader/BUILD.cmake)
 include(lang/wgsl/resolver/BUILD.cmake)
@@ -185,8 +186,6 @@ tint_target_add_dependencies(tint_lang_wgsl_fuzz fuzz
   tint_lang_wgsl_common
   tint_lang_wgsl_features
   tint_lang_wgsl_program
-  tint_lang_wgsl_reader_lower
-  tint_lang_wgsl_resolver
   tint_lang_wgsl_sem
   tint_lang_wgsl_writer_ir_to_program
   tint_lang_wgsl_writer_raise
@@ -208,7 +207,6 @@ tint_target_add_dependencies(tint_lang_wgsl_fuzz fuzz
 
 if(TINT_BUILD_WGSL_READER)
   tint_target_add_dependencies(tint_lang_wgsl_fuzz fuzz
-    tint_lang_wgsl_reader_parser
     tint_lang_wgsl_reader_program_to_ir
   )
 endif(TINT_BUILD_WGSL_READER)

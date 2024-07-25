@@ -90,8 +90,9 @@ class Deserializer : public SerializerDeserializer {
   const std::vector<Handle<AccessorInfo>>& accessor_infos() const {
     return accessor_infos_;
   }
-  const std::vector<Handle<CallHandlerInfo>>& call_handler_infos() const {
-    return call_handler_infos_;
+  const std::vector<Handle<FunctionTemplateInfo>>& function_template_infos()
+      const {
+    return function_template_infos_;
   }
   const std::vector<Handle<Script>>& new_scripts() const {
     return new_scripts_;
@@ -162,7 +163,8 @@ class Deserializer : public SerializerDeserializer {
                        Handle<HeapObject> heap_object,
                        ReferenceDescriptor descr);
 
-  inline int WriteExternalPointer(ExternalPointerSlot dest, Address value);
+  inline int WriteExternalPointer(Tagged<HeapObject> host,
+                                  ExternalPointerSlot dest, Address value);
   inline int WriteIndirectPointer(IndirectPointerSlot dest,
                                   Tagged<HeapObject> value);
 
@@ -271,7 +273,7 @@ class Deserializer : public SerializerDeserializer {
   std::vector<Handle<AllocationSite>> new_allocation_sites_;
   std::vector<Handle<InstructionStream>> new_code_objects_;
   std::vector<Handle<AccessorInfo>> accessor_infos_;
-  std::vector<Handle<CallHandlerInfo>> call_handler_infos_;
+  std::vector<Handle<FunctionTemplateInfo>> function_template_infos_;
   std::vector<Handle<Script>> new_scripts_;
   std::vector<std::shared_ptr<BackingStore>> backing_stores_;
 
@@ -343,10 +345,10 @@ enum class DeserializingUserCodeOption {
 class StringTableInsertionKey final : public StringTableKey {
  public:
   explicit StringTableInsertionKey(
-      Isolate* isolate, Handle<String> string,
+      Isolate* isolate, DirectHandle<String> string,
       DeserializingUserCodeOption deserializing_user_code);
   explicit StringTableInsertionKey(
-      LocalIsolate* isolate, Handle<String> string,
+      LocalIsolate* isolate, DirectHandle<String> string,
       DeserializingUserCodeOption deserializing_user_code);
 
   template <typename IsolateT>
@@ -360,12 +362,12 @@ class StringTableInsertionKey final : public StringTableKey {
                DeserializingUserCodeOption::kIsDeserializingUserCode);
   }
   void PrepareForInsertion(LocalIsolate* isolate) {}
-  V8_WARN_UNUSED_RESULT Handle<String> GetHandleForInsertion() {
+  V8_WARN_UNUSED_RESULT DirectHandle<String> GetHandleForInsertion() {
     return string_;
   }
 
  private:
-  Handle<String> string_;
+  DirectHandle<String> string_;
 #ifdef DEBUG
   DeserializingUserCodeOption deserializing_user_code_;
 #endif

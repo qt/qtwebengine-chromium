@@ -6,6 +6,7 @@
 
 #include <limits>
 #include <memory>
+#include <optional>
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -15,7 +16,6 @@
 #include "base/ranges/algorithm.h"
 #include "media/base/media_switches.h"
 #include "media/video/h264_level_limits.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace media {
 namespace {
@@ -317,11 +317,10 @@ bool H264Decoder::CalculatePicOrderCounts(scoped_refptr<H264Picture> pic) {
       if (pic->nal_ref_idc == 0 && abs_frame_num > 0)
         --abs_frame_num;
 
-      int expected_pic_order_cnt = 0;
+      base::CheckedNumeric<int> expected_pic_order_cnt = 0;
       if (abs_frame_num > 0) {
         if (sps->num_ref_frames_in_pic_order_cnt_cycle == 0) {
-          DVLOG(1) << "Invalid num_ref_frames_in_pic_order_cnt_cycle "
-                   << "in stream";
+          DVLOG(1) << "Invalid num_ref_frames_in_pic_order_cnt_cycle.";
           return false;
         }
 
@@ -330,8 +329,10 @@ bool H264Decoder::CalculatePicOrderCounts(scoped_refptr<H264Picture> pic) {
         int frame_num_in_pic_order_cnt_cycle =
             (abs_frame_num - 1) % sps->num_ref_frames_in_pic_order_cnt_cycle;
 
-        expected_pic_order_cnt = pic_order_cnt_cycle_cnt *
-                                 sps->expected_delta_per_pic_order_cnt_cycle;
+        expected_pic_order_cnt =
+            base::CheckedNumeric<int>(pic_order_cnt_cycle_cnt) *
+            sps->expected_delta_per_pic_order_cnt_cycle;
+
         // frame_num_in_pic_order_cnt_cycle is verified < 255 in parser
         for (int i = 0; i <= frame_num_in_pic_order_cnt_cycle; ++i)
           expected_pic_order_cnt += sps->offset_for_ref_frame[i];
@@ -340,12 +341,24 @@ bool H264Decoder::CalculatePicOrderCounts(scoped_refptr<H264Picture> pic) {
       if (!pic->nal_ref_idc)
         expected_pic_order_cnt += sps->offset_for_non_ref_pic;
 
-      pic->top_field_order_cnt =
+      base::CheckedNumeric<int> top_field_order_cnt =
           expected_pic_order_cnt + pic->delta_pic_order_cnt0;
-      pic->bottom_field_order_cnt = pic->top_field_order_cnt +
-                                    sps->offset_for_top_to_bottom_field +
-                                    pic->delta_pic_order_cnt1;
+      base::CheckedNumeric<int> bottom_field_order_cnt =
+          top_field_order_cnt + sps->offset_for_top_to_bottom_field +
+          pic->delta_pic_order_cnt1;
 
+      if (!top_field_order_cnt.IsValid()) {
+        DVLOG(1) << "Invalid top_field_order_cnt.";
+        return false;
+      }
+
+      if (!bottom_field_order_cnt.IsValid()) {
+        DVLOG(1) << "Invalid bottom_field_order_cnt.";
+        return false;
+      }
+
+      pic->top_field_order_cnt = top_field_order_cnt.ValueOrDie();
+      pic->bottom_field_order_cnt = bottom_field_order_cnt.ValueOrDie();
       break;
     }
 
@@ -777,13 +790,6 @@ H264Decoder::H264Accelerator::Status H264Decoder::StartNewFrame(
       return H264Accelerator::Status::kFail;
   }
 
-  if (recovery_frame_cnt_ && *recovery_frame_cnt_ >= max_frame_num_) {
-    DVLOG(1) << "Invalid recovery_frame_cnt=" << *recovery_frame_cnt_
-             << " (it must be less or equal to max_frame_num-1=" << max_frame_num_ - 1
-             << ")";
-    return H264Accelerator::Status::kFail;
-  }
-
   if (!InitCurrPicture(slice_hdr))
     return H264Accelerator::Status::kFail;
 
@@ -841,7 +847,7 @@ bool H264Decoder::HandleMemoryManagementOps(scoped_refptr<H264Picture> pic) {
         if (to_mark) {
           to_mark->ref = false;
         } else {
-          // TODO(crbug.com/1402627): consider doing the same for mmco 2 when
+          // TODO(crbug.com/40251206): consider doing the same for mmco 2 when
           // we can have testing for it, as how we handle missing |to_mark| for
           // mmco 1.
           DVLOG(1) << "Invalid long term ref pic num to unmark";
@@ -1007,11 +1013,19 @@ bool H264Decoder::FinishPicture(scoped_refptr<H264Picture> pic) {
   DVLOG(4) << "Finishing picture frame_num: " << pic->frame_num
            << ", entries in DPB: " << dpb_.size();
   if (recovery_frame_cnt_) {
-    // This is the first picture after the recovery point SEI message. Computes
-    // the frame_num of the frame that should be output from (Spec D.2.8).
+    // This is the first picture after the recovery point SEI message. Validate
+    // `recovery_frame_cnt_` now that we are certain to have max_frame_num_.
+    if (*recovery_frame_cnt_ >= max_frame_num_) {
+      DVLOG(1) << "Invalid recovery_frame_cnt=" << *recovery_frame_cnt_
+               << " (must be less than or equal to max_frame_num-1="
+               << (max_frame_num_ - 1) << ")";
+      return false;
+    }
+
+    // Compute the frame_num of the first frame that should be output (D.2.8).
     recovery_frame_num_ =
         (*recovery_frame_cnt_ + pic->frame_num) % max_frame_num_;
-    DVLOG(3) << "recovery_frame_num_" << *recovery_frame_num_;
+    DVLOG(3) << "recovery_frame_num_=" << *recovery_frame_num_;
     recovery_frame_cnt_.reset();
   }
 
@@ -1052,7 +1066,7 @@ bool H264Decoder::FinishPicture(scoped_refptr<H264Picture> pic) {
         // outputting all pictures before it, to avoid outputting corrupted
         // frames.
         (*output_candidate)->frame_num == *recovery_frame_num_) {
-      recovery_frame_num_ = absl::nullopt;
+      recovery_frame_num_ = std::nullopt;
       if (!OutputPic(*output_candidate))
         return false;
     }
@@ -1220,6 +1234,15 @@ bool H264Decoder::ProcessSPS(int sps_id, bool* need_new_buffers) {
     new_color_space = container_color_space_;
   }
 
+  if (new_color_space.matrix == VideoColorSpace::MatrixID::RGB) {
+    // Some H.264 videos contain a VUI that specifies a color matrix of GBR,
+    // when they are actually ordinary YUV. H264 only supports 4:2:0 subsampling
+    // and BGR should only be used with 4:4:4, hence default to Rec709. See
+    // crbug.com/341266991.
+    CHECK_NE(chroma_sampling_, VideoChromaSampling::k444);
+    new_color_space = VideoColorSpace::REC709();
+  }
+
   bool is_color_space_change = false;
   if (base::FeatureList::IsEnabled(kAVDColorSpaceChanges)) {
     is_color_space_change = new_color_space.IsSpecified() &&
@@ -1287,7 +1310,7 @@ bool H264Decoder::HandleFrameNumGap(int frame_num) {
     // Seek, SPS, PPS, IDR-frame, non-IDR, ... non-IDR with invalid number.
     // The only way to work around this reliably is to ignore this error.
     // Video playback is not affected, no artefacts are visible.
-    // return false;
+    return true;
   }
 
   DVLOG(2) << "Handling frame_num gap: " << prev_ref_frame_num_ << "->"
@@ -1430,7 +1453,7 @@ H264Decoder::H264Accelerator::Status H264Decoder::ProcessCurrentSlice() {
 
 void H264Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
   const uint8_t* ptr = decoder_buffer.data();
-  const size_t size = decoder_buffer.data_size();
+  const size_t size = decoder_buffer.size();
   const DecryptConfig* decrypt_config = decoder_buffer.decrypt_config();
 
   DCHECK(ptr);
@@ -1625,7 +1648,7 @@ H264Decoder::DecodeResult H264Decoder::Decode() {
           ref_pic_list_b0_.clear();
           ref_pic_list_b1_.clear();
         }
-        // Perfer config changes over color space changes.
+        // Prefer config changes over color space changes.
         if (need_new_buffers) {
           return kConfigChange;
         }
@@ -1759,7 +1782,7 @@ VideoColorSpace H264Decoder::GetVideoColorSpace() const {
   return picture_color_space_;
 }
 
-absl::optional<gfx::HDRMetadata> H264Decoder::GetHDRMetadata() const {
+std::optional<gfx::HDRMetadata> H264Decoder::GetHDRMetadata() const {
   return hdr_metadata_;
 }
 

@@ -38,8 +38,8 @@ with questions or concerns.
 
 `raw_ptr<T>` is a non-owning smart pointer that has improved memory-safety over
 raw pointers.  It behaves just like a raw pointer on platforms where
-ENABLE_BACKUP_REF_PTR_SUPPORT is off, and almost like one when it's on. The main
-difference is that when ENABLE_BACKUP_REF_PTR_SUPPORT is enabled, `raw_ptr<T>`
+USE_RAW_PTR_BACKUP_REF_IMPL is off, and almost like one when it's on. The main
+difference is that when USE_RAW_PTR_BACKUP_REF_IMPL is enabled, `raw_ptr<T>`
 is beneficial for security, because it can prevent a significant percentage of
 Use-after-Free (UaF) bugs from being exploitable. It achieves this by
 quarantining the freed memory as long as any dangling `raw_ptr<T>` pointing to
@@ -144,7 +144,7 @@ below.
 
 ### Performance impact of using |raw_ptr&lt;T&gt;| instead of |T\*|
 
-Compared to a raw C++ pointer, on platforms where ENABLE_BACKUP_REF_PTR_SUPPORT
+Compared to a raw C++ pointer, on platforms where USE_RAW_PTR_BACKUP_REF_IMPL
 is on, `raw_ptr<T>` incurs additional runtime
 overhead for initialization, destruction, and assignment (including
 `ptr++`, `ptr += ...`, etc.).
@@ -169,7 +169,7 @@ below.)
 Some additional overhead comes from setting `raw_ptr<T>` to `nullptr`
 when default-constructed, destructed, or moved. (Yes, we said above to not rely
 on it, but to be precise this will always happen when
-ENABLE_BACKUP_REF_PTR_SUPPORT is on; no guarantees otherwise.)
+USE_RAW_PTR_BACKUP_REF_IMPL is on; no guarantees otherwise.)
 
 During
 [the "Big Rewrite"](https://groups.google.com/a/chromium.org/g/chromium-dev/c/vAEeVifyf78/m/SkBUc6PhBAAJ)
@@ -274,6 +274,11 @@ You don’t have to, but may use `raw_ptr<T>`, in the following scenarios:
   latter if the collection is a class field (note that some of the perf
   optimizations above might still apply and argue for using a raw C++ pointer).
 
+### Signal Handlers
+
+`raw_ptr<T>` assumes that the allocator's data structures are in a consistent
+state. Signal handlers can interrupt in the middle of an allocation operation;
+therefore, `raw_ptr<T>` should not be used in signal handlers.
 
 ## Extra pointer rules {#Extra-pointer-rules}
 

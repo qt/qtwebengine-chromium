@@ -6,24 +6,22 @@
 
 #include <algorithm>
 #include <limits>
-#include <optional>
 
 #include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/hash/sha1.h"
+#include "base/numerics/byte_conversions.h"
 #include "base/rand_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/sys_byteorder.h"
 #include "components/variations/variations_murmur_hash.h"
 
 namespace variations {
 
-SHA1EntropyProvider::SHA1EntropyProvider(const std::string& entropy_source)
-    : entropy_source_(entropy_source) {
-}
+SHA1EntropyProvider::SHA1EntropyProvider(std::string_view entropy_source)
+    : entropy_source_(entropy_source) {}
 
-SHA1EntropyProvider::~SHA1EntropyProvider() {
-}
+SHA1EntropyProvider::~SHA1EntropyProvider() = default;
 
 double SHA1EntropyProvider::GetEntropyForTrial(
     base::StringPiece trial_name,
@@ -41,15 +39,9 @@ double SHA1EntropyProvider::GetEntropyForTrial(
                             ? trial_name
                             : base::NumberToString(randomization_seed)});
 
-  unsigned char sha1_hash[base::kSHA1Length];
-  base::SHA1HashBytes(reinterpret_cast<const unsigned char*>(input.c_str()),
-                      input.size(),
-                      sha1_hash);
-
-  uint64_t bits;
-  static_assert(sizeof(bits) < sizeof(sha1_hash), "more data required");
-  memcpy(&bits, sha1_hash, sizeof(bits));
-  bits = base::ByteSwapToLE64(bits);
+  base::SHA1Digest sha1_hash = base::SHA1HashSpan(base::as_byte_span(input));
+  uint64_t bits =
+      base::numerics::U64FromLittleEndian(base::span(sha1_hash).first<8u>());
 
   return base::BitsToOpenEndedUnitInterval(bits);
 }
@@ -95,13 +87,17 @@ double SessionEntropyProvider::GetEntropyForTrial(
   return base::RandDouble();
 }
 
-EntropyProviders::EntropyProviders(const std::string& high_entropy_value,
+EntropyProviders::EntropyProviders(std::string_view high_entropy_value,
                                    ValueInRange low_entropy_value,
+                                   std::string_view limited_entropy_value,
                                    bool enable_benchmarking)
     : low_entropy_(low_entropy_value),
       benchmarking_enabled_(enable_benchmarking) {
   if (!high_entropy_value.empty()) {
     high_entropy_.emplace(high_entropy_value);
+  }
+  if (!limited_entropy_value.empty()) {
+    limited_entropy_.emplace(limited_entropy_value);
   }
 }
 
@@ -121,6 +117,14 @@ const base::FieldTrial::EntropyProvider& EntropyProviders::low_entropy() const {
 const base::FieldTrial::EntropyProvider& EntropyProviders::session_entropy()
     const {
   return session_entropy_;
+}
+
+const base::FieldTrial::EntropyProvider& EntropyProviders::limited_entropy()
+    const {
+  // The caller must initialize the instance with a
+  // |limited_entropy_randomization_source|.
+  CHECK(has_limited_entropy());
+  return limited_entropy_.value();
 }
 
 }  // namespace variations

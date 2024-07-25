@@ -39,6 +39,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d/ExternalImageDXGIImpl.h"
+#include "dawn/native/d3d/KeyedMutex.h"
 #include "dawn/native/d3d/UtilsD3D.h"
 #include "dawn/native/d3d11/BackendD3D11.h"
 #include "dawn/native/d3d11/BindGroupD3D11.h"
@@ -93,7 +94,7 @@ void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
             continue;
         }
 
-        messageStream << message->pDescription << " (" << message->ID << ")";
+        messageStream << "(" << message->ID << ") " << message->pDescription;
         error->AppendBackendMessage(messageStream.str());
     }
     if (errorsToPrint < totalErrors) {
@@ -111,8 +112,10 @@ void AppendDebugLayerMessagesToError(ID3D11InfoQueue* infoQueue,
 // static
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const UnpackedPtr<DeviceDescriptor>& descriptor,
-                                          const TogglesState& deviceToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
+                                          const TogglesState& deviceToggles,
+                                          Ref<DeviceBase::DeviceLostEvent>&& lostEvent) {
+    Ref<Device> device =
+        AcquireRef(new Device(adapter, descriptor, deviceToggles, std::move(lostEvent)));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -211,11 +214,10 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
 }
 
-ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    Surface* surface,
-    SwapChainBase* previousSwapChain,
-    const SwapChainDescriptor* descriptor) {
-    return SwapChain::Create(this, surface, previousSwapChain, descriptor);
+ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
+                                                              SwapChainBase* previousSwapChain,
+                                                              const SurfaceConfiguration* config) {
+    return SwapChain::Create(this, surface, previousSwapChain, config);
 }
 
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
@@ -225,20 +227,16 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
 
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
-    const TextureViewDescriptor* descriptor) {
+    const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return TextureView::Create(texture, descriptor);
 }
 
-void Device::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
-                                                WGPUCreateComputePipelineAsyncCallback callback,
-                                                void* userdata) {
-    ComputePipeline::InitializeAsync(std::move(computePipeline), callback, userdata);
+void Device::InitializeComputePipelineAsyncImpl(Ref<CreateComputePipelineAsyncEvent> event) {
+    event->InitializeAsync();
 }
 
-void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
-                                               WGPUCreateRenderPipelineAsyncCallback callback,
-                                               void* userdata) {
-    RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
+void Device::InitializeRenderPipelineAsyncImpl(Ref<CreateRenderPipelineAsyncEvent> event) {
+    event->InitializeAsync();
 }
 
 ResultOrError<Ref<SharedTextureMemoryBase>> Device::ImportSharedTextureMemoryImpl(
@@ -376,6 +374,9 @@ void Device::DestroyImpl() {
     //   other threads using the device since there are no other live refs.
     DAWN_ASSERT(GetState() == State::Disconnected);
 
+    mImplicitPixelLocalStorageAttachmentTextureViews = {};
+    mStagingBuffers.clear();
+
     Base::DestroyImpl();
 }
 
@@ -412,6 +413,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
     DAWN_TRY(ValidateIsAlive());
 
     ComPtr<ID3D11Resource> d3d11Resource;
+    ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex;
     switch (descriptor->GetType()) {
         case ExternalImageType::DXGISharedHandle: {
             const auto* sharedHandleDescriptor =
@@ -420,6 +422,11 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                 mD3d11Device5->OpenSharedResource1(sharedHandleDescriptor->sharedHandle,
                                                    IID_PPV_ARGS(&d3d11Resource)),
                 "D3D11 OpenSharedResource1"));
+            if (sharedHandleDescriptor->useKeyedMutex) {
+                d3d11Resource.As(&dxgiKeyedMutex);
+                DAWN_INVALID_IF(!dxgiKeyedMutex,
+                                "Failed to retrieve DXGI keyed mutex when expected");
+            }
             break;
         }
         case ExternalImageType::D3D11Texture: {
@@ -433,6 +440,7 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
                 textureDevice.Get() != mD3d11Device.Get(),
                 "The D3D11 device of the texture and the D3D11 device of the WebGPU device "
                 "must be same.");
+            d3d11Resource.As(&dxgiKeyedMutex);
             break;
         }
         default: {
@@ -460,8 +468,17 @@ ResultOrError<std::unique_ptr<d3d::ExternalImageDXGIImpl>> Device::CreateExterna
             this, d3d::DXGITextureFormat(textureDescriptor->format)));
     }
 
+    Ref<d3d::KeyedMutex> keyedMutex;
+    if (dxgiKeyedMutex) {
+        keyedMutex = AcquireRef(new d3d::KeyedMutex(this, std::move(dxgiKeyedMutex)));
+    }
+
     return std::make_unique<d3d::ExternalImageDXGIImpl>(this, std::move(d3d11Resource),
-                                                        textureDescriptor);
+                                                        std::move(keyedMutex), textureDescriptor);
+}
+
+void Device::DisposeKeyedMutex(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) {
+    // Nothing to do, the ComPtr will release the keyed mutex.
 }
 
 bool Device::MayRequireDuplicationOfIndirectParameters() const {
@@ -478,14 +495,15 @@ bool Device::IsResolveTextureBlitWithDrawSupported() const {
 
 Ref<TextureBase> Device::CreateD3DExternalTexture(const UnpackedPtr<TextureDescriptor>& descriptor,
                                                   ComPtr<IUnknown> d3dTexture,
+                                                  Ref<d3d::KeyedMutex> keyedMutex,
                                                   std::vector<FenceAndSignalValue> waitFences,
                                                   bool isSwapChainTexture,
                                                   bool isInitialized) {
     Ref<Texture> dawnTexture;
-    if (ConsumedError(
-            Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
-                                         std::move(waitFences), isSwapChainTexture, isInitialized),
-            &dawnTexture)) {
+    if (ConsumedError(Texture::CreateExternalImage(this, descriptor, std::move(d3dTexture),
+                                                   std::move(keyedMutex), std::move(waitFences),
+                                                   isSwapChainTexture, isInitialized),
+                      &dawnTexture)) {
         return nullptr;
     }
     return {dawnTexture};
@@ -529,27 +547,60 @@ ResultOrError<TextureViewBase*> Device::GetOrCreateCachedImplicitPixelLocalStora
 ResultOrError<Ref<BufferBase>> Device::GetStagingBuffer(
     const ScopedCommandRecordingContext* commandContext,
     uint64_t size) {
-    constexpr uint64_t kMinSize = 4 * 1024;
-    constexpr uint64_t kMaxSize = 16 * 1024 * 1024;
-    uint64_t bufferSize = mStagingBuffer.Get() ? mStagingBuffer->GetSize() : 0;
-    if (size > bufferSize) {
-        bufferSize = Align(size, kMinSize);
-        BufferDescriptor descriptor;
-        descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
-        descriptor.size = bufferSize;
-        descriptor.mappedAtCreation = false;
-        descriptor.label = "DawnDeviceStagingBuffer";
-        Ref<BufferBase> buffer;
-        DAWN_TRY_ASSIGN(buffer, Buffer::Create(this, Unpack(&descriptor), commandContext));
-        // We don't cache the buffer if it's too large.
-        if (bufferSize > kMaxSize) {
+    constexpr uint64_t kMinStagingBufferSize = 4 * 1024;
+    uint64_t bufferSize = Align(size, kMinStagingBufferSize);
+    BufferDescriptor descriptor;
+    descriptor.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
+    descriptor.size = bufferSize;
+    descriptor.mappedAtCreation = false;
+    descriptor.label = "DawnDeviceStagingBuffer";
+    Ref<BufferBase> buffer;
+    // We don't cache the buffer if it's too large.
+    if (bufferSize > kMaxStagingBufferSize) {
+        DAWN_TRY_ASSIGN(buffer, Buffer::Create(this, Unpack(&descriptor), commandContext,
+                                               /*allowUploadBufferEmulation=*/false));
+        return buffer;
+    }
+
+    ExecutionSerial completedSerial = GetQueue()->GetCompletedCommandSerial();
+    for (auto it = mStagingBuffers.begin(); it != mStagingBuffers.end(); ++it) {
+        if ((*it)->GetLastUsageSerial() > completedSerial) {
+            // This buffer, and none after it are ready. Advance to the end and stop the search.
+            break;
+        }
+
+        if ((*it)->GetSize() >= bufferSize) {
+            // this buffer is large enough. Stop searching and remove.
+            buffer = *it;
+            mStagingBuffers.erase(it);
             return buffer;
         }
-        mStagingBuffer = buffer;
     }
-    // Ensure there is no more than 1 active usage of the staging buffer.
-    DAWN_ASSERT(mStagingBuffer->GetRefCountForTesting() <= 1);
-    return mStagingBuffer;
+
+    // Create a new staging buffer as no existing one can be re-used.
+    DAWN_TRY_ASSIGN(buffer, Buffer::Create(this, Unpack(&descriptor), commandContext,
+                                           /*allowUploadBufferEmulation=*/false));
+    mTotalStagingBufferSize += bufferSize;
+
+    // Purge the old staging buffers if the total size is too large.
+    constexpr uint64_t kMaxTotalSize = 16 * 1024 * 1024;
+    for (auto it = mStagingBuffers.begin(); it != mStagingBuffers.end() &&
+                                            mTotalStagingBufferSize > kMaxTotalSize &&
+                                            (*it)->GetLastUsageSerial() <= completedSerial;) {
+        mTotalStagingBufferSize -= (*it)->GetSize();
+        it = mStagingBuffers.erase(it);
+    }
+
+    return buffer;
+}
+
+void Device::ReturnStagingBuffer(Ref<BufferBase>&& buffer) {
+    DAWN_ASSERT(mStagingBuffers.empty() ||
+                mStagingBuffers.back()->GetLastUsageSerial() <= buffer->GetLastUsageSerial());
+    // Only the cached buffers can be re-used.
+    if (buffer->GetSize() <= kMaxStagingBufferSize) {
+        mStagingBuffers.push_back(std::move(buffer));
+    }
 }
 
 }  // namespace dawn::native::d3d11

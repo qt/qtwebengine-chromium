@@ -40,7 +40,7 @@ namespace {
 gfx::SizeF MakeViewport(const SVGViewportResolver& viewport_resolver,
                         const LengthPoint& point,
                         SVGUnitTypes::SVGUnitType type) {
-  if (!point.X().IsPercentOrCalc() && !point.Y().IsPercentOrCalc()) {
+  if (!point.X().HasPercent() && !point.Y().HasPercent()) {
     return gfx::SizeF(0, 0);
   }
   if (type == SVGUnitTypes::kSvgUnitTypeObjectboundingbox) {
@@ -52,7 +52,7 @@ gfx::SizeF MakeViewport(const SVGViewportResolver& viewport_resolver,
 float MakeViewportDimension(const SVGViewportResolver& viewport_resolver,
                             const Length& radius,
                             SVGUnitTypes::SVGUnitType type) {
-  if (!radius.IsPercentOrCalc()) {
+  if (!radius.HasPercent()) {
     return 0;
   }
   if (type == SVGUnitTypes::kSvgUnitTypeObjectboundingbox) {
@@ -125,12 +125,15 @@ std::unique_ptr<GradientData> LayoutSVGResourceGradient::BuildGradientData(
         object_bounding_box.width(), object_bounding_box.height());
   }
 
+  if (!attributes.GradientTransform().IsInvertible()) {
+    return gradient_data;
+  }
+
   // Create gradient object
   gradient_data->gradient = BuildGradient();
   gradient_data->gradient->AddColorStops(attributes.Stops());
 
-  AffineTransform gradient_transform = attributes.GradientTransform();
-  gradient_data->userspace_transform *= gradient_transform;
+  gradient_data->userspace_transform *= attributes.GradientTransform();
 
   return gradient_data;
 }

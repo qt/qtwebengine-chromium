@@ -158,7 +158,7 @@ SegmentationUkmHelper* SegmentationUkmHelper::GetInstance() {
 }
 
 void SegmentationUkmHelper::Initialize() {
-  // TODO(crbug.com/1406404): Migrate models for these segments to use
+  // TODO(crbug.com/40887237): Migrate models for these segments to use
   // `upload_tensors`.
   allowed_segment_ids_.clear();
   if (base::FeatureList::IsEnabled(segmentation_platform::features::
@@ -206,8 +206,8 @@ ukm::SourceId SegmentationUkmHelper::RecordTrainingData(
     const ModelProvider::Request& input_tensor,
     const ModelProvider::Response& outputs,
     const std::vector<int>& output_indexes,
-    absl::optional<proto::PredictionResult> prediction_result,
-    absl::optional<SelectedSegment> selected_segment) {
+    std::optional<proto::PredictionResult> prediction_result,
+    std::optional<SelectedSegment> selected_segment) {
   ukm::SourceId source_id = ukm::NoURLSourceId();
   ukm::builders::Segmentation_ModelExecution execution_result(source_id);
   if (!AddInputsToUkm(&execution_result, segment_id, model_version,

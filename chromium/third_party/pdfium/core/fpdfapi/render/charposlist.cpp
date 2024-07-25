@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/render/charposlist.h"
 
 #include "build/build_config.h"
@@ -55,7 +60,7 @@ bool IsActualFontLoaded(const CFX_SubstFont* subst_font,
   subst_font_name.Remove(' ');
   subst_font_name.MakeLower();
 
-  absl::optional<size_t> find =
+  std::optional<size_t> find =
       base_font_name.Find(subst_font_name.AsStringView());
   return find.has_value() && find.value() == 0;
 }

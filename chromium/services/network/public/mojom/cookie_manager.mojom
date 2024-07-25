@@ -100,6 +100,19 @@ enum CookieEffectiveSameSite {
   kUndefined = 4,
 };
 
+// Defined in net::CookieInclusionStatus::ExemptionReason.
+enum CookieExemptionReason {
+    kNone = 0,
+    kUserSetting = 1,
+    k3PCDMetadata = 2,
+    k3PCDDeprecationTrial = 3,
+    k3PCDHeuristics = 4,
+    kEnterprisePolicy = 5,
+    kStorageAccess = 6,
+    kTopLevelStorageAccess = 7,
+    kCorsOptIn = 8,
+};
+
 enum ContextType {
   CROSS_SITE,
   SAME_SITE_LAX_METHOD_UNSAFE,
@@ -112,6 +125,13 @@ enum CookieSameSiteContextMetadataDowngradeType {
   kStrictToLax,
   kStrictToCross,
   kLaxToCross,
+};
+
+enum CookieSourceType {
+  kUnknown,
+  kHTTP,
+  kScript,
+  kOther,
 };
 
 enum ContextRedirectTypeBug1221316 {
@@ -188,11 +208,12 @@ struct CanonicalCookie {
   // -1 because of url::PORT_UNSPECIFIED
   // url/third_party/mozilla/url_parse.h
   int32 source_port = -1;
+  CookieSourceType source_type = kUnknown;
 };
 
 // Indicates reasons why a cookie may be excluded in a get or set
 // operation and if it should be warned about.
-// TODO(crbug.com/1310444): Improve serialization validation comments.
+// TODO(crbug.com/40219875): Improve serialization validation comments.
 struct CookieInclusionStatus {
   // Bitfield. Is defined in
   // net::CookieInclusionStatus::ExclusionReason.
@@ -200,6 +221,8 @@ struct CookieInclusionStatus {
   // Bitfield. Is defined in
   // net::CookieInclusionStatus::WarningReason.
   uint32 warning_reasons;
+
+  CookieExemptionReason exemption_reason;
 };
 
 struct CookieAndLineWithAccessResult {

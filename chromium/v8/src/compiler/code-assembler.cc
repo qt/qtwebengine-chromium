@@ -496,6 +496,17 @@ void CodeAssembler::Return(TNode<WordT> value1, TNode<WordT> value2) {
   return raw_assembler()->Return(value1, value2);
 }
 
+void CodeAssembler::Return(TNode<Word32T> value1, TNode<Word32T> value2) {
+  DCHECK_EQ(2, raw_assembler()->call_descriptor()->ReturnCount());
+  DCHECK_EQ(
+      MachineRepresentation::kWord32,
+      raw_assembler()->call_descriptor()->GetReturnType(0).representation());
+  DCHECK_EQ(
+      MachineRepresentation::kWord32,
+      raw_assembler()->call_descriptor()->GetReturnType(1).representation());
+  return raw_assembler()->Return(value1, value2);
+}
+
 void CodeAssembler::Return(TNode<WordT> value1, TNode<Object> value2) {
   DCHECK_EQ(2, raw_assembler()->call_descriptor()->ReturnCount());
   DCHECK_EQ(
@@ -610,6 +621,20 @@ TNode<RawPtrT> CodeAssembler::StackSlotPtr(int size, int alignment) {
   }
 CODE_ASSEMBLER_BINARY_OP_LIST(DEFINE_CODE_ASSEMBLER_BINARY_OP)
 #undef DEFINE_CODE_ASSEMBLER_BINARY_OP
+
+TNode<PairT<Word32T, Word32T>> CodeAssembler::Int32PairAdd(
+    TNode<Word32T> lhs_lo_word, TNode<Word32T> lhs_hi_word,
+    TNode<Word32T> rhs_lo_word, TNode<Word32T> rhs_hi_word) {
+  return UncheckedCast<PairT<Word32T, Word32T>>(raw_assembler()->Int32PairAdd(
+      lhs_lo_word, lhs_hi_word, rhs_lo_word, rhs_hi_word));
+}
+
+TNode<PairT<Word32T, Word32T>> CodeAssembler::Int32PairSub(
+    TNode<Word32T> lhs_lo_word, TNode<Word32T> lhs_hi_word,
+    TNode<Word32T> rhs_lo_word, TNode<Word32T> rhs_hi_word) {
+  return UncheckedCast<PairT<Word32T, Word32T>>(raw_assembler()->Int32PairSub(
+      lhs_lo_word, lhs_hi_word, rhs_lo_word, rhs_hi_word));
+}
 
 TNode<WordT> CodeAssembler::WordShl(TNode<WordT> value, int shift) {
   return (shift != 0) ? WordShl(value, IntPtrConstant(shift)) : value;
@@ -753,6 +778,11 @@ template TNode<AtomicUint64> CodeAssembler::AtomicLoad64<AtomicUint64>(
 Node* CodeAssembler::LoadFromObject(MachineType type, TNode<Object> object,
                                     TNode<IntPtrT> offset) {
   return raw_assembler()->LoadFromObject(type, object, offset);
+}
+
+Node* CodeAssembler::LoadProtectedPointerFromObject(TNode<Object> object,
+                                                    TNode<IntPtrT> offset) {
+  return raw_assembler()->LoadProtectedPointerFromObject(object, offset);
 }
 
 #ifdef V8_MAP_PACKING
@@ -1092,7 +1122,7 @@ Node* CodeAssembler::CallRuntimeImpl(
       Builtins::RuntimeCEntry(result_size, switch_to_the_central_stack);
   TNode<Code> centry_code =
       HeapConstantNoHole(isolate()->builtins()->code_handle(centry));
-  constexpr size_t kMaxNumArgs = 6;
+  constexpr size_t kMaxNumArgs = 7;
   DCHECK_GE(kMaxNumArgs, args.size());
   int argc = static_cast<int>(args.size());
   auto call_descriptor = Linkage::GetRuntimeCallDescriptor(

@@ -14,7 +14,6 @@ from typing import (TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple,
 
 
 from .arch import MachineArch
-from .base import SubprocessError
 from .posix import PosixPlatform
 
 if TYPE_CHECKING:
@@ -394,7 +393,6 @@ class AndroidAdbPlatform(PosixPlatform):
     # TODO figure out
     return 1.0
 
-
   def python_details(self) -> JsonDict:
     # Python is not available on android.
     return {}
@@ -474,6 +472,10 @@ class AndroidAdbPlatform(PosixPlatform):
 
   def rsync(self, from_path: pathlib.Path,
             to_path: pathlib.Path) -> pathlib.Path:
+    return self.pull(from_path, to_path)
+
+  def pull(self, from_path: pathlib.Path,
+           to_path: pathlib.Path) -> pathlib.Path:
     assert self.exists(from_path), (
         f"Source file '{from_path}' does not exist on {self}")
     to_path.parent.mkdir(parents=True, exist_ok=True)

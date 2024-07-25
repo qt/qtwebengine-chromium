@@ -213,6 +213,10 @@ class QuicPacketPrinter : public QuicFramerVisitorInterface {
     std::cerr << "OnAckFrequencyFrame: " << frame;
     return true;
   }
+  bool OnResetStreamAtFrame(const QuicResetStreamAtFrame& frame) override {
+    std::cerr << "OnResetStreamAtFrame: " << frame;
+    return true;
+  }
   void OnPacketComplete() override { std::cerr << "OnPacketComplete\n"; }
   bool IsValidStatelessResetToken(
       const StatelessResetToken& /*token*/) const override {
@@ -266,7 +270,11 @@ int main(int argc, char* argv[]) {
     quiche::QuichePrintCommandLineFlagHelp(usage);
     return 1;
   }
-  std::string hex = absl::HexStringToBytes(args[1]);
+  std::string hex;
+  if (!absl::HexStringToBytes(args[1], &hex)) {
+    std::cerr << "Invalid hex string" << std::endl;
+    return 1;
+  }
   quic::ParsedQuicVersionVector versions = quic::AllSupportedVersions();
   // Fake a time since we're not actually generating acks.
   quic::QuicTime start(quic::QuicTime::Zero());

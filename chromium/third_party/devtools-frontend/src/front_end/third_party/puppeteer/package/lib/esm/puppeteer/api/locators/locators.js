@@ -43,7 +43,7 @@ var __disposeResources = (this && this.__disposeResources) || (function (Suppres
     var e = new Error(message);
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 });
-import { mergeMap, from, EMPTY, defer, filter, first, identity, ignoreElements, retry, throwIfEmpty, race, catchError, defaultIfEmpty, firstValueFrom, fromEvent, map, merge, noop, pipe, raceWith, tap, } from '../../../third_party/rxjs/rxjs.js';
+import { EMPTY, catchError, defaultIfEmpty, defer, filter, first, firstValueFrom, from, fromEvent, identity, ignoreElements, map, merge, mergeMap, noop, pipe, race, raceWith, retry, tap, throwIfEmpty, } from '../../../third_party/rxjs/rxjs.js';
 import { EventEmitter } from '../../common/EventEmitter.js';
 import { debugError, timeout } from '../../common/util.js';
 /**
@@ -58,11 +58,6 @@ export var LocatorEvent;
      */
     LocatorEvent["Action"] = "action";
 })(LocatorEvent || (LocatorEvent = {}));
-export { 
-/**
- * @deprecated Use {@link LocatorEvent}.
- */
-LocatorEvent as LocatorEmittedEvents, };
 /**
  * Locators describe a strategy of locating objects and performing an action on
  * them. If the action fails because the object is not ready for the action, the
@@ -103,14 +98,17 @@ export class Locator extends EventEmitter {
                 })).pipe(defaultIfEmpty(handle));
             });
         },
-        retryAndRaceWithSignalAndTimer: (signal) => {
+        retryAndRaceWithSignalAndTimer: (signal, cause) => {
             const candidates = [];
             if (signal) {
                 candidates.push(fromEvent(signal, 'abort').pipe(map(() => {
+                    if (signal.reason instanceof Error) {
+                        signal.reason.cause = cause;
+                    }
                     throw signal.reason;
                 })));
             }
-            candidates.push(timeout(this._timeout));
+            candidates.push(timeout(this._timeout, cause));
             return pipe(retry({ delay: RETRY_DELAY }), raceWith(...candidates));
         },
     };
@@ -240,6 +238,7 @@ export class Locator extends EventEmitter {
     };
     #click(options) {
         const signal = options?.signal;
+        const cause = new Error('Locator.click');
         return this._wait(options).pipe(this.operators.conditions([
             this.#ensureElementIsInTheViewportIfNeeded,
             this.#waitForStableBoundingBoxIfNeeded,
@@ -251,10 +250,11 @@ export class Locator extends EventEmitter {
                 void handle.dispose().catch(debugError);
                 throw err;
             }));
-        }), this.operators.retryAndRaceWithSignalAndTimer(signal));
+        }), this.operators.retryAndRaceWithSignalAndTimer(signal, cause));
     }
     #fill(value, options) {
         const signal = options?.signal;
+        const cause = new Error('Locator.fill');
         return this._wait(options).pipe(this.operators.conditions([
             this.#ensureElementIsInTheViewportIfNeeded,
             this.#waitForStableBoundingBoxIfNeeded,
@@ -346,10 +346,11 @@ export class Locator extends EventEmitter {
                 void handle.dispose().catch(debugError);
                 throw err;
             }));
-        }), this.operators.retryAndRaceWithSignalAndTimer(signal));
+        }), this.operators.retryAndRaceWithSignalAndTimer(signal, cause));
     }
     #hover(options) {
         const signal = options?.signal;
+        const cause = new Error('Locator.hover');
         return this._wait(options).pipe(this.operators.conditions([
             this.#ensureElementIsInTheViewportIfNeeded,
             this.#waitForStableBoundingBoxIfNeeded,
@@ -360,10 +361,11 @@ export class Locator extends EventEmitter {
                 void handle.dispose().catch(debugError);
                 throw err;
             }));
-        }), this.operators.retryAndRaceWithSignalAndTimer(signal));
+        }), this.operators.retryAndRaceWithSignalAndTimer(signal, cause));
     }
     #scroll(options) {
         const signal = options?.signal;
+        const cause = new Error('Locator.scroll');
         return this._wait(options).pipe(this.operators.conditions([
             this.#ensureElementIsInTheViewportIfNeeded,
             this.#waitForStableBoundingBoxIfNeeded,
@@ -381,7 +383,7 @@ export class Locator extends EventEmitter {
                 void handle.dispose().catch(debugError);
                 throw err;
             }));
-        }), this.operators.retryAndRaceWithSignalAndTimer(signal));
+        }), this.operators.retryAndRaceWithSignalAndTimer(signal, cause));
     }
     /**
      * Clones the locator.
@@ -395,7 +397,8 @@ export class Locator extends EventEmitter {
      * @public
      */
     async waitHandle(options) {
-        return await firstValueFrom(this._wait(options).pipe(this.operators.retryAndRaceWithSignalAndTimer(options?.signal)));
+        const cause = new Error('Locator.waitHandle');
+        return await firstValueFrom(this._wait(options).pipe(this.operators.retryAndRaceWithSignalAndTimer(options?.signal, cause)));
     }
     /**
      * Waits for the locator to get the serialized value from the page.

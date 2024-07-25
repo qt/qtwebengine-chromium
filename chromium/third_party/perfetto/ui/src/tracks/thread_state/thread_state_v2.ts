@@ -13,8 +13,8 @@
 // limitations under the License.
 
 import {Actions} from '../../common/actions';
-import {colorForState} from '../../common/colorizer';
-import {Selection} from '../../common/state';
+import {colorForState} from '../../core/colorizer';
+import {LegacySelection} from '../../common/state';
 import {translateState} from '../../common/thread_state';
 import {
   BASE_ROW,
@@ -55,16 +55,12 @@ export class ThreadStateTrack extends BaseSliceTrack<ThreadStateTrackTypes> {
   }
 
   getSqlSource(): string {
-    // Do not display states 'x' and 'S' (dead & sleeping).
-    // Note: Thread state tracks V1 basically ignores incomplete slices, faking
-    // their duration as 1 instead. Let's just do this here as well for now to
-    // achieve feature parity with tracks V1 and tackle the issue of overlapping
-    // incomplete slices later.
+    // Do not display states: 'S' (sleeping), 'I' (idle kernel thread).
     return `
       select
         id,
         ts,
-        max(dur, 1) as dur,
+        dur,
         cpu,
         state,
         io_wait as ioWait,
@@ -72,13 +68,13 @@ export class ThreadStateTrack extends BaseSliceTrack<ThreadStateTrackTypes> {
       from thread_state
       where
         utid = ${this.utid} and
-        state != 'x' and
-        state != 'S'
+        state not in ('S', 'I')
     `;
   }
 
-  rowToSlice(row: ThreadStateTrackTypes['row']):
-      ThreadStateTrackTypes['slice'] {
+  rowToSlice(
+    row: ThreadStateTrackTypes['row'],
+  ): ThreadStateTrackTypes['slice'] {
     const baseSlice = super.rowToSlice(row);
     const ioWait = row.ioWait === null ? undefined : !!row.ioWait;
     const title = translateState(row.state, ioWait);
@@ -88,18 +84,20 @@ export class ThreadStateTrack extends BaseSliceTrack<ThreadStateTrackTypes> {
 
   onUpdatedSlices(slices: ThreadStateTrackTypes['slice'][]) {
     for (const slice of slices) {
-      slice.isHighlighted = (slice === this.hoveredSlice);
+      slice.isHighlighted = slice === this.hoveredSlice;
     }
   }
 
   onSliceClick(args: OnSliceClickArgs<ThreadStateTrackTypes['slice']>) {
-    globals.makeSelection(Actions.selectThreadState({
-      id: args.slice.id,
-      trackKey: this.trackKey,
-    }));
+    globals.makeSelection(
+      Actions.selectThreadState({
+        id: args.slice.id,
+        trackKey: this.trackKey,
+      }),
+    );
   }
 
-  protected isSelectionHandled(selection: Selection): boolean {
+  protected isSelectionHandled(selection: LegacySelection): boolean {
     return selection.kind === 'THREAD_STATE';
   }
 }

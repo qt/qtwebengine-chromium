@@ -32,6 +32,7 @@
 #include "spirv/unified1/GLSL.std.450.h"
 #include "spirv/unified1/spirv.h"
 
+#include "src/tint/lang/core/access.h"
 #include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/builtin_value.h"
 #include "src/tint/lang/core/constant/scalar.h"
@@ -156,6 +157,10 @@ const core::type::Type* DedupType(const core::type::Type* ty, core::type::Manage
         [&](const core::type::DepthMultisampledTexture* depth) {
             return types.Get<core::type::MultisampledTexture>(depth->dim(), types.f32());
         },
+        [&](const core::type::StorageTexture* st) -> const core::type::Type* {
+            return types.Get<core::type::StorageTexture>(st->dim(), st->texel_format(),
+                                                         core::Access::kRead, st->type());
+        },
 
         // Both sampler types are the same in SPIR-V.
         [&](const core::type::Sampler* s) -> const core::type::Type* {
@@ -225,18 +230,14 @@ class Printer {
         uint32_t return_type_id;
         Vector<uint32_t, 4> param_type_ids;
 
-        /// Hasher provides a hash function for the FunctionType.
-        struct Hasher {
-            /// @param ft the FunctionType to create a hash for
-            /// @return the hash value
-            inline std::size_t operator()(const FunctionType& ft) const {
-                size_t hash = Hash(ft.return_type_id);
-                for (auto& p : ft.param_type_ids) {
-                    hash = HashCombine(hash, p);
-                }
-                return hash;
+        /// @returns the hash code of the FunctionType
+        tint::HashCode HashCode() const {
+            auto hash = Hash(return_type_id);
+            for (auto& p : param_type_ids) {
+                hash = HashCombine(hash, p);
             }
-        };
+            return hash;
+        }
 
         /// Equality operator for FunctionType.
         bool operator==(const FunctionType& other) const {
@@ -249,7 +250,7 @@ class Printer {
     Hashmap<const core::type::Type*, uint32_t, 8> types_;
 
     /// The map of function types to their result IDs.
-    Hashmap<FunctionType, uint32_t, 8, FunctionType::Hasher> function_types_;
+    Hashmap<FunctionType, uint32_t, 8> function_types_;
 
     /// The map of constants to their result IDs.
     Hashmap<const core::constant::Value*, uint32_t, 16> constants_;
@@ -386,7 +387,7 @@ class Printer {
     /// @param constant the constant to get the ID for
     /// @returns the result ID of the constant
     uint32_t Constant(const core::constant::Value* constant) {
-        return constants_.GetOrCreate(constant, [&] {
+        return constants_.GetOrAdd(constant, [&] {
             auto* ty = constant->Type();
 
             // Use OpConstantNull for zero-valued composite constants.
@@ -455,7 +456,7 @@ class Printer {
     /// @param type the type to get the ID for
     /// @returns the result ID of the OpConstantNull instruction
     uint32_t ConstantNull(const core::type::Type* type) {
-        return constant_nulls_.GetOrCreate(type, [&] {
+        return constant_nulls_.GetOrAdd(type, [&] {
             auto id = module_.NextId();
             module_.PushType(spv::Op::OpConstantNull, {Type(type), id});
             return id;
@@ -466,7 +467,7 @@ class Printer {
     /// @param type the type of the undef value
     /// @returns the result ID of the instruction
     uint32_t Undef(const core::type::Type* type) {
-        return undef_values_.GetOrCreate(type, [&] {
+        return undef_values_.GetOrAdd(type, [&] {
             auto id = module_.NextId();
             module_.PushType(spv::Op::OpUndef, {Type(type), id});
             return id;
@@ -478,7 +479,7 @@ class Printer {
     /// @returns the result ID of the type
     uint32_t Type(const core::type::Type* ty) {
         ty = DedupType(ty, ir_.Types());
-        return types_.GetOrCreate(ty, [&] {
+        return types_.GetOrAdd(ty, [&] {
             auto id = module_.NextId();
             Switch(
                 ty,  //
@@ -497,7 +498,6 @@ class Printer {
                     module_.PushCapability(SpvCapabilityFloat16);
                     module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
                     module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
-                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
                     module_.PushType(spv::Op::OpTypeFloat, {id, 16u});
                 },
                 [&](const core::type::Vector* vec) {
@@ -548,7 +548,7 @@ class Printer {
             value,  //
             [&](core::ir::Constant* constant) { return Constant(constant); },
             [&](core::ir::Value*) {
-                return values_.GetOrCreate(value, [&] { return module_.NextId(); });
+                return values_.GetOrAdd(value, [&] { return module_.NextId(); });
             });
     }
 
@@ -556,7 +556,7 @@ class Printer {
     /// @param block the block to get the label ID for
     /// @returns the ID of the block's label
     uint32_t Label(const core::ir::Block* block) {
-        return block_labels_.GetOrCreate(block, [&] { return module_.NextId(); });
+        return block_labels_.GetOrAdd(block, [&] { return module_.NextId(); });
     }
 
     /// Emit a struct type.
@@ -717,7 +717,7 @@ class Printer {
         }
 
         // Get the ID for the function type (creating it if needed).
-        auto function_type_id = function_types_.GetOrCreate(function_type, [&] {
+        auto function_type_id = function_types_.GetOrAdd(function_type, [&] {
             auto func_ty_id = module_.NextId();
             OperandList operands = {func_ty_id, return_type_id};
             operands.insert(operands.end(), function_type.param_type_ids.begin(),
@@ -769,7 +769,6 @@ class Printer {
             }
             case core::ir::Function::PipelineStage::kUndefined:
                 TINT_ICE() << "undefined pipeline stage for entry point";
-                return;
         }
 
         OperandList operands = {U32Operand(stage), id, ir_.NameOf(func).Name()};
@@ -790,7 +789,7 @@ class Printer {
             // Determine if this IO variable is used by the entry point.
             bool used = false;
             for (const auto& use : var->Result(0)->Usages()) {
-                auto* block = use.instruction->Block();
+                auto* block = use->instruction->Block();
                 while (block->Parent()) {
                     block = block->Parent()->Block();
                 }
@@ -1203,7 +1202,6 @@ class Printer {
             }
             default:
                 TINT_UNIMPLEMENTED() << binary->Op();
-                break;
         }
 
         // Emit the instruction.
@@ -1344,7 +1342,6 @@ class Printer {
                 break;
             case spirv::BuiltinFn::kNone:
                 TINT_ICE() << "undefined spirv ir function";
-                return;
         }
 
         OperandList operands;
@@ -1385,7 +1382,7 @@ class Printer {
         auto glsl_ext_inst = [&](enum GLSLstd450 inst) {
             constexpr const char* kGLSLstd450 = "GLSL.std.450";
             op = spv::Op::OpExtInst;
-            operands.push_back(imports_.GetOrCreate(kGLSLstd450, [&] {
+            operands.push_back(imports_.GetOrAdd(kGLSLstd450, [&] {
                 // Import the instruction set the first time it is requested.
                 auto import = module_.NextId();
                 module_.PushExtImport(spv::Op::OpExtInstImport, {import, Operand(kGLSLstd450)});
@@ -1795,7 +1792,7 @@ class Printer {
                     one = b_.Constant(1_u);
                     zero = b_.Constant(0_u);
                 });
-            TINT_ASSERT_OR_RETURN(one && zero);
+            TINT_ASSERT(one && zero);
 
             if (auto* vec = res_ty->As<core::type::Vector>()) {
                 // Splat the scalars into vectors.
@@ -1981,7 +1978,6 @@ class Printer {
                 break;
             default:
                 TINT_UNIMPLEMENTED() << unary->Op();
-                break;
         }
         current_function_.push_inst(op, {Type(ty), id, Value(unary->Val())});
     }
@@ -2008,9 +2004,9 @@ class Printer {
             module_.PushAnnot(spv::Op::OpDecorate,
                               {id, U32Operand(SpvDecorationLocation), *attrs.location});
         }
-        if (attrs.index) {
+        if (attrs.blend_src) {
             module_.PushAnnot(spv::Op::OpDecorate,
-                              {id, U32Operand(SpvDecorationIndex), *attrs.index});
+                              {id, U32Operand(SpvDecorationIndex), *attrs.blend_src});
         }
         if (attrs.interpolation) {
             switch (attrs.interpolation->type) {
@@ -2069,6 +2065,9 @@ class Printer {
             }
             case core::AddressSpace::kIn: {
                 TINT_ASSERT(!current_function_);
+                if (store_ty->DeepestElement()->Is<core::type::F16>()) {
+                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
+                }
                 module_.PushType(spv::Op::OpVariable, {ty, id, U32Operand(SpvStorageClassInput)});
                 EmitIOAttributes(id, var->Attributes(), core::AddressSpace::kIn);
                 break;
@@ -2093,6 +2092,9 @@ class Printer {
             }
             case core::AddressSpace::kOut: {
                 TINT_ASSERT(!current_function_);
+                if (store_ty->DeepestElement()->Is<core::type::F16>()) {
+                    module_.PushCapability(SpvCapabilityStorageInputOutput16);
+                }
                 module_.PushType(spv::Op::OpVariable, {ty, id, U32Operand(SpvStorageClassOutput)});
                 EmitIOAttributes(id, var->Attributes(), core::AddressSpace::kOut);
                 break;
@@ -2197,7 +2199,7 @@ class Printer {
     /// @param ci the control instruction to get the merge label for
     /// @returns the label ID
     uint32_t GetMergeLabel(core::ir::ControlInstruction* ci) {
-        return merge_block_labels_.GetOrCreate(ci, [&] { return module_.NextId(); });
+        return merge_block_labels_.GetOrAdd(ci, [&] { return module_.NextId(); });
     }
 
     /// Get the ID of the label of the block that will contain a terminator instruction.
@@ -2226,7 +2228,9 @@ class Printer {
         switch (format) {
             case core::TexelFormat::kBgra8Unorm:
                 TINT_ICE() << "bgra8unorm should have been polyfilled to rgba8unorm";
-                return SpvImageFormatUnknown;
+            case core::TexelFormat::kR8Unorm:
+                module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+                return SpvImageFormatR8;
             case core::TexelFormat::kR32Uint:
                 return SpvImageFormatR32ui;
             case core::TexelFormat::kR32Sint:

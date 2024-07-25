@@ -7,12 +7,12 @@
 #include "base/check.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "components/services/screen_ai/buildflags/buildflags.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/zygote/zygote_buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/policy/mojom/sandbox.mojom.h"
+#include "services/screen_ai/buildflags/buildflags.h"
 
 #if BUILDFLAG(USE_ZYGOTE)
 #include "content/common/zygote/zygote_handle_impl_linux.h"
@@ -113,9 +113,9 @@ ZygoteCommunication* UtilitySandboxedProcessLauncherDelegate::GetZygote() {
   if (sandbox::policy::IsUnsandboxedSandboxType(sandbox_type_))
     return nullptr;
 
-  // TODO(crbug.com/1427280): remove this special case and fork from the zygote.
-  // For now, browser tests fail when forking the network service from the
-  // unsandboxed zygote, as the forked process only creates the
+  // TODO(crbug.com/40261714): remove this special case and fork from the
+  // zygote. For now, browser tests fail when forking the network service from
+  // the unsandboxed zygote, as the forked process only creates the
   // NetworkServiceTestHelper if the process is exec'd.
   if (sandbox_type_ == sandbox::mojom::Sandbox::kNetwork) {
     return nullptr;

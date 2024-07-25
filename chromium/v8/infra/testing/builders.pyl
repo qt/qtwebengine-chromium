@@ -376,7 +376,6 @@
     },
     'tests': [
       {'name': 'v8testing', 'variant': 'default'},
-      {'name': 'v8testing', 'variant': 'future'},
     ],
   },
   'v8_linux64_coverage_rel': {
@@ -403,6 +402,9 @@
     },
     'tests': [
       {'name': 'v8testing', 'shards': 5},
+      {'name': 'benchmarks', 'shards': 5},
+      {'name': 'mozilla', 'shards': 5},
+      {'name': 'test262', 'shards': 10},
     ],
   },
   'v8_linux64_dbg': {
@@ -554,7 +556,6 @@
       {'name': 'benchmarks', 'variant': 'minor_ms'},
       {'name': 'mozilla', 'variant': 'minor_ms'},
       {'name': 'test262', 'variant': 'minor_ms', 'shards': 2},
-      {'name': 'mjsunit', 'variant': 'minor_ms'},
     ],
   },
   'v8_linux64_msan_rel': {
@@ -648,6 +649,15 @@
       {'name': 'v8testing', 'variant': 'default'},
     ],
   },
+  'v8_linux64_sandbox_testing_rel': {
+    'swarming_dimensions' : {
+      'cpu': 'x86-64',
+      'os': 'Ubuntu-22.04',
+    },
+    'tests': [
+      {'name': 'mjsunit', 'variant': 'default'},
+    ],
+  },
   'v8_linux64_single_generation_dbg': {
     'swarming_dimensions' : {
       'os': 'Ubuntu-22.04',
@@ -732,6 +742,7 @@
       {'name': 'v8testing', 'variant': 'extra', 'shards': 6},
       {'name': 'v8testing', 'variant': 'slow_path', 'shards': 2},
       {'name': 'v8testing', 'variant': 'stress_concurrent_allocation', 'shards': 2},
+      {'name': 'v8testing', 'variant': 'minor_ms', 'shards': 2},
     ],
   },
   'v8_linux64_tsan_dbg': {
@@ -961,7 +972,7 @@
   'v8_mac64_asan_rel': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'v8testing', 'shards': 8},
@@ -970,7 +981,7 @@
   'v8_mac64_dbg': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -983,7 +994,7 @@
   'v8_mac_arm64_gc_stress_dbg': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'd8testing', 'test_args': ['--gc-stress'], 'shards': 3},
@@ -992,7 +1003,7 @@
   'v8_mac64_noopt_dbg': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'v8testing', 'shards': 6},
@@ -1001,7 +1012,7 @@
   'v8_mac64_rel': {
     'swarming_dimensions' : {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -1014,7 +1025,7 @@
   'v8_mac_arm64_rel': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'pool': 'chromium.tests',
     },
     'tests': [
@@ -1030,7 +1041,7 @@
   'v8_mac_arm64_dbg': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'pool': 'chromium.tests',
     },
     'tests': [
@@ -1046,7 +1057,7 @@
   'v8_mac_arm64_full_dbg': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'pool': 'chromium.tests',
     },
     'tests': [
@@ -1062,7 +1073,7 @@
   'v8_mac_arm64_no_pointer_compression_dbg': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'pool': 'chromium.tests',
     },
     'tests': [
@@ -1435,7 +1446,6 @@
     },
     'tests': [
       {'name': 'v8testing', 'variant': 'default'},
-      {'name': 'v8testing', 'variant': 'future'},
     ],
   },
   'V8 Linux64 - custom snapshot - debug': {
@@ -1508,7 +1518,6 @@
       {'name': 'benchmarks', 'variant': 'minor_ms'},
       {'name': 'mozilla', 'variant': 'minor_ms'},
       {'name': 'test262', 'variant': 'minor_ms', 'shards': 2},
-      {'name': 'mjsunit', 'variant': 'minor_ms'},
     ],
   },
   'V8 Linux64 - disable runtime call stats': {
@@ -1699,6 +1708,15 @@
       {'name': 'v8testing', 'shards': 2},
     ],
   },
+  'V8 Linux64 - sandbox testing': {
+    'swarming_dimensions' : {
+      'cpu': 'x86-64',
+      'os': 'Ubuntu-22.04',
+    },
+    'tests': [
+      {'name': 'mjsunit', 'variant': 'default'},
+    ],
+  },
   'V8 Linux64 - shared': {
     'swarming_dimensions' : {
       'os': 'Ubuntu-22.04',
@@ -1734,6 +1752,9 @@
     },
     'tests': [
       {'name': 'v8testing', 'shards': 5},
+      {'name': 'benchmarks', 'shards': 5},
+      {'name': 'mozilla', 'shards': 5},
+      {'name': 'test262', 'shards': 10},
     ],
   },
   'V8 Linux64 GC Stress - custom snapshot': {
@@ -1768,6 +1789,7 @@
       {'name': 'v8testing', 'variant': 'extra', 'shards': 5},
       {'name': 'v8testing', 'variant': 'slow_path', 'shards': 2},
       {'name': 'v8testing', 'variant': 'stress_concurrent_allocation', 'shards': 2},
+      {'name': 'v8testing', 'variant': 'minor_ms', 'shards': 2},
     ],
   },
   'V8 Linux64 TSAN - debug': {
@@ -1846,7 +1868,7 @@
   'V8 Mac64': {
     'swarming_dimensions': {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -1859,7 +1881,7 @@
   'V8 Mac64 - debug': {
     'swarming_dimensions': {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'mozilla'},
@@ -1872,7 +1894,7 @@
   'V8 Mac64 ASAN': {
     'swarming_dimensions': {
       'cpu': 'x86-64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'v8testing', 'shards': 10},
@@ -1881,7 +1903,7 @@
   'V8 Mac - arm64 - gc stress': {
     'swarming_dimensions': {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
     },
     'tests': [
       {'name': 'd8testing', 'test_args': ['--gc-stress'], 'shards': 3},
@@ -1889,7 +1911,7 @@
   },
   'V8 Mac - arm64': {
     'swarming_dimensions' : {
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'cpu': 'arm64',
       'pool': 'chromium.tests',
     },
@@ -1906,7 +1928,7 @@
   },
   'V8 Mac - arm64 - release': {
     'swarming_dimensions' : {
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'cpu': 'arm64',
       'pool': 'chromium.tests',
     },
@@ -1923,7 +1945,7 @@
   },
   'V8 Mac - arm64 - debug': {
     'swarming_dimensions' : {
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'cpu': 'arm64',
       'pool': 'chromium.tests',
     },
@@ -1941,7 +1963,7 @@
   'V8 Mac - arm64 - no pointer compression debug': {
     'swarming_dimensions' : {
       'cpu': 'arm64',
-      'os': 'Mac-13',
+      'os': 'Mac-14',
       'pool': 'chromium.tests',
     },
     'tests': [

@@ -179,6 +179,23 @@ CustomPatternWithAlias kCustomPatternsWithContext[] = {
     // which include a partial hash of the user id.
     {"UID", R"xxx(((?:cryptohome|dmcrypt)-+)([0-9a-fA-F]+)(-+))xxx",
      PIIType::kStableIdentifier},
+
+    // GSC device id unique to each chip.
+    {"Serial",
+     R"xxx((DEV_ID:\s+)(0x[0-9a-zA-Z-]{8}\s+0x[0-9a-zA-Z-]{8})(.*?))xxx",
+     PIIType::kSerial},
+
+    // Chromebook serial hash stored in GSC.
+    {"Serial",
+     R"xxx((SN:\s+)([0-9a-zA-Z-]{8}\s+[0-9a-zA-Z-]{8}\s+[0-9a-zA-Z-]{8}))xxx"
+     R"xxx((.*?))xxx",
+     PIIType::kSerial},
+
+    // Memory dump from GSC log.
+    {"Memory Dump",
+     R"xxx((\[\s*[0-9]+\.[0-9]+\]\s+)(0x[0-9a-zA-Z-]{8}:\s+[0-9a-zA-Z-]{8})xxx"
+     R"xxx(\s+[0-9a-zA-Z-]{8}\s+[0-9a-zA-Z-]{8}\s+[0-9a-zA-Z-]{8})(.*?))xxx",
+     PIIType::kMemory},
 };
 
 bool MaybeUnmapAddress(IPAddress* addr) {
@@ -918,7 +935,7 @@ std::string RedactionTool::RedactCreditCardNumbers(
     }
 
     std::string number;
-    base::RemoveChars(base::StringPiece(sequence), "- ", &number);
+    base::RemoveChars(std::string_view(sequence), "- ", &number);
 
     const auto cc_it = credit_cards_.find(number);
     if (cc_it != credit_cards_.cend()) {
@@ -1002,7 +1019,7 @@ std::string RedactionTool::RedactIbans(
 
     // Since the logic later relies on the size of this string not changing use
     // a lambda to initialize the constant.
-    const std::string numbers_only = [](base::StringPiece stripped) {
+    const std::string numbers_only = [](std::string_view stripped) {
       // Move the first 2 chars+digits to the back of the string.
       constexpr size_t prefix_offset = 4;
       std::string rearranged = std::string(stripped.substr(prefix_offset));
@@ -1106,23 +1123,23 @@ RedactionToolCaller RedactionTool::GetCaller(const base::Location& location) {
 
   std::string fileName = filePath.substr(filePath.find_last_of("/\\") + 1);
 
-  if (fileName == "redaction_tool_unittest.cc") {
+  if (filePath.find("support_tool") != std::string::npos) {
+    return RedactionToolCaller::kSupportTool;
+  } else if (filePath.find("error_reporting") != std::string::npos) {
+    return RedactionToolCaller::kErrorReporting;
+  } else if (fileName == "redaction_tool_unittest.cc") {
     return RedactionToolCaller::kUnitTest;
   } else if (fileName == "system_log_uploader.cc") {
     return RedactionToolCaller::kSysLogUploader;
   } else if (fileName == "system_logs_fetcher.cc") {
     return RedactionToolCaller::kSysLogFetcher;
-  } else if (fileName == "log_source_access_manager.cc") {
-    return RedactionToolCaller::kBrowserSystemLogs;
-  } else if (fileName == "feedback_common.cc") {
+  } else if (fileName == "crash_collector.cc") {
+    return RedactionToolCaller::kCrashTool;
+  } else if (fileName == "feedback_common.cc" ||
+             fileName == "log_source_access_manager.cc") {
     return RedactionToolCaller::kFeedbackTool;
-  } else if (filePath.find("support_tool") != std::string::npos) {
-    return RedactionToolCaller::kSupportTool;
-  } else if (filePath.find("error_reporting") != std::string::npos) {
-    return RedactionToolCaller::kErrorReporting;
-  } else {
-    return RedactionToolCaller::kUnknown;
   }
+  return RedactionToolCaller::kUnknown;
 }
 
 std::string RedactionTool::RedactCustomPatternWithContext(

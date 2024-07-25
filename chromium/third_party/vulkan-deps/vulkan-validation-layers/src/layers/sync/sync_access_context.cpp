@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@
 #include <cinttypes>
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/video_session_state.h"
+#include "state_tracker/render_pass_state.h"
 #include "sync/sync_access_context.h"
+#include "sync/sync_image.h"
 
 bool SimpleBinding(const vvl::Bindable &bindable) { return !bindable.sparse && bindable.Binding(); }
 VkDeviceSize ResourceBaseAddress(const vvl::Buffer &buffer) { return buffer.GetFakeBaseAddress(); }
@@ -28,8 +30,9 @@ class HazardDetector {
 
   public:
     HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const { return pos->second.DetectHazard(usage_info_); }
-    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag) const {
-        return pos->second.DetectAsyncHazard(usage_info_, start_tag);
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
+        return pos->second.DetectAsyncHazard(usage_info_, start_tag, queue_id);
     }
     explicit HazardDetector(SyncStageAccessIndex usage_index) : usage_info_(SyncStageAccess::UsageInfo(usage_index)) {}
 };
@@ -42,8 +45,9 @@ class HazardDetectorWithOrdering {
     HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const {
         return pos->second.DetectHazard(usage_info_, ordering_rule_, kQueueIdInvalid);
     }
-    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag) const {
-        return pos->second.DetectAsyncHazard(usage_info_, start_tag);
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
+        return pos->second.DetectAsyncHazard(usage_info_, start_tag, queue_id);
     }
     HazardDetectorWithOrdering(SyncStageAccessIndex usage_index, SyncOrdering ordering)
         : usage_info_(SyncStageAccess::UsageInfo(usage_index)), ordering_rule_(ordering) {}
@@ -56,8 +60,9 @@ class HazardDetectFirstUse {
     HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const {
         return pos->second.DetectHazard(recorded_use_, queue_id_, tag_range_);
     }
-    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag) const {
-        return pos->second.DetectAsyncHazard(recorded_use_, tag_range_, start_tag);
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
+        return pos->second.DetectAsyncHazard(recorded_use_, tag_range_, start_tag, queue_id);
     }
 
   private:
@@ -85,7 +90,7 @@ AccessContext::AccessContext(uint32_t subpass, VkQueueFlags queue_flags,
     async_.reserve(subpass_dep.async.size());
     for (const auto async_subpass : subpass_dep.async) {
         // Start tags are not known at creation time (as it's done at BeginRenderpass)
-        async_.emplace_back(contexts[async_subpass], kInvalidTag);
+        async_.emplace_back(contexts[async_subpass], kInvalidTag, kQueueIdInvalid);
     }
 
     if (has_barrier_from_external) {
@@ -144,7 +149,7 @@ void AccessContext::ResolveFromContext(const AccessContext &from) {
 void AccessContext::ResolvePreviousAccess(const ResourceAccessRange &range, ResourceAccessRangeMap *descent_map,
                                           const ResourceAccessState *infill_state,
                                           const ResourceAccessStateFunction *previous_barrier) const {
-    if (prev_.size() == 0) {
+    if (prev_.empty()) {
         if (range.non_empty() && infill_state) {
             // Fill the empty poritions of descent_map with the default_state with the barrier function applied (iff present)
             ResourceAccessState state_copy;
@@ -222,8 +227,8 @@ void AccessContext::UpdateAccessState(const AttachmentViewGen &view_gen, Attachm
 void AccessContext::UpdateAccessState(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
                                       SyncStageAccessIndex current_usage, ResourceUsageTag tag) {
     const auto image = static_cast<const ImageState *>(resource.image_state.get());
-    const auto offset = vs_state.profile->GetEffectiveImageOffset(resource.coded_offset);
-    const auto extent = vs_state.profile->GetEffectiveImageExtent(resource.coded_extent);
+    const auto offset = resource.GetEffectiveImageOffset(vs_state);
+    const auto extent = resource.GetEffectiveImageExtent(vs_state);
     ImageRangeGen range_gen(image->MakeImageRangeGen(resource.range, offset, extent, false));
     UpdateAccessState(range_gen, current_usage, SyncOrdering::kNonAttachment, tag);
 }
@@ -274,9 +279,9 @@ HazardResult AccessContext::DetectSubpassTransitionHazard(const TrackBack &track
     return hazard;
 }
 
-void AccessContext::AddAsyncContext(const AccessContext *context, ResourceUsageTag tag) {
+void AccessContext::AddAsyncContext(const AccessContext *context, ResourceUsageTag tag, QueueId queue_id) {
     if (context) {
-        async_.emplace_back(*context, tag);
+        async_.emplace_back(*context, tag, queue_id);
     }
 }
 
@@ -356,8 +361,8 @@ HazardResult AccessContext::DetectHazard(const AttachmentViewGen &view_gen, Atta
 HazardResult AccessContext::DetectHazard(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
                                          SyncStageAccessIndex current_usage) const {
     const auto image = static_cast<const ImageState *>(resource.image_state.get());
-    const auto offset = vs_state.profile->GetEffectiveImageOffset(resource.coded_offset);
-    const auto extent = vs_state.profile->GetEffectiveImageExtent(resource.coded_extent);
+    const auto offset = resource.GetEffectiveImageOffset(vs_state);
+    const auto extent = resource.GetEffectiveImageExtent(vs_state);
     ImageRangeGen range_gen(image->MakeImageRangeGen(resource.range, offset, extent, false));
     HazardDetector detector(current_usage);
     return DetectHazardGeneratedRanges(detector, range_gen, DetectOptions::kDetectAll);
@@ -385,9 +390,10 @@ class BarrierHazardDetector {
     HazardResult Detect(const ResourceAccessRangeMap::const_iterator &pos) const {
         return pos->second.DetectBarrierHazard(usage_info_, kQueueIdInvalid, src_exec_scope_, src_access_scope_);
     }
-    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag) const {
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
         // Async barrier hazard detection can use the same path as the usage index is not IsRead, but is IsWrite
-        return pos->second.DetectAsyncHazard(usage_info_, start_tag);
+        return pos->second.DetectAsyncHazard(usage_info_, start_tag, queue_id);
     }
 
   private:
@@ -443,9 +449,10 @@ class EventBarrierHazardDetector {
         return hazard;
     }
 
-    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag) const {
+    HazardResult DetectAsync(const ResourceAccessRangeMap::const_iterator &pos, ResourceUsageTag start_tag,
+                             QueueId queue_id) const {
         // Async barrier hazard detection can use the same path as the usage index is not IsRead, but is IsWrite
-        return pos->second.DetectAsyncHazard(usage_info_, start_tag);
+        return pos->second.DetectAsyncHazard(usage_info_, start_tag, queue_id);
     }
 
   private:

@@ -29,6 +29,7 @@ press_benchmarks = [
     benchmarks.Speedometer21Benchmark,
     benchmarks.Speedometer30Benchmark,
     benchmarks.MotionMark12Benchmark,
+    benchmarks.MotionMark13Benchmark,
     benchmarks.JetStream20Benchmark,
     benchmarks.JetStream21Benchmark,
 ]

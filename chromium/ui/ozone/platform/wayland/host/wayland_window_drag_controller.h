@@ -24,6 +24,7 @@
 #include "ui/ozone/platform/wayland/gpu/wayland_surface_factory.h"
 #include "ui/ozone/platform/wayland/host/wayland_data_device.h"
 #include "ui/ozone/platform/wayland/host/wayland_data_source.h"
+#include "ui/ozone/platform/wayland/host/wayland_keyboard.h"
 #include "ui/ozone/platform/wayland/host/wayland_pointer.h"
 #include "ui/ozone/platform/wayland/host/wayland_serial_tracker.h"
 #include "ui/ozone/platform/wayland/host/wayland_toplevel_window.h"
@@ -44,7 +45,7 @@ class WaylandSurface;
 // dragging). Wayland Drag and Drop protocol is used, under the hood, to keep
 // track of cursor location and surface focus.
 //
-// TODO(crbug.com/896640): Use drag icon to emulate window moving.
+// TODO(crbug.com/40598679): Use drag icon to emulate window moving.
 class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
                                     public WaylandDataSource::Delegate,
                                     public PlatformEventDispatcher,
@@ -63,7 +64,8 @@ class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
   WaylandWindowDragController(WaylandConnection* connection,
                               WaylandDataDeviceManager* device_manager,
                               WaylandPointer::Delegate* pointer_delegate,
-                              WaylandTouch::Delegate* touch_delegate);
+                              WaylandTouch::Delegate* touch_delegate,
+                              WaylandKeyboard::Delegate* keyboard_delegate);
   WaylandWindowDragController(const WaylandWindowDragController&) = delete;
   WaylandWindowDragController& operator=(const WaylandWindowDragController&) =
       delete;
@@ -80,7 +82,9 @@ class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
   bool Drag(WaylandToplevelWindow* window, const gfx::Vector2d& offset);
   void StopDragging();
 
-  State state() const { return state_; }
+  // Returns true if there is an in-progress drag session owned by the window
+  // drag controller.
+  bool IsDragInProgress() const;
 
   void OnToplevelWindowCreated(WaylandToplevelWindow* window);
 
@@ -108,13 +112,14 @@ class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
     return pointer_grab_owner_;
   }
 
-  absl::optional<mojom::DragEventSource> drag_source() { return drag_source_; }
+  std::optional<mojom::DragEventSource> drag_source() { return drag_source_; }
 
   const gfx::Vector2d& drag_offset_for_testing() const { return drag_offset_; }
 
  private:
   class ExtendedDragSource;
 
+  friend class WaylandWindowDragControllerTest;
   FRIEND_TEST_ALL_PREFIXES(WaylandWindowDragControllerTest,
                            HandleDraggedWindowDestructionAfterMoveLoop);
   FRIEND_TEST_ALL_PREFIXES(WaylandWindowDragControllerTest,
@@ -176,8 +181,8 @@ class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
 
   // Returns the serial for the given |drag_source| if |origin| has the
   // corresponding focus, otherwise return null.
-  absl::optional<wl::Serial> GetSerial(mojom::DragEventSource drag_source,
-                                       WaylandToplevelWindow* origin);
+  std::optional<wl::Serial> GetSerial(mojom::DragEventSource drag_source,
+                                      WaylandToplevelWindow* origin);
 
   const raw_ptr<WaylandConnection> connection_;
   const raw_ptr<WaylandDataDeviceManager> data_device_manager_;
@@ -185,9 +190,10 @@ class WaylandWindowDragController : public WaylandDataDevice::DragDelegate,
   const raw_ptr<WaylandWindowManager> window_manager_;
   const raw_ptr<WaylandPointer::Delegate> pointer_delegate_;
   const raw_ptr<WaylandTouch::Delegate> touch_delegate_;
+  const raw_ptr<WaylandKeyboard::Delegate> keyboard_delegate_;
 
   State state_ = State::kIdle;
-  absl::optional<mojom::DragEventSource> drag_source_;
+  std::optional<mojom::DragEventSource> drag_source_;
 
   gfx::Vector2d drag_offset_;
 

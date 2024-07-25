@@ -29,14 +29,8 @@
 import m from 'mithril';
 
 import {duration, Time, time} from '../../base/time';
-import {
-  BottomTab,
-  bottomTabRegistry,
-  NewBottomTabArgs,
-} from '../../frontend/bottom_tab';
-import {
-  GenericSliceDetailsTabConfig,
-} from '../../frontend/generic_slice_details_tab';
+import {BottomTab, NewBottomTabArgs} from '../../frontend/bottom_tab';
+import {GenericSliceDetailsTabConfig} from '../../frontend/generic_slice_details_tab';
 import {asUpid, Upid} from '../../frontend/sql_types';
 import {DurationWidget} from '../../frontend/widgets/duration';
 import {Timestamp} from '../../frontend/widgets/timestamp';
@@ -55,17 +49,18 @@ interface Data {
   upid: Upid;
 }
 
-export class WebContentInteractionPanel extends
-    BottomTab<GenericSliceDetailsTabConfig> {
+export class WebContentInteractionPanel extends BottomTab<GenericSliceDetailsTabConfig> {
   static readonly kind = 'org.perfetto.WebContentInteractionPanel';
   private loaded = false;
-  private data: Data|undefined;
+  private data: Data | undefined;
 
-  static create(args: NewBottomTabArgs): WebContentInteractionPanel {
+  static create(
+    args: NewBottomTabArgs<GenericSliceDetailsTabConfig>,
+  ): WebContentInteractionPanel {
     return new WebContentInteractionPanel(args);
   }
 
-  constructor(args: NewBottomTabArgs) {
+  constructor(args: NewBottomTabArgs<GenericSliceDetailsTabConfig>) {
     super(args);
     this.loadData();
   }
@@ -108,10 +103,13 @@ export class WebContentInteractionPanel extends
     details['Timestamp'] = m(Timestamp, {ts: this.data.ts});
     details['Duration'] = m(DurationWidget, {dur: this.data.dur});
     details['Renderer Upid'] = this.data.upid;
-    details['Total duration of all events'] =
-        m(DurationWidget, {dur: this.data.totalDurationMs});
-    details['SQL ID'] = m(
-        SqlRef, {table: 'chrome_web_content_interactions', id: this.config.id});
+    details['Total duration of all events'] = m(DurationWidget, {
+      dur: this.data.totalDurationMs,
+    });
+    details['SQL ID'] = m(SqlRef, {
+      table: 'chrome_web_content_interactions',
+      id: this.config.id,
+    });
     return details;
   }
 
@@ -121,19 +119,22 @@ export class WebContentInteractionPanel extends
     }
 
     return m(
-        DetailsShell,
-        {
-          title: this.getTitle(),
-        },
-        m(GridLayout,
+      DetailsShell,
+      {
+        title: this.getTitle(),
+      },
+      m(
+        GridLayout,
+        m(
+          GridLayoutColumn,
           m(
-              GridLayoutColumn,
-              m(
-                  Section,
-                  {title: 'Details'},
-                  m(Tree, dictToTreeNodes(this.getDetailsDictionary())),
-                  ),
-              )));
+            Section,
+            {title: 'Details'},
+            m(Tree, dictToTreeNodes(this.getDetailsDictionary())),
+          ),
+        ),
+      ),
+    );
   }
 
   getTitle(): string {
@@ -144,5 +145,3 @@ export class WebContentInteractionPanel extends
     return !this.loaded;
   }
 }
-
-bottomTabRegistry.register(WebContentInteractionPanel);

@@ -110,8 +110,8 @@ if WITH_XPTR_SOURCES
 libxml2_la_SOURCES += xlink.c xpointer.c
 endif
 
-DEPS = $(top_builddir)/libxml2.la
-LDADDS = $(top_builddir)/libxml2.la
+DEPS = libxml2.la
+LDADDS = libxml2.la
 
 
 m4datadir = $(datadir)/aclocal
@@ -182,10 +182,6 @@ testapi_LDADD= $(LDADDS)
 runxmlconf_SOURCES=runxmlconf.c
 runxmlconf_DEPENDENCIES = $(DEPS)
 runxmlconf_LDADD= $(LDADDS)
-
-#testOOM_SOURCES=testOOM.c testOOMlib.h testOOMlib.c
-#testOOM_DEPENDENCIES = $(DEPS)
-#testOOM_LDADD= $(LDADDS)
 
 check-local:
 	[ -d test   ] || $(LN_S) $(srcdir)/test   .
@@ -391,7 +387,8 @@ EXTRA_DIST = Copyright check-xml-test-suite.py gentest.py \
 	     dbgen.pl dbgenattr.pl \
 	     libxml2.syms timsort.h \
 	     README.zOS README.md \
-	     CMakeLists.txt config.h.cmake.in libxml2-config.cmake.cmake.in
+	     CMakeLists.txt config.h.cmake.in libxml2-config.cmake.cmake.in \
+	     meson.build meson_options.txt
 
 
 pkgconfigdir = $(libdir)/pkgconfig

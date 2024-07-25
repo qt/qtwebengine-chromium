@@ -15,6 +15,7 @@ enum DangerType {
   kDangerousFile,
   kDangerousUrl,
   kDangerousContent,
+  kCookieTheft,
   kUncommonContent,
   kDangerousHost,
   kPotentiallyUnwanted,
@@ -27,7 +28,15 @@ enum DangerType {
   kDeepScannedFailed,
   kDeepScannedSafe,
   kDeepScannedOpenedDangerous,
-  kBlockedUnsupportedFileType,
+  kBlockedScanFailed,
+};
+
+// This corresponds to DownloadUIModel::TailoredWarningType.
+enum TailoredWarningType {
+  kNoApplicableTailoredWarningType,
+  kCookieTheft,
+  kCookieTheftWithAccountInfo,
+  kSuspiciousArchive,
 };
 
 // Represents the state of a download in the UI.
@@ -71,10 +80,13 @@ struct Data {
   string by_ext_id;
   string by_ext_name;
   DangerType danger_type;
+  TailoredWarningType tailored_warning_type;
   string date_string;
   string file_name;
   string file_path;
   string file_url;
+  // Used to display tailored warnings with account information.
+  string account_email;
   string id;
   string last_reason_text;
   string progress_status_text;
@@ -146,6 +158,14 @@ interface PageHandler {
   ClearAll();
   OpenDownloadsFolderRequiringGesture();
 
+  // The two methods below are for the ESB Download Row Promo.
+  // Opens the chrome://settings/security page with a IPH Promotion
+  // on the ESB radio button.
+  OpenEsbSettings();
+
+  // Logs when the user actually sees the ESB Download Row Promo.
+  LogEsbPromotionRowViewed();
+
   // Opens this download with the given |id| while it is being scanned by Safe
   // Browsing. This completes the scan early. This requires a user gesture on
   // the WebUI.
@@ -162,6 +182,9 @@ interface PageHandler {
   // Bypass deep scan for download with the given |id|. This requires a user
   // gesture on the WebUI.
   BypassDeepScanRequiringGesture(string id);
+
+  // Checks whether an ESB Promotion can be shown on this profile.
+  IsEligibleForEsbPromo() => (bool result);
 };
 
 interface Page {

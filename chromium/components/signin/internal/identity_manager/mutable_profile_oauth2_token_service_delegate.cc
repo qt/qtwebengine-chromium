@@ -262,9 +262,12 @@ MutableProfileOAuth2TokenServiceDelegate::CreateAccessTokenFetcher(
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   if (token_binding_helper_ &&
       token_binding_helper_->HasBindingKey(account_id)) {
+    const std::string gaia_id =
+        account_tracker_service_->GetAccountInfo(account_id).gaia;
+    CHECK(!gaia_id.empty());
     // `GaiaAccessTokenFetcher` doesn't support bound refresh tokens.
     auto fetcher = std::make_unique<OAuth2MintAccessTokenFetcherAdapter>(
-        consumer, url_loader_factory, refresh_token,
+        consumer, url_loader_factory, gaia_id, refresh_token,
         signin::GetSigninScopedDeviceId(client_->GetPrefs()),
         std::string(version_info::GetVersionNumber()),
         std::string(
@@ -359,7 +362,7 @@ void MutableProfileOAuth2TokenServiceDelegate::InvalidateTokenForMultilogin(
                           CREDENTIALS_REJECTED_BY_SERVER));
 }
 
-void MutableProfileOAuth2TokenServiceDelegate::LoadCredentials(
+void MutableProfileOAuth2TokenServiceDelegate::LoadCredentialsInternal(
     const CoreAccountId& primary_account_id,
     bool is_syncing) {
   if (load_credentials_state() ==
@@ -377,7 +380,7 @@ void MutableProfileOAuth2TokenServiceDelegate::LoadCredentials(
   DCHECK_EQ(0, web_data_service_request_);
 
   refresh_tokens_.clear();
-  ClearAuthError(absl::nullopt);
+  ClearAuthError(std::nullopt);
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   if (token_binding_helper_) {
     token_binding_helper_->ClearAllKeys();
@@ -494,7 +497,7 @@ void MutableProfileOAuth2TokenServiceDelegate::LoadAllCredentialsIntoMemory(
       case RevokeAllTokensOnLoad::kNo:
         break;
       case RevokeAllTokensOnLoad::kDeleteSiteDataOnExit:
-        if (base::FeatureList::IsEnabled(switches::kUnoDesktop)) {
+        if (switches::IsExplicitBrowserSigninUIOnDesktopEnabled()) {
           // With Uno, tokens are not revoked when clearing cookies if the user
           // is signed in non-syncing.
           revoke_token =
@@ -546,7 +549,7 @@ void MutableProfileOAuth2TokenServiceDelegate::LoadAllCredentialsIntoMemory(
   }
 }
 
-void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentials(
+void MutableProfileOAuth2TokenServiceDelegate::UpdateCredentialsInternal(
     const CoreAccountId& account_id,
     const std::string& refresh_token
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
@@ -656,7 +659,8 @@ void MutableProfileOAuth2TokenServiceDelegate::PersistCredentials(
   }
 }
 
-void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
+void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentialsInternal(
+    signin_metrics::SourceForRefreshTokenOperation source) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   VLOG(1) << "MutablePO2TS::RevokeAllCredentials";
@@ -677,7 +681,7 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
   for (const auto& token : refresh_tokens_)
     accounts.push_back(token.first);
   for (const auto& account : accounts)
-    RevokeCredentials(account);
+    RevokeCredentials(account, source);
 
   DCHECK_EQ(0u, refresh_tokens_.size());
 
@@ -686,7 +690,7 @@ void MutableProfileOAuth2TokenServiceDelegate::RevokeAllCredentials() {
     token_web_data_->RemoveAllTokens();
 }
 
-void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentials(
+void MutableProfileOAuth2TokenServiceDelegate::RevokeCredentialsInternal(
     const CoreAccountId& account_id) {
   RevokeCredentialsImpl(account_id, /*revoke_on_server=*/true);
 }
@@ -723,7 +727,7 @@ void MutableProfileOAuth2TokenServiceDelegate::CancelWebTokenFetch() {
   }
 }
 
-void MutableProfileOAuth2TokenServiceDelegate::ExtractCredentials(
+void MutableProfileOAuth2TokenServiceDelegate::ExtractCredentialsInternal(
     ProfileOAuth2TokenService* to_service,
     const CoreAccountId& account_id) {
   to_service->UpdateCredentials(account_id, GetRefreshToken(account_id),

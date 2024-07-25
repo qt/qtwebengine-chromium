@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
-import {Token} from 'chrome://resources/mojo/mojo/public/mojom/base/token.mojom-webui.js';
+import type {Token} from 'chrome://resources/mojo/mojo/public/mojom/base/token.mojom-webui.js';
 
-import {RecentlyClosedTab, RecentlyClosedTabGroup, Tab, TabGroup} from './tab_search.mojom-webui.js';
+import type {RecentlyClosedTab, RecentlyClosedTabGroup, Tab, TabGroup} from './tab_search.mojom-webui.js';
 import {tabHasMediaAlerts} from './tab_search_utils.js';
 import {TabAlertState} from './tabs.mojom-webui.js';
 
@@ -106,4 +106,12 @@ export function ariaLabel(itemData: ItemData): string {
   }
 
   throw new Error('Invalid data provided.');
+}
+
+export function normalizeURL(url: string): string {
+  // When a navigation is cancelled before completion, the tab's URL can be
+  // empty, which leads to errors when attempting to construct a URL object with
+  // it. To handle this, we substitute any empty URL with 'about:blank'. This is
+  // consistent with how the Omnibox handles empty URLs.
+  return url || 'about:blank';
 }

@@ -12,6 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/typed_macros.h"
 #include "components/guest_view/browser/guest_view_base.h"
+#include "components/sessions/content/session_tab_helper.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
@@ -236,6 +237,14 @@ bool DoesScriptMatch(const Extension& extension,
 
   GURL effective_url =
       GetEffectiveDocumentURL(&frame, url, script.match_origin_as_fallback());
+  auto* web_contents = content::WebContents::FromRenderFrameHost(&frame);
+  int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
+
+  // Script can inject if the extension has tab permissions for the url.
+  if (extension.permissions_data()->HasTabPermissionsForSecurityOrigin(
+          tab_id, effective_url)) {
+    return true;
+  }
 
   // Dynamic scripts can only inject when the extension has host permissions for
   // the url.
@@ -579,7 +588,7 @@ void StoreExtensionsInjectingScripts(
     const std::vector<const Extension*>& extensions,
     ScriptInjectionTracker::ScriptType script_type,
     content::RenderProcessHost& process) {
-  // ContentScriptTracker never removes entries from this set - once a
+  // ScriptInjectionTracker never removes entries from this set - once a
   // renderer process gains an ability to talk on behalf of a content script,
   // it retains this ability forever.  Note that the `process_data` will be
   // destroyed together with the RenderProcessHost (see also a comment inside
@@ -676,7 +685,7 @@ void ScriptInjectionTracker::ReadyToCommitNavigation(
   // Notify URLLoaderFactoryManager for both user and content scripts. This
   // needs to happen at ReadyToCommitNavigation time (i.e. before constructing a
   // URLLoaderFactory that will be sent to the Renderer in a Commit IPC).
-  // TODO(crbug.com/1495177): This should only use webview scripts, since it's
+  // TODO(crbug.com/40286422): This should only use webview scripts, since it's
   // not needed for all extensions.
   extensions_injecting_content_scripts.reserve(
       extensions_injecting_content_scripts.size() +
@@ -778,6 +787,16 @@ void ScriptInjectionTracker::WillExecuteCode(
   // never handle user scripts.
   HandleProgrammaticScriptInjection(PassKey(), ScriptType::kContentScript,
                                     frame, extension);
+}
+
+// static
+void ScriptInjectionTracker::WillGrantActiveTab(
+    base::PassKey<ActiveTabPermissionGranter> pass_key,
+    const Extension& extension,
+    content::RenderProcessHost& process) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  AddMatchingScriptsToProcess(extension, process);
 }
 
 // static

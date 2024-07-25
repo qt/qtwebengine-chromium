@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,21 @@
 #include "containers/subresource_adapter.h"
 #include "containers/range_vector.h"
 #include "generated/sync_validation_types.h"
-#include "state_tracker/image_state.h"
 
 namespace vvl {
 class Buffer;
 class BufferView;
+struct VertexBufferBinding;
+struct IndexBufferBinding;
 }  // namespace vvl
 
-struct BufferBinding;
+namespace syncval_state {
+class CommandBuffer;
+class ImageState;
+class ImageViewState;
+class Swapchain;
+}  // namespace syncval_state
+
 class HazardResult;
 class SyncValidator;
 
@@ -54,8 +61,10 @@ ResourceAccessRange MakeRange(VkDeviceSize start, VkDeviceSize size);
 ResourceAccessRange MakeRange(const vvl::Buffer &buffer, VkDeviceSize offset, VkDeviceSize size);
 ResourceAccessRange MakeRange(const vvl::BufferView &buf_view_state);
 ResourceAccessRange MakeRange(VkDeviceSize offset, uint32_t first_index, uint32_t count, uint32_t stride);
-ResourceAccessRange MakeRange(const BufferBinding &binding, uint32_t first_index, const std::optional<uint32_t> &count,
+ResourceAccessRange MakeRange(const vvl::VertexBufferBinding &binding, uint32_t first_index, const std::optional<uint32_t> &count,
                               uint32_t stride);
+ResourceAccessRange MakeRange(const vvl::IndexBufferBinding &binding, uint32_t first_index, const std::optional<uint32_t> &count,
+                              uint32_t index_size);
 
 extern const ResourceAccessRange kFullRange;
 
@@ -158,72 +167,12 @@ class SingleRangeGenerator {
     const KeyType range_;
     KeyType current_;
 };
-namespace syncval_state {
-class CommandBuffer;
-class Swapchain;
 
-class ImageState : public vvl::Image {
-  public:
-    ImageState(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
-               VkFormatFeatureFlags2KHR features)
-        : vvl::Image(dev_data, img, pCreateInfo, features), opaque_base_address_(0U) {}
-
-    ImageState(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
-               uint32_t swapchain_index, VkFormatFeatureFlags2KHR features)
-        : vvl::Image(dev_data, img, pCreateInfo, swapchain, swapchain_index, features), opaque_base_address_(0U) {}
-    bool IsLinear() const { return fragment_encoder->IsLinearImage(); }
-    bool IsTiled() const { return !IsLinear(); }
-    bool IsSimplyBound() const;
-
-    void SetOpaqueBaseAddress(ValidationStateTracker &dev_data);
-
-    VkDeviceSize GetOpaqueBaseAddress() const { return opaque_base_address_; }
-    bool HasOpaqueMapping() const { return 0U != opaque_base_address_; }
-    VkDeviceSize GetResourceBaseAddress() const;
-    ImageRangeGen MakeImageRangeGen(const VkImageSubresourceRange &subresource_range, bool is_depth_sliced) const;
-    ImageRangeGen MakeImageRangeGen(const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset,
-                                    const VkExtent3D &extent, bool is_depth_sliced) const;
-
-  protected:
-    VkDeviceSize opaque_base_address_ = 0U;
-};
-
-class ImageViewState : public vvl::ImageView {
-  public:
-    ImageViewState(const std::shared_ptr<vvl::Image> &image_state, VkImageView iv, const VkImageViewCreateInfo *ci,
-                   VkFormatFeatureFlags2KHR ff, const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props);
-    const ImageState *GetImageState() const { return static_cast<const syncval_state::ImageState *>(image_state.get()); }
-    ImageRangeGen MakeImageRangeGen(const VkOffset3D &offset, const VkExtent3D &extent, VkImageAspectFlags aspect_mask = 0) const;
-    const ImageRangeGen &GetFullViewImageRangeGen() const { return view_range_gen; }
-
-  protected:
-    ImageRangeGen MakeImageRangeGen() const;
-    // All data members needs for MakeImageRangeGen() must be set before initializing view_range_gen... i.e. above this line.
-    const ImageRangeGen view_range_gen;
-};
-
-// Utilities to DRY up Get... calls
-template <typename Map, typename Key = typename Map::key_type, typename RetVal = std::optional<typename Map::mapped_type>>
-RetVal GetMappedOptional(const Map &map, const Key &key) {
-    RetVal ret_val;
+template <typename Map>
+typename Map::mapped_type GetMapped(const Map &map, const typename Map::key_type &key) {
     auto it = map.find(key);
     if (it != map.cend()) {
-        ret_val.emplace(it->second);
+        return it->second;
     }
-    return ret_val;
+    return typename Map::mapped_type{};
 }
-template <typename Map, typename Fn>
-typename Map::mapped_type GetMapped(const Map &map, const typename Map::key_type &key, Fn &&default_factory) {
-    auto value = GetMappedOptional(map, key);
-    return (value) ? *value : default_factory();
-}
-
-template <typename Map, typename Key = typename Map::key_type, typename Mapped = typename Map::mapped_type,
-          typename Value = typename Mapped::element_type>
-Value *GetMappedPlainFromShared(const Map &map, const Key &key) {
-    auto value = GetMappedOptional<Map, Key>(map, key);
-    if (value) return value->get();
-    return nullptr;
-}
-
-}  // namespace syncval_state

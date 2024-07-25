@@ -7,13 +7,22 @@
 #include <netinet/in.h>
 #include <resolv.h>
 
+#include "base/apple/bridging.h"
+#include "base/apple/foundation_util.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
+#include "base/functional/callback.h"
 #include "base/logging.h"
+#include "base/memory/scoped_policy.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
+#include "net/base/features.h"
+#include "net/base/network_interfaces_getifaddrs.h"
 #include "net/dns/dns_config_service.h"
 
 #if BUILDFLAG(IS_IOS)
@@ -24,6 +33,57 @@ namespace {
 // The maximum number of seconds to wait for the connection type to be
 // determined.
 const double kMaxWaitForConnectionTypeInSeconds = 2.0;
+
+#if BUILDFLAG(IS_MAC)
+std::string GetPrimaryInterfaceName(SCDynamicStoreRef store,
+                                    CFStringRef entity) {
+  base::apple::ScopedCFTypeRef<CFStringRef> netkey(
+      SCDynamicStoreKeyCreateNetworkGlobalEntity(
+          nullptr, kSCDynamicStoreDomainState, entity));
+  base::apple::ScopedCFTypeRef<CFPropertyListRef> netdict_value(
+      SCDynamicStoreCopyValue(store, netkey.get()));
+  CFDictionaryRef netdict =
+      base::apple::CFCast<CFDictionaryRef>(netdict_value.get());
+  if (!netdict) {
+    return "";
+  }
+  CFStringRef primary_if_name_ref =
+      base::apple::GetValueFromDictionary<CFStringRef>(
+          netdict, kSCDynamicStorePropNetPrimaryInterface);
+  if (!primary_if_name_ref) {
+    return "";
+  }
+  return base::SysCFStringRefToUTF8(primary_if_name_ref);
+}
+
+std::string GetIPv4PrimaryInterfaceName(SCDynamicStoreRef store) {
+  return GetPrimaryInterfaceName(store, kSCEntNetIPv4);
+}
+
+std::string GetIPv6PrimaryInterfaceName(SCDynamicStoreRef store) {
+  return GetPrimaryInterfaceName(store, kSCEntNetIPv6);
+}
+
+std::optional<net::NetworkInterfaceList>
+GetNetworkInterfaceListForNetworkChangeCheck(
+    base::RepeatingCallback<bool(net::NetworkInterfaceList*, int)>
+        get_network_list_callback,
+    const std::string& ipv6_primary_interface_name) {
+  net::NetworkInterfaceList interfaces;
+  if (!get_network_list_callback.Run(
+          &interfaces, net::EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES)) {
+    return std::nullopt;
+  }
+  std::erase_if(interfaces, [&ipv6_primary_interface_name](
+                                const net::NetworkInterface& interface) {
+    return interface.address.IsIPv6() &&
+           !interface.address.IsPubliclyRoutable() &&
+           (interface.name != ipv6_primary_interface_name);
+  });
+  return interfaces;
+}
+#endif  // BUILDFLAG(IS_MAC)
+
 }  // namespace
 
 namespace net {
@@ -37,7 +97,18 @@ static bool CalculateReachability(SCNetworkConnectionFlags flags) {
 NetworkChangeNotifierApple::NetworkChangeNotifierApple()
     : NetworkChangeNotifier(NetworkChangeCalculatorParamsMac()),
       initial_connection_type_cv_(&connection_type_lock_),
-      forwarder_(this) {
+      forwarder_(this)
+#if BUILDFLAG(IS_MAC)
+      ,
+      reduce_ip_address_change_notification_(base::FeatureList::IsEnabled(
+          features::kReduceIPAddressChangeNotification)),
+      get_network_list_callback_(base::BindRepeating(&GetNetworkList)),
+      get_ipv4_primary_interface_name_callback_(
+          base::BindRepeating(&GetIPv4PrimaryInterfaceName)),
+      get_ipv6_primary_interface_name_callback_(
+          base::BindRepeating(&GetIPv6PrimaryInterfaceName))
+#endif  // BUILDFLAG(IS_MAC)
+{
   // Must be initialized after the rest of this object, as it may call back into
   // SetInitialConnectionType().
   config_watcher_ = std::make_unique<NetworkConfigWatcherApple>(&forwarder_);
@@ -192,13 +263,17 @@ void NetworkChangeNotifierApple::Forwarder::StartReachabilityNotifications() {
 }
 
 void NetworkChangeNotifierApple::Forwarder::SetDynamicStoreNotificationKeys(
-    SCDynamicStoreRef store) {
-  net_config_watcher_->SetDynamicStoreNotificationKeys(store);
+    base::apple::ScopedCFTypeRef<SCDynamicStoreRef> store) {
+  net_config_watcher_->SetDynamicStoreNotificationKeys(std::move(store));
 }
 
 void NetworkChangeNotifierApple::Forwarder::OnNetworkConfigChange(
     CFArrayRef changed_keys) {
   net_config_watcher_->OnNetworkConfigChange(changed_keys);
+}
+
+void NetworkChangeNotifierApple::Forwarder::CleanUpOnNotifierThread() {
+  net_config_watcher_->CleanUpOnNotifierThread();
 }
 
 void NetworkChangeNotifierApple::SetInitialConnectionType() {
@@ -234,8 +309,7 @@ void NetworkChangeNotifierApple::SetInitialConnectionType() {
 
 void NetworkChangeNotifierApple::StartReachabilityNotifications() {
   // Called on notifier thread.
-  run_loop_.reset(CFRunLoopGetCurrent());
-  CFRetain(run_loop_.get());
+  run_loop_.reset(CFRunLoopGetCurrent(), base::scoped_policy::RETAIN);
 
   DCHECK(reachability_);
   SCNetworkReachabilityContext reachability_context = {
@@ -258,46 +332,58 @@ void NetworkChangeNotifierApple::StartReachabilityNotifications() {
 }
 
 void NetworkChangeNotifierApple::SetDynamicStoreNotificationKeys(
-    SCDynamicStoreRef store) {
+    base::apple::ScopedCFTypeRef<SCDynamicStoreRef> store) {
 #if BUILDFLAG(IS_IOS)
   // SCDynamicStore API does not exist on iOS.
   NOTREACHED();
-#else
-  base::apple::ScopedCFTypeRef<CFMutableArrayRef> notification_keys(
-      CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
-  base::apple::ScopedCFTypeRef<CFStringRef> key(
-      SCDynamicStoreKeyCreateNetworkGlobalEntity(
-          nullptr, kSCDynamicStoreDomainState, kSCEntNetInterface));
-  CFArrayAppendValue(notification_keys.get(), key.get());
-  key.reset(SCDynamicStoreKeyCreateNetworkGlobalEntity(
-      nullptr, kSCDynamicStoreDomainState, kSCEntNetIPv4));
-  CFArrayAppendValue(notification_keys.get(), key.get());
-  key.reset(SCDynamicStoreKeyCreateNetworkGlobalEntity(
-      nullptr, kSCDynamicStoreDomainState, kSCEntNetIPv6));
-  CFArrayAppendValue(notification_keys.get(), key.get());
+#elif BUILDFLAG(IS_MAC)
+  NSArray* notification_keys = @[
+    base::apple::CFToNSOwnershipCast(SCDynamicStoreKeyCreateNetworkGlobalEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCEntNetInterface)),
+    base::apple::CFToNSOwnershipCast(SCDynamicStoreKeyCreateNetworkGlobalEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCEntNetIPv4)),
+    base::apple::CFToNSOwnershipCast(SCDynamicStoreKeyCreateNetworkGlobalEntity(
+        nullptr, kSCDynamicStoreDomainState, kSCEntNetIPv6)),
+  ];
 
   // Set the notification keys.  This starts us receiving notifications.
-  bool ret = SCDynamicStoreSetNotificationKeys(store, notification_keys.get(),
-                                               /*patterns=*/nullptr);
+  bool ret = SCDynamicStoreSetNotificationKeys(
+      store.get(), base::apple::NSToCFPtrCast(notification_keys),
+      /*patterns=*/nullptr);
   // TODO(willchan): Figure out a proper way to handle this rather than crash.
   CHECK(ret);
-#endif  // BUILDFLAG(IS_IOS)
+
+  if (reduce_ip_address_change_notification_) {
+    store_ = std::move(store);
+    ipv4_primary_interface_name_ =
+        get_ipv4_primary_interface_name_callback_.Run(store_.get());
+    ipv6_primary_interface_name_ =
+        get_ipv6_primary_interface_name_callback_.Run(store_.get());
+    interfaces_for_network_change_check_ =
+        GetNetworkInterfaceListForNetworkChangeCheck(
+            get_network_list_callback_, ipv6_primary_interface_name_);
+  }
+  if (initialized_callback_for_test_) {
+    std::move(initialized_callback_for_test_).Run();
+  }
+#endif  // BUILDFLAG(IS_IOS) /  BUILDFLAG(IS_MAC)
 }
 
 void NetworkChangeNotifierApple::OnNetworkConfigChange(CFArrayRef changed_keys) {
 #if BUILDFLAG(IS_IOS)
   // SCDynamicStore API does not exist on iOS.
   NOTREACHED();
-#else
+#elif BUILDFLAG(IS_MAC)
   DCHECK_EQ(run_loop_.get(), CFRunLoopGetCurrent());
 
+  bool maybe_notify = false;
   for (CFIndex i = 0; i < CFArrayGetCount(changed_keys); ++i) {
     CFStringRef key =
         static_cast<CFStringRef>(CFArrayGetValueAtIndex(changed_keys, i));
     if (CFStringHasSuffix(key, kSCEntNetIPv4) ||
         CFStringHasSuffix(key, kSCEntNetIPv6)) {
-      NotifyObserversOfIPAddressChange();
-      return;
+      maybe_notify = true;
+      break;
     }
     if (CFStringHasSuffix(key, kSCEntNetInterface)) {
       // TODO(willchan): Does not appear to be working.  Look into this.
@@ -306,7 +392,42 @@ void NetworkChangeNotifierApple::OnNetworkConfigChange(CFArrayRef changed_keys) 
       NOTREACHED();
     }
   }
+  if (!maybe_notify) {
+    return;
+  }
+  if (!reduce_ip_address_change_notification_) {
+    NotifyObserversOfIPAddressChange();
+    return;
+  }
+  // When the ReduceIPAddressChangeNotification feature is enabled, we notifies
+  // the IP address change only when:
+  //  - The list of network interfaces has changed, excluding local IPv6
+  //    addresses of non-primary interfaces.
+  //  - or the primary interface name (for IPv4 and IPv6) has changed.
+  std::string ipv4_primary_interface_name =
+      get_ipv4_primary_interface_name_callback_.Run(store_.get());
+  std::string ipv6_primary_interface_name =
+      get_ipv6_primary_interface_name_callback_.Run(store_.get());
+  std::optional<NetworkInterfaceList> interfaces =
+      GetNetworkInterfaceListForNetworkChangeCheck(get_network_list_callback_,
+                                                   ipv6_primary_interface_name);
+  if (interfaces_for_network_change_check_ && interfaces &&
+      interfaces_for_network_change_check_.value() == interfaces.value() &&
+      ipv4_primary_interface_name_ == ipv4_primary_interface_name &&
+      ipv6_primary_interface_name_ == ipv6_primary_interface_name) {
+    return;
+  }
+  ipv4_primary_interface_name_ = std::move(ipv4_primary_interface_name);
+  ipv6_primary_interface_name_ = std::move(ipv6_primary_interface_name);
+  interfaces_for_network_change_check_ = std::move(interfaces);
+  NotifyObserversOfIPAddressChange();
 #endif  // BUILDFLAG(IS_IOS)
+}
+
+void NetworkChangeNotifierApple::CleanUpOnNotifierThread() {
+#if BUILDFLAG(IS_MAC)
+  store_.reset();
+#endif  // BUILDFLAG(IS_MAC)
 }
 
 // static
@@ -340,5 +461,23 @@ void NetworkChangeNotifierApple::ReachabilityCallback(
   NotifyObserversOfIPAddressChange();
 #endif  // BUILDFLAG(IS_IOS)
 }
+
+#if BUILDFLAG(IS_MAC)
+void NetworkChangeNotifierApple::SetCallbacksForTest(
+    base::OnceClosure initialized_callback,
+    base::RepeatingCallback<bool(NetworkInterfaceList*, int)>
+        get_network_list_callback,
+    base::RepeatingCallback<std::string(SCDynamicStoreRef)>
+        get_ipv4_primary_interface_name_callback,
+    base::RepeatingCallback<std::string(SCDynamicStoreRef)>
+        get_ipv6_primary_interface_name_callback) {
+  initialized_callback_for_test_ = std::move(initialized_callback);
+  get_network_list_callback_ = std::move(get_network_list_callback);
+  get_ipv4_primary_interface_name_callback_ =
+      std::move(get_ipv4_primary_interface_name_callback);
+  get_ipv6_primary_interface_name_callback_ =
+      std::move(get_ipv6_primary_interface_name_callback);
+}
+#endif  // BUILDFLAG(IS_MAC)
 
 }  // namespace net

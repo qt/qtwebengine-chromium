@@ -858,6 +858,14 @@ class WasmGraphBuildingInterface {
         decoder->detected_->Add(kFeature_imported_strings);
         break;
       }
+      case WKI::kStringToUtf8Array: {
+        TFNode* string = ExternRefToString(decoder, args[0]);
+        result = builder_->StringToUtf8Array(
+            string, compiler::kWithoutNullCheck, decoder->position());
+        builder_->SetType(result, returns[0].type);
+        decoder->detected_->Add(kFeature_imported_strings);
+        break;
+      }
       case WKI::kStringLength: {
         TFNode* string = ExternRefToString(decoder, args[0]);
         result = builder_->StringMeasureWtf16(
@@ -948,6 +956,7 @@ class WasmGraphBuildingInterface {
       case WKI::kDataViewSetUint16:
       case WKI::kDataViewSetUint32:
       case WKI::kDataViewByteLength:
+      case WKI::kFastAPICall:
         return false;
     }
     if (v8_flags.trace_wasm_inlining) {
@@ -956,6 +965,36 @@ class WasmGraphBuildingInterface {
     }
     assumptions_->RecordAssumption(index, import);
     SetAndTypeNode(&returns[0], result);
+    // The decoder assumes that any call might throw, so if we are in a try
+    // block, it marks the associated catch block as reachable, and will
+    // later ask the graph builder to build the catch block's graph.
+    // However, we just replaced the call with a sequence that doesn't throw,
+    // which might make the catch block unreachable as far as the graph builder
+    // is concerned, which would violate assumptions when trying to build a
+    // graph for it. So we insert a fake branch to the catch block to make it
+    // reachable. Later phases will optimize this out.
+    if (decoder->current_catch() != -1) {
+      TryInfo* try_info = current_try_info(decoder);
+      if (try_info->catch_env->state == SsaEnv::kUnreachable) {
+        auto [true_cont, false_cont] =
+            builder_->BranchExpectTrue(builder_->Int32Constant(1));
+        SsaEnv* success_env = Steal(decoder->zone(), ssa_env_);
+        success_env->control = true_cont;
+
+        SsaEnv* exception_env = Split(decoder->zone(), success_env);
+        exception_env->control = false_cont;
+
+        ScopedSsaEnv scoped_env(this, exception_env, success_env);
+
+        if (emit_loop_exits()) {
+          ValueVector stack_values;
+          uint32_t depth = decoder->control_depth_of_current_catch();
+          BuildNestedLoopExits(decoder, depth, true, stack_values);
+        }
+        Goto(decoder, try_info->catch_env);
+        try_info->exception = builder_->Int32Constant(1);
+      }
+    }
     return true;
   }
 
@@ -1036,9 +1075,9 @@ class WasmGraphBuildingInterface {
 
       TFNode* success_control;
       TFNode* failure_control;
-      builder_->CompareToInternalFunctionAtIndex(
-          func_ref.node, expected_function_index, &success_control,
-          &failure_control, i == num_cases - 1);
+      builder_->CompareToFuncRefAtIndex(func_ref.node, expected_function_index,
+                                        &success_control, &failure_control,
+                                        i == num_cases - 1);
       TFNode* initial_effect = effect();
 
       builder_->SetControl(success_control);
@@ -1125,9 +1164,9 @@ class WasmGraphBuildingInterface {
 
       TFNode* success_control;
       TFNode* failure_control;
-      builder_->CompareToInternalFunctionAtIndex(
-          func_ref.node, expected_function_index, &success_control,
-          &failure_control, i == num_cases - 1);
+      builder_->CompareToFuncRefAtIndex(func_ref.node, expected_function_index,
+                                        &success_control, &failure_control,
+                                        i == num_cases - 1);
       TFNode* initial_effect = effect();
 
       builder_->SetControl(success_control);
@@ -1312,6 +1351,18 @@ class WasmGraphBuildingInterface {
       // Merge the current env into the target handler's env.
       SetEnv(block->try_info->catch_env);
       if (depth == decoder->control_depth() - 1) {
+        if (inlined_status_ == kInlinedHandledCall) {
+          if (emit_loop_exits()) {
+            ValueVector stack_values;
+            BuildNestedLoopExits(decoder, depth, false, stack_values,
+                                 &block->try_info->exception);
+          }
+          // We are inlining this function and the inlined Call has a handler.
+          // Add the delegated exception to {dangling_exceptions_}.
+          dangling_exceptions_.Add(block->try_info->exception, effect(),
+                                   control());
+          return;
+        }
         // We just throw to the caller here, so no need to generate IfSuccess
         // and IfFailure nodes.
         builder_->Rethrow(block->try_info->exception);
@@ -1369,9 +1420,58 @@ class WasmGraphBuildingInterface {
     base::Vector<Value> values_without_exnref =
         catch_case.kind == kCatch ? values
                                   : values.SubVector(0, values.size() - 1);
-    CatchAndUnpackWasmException(decoder, block, exception,
-                                catch_case.maybe_tag.tag_imm.tag, caught_tag,
-                                expected_tag, values_without_exnref);
+
+    if (catch_case.maybe_tag.tag_imm.tag->sig->parameter_count() == 1 &&
+        catch_case.maybe_tag.tag_imm.tag->sig->GetParam(0) == kWasmExternRef) {
+      // Check for the special case where the tag is WebAssembly.JSTag and the
+      // exception is not a WebAssembly.Exception. In this case the exception is
+      // caught and pushed on the operand stack.
+      // Only perform this check if the tag signature is the same as
+      // the JSTag signature, i.e. a single externref, otherwise
+      // we know statically that it cannot be the JSTag.
+
+      TFNode* is_js_exn = builder_->IsExceptionTagUndefined(caught_tag);
+      auto [exn_is_js, exn_is_wasm] = builder_->BranchExpectFalse(is_js_exn);
+      SsaEnv* exn_is_js_env = Split(decoder->zone(), ssa_env_);
+      exn_is_js_env->control = exn_is_js;
+      SsaEnv* exn_is_wasm_env = Steal(decoder->zone(), ssa_env_);
+      exn_is_wasm_env->control = exn_is_wasm;
+
+      // Case 1: A wasm exception.
+      SetEnv(exn_is_wasm_env);
+      CatchAndUnpackWasmException(decoder, block, exception,
+                                  catch_case.maybe_tag.tag_imm.tag, caught_tag,
+                                  expected_tag, values_without_exnref);
+
+      // Case 2: A JS exception.
+      SetEnv(exn_is_js_env);
+      TFNode* js_tag = builder_->LoadJSTag();
+      TFNode* compare = builder_->ExceptionTagEqual(expected_tag, js_tag);
+      auto [if_catch, if_no_catch] = builder_->BranchNoHint(compare);
+      // Merge the wasm no-catch and JS no-catch paths.
+      SsaEnv* if_no_catch_env = Split(decoder->zone(), ssa_env_);
+      if_no_catch_env->control = if_no_catch;
+      SetEnv(if_no_catch_env);
+      Goto(decoder, block->try_info->catch_env);
+      // Merge the wasm catch and JS catch paths.
+      SsaEnv* if_catch_env = Steal(decoder->zone(), ssa_env_);
+      if_catch_env->control = if_catch;
+      SetEnv(if_catch_env);
+      Goto(decoder, block->block_env);
+
+      // The final env is a merge of case 1 and 2. The unpacked value is a Phi
+      // of the unpacked value (case 1) and the exception itself (case 2).
+      SetEnv(block->block_env);
+      TFNode* phi_inputs[] = {values[0].node, exception,
+                              block->block_env->control};
+      TFNode* ref = builder_->Phi(wasm::kWasmExternRef, 2, phi_inputs);
+      SetAndTypeNode(&values[0], ref);
+    } else {
+      CatchAndUnpackWasmException(decoder, block, exception,
+                                  catch_case.maybe_tag.tag_imm.tag, caught_tag,
+                                  expected_tag, values_without_exnref);
+    }
+
     if (catch_case.kind == kCatchRef) {
       DCHECK_EQ(values.last().type, kWasmExnRef);
       values.last().node = block->try_info->exception;
@@ -1752,6 +1852,7 @@ class WasmGraphBuildingInterface {
       case HeapType::kNone:
       case HeapType::kNoExtern:
       case HeapType::kNoFunc:
+      case HeapType::kNoExn:
         DCHECK(null_succeeds);
         // This is needed for BrOnNull. {value_on_branch} is on the value stack
         // and BrOnNull interacts with the values on the stack.
@@ -1790,6 +1891,7 @@ class WasmGraphBuildingInterface {
       case HeapType::kNone:
       case HeapType::kNoExtern:
       case HeapType::kNoFunc:
+      case HeapType::kNoExn:
         DCHECK(null_succeeds);
         // We need to store a node in the stack where the decoder so far only
         // pushed a value and expects the `BrOnCastFailAbstract` to set it.
@@ -1890,8 +1992,9 @@ class WasmGraphBuildingInterface {
   void StringNewWtf8(FullDecoder* decoder, const MemoryIndexImmediate& memory,
                      const unibrow::Utf8Variant variant, const Value& offset,
                      const Value& size, Value* result) {
-    SetAndTypeNode(result, builder_->StringNewWtf8(memory.index, variant,
-                                                   offset.node, size.node));
+    SetAndTypeNode(result,
+                   builder_->StringNewWtf8(memory.memory, variant, offset.node,
+                                           size.node, decoder->position()));
   }
 
   void StringNewWtf8Array(FullDecoder* decoder,
@@ -1906,7 +2009,8 @@ class WasmGraphBuildingInterface {
   void StringNewWtf16(FullDecoder* decoder, const MemoryIndexImmediate& imm,
                       const Value& offset, const Value& size, Value* result) {
     SetAndTypeNode(result,
-                   builder_->StringNewWtf16(imm.index, offset.node, size.node));
+                   builder_->StringNewWtf16(imm.memory, offset.node, size.node,
+                                            decoder->position()));
   }
 
   void StringNewWtf16Array(FullDecoder* decoder, const Value& array,
@@ -1954,7 +2058,7 @@ class WasmGraphBuildingInterface {
                         const unibrow::Utf8Variant variant, const Value& str,
                         const Value& offset, Value* result) {
     SetAndTypeNode(
-        result, builder_->StringEncodeWtf8(memory.index, variant, str.node,
+        result, builder_->StringEncodeWtf8(memory.memory, variant, str.node,
                                            NullCheckFor(str.type), offset.node,
                                            decoder->position()));
   }
@@ -1972,7 +2076,7 @@ class WasmGraphBuildingInterface {
   void StringEncodeWtf16(FullDecoder* decoder, const MemoryIndexImmediate& imm,
                          const Value& str, const Value& offset, Value* result) {
     SetAndTypeNode(result, builder_->StringEncodeWtf16(
-                               imm.index, str.node, NullCheckFor(str.type),
+                               imm.memory, str.node, NullCheckFor(str.type),
                                offset.node, decoder->position()));
   }
 
@@ -2025,7 +2129,7 @@ class WasmGraphBuildingInterface {
                             const Value& view, const Value& addr,
                             const Value& pos, const Value& bytes,
                             Value* next_pos, Value* bytes_written) {
-    builder_->StringViewWtf8Encode(memory.index, variant, view.node,
+    builder_->StringViewWtf8Encode(memory.memory, variant, view.node,
                                    NullCheckFor(view.type), addr.node, pos.node,
                                    bytes.node, &next_pos->node,
                                    &bytes_written->node, decoder->position());
@@ -2060,7 +2164,7 @@ class WasmGraphBuildingInterface {
                              const Value& codeunits, Value* result) {
     SetAndTypeNode(
         result, builder_->StringViewWtf16Encode(
-                    imm.index, view.node, NullCheckFor(view.type), offset.node,
+                    imm.memory, view.node, NullCheckFor(view.type), offset.node,
                     pos.node, codeunits.node, decoder->position()));
   }
 

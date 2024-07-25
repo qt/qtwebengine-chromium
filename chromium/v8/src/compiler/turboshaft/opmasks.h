@@ -173,9 +173,20 @@ using kWord64Mul =
     WordBinopMask::For<WordBinopOp::Kind::kMul, WordRepresentation::Word64()>;
 using kWord64BitwiseAnd = WordBinopMask::For<WordBinopOp::Kind::kBitwiseAnd,
                                              WordRepresentation::Word64()>;
+using kWord64BitwiseOr = WordBinopMask::For<WordBinopOp::Kind::kBitwiseOr,
+                                            WordRepresentation::Word64()>;
+using kWord64BitwiseXor = WordBinopMask::For<WordBinopOp::Kind::kBitwiseXor,
+                                             WordRepresentation::Word64()>;
 
 using kBitwiseAnd = WordBinopKindMask::For<WordBinopOp::Kind::kBitwiseAnd>;
 using kBitwiseXor = WordBinopKindMask::For<WordBinopOp::Kind::kBitwiseXor>;
+
+using WordUnaryMask =
+    MaskBuilder<WordUnaryOp, FIELD(WordUnaryOp, kind), FIELD(WordUnaryOp, rep)>;
+using kWord32ReverseBytes = WordUnaryMask::For<WordUnaryOp::Kind::kReverseBytes,
+                                               WordRepresentation::Word32()>;
+using kWord64ReverseBytes = WordUnaryMask::For<WordUnaryOp::Kind::kReverseBytes,
+                                               WordRepresentation::Word64()>;
 
 using FloatUnaryMask = MaskBuilder<FloatUnaryOp, FIELD(FloatUnaryOp, kind),
                                    FIELD(FloatUnaryOp, rep)>;
@@ -216,6 +227,8 @@ using kWord32ShiftRightLogical =
                    WordRepresentation::Word32()>;
 using kWord32RotateRight =
     ShiftMask::For<ShiftOp::Kind::kRotateRight, WordRepresentation::Word32()>;
+using kWord64ShiftLeft =
+    ShiftMask::For<ShiftOp::Kind::kShiftLeft, WordRepresentation::Word64()>;
 using kWord64ShiftRightArithmetic =
     ShiftMask::For<ShiftOp::Kind::kShiftRightArithmetic,
                    WordRepresentation::Word64()>;
@@ -242,6 +255,8 @@ using kWord32Equal = ComparisonMask::For<ComparisonOp::Kind::kEqual,
                                          WordRepresentation::Word32()>;
 using kWord64Equal = ComparisonMask::For<ComparisonOp::Kind::kEqual,
                                          WordRepresentation::Word64()>;
+using ComparisonKindMask = MaskBuilder<ComparisonOp, FIELD(ComparisonOp, kind)>;
+using kComparisonEqual = ComparisonKindMask::For<ComparisonOp::Kind::kEqual>;
 
 using ChangeOpMask =
     MaskBuilder<ChangeOp, FIELD(ChangeOp, kind), FIELD(ChangeOp, assumption),
@@ -272,13 +287,9 @@ using kTruncateFloat32ToUint32OverflowToMin =
                       RegisterRepresentation::Float32(),
                       RegisterRepresentation::Word32()>;
 
-using kTruncateInt64ToInt32 = ChangeOpMask::For<
+using kTruncateWord64ToWord32 = ChangeOpMask::For<
     ChangeOp::Kind::kTruncate, ChangeOp::Assumption::kNoAssumption,
     RegisterRepresentation::Word64(), RegisterRepresentation::Word32()>;
-
-using TaggedBicastMask =
-    MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, kind)>;
-using kTaggedBitcastSmi = TaggedBicastMask::For<TaggedBitcastOp::Kind::kSmi>;
 
 using OverflowCheckedBinopMask =
     MaskBuilder<OverflowCheckedBinopOp, FIELD(OverflowCheckedBinopOp, kind),
@@ -287,12 +298,34 @@ using kOverflowCheckedWord32Add =
     OverflowCheckedBinopMask::For<OverflowCheckedBinopOp::Kind::kSignedAdd,
                                   WordRepresentation::Word32()>;
 
+using TaggedBitcastMask =
+    MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, from),
+                FIELD(TaggedBitcastOp, to), FIELD(TaggedBitcastOp, kind)>;
+using kBitcastTaggedToWordPtrForTagAndSmiBits =
+    TaggedBitcastMask::For<RegisterRepresentation::Tagged(),
+                           RegisterRepresentation::WordPtr(),
+                           TaggedBitcastOp::Kind::kTagAndSmiBits>;
+using kBitcastWordPtrToSmi =
+    TaggedBitcastMask::For<RegisterRepresentation::WordPtr(),
+                           RegisterRepresentation::Tagged(),
+                           TaggedBitcastOp::Kind::kSmi>;
+
+using TaggedBitcastKindMask =
+    MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, kind)>;
+using kTaggedBitcastSmi =
+    TaggedBitcastKindMask::For<TaggedBitcastOp::Kind::kSmi>;
+
 #if V8_ENABLE_WEBASSEMBLY
 
 using Simd128BinopMask =
     MaskBuilder<Simd128BinopOp, FIELD(Simd128BinopOp, kind)>;
 using kSimd128I32x4Mul = Simd128BinopMask::For<Simd128BinopOp::Kind::kI32x4Mul>;
 using kSimd128I16x8Mul = Simd128BinopMask::For<Simd128BinopOp::Kind::kI16x8Mul>;
+
+#define SIMD_SIGN_EXTENSION_BINOP_MASK(kind) \
+  using kSimd128##kind = Simd128BinopMask::For<Simd128BinopOp::Kind::k##kind>;
+FOREACH_SIMD_128_BINARY_SIGN_EXTENSION_OPCODE(SIMD_SIGN_EXTENSION_BINOP_MASK)
+#undef SIMD_SIGN_EXTENSION_BINOP_MASK
 
 using Simd128UnaryMask =
     MaskBuilder<Simd128UnaryOp, FIELD(Simd128UnaryOp, kind)>;
@@ -304,6 +337,13 @@ using kSimd128I32x4ExtAddPairwiseI16x8S =
     Simd128UnaryMask::For<Simd128UnaryOp::Kind::kI32x4ExtAddPairwiseI16x8S>;
 using kSimd128I32x4ExtAddPairwiseI16x8U =
     Simd128UnaryMask::For<Simd128UnaryOp::Kind::kI32x4ExtAddPairwiseI16x8U>;
+using kSimd128ReverseBytes =
+    Simd128UnaryMask::For<Simd128UnaryOp::Kind::kSimd128ReverseBytes>;
+
+#define SIMD_SIGN_EXTENSION_UNARY_MASK(kind) \
+  using kSimd128##kind = Simd128UnaryMask::For<Simd128UnaryOp::Kind::k##kind>;
+FOREACH_SIMD_128_UNARY_SIGN_EXTENSION_OPCODE(SIMD_SIGN_EXTENSION_UNARY_MASK)
+#undef SIMD_SIGN_EXTENSION_UNARY_MASK
 
 using Simd128ShiftMask =
     MaskBuilder<Simd128ShiftOp, FIELD(Simd128ShiftOp, kind)>;

@@ -34,6 +34,7 @@
 #include "services/network/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/mojom/aggregation_service/aggregatable_report.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -86,8 +87,7 @@ class AttributionReportNetworkSenderTest : public testing::Test {
   AttributionReportNetworkSenderTest()
       : task_environment_(base::test::TaskEnvironment::TimeSource::MOCK_TIME),
         network_sender_(std::make_unique<AttributionReportNetworkSender>(
-            base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
-                &test_url_loader_factory_))) {}
+            test_url_loader_factory_.GetSafeWeakWrapper())) {}
 
  protected:
   // |task_environment_| must be initialized first.
@@ -465,7 +465,8 @@ TEST_F(AttributionReportNetworkSenderTest, HeadersPopulated) {
       ReportBuilder(AttributionInfoBuilder().Build(),
                     SourceBuilder().BuildStored())
           .SetAggregatableHistogramContributions(
-              {AggregatableHistogramContribution(/*key=*/1, /*value=*/2)})
+              {blink::mojom::AggregatableReportHistogramContribution(
+                  /*bucket=*/1, /*value=*/2, /*filtering_id=*/std::nullopt)})
           .BuildAggregatableAttribution();
 
   network_sender_->SendReport(report, /*is_debug_report=*/false,
@@ -799,9 +800,14 @@ TEST_F(AttributionReportNetworkSenderTest,
       "https://report.test/.well-known/attribution-reporting/debug/verbose";
 
   std::optional<AttributionDebugReport> report = AttributionDebugReport::Create(
-      SourceBuilder().SetDebugReporting(true).Build(),
-      /*is_debug_cookie_set=*/false,
-      StoreSourceResult::InsufficientUniqueDestinationCapacity(3));
+      /*is_operation_allowed=*/[]() { return true; },
+      StoreSourceResult(
+          SourceBuilder()
+              .SetDebugReporting(true)
+              .SetDebugCookieSet(true)
+              .Build(),
+          /*is_noised=*/false,
+          StoreSourceResult::InsufficientUniqueDestinationCapacity(3)));
   ASSERT_TRUE(report);
 
   base::MockCallback<AttributionReportSender::DebugReportSentCallback> callback;
@@ -828,9 +834,14 @@ TEST_F(AttributionReportNetworkSenderTest,
       "https://report.test/.well-known/attribution-reporting/debug/verbose";
 
   std::optional<AttributionDebugReport> report = AttributionDebugReport::Create(
-      SourceBuilder().SetDebugReporting(true).Build(),
-      /*is_debug_cookie_set=*/false,
-      StoreSourceResult::InsufficientUniqueDestinationCapacity(3));
+      /*is_operation_allowed=*/[]() { return true; },
+      StoreSourceResult(
+          SourceBuilder()
+              .SetDebugReporting(true)
+              .SetDebugCookieSet(true)
+              .Build(),
+          /*is_noised=*/false,
+          StoreSourceResult::InsufficientUniqueDestinationCapacity(3)));
   ASSERT_TRUE(report);
 
   base::MockCallback<AttributionReportSender::DebugReportSentCallback> callback;

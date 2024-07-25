@@ -23,11 +23,19 @@
 
 namespace content {
 
-// Use DCHECK_CURRENTLY_ON(BrowserThread::ID) to assert that a function can only
+// Use DCHECK_CURRENTLY_ON(BrowserThread::ID) to DCHECK that a function can only
 // be called on the named BrowserThread.
-#define DCHECK_CURRENTLY_ON(thread_identifier)                       \
-  DCHECK(::content::BrowserThread::CurrentlyOn(thread_identifier))   \
-      << ::content::BrowserThread::GetDCheckCurrentlyOnErrorMessage( \
+#define DCHECK_CURRENTLY_ON(thread_identifier)                     \
+  DCHECK(::content::BrowserThread::CurrentlyOn(thread_identifier)) \
+      << ::content::BrowserThread::GetCurrentlyOnErrorMessage(     \
+             thread_identifier)
+
+// Use CHECK_CURRENTLY_ON(BrowserThread::ID) to CHECK that a function can only
+// be called on the named BrowserThread.
+#define CHECK_CURRENTLY_ON(thread_identifier, ...)               \
+  CHECK(::content::BrowserThread::CurrentlyOn(thread_identifier) \
+            __VA_OPT__(, ) __VA_ARGS__)                          \
+      << ::content::BrowserThread::GetCurrentlyOnErrorMessage(   \
              thread_identifier)
 
 // The main entry point to post tasks to the UI thread. Tasks posted with the
@@ -84,8 +92,8 @@ class CONTENT_EXPORT BrowserThread {
   // its associated thread. If you already have a task runner bound to a
   // BrowserThread you should use its SequencedTaskRunner::DeleteSoon() member
   // method.
-  // TODO(1026641): Get rid of the last few callers to these in favor of an
-  // explicit call to content::GetUIThreadTaskRunner({})->DeleteSoon(...).
+  // TODO(crbug.com/40108370): Get rid of the last few callers to these in favor
+  // of an explicit call to GetUIThreadTaskRunner({})->DeleteSoon(...).
 
   template <class T>
   static bool DeleteSoon(ID identifier,
@@ -114,8 +122,8 @@ class CONTENT_EXPORT BrowserThread {
   //
   // This is useful when a task needs to run on |task_runner| (for thread-safety
   // reasons) but should be delayed until after critical phases (e.g. startup).
-  // TODO(crbug.com/793069): Add support for sequence-funneling and remove this
-  // method.
+  // TODO(crbug.com/40553790): Add support for sequence-funneling and remove
+  // this method.
   static void PostBestEffortTask(const base::Location& from_here,
                                  scoped_refptr<base::TaskRunner> task_runner,
                                  base::OnceClosure task);
@@ -138,10 +146,9 @@ class CONTENT_EXPORT BrowserThread {
   // UI), and thread switching delays can mean that the final UI tasks executes
   // before the IO task's stack unwinds. This would lead to the object
   // destructing on the IO thread, which often is not what you want (i.e. to
-  // unregister from NotificationService, to notify other objects on the
-  // creating thread etc). Note: see base::OnTaskRunnerDeleter and
-  // base::RefCountedDeleteOnSequence to bind to SequencedTaskRunner instead of
-  // specific BrowserThreads.
+  // notify other objects on the creating thread etc). Note: see
+  // base::OnTaskRunnerDeleter and base::RefCountedDeleteOnSequence to bind to
+  // SequencedTaskRunner instead of specific BrowserThreads.
   template <ID thread>
   struct DeleteOnThread {
     template <typename T>
@@ -186,7 +193,7 @@ class CONTENT_EXPORT BrowserThread {
   struct DeleteOnIOThread : public DeleteOnThread<IO> {};
 
   // Returns an appropriate error message for when DCHECK_CURRENTLY_ON() fails.
-  static std::string GetDCheckCurrentlyOnErrorMessage(ID expected);
+  static std::string GetCurrentlyOnErrorMessage(ID expected);
 
   // Runs all pending tasks for the given thread. Tasks posted after this method
   // is called (in particular any task posted from within any of the pending

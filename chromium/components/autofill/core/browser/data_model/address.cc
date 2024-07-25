@@ -76,6 +76,9 @@ bool Address::FinalizeAfterImport() {
       result = Root()->CompleteFullTree();
     }
   }
+  // Generate synthesized node values after the tree's values were updated,
+  // whether by completion or gaps filled.
+  Root()->GenerateTreeSynthesizedNodes();
   return result;
 }
 
@@ -94,6 +97,13 @@ Address::GetCanonicalizedStateName() const {
 
 bool Address::IsStructuredAddressMergeable(const Address& newer) const {
   return GetRoot().IsMergeableWithComponent(newer.GetRoot());
+}
+
+bool Address::IsStructuredAddressMergeableForType(FieldType type,
+                                                  const Address& other) const {
+  return address_component_store_.GetNodeForType(type)
+      ->IsMergeableWithComponent(
+          *other.address_component_store_.GetNodeForType(type));
 }
 
 const AddressComponent& Address::GetRoot() const {
@@ -309,6 +319,22 @@ void Address::SetAddressCountryCode(const std::u16string& country_code,
   // Update verification status.
   Root()->SetValueForType(ADDRESS_HOME_COUNTRY, country_code,
                           verification_status);
+}
+
+bool Address::IsAddressFieldSettingAccessible(FieldType field_type) const {
+  // Default to US in case of empty country codes.
+  AutofillCountry country(GetAddressCountryCode()->empty()
+                              ? "US"
+                              : GetAddressCountryCode().value());
+
+  for (AddressComponent* component =
+           address_component_store_.GetNodeForType(field_type);
+       component != nullptr; component = component->Parent()) {
+    if (country.IsAddressFieldSettingAccessible(component->GetStorageType())) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace autofill

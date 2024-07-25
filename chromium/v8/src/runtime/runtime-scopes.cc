@@ -12,8 +12,16 @@
 #include "src/execution/isolate-inl.h"
 #include "src/execution/isolate.h"
 #include "src/heap/heap-inl.h"  // For ToBoolean. TODO(jkummerow): Drop.
+#include "src/interpreter/bytecode-flags-and-tokens.h"
 #include "src/objects/arguments-inl.h"
+#include "src/objects/fixed-array.h"
+#include "src/objects/heap-object.h"
+#include "src/objects/js-disposable-stack-inl.h"
+#include "src/objects/js-disposable-stack.h"
+#include "src/objects/objects.h"
+#include "src/objects/oddball.h"
 #include "src/objects/smi.h"
+#include "src/objects/tagged.h"
 #include "src/runtime/runtime-utils.h"
 
 namespace v8 {
@@ -23,6 +31,12 @@ RUNTIME_FUNCTION(Runtime_ThrowConstAssignError) {
   HandleScope scope(isolate);
   THROW_NEW_ERROR_RETURN_FAILURE(isolate,
                                  NewTypeError(MessageTemplate::kConstAssign));
+}
+
+RUNTIME_FUNCTION(Runtime_ThrowUsingAssignError) {
+  HandleScope scope(isolate);
+  THROW_NEW_ERROR_RETURN_FAILURE(isolate,
+                                 NewTypeError(MessageTemplate::kUsingAssign));
 }
 
 namespace {
@@ -222,6 +236,58 @@ RUNTIME_FUNCTION(Runtime_DeclareGlobals) {
     if (IsException(result)) return result;
   });
 
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+RUNTIME_FUNCTION(Runtime_InitializeDisposableStack) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(0, args.length());
+
+  return *isolate->factory()->NewJSDisposableStack();
+}
+
+RUNTIME_FUNCTION(Runtime_AddDisposableValue) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+
+  Handle<JSDisposableStack> stack = args.at<JSDisposableStack>(0);
+  Handle<Object> value = args.at<Object>(1);
+
+  // a. If V is either null or undefined and hint is sync-dispose, return
+  // unused.
+  if (IsNullOrUndefined(*value)) {
+    return *value;
+  }
+
+  Handle<Object> dispose_method;
+  ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
+      isolate, dispose_method,
+      JSDisposableStack::CheckValueAndGetDisposeMethod(isolate, value));
+
+  // Return the DisposableResource Record { [[ResourceValue]]: V, [[Hint]]:
+  // hint, [[DisposeMethod]]: method }.
+  JSDisposableStack::Add(isolate, stack, value, dispose_method);
+
+  return *value;
+}
+
+RUNTIME_FUNCTION(Runtime_DisposeDisposableStack) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(3, args.length());
+
+  Handle<JSDisposableStack> disposable_stack = args.at<JSDisposableStack>(0);
+  Handle<Smi> continuation_token = args.at<Smi>(1);
+  Handle<Object> continuation_error = args.at<Object>(2);
+
+  MAYBE_RETURN(
+      JSDisposableStack::DisposeResources(
+          isolate, disposable_stack,
+          (*continuation_token !=
+           Smi::FromInt(static_cast<int>(
+               interpreter::TryFinallyContinuationToken::kRethrowToken)))
+              ? MaybeHandle<Object>()
+              : continuation_error),
+      ReadOnlyRoots(isolate).exception());
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -549,6 +615,7 @@ RUNTIME_FUNCTION(Runtime_NewRestParameter) {
   Handle<JSObject> result = isolate->factory()->NewJSArray(
       PACKED_ELEMENTS, num_elements, num_elements,
       ArrayStorageAllocationMode::DONT_INITIALIZE_ARRAY_ELEMENTS);
+  if (num_elements == 0) return *result;
   {
     DisallowGarbageCollection no_gc;
     Tagged<FixedArray> elements = FixedArray::cast(result->elements());
@@ -812,13 +879,18 @@ MaybeHandle<Object> StoreLookupSlot(
   }
   // The property was found in a context slot.
   if (index != Context::kNotFound) {
+    auto holder_context = Handle<Context>::cast(holder);
     if (flag == kNeedsInitialization &&
-        IsTheHole(Handle<Context>::cast(holder)->get(index), isolate)) {
+        IsTheHole(holder_context->get(index), isolate)) {
       THROW_NEW_ERROR(isolate,
                       NewReferenceError(MessageTemplate::kNotDefined, name),
                       Object);
     }
     if ((attributes & READ_ONLY) == 0) {
+      if (v8_flags.const_tracking_let && holder_context->IsScriptContext()) {
+        Context::UpdateConstTrackingLetSideData(holder_context, index, value,
+                                                isolate);
+      }
       Handle<Context>::cast(holder)->set(index, *value);
     } else if (!is_sloppy_function_name || is_strict(language_mode)) {
       THROW_NEW_ERROR(
@@ -903,8 +975,17 @@ RUNTIME_FUNCTION(Runtime_StoreGlobalNoHoleCheckForReplLetOrConst) {
   VariableLookupResult lookup_result;
   bool found = script_contexts->Lookup(name, &lookup_result);
   CHECK(found);
-  Tagged<Context> script_context =
-      script_contexts->get(lookup_result.context_index);
+  Handle<Context> script_context =
+      handle(script_contexts->get(lookup_result.context_index), isolate);
+  // We need to initialize the side data also for variables declared with
+  // VariableMode::kConst. This is because such variables can be accessed
+  // by functions using the LdaContextSlot bytecode, and such accesses are not
+  // regarded as "immutable" when optimizing.
+  if (v8_flags.const_tracking_let) {
+    Context::UpdateConstTrackingLetSideData(
+        script_context, lookup_result.slot_index, value, isolate);
+  }
+
   script_context->set(lookup_result.slot_index, *value);
   return *value;
 }

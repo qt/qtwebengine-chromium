@@ -82,7 +82,7 @@ luci.bucket(
                 ci.gpu.SHADOW_SERVICE_ACCOUNT,
             ],
         ),
-        # TODO(crbug.com/1501383): Remove this binding after shadow bucket
+        # TODO(crbug.com/40941662): Remove this binding after shadow bucket
         # could inherit the view permission from the actual bucket.
         luci.binding(
             roles = "role/buildbucket.reader",
@@ -187,6 +187,7 @@ consoles.console_view(
     ("fuchsia-fyi-astro", "gardener|hardware", "ast"),
     ("fuchsia-fyi-nelson", "gardener|hardware", "nsn"),
     ("fuchsia-fyi-sherlock", "gardener|hardware", "sher"),
+    ("fuchsia-fyi-sherlock-qemu", "gardener|hardware|emu", "sher"),
     ("fuchsia-smoke-astro", "gardener|hardware|smoke", "ast"),
     ("fuchsia-smoke-nelson", "gardener|hardware|smoke", "nsn"),
     ("fuchsia-smoke-sherlock", "gardener|hardware|smoke", "sher"),

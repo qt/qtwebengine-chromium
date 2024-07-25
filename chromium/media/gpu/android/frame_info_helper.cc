@@ -90,14 +90,14 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
     void GetFrameInfoImpl(
         std::unique_ptr<CodecOutputBufferRenderer> buffer_renderer,
         base::OnceCallback<void(std::unique_ptr<CodecOutputBufferRenderer>,
-                                absl::optional<FrameInfo>)> cb) {
+                                std::optional<FrameInfo>)> cb) {
       AssertAcquiredDrDcLock();
       DCHECK(buffer_renderer);
 
       auto texture_owner = buffer_renderer->texture_owner();
       DCHECK(texture_owner);
 
-      absl::optional<FrameInfo> info;
+      std::optional<FrameInfo> info;
 
       if (buffer_renderer->RenderToTextureOwnerFrontBuffer()) {
         gfx::Size coded_size;
@@ -117,7 +117,7 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
     void GetFrameInfo(
         std::unique_ptr<CodecOutputBufferRenderer> buffer_renderer,
         base::OnceCallback<void(std::unique_ptr<CodecOutputBufferRenderer>,
-                                absl::optional<FrameInfo>)> cb) {
+                                std::optional<FrameInfo>)> cb) {
       // Note that we need to ensure that no other thread renders another buffer
       // in between while we are getting frame info here. Otherwise we will get
       // wrong frame info. This is ensured by holding |drdc_lock| from all the
@@ -146,7 +146,7 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
     // FrameInfoHelperHolder is used instead to mimic this weakPtr behavior of
     // OnGpu. FrameInfoHelperHolder is RefCountedThreadSafe, and has a pointer
     // to the OnGpu. OnGpu owns the FrameInfoHelperHolder and sets this pointer
-    // to null in its destructor so that it cant be used once OnGpu is
+    // to null in its destructor so that it can't be used once OnGpu is
     // destroyed. Note that since OnGpu::GetFrameInfoImpl needed to be called
     // from any gpu thread, we could not use WeakPtr to it.
     class FrameInfoHelperHolder
@@ -160,7 +160,7 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
       void GetFrameInfoImpl(
           std::unique_ptr<CodecOutputBufferRenderer> buffer_renderer,
           base::OnceCallback<void(std::unique_ptr<CodecOutputBufferRenderer>,
-                                  absl::optional<FrameInfo>)> cb) {
+                                  std::optional<FrameInfo>)> cb) {
         base::AutoLock l(lock_);
         if (frame_info_helper_on_gpu_) {
           frame_info_helper_on_gpu_->GetFrameInfoImpl(
@@ -228,8 +228,8 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
 
   void OnRealFrameInfoAvailable(gfx::Size visible_size,
                                 gfx::Size guessed_coded_size,
-                                absl::optional<gfx::Size> coded_size,
-                                absl::optional<gfx::Rect> visible_rect) {
+                                std::optional<gfx::Size> coded_size,
+                                std::optional<gfx::Rect> visible_rect) {
     DVLOG(1) << __func__
              << ": coded_size=" << (coded_size ? coded_size->ToString() : "")
              << ", visible_rect="
@@ -265,7 +265,7 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
 
   void OnFrameInfoReady(
       std::unique_ptr<CodecOutputBufferRenderer> buffer_renderer,
-      absl::optional<FrameInfo> frame_info) {
+      std::optional<FrameInfo> frame_info) {
     DCHECK(buffer_renderer);
     DCHECK(!requests_.empty());
 
@@ -367,7 +367,7 @@ class FrameInfoHelperImpl : public FrameInfoHelper,
   base::queue<Request> requests_;
 
   // Cached values.
-  absl::optional<FrameInfo> frame_info_;
+  std::optional<FrameInfo> frame_info_;
   gfx::Size visible_size_;
   bool waiting_for_real_frame_info_ = false;
   bool disable_coded_size_guessing_ =

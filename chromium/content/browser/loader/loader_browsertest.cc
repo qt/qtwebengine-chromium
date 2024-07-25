@@ -275,8 +275,8 @@ std::unique_ptr<net::test_server::HttpResponse> CancelOnRequest(
   if (request.relative_url != relative_url)
     return nullptr;
 
-  content::GetUIThreadTaskRunner({})->PostTask(FROM_HERE,
-                                               crash_network_service_callback);
+  GetUIThreadTaskRunner({})->PostTask(FROM_HERE,
+                                      crash_network_service_callback);
 
   return std::make_unique<net::test_server::HungResponse>();
 }
@@ -833,7 +833,7 @@ IN_PROC_BROWSER_TEST_F(RequestDataBrowserTest, LinkRelPrefetchReferrerPolicy) {
   EXPECT_TRUE(image_request->load_flags & net::LOAD_PREFETCH);
 }
 
-// TODO(crbug.com/1271868): Flaky on all platforms.
+// TODO(crbug.com/40805845): Flaky on all platforms.
 IN_PROC_BROWSER_TEST_F(RequestDataBrowserTest, DISABLED_BasicCrossSite) {
   GURL top_url(embedded_test_server()->GetURL(
       "a.com", "/nested_page_with_subresources.html"));
@@ -1164,7 +1164,7 @@ class ThrottleContentBrowserClient
       const base::RepeatingCallback<WebContents*()>& wc_getter,
       NavigationUIData* navigation_ui_data,
       int frame_tree_node_id,
-      absl::optional<int64_t> navigation_id) override {
+      std::optional<int64_t> navigation_id) override {
     std::vector<std::unique_ptr<blink::URLLoaderThrottle>> throttles;
     auto throttle =
         std::make_unique<URLModifyingThrottle>(modify_start_, modify_redirect_);

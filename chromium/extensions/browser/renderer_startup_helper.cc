@@ -13,6 +13,7 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
 #include "base/unguessable_token.h"
@@ -32,10 +33,10 @@
 #include "extensions/browser/network_permissions_updater.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_manager_factory.h"
-#include "extensions/browser/service_worker_task_queue.h"
-#include "extensions/buildflags/buildflags.h"
+#include "extensions/browser/service_worker/service_worker_task_queue.h"
+#include "extensions/browser/user_script_world_configuration_manager.h"
+#include "extensions/common/extension_id.h"
 #include "extensions/common/extension_l10n_util.h"
-#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/common/features/feature_channel.h"
@@ -100,12 +101,10 @@ mojom::ExtensionLoadedParamsPtr CreateExtensionLoadedParams(
       extension.creation_flags(), extension.guid());
 }
 
-#if !BUILDFLAG(ENABLE_EXTENSIONS_LEGACY_IPC)
 base::flat_map<std::string, std::string> ToFlatMap(
     const std::map<std::string, std::string>& map) {
   return {map.begin(), map.end()};
 }
-#endif
 
 }  // namespace
 
@@ -214,10 +213,11 @@ void RendererStartupHelper::InitializeProcess(
         *ext, true /* include tab permissions*/, renderer_context));
     extension_process_map_[ext->id()].insert(process);
 
-    // Each extension needs to know its user script world configuration.
-    mojom::UserScriptWorldInfoPtr info =
-        util::GetUserScriptWorldInfo(ext->id(), browser_context_);
-    renderer->UpdateUserScriptWorld(std::move(info));
+    // Each extension needs to know its user script world configurations.
+    std::vector<mojom::UserScriptWorldInfoPtr> worlds_info =
+        UserScriptWorldConfigurationManager::Get(browser_context_)
+            ->GetAllUserScriptWorlds(ext->id());
+    renderer->UpdateUserScriptWorlds(std::move(worlds_info));
   }
 
   // Activate pending extensions.
@@ -301,8 +301,8 @@ void RendererStartupHelper::OnExtensionLoaded(const Extension& extension) {
   DCHECK(!base::Contains(extension_process_map_, extension.id()));
 
   // Mark the extension as loaded.
-  std::set<content::RenderProcessHost*>& loaded_process_set =
-      extension_process_map_[extension.id()];
+  std::set<raw_ptr<content::RenderProcessHost, SetExperimental>>&
+      loaded_process_set = extension_process_map_[extension.id()];
 
   // util::IsExtensionVisibleToContext() would filter out themes, but we choose
   // to return early for performance reasons.
@@ -334,8 +334,8 @@ void RendererStartupHelper::OnExtensionLoaded(const Extension& extension) {
 void RendererStartupHelper::OnExtensionUnloaded(const Extension& extension) {
   DCHECK(base::Contains(extension_process_map_, extension.id()));
 
-  const std::set<content::RenderProcessHost*>& loaded_process_set =
-      extension_process_map_[extension.id()];
+  const std::set<raw_ptr<content::RenderProcessHost, SetExperimental>>&
+      loaded_process_set = extension_process_map_[extension.id()];
   for (content::RenderProcessHost* process : loaded_process_set) {
     mojom::Renderer* renderer = GetRenderer(process);
     if (renderer)
@@ -364,10 +364,11 @@ void RendererStartupHelper::OnDeveloperModeChanged(bool in_developer_mode) {
 
 void RendererStartupHelper::SetUserScriptWorldProperties(
     const Extension& extension,
+    std::optional<std::string> world_id,
     std::optional<std::string> csp,
     bool enable_messaging) {
   mojom::UserScriptWorldInfoPtr info = mojom::UserScriptWorldInfo::New(
-      extension.id(), std::move(csp), enable_messaging);
+      extension.id(), std::move(world_id), std::move(csp), enable_messaging);
   for (auto& process_entry : process_mojo_map_) {
     content::RenderProcessHost* process = process_entry.first;
     mojom::Renderer* renderer = GetRenderer(process);
@@ -380,7 +381,28 @@ void RendererStartupHelper::SetUserScriptWorldProperties(
       continue;
     }
 
-    renderer->UpdateUserScriptWorld(info.Clone());
+    std::vector<mojom::UserScriptWorldInfoPtr> worlds_info;
+    worlds_info.push_back(info.Clone());
+    renderer->UpdateUserScriptWorlds(std::move(worlds_info));
+  }
+}
+
+void RendererStartupHelper::ClearUserScriptWorldProperties(
+    const Extension& extension,
+    const std::optional<std::string>& world_id) {
+  for (auto& process_entry : process_mojo_map_) {
+    content::RenderProcessHost* process = process_entry.first;
+    mojom::Renderer* renderer = GetRenderer(process);
+    if (!renderer) {
+      continue;
+    }
+
+    if (!util::IsExtensionVisibleToContext(extension,
+                                           process->GetBrowserContext())) {
+      continue;
+    }
+
+    renderer->ClearUserScriptWorldConfig(extension.id(), world_id);
   }
 }
 
@@ -474,15 +496,6 @@ void RendererStartupHelper::BindForRenderer(
 
 void RendererStartupHelper::WakeEventPage(const ExtensionId& extension_id,
                                           WakeEventPageCallback callback) {
-#if BUILDFLAG(ENABLE_EXTENSIONS_LEGACY_IPC)
-  auto* process =
-      content::RenderProcessHost::FromID(receivers_.current_context());
-  if (!process) {
-    return;
-  }
-  bad_message::ReceivedBadMessage(process, bad_message::LEGACY_IPC_MISMATCH);
-  return;
-#else
   auto* browser_context = GetRendererBrowserContext();
   if (!browser_context) {
     std::move(callback).Run(false);
@@ -522,21 +535,11 @@ void RendererStartupHelper::WakeEventPage(const ExtensionId& extension_id,
 
   // The extension has no background page, so there is nothing to wake.
   std::move(callback).Run(false);
-#endif
 }
 
 void RendererStartupHelper::GetMessageBundle(
-    const std::string& extension_id,
+    const ExtensionId& extension_id,
     GetMessageBundleCallback callback) {
-#if BUILDFLAG(ENABLE_EXTENSIONS_LEGACY_IPC)
-  auto* process =
-      content::RenderProcessHost::FromID(receivers_.current_context());
-  if (!process) {
-    return;
-  }
-  bad_message::ReceivedBadMessage(process, bad_message::LEGACY_IPC_MISMATCH);
-  return;
-#else
   auto* browser_context = GetRendererBrowserContext();
   if (!browser_context) {
     std::move(callback).Run({});
@@ -584,7 +587,7 @@ void RendererStartupHelper::GetMessageBundle(
       FROM_HERE, {base::MayBlock()},
       base::BindOnce(
           [](const std::vector<base::FilePath>& extension_paths,
-             const std::string& main_extension_id,
+             const ExtensionId& main_extension_id,
              const std::string& default_locale,
              extension_l10n_util::GzippedMessagesPermission gzip_permission) {
             return base::WrapUnique<MessageBundle::SubstitutionMap>(
@@ -601,7 +604,6 @@ void RendererStartupHelper::GetMessageBundle(
             std::move(callback).Run(ToFlatMap(*dictionary_map));
           },
           std::move(callback)));
-#endif
 }
 
 //////////////////////////////////////////////////////////////////////////////

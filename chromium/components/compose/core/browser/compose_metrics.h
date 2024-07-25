@@ -6,6 +6,7 @@
 #define COMPONENTS_COMPOSE_CORE_BROWSER_COMPOSE_METRICS_H_
 
 #include "base/time/time.h"
+#include "components/compose/core/browser/compose_enums.mojom.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
@@ -19,8 +20,8 @@ namespace compose {
 extern const char kComposeDialogOpenLatency[];
 extern const char kComposeDialogSelectionLength[];
 extern const char kComposeRequestReason[];
-extern const char kComposeRequestDurationOk[];
-extern const char kComposeRequestDurationError[];
+extern const char kComposeRequestDurationOkSuffix[];
+extern const char kComposeRequestDurationErrorSuffix[];
 extern const char kComposeRequestStatus[];
 extern const char kComposeSessionComposeCount[];
 extern const char kComposeSessionCloseReason[];
@@ -37,6 +38,8 @@ extern const char kComposeMSBBSessionCloseReason[];
 extern const char kComposeMSBBSessionDialogShownCount[];
 extern const char kInnerTextNodeOffsetFound[];
 extern const char kComposeContextMenuCtr[];
+extern const char kComposeProactiveNudgeCtr[];
+extern const char kComposeProactiveNudgeShowStatus[];
 extern const char kOpenComposeDialogResult[];
 
 // Enum for calculating the CTR of the Compose context menu item.
@@ -117,12 +120,18 @@ enum class ComposeSessionEventTypes {
   kThumbsUp = 16,
   kInsertClicked = 17,
   kCloseClicked = 18,
-  kMaxValue = kCloseClicked,
+  kEditClicked = 19,
+  kCancelEditClicked = 20,
+  kAnyModifierUsed = 21,
+  kRedoClicked = 22,
+  kResultEdited = 23,
+  kEditedResultInserted = 24,
+  kMaxValue = kEditedResultInserted,
 };
 
-// Enum for recording the show status of the Compose context menu item.
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused. Keep in sync with
+// Enum for recording the show status of both the HMW context menu item and
+// the proactive nudge. These values are persisted to logs. Entries should not
+// be renumbered and numeric values should never be reused. Keep in sync with
 // ComposeShowStatus in
 // src/tools/metrics/histograms/metadata/compose/enums.xml.
 enum class ComposeShowStatus {
@@ -139,8 +148,86 @@ enum class ComposeShowStatus {
   kNotComposeEligible = 9,
   kIncorrectScheme = 10,
   kFormFieldNestedInFencedFrame = 11,
-  kFeatureFlagDisabled = 12,
-  kMaxValue = kFeatureFlagDisabled,
+  kComposeFeatureFlagDisabled = 12,
+  kDisabledOnChromeOS = 13,
+  kAutocompleteOff = 14,
+  kWritingSuggestionsFalse = 15,
+  kProactiveNudgeFeatureDisabled = 16,
+  kProactiveNudgeDisabledGloballyByUserPreference = 17,
+  kProactiveNudgeDisabledForSiteByUserPreference = 18,
+  kPractiveNudgeDisabledByServerConfig = 19,
+  kPractiveNudgeUnknownServerConfig = 20,
+  kRandomlyBlocked = 21,
+  kProactiveNudgeDisabledByMSBB = 22,
+  kProactiveNudgeBlockedBySegmentationPlatform = 23,
+  kMaxValue = kProactiveNudgeBlockedBySegmentationPlatform
+};
+
+// Enum for calculating the CTR of the Compose proactive nudge.
+// Keep in sync with ComposeProactiveNudgeCtrEvent in
+// src/tools/metrics/histograms/metadata/compose/enums.xml.
+enum class ComposeProactiveNudgeCtrEvent {
+  kNudgeDisplayed = 0,
+  kDialogOpened = 1,
+  kUserDisabledProactiveNudge = 2,
+  kUserDisabledSite = 3,
+  kOpenSettings = 4,
+  kMaxValue = kOpenSettings,
+};
+
+enum class EvalLocation : int {
+  // Response was evaluated on the server.
+  kServer,
+  // Response was evaluated on the device.
+  kOnDevice,
+};
+
+// Keep in sync with ComposeSessionEvalLocation in
+// src/tools/metrics/histograms/metadata/compose/enums.xml.
+enum class SessionEvalLocation {
+  // No responses were evaluated.
+  kNone = 0,
+  // All responses were evaluated on the server.
+  kServer = 1,
+  // All responses were evaluated on the device.
+  kOnDevice = 2,
+  // Some responses were evaluated on the server and some on the device.
+  kMixed = 3,
+  kMaxValue = kMixed,
+};
+
+// Enum for recording the feedback state of a Compose request.
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused. Keep in sync with
+// ComposeRequestFeedback in
+// src/tools/metrics/histograms/metadata/compose/enums.xml.
+enum class ComposeRequestFeedback {
+  kNoFeedback = 0,
+  kPositiveFeedback = 1,
+  kNegativeFeedback = 2,
+  kRequestError = 3,
+  kMaxValue = kRequestError,
+};
+
+// The output metric for the proactive nudge segmentation model. Represents what
+// effect the nudge had on the user's engagement. Keep in sync with
+// ProactiveNudgeDerivedEngagement in
+// src/tools/metrics/histograms/metadata/compose/enums.xml.
+enum class ProactiveNudgeDerivedEngagement {
+  // The user didn't interact with the nudge.
+  kIgnored,
+  // The user disabled the nudge on this site using the three-dot menu.
+  kNudgeDisabledOnSingleSite,
+  // The user disabled the nudge on all sites using the three-dot menu.
+  kNudgeDisabledOnAllSites,
+  // User clicked the nudge, but didn't press generate in Compose.
+  kOpenedComposeMinimalUse,
+  // User clicked the nudge, pressed generate at least once, but didn't accept
+  // the suggestion.
+  kGeneratedComposeSuggestion,
+  // User clicked, pressed generate, and accepted a suggestion.
+  kAcceptedComposeSuggestion,
+  kMaxValue = kAcceptedComposeSuggestion,
 };
 
 // Struct containing event and logging information for an individual
@@ -162,9 +249,13 @@ struct ComposeSessionEvents {
   unsigned int msbb_dialog_shown_count = 0;
   // Times the user has pressed "undo" this session.
   unsigned int undo_count = 0;
+  // Times the user has pressed "redo" this session.
+  unsigned int redo_count = 0;
+  // Times the user has edited the result text this session.
+  unsigned int result_edit_count = 0;
   // Compose request after input edited.
   unsigned int update_input_count = 0;
-  // Tiems the user has pressed the "Retry" button.
+  // Times the user has pressed the "Retry" button.
   unsigned int regenerate_count = 0;
   // Times the user has picked the "Shorter" option.
   unsigned int shorten_count = 0;
@@ -183,6 +274,8 @@ struct ComposeSessionEvents {
   // True if the MSBB was enabled in the session.
   bool msbb_enabled_in_session = false;
 
+  // True if the session started from the proactive nudge.
+  bool started_with_proactive_nudge = false;
   // True if the session started with selected text.
   bool has_initial_text = false;
   // True if thumbs up was ever clicked during the session.
@@ -192,8 +285,18 @@ struct ComposeSessionEvents {
 
   // True if the results were eventually inserted back to the web page.
   bool inserted_results = false;
+  // True if an edited result was eventually inserted back to the web page.
+  bool edited_result_inserted = false;
   // True if the the user closed the compose session via the "x" button.
   bool close_clicked = false;
+  // True if the user has pressed the "Edit" button this session.
+  bool did_click_edit = false;
+  // True if the user has pressed "Cancel" on the editing view for this session.
+  bool did_click_cancel_on_edit = false;
+  // Number of on-device responses received.
+  unsigned int on_device_responses = 0;
+  // Number of server responses received.
+  unsigned int server_responses = 0;
 };
 
 // Enum with the possible reasons for it being impossible to open the Compose
@@ -209,16 +312,26 @@ enum class OpenComposeDialogResult {
   kAutofillFormFieldDataNotFound = 5,
   kNoWebContents = 6,
   kFailedCreatingComposeDialogView = 7,
-  kMaxValue = kFailedCreatingComposeDialogView
+  kAutofillFormDataNotFoundAfterSelectAll = 8,
+  kMaxValue = kAutofillFormDataNotFoundAfterSelectAll
 };
 
-// Enum to log if the inner text succusfuly found an offset
+// Enum to log if the inner text successfuly found an offset
 // Keep in sync with ComposeInnerTextNodeOffset in
 // src/tools/metrics/histograms/metadata/compose/enums.xml.
 enum class ComposeInnerTextNodeOffset {
   kNoOffsetFound = 0,
   kOffsetFound = 1,
   kMaxValue = kOffsetFound
+};
+
+// Enum to log if all text was selected on behalf of the user.
+// Keep in sync with ComposeSelectAllStatus in
+// src/tools/metrics/histograms/metadata/compose/enums.xml.
+enum class ComposeSelectAllStatus {
+  kNoSelectAll = 0,
+  kSelectedAll = 1,
+  kMaxValue = kSelectedAll
 };
 
 // Class that automatically reports any UKM metrics for the page-level Compose
@@ -237,6 +350,20 @@ class PageUkmTracker {
   // The composed text was accepted and inserted into the webpage by the user.
   void ComposeTextInserted();
 
+  // Records that the proactive nudge should show. Recorded anytime the
+  // proactive nudge could be shown even if the nudge is eventually blocked.
+  void ComposeProactiveNudgeShouldShow();
+
+  // The compose proactive nudge was shown.
+  void ProactiveNudgeShown();
+
+  // The compose proactive nudge was opened.
+  void ProactiveNudgeOpened();
+
+  // Mark that proactive nudge preferences were set during this page load.
+  void ProactiveNudgeDisabledGlobally();
+  void ProactiveNudgeDisabledForSite();
+
   // The compose dialog was requested but not shown due to problems obtaining
   // form data from Autofill.
   void ShowDialogAbortedDueToMissingFormData();
@@ -250,7 +377,16 @@ class PageUkmTracker {
   bool event_was_recorded_ = false;
   unsigned int menu_item_shown_count_ = 0;
   unsigned int menu_item_clicked_count_ = 0;
+
   unsigned int compose_text_inserted_count_ = 0;
+
+  unsigned int proactive_nudge_should_show_count_ = 0;
+  unsigned int proactive_nudge_shown_count_ = 0;
+  unsigned int proactive_nudge_opened_count_ = 0;
+
+  bool proactive_nudge_disabled_globally_ = false;
+  bool proactive_nudge_disabled_for_site_ = false;
+
   unsigned int missing_form_data_count_ = 0;
   unsigned int missing_form_field_data_count_ = 0;
 
@@ -261,13 +397,25 @@ void LogComposeContextMenuCtr(ComposeContextMenuCtrEvent event);
 
 void LogComposeContextMenuShowStatus(ComposeShowStatus status);
 
+void LogComposeProactiveNudgeCtr(ComposeProactiveNudgeCtrEvent event);
+
+void LogComposeProactiveNudgeShowStatus(ComposeShowStatus status);
+
 void LogOpenComposeDialogResult(OpenComposeDialogResult result);
 
 void LogComposeRequestReason(ComposeRequestReason reason);
+void LogComposeRequestReason(EvalLocation eval_location,
+                             ComposeRequestReason reason);
 
-// Log the duration of a compose request. |is_valid| indicates the status of
+void LogComposeRequestStatus(compose::mojom::ComposeStatus status);
+void LogComposeRequestStatus(EvalLocation eval_location,
+                             compose::mojom::ComposeStatus status);
+
+// Log the duration of a compose request. |is_ok| indicates the status of
 // the request.
-void LogComposeRequestDuration(base::TimeDelta duration, bool is_ok);
+void LogComposeRequestDuration(base::TimeDelta duration,
+                               EvalLocation eval_location,
+                               bool is_ok);
 
 void LogComposeFirstRunSessionCloseReason(
     ComposeFirstRunSessionCloseReason reason);
@@ -282,6 +430,12 @@ void LogComposeMSBBSessionCloseReason(ComposeMSBBSessionCloseReason reason);
 // Log session based metrics when a consent session ends.
 void LogComposeMSBBSessionDialogShownCount(ComposeMSBBSessionCloseReason reason,
                                            int dialog_shown_count);
+
+SessionEvalLocation GetSessionEvalLocationFromEvents(
+    const ComposeSessionEvents& session_events);
+
+std::optional<EvalLocation> GetEvalLocationFromEvents(
+    const ComposeSessionEvents& session_events);
 
 // Log session based metrics when a session ends.
 // Should only be called once per session.
@@ -311,8 +465,15 @@ void LogComposeDialogOpenLatency(base::TimeDelta duration);
 void LogComposeDialogSelectionLength(int length);
 
 // Log the session duration with |session_suffix| applied to histogram name.
-void LogComposeSessionDuration(base::TimeDelta session_duration,
-                               std::string session_suffix = "");
+void LogComposeSessionDuration(
+    base::TimeDelta session_duration,
+    std::string session_suffix = "",
+    std::optional<EvalLocation> eval_location = std::nullopt);
+
+void LogComposeRequestFeedback(EvalLocation eval_location,
+                               ComposeRequestFeedback feedback);
+
+void LogComposeSelectAllStatus(ComposeSelectAllStatus select_all_status);
 
 }  // namespace compose
 

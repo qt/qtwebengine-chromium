@@ -5,6 +5,7 @@
 #include "content/browser/loader/keep_alive_attribution_request_helper.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "base/check.h"
@@ -15,10 +16,10 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
+#include "components/attribution_reporting/constants.h"
 #include "components/attribution_reporting/registration_eligibility.mojom-shared.h"
 #include "components/attribution_reporting/suitable_origin.h"
 #include "content/browser/attribution_reporting/attribution_background_registrations_id.h"
-#include "content/browser/attribution_reporting/attribution_constants.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager_impl.h"
 #include "content/browser/attribution_reporting/attribution_os_level_manager.h"
@@ -36,7 +37,6 @@
 #include "services/network/public/mojom/attribution.mojom-shared.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
@@ -65,6 +65,11 @@ using ::testing::Return;
 constexpr char kRegisterSourceJson[] =
     R"json({"destination":"https://destination.example"})json";
 constexpr char kRegisterTriggerJson[] = R"json({ })json";
+
+using attribution_reporting::kAttributionReportingRegisterOsSourceHeader;
+using attribution_reporting::kAttributionReportingRegisterOsTriggerHeader;
+using attribution_reporting::kAttributionReportingRegisterSourceHeader;
+using attribution_reporting::kAttributionReportingRegisterTriggerHeader;
 
 class KeepAliveAttributionRequestHelperTest : public RenderViewHostTestHarness {
  public:
@@ -120,8 +125,8 @@ class KeepAliveAttributionRequestHelperTest : public RenderViewHostTestHarness {
       const GURL& reporting_url,
       AttributionReportingEligibility eligibility =
           AttributionReportingEligibility::kEventSourceOrTrigger,
-      const absl::optional<base::UnguessableToken>& attribution_src_token =
-          absl::nullopt,
+      const std::optional<base::UnguessableToken>& attribution_src_token =
+          std::nullopt,
       const GURL& context_url = GURL("https://secure_source.com")) {
     test_web_contents()->NavigateAndCommit(context_url);
 
@@ -156,7 +161,7 @@ TEST_F(KeepAliveAttributionRequestHelperTest, SingleResponse) {
   const GURL reporting_url("https://report.test");
   auto helper = CreateValidHelper(
       reporting_url, AttributionReportingEligibility::kEventSourceOrTrigger,
-      /*attribution_src_token=*/absl::nullopt, source_url);
+      /*attribution_src_token=*/std::nullopt, source_url);
 
   EXPECT_CALL(
       *mock_attribution_manager(),
@@ -178,7 +183,7 @@ TEST_F(KeepAliveAttributionRequestHelperTest, SingleResponse) {
 }
 
 TEST_F(KeepAliveAttributionRequestHelperTest, NavigationSource) {
-  const absl::optional<base::UnguessableToken> attribution_src_token =
+  const std::optional<base::UnguessableToken> attribution_src_token =
       base::UnguessableToken(blink::AttributionSrcToken());
   const GURL reporting_url("https://report.test");
   auto helper = CreateValidHelper(
@@ -418,7 +423,7 @@ TEST_F(KeepAliveAttributionRequestHelperTest, HelperNotNeeded) {
     ASSERT_TRUE(context.has_value());
     auto helper = KeepAliveAttributionRequestHelper::CreateIfNeeded(
         AttributionReportingEligibility::kEmpty, reporting_url,
-        /*attribution_src_token=*/absl::nullopt, "devtools-request-id",
+        /*attribution_src_token=*/std::nullopt, "devtools-request-id",
         network::AttributionReportingRuntimeFeatures(), context.value());
     EXPECT_EQ(helper, nullptr);
   }
@@ -435,7 +440,7 @@ TEST_F(KeepAliveAttributionRequestHelperTest, HelperNotNeeded) {
     ASSERT_TRUE(context.has_value());
     auto helper = KeepAliveAttributionRequestHelper::CreateIfNeeded(
         AttributionReportingEligibility::kEventSourceOrTrigger, reporting_url,
-        /*attribution_src_token=*/absl::nullopt, "devtools-request-id",
+        /*attribution_src_token=*/std::nullopt, "devtools-request-id",
         network::AttributionReportingRuntimeFeatures(), context.value());
     EXPECT_EQ(helper, nullptr);
   }

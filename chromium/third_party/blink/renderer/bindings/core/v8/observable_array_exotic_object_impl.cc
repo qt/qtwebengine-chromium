@@ -53,7 +53,7 @@ ObservableArrayExoticObjectImpl::ProxyTargetToObservableArrayBaseOrDie(
   // Crash when author script managed to pass something else other than the
   // right proxy target object.
   CHECK(backing_list_wrapper->IsObject());
-  return ToScriptWrappable(backing_list_wrapper.As<v8::Object>())
+  return ToScriptWrappable(isolate, backing_list_wrapper.As<v8::Object>())
       ->ToImpl<bindings::ObservableArrayBase>();
 }
 
@@ -64,7 +64,7 @@ ObservableArrayExoticObjectImpl::ObservableArrayExoticObjectImpl(
 v8::Local<v8::Value> ObservableArrayExoticObjectImpl::Wrap(
     ScriptState* script_state) {
   v8::Isolate* isolate = script_state->GetIsolate();
-  DCHECK(!DOMDataStore::ContainsWrapper(this, isolate));
+  DCHECK(!DOMDataStore::ContainsWrapper(isolate, this));
 
   // The proxy target object must be a JS Array (v8::Array) by definition.
   // Especially it's important that IsArray(proxy) evaluates to true.

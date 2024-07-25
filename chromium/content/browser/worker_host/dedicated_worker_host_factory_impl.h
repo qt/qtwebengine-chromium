@@ -5,8 +5,6 @@
 #ifndef CONTENT_BROWSER_WORKER_HOST_DEDICATED_WORKER_HOST_FACTORY_IMPL_H_
 #define CONTENT_BROWSER_WORKER_HOST_DEDICATED_WORKER_HOST_FACTORY_IMPL_H_
 
-#include <optional>
-
 #include "content/browser/network/cross_origin_embedder_policy_reporter.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/dedicated_worker_creator.h"
@@ -70,7 +68,8 @@ class CONTENT_EXPORT DedicatedWorkerHostFactoryImpl
           outside_fetch_client_settings_object,
       mojo::PendingRemote<blink::mojom::BlobURLToken> blob_url_token,
       mojo::PendingRemote<blink::mojom::DedicatedWorkerHostFactoryClient>
-          client) override;
+          client,
+      bool has_storage_access) override;
 
  private:
   // The ID of the RenderProcessHost where the worker will live.

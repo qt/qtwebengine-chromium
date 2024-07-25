@@ -217,24 +217,7 @@ WebURLResponse WebURLResponse::Create(
   // If there's no received headers end time, don't set load timing.  This is
   // the case for non-HTTP requests, requests that don't go over the wire, and
   // certain error cases.
-  //
-  // https://crbug.com/1382255: Because the resource-fetching request of
-  // prefetch occurs before the navigation, both `requestStart` and
-  // `responseStart` are negative, measured with respect to `startTime` of the
-  // navigation. Do not set the `ResourceLoadTiming` for the prefetch navigation
-  // response; then `PerformanceResourceTiming` won't be able to retrieve the
-  // timing info, resulting in setting `requestStart` and `responseStart` to
-  // their respective previous timeline event.
-  //
-  // Not setting the `ResourceLoadTiming` does not affect the DNS and TCP
-  // timings (domainLookupStart, domainLookupEnd, connectStart,
-  // secureConnectionStart and connectEnd) because these values are null for the
-  // prefetch navigation. See
-  // https://docs.google.com/document/d/1XbLImIqGoHgxJZnscWoZIX8IlIiHOlXvBW81B_3HScc
-  // (Chromium org access) for the navigation timing events timeline.
-  if (!head.load_timing.receive_headers_end.is_null() &&
-      head.navigation_delivery_type !=
-          network::mojom::NavigationDeliveryType::kNavigationalPrefetch) {
+  if (!head.load_timing.receive_headers_end.is_null()) {
     response.SetLoadTiming(ToMojoLoadTiming(head.load_timing));
   }
 
@@ -513,6 +496,7 @@ void WebURLResponse::SetServiceWorkerRouterInfo(
     const network::mojom::ServiceWorkerRouterInfo& value) {
   auto info = ServiceWorkerRouterInfo::Create();
   info->SetRuleIdMatched(value.rule_id_matched);
+  info->SetMatchedSourceType(value.matched_source_type);
   resource_response_->SetServiceWorkerRouterInfo(std::move(info));
 }
 
@@ -653,7 +637,7 @@ void WebURLResponse::SetWasCookieInRequest(bool was_cookie_in_request) {
 }
 
 void WebURLResponse::SetRecursivePrefetchToken(
-    const absl::optional<base::UnguessableToken>& token) {
+    const std::optional<base::UnguessableToken>& token) {
   resource_response_->SetRecursivePrefetchToken(token);
 }
 
@@ -726,12 +710,12 @@ void WebURLResponse::SetDnsAliases(const WebVector<WebString>& aliases) {
 }
 
 void WebURLResponse::SetAuthChallengeInfo(
-    const absl::optional<net::AuthChallengeInfo>& auth_challenge_info) {
+    const std::optional<net::AuthChallengeInfo>& auth_challenge_info) {
   resource_response_->SetAuthChallengeInfo(auth_challenge_info);
 }
 
-const absl::optional<net::AuthChallengeInfo>&
-WebURLResponse::AuthChallengeInfo() const {
+const std::optional<net::AuthChallengeInfo>& WebURLResponse::AuthChallengeInfo()
+    const {
   return resource_response_->AuthChallengeInfo();
 }
 

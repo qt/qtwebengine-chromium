@@ -60,12 +60,38 @@ BluetoothUUID ExtractUuid(IOBluetoothSDPDataElement* service_class_data) {
   return BluetoothUUID();
 }
 
+BluetoothDevice::UUIDList GetUuids(IOBluetoothDevice* device) {
+  BluetoothDevice::UUIDList uuids;
+  for (IOBluetoothSDPServiceRecord* service_record in [device services]) {
+    IOBluetoothSDPDataElement* service_class_data =
+        [service_record getAttributeDataElement:
+                            kBluetoothSDPAttributeIdentifierServiceClassIDList];
+    auto type_descriptor = [service_class_data getTypeDescriptor];
+    if (type_descriptor == kBluetoothSDPDataElementTypeUUID) {
+      IOBluetoothSDPUUID* sdp_uuid =
+          [[service_class_data getUUIDValue] getUUIDWithLength:16];
+      BluetoothUUID uuid = GetUuid(sdp_uuid);
+      if (uuid.IsValid()) {
+        uuids.push_back(uuid);
+      }
+    } else if (type_descriptor ==
+               kBluetoothSDPDataElementTypeDataElementSequence) {
+      BluetoothUUID uuid = ExtractUuid(service_class_data);
+      if (uuid.IsValid()) {
+        uuids.push_back(uuid);
+      }
+    }
+  }
+  return uuids;
+}
+
 }  // namespace
 
 BluetoothClassicDeviceMac::BluetoothClassicDeviceMac(
     BluetoothAdapterMac* adapter,
     IOBluetoothDevice* device)
     : BluetoothDeviceMac(adapter), device_(device) {
+  device_uuids_.ReplaceServiceUUIDs(GetUuids(device_));
   UpdateTimestamp();
 }
 
@@ -76,7 +102,7 @@ uint32_t BluetoothClassicDeviceMac::GetBluetoothClass() const {
 }
 
 void BluetoothClassicDeviceMac::CreateGattConnectionImpl(
-    absl::optional<BluetoothUUID> service_uuid) {
+    std::optional<BluetoothUUID> service_uuid) {
   // Classic devices do not support GATT connection.
   DidConnectGatt(ERROR_UNSUPPORTED_DEVICE);
 }
@@ -110,16 +136,16 @@ uint16_t BluetoothClassicDeviceMac::GetDeviceID() const {
 }
 
 uint16_t BluetoothClassicDeviceMac::GetAppearance() const {
-  // TODO(crbug.com/588083): Implementing GetAppearance()
+  // TODO(crbug.com/41240161): Implementing GetAppearance()
   // on mac, win, and android platforms for chrome
   NOTIMPLEMENTED();
   return 0;
 }
 
-absl::optional<std::string> BluetoothClassicDeviceMac::GetName() const {
+std::optional<std::string> BluetoothClassicDeviceMac::GetName() const {
   if ([device_ name])
     return base::SysNSStringToUTF8([device_ name]);
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 bool BluetoothClassicDeviceMac::IsPaired() const {
@@ -142,35 +168,12 @@ bool BluetoothClassicDeviceMac::IsConnecting() const {
   return false;
 }
 
-BluetoothDevice::UUIDSet BluetoothClassicDeviceMac::GetUUIDs() const {
-  UUIDSet uuids;
-  for (IOBluetoothSDPServiceRecord* service_record in [device_ services]) {
-    IOBluetoothSDPDataElement* service_class_data =
-        [service_record getAttributeDataElement:
-                            kBluetoothSDPAttributeIdentifierServiceClassIDList];
-    auto type_descriptor = [service_class_data getTypeDescriptor];
-    if (type_descriptor == kBluetoothSDPDataElementTypeUUID) {
-      IOBluetoothSDPUUID* sdp_uuid =
-          [[service_class_data getUUIDValue] getUUIDWithLength:16];
-      BluetoothUUID uuid = GetUuid(sdp_uuid);
-      if (uuid.IsValid())
-        uuids.insert(uuid);
-    } else if (type_descriptor ==
-               kBluetoothSDPDataElementTypeDataElementSequence) {
-      BluetoothUUID uuid = ExtractUuid(service_class_data);
-      if (uuid.IsValid())
-        uuids.insert(uuid);
-    }
-  }
-  return uuids;
+std::optional<int8_t> BluetoothClassicDeviceMac::GetInquiryRSSI() const {
+  return std::nullopt;
 }
 
-absl::optional<int8_t> BluetoothClassicDeviceMac::GetInquiryRSSI() const {
-  return absl::nullopt;
-}
-
-absl::optional<int8_t> BluetoothClassicDeviceMac::GetInquiryTxPower() const {
-  return absl::nullopt;
+std::optional<int8_t> BluetoothClassicDeviceMac::GetInquiryTxPower() const {
+  return std::nullopt;
 }
 
 bool BluetoothClassicDeviceMac::ExpectingPinCode() const {

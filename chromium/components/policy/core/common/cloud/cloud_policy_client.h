@@ -10,6 +10,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -30,7 +31,6 @@
 #include "components/policy/core/common/remote_commands/remote_command_job.h"
 #include "components/policy/policy_export.h"
 #include "components/policy/proto/device_management_backend.pb.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace content {
 class BrowserContext;
@@ -47,6 +47,9 @@ class DMServerJobConfiguration;
 class RegistrationJobConfiguration;
 class SigningService;
 struct DMServerJobResult;
+
+inline constexpr char kPolicyFetchingTimeHistogramName[] =
+    "Enterprise.CloudManagement.PolicyFetchingTime";
 
 // Implements the core logic required to talk to the device management service.
 // Also keeps track of the current state of the association with the service,
@@ -148,7 +151,7 @@ class POLICY_EXPORT CloudPolicyClient {
     enterprise_management::DeviceRegisterRequest::Type registration_type;
     enterprise_management::DeviceRegisterRequest::Flavor flavor;
 
-    absl::optional<enterprise_management::LicenseType_LicenseTypeEnum>
+    std::optional<enterprise_management::LicenseType_LicenseTypeEnum>
         license_type;
 
     // Lifetime of registration. Used for easier clean up of ephemeral session
@@ -167,7 +170,7 @@ class POLICY_EXPORT CloudPolicyClient {
     // undergoes enrollment and a PSM server-backed state determination was
     // performed before (on Chrome OS, as encoded in the
     // `prefs::kEnrollmentPsmResult` pref).
-    absl::optional<
+    std::optional<
         enterprise_management::DeviceRegisterRequest::PsmExecutionResult>
         psm_execution_result;
 
@@ -175,13 +178,13 @@ class POLICY_EXPORT CloudPolicyClient {
     // PSM protocol determination timestamp. Its value will exist if the device
     // undergoes enrollment and PSM got executed successfully (on ChromeOS, as
     // encoded in `prefs::kEnrollmentPsmDeterminationTime` pref).
-    absl::optional<int64_t> psm_determination_timestamp;
+    std::optional<int64_t> psm_determination_timestamp;
 
     // The following field is relevant only to Chrome OS Demo Mode.
     // Information about demo-specific device attributes and retail context.
     // This value will only exist if the enrollment requisition is
     // kDemoRequisition ("cros-demo-mode").
-    absl::optional<enterprise_management::DemoModeDimensions>
+    std::optional<enterprise_management::DemoModeDimensions>
         demo_mode_dimensions;
   };
 
@@ -199,9 +202,15 @@ class POLICY_EXPORT CloudPolicyClient {
       std::string_view machine_model,
       std::string_view brand_code,
       std::string_view attested_device_id,
-      absl::optional<MacAddress> ethernet_mac_address,
-      absl::optional<MacAddress> dock_mac_address,
+      std::optional<MacAddress> ethernet_mac_address,
+      std::optional<MacAddress> dock_mac_address,
       std::string_view manufacture_date,
+      DeviceManagementService* service,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      DeviceDMTokenCallback device_dm_token_callback);
+  // Create CloudPolicyClient for Profile with its `profile_id`.
+  CloudPolicyClient(
+      const std::string& profile_id,
       DeviceManagementService* service,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       DeviceDMTokenCallback device_dm_token_callback);
@@ -211,6 +220,10 @@ class POLICY_EXPORT CloudPolicyClient {
       DeviceManagementService* service,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       DeviceDMTokenCallback device_dm_token_callback);
+  CloudPolicyClient(
+      DeviceManagementService* service,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
   CloudPolicyClient(const CloudPolicyClient&) = delete;
   CloudPolicyClient& operator=(const CloudPolicyClient&) = delete;
 
@@ -236,7 +249,7 @@ class POLICY_EXPORT CloudPolicyClient {
   // error notification. The |signing_service| is used to sign the request and
   // is expected to be available until caller receives
   // |OnRegistrationStateChanged| or |OnClientError|.
-  // TODO(crbug.com/1236148): Remove SigningService from CloudPolicyClient and
+  // TODO(crbug.com/40192631): Remove SigningService from CloudPolicyClient and
   // make callees sign their data themselves.
   virtual void RegisterWithCertificate(
       const RegistrationParameters& parameters,
@@ -245,16 +258,29 @@ class POLICY_EXPORT CloudPolicyClient {
       const std::string& sub_organization,
       std::unique_ptr<SigningService> signing_service);
 
+  // Attempts to enroll a browser with the device management service using an
+  // enrollment token. Results in a registration change or error notification.
+  // To emphasize, this method is used to register browser (e.g. for
+  // machine-level policies).
+  // Device registration with enrollment token should be performed using
+  // RegisterWithEnrollmentToken method, and this request will timeout after 30
+  // seconds if the enrollment is not mandatory.
+  virtual void RegisterBrowserWithEnrollmentToken(
+      const std::string& token,
+      const std::string& client_id,
+      const ClientDataDelegate& client_data_delegate,
+      bool is_mandatory);
+
   // Attempts to enroll with the device management service using an enrollment
   // token. Results in a registration change or error notification.
-  // This method is used to register browser (e.g. for machine-level policies).
-  // Device registration with enrollment token should be performed using
-  // RegisterWithCertificate method, and this request will timeout after 30
-  // seconds if the enrollment is not mandatory.
-  virtual void RegisterWithToken(const std::string& token,
-                                 const std::string& client_id,
-                                 const ClientDataDelegate& client_data_delegate,
-                                 bool is_mandatory);
+  //
+  // This method is used to register a ChromeOS device (currently only used for
+  // ChromeOS Flex Auto Enrollment). Browser registration should be performed
+  // using RegisterWithToken.
+  virtual void RegisterDeviceWithEnrollmentToken(
+      const RegistrationParameters& parameters,
+      const std::string& client_id,
+      DMAuth enrollment_token_auth);
 
   // Attempts to register the profile with the device management service using a
   // OIDC response from a third party IdP's authentication. Results in a
@@ -263,7 +289,6 @@ class POLICY_EXPORT CloudPolicyClient {
       const RegistrationParameters& parameters,
       const std::string& oauth_token,
       const std::string& oidc_id_token,
-      const std::string& profile_id,
       const std::string& client_id);
 
   // Sets information about a policy invalidation. Subsequent fetch operations
@@ -476,7 +501,20 @@ class POLICY_EXPORT CloudPolicyClient {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return manufacture_date_;
   }
-
+  const std::string& oidc_user_display_name() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return oidc_user_display_name_;
+  }
+  const std::string& oidc_user_email() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return oidc_user_email_;
+  }
+  // TODO(326063101): Replace boolean with an enum, same as
+  // policy::ThirdPartyIdentityType
+  bool is_dasherless() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return is_dasherless_;
+  }
   const std::vector<std::string>& user_affiliation_ids() const {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return user_affiliation_ids_;
@@ -555,6 +593,12 @@ class POLICY_EXPORT CloudPolicyClient {
     return device_mode_;
   }
 
+  // The type of third party identity as received in the registration request.
+  ThirdPartyIdentityType third_party_identity_type() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+    return third_party_identity_type_;
+  }
+
   // The policy responses as obtained by the last request to the cloud. These
   // policies haven't gone through verification, so their contents cannot be
   // trusted. Use CloudPolicyStore::policy() and CloudPolicyStore::policy_map()
@@ -585,10 +629,6 @@ class POLICY_EXPORT CloudPolicyClient {
 
   scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory();
 
-  void add_connector_url_params(bool value) {
-    add_connector_url_params_ = value;
-  }
-
   // Returns the number of active requests.
   int GetActiveRequestCountForTest() const;
 
@@ -618,8 +658,12 @@ class POLICY_EXPORT CloudPolicyClient {
   // Callback for registration requests.
   void OnRegisterCompleted(DMServerJobResult result);
 
-  // Callback for policy fetch requests.
-  void OnPolicyFetchCompleted(DMServerJobResult result);
+  // Callback for token-based device registration requests.
+  void OnTokenBasedRegisterDeviceCompleted(DMServerJobResult result);
+
+  // Callback for policy fetch requests. `start_time` is the timestamp of the
+  // request creation, used for recording fetching time as a histogram.
+  void OnPolicyFetchCompleted(base::Time start_time, DMServerJobResult result);
 
   // Callback for robot account api authorization requests.
   void OnFetchRobotAuthCodesCompleted(RobotAuthCodeCallback callback,
@@ -639,7 +683,7 @@ class POLICY_EXPORT CloudPolicyClient {
       DeviceManagementService::Job* job,
       DeviceManagementStatus status,
       int net_error,
-      absl::optional<base::Value::Dict> response);
+      std::optional<base::Value::Dict> response);
 
   // Callback for remote command fetch requests.
   void OnRemoteCommandsFetched(RemoteCommandCallback callback,
@@ -684,6 +728,12 @@ class POLICY_EXPORT CloudPolicyClient {
   const std::string ethernet_mac_address_;
   const std::string dock_mac_address_;
   const std::string manufacture_date_;
+
+  // Specific fields for oidc registration responses.
+  std::string oidc_user_display_name_;
+  std::string oidc_user_email_;
+  bool is_dasherless_ = false;
+
   PolicyTypeSet types_to_fetch_;
   std::vector<std::string> state_keys_to_upload_;
 
@@ -694,8 +744,9 @@ class POLICY_EXPORT CloudPolicyClient {
   std::string dm_token_;
   std::unique_ptr<base::Value::Dict> configuration_seed_;
   DeviceMode device_mode_ = DEVICE_MODE_NOT_SET;
+  ThirdPartyIdentityType third_party_identity_type_ = NO_THIRD_PARTY_MANAGEMENT;
   std::string client_id_;
-  absl::optional<std::string> profile_id_;
+  std::optional<std::string> profile_id_;
   base::Time last_policy_timestamp_;
   int public_key_version_ = -1;
   bool public_key_version_valid_ = false;
@@ -758,7 +809,6 @@ class POLICY_EXPORT CloudPolicyClient {
       base::Value::Dict report,
       const std::string& server_url,
       bool include_device_info,
-      bool add_connector_url_params,
       ResultCallback callback);
 
   void SetClientId(const std::string& client_id);
@@ -793,16 +843,30 @@ class POLICY_EXPORT CloudPolicyClient {
   void CreateUniqueRequestJob(
       std::unique_ptr<RegistrationJobConfiguration> config);
 
+  // Shared logic for reading fields out of DeviceRegisterResponse and
+  // notifying observers of the response status.
+  void ProcessDeviceRegisterResponse(
+      const enterprise_management::DeviceRegisterResponse& response,
+      DeviceManagementStatus dm_status);
+
+  // Records the fetch status for each supported type to fetch used by the
+  // client.
+  void RecordFetchStatus(DeviceManagementStatus status);
+
+#if BUILDFLAG(IS_WIN)
+  // Callback to get browser device identifier.
+  void SetBrowserDeviceIdentifier(
+      enterprise_management::PolicyFetchRequest* request,
+      std::unique_ptr<DMServerJobConfiguration> config,
+      std::unique_ptr<enterprise_management::BrowserDeviceIdentifier>
+          identifier);
+#endif
+
   // Used to store a copy of the previously used `dm_token_`. This is used
-  // during re-registration, which gets triggered by a failed policy fetch with
-  // errors `DM_STATUS_SERVICE_DEVICE_NOT_FOUND` and
+  // during re-registration, which gets triggered by a failed policy fetch
+  // with errors `DM_STATUS_SERVICE_DEVICE_NOT_FOUND` and
   // `DM_STATUS_SERVICE_DEVICE_NEEDS_RESET`.
   std::string reregistration_dm_token_;
-
-  // Whether extra enterprise connectors URL parameters should be included
-  // in real-time reports.  Only reports uploaded using UploadRealtimeReport()
-  // are affected.
-  bool add_connector_url_params_ = false;
 
   // Used to create tasks which run delayed on the UI thread.
   base::WeakPtrFactory<CloudPolicyClient> weak_ptr_factory_{this};

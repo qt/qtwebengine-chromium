@@ -69,14 +69,15 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   void SetBounds(const gfx::Rect& rect) override;
   gfx::NativeView GetNativeView() override;
   gfx::NativeViewAccessible GetNativeViewAccessible() override;
+  gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
   void Focus() override;
   bool HasFocus() override;
   void Hide() override;
   bool IsShowing() override;
   gfx::Rect GetViewBounds() override;
-  blink::mojom::PointerLockResult LockMouse(bool) override;
-  blink::mojom::PointerLockResult ChangeMouseLock(bool) override;
-  void UnlockMouse() override;
+  blink::mojom::PointerLockResult LockPointer(bool) override;
+  blink::mojom::PointerLockResult ChangePointerLock(bool) override;
+  void UnlockPointer() override;
   void EnsureSurfaceSynchronizedForWebTest() override;
   uint32_t GetCaptureSequenceNumber() const override;
   void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
@@ -150,7 +151,7 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   void TransformPointToRootSurface(gfx::PointF* point) override;
   bool TransformPointToCoordSpaceForView(
       const gfx::PointF& point,
-      RenderWidgetHostViewBase* target_view,
+      RenderWidgetHostViewInput* target_view,
       gfx::PointF* transformed_point) override;
   void ProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
@@ -167,6 +168,11 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   void OnUpdateTextInputStateCalled(TextInputManager* text_input_manager,
                                     RenderWidgetHostViewBase* updated_view,
                                     bool did_update_state) override;
+  void OnTextSelectionChanged(TextInputManager* text_input_manager,
+                              RenderWidgetHostViewBase* updated_view) override;
+  void OnSelectionBoundsChanged(
+      TextInputManager* text_input_manager,
+      RenderWidgetHostViewBase* updated_view) override;
 
   // RenderFrameMetadataProvider::Observer implementation.
   void OnRenderFrameMetadataChangedBeforeActivation(
@@ -234,11 +240,11 @@ class CONTENT_EXPORT RenderWidgetHostViewIOS
   // mouse position just as mouse lock was entered; the movement they report
   // indicates what the change in position of the mouse would be had it not been
   // locked.
-  bool mouse_locked_ = false;
+  bool pointer_locked_ = false;
 
   // Tracks whether unaccelerated mouse motion events are sent while the mouse
   // is locked.
-  bool mouse_lock_unadjusted_movement_ = false;
+  bool pointer_lock_unadjusted_movement_ = false;
 
   // Latest capture sequence number which is incremented when the caller
   // requests surfaces be synchronized via

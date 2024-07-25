@@ -37,12 +37,12 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "third_party/skia/include/core/SkPathBuilder.h"
 #include "third_party/skia/include/core/SkPathMeasure.h"
 #include "ui/gfx/geometry/transform.h"
 
 namespace gfx {
 class PointF;
+class QuadF;
 class RectF;
 class Vector2dF;
 }
@@ -65,7 +65,7 @@ enum PathElementType {
 // returns two tangent points and the endpoint.
 struct PathElement {
   PathElementType type;
-  raw_ptr<gfx::PointF, ExperimentalRenderer | AllowPtrArithmetic> points;
+  raw_ptr<gfx::PointF, AllowPtrArithmetic> points;
 };
 
 // Result structure from Path::PointAndNormalAtLength() (and similar).
@@ -92,6 +92,9 @@ class PLATFORM_EXPORT Path {
 
   bool Contains(const gfx::PointF&) const;
   bool Contains(const gfx::PointF&, WindRule) const;
+
+  bool Intersects(const gfx::QuadF&) const;
+  bool Intersects(const gfx::QuadF&, WindRule) const;
 
   // Determine if the path's stroke contains the point.  The transform is used
   // only to determine the precision factor when analyzing the stroke, so that

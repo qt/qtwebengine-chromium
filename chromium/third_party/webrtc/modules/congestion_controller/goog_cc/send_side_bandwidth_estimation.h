@@ -37,8 +37,8 @@ class RtcEventLog;
 
 class LinkCapacityTracker {
  public:
-  LinkCapacityTracker();
-  ~LinkCapacityTracker();
+  LinkCapacityTracker() = default;
+  ~LinkCapacityTracker() = default;
   // Call when a new delay-based estimate is available.
   void UpdateDelayBasedEstimate(Timestamp at_time,
                                 DataRate delay_based_bitrate);
@@ -50,7 +50,6 @@ class LinkCapacityTracker {
   DataRate estimate() const;
 
  private:
-  FieldTrialParameter<TimeDelta> tracking_rate;
   double capacity_estimate_bps_ = 0;
   Timestamp last_link_capacity_update_ = Timestamp::MinusInfinity();
   DataRate last_delay_based_estimate_ = DataRate::PlusInfinity();
@@ -129,6 +128,7 @@ class SendSideBandwidthEstimation {
                                 BandwidthUsage delay_detector_state,
                                 absl::optional<DataRate> probe_bitrate,
                                 bool in_alr);
+  bool PaceAtLossBasedEstimate() const;
 
  private:
   friend class GoogCcStatePrinter;

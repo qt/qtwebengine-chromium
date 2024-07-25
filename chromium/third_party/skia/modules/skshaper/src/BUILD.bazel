@@ -1,5 +1,9 @@
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_filegroup")
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
 licenses(["notice"])
 
 exports_files_legacy()
@@ -15,18 +19,21 @@ skia_filegroup(
 skia_filegroup(
     name = "skunicode_srcs",
     srcs = ["SkShaper_skunicode.cpp"],
+    visibility = ["//modules/skshaper:__pkg__"],
 )
 
 # In own group for export to //modules/skshaper/skshaper.gni:skia_shaper_coretext_sources.
 skia_filegroup(
     name = "coretext_srcs",
     srcs = ["SkShaper_coretext.cpp"],
+    visibility = ["//modules/skshaper:__pkg__"],
 )
 
 skia_filegroup(
     name = "base_srcs",
     srcs = [
         "SkShaper.cpp",
+        "SkShaper_factory.cpp",
         "SkShaper_primitive.cpp",
     ],
     visibility = [
@@ -52,7 +59,8 @@ skia_filegroup(
     name = "core_srcs",
     srcs = [
         "SkShaper.cpp",
-        "SkShaper_skunicode.cpp",
+        "SkShaper_factory.cpp",
+        "SkShaper_primitive.cpp",
     ],
     visibility = ["//modules/skshaper:__pkg__"],
 )

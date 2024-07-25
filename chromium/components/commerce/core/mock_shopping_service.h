@@ -21,6 +21,8 @@ class BookmarkNode;
 
 namespace commerce {
 
+class AccountChecker;
+
 // A mock ShoppingService that allows us to decide the response.
 class MockShoppingService : public commerce::ShoppingService {
  public:
@@ -31,6 +33,7 @@ class MockShoppingService : public commerce::ShoppingService {
   ~MockShoppingService() override;
 
   // commerce::ShoppingService overrides.
+  MOCK_METHOD(AccountChecker*, GetAccountChecker, (), (override));
   MOCK_METHOD(void,
               GetProductInfoForUrl,
               (const GURL& url, commerce::ProductInfoCallback callback),
@@ -38,6 +41,14 @@ class MockShoppingService : public commerce::ShoppingService {
   MOCK_METHOD(void,
               GetPriceInsightsInfoForUrl,
               (const GURL& url, commerce::PriceInsightsInfoCallback callback),
+              (override));
+  MOCK_METHOD(const std::vector<commerce::UrlInfo>,
+              GetUrlInfosForActiveWebWrappers,
+              (),
+              (override));
+  MOCK_METHOD(const std::vector<commerce::UrlInfo>,
+              GetUrlInfosForRecentlyViewedWebWrappers,
+              (),
               (override));
   MOCK_METHOD(void,
               GetUpdatedProductInfoForBookmarks,
@@ -53,7 +64,7 @@ class MockShoppingService : public commerce::ShoppingService {
               IsShoppingPage,
               (const GURL& url, IsShoppingPageCallback callback),
               (override));
-  MOCK_METHOD(absl::optional<ProductInfo>,
+  MOCK_METHOD(std::optional<ProductInfo>,
               GetAvailableProductInfoForUrl,
               (const GURL& url),
               (override));
@@ -118,20 +129,36 @@ class MockShoppingService : public commerce::ShoppingService {
               (const std::string& tracking_id,
                base::OnceCallback<void(bool)> callback),
               (override));
+  MOCK_METHOD(void,
+              GetProductSpecificationsForUrls,
+              (const std::vector<GURL>& urls,
+               ProductSpecificationsCallback callback),
+              (override));
+  MOCK_METHOD(ProductSpecificationsService*,
+              GetProductSpecificationsService,
+              (),
+              (override));
+  MOCK_METHOD(std::optional<EntryPointInfo>,
+              GetEntryPointInfoForSelection,
+              (GURL old_url, GURL new_url),
+              (override));
 
   // Make this mock permissive for all features but default to providing empty
   // data for all accessors of shopping data.
   void SetupPermissiveMock();
 
+  void SetAccountChecker(AccountChecker* account_checker);
   void SetResponseForGetProductInfoForUrl(
-      absl::optional<commerce::ProductInfo> product_info);
+      std::optional<commerce::ProductInfo> product_info);
   void SetResponseForGetPriceInsightsInfoForUrl(
-      absl::optional<commerce::PriceInsightsInfo> price_insights_info);
+      std::optional<commerce::PriceInsightsInfo> price_insights_info);
+  void SetResponseForGetUrlInfosForActiveWebWrappers(
+      std::vector<commerce::UrlInfo> url_infos);
   void SetResponsesForGetUpdatedProductInfoForBookmarks(
       std::map<int64_t, ProductInfo> bookmark_updates);
   void SetResponseForGetMerchantInfoForUrl(
-      absl::optional<commerce::MerchantInfo> merchant_info);
-  void SetResponseForIsShoppingPage(absl::optional<bool> is_shopping_page);
+      std::optional<commerce::MerchantInfo> merchant_info);
+  void SetResponseForIsShoppingPage(std::optional<bool> is_shopping_page);
   void SetSubscribeCallbackValue(bool subscribe_should_succeed);
   void SetUnsubscribeCallbackValue(bool unsubscribe_should_succeed);
   void SetIsSubscribedCallbackValue(bool is_subscribed);
@@ -151,6 +178,10 @@ class MockShoppingService : public commerce::ShoppingService {
   void SetIsParcelTrackingEligible(bool is_eligible);
   void SetGetAllParcelStatusesCallbackValue(
       std::vector<ParcelTrackingStatus> parcels);
+  void SetResponseForGetProductSpecificationsForUrls(
+      ProductSpecifications specs);
+  void SetResponseForGetEntryPointInfoForSelection(
+      std::optional<EntryPointInfo> entry_point_info);
 
  private:
   // Since the discount API wants a const ref to some map, keep a default

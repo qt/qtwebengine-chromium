@@ -46,8 +46,8 @@ namespace dawn::native::d3d12 {
 ResultOrError<Ref<SwapChain>> SwapChain::Create(Device* device,
                                                 Surface* surface,
                                                 SwapChainBase* previousSwapChain,
-                                                const SwapChainDescriptor* descriptor) {
-    Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, descriptor));
+                                                const SurfaceConfiguration* config) {
+    Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, config));
     DAWN_TRY(swapchain->Initialize(previousSwapChain));
     return swapchain;
 }
@@ -88,9 +88,8 @@ MaybeError SwapChain::PresentImpl() {
     // Transition the texture to the present state as required by IDXGISwapChain1::Present()
     // TODO(crbug.com/dawn/269): Remove the need for this by eagerly transitioning the
     // presentable texture to present at the end of submits that use them.
-    CommandRecordingContext* commandContext;
-    DAWN_TRY_ASSIGN(commandContext, queue->GetPendingCommandContext());
-    mApiTexture->TrackUsageAndTransitionNow(commandContext, kPresentTextureUsage,
+    CommandRecordingContext* commandContext = queue->GetPendingCommandContext();
+    mApiTexture->TrackUsageAndTransitionNow(commandContext, kPresentReleaseTextureUsage,
                                             mApiTexture->GetAllSubresources());
     DAWN_TRY(queue->SubmitPendingCommands());
 
@@ -106,7 +105,7 @@ MaybeError SwapChain::PresentImpl() {
     return {};
 }
 
-ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
+ResultOrError<SwapChainTextureInfo> SwapChain::GetCurrentTextureImpl() {
     Queue* queue = ToBackend(GetDevice()->GetQueue());
 
     // Synchronously wait until previous operations on the next swapchain buffer are finished.
@@ -120,7 +119,13 @@ ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor descriptor = GetSwapChainBaseTextureDescriptor(this);
     DAWN_TRY_ASSIGN(mApiTexture, Texture::Create(ToBackend(GetDevice()), Unpack(&descriptor),
                                                  mBuffers[mCurrentBuffer]));
-    return mApiTexture;
+
+    SwapChainTextureInfo info;
+    info.texture = mApiTexture;
+    info.status = wgpu::SurfaceGetCurrentTextureStatus::Success;
+    // TODO(dawn:2320): Check for optimality
+    info.suboptimal = false;
+    return info;
 }
 
 MaybeError SwapChain::DetachAndWaitForDeallocation() {
@@ -131,7 +136,7 @@ MaybeError SwapChain::DetachAndWaitForDeallocation() {
     // before it is finished being used. Flush the commands and wait for that serial to be
     // passed, then Tick the device to make sure the reference to the D3D12 texture is removed.
     Queue* queue = ToBackend(GetDevice()->GetQueue());
-    DAWN_TRY(queue->NextSerial());
+    DAWN_TRY(queue->EnsureCommandsFlushed(queue->GetPendingCommandSerial()));
     DAWN_TRY(queue->WaitForSerial(queue->GetLastSubmittedCommandSerial()));
     return ToBackend(GetDevice())->TickImpl();
 }

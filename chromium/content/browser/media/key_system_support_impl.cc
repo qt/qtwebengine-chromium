@@ -5,7 +5,6 @@
 #include "content/browser/media/key_system_support_impl.h"
 
 #include "base/logging.h"
-#include "base/no_destructor.h"
 
 namespace content {
 
@@ -27,19 +26,8 @@ bool IsValidKeySystemCapabilities(KeySystemCapabilities capabilities) {
 
 }  // namespace
 
-// static
-KeySystemSupportImpl* KeySystemSupportImpl::GetInstance() {
-  static base::NoDestructor<KeySystemSupportImpl> impl;
-  return impl.get();
-}
-
-// static
-void KeySystemSupportImpl::BindReceiver(
-    mojo::PendingReceiver<media::mojom::KeySystemSupport> receiver) {
-  KeySystemSupportImpl::GetInstance()->Bind(std::move(receiver));
-}
-
-KeySystemSupportImpl::KeySystemSupportImpl() = default;
+KeySystemSupportImpl::KeySystemSupportImpl(RenderFrameHost* render_frame_host)
+    : DocumentUserData(render_frame_host) {}
 KeySystemSupportImpl::~KeySystemSupportImpl() = default;
 
 void KeySystemSupportImpl::SetGetKeySystemCapabilitiesUpdateCbForTesting(
@@ -62,7 +50,7 @@ void KeySystemSupportImpl::AddObserver(
   // immediately. All observers will be notified if there are updates later.
   if (key_system_capabilities_.has_value()) {
     observer_remotes_.Get(id)->OnKeySystemSupportUpdated(
-        CloneKeySystemCapabilities());
+        key_system_capabilities_.value());
     return;
   }
 
@@ -103,18 +91,9 @@ void KeySystemSupportImpl::OnKeySystemCapabilitiesUpdated(
   key_system_capabilities_ = std::move(key_system_capabilities);
 
   for (auto& observer : observer_remotes_)
-    observer->OnKeySystemSupportUpdated(CloneKeySystemCapabilities());
+    observer->OnKeySystemSupportUpdated(key_system_capabilities_.value());
 }
 
-KeySystemCapabilityPtrMap KeySystemSupportImpl::CloneKeySystemCapabilities() {
-  DCHECK(key_system_capabilities_.has_value());
-
-  base::flat_map<std::string, media::mojom::KeySystemCapabilityPtr> result;
-  for (const auto& [key_system, capability] :
-       key_system_capabilities_.value()) {
-    result[key_system] = capability.Clone();
-  }
-  return result;
-}
+DOCUMENT_USER_DATA_KEY_IMPL(KeySystemSupportImpl);
 
 }  // namespace content

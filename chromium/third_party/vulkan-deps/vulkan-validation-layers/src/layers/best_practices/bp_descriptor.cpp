@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,10 +19,11 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
+#include "best_practices/bp_state.h"
 
 bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
                                                           VkDescriptorSet* pDescriptorSets, const ErrorObject& error_obj,
-                                                          void* ads_state_data) const {
+                                                          vvl::AllocateDescriptorSetsData& ads_state_data) const {
     bool skip = false;
     skip |= ValidationStateTracker::PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj,
                                                                           ads_state_data);
@@ -57,7 +58,7 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
 
 void BestPractices::ManualPostCallRecordAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
                                                                VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj,
-                                                               void* ads_state) {
+                                                               vvl::AllocateDescriptorSetsData& ads_state) {
     if (record_obj.result == VK_SUCCESS) {
         auto pool_state = Get<bp_state::DescriptorPool>(pAllocateInfo->descriptorPool);
         if (pool_state) {
@@ -179,4 +180,9 @@ bool BestPractices::PreCallValidateCreateDescriptorUpdateTemplate(VkDevice devic
     }
 
     return skip;
+}
+
+std::shared_ptr<vvl::DescriptorPool> BestPractices::CreateDescriptorPoolState(VkDescriptorPool handle,
+                                                                              const VkDescriptorPoolCreateInfo* pCreateInfo) {
+    return std::static_pointer_cast<vvl::DescriptorPool>(std::make_shared<bp_state::DescriptorPool>(*this, handle, pCreateInfo));
 }

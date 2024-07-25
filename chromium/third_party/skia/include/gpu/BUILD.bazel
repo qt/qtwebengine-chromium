@@ -1,4 +1,8 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "select_multi", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "generate_cpp_files_for_headers", "select_multi", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
@@ -17,7 +21,6 @@ skia_filegroup(
 skia_filegroup(
     name = "public_hdrs",
     srcs = [
-        "GrBackendDrawableInfo.h",
         "GrBackendSemaphore.h",
         "GrBackendSurface.h",
         "GrContextOptions.h",
@@ -46,7 +49,6 @@ skia_filegroup(
 skia_filegroup(
     name = "ganesh_hdrs",
     srcs = [
-        "GrBackendDrawableInfo.h",
         "GrBackendSemaphore.h",
         "GrBackendSurface.h",
         "GrContextOptions.h",
@@ -71,4 +73,12 @@ skia_filegroup(
         "ShaderErrorHandler.h",
     ],
     visibility = ["//src/gpu:__pkg__"],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "GrTypes.h",
+        "MutableTextureState.h",
+    ],
 )

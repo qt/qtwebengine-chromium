@@ -93,6 +93,12 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kUseDMSAAForTiles);
 // Use DMSAA instead of MSAA for rastering tiles on Android GL backend. Note
 // that the above flag kUseDMSAAForTiles is used for Android Vulkan backend.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kUseDMSAAForTilesAndroidGL);
+
+// Break synchronization of scrolling website content and browser controls in
+// android to see performance gains for moving browser controls to viz.
+// WARNING: Don't enable this feature! It should only be used to measure
+// performance on prestable channels.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kAndroidNoSurfaceSyncForBrowserControls);
 #endif
 
 // Updating browser controls state will IPC directly from browser main to the
@@ -110,11 +116,9 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kReclaimResourcesFlushInBackground);
 
 // When LayerTreeHostImpl::ReclaimResources() is called in background, trigger a
 // additional delayed flush to reclaim resources.
+//
+// Enabled 03/2024, kept to run a holdback experiment.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kReclaimResourcesDelayedFlushInBackground);
-
-// Try to play a longer list of ops before giving up in solid color analysis for
-// tiles.
-CC_BASE_EXPORT BASE_DECLARE_FEATURE(kMoreAggressiveSolidColorDetection);
 
 // Allow CC FrameRateEstimater to reduce the frame rate to half of the default
 // if the condition meets the requirement.
@@ -134,9 +138,6 @@ constexpr static int kDefaultInterestAreaSizeInPixels = 3000;
 constexpr static int kDefaultInterestAreaSizeInPixelsWhenEnabled = 500;
 CC_BASE_EXPORT extern const base::FeatureParam<int> kInterestAreaSizeInPixels;
 
-// Whether images marked "no-cache" are cached. When disabled, they are.
-CC_BASE_EXPORT BASE_DECLARE_FEATURE(kImageCacheNoCache);
-
 // When enabled, old prepaint tiles in the "eventually" region get reclaimed
 // after some time.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kReclaimOldPrepaintTiles);
@@ -150,14 +151,54 @@ CC_BASE_EXPORT BASE_DECLARE_FEATURE(kUseMapRectForPixelMovement);
 // viz::Surface.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kEvictionThrottlesDraw);
 
-// Kill switch for trigger late deadline timer immediately in scheduler when
-// there's no active tree likely.
-CC_BASE_EXPORT BASE_DECLARE_FEATURE(kResetTimerWhenNoActiveTreeLikely);
+// Whether to use the recorded bounds (i.e. `DisplayItemList::bounds()`) to
+// determine the area of tiling. See crbug.com/1517714.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kUseRecordedBoundsForTiling);
 
 // Permits adjusting the threshold we use for determining if main thread updates
 // are fast. Specifically, via a scalar on the range [0,1] that we multiply with
 // the existing threshold. I.e., |new_threshold| = |scalar| * |old_threshold|.
 CC_BASE_EXPORT BASE_DECLARE_FEATURE(kAdjustFastMainThreadThreshold);
+
+// When a LayerTreeHostImpl is not visible, clear its transferable resources
+// that haven't been imported into viz.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kClearCanvasResourcesInBackground);
+
+// Currently CC Metrics does a lot of calculations for UMA and Tracing. While
+// Traces themselves won't run when we are not tracing, some of the calculation
+// work is done regardless. When enabled this feature reduces extra calculation
+// to when tracing is enabled.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kMetricsTracingCalculationReduction);
+
+// Temporary features to enable the fix for b/328665503 independently from
+// adding the implementation.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kPaintWithGainmapShader);
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kPaintWithGlobalToneMapFilter);
+
+// When enabled we will restore older FrameSequenceTracker sequence order
+// enforcing that can miss backfilled frames.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kMetricsBackfillAdjustmentHoldback);
+
+// When enabled we will submit the 'CopySharedImage' in one call and not batch
+// it up into 4MiB increments.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kNonBatchedCopySharedImage);
+
+// Currently there is a race between OnBeginFrames from the GPU process and
+// input arriving from the Browser process. Due to this we can start to produce
+// a frame while scrolling without any input events. Late arriving events are
+// then enqueued for the next VSync.
+//
+// When this feature is enabled we will instead wait until
+// `kWaitForLateScrollEventsDeadlineRatio` of the frame interval for input.
+// During this time scroll events will be dispatched immediately. At the
+// deadline we will resume frame production and enqueuing input.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kWaitForLateScrollEvents);
+CC_BASE_EXPORT extern const base::FeatureParam<double>
+    kWaitForLateScrollEventsDeadlineRatio;
+
+// When enabled we stop always pushing PictureLayerImpl properties on
+// tree Activation. See crbug.com/40335690.
+CC_BASE_EXPORT BASE_DECLARE_FEATURE(kDontAlwaysPushPictureLayerImpls);
 
 }  // namespace features
 

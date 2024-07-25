@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
+#include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/modules/accessibility/testing/accessibility_test.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
@@ -323,11 +324,11 @@ TEST_F(AccessibilityTest, DetachedIsIgnored) {
   ASSERT_NE(nullptr, button);
 
   EXPECT_FALSE(button->IsDetached());
-  EXPECT_FALSE(button->AccessibilityIsIgnored());
+  EXPECT_FALSE(button->IsIgnored());
   GetAXObjectCache().Remove(button->GetNode());
   EXPECT_TRUE(button->IsDetached());
-  EXPECT_TRUE(button->AccessibilityIsIgnored());
-  EXPECT_FALSE(button->AccessibilityIsIgnoredButIncludedInTree());
+  EXPECT_TRUE(button->IsIgnored());
+  EXPECT_FALSE(button->IsIgnoredButIncludedInTree());
 }
 
 TEST_F(AccessibilityTest, UnignoredChildren) {
@@ -369,9 +370,9 @@ TEST_F(AccessibilityTest, UnignoredChildren) {
 
 TEST_F(AccessibilityTest, SimpleTreeNavigation) {
   SetBodyInnerHTML(R"HTML(<input id="input" type="text" value="value">
-                   <div id="ignored_a" aria-hidden="true"></div>
+                   <div id="ignored_a" aria-hidden="true" lang="en-US"></div>
                    <p id="paragraph">hello<br id="br">there</p>
-                   <span id="ignored_b" aria-hidden="true"></span>
+                   <span id="ignored_b" aria-hidden="true" lang="fr-CA"></span>
                    <button id="button">button</button>)HTML");
 
   AXObject* body = GetAXBodyObject();
@@ -380,13 +381,13 @@ TEST_F(AccessibilityTest, SimpleTreeNavigation) {
   const AXObject* input = GetAXObjectByElementId("input");
   ASSERT_NE(nullptr, input);
   ASSERT_NE(nullptr, GetAXObjectByElementId("ignored_a"));
-  ASSERT_TRUE(GetAXObjectByElementId("ignored_a")->AccessibilityIsIgnored());
+  ASSERT_TRUE(GetAXObjectByElementId("ignored_a")->IsIgnored());
   const AXObject* paragraph = GetAXObjectByElementId("paragraph");
   ASSERT_NE(nullptr, paragraph);
   const AXObject* br = GetAXObjectByElementId("br");
   ASSERT_NE(nullptr, br);
   ASSERT_NE(nullptr, GetAXObjectByElementId("ignored_b"));
-  ASSERT_TRUE(GetAXObjectByElementId("ignored_b")->AccessibilityIsIgnored());
+  ASSERT_TRUE(GetAXObjectByElementId("ignored_b")->IsIgnored());
   const AXObject* button = GetAXObjectByElementId("button");
   ASSERT_NE(nullptr, button);
 
@@ -484,7 +485,7 @@ TEST_F(AccessibilityTest, LangAttrInterestingHidden) {
   const AXObject* span_1 = obj_a->ChildAtIncludingIgnored(0);
   ASSERT_NE(nullptr, span_1);
   EXPECT_EQ(ax::mojom::Role::kGenericContainer, span_1->RoleValue());
-  EXPECT_TRUE(span_1->AccessibilityIsIgnoredButIncludedInTree());
+  EXPECT_TRUE(span_1->IsIgnoredButIncludedInTree());
 }
 
 TEST_F(AccessibilityTest, TreeNavigationWithIgnoredContainer) {
@@ -508,29 +509,29 @@ TEST_F(AccessibilityTest, TreeNavigationWithIgnoredContainer) {
   ASSERT_EQ(3, body->ChildCountIncludingIgnored());
   ASSERT_EQ(1, body->ChildAtIncludingIgnored(1)->ChildCountIncludingIgnored());
 
-  ASSERT_FALSE(root->AccessibilityIsIgnored());
-  ASSERT_TRUE(body->AccessibilityIsIgnored());
+  ASSERT_FALSE(root->IsIgnored());
+  ASSERT_TRUE(body->IsIgnored());
   const AXObject* obj_a = GetAXObjectByElementId("A");
   ASSERT_NE(nullptr, obj_a);
-  ASSERT_FALSE(obj_a->AccessibilityIsIgnored());
+  ASSERT_FALSE(obj_a->IsIgnored());
   const AXObject* obj_a_text = obj_a->FirstChildIncludingIgnored();
   ASSERT_NE(nullptr, obj_a_text);
   EXPECT_EQ(ax::mojom::Role::kStaticText, obj_a_text->RoleValue());
   const AXObject* obj_b = GetAXObjectByElementId("B");
   ASSERT_NE(nullptr, obj_b);
-  ASSERT_FALSE(obj_b->AccessibilityIsIgnored());
+  ASSERT_FALSE(obj_b->IsIgnored());
   const AXObject* obj_b_text = obj_b->FirstChildIncludingIgnored();
   ASSERT_NE(nullptr, obj_b_text);
   EXPECT_EQ(ax::mojom::Role::kStaticText, obj_b_text->RoleValue());
   const AXObject* obj_c = GetAXObjectByElementId("C");
   ASSERT_NE(nullptr, obj_c);
-  ASSERT_FALSE(obj_c->AccessibilityIsIgnored());
+  ASSERT_FALSE(obj_c->IsIgnored());
   const AXObject* obj_c_text = obj_c->FirstChildIncludingIgnored();
   ASSERT_NE(nullptr, obj_c_text);
   EXPECT_EQ(ax::mojom::Role::kStaticText, obj_c_text->RoleValue());
   const AXObject* obj_ignored = body->ChildAtIncludingIgnored(1);
   ASSERT_NE(nullptr, obj_ignored);
-  ASSERT_TRUE(obj_ignored->AccessibilityIsIgnored());
+  ASSERT_TRUE(obj_ignored->IsIgnored());
 
   EXPECT_EQ(root, obj_a->ParentObjectUnignored());
   EXPECT_EQ(body, obj_a->ParentObjectIncludedInTree());
@@ -610,7 +611,7 @@ TEST_F(AccessibilityTest, TreeNavigationWithContinuations) {
   const AXObject* ax_text_before = ax_link->FirstChildIncludingIgnored();
   ASSERT_NE(nullptr, ax_text_before);
   ASSERT_EQ(ax::mojom::Role::kStaticText, ax_text_before->RoleValue());
-  ASSERT_FALSE(ax_text_before->AccessibilityIsIgnored());
+  ASSERT_FALSE(ax_text_before->IsIgnored());
   const AXObject* ax_div = GetAXObjectByElementId("div");
   ASSERT_NE(nullptr, ax_div);
   const AXObject* ax_paragraph = GetAXObjectByElementId("paragraph");
@@ -618,11 +619,11 @@ TEST_F(AccessibilityTest, TreeNavigationWithContinuations) {
   const AXObject* ax_text_inside = ax_paragraph->FirstChildIncludingIgnored();
   ASSERT_NE(nullptr, ax_text_inside);
   ASSERT_EQ(ax::mojom::Role::kStaticText, ax_text_inside->RoleValue());
-  ASSERT_FALSE(ax_text_inside->AccessibilityIsIgnored());
+  ASSERT_FALSE(ax_text_inside->IsIgnored());
   const AXObject* ax_text_after = ax_link->LastChildIncludingIgnored();
   ASSERT_NE(nullptr, ax_text_after);
   ASSERT_EQ(ax::mojom::Role::kStaticText, ax_text_after->RoleValue());
-  ASSERT_FALSE(ax_text_after->AccessibilityIsIgnored());
+  ASSERT_FALSE(ax_text_after->IsIgnored());
 
   //
   // Test parent / child relationships individually. This is easier to debug
@@ -979,6 +980,28 @@ TEST_F(AccessibilityTest, NextAndPreviousOnLineInert) {
   EXPECT_EQ("go ", previous->GetNode()->textContent());
 }
 
+TEST_F(AccessibilityTest, NextOnLineAriaHidden) {
+  // Note the spans must be in the same line or we could get other unwanted
+  // behavior. See https://crbug.com/1511390 for details.
+  SetBodyInnerHTML(R"HTML(
+    <div contenteditable="true" style="outline: 1px solid;">
+        <div>first line</div>
+        <span id="this">this line </span><span aria-hidden="true">is</span><span> broken.</span>
+        <div>last line</div>
+    </div>
+  )HTML");
+  const AXObject* this_object = GetAXObjectByElementId("this");
+  ASSERT_NE(nullptr, this_object);
+
+  const AXObject* next = this_object->NextOnLine();
+  ASSERT_NE(nullptr, next);
+  EXPECT_EQ(" broken.", next->GetNode()->textContent());
+
+  const AXObject* prev = next->PreviousOnLine();
+  ASSERT_NE(nullptr, prev);
+  EXPECT_EQ("this line ", prev->GetNode()->textContent());
+}
+
 TEST_F(AccessibilityTest, TableRowAndCellIsLineBreakingObject) {
   SetBodyInnerHTML(R"HTML(
       <table id="table">
@@ -1003,6 +1026,45 @@ TEST_F(AccessibilityTest, TableRowAndCellIsLineBreakingObject) {
   ASSERT_NE(nullptr, cell);
   ASSERT_EQ(ax::mojom::Role::kCell, cell->RoleValue());
   EXPECT_TRUE(cell->IsLineBreakingObject());
+}
+
+TEST_F(AccessibilityTest, TestSetRangeValueVideoControlSlider) {
+  SetBodyInnerHTML(R"HTML(
+      <body>
+        <video id="vid" src="bear.webm"></video>
+      </body>
+      )HTML");
+
+  AXObject* video = GetAXObjectByElementId("vid");
+
+  Node* video_node = video->GetNode();
+  ASSERT_NE(nullptr, video_node);
+  auto* video_element = DynamicTo<HTMLMediaElement>(video_node);
+  ASSERT_NE(nullptr, video_node);
+  Node* timeline_node =
+      video_element->GetMediaControls()->TimelineLayoutObject()->GetNode();
+  ASSERT_NE(nullptr, timeline_node);
+  AXObjectCache* cache = timeline_node->GetDocument().ExistingAXObjectCache();
+  ASSERT_NE(nullptr, cache);
+  AXObject* video_slider = cache->ObjectFromAXID(timeline_node->GetDomNodeId());
+
+  ASSERT_NE(nullptr, video_slider);
+  ASSERT_EQ(video_slider->RoleValue(), ax::mojom::blink::Role::kSlider);
+
+  float value = 0.0f;
+  EXPECT_TRUE(video_slider->ValueForRange(&value));
+  EXPECT_EQ(0.0f, value);
+
+  std::string value_to_set("1.0");
+  ui::AXActionData action_data;
+  action_data.action = ax::mojom::Action::kSetValue;
+  action_data.value = value_to_set;
+  action_data.target_node_id = video_slider->AXObjectID();
+
+  EXPECT_TRUE(video_slider->PerformAction(action_data));
+
+  EXPECT_TRUE(video_slider->ValueForRange(&value));
+  EXPECT_EQ(1.0f, value);
 }
 
 TEST_F(AccessibilityTest,
@@ -1093,7 +1155,7 @@ TEST_F(AccessibilityTest, SlotIsLineBreakingObject) {
       )HTML";
   SetBodyContent(body_content);
   ShadowRoot& shadow_root =
-      GetElementById("host")->AttachShadowRootInternal(ShadowRootType::kOpen);
+      GetElementById("host")->AttachShadowRootForTesting(ShadowRootMode::kOpen);
   shadow_root.setInnerHTML(String::FromUTF8(shadow_content),
                            ASSERT_NO_EXCEPTION);
   UpdateAllLifecyclePhasesForTest();
@@ -1599,32 +1661,6 @@ TEST_F(AccessibilityTest, CanSetFocusInCanvasFallbackContent) {
       GetAXObjectByElementId("a-hidden-inert")->CanSetFocusAttribute());
 }
 
-TEST_F(AccessibilityTest, GetParentNodeForComputeParent) {
-  SetBodyInnerHTML(
-      R"HTML(<img usemap="#map"><map name="map"><area id="area"
-      shape="rect" coords="0,0,5,5" href="about:blank" alt="Area">)HTML");
-
-  AXObjectCacheImpl& cache = GetAXObjectCache();
-
-  // The parent of the area isn't the DOM parent, but the image because that
-  // mirrors the structure of the ax tree.
-  Element* area = GetElementById("area");
-  AXObject* parent = AXObject::ComputeNonARIAParent(cache, area);
-  EXPECT_TRUE(IsA<HTMLImageElement>(parent->GetNode()));
-
-  parent = AXObject::ComputeNonARIAParent(cache, parent->GetNode());
-  EXPECT_TRUE(IsA<HTMLBodyElement>(parent->GetNode()));
-
-  parent = AXObject::ComputeNonARIAParent(cache, parent->GetNode());
-  EXPECT_TRUE(IsA<HTMLHtmlElement>(parent->GetNode()));
-
-  parent = AXObject::ComputeNonARIAParent(cache, parent->GetNode());
-  EXPECT_TRUE(IsA<Document>(parent->GetNode()));
-
-  parent = AXObject::ComputeNonARIAParent(cache, parent->GetNode());
-  EXPECT_EQ(parent, nullptr);
-}
-
 TEST_F(AccessibilityTest, CanComputeAsNaturalParent) {
   SetBodyInnerHTML(R"HTML(M<img usemap="#map"><map name="map"><hr><progress>
     <div><input type="range">M)HTML");
@@ -1660,8 +1696,8 @@ TEST_F(AccessibilityTest, StitchChildTree) {
         <p id="paragraph">Ignored text.</P>
       </div>
       <input id="button" type="button" value="Test"
-          style="display: none;">
-      <canvas id="canvas" aria-hidden="true">
+          style="display: none;" lang="fr-CA">  <!-- lang includes in tree -->
+      <canvas id="canvas" aria-hidden="true" lang="fr-CA">
         <input id="ignoredButton" type="button" aria-hidden="false" value="Test">
         <p aria-hidden="false>More fallback content.</p>
       </canvas>)HTML");
@@ -1685,19 +1721,19 @@ TEST_F(AccessibilityTest, StitchChildTree) {
   AXObject* ignored_button = GetAXObjectByElementId("ignoredButton");
   ASSERT_NE(nullptr, ignored_button);
 
-  EXPECT_TRUE(div->AccessibilityIsIncludedInTree());
+  EXPECT_TRUE(div->IsIncludedInTree());
   EXPECT_TRUE(div->IsVisible());
   EXPECT_EQ(1, div->ChildCountIncludingIgnored());
-  EXPECT_TRUE(paragraph->AccessibilityIsIncludedInTree());
+  EXPECT_TRUE(paragraph->IsIncludedInTree());
   EXPECT_TRUE(paragraph->IsVisible());
-  EXPECT_TRUE(paragraph_text->AccessibilityIsIncludedInTree());
+  EXPECT_TRUE(paragraph_text->IsIncludedInTree());
   EXPECT_TRUE(paragraph_text->IsVisible());
-  EXPECT_TRUE(button->AccessibilityIsIgnored());
+  EXPECT_TRUE(button->IsIgnored());
   EXPECT_FALSE(button->IsVisible());
-  EXPECT_TRUE(canvas->AccessibilityIsIgnored());
+  EXPECT_TRUE(canvas->IsIgnored());
   EXPECT_FALSE(canvas->IsVisible());
   EXPECT_EQ(1, canvas->ChildCountIncludingIgnored());
-  EXPECT_TRUE(ignored_button->AccessibilityIsIncludedInTree());
+  EXPECT_TRUE(ignored_button->IsIncludedInTree());
   EXPECT_FALSE(ignored_button->IsVisible());
   EXPECT_FALSE(paragraph->IsHiddenByChildTree());
   EXPECT_FALSE(paragraph_text->IsHiddenByChildTree());
@@ -1749,17 +1785,17 @@ TEST_F(AccessibilityTest, StitchChildTree) {
   canvas = GetAXObjectByElementId("canvas");
   ASSERT_NE(nullptr, canvas);
 
-  EXPECT_TRUE(div->AccessibilityIsIncludedInTree());
+  EXPECT_TRUE(div->IsIncludedInTree());
   EXPECT_TRUE(div->IsVisible());
   EXPECT_EQ(0, div->ChildCountIncludingIgnored());
-  EXPECT_TRUE(button->AccessibilityIsIncludedInTree())
+  EXPECT_TRUE(button->IsIncludedInTree())
       << "`button` should switch from ignored due to `display:none`, to "
          "included in the tree.";
   EXPECT_FALSE(button->IsVisible())
       << "The visibility state should not change, only the inclusion in the "
          "tree.";
   EXPECT_EQ(0, button->ChildCountIncludingIgnored());
-  EXPECT_TRUE(canvas->AccessibilityIsIgnoredButIncludedInTree());
+  EXPECT_TRUE(canvas->IsIgnoredButIncludedInTree());
   EXPECT_FALSE(canvas->IsVisible())
       << "The visibility state should not change, only the inclusion in the "
          "tree.";
@@ -1770,10 +1806,10 @@ TEST_F(AccessibilityTest, StitchChildTree) {
   // once it walks the DOM tree again.
 
   EXPECT_TRUE(paragraph->IsHiddenByChildTree());
-  EXPECT_TRUE(paragraph->AccessibilityIsIgnored());
+  EXPECT_TRUE(paragraph->IsIgnored());
   EXPECT_FALSE(paragraph->IsVisible());
   EXPECT_TRUE(ignored_button->IsHiddenByChildTree());
-  EXPECT_TRUE(ignored_button->AccessibilityIsIgnored());
+  EXPECT_TRUE(ignored_button->IsIgnored());
   EXPECT_FALSE(ignored_button->IsVisible());
 }
 

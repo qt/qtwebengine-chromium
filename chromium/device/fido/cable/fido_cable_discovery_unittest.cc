@@ -72,7 +72,7 @@ constexpr CableSessionPreKeyArray kTestSessionPreKey = {
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}};
 
-// TODO(https://crbug.com/837088): Add support for multiple EIDs on Windows.
+// TODO(crbug.com/40573698): Add support for multiple EIDs on Windows.
 #if !BUILDFLAG(IS_WIN)
 constexpr CableEidArray kSecondaryClientEid = {
     {0x15, 0x14, 0x13, 0x12, 0x11, 0x10, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04,
@@ -221,8 +221,8 @@ class CableMockAdapter : public MockBluetoothAdapter {
     service_data_map.emplace(kGoogleCableUUID128, std::move(service_data));
 
     mock_device->UpdateAdvertisementData(
-        1 /* rssi */, absl::nullopt /* flags */, BluetoothDevice::UUIDList(),
-        absl::nullopt /* tx_power */, std::move(service_data_map),
+        1 /* rssi */, std::nullopt /* flags */, BluetoothDevice::UUIDList(),
+        std::nullopt /* tx_power */, std::move(service_data_map),
         BluetoothDevice::ManufacturerDataMap());
 
     auto* mock_device_ptr = mock_device.get();
@@ -316,7 +316,7 @@ class CableMockAdapter : public MockBluetoothAdapter {
                             delegate) {
               EXPECT_TRUE(filter);
               delegate->OnSessionStarted(/*scan_session=*/nullptr,
-                                         /*error_code=*/absl::nullopt);
+                                         /*error_code=*/std::nullopt);
               auto* device = CreateNewTestBluetoothDevice(eid);
               delegate->OnDeviceFound(/*scan_session=*/nullptr, device);
               return nullptr;
@@ -481,7 +481,7 @@ TEST_F(FidoCableDiscoveryTest, TestDiscoveryFindsIncorrectDevice) {
 
 // Windows currently does not support multiple EIDs, so the following tests are
 // not applicable.
-// TODO(https://crbug.com/837088): Support multiple EIDs on Windows and enable
+// TODO(crbug.com/40573698): Support multiple EIDs on Windows and enable
 // these tests.
 #if !BUILDFLAG(IS_WIN)
 // Tests Cable discovery flow when multiple(2) sets of client/authenticator EIDs

@@ -67,9 +67,8 @@ void SetCookieDirect(WebContentsImpl* tab,
   options.set_same_site_cookie_context(
       net::CookieOptions::SameSiteCookieContext::MakeInclusive());
 
-  auto cookie_obj = net::CanonicalCookie::Create(
-      url, cookie_line, base::Time::Now(), std::nullopt /* server_time */,
-      std::nullopt /* cookie_partition_key */);
+  auto cookie_obj = net::CanonicalCookie::CreateForTesting(url, cookie_line,
+                                                           base::Time::Now());
 
   base::RunLoop run_loop;
   tab->GetBrowserContext()
@@ -455,10 +454,12 @@ class RestrictedCookieManagerInterceptor
                         bool has_storage_access,
                         bool get_version_shared_memory,
                         bool is_ad_tagged,
+                        bool force_disable_third_party_cookies,
                         GetCookiesStringCallback callback) override {
     GetForwardingInterface()->GetCookiesString(
         URLToUse(url), site_for_cookies, top_frame_origin, has_storage_access,
-        get_version_shared_memory, is_ad_tagged, std::move(callback));
+        get_version_shared_memory, is_ad_tagged,
+        force_disable_third_party_cookies, std::move(callback));
   }
 
  private:
@@ -517,7 +518,7 @@ class CookieStoreContentBrowserClient
 
 // Cookie access in loader is locked to a particular origin, so messages
 // for wrong URLs are rejected.
-// TODO(https://crbug.com/954603): This should actually result in renderer
+// TODO(crbug.com/41453892): This should actually result in renderer
 // kills.
 IN_PROC_BROWSER_TEST_F(CookieBrowserTest, CrossSiteCookieSecurityEnforcement) {
   // The code under test is only active under site isolation.

@@ -21,7 +21,7 @@ struct BLINK_COMMON_EXPORT FrameVisualProperties {
 
   FrameVisualProperties& operator=(const FrameVisualProperties& other);
 
-  static int MaxChildFrameScreenRectMovement();
+  static double MaxChildFrameScreenRectMovement();
   static int MinScreenRectStableTimeMs();
 
   // TODO(szager): These values override the above two values for frames that
@@ -49,7 +49,7 @@ struct BLINK_COMMON_EXPORT FrameVisualProperties {
   gfx::Size visible_viewport_size;
   gfx::Size min_size_for_auto_resize;
   gfx::Size max_size_for_auto_resize;
-  std::vector<gfx::Rect> root_widget_window_segments;
+  std::vector<gfx::Rect> root_widget_viewport_segments;
 
   // The size of the compositor viewport, to match the sub-frame's surface.
   gfx::Rect compositor_viewport;

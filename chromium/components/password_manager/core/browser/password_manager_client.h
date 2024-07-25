@@ -29,7 +29,19 @@
 #include "components/sync/service/sync_service.h"
 #include "net/cert/cert_status_flags.h"
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_CHROMEOS)
+#include "base/i18n/rtl.h"
+#include "components/password_manager/core/browser/password_cross_domain_confirmation_popup_controller.h"
+#include "ui/gfx/geometry/rect_f.h"
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_CHROMEOS)
+
 class PrefService;
+
+namespace affiliations {
+class AffiliationService;
+}  // namespace affiliations
 
 namespace autofill {
 class AutofillCrowdsourcingManager;
@@ -91,25 +103,15 @@ class PasswordStoreInterface;
 class WebAuthnCredentialsDelegate;
 struct PasswordForm;
 
-enum class SyncState {
-  kNotSyncing,
-  kSyncingNormalEncryption,
-  kSyncingWithCustomPassphrase,
-  // Sync is disabled but the user is signed in and opted in to passwords
-  // account storage.
-  kAccountPasswordsActiveNormalEncryption,
-  // Same as above but the account has a custom passphrase set.
-  kAccountPasswordsActiveWithCustomPassphrase,
-};
-
 enum class ErrorMessageFlowType { kSaveFlow, kFillFlow };
 
 #if BUILDFLAG(IS_ANDROID)
-struct SubmissionReadinessParams {
+struct PasswordFillingParams {
   autofill::FormData form;
   uint64_t username_field_index;
   uint64_t password_field_index;
-  // TODO(crbug/1462532): Remove this param after
+  autofill::FieldRendererId focused_field_renderer_id_;
+  // TODO(crbug.com/40274966): Remove this param after
   // PasswordSuggestionBottomSheetV2 is launched.
   autofill::mojom::SubmissionReadinessState submission_readiness;
 };
@@ -142,7 +144,7 @@ class PasswordManagerClient {
   // the presence of SSL errors on a page. |url| describes the URL to fill the
   // password for. It is not necessary the URL of the current page but can be a
   // URL of a proxy or subframe.
-  // TODO(crbug.com/1071842): This method's name is misleading as it also
+  // TODO(crbug.com/40685327): This method's name is misleading as it also
   // determines whether saving prompts should be shown.
   virtual bool IsFillingEnabled(const GURL& url) const;
 
@@ -213,9 +215,12 @@ class PasswordManagerClient {
   // TouchToFill).
   virtual bool ShowKeyboardReplacingSurface(
       PasswordManagerDriver* driver,
-      const SubmissionReadinessParams& submission_readiness_params,
+      const PasswordFillingParams& password_filling_params,
       bool is_webauthn_form);
 #endif
+
+  virtual bool CanUseBiometricAuthForFilling(
+      device_reauth::DeviceAuthenticator* authenticator);
 
   // Returns a pointer to a DeviceAuthenticator. Might be null if
   // BiometricAuthentication is not available for a given platform.
@@ -248,7 +253,7 @@ class PasswordManagerClient {
           submitted_manager) = 0;
 
   // Informs that a successful login has just happened.
-  // TODO(crbug.com/1299394): Remove when the TimeToSuccessfulLogin metric is
+  // TODO(crbug.com/40215916): Remove when the TimeToSuccessfulLogin metric is
   // deprecated.
   virtual void NotifyOnSuccessfulLogin(
       const std::u16string& submitted_username) {}
@@ -257,14 +262,14 @@ class PasswordManagerClient {
   virtual void NotifyKeychainError() = 0;
 
   // Informs that a credential filled by Touch To Fill can be submitted.
-  // TODO(crbug.com/1299394): Remove when the TimeToSuccessfulLogin metric is
+  // TODO(crbug.com/40215916): Remove when the TimeToSuccessfulLogin metric is
   // deprecated.
   virtual void StartSubmissionTrackingAfterTouchToFill(
       const std::u16string& filled_username) {}
 
   // Informs that a successful submission didn't happen after Touch To Fill
   // (e.g. a submission failed, a user edited an input field manually).
-  // TODO(crbug.com/1299394): Remove when the TimeToSuccessfulLogin metric is
+  // TODO(crbug.com/40215916): Remove when the TimeToSuccessfulLogin metric is
   // deprecated.
   virtual void ResetSubmissionTrackingAfterTouchToFill() {}
 
@@ -275,8 +280,7 @@ class PasswordManagerClient {
   // Currently only implemented on Android.
   virtual void UpdateCredentialCache(
       const url::Origin& origin,
-      const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-          best_matches,
+      base::span<const PasswordForm> best_matches,
       bool is_blocklisted);
 
   // Called when a password is saved in an automated fashion. Embedder may
@@ -294,8 +298,7 @@ class PasswordManagerClient {
   // implementation is a noop. |was_autofilled_on_pageload| contains information
   // if password form was autofilled on pageload.
   virtual void PasswordWasAutofilled(
-      const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-          best_matches,
+      base::span<const PasswordForm> best_matches,
       const url::Origin& origin,
       const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>*
           federated_matches,
@@ -333,6 +336,9 @@ class PasswordManagerClient {
   // Gets the sync service associated with this client.
   virtual const syncer::SyncService* GetSyncService() const = 0;
 
+  // Gets the affiliation service associated with this client.
+  virtual affiliations::AffiliationService* GetAffiliationService() = 0;
+
   // Returns the profile PasswordStore associated with this instance.
   virtual PasswordStoreInterface* GetProfilePasswordStore() const = 0;
 
@@ -341,10 +347,6 @@ class PasswordManagerClient {
 
   // Returns the PasswordReuseManager associated with this instance.
   virtual PasswordReuseManager* GetPasswordReuseManager() const = 0;
-
-  // Reports whether and how passwords are synced in the embedder. The default
-  // implementation always returns kNotSyncing.
-  virtual SyncState GetPasswordSyncState() const;
 
   // Returns true if last navigation page had HTTP error i.e 5XX or 4XX
   virtual bool WasLastNavigationHTTPError() const;
@@ -501,6 +503,18 @@ class PasswordManagerClient {
 
   // Refreshes password manager settings stored in prefs.
   virtual void RefreshPasswordManagerSettingsIfNeeded() const;
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_CHROMEOS)
+  // Creates and show the cross domain confirmation popup.
+  virtual std::unique_ptr<PasswordCrossDomainConfirmationPopupController>
+  ShowCrossDomainConfirmationPopup(const gfx::RectF& element_bounds,
+                                   base::i18n::TextDirection text_direction,
+                                   const GURL& domain,
+                                   const std::u16string& password_origin,
+                                   base::OnceClosure confirmation_callback) = 0;
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_CHROMEOS)
 };
 
 }  // namespace password_manager

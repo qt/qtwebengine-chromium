@@ -1,7 +1,7 @@
 Name: Zstandard
 Short Name: zstd
 URL: https://github.com/facebook/zstd
-Version: 050fec5c378d676fede8b2171ec5e84f6afa1504
+Version: ff7a151f2e6c009b657d9f798c2d9962b0e3feb5
 License: BSD, GPLv2
 License File: src/LICENSE
 CPEPrefix: cpe:/a:facebook:zstandard:1.5.5
@@ -14,4 +14,4 @@ compression scenarios at zlib-level and better compression ratios.
 This library is used to decode "Content-Encoding: zstd" responses.
 
 Local Modifications:
-- BUILD.gn: Added.
+- BUILD.gn: Added targets for compression and decompression.

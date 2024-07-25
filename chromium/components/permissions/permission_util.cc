@@ -20,6 +20,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_features.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
@@ -51,9 +52,9 @@ enum class PermissionDelegationMode {
 
 PermissionDelegationMode GetPermissionDelegationMode(
     ContentSettingsType permission) {
-  // TODO(crbug.com/987654): Generalize this to other "background permissions",
-  // that is, permissions that can be used by a service worker. This includes
-  // durable storage, background sync, etc.
+  // TODO(crbug.com/40637582): Generalize this to other "background
+  // permissions", that is, permissions that can be used by a service worker.
+  // This includes durable storage, background sync, etc.
   if (permission == ContentSettingsType::NOTIFICATIONS)
     return PermissionDelegationMode::kUndelegated;
   if (permission == ContentSettingsType::STORAGE_ACCESS ||
@@ -85,7 +86,7 @@ PermissionRequestGestureType PermissionUtil::GetGestureType(bool user_gesture) {
                       : PermissionRequestGestureType::NO_GESTURE;
 }
 
-absl::optional<blink::mojom::PermissionsPolicyFeature>
+std::optional<blink::mojom::PermissionsPolicyFeature>
 PermissionUtil::GetPermissionsPolicyFeature(ContentSettingsType permission) {
   PermissionType permission_type;
   bool success =
@@ -93,7 +94,7 @@ PermissionUtil::GetPermissionsPolicyFeature(ContentSettingsType permission) {
   DCHECK(success);
   return success
              ? blink::PermissionTypeToPermissionsPolicyFeature(permission_type)
-             : absl::nullopt;
+             : std::nullopt;
 }
 
 bool PermissionUtil::GetPermissionType(ContentSettingsType type,
@@ -195,6 +196,15 @@ bool PermissionUtil::GetPermissionType(ContentSettingsType type,
     case ContentSettingsType::WEB_PRINTING:
       *out = PermissionType::WEB_PRINTING;
       break;
+    case ContentSettingsType::SPEAKER_SELECTION:
+      *out = PermissionType::SPEAKER_SELECTION;
+      break;
+    case ContentSettingsType::KEYBOARD_LOCK:
+      *out = PermissionType::KEYBOARD_LOCK;
+      break;
+    case ContentSettingsType::POINTER_LOCK:
+      *out = PermissionType::POINTER_LOCK;
+      break;
     default:
       return false;
   }
@@ -229,12 +239,14 @@ bool PermissionUtil::IsGuardContentSetting(ContentSettingsType type) {
 
 bool PermissionUtil::CanPermissionBeAllowedOnce(ContentSettingsType type) {
   switch (type) {
+#if !BUILDFLAG(IS_ANDROID)
+    case ContentSettingsType::CAMERA_PAN_TILT_ZOOM:
+#endif
     case ContentSettingsType::GEOLOCATION:
     case ContentSettingsType::MEDIASTREAM_MIC:
     case ContentSettingsType::MEDIASTREAM_CAMERA:
     case ContentSettingsType::SMART_CARD_DATA:
-      return base::FeatureList::IsEnabled(
-          permissions::features::kOneTimePermission);
+      return true;
     default:
       return false;
   }
@@ -336,6 +348,12 @@ ContentSettingsType PermissionUtil::PermissionTypeToContentSettingTypeSafe(
       return ContentSettingsType::CAPTURED_SURFACE_CONTROL;
     case PermissionType::WEB_PRINTING:
       return ContentSettingsType::WEB_PRINTING;
+    case PermissionType::SPEAKER_SELECTION:
+      return ContentSettingsType::SPEAKER_SELECTION;
+    case PermissionType::KEYBOARD_LOCK:
+      return ContentSettingsType::KEYBOARD_LOCK;
+    case PermissionType::POINTER_LOCK:
+      return ContentSettingsType::POINTER_LOCK;
     case PermissionType::NUM:
       break;
   }
@@ -410,7 +428,7 @@ bool PermissionUtil::IsPermissionBlockedInPartition(
     case PermissionDelegationMode::kDoubleKeyed:
       return false;
     case PermissionDelegationMode::kUndelegated:
-      // TODO(crbug.com/1312218): This will create |requesting_origin|'s home
+      // TODO(crbug.com/40220503): This will create |requesting_origin|'s home
       // StoragePartition if it doesn't already exist. Given how
       // StoragePartitions are used today, this shouldn't actually be a
       // problem, but ideally we'd compare StoragePartitionConfigs.
@@ -425,7 +443,7 @@ bool PermissionUtil::IsPermissionBlockedInPartition(
 GURL PermissionUtil::GetCanonicalOrigin(ContentSettingsType permission,
                                         const GURL& requesting_origin,
                                         const GURL& embedding_origin) {
-  absl::optional<GURL> override_origin =
+  std::optional<GURL> override_origin =
       PermissionsClient::Get()->OverrideCanonicalOrigin(requesting_origin,
                                                         embedding_origin);
   if (override_origin)

@@ -44,9 +44,19 @@
 #include "dawn/common/windows_with_undefs.h"
 #endif
 
-using EGLImage = void*;
-
 namespace dawn::native::opengl {
+
+struct EGLFunctions;
+
+enum class EGLExtension {
+    DisplayTextureShareGroupANGLE,
+    CreateContextRobustnessEXT,
+    FenceSyncKHR,
+    ReusableSyncKHR,
+
+    EnumCount,
+};
+using EGLExtensionSet = ityp::bitset<EGLExtension, static_cast<size_t>(EGLExtension::EnumCount)>;
 
 class Device final : public DeviceBase {
   public:
@@ -55,7 +65,8 @@ class Device final : public DeviceBase {
                                              const UnpackedPtr<DeviceDescriptor>& descriptor,
                                              const OpenGLFunctions& functions,
                                              std::unique_ptr<Context> context,
-                                             const TogglesState& deviceToggles);
+                                             const TogglesState& deviceToggles,
+                                             Ref<DeviceBase::DeviceLostEvent>&& lostEvent);
     ~Device() override;
 
     MaybeError Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor);
@@ -63,8 +74,13 @@ class Device final : public DeviceBase {
     // Returns all the OpenGL entry points and ensures that the associated
     // Context is current.
     const OpenGLFunctions& GetGL() const;
+    const EGLFunctions& GetEGL(bool makeCurrent) const;
+    const EGLExtensionSet& GetEGLExtensions() const;
+    EGLDisplay GetEGLDisplay() const;
 
     const GLFormat& GetGLFormat(const Format& format);
+
+    int GetMaxTextureMaxAnisotropy() const;
 
     MaybeError ValidateTextureCanBeWrapped(const UnpackedPtr<TextureDescriptor>& descriptor);
     Ref<TextureBase> CreateTextureWrappingEGLImage(const ExternalImageDescriptor* descriptor,
@@ -94,10 +110,17 @@ class Device final : public DeviceBase {
 
     float GetTimestampPeriodInNS() const override;
 
+    bool MayRequireDuplicationOfIndirectParameters() const override;
+    bool ShouldApplyIndexBufferOffsetToFirstIndex() const override;
+
     class Context {
       public:
         virtual ~Context() {}
         virtual void MakeCurrent() = 0;
+        // TODO(dawn:2544) Abstract EGL-isms for use with desktop GL.
+        virtual EGLDisplay GetEGLDisplay() const = 0;
+        virtual const EGLFunctions& GetEGL() const = 0;
+        virtual const EGLExtensionSet& GetExtensions() const = 0;
     };
 
   private:
@@ -105,7 +128,8 @@ class Device final : public DeviceBase {
            const UnpackedPtr<DeviceDescriptor>& descriptor,
            const OpenGLFunctions& functions,
            std::unique_ptr<Context> context,
-           const TogglesState& deviceToggless);
+           const TogglesState& deviceToggles,
+           Ref<DeviceBase::DeviceLostEvent>&& lostEvent);
 
     ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) override;
@@ -125,12 +149,12 @@ class Device final : public DeviceBase {
     ResultOrError<Ref<SwapChainBase>> CreateSwapChainImpl(
         Surface* surface,
         SwapChainBase* previousSwapChain,
-        const SwapChainDescriptor* descriptor) override;
+        const SurfaceConfiguration* config) override;
     ResultOrError<Ref<TextureBase>> CreateTextureImpl(
         const UnpackedPtr<TextureDescriptor>& descriptor) override;
     ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
         TextureBase* texture,
-        const TextureViewDescriptor* descriptor) override;
+        const UnpackedPtr<TextureViewDescriptor>& descriptor) override;
     Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
         const UnpackedPtr<ComputePipelineDescriptor>& descriptor) override;
     Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
@@ -146,6 +170,7 @@ class Device final : public DeviceBase {
 
     GLFormatTable mFormatTable;
     std::unique_ptr<Context> mContext = nullptr;
+    int mMaxTextureMaxAnisotropy = 0;
 };
 
 }  // namespace dawn::native::opengl

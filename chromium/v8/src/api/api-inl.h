@@ -22,14 +22,16 @@ inline T ToCData(v8::internal::Tagged<v8::internal::Object> obj) {
   static_assert(sizeof(T) == sizeof(v8::internal::Address));
   if (obj == v8::internal::Smi::zero()) return nullptr;
   return reinterpret_cast<T>(
-      v8::internal::Foreign::cast(obj)->foreign_address());
+      v8::internal::Foreign::cast(obj)
+          ->foreign_address<internal::kGenericForeignTag>());
 }
 
 template <>
 inline v8::internal::Address ToCData(
     v8::internal::Tagged<v8::internal::Object> obj) {
   if (obj == v8::internal::Smi::zero()) return v8::internal::kNullAddress;
-  return v8::internal::Foreign::cast(obj)->foreign_address();
+  return v8::internal::Foreign::cast(obj)
+      ->foreign_address<internal::kGenericForeignTag>();
 }
 
 template <typename T>
@@ -37,7 +39,7 @@ inline v8::internal::Handle<v8::internal::Object> FromCData(
     v8::internal::Isolate* isolate, T obj) {
   static_assert(sizeof(T) == sizeof(v8::internal::Address));
   if (obj == nullptr) return handle(v8::internal::Smi::zero(), isolate);
-  return isolate->factory()->NewForeign(
+  return isolate->factory()->NewForeign<internal::kGenericForeignTag>(
       reinterpret_cast<v8::internal::Address>(obj));
 }
 
@@ -47,7 +49,7 @@ inline v8::internal::Handle<v8::internal::Object> FromCData(
   if (obj == v8::internal::kNullAddress) {
     return handle(v8::internal::Smi::zero(), isolate);
   }
-  return isolate->factory()->NewForeign(obj);
+  return isolate->factory()->NewForeign<internal::kGenericForeignTag>(obj);
 }
 
 template <class From, class To>
@@ -179,7 +181,7 @@ class V8_NODISCARD CallDepthScope {
   CallDepthScope(i::Isolate* isolate, Local<Context> context)
       : isolate_(isolate), saved_context_(isolate->context(), isolate_) {
     isolate_->thread_local_top()->IncrementCallDepth<do_callback>(this);
-    i::Tagged<i::NativeContext> env = *Utils::OpenHandle(*context);
+    i::Tagged<i::NativeContext> env = *Utils::OpenDirectHandle(*context);
     isolate->set_context(env);
 
     if (do_callback) isolate_->FireBeforeCallEnteredCallback();
@@ -304,7 +306,7 @@ bool CopyAndConvertArrayToCppBuffer(Local<Array> src, T* dst,
   }
 
   i::DisallowGarbageCollection no_gc;
-  i::Tagged<i::JSArray> obj = *Utils::OpenHandle(*src);
+  i::Tagged<i::JSArray> obj = *Utils::OpenDirectHandle(*src);
   if (i::Object::IterationHasObservableEffects(obj)) {
     // The array has a custom iterator.
     return false;

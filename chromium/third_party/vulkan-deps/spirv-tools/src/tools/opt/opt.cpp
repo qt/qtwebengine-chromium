@@ -335,6 +335,12 @@ Options (in lexicographical order):)",
                These conditions are guaranteed to be met after running
                dead-branch elimination.)");
   printf(R"(
+  --modify-maximal-reconvergence=[add|remove]
+               Add or remove the MaximallyReconvergesKHR execution mode to all
+               entry points in the module.
+               Note: when adding the execution mode, no attempt is made to
+               determine if any ray tracing repack instructions are used.)");
+  printf(R"(
   --loop-unswitch
                Hoists loop-invariant conditionals out of loops by duplicating
                the loop on each branch of the conditional and adjusting each
@@ -518,6 +524,10 @@ Options (in lexicographical order):)",
                prints CPU/WALL/USR/SYS time (and RSS if possible), but note that
                USR/SYS time are returned by getrusage() and can have a small
                error.)");
+  printf(R"(
+  --trim-capabilities
+               Remove unnecessary capabilities and extensions declared within the
+               module.)");
   printf(R"(
   --upgrade-memory-model
                Upgrades the Logical GLSL450 memory model to Logical VulkanKHR.

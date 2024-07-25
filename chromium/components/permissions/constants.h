@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_PERMISSIONS_CONSTANTS_H_
 #define COMPONENTS_PERMISSIONS_CONSTANTS_H_
 
+#include <string_view>
+
 #include "base/component_export.h"
 #include "base/time/clock.h"
 #include "build/build_config.h"
@@ -71,13 +73,21 @@ extern const char kPermissionsPromptSurveyHadGestureKey[];
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const char kPermissionsPromptSurveyReleaseChannelKey[];
 
-// TODO(crbug.com/1410489): Remove the code related to unused site permissions
+// TODO(crbug.com/40254381): Remove the code related to unused site permissions
 // from Android builds.
 
 // The key used for marking permissions as revoked, as per the unused site
-// permissions module of Safety Check.
+// permissions module of Safety Check, including both chooser and regular
+// permissions.
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const char kRevokedKey[];
+
+// The key for base::Value::Dict, holding the revoked chooser permission data.
+// The Dict has std::string_view of ContentSettingsType int as key,
+// and the corresponding revoked `base::Value` data as value.
+// For example, {"3": {"foo": "bar"}, "12": "baz", "24": ["item0", "item1"]}
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+extern const char kRevokedChooserPermissionsKey[];
 
 // How long an explicit Storage Access API permission grant/denial should last
 // (not taking renewals into account).

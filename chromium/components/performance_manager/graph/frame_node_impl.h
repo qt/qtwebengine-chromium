@@ -23,6 +23,7 @@
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace performance_manager {
 
@@ -88,6 +89,7 @@ class FrameNodeImpl
   LifecycleState GetLifecycleState() const override;
   bool HasNonemptyBeforeUnload() const override;
   const GURL& GetURL() const override;
+  const std::optional<url::Origin>& GetOrigin() const override;
   bool IsCurrent() const override;
   const PriorityAndReason& GetPriorityAndReason() const override;
   bool GetNetworkAlmostIdle() const override;
@@ -98,7 +100,7 @@ class FrameNodeImpl
   bool HadUserEdits() const override;
   bool IsAudible() const override;
   bool IsCapturingMediaStream() const override;
-  absl::optional<bool> IntersectsViewport() const override;
+  std::optional<bool> IntersectsViewport() const override;
   Visibility GetVisibility() const override;
   const RenderFrameHostProxy& GetRenderFrameHostProxy() const override;
   uint64_t GetResidentSetKbEstimate() const override;
@@ -113,10 +115,14 @@ class FrameNodeImpl
   int render_frame_id() const;
 
   // Getters for non-const properties. These are not thread safe.
-  const base::flat_set<FrameNodeImpl*>& child_frame_nodes() const;
-  const base::flat_set<PageNodeImpl*>& opened_page_nodes() const;
-  const base::flat_set<PageNodeImpl*>& embedded_page_nodes() const;
-  const base::flat_set<WorkerNodeImpl*>& child_worker_nodes() const;
+  const base::flat_set<raw_ptr<FrameNodeImpl, CtnExperimental>>&
+  child_frame_nodes() const;
+  const base::flat_set<raw_ptr<PageNodeImpl, CtnExperimental>>&
+  opened_page_nodes() const;
+  const base::flat_set<raw_ptr<PageNodeImpl, CtnExperimental>>&
+  embedded_page_nodes() const;
+  const base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>>&
+  child_worker_nodes() const;
 
   // Setters are not thread safe.
   void SetIsCurrent(bool is_current);
@@ -131,7 +137,7 @@ class FrameNodeImpl
   void SetPrivateFootprintKbEstimate(uint64_t private_footprint_estimate);
 
   // Invoked when a navigation is committed in the frame.
-  void OnNavigationCommitted(const GURL& url, bool same_document);
+  void OnNavigationCommitted(GURL url, url::Origin origin, bool same_document);
 
   // Invoked by |worker_node| when it starts/stops being a child of this frame.
   void AddChildWorker(WorkerNodeImpl* worker_node);
@@ -195,13 +201,15 @@ class FrameNodeImpl
     DocumentProperties();
     ~DocumentProperties();
 
-    void Reset(FrameNodeImpl* frame_node, const GURL& url_in);
+    void Reset(FrameNodeImpl* frame_node, GURL url_in, url::Origin origin_in);
 
-    ObservedProperty::NotifiesOnlyOnChangesWithPreviousValue<
-        GURL,
-        const GURL&,
-        &FrameNodeObserver::OnURLChanged>
-        url;
+    // FrameNodeObserver::OnURLChanged/OnOriginChanged() is invoked when the
+    // URL/origin changes. Not using ObservedProperty here to allow updating
+    // both properties before notifying observers (see
+    // `FrameNodeImpl::DocumentProperties::Reset` implementation).
+    GURL url;
+    std::optional<url::Origin> origin;
+
     bool has_nonempty_beforeunload = false;
 
     // Network is considered almost idle when there are no more than 2 network
@@ -212,7 +220,7 @@ class FrameNodeImpl
         network_almost_idle{false};
 
     // Indicates if a form in the frame has been interacted with.
-    // TODO(crbug.com/1156388): Remove this once HadUserEdits is known to cover
+    // TODO(crbug.com/40735910): Remove this once HadUserEdits is known to cover
     // all existing cases.
     ObservedProperty::NotifiesOnlyOnChanges<
         bool,
@@ -279,13 +287,13 @@ class FrameNodeImpl
   // UI thread.
   const RenderFrameHostProxy render_frame_host_proxy_;
 
-  base::flat_set<FrameNodeImpl*> child_frame_nodes_;
+  base::flat_set<raw_ptr<FrameNodeImpl, CtnExperimental>> child_frame_nodes_;
 
   // The set of pages that have been opened by this frame.
-  base::flat_set<PageNodeImpl*> opened_page_nodes_;
+  base::flat_set<raw_ptr<PageNodeImpl, CtnExperimental>> opened_page_nodes_;
 
   // The set of pages that have been embedded by this frame.
-  base::flat_set<PageNodeImpl*> embedded_page_nodes_;
+  base::flat_set<raw_ptr<PageNodeImpl, CtnExperimental>> embedded_page_nodes_;
 
   uint64_t resident_set_kb_estimate_ = 0;
 
@@ -325,7 +333,7 @@ class FrameNodeImpl
   DocumentProperties document_;
 
   // The child workers of this frame.
-  base::flat_set<WorkerNodeImpl*> child_worker_nodes_;
+  base::flat_set<raw_ptr<WorkerNodeImpl, CtnExperimental>> child_worker_nodes_;
 
   // Frame priority information. Set via ExecutionContextPriorityDecorator.
   ObservedProperty::NotifiesOnlyOnChangesWithPreviousValue<
@@ -355,7 +363,7 @@ class FrameNodeImpl
   // point in tracking it. To avoid programming mistakes, it is forbidden to
   // query this property for the main frame.
   ObservedProperty::NotifiesOnlyOnChanges<
-      absl::optional<bool>,
+      std::optional<bool>,
       &FrameNodeObserver::OnIntersectsViewportChanged>
       intersects_viewport_;
 

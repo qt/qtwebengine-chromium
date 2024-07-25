@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 // clang-format off
-import {dedupingMixin, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import type { PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {dedupingMixin} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {assert} from 'chrome://resources/js/assert.js';
 import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 
@@ -113,6 +114,16 @@ export const PrivacySandboxDialogMixin = dedupingMixin(
           }
         }
 
+        updateScrollableContents() {
+          requestAnimationFrame(() => {
+            const scrollable =
+                this.shadowRoot!.querySelector<HTMLElement>('[scrollable]')!;
+            scrollable.classList.toggle(
+                'can-scroll',
+                scrollable.clientHeight < scrollable.scrollHeight);
+          });
+        }
+
         // Checks if #lastTextElement is in the viewport of the [scrollable]
         // element. |wasScrolledToBottom| represents if the content was fully
         // shown at least once.
@@ -212,4 +223,5 @@ export interface PrivacySandboxDialogMixinInterface {
   maybeShowMoreButton(): Promise<void>;
   whenWasScrolledToBottomForTest(): Promise<void>;
   promptActionOccurred(action: PrivacySandboxPromptAction): void;
+  updateScrollableContents(): void;
 }

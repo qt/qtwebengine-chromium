@@ -14,7 +14,7 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
 #include "src/execution/frame-constants.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-objects.h"
@@ -53,10 +53,28 @@ class Arm64OperandConverter final : public InstructionOperandConverter {
     return InputDoubleRegister(index).S();
   }
 
+  DoubleRegister InputFloat32OrFPZeroRegister(size_t index) {
+    if (instr_->InputAt(index)->IsImmediate()) {
+      DCHECK_EQ(0, base::bit_cast<int32_t>(InputFloat32(index)));
+      return fp_zero.S();
+    }
+    DCHECK(instr_->InputAt(index)->IsFPRegister());
+    return InputDoubleRegister(index).S();
+  }
+
   CPURegister InputFloat64OrZeroRegister(size_t index) {
     if (instr_->InputAt(index)->IsImmediate()) {
       DCHECK_EQ(0, base::bit_cast<int64_t>(InputDouble(index)));
       return xzr;
+    }
+    DCHECK(instr_->InputAt(index)->IsDoubleRegister());
+    return InputDoubleRegister(index);
+  }
+
+  DoubleRegister InputFloat64OrFPZeroRegister(size_t index) {
+    if (instr_->InputAt(index)->IsImmediate()) {
+      DCHECK_EQ(0, base::bit_cast<int64_t>(InputDouble(index)));
+      return fp_zero;
     }
     DCHECK(instr_->InputAt(index)->IsDoubleRegister());
     return InputDoubleRegister(index);
@@ -743,10 +761,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ Call(i.InputCode(0), RelocInfo::CODE_TARGET);
       } else {
         Register reg = i.InputRegister(0);
+        CodeEntrypointTag tag =
+            i.InputCodeEntrypointTag(instr->CodeEnrypointTagInputIndex());
         DCHECK_IMPLIES(
             instr->HasCallDescriptorFlag(CallDescriptor::kFixedTargetRegister),
             reg == kJavaScriptCallCodeStartRegister);
-        __ CallCodeObject(reg);
+        __ CallCodeObject(reg, tag);
       }
       RecordCallPosition(instr);
       frame_access_state()->ClearSPDelta();
@@ -801,10 +821,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ Jump(i.InputCode(0), RelocInfo::CODE_TARGET);
       } else {
         Register reg = i.InputRegister(0);
+        CodeEntrypointTag tag =
+            i.InputCodeEntrypointTag(instr->CodeEnrypointTagInputIndex());
         DCHECK_IMPLIES(
             instr->HasCallDescriptorFlag(CallDescriptor::kFixedTargetRegister),
             reg == kJavaScriptCallCodeStartRegister);
-        __ JumpCodeObject(reg);
+        __ JumpCodeObject(reg, tag);
       }
       unwinding_info_writer_.MarkBlockWillExit();
       frame_access_state()->ClearSPDelta();
@@ -880,30 +902,37 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArchPrepareTailCall:
       AssemblePrepareTailCall();
       break;
+    case kArchCallCFunctionWithFrameState:
     case kArchCallCFunction: {
       int const num_gp_parameters = ParamField::decode(instr->opcode());
       int const num_fp_parameters = FPParamField::decode(instr->opcode());
       Label return_location;
+      SetIsolateDataSlots set_isolate_data_slots = SetIsolateDataSlots::kYes;
 #if V8_ENABLE_WEBASSEMBLY
       if (linkage()->GetIncomingDescriptor()->IsWasmCapiFunction()) {
         // Put the return address in a stack slot.
         __ StoreReturnAddressInWasmExitFrame(&return_location);
+        set_isolate_data_slots = SetIsolateDataSlots::kNo;
       }
 #endif  // V8_ENABLE_WEBASSEMBLY
-
+      int pc_offset;
       if (instr->InputAt(0)->IsImmediate()) {
         ExternalReference ref = i.InputExternalReference(0);
-        __ CallCFunction(ref, num_gp_parameters, num_fp_parameters);
+        pc_offset = __ CallCFunction(ref, num_gp_parameters, num_fp_parameters,
+                                     set_isolate_data_slots, &return_location);
       } else {
         Register func = i.InputRegister(0);
-        __ CallCFunction(func, num_gp_parameters, num_fp_parameters);
+        pc_offset = __ CallCFunction(func, num_gp_parameters, num_fp_parameters,
+                                     set_isolate_data_slots, &return_location);
       }
-      __ Bind(&return_location);
-#if V8_ENABLE_WEBASSEMBLY
-      if (linkage()->GetIncomingDescriptor()->IsWasmCapiFunction()) {
-        RecordSafepoint(instr->reference_map());
+      RecordSafepoint(instr->reference_map(), pc_offset);
+
+      bool const needs_frame_state =
+          (arch_opcode == kArchCallCFunctionWithFrameState);
+      if (needs_frame_state) {
+        RecordDeoptInfo(instr, pc_offset);
       }
-#endif  // V8_ENABLE_WEBASSEMBLY
+
       frame_access_state()->SetFrameAccessToDefault();
       // Ideally, we should decrement SP delta to match the change of stack
       // pointer in CallCFunction. However, for certain architectures (e.g.
@@ -1963,6 +1992,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64Float64ExtractHighWord32:
       __ Umov(i.OutputRegister32(), i.InputFloat64Register(0).V2S(), 1);
       break;
+    case kArm64Float64FromWord32Pair:
+      __ uxtw(i.TempRegister(0), i.InputRegister64(1));
+      __ orr(i.TempRegister(0), i.TempRegister(0),
+             Operand(i.InputRegister64(0), LSL, 32));
+      __ Fmov(i.OutputFloat64Register(), i.TempRegister(0));
+      break;
     case kArm64Float64InsertLowWord32:
       DCHECK_EQ(i.OutputFloat64Register(), i.InputFloat64Register(0));
       __ Ins(i.OutputFloat64Register().V2S(), 0, i.InputRegister32(1));
@@ -2040,6 +2075,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64LdrDecompressTagged:
       RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
       __ DecompressTagged(i.OutputRegister(), i.MemoryOperand());
+      break;
+    case kArm64LdrDecompressProtected:
+      RecordTrapInfoIfNeeded(zone(), this, opcode, instr, __ pc_offset());
+      __ DecompressProtected(i.OutputRegister(), i.MemoryOperand());
       break;
     case kArm64LdarDecompressTaggedSigned:
       __ AtomicDecompressTaggedSigned(i.OutputRegister(), i.InputRegister(0),
@@ -2806,7 +2845,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     }
     case kArm64I8x16BitMask: {
-      __ I8x16BitMask(i.OutputRegister32(), i.InputSimd128Register(0));
+      VRegister temp = NoVReg;
+
+      if (CpuFeatures::IsSupported(PMULL1Q)) {
+        temp = i.TempSimd128Register(0);
+      }
+
+      __ I8x16BitMask(i.OutputRegister32(), i.InputSimd128Register(0), temp);
       break;
     }
     case kArm64S128Const: {
@@ -2885,8 +2930,39 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         __ Mov(temp, src1);
         src1 = temp;
       }
-      // Perform shuffle as a vmov per lane.
       int32_t shuffle = i.InputInt32(2);
+
+      // Check whether we can reduce the number of vmovs by performing a dup
+      // first.
+      if (src0 == src1) {
+        const std::array<int, 4> lanes{shuffle & 0x3, shuffle >> 8 & 0x3,
+                                       shuffle >> 16 & 0x3,
+                                       shuffle >> 24 & 0x3};
+        std::array<int, 4> lane_counts{};
+        for (int lane : lanes) {
+          ++lane_counts[lane];
+        }
+
+        int duplicate_lane = -1;
+        for (int lane = 0; lane < 4; ++lane) {
+          if (lane_counts[lane] > 1) {
+            duplicate_lane = lane;
+            break;
+          }
+        }
+
+        if (duplicate_lane != -1) {
+          __ Dup(dst, src0, duplicate_lane);
+          for (int i = 0; i < 4; ++i) {
+            int lane = lanes[i];
+            if (lane == duplicate_lane) continue;
+            __ Mov(dst, i, src0, lane);
+          }
+          break;
+        }
+      }
+
+      // Perform shuffle as a vmov per lane.
       for (int i = 0; i < 4; i++) {
         VRegister src = src0;
         int lane = shuffle & 0x7;
@@ -2951,6 +3027,13 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else {
         __ Tbl(dst, src0, src1, temp.V16B());
       }
+      break;
+    }
+    case kArm64S32x4Reverse: {
+      Simd128Register dst = i.OutputSimd128Register().V16B(),
+                      src = i.InputSimd128Register(0).V16B();
+      __ Rev64(dst.V4S(), src.V4S());
+      __ Ext(dst.V16B(), dst.V16B(), dst.V16B(), 8);
       break;
     }
       SIMD_UNOP_CASE(kArm64S32x2Reverse, Rev64, 4S);
@@ -3030,6 +3113,17 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ Fmov(i.OutputRegister64(), temp.D());
       __ Cmp(i.OutputRegister64(), 0);
       __ Cset(i.OutputRegister32(), ne);
+      break;
+    }
+    case kArm64S32x4OneLaneSwizzle: {
+      Simd128Register dst = i.OutputSimd128Register().V4S(),
+                      src = i.InputSimd128Register(0).V4S();
+      int from = i.InputInt32(1);
+      int to = i.InputInt32(2);
+      if (dst != src) {
+        __ Mov(dst, src);
+      }
+      __ Mov(dst, to, src, from);
       break;
     }
 #define SIMD_REDUCE_OP_CASE(Op, Instr, format, FORMAT)     \
@@ -3153,6 +3247,139 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   __ Cset(reg, cc);
 }
 
+// Given condition, return a value for nzcv which represents it. This is used
+// for the default condition for ccmp.
+inline StatusFlags ConditionToDefaultFlags(Condition condition) {
+  switch (condition) {
+    default:
+      UNREACHABLE();
+    case eq:
+      return ZFlag;  // Z == 1
+    case ne:
+      return NoFlag;  // Z == 0
+    case hs:
+      return CFlag;  // C == 1
+    case lo:
+      return NoFlag;  // C == 0
+    case mi:
+      return NFlag;  // N == 1
+    case pl:
+      return NoFlag;  // N == 0
+    case vs:
+      return VFlag;  // V == 1
+    case vc:
+      return NoFlag;  // V == 0
+    case hi:
+      return CFlag;  // C == 1 && Z == 0
+    case ls:
+      return NoFlag;  // C == 0 || Z == 1
+    case ge:
+      return NoFlag;  // N == V
+    case lt:
+      return NFlag;  // N != V
+    case gt:
+      return NoFlag;  // Z == 0 && N == V
+    case le:
+      return ZFlag;  // Z == 1 || N != V
+  }
+}
+
+void AssembleConditionalCompareChain(Instruction* instr, int64_t num_ccmps,
+                                     size_t ccmp_base_index,
+                                     CodeGenerator* gen) {
+  Arm64OperandConverter i(gen, instr);
+  // The first two, or three operands are the compare that begins the chain.
+  // These operands are used when the first compare, the one with the
+  // continuation attached, is generated.
+  // Then, each five provide:
+  //  - cmp opcode
+  //  - compare lhs
+  //  - compare rhs
+  //  - default flags
+  //  - user condition
+  for (unsigned n = 0; n < num_ccmps; ++n) {
+    size_t opcode_index = ccmp_base_index + kCcmpOffsetOfOpcode;
+    size_t compare_lhs_index = ccmp_base_index + kCcmpOffsetOfLhs;
+    size_t compare_rhs_index = ccmp_base_index + kCcmpOffsetOfRhs;
+    size_t default_condition_index =
+        ccmp_base_index + kCcmpOffsetOfDefaultFlags;
+    size_t compare_condition_index =
+        ccmp_base_index + kCcmpOffsetOfCompareCondition;
+    ccmp_base_index += kNumCcmpOperands;
+    DCHECK_LT(ccmp_base_index, instr->InputCount() - 1);
+
+    InstructionCode code = static_cast<InstructionCode>(
+        i.ToConstant(instr->InputAt(opcode_index)).ToInt64());
+
+    FlagsCondition default_condition = static_cast<FlagsCondition>(
+        i.ToConstant(instr->InputAt(default_condition_index)).ToInt64());
+
+    StatusFlags default_flags =
+        ConditionToDefaultFlags(FlagsConditionToCondition(default_condition));
+
+    FlagsCondition compare_condition = static_cast<FlagsCondition>(
+        i.ToConstant(instr->InputAt(compare_condition_index)).ToInt64());
+
+    if (code == kArm64Cmp) {
+      gen->masm()->Ccmp(i.InputRegister64(compare_lhs_index),
+                        i.InputOperand64(compare_rhs_index), default_flags,
+                        FlagsConditionToCondition(compare_condition));
+    } else {
+      DCHECK_EQ(code, kArm64Cmp32);
+      gen->masm()->Ccmp(i.InputRegister32(compare_lhs_index),
+                        i.InputOperand32(compare_rhs_index), default_flags,
+                        FlagsConditionToCondition(compare_condition));
+    }
+  }
+}
+
+// Assemble a conditional compare and boolean materializations after this
+// instruction.
+void CodeGenerator::AssembleArchConditionalBoolean(Instruction* instr) {
+  // Materialize a full 64-bit 1 or 0 value. The result register is always the
+  // last output of the instruction.
+  DCHECK_NE(0u, instr->OutputCount());
+  Arm64OperandConverter i(this, instr);
+  Register reg = i.OutputRegister(instr->OutputCount() - 1);
+  DCHECK_GE(instr->InputCount(), 6);
+
+  // Input ordering:
+  // > InputCount - 1: number of ccmps.
+  // > InputCount - 2: branch condition.
+  size_t num_ccmps_index =
+      instr->InputCount() - kConditionalSetEndOffsetOfNumCcmps;
+  size_t set_condition_index =
+      instr->InputCount() - kConditionalSetEndOffsetOfCondition;
+  int64_t num_ccmps = i.ToConstant(instr->InputAt(num_ccmps_index)).ToInt64();
+  size_t ccmp_base_index = set_condition_index - kNumCcmpOperands * num_ccmps;
+  AssembleConditionalCompareChain(instr, num_ccmps, ccmp_base_index, this);
+
+  FlagsCondition set_condition = static_cast<FlagsCondition>(
+      i.ToConstant(instr->InputAt(set_condition_index)).ToInt64());
+  __ Cset(reg, FlagsConditionToCondition(set_condition));
+}
+
+void CodeGenerator::AssembleArchConditionalBranch(Instruction* instr,
+                                                  BranchInfo* branch) {
+  DCHECK_GE(instr->InputCount(), 6);
+  Arm64OperandConverter i(this, instr);
+  // Input ordering:
+  // > InputCount - 1: false block.
+  // > InputCount - 2: true block.
+  // > InputCount - 3: number of ccmps.
+  // > InputCount - 4: branch condition.
+  size_t num_ccmps_index =
+      instr->InputCount() - kConditionalBranchEndOffsetOfNumCcmps;
+  int64_t num_ccmps = i.ToConstant(instr->InputAt(num_ccmps_index)).ToInt64();
+  size_t ccmp_base_index = instr->InputCount() -
+                           kConditionalBranchEndOffsetOfCondition -
+                           kNumCcmpOperands * num_ccmps;
+  AssembleConditionalCompareChain(instr, num_ccmps, ccmp_base_index, this);
+  Condition cc = FlagsConditionToCondition(branch->condition);
+  __ B(cc, branch->true_label);
+  if (!branch->fallthru) __ B(branch->false_label);
+}
+
 void CodeGenerator::AssembleArchSelect(Instruction* instr,
                                        FlagsCondition condition) {
   Arm64OperandConverter i(this, instr);
@@ -3168,21 +3395,21 @@ void CodeGenerator::AssembleArchSelect(Instruction* instr,
   size_t false_value_index = instr->InputCount() - 1;
   if (rep == MachineRepresentation::kFloat32) {
     __ Fcsel(i.OutputFloat32Register(output_index),
-             i.InputFloat32Register(true_value_index),
-             i.InputFloat32Register(false_value_index), cc);
+             i.InputFloat32OrFPZeroRegister(true_value_index),
+             i.InputFloat32OrFPZeroRegister(false_value_index), cc);
   } else if (rep == MachineRepresentation::kFloat64) {
     __ Fcsel(i.OutputFloat64Register(output_index),
-             i.InputFloat64Register(true_value_index),
-             i.InputFloat64Register(false_value_index), cc);
+             i.InputFloat64OrFPZeroRegister(true_value_index),
+             i.InputFloat64OrFPZeroRegister(false_value_index), cc);
   } else if (rep == MachineRepresentation::kWord32) {
     __ Csel(i.OutputRegister32(output_index),
-            i.InputRegister32(true_value_index),
-            i.InputRegister32(false_value_index), cc);
+            i.InputOrZeroRegister32(true_value_index),
+            i.InputOrZeroRegister32(false_value_index), cc);
   } else {
     DCHECK_EQ(rep, MachineRepresentation::kWord64);
     __ Csel(i.OutputRegister64(output_index),
-            i.InputRegister64(true_value_index),
-            i.InputRegister64(false_value_index), cc);
+            i.InputOrZeroRegister64(true_value_index),
+            i.InputOrZeroRegister64(false_value_index), cc);
   }
 }
 
@@ -3398,6 +3625,12 @@ void CodeGenerator::AssembleConstructFrame() {
 
   if (returns != 0) {
     __ Claim(returns);
+  }
+
+  for (int spill_slot : frame()->tagged_slots()) {
+    FrameOffset offset = frame_access_state()->GetFrameOffset(spill_slot);
+    DCHECK(offset.from_frame_pointer());
+    __ Str(xzr, MemOperand(fp, offset.offset()));
   }
 }
 
@@ -3740,10 +3973,9 @@ void CodeGenerator::AssembleMove(InstructionOperand* source,
     case MoveType::kRegisterToRegister:
       if (source->IsRegister()) {
         __ Mov(g.ToRegister(destination), g.ToRegister(source));
-      } else if (source->IsFloatRegister() || source->IsDoubleRegister()) {
-        __ Mov(g.ToDoubleRegister(destination), g.ToDoubleRegister(source));
       } else {
-        DCHECK(source->IsSimd128Register());
+        DCHECK(source->IsSimd128Register() || source->IsFloatRegister() ||
+               source->IsDoubleRegister());
         __ Mov(g.ToDoubleRegister(destination).Q(),
                g.ToDoubleRegister(source).Q());
       }

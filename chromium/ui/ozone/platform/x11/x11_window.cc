@@ -308,6 +308,7 @@ void X11Window::Initialize(PlatformWindowInitProperties properties) {
     case PlatformWindowType::kTooltip:
       window_type = x11::GetAtom("_NET_WM_WINDOW_TYPE_TOOLTIP");
       break;
+    case PlatformWindowType::kBubble:
     case PlatformWindowType::kPopup:
       window_type = x11::GetAtom("_NET_WM_WINDOW_TYPE_NOTIFICATION");
       break;
@@ -350,7 +351,7 @@ void X11Window::Initialize(PlatformWindowInitProperties properties) {
     }
   }
 
-  workspace_ = absl::nullopt;
+  workspace_ = std::nullopt;
   if (properties.visible_on_all_workspaces) {
     window_properties_.insert(x11::GetAtom("_NET_WM_STATE_STICKY"));
     connection_->SetProperty(xwindow_, x11::GetAtom("_NET_WM_DESKTOP"),
@@ -627,7 +628,7 @@ bool X11Window::HasCapture() const {
 }
 
 void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
-  // TODO(crbug.com/1034783) Support `target_display_id` on this platform.
+  // TODO(crbug.com/40111909) Support `target_display_id` on this platform.
   DCHECK_EQ(target_display_id, display::kInvalidDisplayId);
   if (fullscreen) {
     CancelResize();
@@ -689,6 +690,8 @@ void X11Window::SetFullscreen(bool fullscreen, int64_t target_display_id) {
     }
   }
 
+  UpdateDecorationInsets();
+
   // Do not go through SetBounds as long as it adjusts bounds and sets them to X
   // Server. Instead, we just store the bounds and notify the client that the
   // window occupies the entire screen.
@@ -736,14 +739,6 @@ void X11Window::Maximize() {
   // Some WMs do not respect maximization hints on unmapped windows, so we
   // save this one for later too.
   should_maximize_after_map_ = !window_mapped_in_client_;
-
-  // Some WMs keep respecting the frame extents even if the window is maximised.
-  // Remove the insets when maximising.  The extents will be set again when the
-  // window is restored to normal state.
-  // See https://crbug.com/1260821
-  if (CanSetDecorationInsets()) {
-    SetDecorationInsets(nullptr);
-  }
 
   SetWMSpecState(true, x11::GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
                  x11::GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
@@ -1104,35 +1099,8 @@ bool X11Window::CanSetDecorationInsets() const {
   return connection_->WmSupportsHint(x11::GetAtom("_GTK_FRAME_EXTENTS"));
 }
 
-void X11Window::SetDecorationInsets(const gfx::Insets* insets_px) {
-  auto atom = x11::GetAtom("_GTK_FRAME_EXTENTS");
-  if (!insets_px) {
-    connection_->DeleteProperty(xwindow_, atom);
-    return;
-  }
-
-  // For a window in maximised or minimised state, insets should be re-set to
-  // zero.
-  // On the other hand, non-zero insets should be set when the window is being
-  // initialised and has unknown state, otherwise the bounds will be
-  // unnecessarily inflated at later steps.
-  // See https://crbug.com/1281211 and https://crbug.com/1287212 for details.
-  if (GetPlatformWindowState() == PlatformWindowState::kNormal ||
-      GetPlatformWindowState() == PlatformWindowState::kUnknown) {
-    connection_->SetArrayProperty(
-        xwindow_, atom, x11::Atom::CARDINAL,
-        std::vector<uint32_t>{static_cast<uint32_t>(insets_px->left()),
-                              static_cast<uint32_t>(insets_px->right()),
-                              static_cast<uint32_t>(insets_px->top()),
-                              static_cast<uint32_t>(insets_px->bottom())});
-  } else {
-    connection_->SetArrayProperty(xwindow_, atom, x11::Atom::CARDINAL,
-                                  std::vector<uint32_t>({0, 0, 0, 0}));
-  }
-}
-
 void X11Window::SetOpaqueRegion(
-    absl::optional<std::vector<gfx::Rect>> region_px) {
+    std::optional<std::vector<gfx::Rect>> region_px) {
   auto atom = x11::GetAtom("_NET_WM_OPAQUE_REGION");
   if (!region_px) {
     connection_->DeleteProperty(xwindow_, atom);
@@ -1148,8 +1116,9 @@ void X11Window::SetOpaqueRegion(
   connection_->SetArrayProperty(xwindow_, atom, x11::Atom::CARDINAL, value);
 }
 
-void X11Window::SetInputRegion(absl::optional<gfx::Rect> region_px) {
-  if (!region_px) {
+void X11Window::SetInputRegion(
+    std::optional<std::vector<gfx::Rect>> region_px) {
+  if (!region_px.has_value() || region_px->empty()) {
     // Reset the input region.
     connection_->shape().Mask({
         .operation = x11::Shape::So::Set,
@@ -1158,15 +1127,16 @@ void X11Window::SetInputRegion(absl::optional<gfx::Rect> region_px) {
     });
     return;
   }
+  DCHECK_EQ(1u, region_px->size());
   connection_->shape().Rectangles(x11::Shape::RectanglesRequest{
       .operation = x11::Shape::So::Set,
       .destination_kind = x11::Shape::Sk::Input,
       .ordering = x11::ClipOrdering::YXBanded,
       .destination_window = xwindow_,
-      .rectangles = {{static_cast<int16_t>(region_px->x()),
-                      static_cast<int16_t>(region_px->y()),
-                      static_cast<uint16_t>(region_px->width()),
-                      static_cast<uint16_t>(region_px->height())}},
+      .rectangles = {{static_cast<int16_t>((*region_px)[0].x()),
+                      static_cast<int16_t>((*region_px)[0].y()),
+                      static_cast<uint16_t>((*region_px)[0].width()),
+                      static_cast<uint16_t>((*region_px)[0].height())}},
   });
 }
 
@@ -1210,7 +1180,7 @@ void X11Window::NotifyStartupComplete(const std::string& startup_id) {
 }
 
 std::string X11Window::GetWorkspace() const {
-  absl::optional<int> workspace_id = workspace_;
+  std::optional<int> workspace_id = workspace_;
   return workspace_id.has_value() ? base::NumberToString(workspace_id.value())
                                   : std::string();
 }
@@ -1317,7 +1287,7 @@ bool X11Window::HandleAsAtkEvent(const x11::KeyEvent& key_event,
                                  bool send_event,
                                  bool transient) {
 #if !BUILDFLAG(USE_ATK)
-  // TODO(crbug.com/1014934): Support ATK in Ozone/X11.
+  // TODO(crbug.com/40653448): Support ATK in Ozone/X11.
   NOTREACHED();
   return false;
 #else
@@ -1421,14 +1391,37 @@ void X11Window::DispatchUiEvent(ui::Event* event, const x11::Event& xev) {
 
   // If after CoalescePendingMotionEvents the type of xev is resolved to
   // UNKNOWN, i.e: xevent translation returns nullptr, don't dispatch the
-  // event. TODO(804418): investigate why ColescePendingMotionEvents can
-  // include mouse wheel events as well. Investigation showed that events on
+  // event. TODO(crbug.com/40559202): investigate why ColescePendingMotionEvents
+  // can include mouse wheel events as well. Investigation showed that events on
   // Linux are checked with cmt-device path, and can include DT_CMT_SCROLL_
   // data. See more discussion in https://crrev.com/c/853953
   UpdateWMUserTime(event);
   DispatchEventFromNativeUiEvent(
       event, base::BindOnce(&PlatformWindowDelegate::DispatchEvent,
                             base::Unretained(platform_window_delegate())));
+}
+
+void X11Window::UpdateDecorationInsets() {
+  auto atom = x11::GetAtom("_GTK_FRAME_EXTENTS");
+  auto insets_dip =
+      platform_window_delegate_->CalculateInsetsInDIP(GetPlatformWindowState());
+
+  if (insets_dip.IsEmpty()) {
+    connection_->DeleteProperty(xwindow_, atom);
+    return;
+  }
+
+  // Insets must be zero when the window state is not normal nor unknown.
+  CHECK(GetPlatformWindowState() == PlatformWindowState::kNormal ||
+        GetPlatformWindowState() == PlatformWindowState::kUnknown);
+
+  auto insets_px = platform_window_delegate_->ConvertInsetsToPixels(insets_dip);
+  connection_->SetArrayProperty(
+      xwindow_, atom, x11::Atom::CARDINAL,
+      std::vector<uint32_t>{static_cast<uint32_t>(insets_px.left()),
+                            static_cast<uint32_t>(insets_px.right()),
+                            static_cast<uint32_t>(insets_px.top()),
+                            static_cast<uint32_t>(insets_px.bottom())});
 }
 
 void X11Window::OnXWindowStateChanged() {
@@ -1494,6 +1487,9 @@ void X11Window::OnXWindowStateChanged() {
     auto old_state = state_;
     state_ = new_state;
     platform_window_delegate_->OnWindowStateChanged(old_state, state_);
+    if (CanSetDecorationInsets()) {
+      UpdateDecorationInsets();
+    }
   }
 
   WindowTiledEdges tiled_state = GetTiledState();
@@ -1501,6 +1497,7 @@ void X11Window::OnXWindowStateChanged() {
     tiled_state_ = tiled_state;
 #if BUILDFLAG(IS_LINUX)
     platform_window_delegate_->OnWindowTiledStateChanged(tiled_state);
+    UpdateDecorationInsets();
 #endif
   }
 }
@@ -1539,20 +1536,20 @@ void X11Window::OnXWindowDragDropEvent(const x11::ClientMessageEvent& xev) {
   drag_drop_client_->HandleXdndEvent(xev);
 }
 
-absl::optional<gfx::Size> X11Window::GetMinimumSizeForXWindow() {
+std::optional<gfx::Size> X11Window::GetMinimumSizeForXWindow() {
   if (auto max_size = platform_window_delegate_->GetMinimumSizeForWindow()) {
     return platform_window_delegate_->ConvertRectToPixels(gfx::Rect(*max_size))
         .size();
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
-absl::optional<gfx::Size> X11Window::GetMaximumSizeForXWindow() {
+std::optional<gfx::Size> X11Window::GetMaximumSizeForXWindow() {
   if (auto max_size = platform_window_delegate_->GetMaximumSizeForWindow()) {
     return platform_window_delegate_->ConvertRectToPixels(gfx::Rect(*max_size))
         .size();
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 SkPath X11Window::GetWindowMaskForXWindow() {
@@ -1620,7 +1617,7 @@ void X11Window::UpdateDragImage(const gfx::ImageSkia& image,
   NOTIMPLEMENTED();
 }
 
-absl::optional<gfx::AcceleratedWidget> X11Window::GetDragWidget() {
+std::optional<gfx::AcceleratedWidget> X11Window::GetDragWidget() {
   DCHECK(drag_location_delegate_);
   return drag_location_delegate_->GetDragWidget();
 }
@@ -1659,7 +1656,7 @@ int X11Window::UpdateDrag(const gfx::Point& connection_point) {
     drop_handler->OnDragEnter(local_point_in_dip, suggested_operations,
                               GetKeyModifiers(source_client));
 
-    // TODO(crbug.com/1487784): Factor DataFetched out of Enter callback.
+    // TODO(crbug.com/40073696): Factor DataFetched out of Enter callback.
     drop_handler->OnDragDataAvailable(std::move(data));
 
     notified_enter_ = true;
@@ -1916,6 +1913,10 @@ void X11Window::Map(bool inactive) {
   size_hints.flags |= x11::SIZE_HINT_P_POSITION;
   size_hints.x = bounds_in_pixels_.x();
   size_hints.y = bounds_in_pixels_.y();
+  // Set STATIC_GRAVITY so that the window position is not affected by the
+  // frame width when running with window manager.
+  size_hints.flags |= x11::SIZE_HINT_P_WIN_GRAVITY;
+  size_hints.win_gravity = x11::WIN_GRAVITY_HINT_STATIC_GRAVITY;
   connection_->SetWmNormalHints(xwindow_, size_hints);
 
   ignore_keyboard_input_ = inactive;
@@ -1928,6 +1929,8 @@ void X11Window::Map(bool inactive) {
   }
 
   UpdateMinAndMaxSize();
+
+  UpdateDecorationInsets();
 
   if (window_properties_.empty()) {
     connection_->DeleteProperty(xwindow_, x11::GetAtom("_NET_WM_STATE"));
@@ -2005,7 +2008,7 @@ void X11Window::OnWorkspaceUpdated() {
   if (GetWindowDesktop(xwindow_, &workspace)) {
     workspace_ = workspace;
   } else {
-    workspace_ = absl::nullopt;
+    workspace_ = std::nullopt;
   }
 
   if (workspace_ != old_workspace) {
@@ -2034,8 +2037,8 @@ void X11Window::SetFlashFrameHint(bool flash_frame) {
 }
 
 void X11Window::UpdateMinAndMaxSize() {
-  absl::optional<gfx::Size> minimum_in_pixels = GetMinimumSizeForXWindow();
-  absl::optional<gfx::Size> maximum_in_pixels = GetMaximumSizeForXWindow();
+  std::optional<gfx::Size> minimum_in_pixels = GetMinimumSizeForXWindow();
+  std::optional<gfx::Size> maximum_in_pixels = GetMaximumSizeForXWindow();
   if ((!minimum_in_pixels ||
        min_size_in_pixels_ == minimum_in_pixels.value()) &&
       (!maximum_in_pixels ||

@@ -519,7 +519,7 @@ void VideoReceiveStream2::CreateAndRegisterExternalDecoder(
   TRACE_EVENT0("webrtc",
                "VideoReceiveStream2::CreateAndRegisterExternalDecoder");
   std::unique_ptr<VideoDecoder> video_decoder =
-      config_.decoder_factory->CreateVideoDecoder(decoder.video_format);
+      config_.decoder_factory->Create(env_, decoder.video_format);
   // If we still have no valid decoder, we have to create a "Null" decoder
   // that ignores all calls. The reason we can get into this state is that the
   // old decoder factory interface doesn't have a way to query supported
@@ -567,6 +567,19 @@ VideoReceiveStreamInterface::Stats VideoReceiveStream2::GetStats() const {
       stats.total_bitrate_bps += rtx_statistician->BitrateReceived();
       stats.rtx_rtp_stats = rtx_statistician->GetStats();
     }
+  }
+
+  absl::optional<RtpRtcpInterface::SenderReportStats> rtcp_sr_stats =
+      rtp_video_stream_receiver_.GetSenderReportStats();
+  if (rtcp_sr_stats) {
+    stats.last_sender_report_timestamp_ms =
+        rtcp_sr_stats->last_arrival_timestamp.ToMs() -
+        rtc::kNtpJan1970Millisecs;
+    stats.last_sender_report_remote_timestamp_ms =
+        rtcp_sr_stats->last_remote_timestamp.ToMs() - rtc::kNtpJan1970Millisecs;
+    stats.sender_reports_packets_sent = rtcp_sr_stats->packets_sent;
+    stats.sender_reports_bytes_sent = rtcp_sr_stats->bytes_sent;
+    stats.sender_reports_reports_count = rtcp_sr_stats->reports_count;
   }
   return stats;
 }

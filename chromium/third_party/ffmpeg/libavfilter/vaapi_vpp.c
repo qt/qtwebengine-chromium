@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "libavutil/avassert.h"
+#include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "formats.h"
 #include "internal.h"
@@ -36,6 +37,10 @@ int ff_vaapi_vpp_query_formats(AVFilterContext *avctx)
         return err;
     if ((err = ff_formats_ref(ff_make_format_list(pix_fmts),
                               &avctx->outputs[0]->incfg.formats)) < 0)
+        return err;
+
+    if ((err = ff_set_common_all_color_spaces(avctx)) < 0 ||
+        (err = ff_set_common_all_color_ranges(avctx)) < 0)
         return err;
 
     return 0;

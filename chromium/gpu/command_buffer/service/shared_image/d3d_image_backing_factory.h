@@ -5,14 +5,15 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_D3D_IMAGE_BACKING_FACTORY_H_
 #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_D3D_IMAGE_BACKING_FACTORY_H_
 
+#include <windows.h>
+
 #include <d3d11.h>
 #include <dxgi1_2.h>
-#include <windows.h>
 #include <wrl/client.h>
 
 #include <memory>
-
 #include <optional>
+
 #include "gpu/command_buffer/service/shared_image/shared_image_backing_factory.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
 #include "gpu/gpu_gles2_export.h"
@@ -98,6 +99,7 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
       SkAlphaType alpha_type,
       uint32_t usage,
       std::string debug_label,
+      bool is_thread_safe,
       base::span<const uint8_t> pixel_data) override;
   std::unique_ptr<SharedImageBacking> CreateSharedImage(
       const Mailbox& mailbox,
@@ -128,7 +130,7 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
                    gfx::GpuMemoryBufferType gmb_type,
                    GrContextType gr_context_type,
                    base::span<const uint8_t> pixel_data) override;
-
+  SharedImageBackingType GetBackingType() override;
   Microsoft::WRL::ComPtr<ID3D11Device> GetDeviceForTesting() const {
     return d3d11_device_;
   }
@@ -148,14 +150,13 @@ class GPU_GLES2_EXPORT D3DImageBackingFactory
       const gfx::ColorSpace& color_space,
       GrSurfaceOrigin surface_origin,
       SkAlphaType alpha_type,
-      uint32_t usage);
-  bool UseMapOnDefaultTextures();
+      uint32_t usage,
+      std::string debug_label);
   bool SupportsBGRA8UnormStorage();
 
   // D3D11 device used for creating textures. This is also Skia's D3D11 device.
   // Can be different from |angle_d3d11_device_| when using Graphite.
   Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device_;
-  std::optional<bool> map_on_default_textures_;
   std::optional<bool> supports_bgra8unorm_storage_;
 
   scoped_refptr<DXGISharedHandleManager> dxgi_shared_handle_manager_;

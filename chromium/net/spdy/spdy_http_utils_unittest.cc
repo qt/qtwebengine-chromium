@@ -47,6 +47,23 @@ class SpdyHttpUtilsTestParam : public testing::TestWithParam<bool> {
 
 INSTANTIATE_TEST_SUITE_P(All, SpdyHttpUtilsTestParam, Values(true, false));
 
+// Check that the headers are ordered correctly, with pseudo-headers
+// preceding HTTP headers per
+// https://datatracker.ietf.org/doc/html/rfc9114#section-4.3
+void CheckOrdering(const spdy::Http2HeaderBlock& headers) {
+  bool seen_http_header = false;
+
+  for (auto& header : headers) {
+    const bool is_pseudo = header.first.starts_with(':');
+    if (is_pseudo) {
+      ASSERT_FALSE(seen_http_header) << "Header order is incorrect:\n"
+                                     << headers.DebugString();
+    } else {
+      seen_http_header = true;
+    }
+  }
+}
+
 TEST(SpdyHttpUtilsTest, ConvertRequestPriorityToSpdy3Priority) {
   EXPECT_EQ(0, ConvertRequestPriorityToSpdyPriority(HIGHEST));
   EXPECT_EQ(1, ConvertRequestPriorityToSpdyPriority(MEDIUM));
@@ -80,6 +97,7 @@ TEST_P(SpdyHttpUtilsTestParam, CreateSpdyHeadersFromHttpRequestHTTP2) {
   spdy::Http2HeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(request, RequestPriority::HIGHEST,
                                    request.extra_headers, &headers);
+  CheckOrdering(headers);
   EXPECT_EQ("GET", headers[":method"]);
   EXPECT_EQ("https", headers[":scheme"]);
   EXPECT_EQ("www.google.com", headers[":authority"]);
@@ -90,6 +108,52 @@ TEST_P(SpdyHttpUtilsTestParam, CreateSpdyHeadersFromHttpRequestHTTP2) {
     EXPECT_EQ(headers.end(), headers.find(net::kHttp2PriorityHeader));
   }
   EXPECT_EQ(headers.end(), headers.find(":version"));
+  EXPECT_EQ("Chrome/1.1", headers["user-agent"]);
+}
+
+TEST_P(SpdyHttpUtilsTestParam,
+       CreateSpdyHeadersFromHttpRequestForExtendedConnect) {
+  GURL url("https://www.google.com/index.html");
+  HttpRequestInfo request;
+  request.method = "CONNECT";
+  request.url = url;
+  request.priority_incremental = true;
+  request.extra_headers.SetHeader(HttpRequestHeaders::kUserAgent, "Chrome/1.1");
+  spdy::Http2HeaderBlock headers;
+  CreateSpdyHeadersFromHttpRequestForExtendedConnect(
+      request, RequestPriority::HIGHEST, "connect-ftp", request.extra_headers,
+      &headers);
+  CheckOrdering(headers);
+  EXPECT_EQ("CONNECT", headers[":method"]);
+  EXPECT_EQ("https", headers[":scheme"]);
+  EXPECT_EQ("www.google.com", headers[":authority"]);
+  EXPECT_EQ("connect-ftp", headers[":protocol"]);
+  EXPECT_EQ("/index.html", headers[":path"]);
+  if (base::FeatureList::IsEnabled(net::features::kPriorityHeader)) {
+    EXPECT_EQ("u=0, i", headers[net::kHttp2PriorityHeader]);
+  } else {
+    EXPECT_EQ(headers.end(), headers.find(net::kHttp2PriorityHeader));
+  }
+  EXPECT_EQ("Chrome/1.1", headers["user-agent"]);
+}
+
+TEST_P(SpdyHttpUtilsTestParam, CreateSpdyHeadersWithDefaultPriority) {
+  GURL url("https://www.google.com/index.html");
+  HttpRequestInfo request;
+  request.method = "GET";
+  request.url = url;
+  request.priority_incremental = false;
+  request.extra_headers.SetHeader(HttpRequestHeaders::kUserAgent, "Chrome/1.1");
+  spdy::Http2HeaderBlock headers;
+  CreateSpdyHeadersFromHttpRequest(request, RequestPriority::DEFAULT_PRIORITY,
+                                   request.extra_headers, &headers);
+  CheckOrdering(headers);
+  EXPECT_EQ("GET", headers[":method"]);
+  EXPECT_EQ("https", headers[":scheme"]);
+  EXPECT_EQ("www.google.com", headers[":authority"]);
+  EXPECT_EQ("/index.html", headers[":path"]);
+  EXPECT_FALSE(headers.contains(net::kHttp2PriorityHeader));
+  EXPECT_FALSE(headers.contains(":version"));
   EXPECT_EQ("Chrome/1.1", headers["user-agent"]);
 }
 
@@ -105,6 +169,7 @@ TEST_P(SpdyHttpUtilsTestParam, CreateSpdyHeadersWithExistingPriority) {
   spdy::Http2HeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(request, RequestPriority::HIGHEST,
                                    request.extra_headers, &headers);
+  CheckOrdering(headers);
   EXPECT_EQ("GET", headers[":method"]);
   EXPECT_EQ("https", headers[":scheme"]);
   EXPECT_EQ("www.google.com", headers[":authority"]);
@@ -123,6 +188,7 @@ TEST(SpdyHttpUtilsTest, CreateSpdyHeadersFromHttpRequestConnectHTTP2) {
   spdy::Http2HeaderBlock headers;
   CreateSpdyHeadersFromHttpRequest(request, RequestPriority::DEFAULT_PRIORITY,
                                    request.extra_headers, &headers);
+  CheckOrdering(headers);
   EXPECT_EQ("CONNECT", headers[":method"]);
   EXPECT_TRUE(headers.end() == headers.find(":scheme"));
   EXPECT_EQ("www.google.com:443", headers[":authority"]);

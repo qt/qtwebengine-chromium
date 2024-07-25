@@ -5,27 +5,14 @@
 #ifndef MEDIA_FILTERS_HLS_TEST_HELPERS_H_
 #define MEDIA_FILTERS_HLS_TEST_HELPERS_H_
 
-#include "media/filters/hls_codec_detector.h"
+#include <string_view>
+
 #include "media/filters/hls_data_source_provider.h"
 #include "media/filters/hls_rendition.h"
 #include "media/filters/manifest_demuxer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace media {
-
-class MockCodecDetector : public HlsCodecDetector {
- public:
-  ~MockCodecDetector() override;
-  MockCodecDetector();
-  MOCK_METHOD(void,
-              DetermineContainerAndCodec,
-              (std::unique_ptr<HlsDataSourceStream>, CodecCallback),
-              (override));
-  MOCK_METHOD(void,
-              DetermineContainerOnly,
-              (std::unique_ptr<HlsDataSourceStream> stream, CodecCallback cb),
-              (override));
-};
 
 class MockHlsDataSourceProvider : public HlsDataSourceProvider {
  public:
@@ -49,12 +36,16 @@ class MockHlsDataSourceProvider : public HlsDataSourceProvider {
 
 class StringHlsDataSourceStreamFactory {
  public:
-  static std::unique_ptr<HlsDataSourceStream> CreateStream(std::string content);
+  static std::unique_ptr<HlsDataSourceStream> CreateStream(
+      std::string content,
+      bool taint_origin = false);
 };
 
 class FileHlsDataSourceStreamFactory {
  public:
-  static std::unique_ptr<HlsDataSourceStream> CreateStream(std::string file);
+  static std::unique_ptr<HlsDataSourceStream> CreateStream(
+      std::string file,
+      bool taint_origin = false);
 };
 
 class MockManifestDemuxerEngineHost : public ManifestDemuxerEngineHost {
@@ -63,35 +54,35 @@ class MockManifestDemuxerEngineHost : public ManifestDemuxerEngineHost {
   ~MockManifestDemuxerEngineHost() override;
   MOCK_METHOD(bool,
               AddRole,
-              (base::StringPiece, std::string, std::string),
+              (std::string_view, RelaxedParserSupportedType),
               (override));
-  MOCK_METHOD(void, RemoveRole, (base::StringPiece), (override));
-  MOCK_METHOD(void, SetSequenceMode, (base::StringPiece, bool), (override));
+  MOCK_METHOD(void, RemoveRole, (std::string_view), (override));
+  MOCK_METHOD(void, SetSequenceMode, (std::string_view, bool), (override));
   MOCK_METHOD(void, SetDuration, (double), (override));
   MOCK_METHOD(Ranges<base::TimeDelta>,
               GetBufferedRanges,
-              (base::StringPiece),
+              (std::string_view),
               (override));
   MOCK_METHOD(void,
               Remove,
-              (base::StringPiece, base::TimeDelta, base::TimeDelta),
+              (std::string_view, base::TimeDelta, base::TimeDelta),
               (override));
   MOCK_METHOD(
       void,
       RemoveAndReset,
-      (base::StringPiece, base::TimeDelta, base::TimeDelta, base::TimeDelta*),
+      (std::string_view, base::TimeDelta, base::TimeDelta, base::TimeDelta*),
       (override));
   MOCK_METHOD(void,
               SetGroupStartIfParsingAndSequenceMode,
-              (base::StringPiece, base::TimeDelta),
+              (std::string_view, base::TimeDelta),
               (override));
   MOCK_METHOD(void,
               EvictCodedFrames,
-              (base::StringPiece, base::TimeDelta, size_t),
+              (std::string_view, base::TimeDelta, size_t),
               (override));
   MOCK_METHOD(bool,
               AppendAndParseData,
-              (base::StringPiece,
+              (std::string_view,
                base::TimeDelta,
                base::TimeDelta,
                base::TimeDelta*,
@@ -102,7 +93,7 @@ class MockManifestDemuxerEngineHost : public ManifestDemuxerEngineHost {
   MOCK_METHOD(void, RequestSeek, (base::TimeDelta), (override));
   MOCK_METHOD(void,
               SetGroupStartTimestamp,
-              (base::StringPiece role, base::TimeDelta time),
+              (std::string_view role, base::TimeDelta time),
               (override));
   MOCK_METHOD(void, SetEndOfStream, (), (override));
   MOCK_METHOD(void, UnsetEndOfStream, (), (override));
@@ -124,7 +115,7 @@ class MockHlsRenditionHost : public HlsRenditionHost {
 
   MOCK_METHOD(void,
               UpdateRenditionManifestUri,
-              (std::string, GURL, base::OnceClosure),
+              (std::string, GURL, base::OnceCallback<void(bool)>),
               (override));
 
   MOCK_METHOD(void,
@@ -134,6 +125,8 @@ class MockHlsRenditionHost : public HlsRenditionHost {
               (override));
 
   MOCK_METHOD(void, UpdateNetworkSpeed, (uint64_t), (override));
+
+  MOCK_METHOD(void, SetEndOfStream, (bool), (override));
 };
 
 class MockHlsRendition : public HlsRendition {
@@ -152,7 +145,7 @@ class MockHlsRendition : public HlsRendition {
               (base::TimeDelta time),
               (override));
   MOCK_METHOD(void, StartWaitingForSeek, (), (override));
-  MOCK_METHOD(absl::optional<base::TimeDelta>, GetDuration, (), (override));
+  MOCK_METHOD(std::optional<base::TimeDelta>, GetDuration, (), (override));
   MOCK_METHOD(void, Stop, (), (override));
   MOCK_METHOD(void,
               UpdatePlaylist,

@@ -14,9 +14,9 @@ const UIStrings = {
    */
   inputDelay: 'Input delay',
   /**
-   *@description Text shown next to the interaction event's thread processing time in the detail view.
+   *@description Text shown next to the interaction event's thread processing duration in the detail view.
    */
-  processingTime: 'Processing time',
+  processingDuration: 'Processing duration',
   /**
    *@description Text shown next to the interaction event's presentation delay time in the detail view.
    */
@@ -29,13 +29,13 @@ export class InteractionBreakdown extends HTMLElement {
   static readonly litTagName = LitHtml.literal`devtools-interaction-breakdown`;
   readonly #shadow = this.attachShadow({mode: 'open'});
   readonly #boundRender = this.#render.bind(this);
-  #entry: TraceEngine.Types.TraceEvents.SyntheticInteractionEvent|null = null;
+  #entry: TraceEngine.Types.TraceEvents.SyntheticInteractionPair|null = null;
 
   connectedCallback(): void {
     this.#shadow.adoptedStyleSheets = [styles];
   }
 
-  set entry(entry: TraceEngine.Types.TraceEvents.SyntheticInteractionEvent) {
+  set entry(entry: TraceEngine.Types.TraceEvents.SyntheticInteractionPair) {
     if (entry === this.#entry) {
       return;
     }
@@ -54,8 +54,8 @@ export class InteractionBreakdown extends HTMLElement {
         LitHtml.html`<ul class="breakdown">
                      <li data-entry="input-delay">${i18nString(UIStrings.inputDelay)}<span class="value">${
             inputDelay}</span></li>
-                     <li data-entry="processing-time">${i18nString(UIStrings.processingTime)}<span class="value">${
-            mainThreadTime}</span></li>
+                     <li data-entry="processing-duration">${
+            i18nString(UIStrings.processingDuration)}<span class="value">${mainThreadTime}</span></li>
                      <li data-entry="presentation-delay">${
             i18nString(UIStrings.presentationDelay)}<span class="value">${presentationDelay}</span></li>
                    </ul>
@@ -64,10 +64,9 @@ export class InteractionBreakdown extends HTMLElement {
   }
 }
 
-ComponentHelpers.CustomElements.defineComponent('devtools-interaction-breakdown', InteractionBreakdown);
+customElements.define('devtools-interaction-breakdown', InteractionBreakdown);
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLElementTagNameMap {
     'devtools-interaction-breakdown': InteractionBreakdown;
   }

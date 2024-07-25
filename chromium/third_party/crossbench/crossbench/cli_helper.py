@@ -23,8 +23,7 @@ import hjson
 from crossbench import helper, plt
 
 
-def parse_path(value: Union[str, pathlib.Path],
-               name: str = "File") -> pathlib.Path:
+def parse_path(value: Union[str, pathlib.Path]) -> pathlib.Path:
   value = parse_not_none(value, "path")
   if not value:
     raise argparse.ArgumentTypeError("Invalid empty path.")
@@ -32,14 +31,12 @@ def parse_path(value: Union[str, pathlib.Path],
     path = pathlib.Path(value).expanduser()
   except RuntimeError as e:
     raise argparse.ArgumentTypeError(f"Invalid Path '{value}': {e}") from e
-  if not path.exists():
-    raise argparse.ArgumentTypeError(f"{name} '{path}' does not exist.")
   return path
 
 
 def parse_existing_file_path(value: Union[str, pathlib.Path],
                              name: str = "File") -> pathlib.Path:
-  path = parse_path(value, name)
+  path = parse_existing_path(value, name)
   if not path.is_file():
     raise argparse.ArgumentTypeError(f"{name} '{path}' is not a file.")
   return path
@@ -60,7 +57,7 @@ def parse_file_path(value: Union[str, pathlib.Path],
 
 def parse_dir_path(value: Union[str, pathlib.Path],
                    name: str = "Path") -> pathlib.Path:
-  path = parse_path(value, name)
+  path = parse_existing_path(value, name)
   if not path.is_dir():
     raise argparse.ArgumentTypeError(f"{name} '{path}', is not a folder.")
   return path
@@ -76,7 +73,7 @@ def parse_non_empty_dir_path(value: Union[str, pathlib.Path],
 
 def parse_existing_path(value: Union[str, pathlib.Path],
                         name: str = "Path") -> pathlib.Path:
-  path = parse_path(value, name)
+  path = parse_path(value)
   if not path.exists():
     raise argparse.ArgumentTypeError(f"{name} '{path}' does not exist.")
   return path

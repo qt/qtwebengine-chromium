@@ -75,6 +75,9 @@ StyleResolverState::StyleResolverState(
       container_unit_context_(style_recalc_context
                                   ? style_recalc_context->container
                                   : element.ParentOrShadowHostElement()),
+      anchor_evaluator_(style_recalc_context
+                            ? style_recalc_context->anchor_evaluator
+                            : nullptr),
       originating_element_style_(style_request.originating_element_style),
       is_for_highlight_(IsHighlightPseudoElement(style_request.pseudo_id)),
       uses_highlight_pseudo_inheritance_(
@@ -82,9 +85,7 @@ StyleResolverState::StyleResolverState(
       is_outside_flat_tree_(style_recalc_context
                                 ? style_recalc_context->is_outside_flat_tree
                                 : false),
-      can_trigger_animations_(style_request.can_trigger_animations),
-      is_resolving_position_fallback_style_(
-          style_recalc_context && style_recalc_context->is_position_fallback) {
+      can_trigger_animations_(style_request.can_trigger_animations) {
   DCHECK(!!parent_style_ == !!layout_parent_style_);
 
   if (UsesHighlightPseudoInheritance()) {
@@ -160,6 +161,9 @@ void StyleResolverState::UpdateLengthConversionData() {
       *style_builder_, ParentStyle(), RootElementStyle(),
       GetDocument().GetStyleEngine().GetViewportSize(),
       CSSToLengthConversionData::ContainerSizes(container_unit_context_),
+      CSSToLengthConversionData::AnchorData(anchor_evaluator_,
+                                            StyleBuilder().PositionAnchor(),
+                                            StyleBuilder().InsetAreaOffsets()),
       StyleBuilder().EffectiveZoom(), length_conversion_flags_);
   element_style_resources_.UpdateLengthConversionData(
       &css_to_length_conversion_data_);
@@ -178,10 +182,12 @@ CSSToLengthConversionData StyleResolverState::UnzoomedLengthConversionData(
       GetDocument().GetLayoutView());
   CSSToLengthConversionData::ContainerSizes container_sizes(
       container_unit_context_);
-
+  CSSToLengthConversionData::AnchorData anchor_data(
+      anchor_evaluator_, StyleBuilder().PositionAnchor(),
+      StyleBuilder().InsetAreaOffsets());
   return CSSToLengthConversionData(
       StyleBuilder().GetWritingMode(), font_sizes, line_height_size,
-      viewport_size, container_sizes, 1, length_conversion_flags_);
+      viewport_size, container_sizes, anchor_data, 1, length_conversion_flags_);
 }
 
 CSSToLengthConversionData StyleResolverState::FontSizeConversionData() {
@@ -208,10 +214,19 @@ void StyleResolverState::SetLayoutParentStyle(
 void StyleResolverState::LoadPendingResources() {
   if (pseudo_request_type_ == StyleRequest::kForComputedStyle ||
       (ParentStyle() && ParentStyle()->IsEnsuredInDisplayNone()) ||
-      (StyleBuilder().Display() == EDisplay::kNone &&
-       !GetElement().LayoutObjectIsNeeded(style_builder_->GetDisplayStyle())) ||
       StyleBuilder().IsEnsuredOutsideFlatTree()) {
     return;
+  }
+  if (StyleBuilder().Display() == EDisplay::kNone &&
+      !GetElement().LayoutObjectIsNeeded(style_builder_->GetDisplayStyle())) {
+    // Don't load resources for display:none elements unless we are animating
+    // display. If we are animating display, we might otherwise have ended up
+    // caching a base style with pending images.
+    Element* animating_element = GetAnimatingElement();
+    if (!animating_element || !CSSAnimations::IsAnimatingDisplayProperty(
+                                  animating_element->GetElementAnimations())) {
+      return;
+    }
   }
 
   if (StyleBuilder().StyleType() == kPseudoIdTargetText) {
@@ -262,6 +277,27 @@ void StyleResolverState::SetTextOrientation(ETextOrientation text_orientation) {
   if (StyleBuilder().GetTextOrientation() != text_orientation) {
     StyleBuilder().SetTextOrientation(text_orientation);
     font_builder_.DidChangeTextOrientation();
+  }
+}
+
+void StyleResolverState::SetPositionAnchor(ScopedCSSName* position_anchor) {
+  if (StyleBuilder().PositionAnchor() != position_anchor) {
+    StyleBuilder().SetPositionAnchor(position_anchor);
+    css_to_length_conversion_data_.SetAnchorData(
+        CSSToLengthConversionData::AnchorData(
+            anchor_evaluator_, position_anchor,
+            StyleBuilder().InsetAreaOffsets()));
+  }
+}
+
+void StyleResolverState::SetInsetAreaOffsets(
+    const std::optional<InsetAreaOffsets>& inset_area_offsets) {
+  if (StyleBuilder().InsetAreaOffsets() != inset_area_offsets) {
+    StyleBuilder().SetInsetAreaOffsets(inset_area_offsets);
+    css_to_length_conversion_data_.SetAnchorData(
+        CSSToLengthConversionData::AnchorData(anchor_evaluator_,
+                                              StyleBuilder().PositionAnchor(),
+                                              inset_area_offsets));
   }
 }
 

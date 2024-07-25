@@ -17,20 +17,16 @@
 
 namespace blink {
 
-enum {
-  kUnderInvalidationChecking = 1 << 0,
-  kUsedColorSchemeRootScrollbars = 1 << 1,
-  kFluentScrollbar = 1 << 2,
-  kSparseObjectPaintProperties = 1 << 3,
-  kHitTestOpaqueness = 1 << 4,
-  kElementCapture = 1 << 5,
-};
+inline constexpr unsigned kUnderInvalidationChecking = 1 << 0;
+inline constexpr unsigned kUsedColorSchemeRootScrollbars = 1 << 1;
+inline constexpr unsigned kFluentScrollbar = 1 << 2;
+inline constexpr unsigned kHitTestOpaqueness = 1 << 4;
+inline constexpr unsigned kElementCapture = 1 << 5;
 
 class PaintTestConfigurations
     : public testing::WithParamInterface<unsigned>,
       private ScopedPaintUnderInvalidationCheckingForTest,
       private ScopedUsedColorSchemeRootScrollbarsForTest,
-      private ScopedSparseObjectPaintPropertiesForTest,
       private ScopedHitTestOpaquenessForTest,
       private ScopedElementCaptureForTest {
  public:
@@ -39,8 +35,6 @@ class PaintTestConfigurations
                                                     kUnderInvalidationChecking),
         ScopedUsedColorSchemeRootScrollbarsForTest(
             GetParam() & kUsedColorSchemeRootScrollbars),
-        ScopedSparseObjectPaintPropertiesForTest(GetParam() &
-                                                 kSparseObjectPaintProperties),
         ScopedHitTestOpaquenessForTest(GetParam() & kHitTestOpaqueness),
         ScopedElementCaptureForTest(GetParam() & kElementCapture) {
     std::vector<base::test::FeatureRef> enabled_features = {};

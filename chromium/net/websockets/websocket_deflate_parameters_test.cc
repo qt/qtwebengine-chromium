@@ -122,7 +122,7 @@ TEST_P(WebSocketDeflateParametersInitializeTest, Initialize) {
 
   if (expected) {
     EXPECT_TRUE(actual);
-    EXPECT_TRUE(extension.Equals(parameters.AsExtension()));
+    EXPECT_TRUE(extension.Equivalent(parameters.AsExtension()));
   } else {
     EXPECT_FALSE(actual);
   }
@@ -222,7 +222,7 @@ std::vector<InitializeTestParameter> InitializeTestParameters() {
       parameters, parameters + std::size(parameters));
 }
 
-const CompatibilityTestParameter kCompatibilityTestParameters[] = {
+constexpr CompatibilityTestParameter kCompatibilityTestParameters[] = {
     {"", "", true},
     // server_no_context_takeover
     {"", "; server_no_context_takeover", true},

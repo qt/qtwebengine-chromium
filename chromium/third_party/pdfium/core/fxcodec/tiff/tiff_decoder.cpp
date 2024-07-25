@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxcodec/tiff/tiff_decoder.h"
 
 #include <limits>
@@ -12,15 +17,18 @@
 #include "core/fxcodec/cfx_codec_memory.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/compiler_specific.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/notreached.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/span.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/base/check.h"
-#include "third_party/base/notreached.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 extern "C" {
 #if defined(USE_SYSTEM_LIBTIFF)
@@ -99,11 +107,11 @@ void* _TIFFrealloc(void* ptr, tmsize_t size) {
 }
 
 void _TIFFmemset(void* ptr, int val, tmsize_t size) {
-  memset(ptr, val, static_cast<size_t>(size));
+  FXSYS_memset(ptr, val, static_cast<size_t>(size));
 }
 
 void _TIFFmemcpy(void* des, const void* src, tmsize_t size) {
-  memcpy(des, src, static_cast<size_t>(size));
+  FXSYS_memcpy(des, src, static_cast<size_t>(size));
 }
 
 int _TIFFmemcmp(const void* ptr1, const void* ptr2, tmsize_t size) {
@@ -120,14 +128,17 @@ tsize_t tiff_read(thandle_t context, tdata_t buf, tsize_t length) {
     return 0;
 
   FX_FILESIZE offset = pTiffContext->offset();
+  // SAFETY: required from caller.
   if (!pTiffContext->io_in()->ReadBlockAtOffset(
-          {static_cast<uint8_t*>(buf), static_cast<size_t>(length)}, offset)) {
+          UNSAFE_BUFFERS(pdfium::make_span(static_cast<uint8_t*>(buf),
+                                           static_cast<size_t>(length))),
+          offset)) {
     return 0;
   }
   pTiffContext->set_offset(increment.ValueOrDie());
   if (offset + length > pTiffContext->io_in()->GetSize()) {
-    return pdfium::base::checked_cast<tsize_t>(
-        pTiffContext->io_in()->GetSize() - offset);
+    return pdfium::checked_cast<tsize_t>(pTiffContext->io_in()->GetSize() -
+                                         offset);
   }
   return length;
 }
@@ -147,8 +158,7 @@ toff_t tiff_seek(thandle_t context, toff_t offset, int whence) {
     case 0: {
       if (file_offset > pTiffContext->io_in()->GetSize())
         return static_cast<toff_t>(-1);
-      pTiffContext->set_offset(
-          pdfium::base::checked_cast<uint32_t>(file_offset));
+      pTiffContext->set_offset(pdfium::checked_cast<uint32_t>(file_offset));
       return pTiffContext->offset();
     }
     case 1: {
@@ -162,7 +172,7 @@ toff_t tiff_seek(thandle_t context, toff_t offset, int whence) {
     case 2: {
       if (pTiffContext->io_in()->GetSize() < file_offset)
         return static_cast<toff_t>(-1);
-      pTiffContext->set_offset(pdfium::base::checked_cast<uint32_t>(
+      pTiffContext->set_offset(pdfium::checked_cast<uint32_t>(
           pTiffContext->io_in()->GetSize() - file_offset));
       return pTiffContext->offset();
     }
@@ -298,7 +308,7 @@ void CTiffContext::SetPalette(const RetainPtr<CFX_DIBitmap>& pDIBitmap,
   uint16_t* blue_orig = nullptr;
   TIFFGetField(m_tif_ctx.get(), TIFFTAG_COLORMAP, &red_orig, &green_orig,
                &blue_orig);
-  for (int32_t i = pdfium::base::checked_cast<int32_t>((1L << bps) - 1); i >= 0;
+  for (int32_t i = pdfium::checked_cast<int32_t>((1L << bps) - 1); i >= 0;
        i--) {
 #define CVT(x) ((uint16_t)((x) >> 8))
     red_orig[i] = CVT(red_orig[i]);

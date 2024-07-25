@@ -37,6 +37,29 @@ chromium-metrics-reviews@google.com.
   <int value="7" label="Failed to enable (need powerwash)"/>
 </enum>
 
+<enum name="AllowActivationReason">
+  <summary>Reason of ARC activation</summary>
+  <int value="0" label="ImmediateActivation"/>
+  <int value="1" label="UserSessionStartUpTaskCompleted"/>
+  <int value="2" label="AlwaysStartIsEnabled"/>
+  <int value="3" label="ForcedByPolicy"/>
+  <int value="4" label="UserLaunchAction"/>
+  <int value="5" label="UserEnableAction"/>
+  <int value="6" label="RestoreApps"/>
+</enum>
+
+<enum name="AppErrorDialogType">
+  <int value="0" label="UNSUPPORTED"/>
+  <int value="1" label="AERR_APPLICATION"/>
+  <int value="2" label="AERR_PROCESS"/>
+  <int value="3" label="AERR_APPLICATION_REPEATED"/>
+  <int value="4" label="AERR_PROCESS_REPEATED"/>
+  <int value="5" label="ANR_ACTIVITY_APPLICATION"/>
+  <int value="6" label="ANR_ACTIVITY_PROCESS"/>
+  <int value="7" label="ANR_APPLICATION_PROCESS"/>
+  <int value="8" label="ANR_PROCESS"/>
+</enum>
+
 <enum name="AppInstallType">
   <int value="0" label="UNKNOWN"/>
   <int value="1" label="OPTIONAL"/>
@@ -124,38 +147,6 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Main account is missing"/>
   <int value="2" label="ARC DPC is out of sync"/>
   <int value="3" label="Reauth not needed"/>
-</enum>
-
-<enum name="ArcBootContinueCodeInstallationResult">
-  <int value="0" label="Success"/>
-  <int value="1" label="Host side code is not ready"/>
-  <int value="2" label="Can not install host code"/>
-</enum>
-
-<enum name="ArcClipboardDragDropEvent">
-  <int value="0" label="Text clipboard set from Chrome"/>
-  <int value="1" label="Image clipboard set from Chrome"/>
-  <int value="2" label="Text clipboard set from ARC"/>
-  <int value="3" label="Image clipboard set from ARC"/>
-  <int value="4" label="Text dropped from Chrome"/>
-  <int value="5" label="Image dropped from Chrome"/>
-  <int value="6" label="Text dropped from ARC"/>
-  <int value="7" label="Image dropped from ARC"/>
-</enum>
-
-<enum name="ArcCodeRelocationResult">
-  <int value="0" label="Success"/>
-  <int value="1" label="Error bootlockboxd not ready"/>
-  <int value="2" label="Error unable to relocate"/>
-  <int value="3" label="Error unable to sign"/>
-  <int value="4" label="Salt empty"/>
-</enum>
-
-<enum name="ArcCodeVerificationResult">
-  <int value="0" label="Success"/>
-  <int value="1" label="Error bootlockboxd not ready"/>
-  <int value="2" label="The first boot after OTA or OOBE boot"/>
-  <int value="3" label="Invalid code"/>
 </enum>
 
 <enum name="ArcContainerLifetimeEvent">
@@ -379,13 +370,6 @@ chromium-metrics-reviews@google.com.
   <int value="40" label="Start service connection (ArcHostVpnService)"/>
   <int value="41" label="Replace VPN routing interface (ArcHostVpnService)"/>
   <int value="42" label="Disconnect service (ArcHostVpnService)"/>
-</enum>
-
-<enum name="ArcNotificationExpandState">
-  <int value="0" label="Fixed size"/>
-  <int value="1" label="Expandable"/>
-  <int value="2" label="Expanded"/>
-  <int value="3" label="Collapsed"/>
 </enum>
 
 <enum name="ArcNotificationStyle">
@@ -788,6 +772,13 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="The migration has finished"/>
 </enum>
 
+<enum name="ArcWallpaperApi">
+  <summary>Defines the Wallpaper APIs called from Android.</summary>
+  <int value="0" label="Set"/>
+  <int value="1" label="SetDefault"/>
+  <int value="2" label="Get"/>
+</enum>
+
 <enum name="BooleanIsCustomNotification">
   <int value="0" label="Not Custom Notification"/>
   <int value="1" label="Is Custom Notification"/>
@@ -865,22 +856,25 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Migration resumed"/>
 </enum>
 
+<enum name="DeferArcActivationCategory">
+  <int value="0" label="Deferred"/>
+  <int value="1" label="NotDeferred"/>
+  <int value="2" label="NotTarget"/>
+</enum>
+
+<enum name="DeferArcActivationResult">
+  <int value="0" label="DeferSucceeded"/>
+  <int value="1" label="DeferFailed"/>
+  <int value="2" label="NotDeferSucceeded"/>
+  <int value="3" label="NotDeferFailed"/>
+</enum>
+
 <enum name="InstallationCounterReasonEnum">
   <int value="0" label="User"/>
   <int value="1" label="Default App"/>
   <int value="2" label="OEM"/>
   <int value="3" label="Policy based App"/>
   <int value="4" label="Unknown Reason"/>
-</enum>
-
-<enum name="LowLatencyStylusLibraryApisList">
-<!-- Value from components/arc/mojom/metrics.mojom -->
-
-  <int value="0" label="Unsupported"/>
-  <int value="1" label="InkOverlay::LowLatencyStylusLibInActiveUse"/>
-  <int value="2" label="GLInkOverlay::LowLatencyStylusLibInActiveUse"/>
-  <int value="3" label="GLInkRenderer::SetProjectionMatrix"/>
-  <int value="4" label="GLInkRenderer::SetViewMatrix"/>
 </enum>
 
 <enum name="NearbyShareArcBridgeFailResult">
@@ -896,8 +890,19 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="PREVIEW_EVENT_INITIATED"/>
 </enum>
 
+<enum name="UnaffiliatedDeviceArcAllowedStatus">
+  <int value="0" label="Enabled on affiliated device"/>
+  <int value="1" label="Enabled on unaffiliated device"/>
+  <int value="2" label="Disabled on unaffiliated device"/>
+</enum>
+
 <enum name="UninstallCounterReasonEnum">
   <int value="0" label="User"/>
+</enum>
+
+<enum name="VmmSwapOutState">
+  <int value="0" label="Not Swapped Out"/>
+  <int value="1" label="Swapped Out"/>
 </enum>
 
 <enum name="VpnServiceBuilderCompatApisList">

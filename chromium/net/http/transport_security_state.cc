@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -40,7 +42,6 @@
 #include "net/http/http_security_headers.h"
 #include "net/net_buildflags.h"
 #include "net/ssl/ssl_info.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace net {
 
@@ -55,11 +56,6 @@ const TransportSecurityStateSource* const kDefaultHSTSSource = nullptr;
 #endif
 
 const TransportSecurityStateSource* g_hsts_source = kDefaultHSTSSource;
-
-// Override for CheckCTRequirements() for unit tests. Possible values:
-//   false: Use the default implementation (e.g. production)
-//   true: Unless a delegate says otherwise, require CT.
-bool g_ct_required_for_testing = false;
 
 TransportSecurityState::HashedHost HashHost(
     base::span<const uint8_t> canonicalized_host) {
@@ -94,7 +90,7 @@ std::vector<uint8_t> CanonicalizeHost(const std::string& host) {
   // invalid characters in the host (via DNSDomainFromDot()).
   std::string lowered_host = base::ToLowerASCII(host);
 
-  absl::optional<std::vector<uint8_t>> new_host =
+  std::optional<std::vector<uint8_t>> new_host =
       dns_names_util::DottedNameToNetwork(
           lowered_host,
           /*require_valid_internet_hostname=*/true);
@@ -233,11 +229,6 @@ bool DecodeHSTSPreload(const std::string& search_hostname, PreloadResult* out) {
 
 }  // namespace
 
-// static
-BASE_FEATURE(kCertificateTransparencyEnforcement,
-             "CertificateTransparencyEnforcement",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 void SetTransportSecurityStateSourceForTesting(
     const TransportSecurityStateSource* source) {
   g_hsts_source = source ? source : kDefaultHSTSSource;
@@ -319,18 +310,16 @@ TransportSecurityState::CheckCTRequirements(
   using CTRequirementLevel = RequireCTDelegate::CTRequirementLevel;
   std::string hostname = host_port_pair.host();
 
-  // If CT is emergency disabled, either through a component updater set flag or
-  // through the feature flag, we don't require CT for any host.
-  if (ct_emergency_disable_ ||
-      !base::FeatureList::IsEnabled(kCertificateTransparencyEnforcement)) {
+  // If CT is emergency disabled, we don't require CT for any host.
+  if (ct_emergency_disable_) {
     return CT_NOT_REQUIRED;
   }
 
   // CT is not required if the certificate does not chain to a publicly
-  // trusted root certificate. Testing can override this, as certain tests
-  // rely on using a non-publicly-trusted root.
-  if (!is_issued_by_known_root && !g_ct_required_for_testing)
+  // trusted root certificate.
+  if (!is_issued_by_known_root) {
     return CT_NOT_REQUIRED;
+  }
 
   // A connection is considered compliant if it has sufficient SCTs or if the
   // build is outdated. Other statuses are not considered compliant; this
@@ -341,9 +330,7 @@ TransportSecurityState::CheckCTRequirements(
            ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS ||
        policy_compliance == ct::CTPolicyCompliance::CT_POLICY_BUILD_NOT_TIMELY);
 
-  CTRequirementLevel ct_required = g_ct_required_for_testing
-                                       ? CTRequirementLevel::REQUIRED
-                                       : CTRequirementLevel::NOT_REQUIRED;
+  CTRequirementLevel ct_required = CTRequirementLevel::NOT_REQUIRED;
   if (require_ct_delegate_) {
     // Allow the delegate to override the CT requirement state.
     ct_required = require_ct_delegate_->IsCTRequiredForHost(
@@ -385,8 +372,8 @@ void TransportSecurityState::UpdatePinList(
       // entry, we will ignore that particular pin.
       continue;
     }
-    host_pins_.value()[pin.hostname_] = std::make_pair(
-        pinset_names_map[pin.pinset_name_], pin.include_subdomains_);
+    host_pins_.value()[pin.hostname_] =
+        std::pair(pinset_names_map[pin.pinset_name_], pin.include_subdomains_);
   }
 }
 
@@ -589,11 +576,6 @@ void TransportSecurityState::AddHPKP(const std::string& host,
   AddHPKPInternal(host, base::Time::Now(), expiry, include_subdomains, hashes);
 }
 
-// static
-void TransportSecurityState::SetRequireCTForTesting(bool required) {
-  g_ct_required_for_testing = required;
-}
-
 size_t TransportSecurityState::num_sts_entries() const {
   return enabled_sts_hosts_.size();
 }
@@ -665,7 +647,7 @@ bool TransportSecurityState::GetStaticPKPState(const std::string& host,
     normalized_host.erase(trailing_dot_found + 1);
     normalized_host = base::ToLowerASCII(normalized_host);
 
-    base::StringPiece search_hostname = normalized_host;
+    std::string_view search_hostname = normalized_host;
     while (true) {
       auto iter = host_pins_->find(search_hostname);
       // Only consider this a match if either include_subdomains is set, or
@@ -772,7 +754,7 @@ bool TransportSecurityState::GetDynamicSTSState(const std::string& host,
     // An entry matches if it is either an exact match, or if it is a prefix
     // match and the includeSubDomains directive was included.
     if (i == 0 || j->second.include_subdomains) {
-      absl::optional<std::string> dotted_name =
+      std::optional<std::string> dotted_name =
           dns_names_util::NetworkToDottedName(host_sub_chunk);
       if (!dotted_name)
         return false;
@@ -818,7 +800,7 @@ bool TransportSecurityState::GetDynamicPKPState(const std::string& host,
     // implement HPKP, so this logic is only used via AddHPKP(), reachable from
     // Cronet.
     if (i == 0 || j->second.include_subdomains) {
-      absl::optional<std::string> dotted_name =
+      std::optional<std::string> dotted_name =
           dns_names_util::NetworkToDottedName(host_sub_chunk);
       if (!dotted_name)
         return false;

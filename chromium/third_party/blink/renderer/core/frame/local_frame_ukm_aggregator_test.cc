@@ -260,7 +260,7 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
 
  private:
   // Deterministically record metrics in test.
-  base::MetricsSubSampler::ScopedDisableForTesting no_subsampling_;
+  base::MetricsSubSampler::ScopedAlwaysSampleForTesting no_subsampling_;
 
   int64_t source_id_;
   scoped_refptr<LocalFrameUkmAggregator> aggregator_;
@@ -696,10 +696,10 @@ class LocalFrameUkmAggregatorSimTest : public SimTest {
     observer_init->setRoot(
         MakeGarbageCollected<V8UnionDocumentOrElement>(&document));
     TestIntersectionObserverDelegate* internal_delegate =
-        MakeGarbageCollected<TestIntersectionObserverDelegate>(
-            document, LocalFrameUkmAggregator::kLazyLoadIntersectionObserver);
-    IntersectionObserver* internal_observer =
-        IntersectionObserver::Create(observer_init, *internal_delegate);
+        MakeGarbageCollected<TestIntersectionObserverDelegate>(document);
+    IntersectionObserver* internal_observer = IntersectionObserver::Create(
+        observer_init, *internal_delegate,
+        LocalFrameUkmAggregator::kLazyLoadIntersectionObserver);
     DCHECK(!Compositor().NeedsBeginFrame());
     internal_observer->observe(target1);
     internal_observer->observe(target2);
@@ -714,10 +714,10 @@ class LocalFrameUkmAggregatorSimTest : public SimTest {
         0);
 
     TestIntersectionObserverDelegate* javascript_delegate =
-        MakeGarbageCollected<TestIntersectionObserverDelegate>(
-            document, LocalFrameUkmAggregator::kJavascriptIntersectionObserver);
-    IntersectionObserver* javascript_observer =
-        IntersectionObserver::Create(observer_init, *javascript_delegate);
+        MakeGarbageCollected<TestIntersectionObserverDelegate>(document);
+    IntersectionObserver* javascript_observer = IntersectionObserver::Create(
+        observer_init, *javascript_delegate,
+        LocalFrameUkmAggregator::kJavascriptIntersectionObserver);
     javascript_observer->observe(target1);
     javascript_observer->observe(target2);
     Compositor().BeginFrame();
@@ -760,7 +760,7 @@ class LocalFrameUkmAggregatorSimTest : public SimTest {
 
  private:
   // Deterministically record metrics in test.
-  base::MetricsSubSampler::ScopedDisableForTesting no_subsampling_;
+  base::MetricsSubSampler::ScopedAlwaysSampleForTesting no_subsampling_;
 };
 
 TEST_F(LocalFrameUkmAggregatorSimTest, GetUkmAggregator) {

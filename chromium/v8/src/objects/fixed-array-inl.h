@@ -15,6 +15,7 @@
 #include "src/objects/maybe-object-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/oddball.h"
+#include "src/objects/slots-inl.h"
 #include "src/objects/slots.h"
 #include "src/roots/roots-inl.h"
 #include "src/torque/runtime-macro-shims.h"
@@ -50,25 +51,25 @@ void TaggedArrayBase<D, S, P>::set_capacity(int value, ReleaseStoreTag tag) {
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 int TaggedArrayBase<D, S, P>::length() const {
   return capacity();
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 int TaggedArrayBase<D, S, P>::length(AcquireLoadTag tag) const {
   return capacity(tag);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set_length(int value) {
   set_capacity(value);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set_length(int value, ReleaseStoreTag tag) {
   set_capacity(value, tag);
 }
@@ -85,37 +86,37 @@ bool TaggedArrayBase<D, S, P>::IsCowArray() const {
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType TaggedArrayBase<D, S, P>::get(
-    int index) const {
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::get(int index) const {
   DCHECK(IsInBounds(index));
   // TODO(jgruber): This tag-less overload shouldn't be relaxed.
-  return TaggedField<ElementT>::Relaxed_Load(*this, OffsetOfElementAt(index));
+  return ElementFieldT::Relaxed_Load(*this, OffsetOfElementAt(index));
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType TaggedArrayBase<D, S, P>::get(
-    int index, RelaxedLoadTag) const {
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::get(int index, RelaxedLoadTag) const {
   DCHECK(IsInBounds(index));
-  return TaggedField<ElementT>::Relaxed_Load(*this, OffsetOfElementAt(index));
+  return ElementFieldT::Relaxed_Load(*this, OffsetOfElementAt(index));
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType TaggedArrayBase<D, S, P>::get(
-    int index, AcquireLoadTag) const {
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::get(int index, AcquireLoadTag) const {
   DCHECK(IsInBounds(index));
-  return TaggedField<ElementT>::Acquire_Load(*this, OffsetOfElementAt(index));
+  return ElementFieldT::Acquire_Load(*this, OffsetOfElementAt(index));
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType TaggedArrayBase<D, S, P>::get(
-    int index, SeqCstAccessTag) const {
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::get(int index, SeqCstAccessTag) const {
   DCHECK(IsInBounds(index));
-  return TaggedField<ElementT>::SeqCst_Load(*this, OffsetOfElementAt(index));
+  return ElementFieldT::SeqCst_Load(*this, OffsetOfElementAt(index));
 }
 
 template <class D, class S, class P>
 void TaggedArrayBase<D, S, P>::ConditionalWriteBarrier(
-    Tagged<HeapObject> object, int offset, PtrType value,
+    Tagged<HeapObject> object, int offset, Tagged<ElementT> value,
     WriteBarrierMode mode) {
   if constexpr (kElementsAreMaybeObject) {
     CONDITIONAL_WEAK_WRITE_BARRIER(object, offset, value, mode);
@@ -125,92 +126,94 @@ void TaggedArrayBase<D, S, P>::ConditionalWriteBarrier(
 }
 
 template <class D, class S, class P>
-void TaggedArrayBase<D, S, P>::set(int index, PtrType value,
+void TaggedArrayBase<D, S, P>::set(int index, Tagged<ElementT> value,
                                    WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
   // TODO(jgruber): This tag-less overload shouldn't be relaxed.
   const int offset = OffsetOfElementAt(index);
-  TaggedField<ElementT>::Relaxed_Store(*this, offset, value);
+  ElementFieldT::Relaxed_Store(*this, offset, value);
   ConditionalWriteBarrier(*this, offset, value, mode);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set(int index, Tagged<Smi> value) {
   set(index, value, SKIP_WRITE_BARRIER);
 }
 
 template <class D, class S, class P>
-void TaggedArrayBase<D, S, P>::set(int index, PtrType value,
+void TaggedArrayBase<D, S, P>::set(int index, Tagged<ElementT> value,
                                    RelaxedStoreTag tag, WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
   const int offset = OffsetOfElementAt(index);
-  TaggedField<ElementT>::Relaxed_Store(*this, offset, value);
+  ElementFieldT::Relaxed_Store(*this, offset, value);
   ConditionalWriteBarrier(*this, offset, value, mode);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set(int index, Tagged<Smi> value,
                                    RelaxedStoreTag tag) {
   set(index, value, tag, SKIP_WRITE_BARRIER);
 }
 
 template <class D, class S, class P>
-void TaggedArrayBase<D, S, P>::set(int index, PtrType value,
+void TaggedArrayBase<D, S, P>::set(int index, Tagged<ElementT> value,
                                    ReleaseStoreTag tag, WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
   const int offset = OffsetOfElementAt(index);
-  TaggedField<ElementT>::Release_Store(*this, offset, value);
+  ElementFieldT::Release_Store(*this, offset, value);
   ConditionalWriteBarrier(*this, offset, value, mode);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set(int index, Tagged<Smi> value,
                                    ReleaseStoreTag tag) {
   set(index, value, tag, SKIP_WRITE_BARRIER);
 }
 
 template <class D, class S, class P>
-void TaggedArrayBase<D, S, P>::set(int index, PtrType value,
+void TaggedArrayBase<D, S, P>::set(int index, Tagged<ElementT> value,
                                    SeqCstAccessTag tag, WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
   const int offset = OffsetOfElementAt(index);
-  TaggedField<ElementT>::SeqCst_Store(*this, offset, value);
+  ElementFieldT::SeqCst_Store(*this, offset, value);
   ConditionalWriteBarrier(*this, offset, value, mode);
 }
 
 template <class D, class S, class P>
-template <typename>
+template <typename, typename>
 void TaggedArrayBase<D, S, P>::set(int index, Tagged<Smi> value,
                                    SeqCstAccessTag tag) {
   set(index, value, tag, SKIP_WRITE_BARRIER);
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType TaggedArrayBase<D, S, P>::swap(
-    int index, PtrType value, SeqCstAccessTag, WriteBarrierMode mode) {
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::swap(int index, Tagged<ElementT> value,
+                               SeqCstAccessTag, WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
-  PtrType previous_value =
+  Tagged<ElementT> previous_value =
       SEQ_CST_SWAP_FIELD(*this, OffsetOfElementAt(index), value);
   ConditionalWriteBarrier(*this, OffsetOfElementAt(index), value, mode);
   return previous_value;
 }
 
 template <class D, class S, class P>
-typename TaggedArrayBase<D, S, P>::PtrType
-TaggedArrayBase<D, S, P>::compare_and_swap(int index, PtrType expected,
-                                           PtrType value, SeqCstAccessTag,
+Tagged<typename TaggedArrayBase<D, S, P>::ElementT>
+TaggedArrayBase<D, S, P>::compare_and_swap(int index, Tagged<ElementT> expected,
+                                           Tagged<ElementT> value,
+                                           SeqCstAccessTag,
                                            WriteBarrierMode mode) {
   DCHECK(!IsCowArray());
   DCHECK(IsInBounds(index));
-  PtrType previous_value = SEQ_CST_COMPARE_AND_SWAP_FIELD(
+  Tagged<ElementT> previous_value = SEQ_CST_COMPARE_AND_SWAP_FIELD(
       *this, OffsetOfElementAt(index), expected, value);
   if (previous_value == expected) {
     ConditionalWriteBarrier(*this, OffsetOfElementAt(index), value, mode);
@@ -315,15 +318,35 @@ template <class IsolateT>
 Handle<TrustedFixedArray> TrustedFixedArray::New(IsolateT* isolate,
                                                  int capacity) {
   if (V8_UNLIKELY(static_cast<unsigned>(capacity) >
-                  FixedArrayBase::kMaxLength)) {
+                  TrustedFixedArray::kMaxLength)) {
+    FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
+          capacity);
+  }
+  // TODO(saelo): once we have trusted read-only roots, we can return the
+  // empty_trusted_fixed_array here. Currently this isn't possible because the
+  // (mutable) empty_trusted_fixed_array will be created via this function.
+  // The same is true for the other trusted-space arrays below.
+
+  base::Optional<DisallowGarbageCollection> no_gc;
+  Handle<TrustedFixedArray> result = Handle<TrustedFixedArray>::cast(
+      Allocate(isolate, capacity, &no_gc, AllocationType::kTrusted));
+  MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
+  return result;
+}
+
+// static
+template <class IsolateT>
+Handle<ProtectedFixedArray> ProtectedFixedArray::New(IsolateT* isolate,
+                                                     int capacity) {
+  if (V8_UNLIKELY(static_cast<unsigned>(capacity) >
+                  ProtectedFixedArray::kMaxLength)) {
     FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
           capacity);
   }
 
   base::Optional<DisallowGarbageCollection> no_gc;
-  Handle<TrustedFixedArray> result = Handle<TrustedFixedArray>::cast(
+  Handle<ProtectedFixedArray> result = Handle<ProtectedFixedArray>::cast(
       Allocate(isolate, capacity, &no_gc, AllocationType::kTrusted));
-  result->init_self_indirect_pointer(isolate);
   MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
   return result;
 }
@@ -391,6 +414,9 @@ void FixedArrayBase::set_length(int value, ReleaseStoreTag tag) {
 CAST_ACCESSOR(WeakFixedArray)
 OBJECT_CONSTRUCTORS_IMPL(WeakFixedArray, WeakFixedArray::Super)
 
+CAST_ACCESSOR(TrustedWeakFixedArray)
+OBJECT_CONSTRUCTORS_IMPL(TrustedWeakFixedArray, TrustedWeakFixedArray::Super)
+
 TQ_OBJECT_CONSTRUCTORS_IMPL(WeakArrayList)
 
 template <class D, class S, class P>
@@ -406,6 +432,9 @@ OBJECT_CONSTRUCTORS_IMPL(FixedArray, FixedArray::Super)
 
 CAST_ACCESSOR(TrustedFixedArray)
 OBJECT_CONSTRUCTORS_IMPL(TrustedFixedArray, TrustedFixedArray::Super)
+
+CAST_ACCESSOR(ProtectedFixedArray)
+OBJECT_CONSTRUCTORS_IMPL(ProtectedFixedArray, ProtectedFixedArray::Super)
 
 CAST_ACCESSOR(FixedDoubleArray)
 OBJECT_CONSTRUCTORS_IMPL(FixedDoubleArray, FixedDoubleArray::Super)
@@ -798,23 +827,41 @@ Handle<WeakFixedArray> WeakFixedArray::New(IsolateT* isolate, int capacity,
   return result;
 }
 
-MaybeObject WeakArrayList::Get(int index) const {
+template <class IsolateT>
+Handle<TrustedWeakFixedArray> TrustedWeakFixedArray::New(IsolateT* isolate,
+                                                         int capacity) {
+  if (V8_UNLIKELY(static_cast<unsigned>(capacity) >
+                  TrustedFixedArray::kMaxLength)) {
+    FATAL("Fatal JavaScript invalid size error %d (see crbug.com/1201626)",
+          capacity);
+  }
+
+  base::Optional<DisallowGarbageCollection> no_gc;
+  Handle<TrustedWeakFixedArray> result = Handle<TrustedWeakFixedArray>::cast(
+      Allocate(isolate, capacity, &no_gc, AllocationType::kTrusted));
+  MemsetTagged((*result)->RawFieldOfFirstElement(), Smi::zero(), capacity);
+  return result;
+}
+
+Tagged<MaybeObject> WeakArrayList::Get(int index) const {
   PtrComprCageBase cage_base = GetPtrComprCageBase(*this);
   return Get(cage_base, index);
 }
-MaybeObject WeakArrayList::get(int index) const { return Get(index); }
+Tagged<MaybeObject> WeakArrayList::get(int index) const { return Get(index); }
 
-MaybeObject WeakArrayList::Get(PtrComprCageBase cage_base, int index) const {
+Tagged<MaybeObject> WeakArrayList::Get(PtrComprCageBase cage_base,
+                                       int index) const {
   DCHECK_LT(static_cast<unsigned>(index), static_cast<unsigned>(capacity()));
   return objects(cage_base, index, kRelaxedLoad);
 }
 
-void WeakArrayList::Set(int index, MaybeObject value, WriteBarrierMode mode) {
+void WeakArrayList::Set(int index, Tagged<MaybeObject> value,
+                        WriteBarrierMode mode) {
   set_objects(index, value, mode);
 }
 
 void WeakArrayList::Set(int index, Tagged<Smi> value) {
-  Set(index, MaybeObject::FromSmi(value), SKIP_WRITE_BARRIER);
+  Set(index, value, SKIP_WRITE_BARRIER);
 }
 
 MaybeObjectSlot WeakArrayList::data_start() {
@@ -837,9 +884,9 @@ void WeakArrayList::CopyElements(Isolate* isolate, int dst_index,
 Tagged<HeapObject> WeakArrayList::Iterator::Next() {
   if (!array_.is_null()) {
     while (index_ < array_->length()) {
-      MaybeObject item = array_->Get(index_++);
-      DCHECK(item->IsWeakOrCleared());
-      if (!item->IsCleared()) return item.GetHeapObjectAssumeWeak();
+      Tagged<MaybeObject> item = array_->Get(index_++);
+      DCHECK(item.IsWeakOrCleared());
+      if (!item.IsCleared()) return item.GetHeapObjectAssumeWeak();
     }
     array_ = WeakArrayList();
   }
@@ -916,72 +963,85 @@ Handle<TrustedByteArray> TrustedByteArray::New(IsolateT* isolate, int length) {
   return result;
 }
 
-Address FixedAddressArray::get_sandboxed_pointer(int offset) const {
+template <typename Base>
+Address FixedAddressArrayBase<Base>::get_sandboxed_pointer(int offset) const {
   DCHECK_GE(offset, 0);
-  DCHECK_GT(length(), offset);
-  int actual_offset = offset * sizeof(Address);
+  DCHECK_GT(this->length(), offset);
   PtrComprCageBase sandbox_base = GetPtrComprCageBase(*this);
-  return ReadSandboxedPointerField(kHeaderSize + actual_offset, sandbox_base);
+  return this->ReadSandboxedPointerField(
+      FixedAddressArrayBase::OffsetOfElementAt(offset), sandbox_base);
 }
 
-void FixedAddressArray::set_sandboxed_pointer(int offset, Address value) {
+template <typename Base>
+void FixedAddressArrayBase<Base>::set_sandboxed_pointer(int offset,
+                                                        Address value) {
   DCHECK_GE(offset, 0);
-  DCHECK_GT(length(), offset);
-  int actual_offset = offset * sizeof(Address);
+  DCHECK_GT(this->length(), offset);
   PtrComprCageBase sandbox_base = GetPtrComprCageBase(*this);
-  WriteSandboxedPointerField(kHeaderSize + actual_offset, sandbox_base, value);
+  this->WriteSandboxedPointerField(
+      FixedAddressArrayBase::OffsetOfElementAt(offset), sandbox_base, value);
 }
 
+template <typename Base>
+template <typename... MoreArgs>
 // static
-Handle<FixedAddressArray> FixedAddressArray::New(Isolate* isolate, int length,
-                                                 AllocationType allocation) {
-  return Handle<FixedAddressArray>::cast(
-      FixedIntegerArray<Address>::New(isolate, length, allocation));
+Handle<FixedAddressArrayBase<Base>> FixedAddressArrayBase<Base>::New(
+    Isolate* isolate, int length, MoreArgs&&... more_args) {
+  return Handle<FixedAddressArrayBase>::cast(
+      Underlying::New(isolate, length, std::forward<MoreArgs>(more_args)...));
 }
 
-FixedAddressArray::FixedAddressArray(Address ptr)
-    : FixedIntegerArray<Address>(ptr) {}
+template <typename Base>
+FixedAddressArrayBase<Base>::FixedAddressArrayBase(Address ptr)
+    : Underlying(ptr) {}
 
-CAST_ACCESSOR(FixedAddressArray)
+template <typename Base>
+CAST_ACCESSOR(FixedAddressArrayBase<Base>)
 
-template <typename T>
-FixedIntegerArray<T>::FixedIntegerArray(Address ptr) : ByteArray(ptr) {
-  DCHECK_EQ(ByteArray::length() % sizeof(T), 0);
+template <typename T, typename Base>
+FixedIntegerArrayBase<T, Base>::FixedIntegerArrayBase(Address ptr) : Base(ptr) {
+  DCHECK_EQ(Base::length() % sizeof(T), 0);
 }
 
-template <typename T>
-CAST_ACCESSOR(FixedIntegerArray<T>)
+template <typename T, typename Base>
+Tagged<FixedIntegerArrayBase<T, Base>> FixedIntegerArrayBase<T, Base>::cast(
+    Tagged<Object> object) {
+  Tagged<Base> base = Tagged<Base>::cast(object);
+  DCHECK_EQ(0, base->length() % sizeof(T));
+  return FixedIntegerArrayBase<T, Base>{base.ptr()};
+}
 
+template <typename T, typename Base>
+template <typename... MoreArgs>
 // static
-template <typename T>
-Handle<FixedIntegerArray<T>> FixedIntegerArray<T>::New(
-    Isolate* isolate, int length, AllocationType allocation) {
+Handle<FixedIntegerArrayBase<T, Base>> FixedIntegerArrayBase<T, Base>::New(
+    Isolate* isolate, int length, MoreArgs&&... more_args) {
   int byte_length;
   CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
-  return Handle<FixedIntegerArray<T>>::cast(
-      isolate->factory()->NewByteArray(byte_length, allocation));
+  return Handle<FixedIntegerArrayBase<T, Base>>::cast(
+      Base::New(isolate, byte_length, std::forward<MoreArgs>(more_args)...));
 }
 
-template <typename T>
-T FixedIntegerArray<T>::get(int index) const {
+template <typename T, typename Base>
+T FixedIntegerArrayBase<T, Base>::get(int index) const {
   static_assert(std::is_integral<T>::value);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, length());
-  return ReadField<T>(kHeaderSize + index * sizeof(T));
+  return this->template ReadField<T>(Base::kHeaderSize + index * sizeof(T));
 }
 
-template <typename T>
-void FixedIntegerArray<T>::set(int index, T value) {
+template <typename T, typename Base>
+void FixedIntegerArrayBase<T, Base>::set(int index, T value) {
   static_assert(std::is_integral<T>::value);
   DCHECK_GE(index, 0);
   DCHECK_LT(index, length());
-  WriteField<T>(kHeaderSize + index * sizeof(T), value);
+  this->template WriteField<T>(Base::kHeaderSize + index * sizeof(T), value);
 }
 
-template <typename T>
-int FixedIntegerArray<T>::length() const {
-  DCHECK_EQ(ByteArray::length() % sizeof(T), 0);
-  return ByteArray::length() / sizeof(T);
+template <typename T, typename Base>
+int FixedIntegerArrayBase<T, Base>::length() const {
+  DCHECK_EQ(Base::length() % sizeof(T), 0);
+  return Base::length() / sizeof(T);
 }
 
 template <ExternalPointerTag tag>
@@ -996,21 +1056,19 @@ inline void ExternalPointerArray::set(int index, Isolate* isolate,
                                                   isolate, value);
 }
 
-inline void ExternalPointerArray::clear(int index) {
-  ResetLazilyInitializedExternalPointerField(OffsetOfElementAt(index));
-}
-
 // static
 Handle<ExternalPointerArray> ExternalPointerArray::New(
     Isolate* isolate, int length, AllocationType allocation) {
   return isolate->factory()->NewExternalPointerArray(length, allocation);
 }
 
-template <class T>
-PodArray<T>::PodArray(Address ptr) : ByteArray(ptr) {}
+template <class T, class Super>
+int PodArrayBase<T, Super>::length() const {
+  return Super::length() / sizeof(T);
+}
 
-template <class T>
-CAST_ACCESSOR(PodArray<T>)
+template <class T, class Super>
+PodArrayBase<T, Super>::PodArrayBase(Address ptr) : Super(ptr) {}
 
 // static
 template <class T>
@@ -1033,9 +1091,37 @@ Handle<PodArray<T>> PodArray<T>::New(LocalIsolate* isolate, int length,
 }
 
 template <class T>
-int PodArray<T>::length() const {
-  return ByteArray::length() / sizeof(T);
+PodArray<T>::PodArray(Address ptr) : PodArrayBase<T, ByteArray>(ptr) {}
+
+template <class T>
+CAST_ACCESSOR(PodArray<T>)
+
+// static
+template <class T>
+Handle<TrustedPodArray<T>> TrustedPodArray<T>::New(Isolate* isolate,
+                                                   int length) {
+  int byte_length;
+  CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
+  return Handle<TrustedPodArray<T>>::cast(
+      isolate->factory()->NewTrustedByteArray(byte_length));
 }
+
+// static
+template <class T>
+Handle<TrustedPodArray<T>> TrustedPodArray<T>::New(LocalIsolate* isolate,
+                                                   int length) {
+  int byte_length;
+  CHECK(!base::bits::SignedMulOverflow32(length, sizeof(T), &byte_length));
+  return Handle<TrustedPodArray<T>>::cast(
+      isolate->factory()->NewTrustedByteArray(byte_length));
+}
+
+template <class T>
+TrustedPodArray<T>::TrustedPodArray(Address ptr)
+    : PodArrayBase<T, TrustedByteArray>(ptr) {}
+
+template <class T>
+CAST_ACCESSOR(TrustedPodArray<T>)
 
 }  // namespace internal
 }  // namespace v8

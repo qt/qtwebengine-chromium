@@ -28,39 +28,38 @@ using clock_operators::operator<<;
 #define RECEIVER_LOG(level) OSP_LOG_##level << "[SSRC:" << ssrc() << "] "
 #define RECEIVER_VLOG OSP_VLOG << "[SSRC:" << ssrc() << "] "
 
-Receiver::Receiver(Environment* environment,
-                   ReceiverPacketRouter* packet_router,
+Receiver::Receiver(Environment& environment,
+                   ReceiverPacketRouter& packet_router,
                    SessionConfig config)
-    : now_(environment->now_function()),
+    : now_(environment.now_function()),
       packet_router_(packet_router),
       config_(config),
       rtcp_session_(config.sender_ssrc, config.receiver_ssrc, now_()),
-      rtcp_parser_(&rtcp_session_),
-      rtcp_builder_(&rtcp_session_),
+      rtcp_parser_(rtcp_session_),
+      rtcp_builder_(rtcp_session_),
       stats_tracker_(config.rtp_timebase),
       rtp_parser_(config.sender_ssrc),
       rtp_timebase_(config.rtp_timebase),
       crypto_(config.aes_secret_key, config.aes_iv_mask),
       is_pli_enabled_(config.is_pli_enabled),
-      rtcp_alarm_(environment->now_function(), environment->task_runner()),
+      rtcp_alarm_(environment.now_function(), environment.task_runner()),
       smoothed_clock_offset_(ClockDriftSmoother::kDefaultTimeConstant),
-      consumption_alarm_(environment->now_function(),
-                         environment->task_runner()) {
-  OSP_DCHECK(packet_router_);
-  OSP_DCHECK_EQ(checkpoint_frame(), FrameId::leader());
+      consumption_alarm_(environment.now_function(),
+                         environment.task_runner()) {
+  OSP_CHECK_EQ(checkpoint_frame(), FrameId::leader());
 
-  rtcp_buffer_.assign(environment->GetMaxPacketSize(), 0);
+  rtcp_buffer_.assign(environment.GetMaxPacketSize(), 0);
   OSP_CHECK_GT(rtcp_buffer_.size(), 0);
 
   rtcp_builder_.SetPlayoutDelay(config.target_playout_delay);
   playout_delay_changes_.emplace_back(FrameId::leader(),
                                       config.target_playout_delay);
 
-  packet_router_->OnReceiverCreated(rtcp_session_.sender_ssrc(), this);
+  packet_router_.OnReceiverCreated(rtcp_session_.sender_ssrc(), this);
 }
 
 Receiver::~Receiver() {
-  packet_router_->OnReceiverDestroyed(rtcp_session_.sender_ssrc());
+  packet_router_.OnReceiverDestroyed(rtcp_session_.sender_ssrc());
 }
 
 const SessionConfig& Receiver::config() const {
@@ -85,8 +84,13 @@ void Receiver::SetPlayerProcessingTime(Clock::duration needed_time) {
 void Receiver::RequestKeyFrame() {
   // If we don't have picture loss indication enabled, we should not request
   // any key frames.
-  OSP_DCHECK(is_pli_enabled_) << "PLI is not enabled.";
-  if (is_pli_enabled_ && !last_key_frame_received_.is_null() &&
+  if (!is_pli_enabled_) {
+    OSP_LOG_WARN << "Should not request any key frames when picture loss "
+                    "indication is not enabled";
+    return;
+  }
+
+  if (!last_key_frame_received_.is_null() &&
       last_frame_consumed_ >= last_key_frame_received_ &&
       !rtcp_builder_.is_picture_loss_indicator_set()) {
     rtcp_builder_.SetPictureLossIndicator(true);
@@ -151,8 +155,8 @@ EncodedFrame Receiver::ConsumeNextFrame(ByteBuffer buffer) {
 
   // Decrypt the frame, populating the given output |frame|.
   PendingFrame& entry = GetQueueEntry(frame_id);
-  OSP_DCHECK(entry.collector.is_complete());
-  OSP_DCHECK(entry.estimated_capture_time);
+  OSP_CHECK(entry.collector.is_complete());
+  OSP_CHECK(entry.estimated_capture_time);
 
   const EncryptedFrame& encrypted_frame =
       entry.collector.PeekAtAssembledFrame();
@@ -346,7 +350,7 @@ void Receiver::SendRtcp() {
   rtcp_builder_.IncludeFeedbackInNextPacket(std::move(packet_nacks),
                                             std::move(frame_acks));
   last_rtcp_send_time_ = now_();
-  packet_router_->SendRtcpPacket(
+  packet_router_.SendRtcpPacket(
       rtcp_builder_.BuildPacket(last_rtcp_send_time_, rtcp_buffer_));
 
   // Schedule the automatic sending of another RTCP packet, if this method is
@@ -369,7 +373,7 @@ Receiver::PendingFrame& Receiver::GetQueueEntry(FrameId frame_id) {
 
 void Receiver::RecordNewTargetPlayoutDelay(FrameId as_of_frame,
                                            milliseconds delay) {
-  OSP_DCHECK_GT(as_of_frame, checkpoint_frame());
+  OSP_CHECK_GT(as_of_frame, checkpoint_frame());
 
   // Prune-out entries from |playout_delay_changes_| that are no longer needed.
   // At least one entry must always be kept (i.e., there must always be a
@@ -392,14 +396,14 @@ void Receiver::RecordNewTargetPlayoutDelay(FrameId as_of_frame,
 }
 
 milliseconds Receiver::ResolveTargetPlayoutDelay(FrameId frame_id) const {
-  OSP_DCHECK_GT(frame_id, last_frame_consumed_);
+  OSP_CHECK_GT(frame_id, last_frame_consumed_);
 
 #if OSP_DCHECK_IS_ON()
   // Extra precaution: Ensure all possible playout delay changes are known. In
   // other words, every unconsumed frame in the queue, up to (and including)
   // |frame_id|, must have an assigned estimated_capture_time.
   for (FrameId f = last_frame_consumed_ + 1; f <= frame_id; ++f) {
-    OSP_DCHECK(GetQueueEntry(f).estimated_capture_time)
+    OSP_CHECK(GetQueueEntry(f).estimated_capture_time)
         << " don't know whether there was a playout delay change for frame "
         << f;
   }
@@ -408,14 +412,14 @@ milliseconds Receiver::ResolveTargetPlayoutDelay(FrameId frame_id) const {
   const auto it = std::find_if(
       playout_delay_changes_.crbegin(), playout_delay_changes_.crend(),
       [&](const auto& entry) { return entry.first <= frame_id; });
-  OSP_DCHECK(it != playout_delay_changes_.crend());
+  OSP_CHECK(it != playout_delay_changes_.crend());
   return it->second;
 }
 
 void Receiver::AdvanceCheckpoint(FrameId new_checkpoint) {
   TRACE_DEFAULT_SCOPED(TraceCategory::kReceiver);
-  OSP_DCHECK_GT(new_checkpoint, checkpoint_frame());
-  OSP_DCHECK_LE(new_checkpoint, latest_frame_expected_);
+  OSP_CHECK_GT(new_checkpoint, checkpoint_frame());
+  OSP_CHECK_LE(new_checkpoint, latest_frame_expected_);
 
   while (new_checkpoint < latest_frame_expected_) {
     const FrameId next = new_checkpoint + 1;
@@ -431,19 +435,19 @@ void Receiver::AdvanceCheckpoint(FrameId new_checkpoint) {
 }
 
 void Receiver::DropAllFramesBefore(FrameId first_kept_frame) {
-  // The following DCHECKs are verifying that this method is only being called
+  // The following CHECKs are verifying that this method is only being called
   // because one or more incomplete frames are being skipped-over.
   const FrameId first_to_drop = last_frame_consumed_ + 1;
-  OSP_DCHECK_GT(first_kept_frame, first_to_drop);
-  OSP_DCHECK_GT(first_kept_frame, checkpoint_frame());
-  OSP_DCHECK_LE(first_kept_frame, latest_frame_expected_);
+  OSP_CHECK_GT(first_kept_frame, first_to_drop);
+  OSP_CHECK_GT(first_kept_frame, checkpoint_frame());
+  OSP_CHECK_LE(first_kept_frame, latest_frame_expected_);
 
   // Reset each of the frames being dropped, pretending that they were consumed.
   for (FrameId f = first_to_drop; f < first_kept_frame; ++f) {
     PendingFrame& entry = GetQueueEntry(f);
     // Pedantic sanity-check: Ensure the "target playout delay change" data
     // dependency was satisfied. See comments in AdvanceToNextFrame().
-    OSP_DCHECK(entry.estimated_capture_time);
+    OSP_CHECK(entry.estimated_capture_time);
     entry.Reset();
   }
   last_frame_consumed_ = first_kept_frame - 1;

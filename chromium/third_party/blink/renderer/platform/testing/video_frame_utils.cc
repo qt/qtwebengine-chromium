@@ -34,7 +34,7 @@ scoped_refptr<media::VideoFrame> CreateTestFrame(
       return media::VideoFrame::CreateZeroInitializedFrame(
           pixel_format, coded_size, visible_rect, natural_size, timestamp);
     case media::VideoFrame::STORAGE_GPU_MEMORY_BUFFER: {
-      absl::optional<gfx::BufferFormat> buffer_format =
+      std::optional<gfx::BufferFormat> buffer_format =
           media::VideoPixelFormatToGfxBufferFormat(pixel_format);
       CHECK(buffer_format) << "Pixel format "
                            << media::VideoPixelFormatToString(pixel_format)
@@ -47,23 +47,23 @@ scoped_refptr<media::VideoFrame> CreateTestFrame(
           base::NullCallback(), timestamp);
     }
     case media::VideoFrame::STORAGE_OPAQUE: {
-      absl::optional<gfx::BufferFormat> buffer_format =
+      std::optional<gfx::BufferFormat> buffer_format =
           media::VideoPixelFormatToGfxBufferFormat(pixel_format);
       CHECK(buffer_format) << "Pixel format "
                            << media::VideoPixelFormatToString(pixel_format)
                            << " has no corresponding gfx::BufferFormat";
       auto gmb = std::make_unique<media::FakeGpuMemoryBuffer>(
           coded_size, buffer_format.value());
-      gpu::MailboxHolder mailboxes[media::VideoFrame::kMaxPlanes];
-      // Set mailbox names so this registers as a texture.
-      mailboxes[0].mailbox = gpu::Mailbox::GenerateForSharedImage();
+      scoped_refptr<gpu::ClientSharedImage>
+          shared_images[media::VideoFrame::kMaxPlanes];
       for (size_t i = 0; i < media::VideoFrame::NumPlanes(pixel_format); ++i) {
-        mailboxes[i].mailbox.name[0] = 1;
+        shared_images[i] = gpu::ClientSharedImage::CreateForTesting();
       }
 
-      return media::VideoFrame::WrapNativeTextures(
-          pixel_format, mailboxes, base::NullCallback(), coded_size,
-          visible_rect, natural_size, timestamp);
+      return media::VideoFrame::WrapSharedImages(
+          pixel_format, shared_images, gpu::SyncToken(), 0,
+          base::NullCallback(), coded_size, visible_rect, natural_size,
+          timestamp);
     }
     default:
       NOTREACHED() << "Unsupported storage type or pixel format";

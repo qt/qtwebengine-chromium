@@ -372,6 +372,8 @@ void Scope::SetDefaults() {
   needs_home_object_ = false;
   is_block_scope_for_object_literal_ = false;
 
+  has_using_declaration_ = false;
+
   num_stack_slots_ = 0;
   num_heap_slots_ = ContextHeaderLength();
 
@@ -552,32 +554,35 @@ bool Scope::IsReparsedMemberInitializerScope() const {
 #endif
 
 DeclarationScope* Scope::AsDeclarationScope() {
-  DCHECK(is_declaration_scope());
+  // Here and below: if an attacker corrupts the in-sandox SFI::unique_id or
+  // fields of a Script object, we can get confused about which type of scope
+  // we're operating on. These CHECKs defend against that.
+  SBXCHECK(is_declaration_scope());
   return static_cast<DeclarationScope*>(this);
 }
 
 const DeclarationScope* Scope::AsDeclarationScope() const {
-  DCHECK(is_declaration_scope());
+  SBXCHECK(is_declaration_scope());
   return static_cast<const DeclarationScope*>(this);
 }
 
 ModuleScope* Scope::AsModuleScope() {
-  DCHECK(is_module_scope());
+  SBXCHECK(is_module_scope());
   return static_cast<ModuleScope*>(this);
 }
 
 const ModuleScope* Scope::AsModuleScope() const {
-  DCHECK(is_module_scope());
+  SBXCHECK(is_module_scope());
   return static_cast<const ModuleScope*>(this);
 }
 
 ClassScope* Scope::AsClassScope() {
-  DCHECK(is_class_scope());
+  SBXCHECK(is_class_scope());
   return static_cast<ClassScope*>(this);
 }
 
 const ClassScope* Scope::AsClassScope() const {
-  DCHECK(is_class_scope());
+  SBXCHECK(is_class_scope());
   return static_cast<const ClassScope*>(this);
 }
 
@@ -679,7 +684,7 @@ void DeclarationScope::HoistSloppyBlockFunctions(AstNodeFactory* factory) {
       DCHECK(is_being_lazily_parsed_);
       bool was_added;
       Variable* var = DeclareVariableName(name, VariableMode::kVar, &was_added);
-      if (sloppy_block_function->init() == Token::ASSIGN) {
+      if (sloppy_block_function->init() == Token::kAssign) {
         var->SetMaybeAssigned();
       }
     }
@@ -1077,14 +1082,15 @@ Variable* Scope::DeclareLocal(const AstRawString* name, VariableMode mode,
   DCHECK(!already_resolved_);
   // Private methods should be declared with ClassScope::DeclarePrivateName()
   DCHECK(!IsPrivateMethodOrAccessorVariableMode(mode));
-  // This function handles VariableMode::kVar, VariableMode::kLet, and
-  // VariableMode::kConst modes.  VariableMode::kDynamic variables are
-  // introduced during variable allocation, and VariableMode::kTemporary
-  // variables are allocated via NewTemporary().
+  // This function handles VariableMode::kVar, VariableMode::kLet,
+  // VariableMode::kConst, and VariableMode::kUsing modes.
+  // VariableMode::kDynamic variables are introduced during variable allocation,
+  // and VariableMode::kTemporary variables are allocated via NewTemporary().
   DCHECK(IsDeclaredVariableMode(mode));
   DCHECK_IMPLIES(GetDeclarationScope()->is_being_lazily_parsed(),
                  mode == VariableMode::kVar || mode == VariableMode::kLet ||
-                     mode == VariableMode::kConst);
+                     mode == VariableMode::kConst ||
+                     mode == VariableMode::kUsing);
   DCHECK(!GetDeclarationScope()->was_lazily_parsed());
   Variable* var =
       Declare(zone(), name, mode, kind, init_flag, kNotAssigned, was_added);
@@ -2441,7 +2447,7 @@ bool Scope::MustAllocate(Variable* var) {
     var->set_is_used();
     if (inner_scope_calls_eval_ && !var->is_this()) var->SetMaybeAssigned();
   }
-  DCHECK(!var->has_forced_context_allocation() || var->is_used());
+  CHECK(!var->has_forced_context_allocation() || var->is_used());
   // Global variables do not need to be allocated.
   return !var->IsGlobalObjectProperty() && var->is_used();
 }
@@ -2926,7 +2932,7 @@ Variable* ClassScope::LookupPrivateNameInScopeInfo(const AstRawString* name) {
     return nullptr;
   }
 
-  DCHECK(IsConstVariableMode(lookup_result.mode));
+  DCHECK(IsImmutableLexicalOrPrivateVariableMode(lookup_result.mode));
   DCHECK_EQ(lookup_result.init_flag, InitializationFlag::kNeedsInitialization);
   DCHECK_EQ(lookup_result.maybe_assigned_flag, MaybeAssignedFlag::kNotAssigned);
 
@@ -3072,9 +3078,10 @@ Variable* ClassScope::DeclareClassVariable(AstValueFactory* ast_value_factory,
                                            const AstRawString* name,
                                            int class_token_pos) {
   DCHECK_NULL(class_variable_);
+  DCHECK_NOT_NULL(name);
   bool was_added;
   class_variable_ =
-      Declare(zone(), name == nullptr ? ast_value_factory->dot_string() : name,
+      Declare(zone(), name->IsEmpty() ? ast_value_factory->dot_string() : name,
               VariableMode::kConst, NORMAL_VARIABLE,
               InitializationFlag::kNeedsInitialization,
               MaybeAssignedFlag::kMaybeAssigned, &was_added);

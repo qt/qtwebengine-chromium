@@ -188,8 +188,10 @@ void ClearDeadFallthroughRegisters(RegisterFrameState<RegisterT>& registers,
 }
 
 bool IsDeadNodeToSkip(Node* node) {
-  return node->Is<ValueNode>() && node->Cast<ValueNode>()->has_no_more_uses() &&
-         !node->properties().is_required_when_unused();
+  if (!node->Is<ValueNode>()) return false;
+  ValueNode* value = node->Cast<ValueNode>();
+  return value->has_no_more_uses() &&
+         !value->properties().is_required_when_unused();
 }
 
 }  // namespace
@@ -744,7 +746,8 @@ void StraightForwardRegisterAllocator::AllocateNode(Node* node) {
     // spilled so they can properly be merged after the catch block.
     if (node->properties().can_throw()) {
       ExceptionHandlerInfo* info = node->exception_handler_info();
-      if (info->HasExceptionHandler() && !node->properties().is_call()) {
+      if (info->HasExceptionHandler() && !info->ShouldLazyDeopt() &&
+          !node->properties().is_call()) {
         BasicBlock* block = info->catch_block.block_ptr();
         auto spill = [&](auto reg, ValueNode* node) {
           if (node->live_range().end < block->first_id()) return;

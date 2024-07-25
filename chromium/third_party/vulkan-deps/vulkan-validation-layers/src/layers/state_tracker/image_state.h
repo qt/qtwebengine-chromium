@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2022 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -22,8 +22,6 @@
 #include <utility>
 #include <variant>
 
-#include <vulkan/utility/vk_format_utils.h>
-
 #include "state_tracker/device_memory_state.h"
 #include "state_tracker/image_layout_map.h"
 #include "utils/vk_layer_utils.h"
@@ -34,7 +32,7 @@ class Semaphore;
 class Surface;
 class Swapchain;
 class VideoProfileDesc;
-} // namespace vvl
+}  // namespace vvl
 
 class ValidationStateTracker;
 
@@ -67,21 +65,6 @@ static inline VkImageSubresourceRange RangeFromLayers(const VkImageSubresourceLa
     return subresource_range;
 }
 
-class GlobalImageLayoutRangeMap : public subresource_adapter::BothRangeMap<VkImageLayout, 16> {
-  public:
-    using RangeGenerator = image_layout_map::RangeGenerator;
-    using RangeType = key_type;
-
-    GlobalImageLayoutRangeMap(index_type index) : BothRangeMap<VkImageLayout, 16>(index) {}
-    ReadLockGuard ReadLock() const { return ReadLockGuard(lock_); }
-    WriteLockGuard WriteLock() { return WriteLockGuard(lock_); }
-
-    bool AnyInRange(RangeGenerator &gen, std::function<bool(const key_type &range, const mapped_type &state)> &&func) const;
-
-  private:
-    mutable std::shared_mutex lock_;
-};
-
 namespace vvl {
 
 // State for VkImage objects.
@@ -104,8 +87,8 @@ namespace vvl {
 //
 class Image : public Bindable {
   public:
-    const safe_VkImageCreateInfo safe_create_info;
-    const VkImageCreateInfo &createInfo;
+    const vku::safe_VkImageCreateInfo safe_create_info;
+    const VkImageCreateInfo &create_info;
     bool shared_presentable;                   // True for a front-buffered swapchain image
     bool layout_locked;                        // A front-buffered image that has been presented can never have layout transitioned
     const uint64_t ahb_format;                 // External Android format, if provided
@@ -143,63 +126,65 @@ class Image : public Bindable {
 
     vvl::unordered_set<std::shared_ptr<const vvl::VideoProfileDesc>> supported_video_profiles;
 
-    Image(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo,
+    Image(const ValidationStateTracker &dev_data, VkImage handle, const VkImageCreateInfo *pCreateInfo,
           VkFormatFeatureFlags2KHR features);
-    Image(const ValidationStateTracker *dev_data, VkImage img, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
+    Image(const ValidationStateTracker &dev_data, VkImage handle, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
           uint32_t swapchain_index, VkFormatFeatureFlags2KHR features);
     Image(Image const &rh_obj) = delete;
     std::shared_ptr<const Image> shared_from_this() const { return SharedFromThisImpl(this); }
     std::shared_ptr<Image> shared_from_this() { return SharedFromThisImpl(this); }
 
-    VkImage image() const { return handle_.Cast<VkImage>(); }
+    VkImage VkHandle() const { return handle_.Cast<VkImage>(); }
 
     bool HasAHBFormat() const { return ahb_format != 0; }
     bool IsCompatibleAliasing(const Image *other_image_state) const;
 
     // returns true if this image could be using the same memory as another image
-    bool HasAliasFlag() const { return 0 != (createInfo.flags & VK_IMAGE_CREATE_ALIAS_BIT); }
+    bool HasAliasFlag() const { return 0 != (create_info.flags & VK_IMAGE_CREATE_ALIAS_BIT); }
     bool CanAlias() const { return HasAliasFlag() || bind_swapchain; }
 
-    bool IsCreateInfoEqual(const VkImageCreateInfo &other_createInfo) const;
-    bool IsCreateInfoDedicatedAllocationImageAliasingCompatible(const VkImageCreateInfo &other_createInfo) const;
+    bool IsCreateInfoEqual(const VkImageCreateInfo &other_create_info) const;
+    bool IsCreateInfoDedicatedAllocationImageAliasingCompatible(const VkImageCreateInfo &other_create_info) const;
 
     bool IsSwapchainImage() const { return create_from_swapchain != VK_NULL_HANDLE; }
 
-    inline bool IsImageTypeEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.imageType == other_createInfo.imageType;
+    inline bool IsImageTypeEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.imageType == other_create_info.imageType;
     }
-    inline bool IsFormatEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.format == other_createInfo.format;
+    inline bool IsFormatEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.format == other_create_info.format;
     }
-    inline bool IsMipLevelsEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.mipLevels == other_createInfo.mipLevels;
+    inline bool IsMipLevelsEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.mipLevels == other_create_info.mipLevels;
     }
-    inline bool IsUsageEqual(const VkImageCreateInfo &other_createInfo) const { return createInfo.usage == other_createInfo.usage; }
-    inline bool IsSamplesEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.samples == other_createInfo.samples;
+    inline bool IsUsageEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.usage == other_create_info.usage;
     }
-    inline bool IsTilingEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.tiling == other_createInfo.tiling;
+    inline bool IsSamplesEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.samples == other_create_info.samples;
     }
-    inline bool IsArrayLayersEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.arrayLayers == other_createInfo.arrayLayers;
+    inline bool IsTilingEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.tiling == other_create_info.tiling;
     }
-    inline bool IsInitialLayoutEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.initialLayout == other_createInfo.initialLayout;
+    inline bool IsArrayLayersEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.arrayLayers == other_create_info.arrayLayers;
     }
-    inline bool IsSharingModeEqual(const VkImageCreateInfo &other_createInfo) const {
-        return createInfo.sharingMode == other_createInfo.sharingMode;
+    inline bool IsInitialLayoutEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.initialLayout == other_create_info.initialLayout;
     }
-    inline bool IsExtentEqual(const VkImageCreateInfo &other_createInfo) const {
-        return (createInfo.extent.width == other_createInfo.extent.width) &&
-               (createInfo.extent.height == other_createInfo.extent.height) &&
-               (createInfo.extent.depth == other_createInfo.extent.depth);
+    inline bool IsSharingModeEqual(const VkImageCreateInfo &other_create_info) const {
+        return create_info.sharingMode == other_create_info.sharingMode;
     }
-    inline bool IsQueueFamilyIndicesEqual(const VkImageCreateInfo &other_createInfo) const {
-        return (createInfo.queueFamilyIndexCount == other_createInfo.queueFamilyIndexCount) &&
-               (createInfo.queueFamilyIndexCount == 0 ||
-                memcmp(createInfo.pQueueFamilyIndices, other_createInfo.pQueueFamilyIndices,
-                       createInfo.queueFamilyIndexCount * sizeof(createInfo.pQueueFamilyIndices[0])) == 0);
+    inline bool IsExtentEqual(const VkImageCreateInfo &other_create_info) const {
+        return (create_info.extent.width == other_create_info.extent.width) &&
+               (create_info.extent.height == other_create_info.extent.height) &&
+               (create_info.extent.depth == other_create_info.extent.depth);
+    }
+    inline bool IsQueueFamilyIndicesEqual(const VkImageCreateInfo &other_create_info) const {
+        return (create_info.queueFamilyIndexCount == other_create_info.queueFamilyIndexCount) &&
+               (create_info.queueFamilyIndexCount == 0 ||
+                memcmp(create_info.pQueueFamilyIndices, other_create_info.pQueueFamilyIndices,
+                       create_info.queueFamilyIndexCount * sizeof(create_info.pQueueFamilyIndices[0])) == 0);
     }
 
     ~Image() {
@@ -214,21 +199,21 @@ class Image : public Bindable {
 
     // Returns the effective extent of the provided subresource, adjusted for mip level and array depth.
     VkExtent3D GetEffectiveSubresourceExtent(const VkImageSubresourceLayers &sub) const {
-        return ::GetEffectiveExtent(createInfo, sub.aspectMask, sub.mipLevel);
+        return GetEffectiveExtent(create_info, sub.aspectMask, sub.mipLevel);
     }
 
     // Returns the effective extent of the provided subresource, adjusted for mip level and array depth.
     VkExtent3D GetEffectiveSubresourceExtent(const VkImageSubresource &sub) const {
-        return ::GetEffectiveExtent(createInfo, sub.aspectMask, sub.mipLevel);
+        return GetEffectiveExtent(create_info, sub.aspectMask, sub.mipLevel);
     }
 
     // Returns the effective extent of the provided subresource, adjusted for mip level and array depth.
     VkExtent3D GetEffectiveSubresourceExtent(const VkImageSubresourceRange &range) const {
-        return ::GetEffectiveExtent(createInfo, range);
+        return GetEffectiveExtent(create_info, range.aspectMask, range.baseMipLevel);
     }
 
     VkImageSubresourceRange NormalizeSubresourceRange(const VkImageSubresourceRange &range) const {
-        return ::NormalizeSubresourceRange(createInfo, range);
+        return ::NormalizeSubresourceRange(create_info, range);
     }
 
     void SetInitialLayoutMap();
@@ -266,11 +251,9 @@ class Image : public Bindable {
     }
 
   private:
-    std::variant<std::monostate,
-                 BindableNoMemoryTracker,
-                 BindableLinearMemoryTracker,
-                 BindableSparseMemoryTracker,
-                 BindableMultiplanarMemoryTracker> tracker_;
+    std::variant<std::monostate, BindableNoMemoryTracker, BindableLinearMemoryTracker, BindableSparseMemoryTracker,
+                 BindableMultiplanarMemoryTracker>
+        tracker_;
 };
 
 // State for VkImageView objects.
@@ -278,8 +261,9 @@ class Image : public Bindable {
 //    ImageView [N] -> [1] vv::Image
 class ImageView : public StateObject {
   public:
-    const safe_VkImageViewCreateInfo safe_create_info;
+    const vku::safe_VkImageViewCreateInfo safe_create_info;
     const VkImageViewCreateInfo &create_info;
+
     const VkImageSubresourceRange normalized_subresource_range;
     const image_layout_map::RangeGenerator range_generator;
     const VkSampleCountFlagBits samples;
@@ -295,10 +279,10 @@ class ImageView : public StateObject {
     std::shared_ptr<vvl::Image> image_state;
     const bool is_depth_sliced;
 
-    ImageView(const std::shared_ptr<vvl::Image> &image_state, VkImageView iv, const VkImageViewCreateInfo *ci,
+    ImageView(const std::shared_ptr<vvl::Image> &image_state, VkImageView handle, const VkImageViewCreateInfo *ci,
               VkFormatFeatureFlags2KHR ff, const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props);
     ImageView(const ImageView &rh_obj) = delete;
-    VkImageView image_view() const { return handle_.Cast<VkImageView>(); }
+    VkImageView VkHandle() const { return handle_.Cast<VkImageView>(); }
 
     void LinkChildNodes() override {
         // Connect child node(s), which cannot safely be done in the constructor.
@@ -335,7 +319,9 @@ struct SwapchainImage {
 //    However, only 1 swapchain for each surface can be !retired.
 class Swapchain : public StateObject {
   public:
-    const safe_VkSwapchainCreateInfoKHR createInfo;
+    const vku::safe_VkSwapchainCreateInfoKHR safe_create_info;
+    const VkSwapchainCreateInfoKHR &create_info;
+
     std::vector<VkPresentModeKHR> present_modes;
     std::vector<SwapchainImage> images;
     bool retired = false;
@@ -343,13 +329,13 @@ class Swapchain : public StateObject {
     const bool shared_presentable;
     uint32_t get_swapchain_image_count = 0;
     uint64_t max_present_id = 0;
-    const safe_VkImageCreateInfo image_create_info;
+    const vku::safe_VkImageCreateInfo image_create_info;
 
     std::shared_ptr<vvl::Surface> surface;
-    ValidationStateTracker *dev_data;
+    ValidationStateTracker &dev_data;
     uint32_t acquired_images = 0;
 
-    Swapchain(ValidationStateTracker *dev_data, const VkSwapchainCreateInfoKHR *pCreateInfo, VkSwapchainKHR swapchain);
+    Swapchain(ValidationStateTracker &dev_data, const VkSwapchainCreateInfoKHR *pCreateInfo, VkSwapchainKHR handle);
 
     ~Swapchain() {
         if (!Destroyed()) {
@@ -357,7 +343,7 @@ class Swapchain : public StateObject {
         }
     }
 
-    VkSwapchainKHR swapchain() const { return handle_.Cast<VkSwapchainKHR>(); }
+    VkSwapchainKHR VkHandle() const { return handle_.Cast<VkSwapchainKHR>(); }
 
     void PresentImage(uint32_t image_index, uint64_t present_id);
 
@@ -396,20 +382,13 @@ struct hash<GpuQueue> {
 
 class ValidationObject;
 
-// State for VkSurfaceKHR objects.
-struct PresentModeState {
-    VkSurfaceCapabilitiesKHR surface_capabilities_;
-    VkSurfacePresentScalingCapabilitiesEXT scaling_capabilities_;
-    std::vector<VkPresentModeKHR> compatible_present_modes_;
-};
-
 namespace vvl {
 
 // Parent -> child relationships in the object usage tree:
 //    vvl::Surface -> nothing
 class Surface : public StateObject {
   public:
-    Surface(VkSurfaceKHR s) : StateObject(s, kVulkanObjectTypeSurfaceKHR) {}
+    Surface(VkSurfaceKHR handle) : StateObject(handle, kVulkanObjectTypeSurfaceKHR) {}
 
     ~Surface() {
         if (!Destroyed()) {
@@ -417,13 +396,7 @@ class Surface : public StateObject {
         }
     }
 
-    VkSurfaceKHR surface() const { return handle_.Cast<VkSurfaceKHR>(); }
-    VkPhysicalDeviceSurfaceInfo2KHR GetSurfaceInfo2(const void *surface_info2_pnext = nullptr) const {
-        VkPhysicalDeviceSurfaceInfo2KHR surface_info2 = vku::InitStructHelper();
-        surface_info2.pNext = surface_info2_pnext;
-        surface_info2.surface = surface();
-        return surface_info2;
-    }
+    VkSurfaceKHR VkHandle() const { return handle_.Cast<VkSurfaceKHR>(); }
 
     void Destroy() override;
 
@@ -436,37 +409,62 @@ class Surface : public StateObject {
     std::vector<VkPresentModeKHR> GetPresentModes(VkPhysicalDevice phys_dev, const Location &loc,
                                                   const ValidationObject *validation_obj) const;
 
-    void SetFormats(VkPhysicalDevice phys_dev, std::vector<safe_VkSurfaceFormat2KHR> &&fmts);
-    vvl::span<const safe_VkSurfaceFormat2KHR> GetFormats(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
-                                                         const void *surface_info2_pnext, const Location &loc,
-                                                         const ValidationObject *validation_obj) const;
+    void SetFormats(VkPhysicalDevice phys_dev, std::vector<vku::safe_VkSurfaceFormat2KHR> &&fmts);
+    vvl::span<const vku::safe_VkSurfaceFormat2KHR> GetFormats(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
+                                                              const void *surface_info2_pnext, const Location &loc,
+                                                              const ValidationObject *validation_obj) const;
 
-    void SetCapabilities(VkPhysicalDevice phys_dev, const safe_VkSurfaceCapabilities2KHR &caps);
-    safe_VkSurfaceCapabilities2KHR GetCapabilities(bool get_surface_capabilities2, VkPhysicalDevice phys_dev,
-                                                   const void *surface_info2_pnext, const Location &loc,
-                                                   const ValidationObject *validation_obj) const;
+    // Cache capabilities that do not depend on the present mode
+    void UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilitiesKHR &surface_caps);
+    // Cache per present mode capabilities
+    void UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilities2KHR &surface_caps,
+                                 VkPresentModeKHR present_mode);
 
-    void SetCompatibleModes(VkPhysicalDevice phys_dev, const VkPresentModeKHR present_mode,
-                            vvl::span<const VkPresentModeKHR> compatible_modes);
-    std::vector<VkPresentModeKHR> GetCompatibleModes(VkPhysicalDevice phys_dev, const VkPresentModeKHR present_mode) const;
-    void SetPresentModeCapabilities(VkPhysicalDevice phys_dev, const VkPresentModeKHR present_mode,
-                                    const VkSurfaceCapabilitiesKHR &caps,
-                                    const VkSurfacePresentScalingCapabilitiesEXT &scaling_caps);
-    VkSurfaceCapabilitiesKHR GetPresentModeSurfaceCapabilities(VkPhysicalDevice phys_dev,
-                                                               const VkPresentModeKHR present_mode) const;
+    VkSurfaceCapabilitiesKHR GetSurfaceCapabilities(VkPhysicalDevice phys_dev, const void *surface_info_pnext) const;
+    VkSurfaceCapabilitiesKHR GetPresentModeSurfaceCapabilities(VkPhysicalDevice phys_dev, VkPresentModeKHR present_mode) const;
     VkSurfacePresentScalingCapabilitiesEXT GetPresentModeScalingCapabilities(VkPhysicalDevice phys_dev,
-                                                                             const VkPresentModeKHR present_mode) const;
+                                                                             VkPresentModeKHR present_mode) const;
+    std::vector<VkPresentModeKHR> GetCompatibleModes(VkPhysicalDevice phys_dev, VkPresentModeKHR present_mode) const;
+
     vvl::Swapchain *swapchain{nullptr};
 
   private:
+    // Contains per present mode capabilities
+    struct PresentModeInfo {
+        VkPresentModeKHR present_mode;
+        VkSurfaceCapabilitiesKHR surface_capabilities;
+        std::optional<VkSurfacePresentScalingCapabilitiesEXT> scaling_capabilities;
+        std::optional<std::vector<VkPresentModeKHR>> compatible_present_modes;
+    };
+    // Cached information per physical device. Optional indicates if element is in the cache.
+    //
+    // NOTE: One of the reasons to cache surface caps is to prevent a false-positive
+    // when the surface change happens (e.g. resize) after the surface caps are queried
+    // and before the swapchain is created. The assumption is that with the current API,
+    // the app can't do better than this (no atomicity between query and swapchain creation).
+    // The caching ensures that validation sees the same surface state as the application.
+    //
+    // The priority is to avoid false-positives for correctly written application.
+    // When the application behaves incorrectly (e.g. forgets to query surface caps after
+    // it processed the resize event), then the caching can hide a problem, since validation
+    // will think that application respects surface caps values.
+    struct PhysDevCache {
+        std::optional<std::vector<VkPresentModeKHR>> present_modes;
+        std::optional<VkSurfaceCapabilitiesKHR> capabilities;
+        std::vector<PresentModeInfo> present_mode_infos;
+
+        const PresentModeInfo *GetPresentModeInfo(VkPresentModeKHR present_mode) const;
+    };
+    const PhysDevCache *GetPhysDevCache(VkPhysicalDevice phys_dev) const;
+
+  private:
     std::unique_lock<std::mutex> Lock() const { return std::unique_lock<std::mutex>(lock_); }
+    // TODO: make mutex shared, so multiple Validate can read simultaneously. Remove remaining mutations in Validate first
     mutable std::mutex lock_;
     mutable vvl::unordered_map<GpuQueue, bool> gpu_queue_support_;
-    mutable vvl::unordered_map<VkPhysicalDevice, std::vector<safe_VkSurfaceFormat2KHR>> formats_;
-    mutable vvl::unordered_map<VkPhysicalDevice, safe_VkSurfaceCapabilities2KHR> capabilities_;
-    mutable vvl::unordered_map<VkPhysicalDevice,
-                                      vvl::unordered_map<VkPresentModeKHR, std::optional<std::shared_ptr<PresentModeState>>>>
-        present_modes_data_;
+    mutable vvl::unordered_map<VkPhysicalDevice, std::vector<vku::safe_VkSurfaceFormat2KHR>> formats_;
+
+    vvl::unordered_map<VkPhysicalDevice, PhysDevCache> cache_;
 };
 
 }  // namespace vvl

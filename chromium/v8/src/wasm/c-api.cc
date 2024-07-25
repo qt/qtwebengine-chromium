@@ -30,6 +30,7 @@
 #include "src/api/api-inl.h"
 #include "src/builtins/builtins.h"
 #include "src/compiler/wasm-compiler.h"
+#include "src/flags/flags.h"
 #include "src/objects/call-site-info-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/managed-inl.h"
@@ -408,6 +409,13 @@ auto Engine::make(own<Config>&& config) -> own<Engine> {
   engine->platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(engine->platform.get());
   v8::V8::Initialize();
+
+  if (i::v8_flags.prof) {
+    i::PrintF(
+        "--prof is currently unreliable for V8's Wasm-C-API due to "
+        "fast-c-calls.\n");
+  }
+
   return make_own(seal<Engine>(engine));
 }
 
@@ -440,6 +448,8 @@ StoreImpl::~StoreImpl() {
 }
 
 struct ManagedData {
+  static constexpr i::ExternalPointerTag kManagedTag = i::kWasmManagedDataTag;
+
   ManagedData(void* info, void (*finalizer)(void*))
       : info(info), finalizer(finalizer) {}
 
@@ -1324,7 +1334,7 @@ auto Extern::copy() const -> own<Extern> { return impl(this)->copy(); }
 auto Extern::kind() const -> ExternKind {
   PtrComprCageAccessScope ptr_compr_cage_access_scope(impl(this)->isolate());
   i::Handle<i::JSReceiver> obj = impl(this)->v8_object();
-  if (i::WasmExportedFunction::IsWasmExportedFunction(*obj)) {
+  if (i::WasmExternalFunction::IsWasmExternalFunction(*obj)) {
     return wasm::EXTERN_FUNC;
   }
   if (IsWasmGlobalObject(*obj)) return wasm::EXTERN_GLOBAL;
@@ -1394,6 +1404,8 @@ Func::~Func() = default;
 auto Func::copy() const -> own<Func> { return impl(this)->copy(); }
 
 struct FuncData {
+  static constexpr i::ExternalPointerTag kManagedTag = i::kWasmFuncDataTag;
+
   Store* store;
   own<FuncType> type;
   enum Kind { kCallback, kCallbackWithEnv } kind;
@@ -1711,7 +1723,7 @@ auto Func::call(const Val args[], Val results[]) const -> own<Trap> {
   PrepareFunctionData(isolate, function_data, sig, module);
   i::Handle<i::Code> wrapper_code(function_data->c_wrapper_code(isolate),
                                   isolate);
-  i::Address call_target = function_data->internal()->call_target(isolate);
+  i::Address call_target = function_data->internal()->call_target();
 
   i::wasm::CWasmArgumentsPacker packer(function_data->packed_args_size());
   PushArgs(sig, args, &packer, store);
@@ -1719,7 +1731,7 @@ auto Func::call(const Val args[], Val results[]) const -> own<Trap> {
   i::Handle<i::Object> object_ref = instance;
   if (function_index < static_cast<int>(module->num_imported_functions)) {
     object_ref = i::handle(
-        instance->trusted_data(isolate)->imported_function_refs()->get(
+        instance->trusted_data(isolate)->dispatch_table_for_imports()->ref(
             function_index),
         isolate);
     if (IsWasmApiFunctionRef(*object_ref)) {
@@ -1764,7 +1776,7 @@ i::Address FuncData::v8_callback(i::Address host_data_foreign,
   v8::Isolate::Scope isolate_scope(store->isolate());
   i::HandleScope scope(isolate);
 
-  isolate->set_context(*v8::Utils::OpenHandle(*store->context()));
+  isolate->set_context(*v8::Utils::OpenDirectHandle(*store->context()));
 
   const ownvec<ValType>& param_types = self->type->params();
   const ownvec<ValType>& result_types = self->type->results();
@@ -1912,9 +1924,10 @@ auto Global::get() const -> Val {
       i::HandleScope scope(store->i_isolate());
       v8::Isolate::Scope isolate_scope(store->isolate());
       i::Handle<i::Object> result = v8_global->GetRef();
-      if (IsWasmInternalFunction(*result)) {
-        result = i::WasmInternalFunction::GetOrCreateExternal(
-            i::Handle<i::WasmInternalFunction>::cast(result));
+      if (IsWasmFuncRef(*result)) {
+        result = i::WasmInternalFunction::GetOrCreateExternal(i::handle(
+            i::WasmFuncRef::cast(*result)->internal(store->i_isolate()),
+            store->i_isolate()));
       }
       if (IsWasmNull(*result)) {
         result = v8_global->GetIsolate()->factory()->null_value();
@@ -2020,7 +2033,7 @@ auto Table::make(Store* store_abs, const TableType* type, const Ref* ref)
       // This doesn't call WasmTableObject::Set because the table has
       // just been created, so it can't be imported by any instances
       // yet that might require updating.
-      DCHECK_EQ(table_obj->dispatch_tables()->length(), 0);
+      DCHECK_EQ(table_obj->uses()->length(), 0);
       entries->set(i, *init);
     }
   }
@@ -2055,9 +2068,9 @@ auto Table::get(size_t index) const -> own<Ref> {
   i::HandleScope handle_scope(isolate);
   i::Handle<i::Object> result =
       i::WasmTableObject::Get(isolate, table, static_cast<uint32_t>(index));
-  if (IsWasmInternalFunction(*result)) {
+  if (IsWasmFuncRef(*result)) {
     result = i::WasmInternalFunction::GetOrCreateExternal(
-        i::Handle<i::WasmInternalFunction>::cast(result));
+        i::handle(i::WasmFuncRef::cast(*result)->internal(isolate), isolate));
   }
   if (IsWasmNull(*result)) {
     result = isolate->factory()->null_value();
@@ -2290,9 +2303,9 @@ auto Instance::exports() const -> ownvec<Extern> {
     const ExternType* type = export_types[i]->type();
     switch (type->kind()) {
       case EXTERN_FUNC: {
-        DCHECK(i::WasmExportedFunction::IsWasmExportedFunction(*obj));
+        DCHECK(i::WasmExternalFunction::IsWasmExternalFunction(*obj));
         exports[i] = implement<Func>::type::make(
-            store, i::Handle<i::WasmExportedFunction>::cast(obj));
+            store, i::Handle<i::WasmExternalFunction>::cast(obj));
       } break;
       case EXTERN_GLOBAL: {
         exports[i] = implement<Global>::type::make(

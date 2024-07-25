@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,12 @@
  */
 
 #include "state_tracker/descriptor_sets.h"
+#include "state_tracker/image_state.h"
+#include "state_tracker/buffer_state.h"
 #include "state_tracker/cmd_buffer_state.h"
+#include "state_tracker/ray_tracing_state.h"
+#include "state_tracker/sampler_state.h"
+#include "state_tracker/shader_module.h"
 
 static vvl::DescriptorPool::TypeCountMap GetMaxTypeCounts(const VkDescriptorPoolCreateInfo *create_info) {
     vvl::DescriptorPool::TypeCountMap counts;
@@ -31,23 +36,24 @@ static vvl::DescriptorPool::TypeCountMap GetMaxTypeCounts(const VkDescriptorPool
     return counts;
 }
 
-vvl::DescriptorPool::DescriptorPool(ValidationStateTracker *dev, const VkDescriptorPool pool,
-                                             const VkDescriptorPoolCreateInfo *pCreateInfo)
-    : StateObject(pool, kVulkanObjectTypeDescriptorPool),
+vvl::DescriptorPool::DescriptorPool(ValidationStateTracker &dev, const VkDescriptorPool handle,
+                                    const VkDescriptorPoolCreateInfo *pCreateInfo)
+    : StateObject(handle, kVulkanObjectTypeDescriptorPool),
+      safe_create_info(pCreateInfo),
+      create_info(*safe_create_info.ptr()),
       maxSets(pCreateInfo->maxSets),
-      createInfo(pCreateInfo),
       maxDescriptorTypeCount(GetMaxTypeCounts(pCreateInfo)),
       available_sets_(pCreateInfo->maxSets),
       available_counts_(maxDescriptorTypeCount),
       dev_data_(dev) {}
 
 void vvl::DescriptorPool::Allocate(const VkDescriptorSetAllocateInfo *alloc_info, const VkDescriptorSet *descriptor_sets,
-                                     const vvl::AllocateDescriptorSetsData *ds_data) {
+                                   const vvl::AllocateDescriptorSetsData &ds_data) {
     auto guard = WriteLock();
     // Account for sets and individual descriptors allocated from pool
     available_sets_ -= alloc_info->descriptorSetCount;
-    for (auto it = ds_data->required_descriptors_by_type.begin(); it != ds_data->required_descriptors_by_type.end(); ++it) {
-        available_counts_[it->first] -= ds_data->required_descriptors_by_type.at(it->first);
+    for (auto it = ds_data.required_descriptors_by_type.begin(); it != ds_data.required_descriptors_by_type.end(); ++it) {
+        available_counts_[it->first] -= ds_data.required_descriptors_by_type.at(it->first);
     }
 
     const auto *variable_count_info = vku::FindStructInPNextChain<VkDescriptorSetVariableDescriptorCountAllocateInfo>(alloc_info->pNext);
@@ -58,10 +64,10 @@ void vvl::DescriptorPool::Allocate(const VkDescriptorSetAllocateInfo *alloc_info
     for (uint32_t i = 0; i < alloc_info->descriptorSetCount; i++) {
         uint32_t variable_count = variable_count_valid ? variable_count_info->pDescriptorCounts[i] : 0;
 
-        auto new_ds = dev_data_->CreateDescriptorSet(descriptor_sets[i], this, ds_data->layout_nodes[i], variable_count);
+        auto new_ds = dev_data_.CreateDescriptorSet(descriptor_sets[i], this, ds_data.layout_nodes[i], variable_count);
 
         sets_.emplace(descriptor_sets[i], new_ds.get());
-        dev_data_->Add(std::move(new_ds));
+        dev_data_.Add(std::move(new_ds));
     }
 }
 
@@ -83,7 +89,7 @@ void vvl::DescriptorPool::Free(uint32_t count, const VkDescriptorSet *descriptor
                 descriptor_count = layout.GetDescriptorCountFromIndex(j);
                 available_counts_[type_index] += descriptor_count;
             }
-            dev_data_->Destroy<vvl::DescriptorSet>(iter->first);
+            dev_data_.Destroy<vvl::DescriptorSet>(iter->first);
             sets_.erase(iter);
         }
     }
@@ -93,7 +99,7 @@ void vvl::DescriptorPool::Reset() {
     auto guard = WriteLock();
     // For every set off of this pool, clear it, remove from setMap, and free vvl::DescriptorSet
     for (auto entry : sets_) {
-        dev_data_->Destroy<vvl::DescriptorSet>(entry.first);
+        dev_data_.Destroy<vvl::DescriptorSet>(entry.first);
     }
     sets_.clear();
     // Reset available count for each type and available sets for this pool
@@ -176,6 +182,36 @@ vvl::DescriptorSetLayoutDict descriptor_set_layout_dict;
 
 DescriptorSetLayoutId GetCanonicalId(const VkDescriptorSetLayoutCreateInfo *p_create_info) {
     return descriptor_set_layout_dict.LookUp(DescriptorSetLayoutDef(p_create_info));
+}
+
+bool operator==(const DescriptorSetLayoutDef &lhs, const DescriptorSetLayoutDef &rhs) {
+    // trivial types
+    if ((lhs.GetCreateFlags() != rhs.GetCreateFlags()) || (lhs.GetBindingFlags() != rhs.GetBindingFlags())) {
+        return false;
+    }
+    // vectors of enums
+    if (lhs.GetMutableTypes() != rhs.GetMutableTypes()) {
+        return false;
+    }
+    // vectors of vku::safe_VkDescriptorSetLayoutBinding structures
+    const auto &lhs_bindings = lhs.GetBindings();
+    const auto &rhs_bindings = rhs.GetBindings();
+    if (lhs_bindings.size() != rhs_bindings.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < lhs_bindings.size(); i++) {
+        const auto &l = lhs_bindings[i];
+        const auto &r = rhs_bindings[i];
+        if (l.descriptorType != r.descriptorType || l.descriptorCount != r.descriptorCount || l.stageFlags != r.stageFlags) {
+            return false;
+        }
+        for (uint32_t s = 0; s < l.descriptorCount; s++) {
+            if (l.pImmutableSamplers[s] != r.pImmutableSamplers[s]) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 // Construct DescriptorSetLayout instance from given create info
@@ -366,16 +402,16 @@ bool vvl::DescriptorSetLayout::IsCompatible(DescriptorSetLayout const *rh_ds_lay
 
 // The DescriptorSetLayout stores the per handle data for a descriptor set layout, and references the common defintion for the
 // handle invariant portion
-vvl::DescriptorSetLayout::DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *p_create_info,
-                                                          const VkDescriptorSetLayout layout)
-    : StateObject(layout, kVulkanObjectTypeDescriptorSetLayout), layout_id_(GetCanonicalId(p_create_info)) {}
+vvl::DescriptorSetLayout::DescriptorSetLayout(const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+                                              const VkDescriptorSetLayout handle)
+    : StateObject(handle, kVulkanObjectTypeDescriptorSetLayout), layout_id_(GetCanonicalId(pCreateInfo)) {}
 
 void vvl::AllocateDescriptorSetsData::Init(uint32_t count) { layout_nodes.resize(count); }
 
-vvl::DescriptorSet::DescriptorSet(const VkDescriptorSet set, vvl::DescriptorPool *pool_state,
-                                              const std::shared_ptr<DescriptorSetLayout const> &layout, uint32_t variable_count,
-                                              vvl::DescriptorSet::StateTracker *state_data)
-    : StateObject(set, kVulkanObjectTypeDescriptorSet),
+vvl::DescriptorSet::DescriptorSet(const VkDescriptorSet handle, vvl::DescriptorPool *pool_state,
+                                  const std::shared_ptr<DescriptorSetLayout const> &layout, uint32_t variable_count,
+                                  vvl::DescriptorSet::StateTracker *state_data)
+    : StateObject(handle, kVulkanObjectTypeDescriptorSet),
       some_update_(false),
       pool_state_(pool_state),
       layout_(layout),
@@ -499,7 +535,7 @@ void vvl::DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, cons
     push_descriptor_set_writes.clear();
     push_descriptor_set_writes.reserve(static_cast<std::size_t>(write_count));
     for (uint32_t i = 0; i < write_count; i++) {
-        push_descriptor_set_writes.push_back(safe_VkWriteDescriptorSet(&write_descs[i]));
+        push_descriptor_set_writes.push_back(vku::safe_VkWriteDescriptorSet(&write_descs[i]));
     }
 }
 
@@ -577,9 +613,8 @@ void vvl::DescriptorSet::UpdateDrawState(ValidationStateTracker *device_data, vv
     for (const auto &binding_req_pair : binding_req_map) {
         auto *binding = GetBinding(binding_req_pair.first);
         assert(binding);
-
         // core validation doesn't handle descriptor indexing, that is only done by GPU-AV
-        if (SkipBinding(*binding)) {
+        if (SkipBinding(*binding, binding_req_pair.second.variable->is_dynamic_accessed)) {
             continue;
         }
         switch (binding->descriptor_class) {
@@ -649,6 +684,28 @@ void vvl::SamplerDescriptor::CopyUpdate(DescriptorSet &set_state, const Validati
     }
 }
 
+VkSampler vvl::SamplerDescriptor::GetSampler() const { return sampler_state_ ? sampler_state_->VkHandle() : VK_NULL_HANDLE; }
+
+void vvl::SamplerDescriptor::SetSamplerState(std::shared_ptr<vvl::Sampler> &&state) {
+    sampler_state_ = std::move(state);
+    // currently this method is only used to initialize immutable samplers during DescriptorSet creation
+    immutable_ = true;
+}
+
+bool vvl::SamplerDescriptor::AddParent(StateObject *state_object) {
+    bool result = false;
+    if (sampler_state_) {
+        result = sampler_state_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::SamplerDescriptor::RemoveParent(StateObject *state_object) {
+    if (sampler_state_) {
+        sampler_state_->RemoveParent(state_object);
+    }
+}
+bool vvl::SamplerDescriptor::Invalid() const { return !sampler_state_ || sampler_state_->Invalid(); }
+
 void vvl::ImageSamplerDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                           const VkWriteDescriptorSet &update, const uint32_t index,
                                                           bool is_bindless) {
@@ -676,6 +733,32 @@ void vvl::ImageSamplerDescriptor::CopyUpdate(DescriptorSet &set_state, const Val
         ReplaceStatePtr(set_state, sampler_state_, image_src.sampler_state_, is_bindless);
     }
     ImageDescriptor::CopyUpdate(set_state, dev_data, src, is_bindless, src_type);
+}
+
+VkSampler vvl::ImageSamplerDescriptor::GetSampler() const { return sampler_state_ ? sampler_state_->VkHandle() : VK_NULL_HANDLE; }
+
+void vvl::ImageSamplerDescriptor::SetSamplerState(std::shared_ptr<vvl::Sampler> &&state) {
+    sampler_state_ = std::move(state);
+    // currently this method is only used to initialize immutable samplers during DescriptorSet creation
+    immutable_ = true;
+}
+
+bool vvl::ImageSamplerDescriptor::AddParent(StateObject *state_object) {
+    bool result = ImageDescriptor::AddParent(state_object);
+    if (sampler_state_) {
+        result |= sampler_state_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::ImageSamplerDescriptor::RemoveParent(StateObject *state_object) {
+    ImageDescriptor::RemoveParent(state_object);
+    if (sampler_state_) {
+        sampler_state_->RemoveParent(state_object);
+    }
+}
+
+bool vvl::ImageSamplerDescriptor::Invalid() const {
+    return ImageDescriptor::Invalid() || !sampler_state_ || sampler_state_->Invalid();
 }
 
 void vvl::ImageDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
@@ -711,6 +794,35 @@ void vvl::ImageDescriptor::UpdateDrawState(ValidationStateTracker *dev_data, vvl
     }
 }
 
+VkImageView vvl::ImageDescriptor::GetImageView() const {
+    return image_view_state_ ? image_view_state_->VkHandle() : VK_NULL_HANDLE;
+}
+
+bool vvl::ImageDescriptor::AddParent(StateObject *state_object) {
+    bool result = false;
+    if (image_view_state_) {
+        result = image_view_state_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::ImageDescriptor::RemoveParent(StateObject *state_object) {
+    if (image_view_state_) {
+        image_view_state_->RemoveParent(state_object);
+    }
+}
+void vvl::ImageDescriptor::InvalidateNode(const std::shared_ptr<StateObject> &invalid_node, bool unlink) {
+    if (invalid_node == image_view_state_) {
+        known_valid_view_ = false;
+        if (unlink) {
+            image_view_state_.reset();
+        }
+    }
+}
+
+bool vvl::ImageDescriptor::Invalid() const { return !known_valid_view_ && ComputeInvalid(); }
+bool vvl::ImageDescriptor::ComputeInvalid() const { return !image_view_state_ || image_view_state_->Invalid(); }
+void vvl::ImageDescriptor::UpdateKnownValidView(bool is_bindless) { known_valid_view_ = !is_bindless && !ComputeInvalid(); }
+
 void vvl::BufferDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                     const VkWriteDescriptorSet &update, const uint32_t index, bool is_bindless) {
     const auto &buffer_info = update.pBufferInfo[index];
@@ -735,6 +847,22 @@ void vvl::BufferDescriptor::CopyUpdate(DescriptorSet &set_state, const Validatio
     ReplaceStatePtr(set_state, buffer_state_, buff_desc.buffer_state_, is_bindless);
 }
 
+VkBuffer vvl::BufferDescriptor::GetBuffer() const { return buffer_state_ ? buffer_state_->VkHandle() : VK_NULL_HANDLE; }
+
+bool vvl::BufferDescriptor::AddParent(StateObject *state_object) {
+    bool result = false;
+    if (buffer_state_) {
+        result = buffer_state_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::BufferDescriptor::RemoveParent(StateObject *state_object) {
+    if (buffer_state_) {
+        buffer_state_->RemoveParent(state_object);
+    }
+}
+bool vvl::BufferDescriptor::Invalid() const { return !buffer_state_ || buffer_state_->Invalid(); }
+
 void vvl::TexelDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                    const VkWriteDescriptorSet &update, const uint32_t index, bool is_bindless) {
     auto buffer_view = dev_data.GetConstCastShared<vvl::BufferView>(update.pTexelBufferView[index]);
@@ -750,6 +878,25 @@ void vvl::TexelDescriptor::CopyUpdate(DescriptorSet &set_state, const Validation
     }
     ReplaceStatePtr(set_state, buffer_view_state_, static_cast<const TexelDescriptor &>(src).buffer_view_state_, is_bindless);
 }
+
+VkBufferView vvl::TexelDescriptor::GetBufferView() const {
+    return buffer_view_state_ ? buffer_view_state_->VkHandle() : VK_NULL_HANDLE;
+}
+
+bool vvl::TexelDescriptor::AddParent(StateObject *state_object) {
+    bool result = false;
+    if (buffer_view_state_) {
+        result = buffer_view_state_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::TexelDescriptor::RemoveParent(StateObject *state_object) {
+    if (buffer_view_state_) {
+        buffer_view_state_->RemoveParent(state_object);
+    }
+}
+
+bool vvl::TexelDescriptor::Invalid() const { return !buffer_view_state_ || buffer_view_state_->Invalid(); }
 
 void vvl::AccelerationStructureDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                                    const VkWriteDescriptorSet &update, const uint32_t index,
@@ -791,6 +938,32 @@ void vvl::AccelerationStructureDescriptor::CopyUpdate(DescriptorSet &set_state, 
     } else {
         acc_nv_ = acc_desc.acc_nv_;
         ReplaceStatePtr(set_state, acc_state_nv_, dev_data.GetConstCastShared<vvl::AccelerationStructureNV>(acc_nv_), is_bindless);
+    }
+}
+
+bool vvl::AccelerationStructureDescriptor::AddParent(StateObject *state_object) {
+    bool result = false;
+    if (acc_state_) {
+        result |= acc_state_->AddParent(state_object);
+    }
+    if (acc_state_nv_) {
+        result |= acc_state_nv_->AddParent(state_object);
+    }
+    return result;
+}
+void vvl::AccelerationStructureDescriptor::RemoveParent(StateObject *state_object) {
+    if (acc_state_) {
+        acc_state_->RemoveParent(state_object);
+    }
+    if (acc_state_nv_) {
+        acc_state_nv_->RemoveParent(state_object);
+    }
+}
+bool vvl::AccelerationStructureDescriptor::Invalid() const {
+    if (is_khr_) {
+        return !acc_state_ || acc_state_->Invalid();
+    } else {
+        return !acc_state_nv_ || acc_state_nv_->Invalid();
     }
 }
 
@@ -839,7 +1012,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const Validat
             range_ = buffer_info.range;
             const auto buffer_state = dev_data.GetConstCastShared<vvl::Buffer>(update.pBufferInfo->buffer);
             if (buffer_state) {
-                buffer_size = buffer_state->createInfo.size;
+                buffer_size = buffer_state->create_info.size;
             }
             ReplaceStatePtr(set_state, buffer_state_, buffer_state, is_bindless);
             break;
@@ -847,7 +1020,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const Validat
         case DescriptorClass::TexelBuffer: {
             const auto buffer_view = dev_data.GetConstCastShared<vvl::BufferView>(update.pTexelBufferView[index]);
             if (buffer_view) {
-                buffer_size = buffer_view->buffer_state->createInfo.size;
+                buffer_size = buffer_view->buffer_state->create_info.size;
             }
             ReplaceStatePtr(set_state, buffer_view_state_, buffer_view, is_bindless);
             break;
@@ -962,6 +1135,36 @@ void vvl::MutableDescriptor::CopyUpdate(DescriptorSet &set_state, const Validati
         src_size = mutable_src.GetBufferSize();
     }
     SetDescriptorType(src_type, src_size);
+}
+
+void vvl::MutableDescriptor::SetDescriptorType(VkDescriptorType type, VkDeviceSize buffer_size) {
+    active_descriptor_type_ = type;
+    buffer_size_ = buffer_size;
+}
+void vvl::MutableDescriptor::SetDescriptorType(VkDescriptorType src_type, const Descriptor *src) {
+    active_descriptor_type_ = src_type;
+    if (src->GetClass() == vvl::DescriptorClass::GeneralBuffer) {
+        auto buffer = static_cast<const vvl::BufferDescriptor *>(src)->GetBuffer();
+        if (buffer == VK_NULL_HANDLE) {
+            buffer_size_ = vvl::kU32Max;
+        } else {
+            auto buffer_state = static_cast<const vvl::BufferDescriptor *>(src)->GetBufferState();
+            buffer_size_ = static_cast<uint32_t>(buffer_state->create_info.size);
+        }
+    } else if (src->GetClass() == vvl::DescriptorClass::TexelBuffer) {
+        auto buffer_view = static_cast<const vvl::TexelDescriptor *>(src)->GetBufferView();
+        if (buffer_view == VK_NULL_HANDLE) {
+            buffer_size_ = vvl::kU32Max;
+        } else {
+            auto buffer_view_state = static_cast<const vvl::TexelDescriptor *>(src)->GetBufferViewState();
+            buffer_size_ = static_cast<uint32_t>(buffer_view_state->buffer_state->create_info.size);
+        }
+    } else if (src->GetClass() == vvl::DescriptorClass::Mutable) {
+        auto descriptor = static_cast<const vvl::MutableDescriptor *>(src);
+        buffer_size_ = descriptor->GetBufferSize();
+    } else {
+        buffer_size_ = 0;
+    }
 }
 
 void vvl::MutableDescriptor::UpdateDrawState(ValidationStateTracker *dev_data, vvl::CommandBuffer *cb_state) {

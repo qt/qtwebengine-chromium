@@ -52,10 +52,12 @@
 #include "third_party/blink/renderer/core/css/style_image_cache.h"
 #include "third_party/blink/renderer/core/css/style_invalidation_root.h"
 #include "third_party/blink/renderer/core/css/style_recalc_root.h"
+#include "third_party/blink/renderer/core/css/try_value_flips.h"
 #include "third_party/blink/renderer/core/css/vision_deficiency.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/layout/geometry/axis.h"
+#include "third_party/blink/renderer/core/style/position_try_options.h"
 #include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/fonts/font_selector_client.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
@@ -73,6 +75,7 @@ class TextPosition;
 
 namespace blink {
 
+class AnchorEvaluator;
 class ComputedStyleBuilder;
 class CounterStyle;
 class CounterStyleMap;
@@ -87,7 +90,6 @@ class ElementRuleCollector;
 class Font;
 class FontSelector;
 class HTMLBodyElement;
-class HTMLSelectElement;
 class MediaQueryEvaluator;
 class Node;
 class ReferenceFilterOperation;
@@ -345,6 +347,12 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   void ResetCSSFeatureFlags(const RuleFeatureSet&);
 
+  bool CountersChanged() const { return counters_changed_; }
+  void MarkCountersDirty() { counters_changed_ = true; }
+  void MarkCountersClean() { counters_changed_ = false; }
+  // Traverse all elements and recalculate counters values.
+  void UpdateCounters();
+
   void ShadowRootInsertedToDocument(ShadowRoot&);
   void ShadowRootRemovedFromDocument(ShadowRoot*);
   void ResetAuthorStyle(TreeScope&);
@@ -490,6 +498,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
       SelectorFilter&,
       StyleScopeFrame&,
       const HeapHashSet<Member<RuleSet>>&,
+      unsigned changed_rule_flags,
       InvalidationScope = kInvalidateCurrentScope);
   void ApplyRuleSetInvalidationForSubtree(
       TreeScope&,
@@ -497,6 +506,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
       SelectorFilter&,
       StyleScopeFrame& parent_style_scope_frame,
       const HeapHashSet<Member<RuleSet>>&,
+      unsigned changed_rule_flags,
       InvalidationScope,
       bool invalidate_slotted,
       bool invalidate_part);
@@ -562,13 +572,12 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void MarkCounterStylesNeedUpdate();
   void UpdateCounterStyles();
 
-  // Set a flag to invalidate elements using position-fallback on next lifecycle
-  // update when @position-fallback rules are added or removed.
-  void MarkPositionFallbackStylesDirty();
+  // Set a flag to invalidate elements using position-try-options on next
+  // lifecycle update when @position-try rules are added or removed.
+  void MarkPositionTryStylesDirty();
 
-  // Mark elements affected by @position-fallback rules for style and layout
-  // update.
-  void InvalidatePositionFallbackStyles();
+  // Mark elements affected by @position-try rules for style and layout update.
+  void InvalidatePositionTryStyles();
 
   StyleRuleKeyframes* KeyframeStylesForAnimation(
       const AtomicString& animation_name);
@@ -612,10 +621,15 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // after all.
   void UpdateStyleForNonEligibleContainer(Element& container);
   // Updates the style of `element`, and descendants if needed.
-  // The provided `try_set` represents the declaration block from a @try rule.
-  void UpdateStyleForPositionFallback(Element& element,
-                                      const CSSPropertyValueSet* try_set);
-  StyleRulePositionFallback* GetPositionFallbackRule(const ScopedCSSName&);
+  // The provided `try_set` represents the declaration block from
+  // a @position-try rule. The specified TryTacticList will cause
+  // CSSFlipRevertValues to appear in the try-tactics layer (see
+  // OutOfFlowData::try_tactics_set_).
+  void UpdateStyleForOutOfFlow(Element& element,
+                               const CSSPropertyValueSet* try_set,
+                               const TryTacticList&,
+                               AnchorEvaluator*);
+  StyleRulePositionTry* GetPositionTryRule(const ScopedCSSName&);
   void RecalcStyle();
 
   void ClearEnsuredDescendantStyles(Element& element);
@@ -626,20 +640,24 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   bool InContainerQueryStyleRecalc() const {
     return in_container_query_style_recalc_;
   }
-  bool InPositionFallbackStyleRecalc() const {
-    return in_position_fallback_style_recalc_;
+  bool InPositionTryStyleRecalc() const {
+    return in_position_try_style_recalc_;
   }
-  // If we are in a container query style recalc, return the container element,
-  // otherwise return nullptr.
-  Element* GetContainerForContainerStyleRecalc() const {
-    // The To<Element>() should not fail because the style_recalc_root_ is set
-    // to the container element when doing a container query style recalc.
-    if (InContainerQueryStyleRecalc()) {
+  // Get the root element of an interleaving recalc, if any. This function will
+  // return nullptr if the interleaving root is a PseudoElement, because such
+  // elements can't be recalc roots.
+  //
+  // See StyleEngine::UpdateStyleAndLayoutTreeForContainer.
+  // See StyleEngine::UpdateStyleForOutOfFlow.
+  Element* GetInterleavingRecalcRoot() const {
+    if (InContainerQueryStyleRecalc() || InPositionTryStyleRecalc()) {
+      // During interleaved style recalc, the recalc root is either set
+      // to the interleaving root (always an Element), or nullptr (if it's
+      // a PseudoElement).
       return To<Element>(style_recalc_root_.GetRootNode());
     }
     return nullptr;
   }
-  void ChangeRenderingForHTMLSelect(HTMLSelectElement& select);
   void DetachedFromParent(LayoutObject* parent) {
     // This method will be called for every LayoutObject while detaching a
     // subtree. Since the trees are detached bottom up, the last parent passed
@@ -702,6 +720,11 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   }
 
  private:
+  void UpdateCounters(const Element& element,
+                      CountersAttachmentContext& context);
+  void UpdateLayoutCounters(const Element& element,
+                            const LayoutObject& layout_object,
+                            CountersAttachmentContext& context);
   // FontSelectorClient implementation.
   void FontsNeedUpdate(FontSelector*, FontInvalidationReason) override;
 
@@ -774,8 +797,10 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
       SelectorFilter& selector_filter,
       StyleScopeFrame& style_scope_frame,
       const HeapHashSet<Member<RuleSet>>& rule_sets,
+      unsigned changed_rule_flags,
       bool is_shadow_host);
-  void InvalidateSlottedElements(HTMLSlotElement&);
+  void InvalidateSlottedElements(HTMLSlotElement&,
+                                 const StyleChangeReasonForTracing&);
   void InvalidateForRuleSetChanges(
       TreeScope& tree_scope,
       const HeapHashSet<Member<RuleSet>>& changed_rule_sets,
@@ -835,10 +860,9 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   void RecalcStyle(StyleRecalcChange, const StyleRecalcContext&);
   void RecalcStyleForContainer(Element& container, StyleRecalcChange change);
   bool RecalcHighlightStylesForContainer(Element& container);
-  void RecalcPositionFallbackStyleForPseudoElement(
-      PseudoElement& pseudo_element,
-      const StyleRecalcChange,
-      const StyleRecalcContext&);
+  void RecalcPositionTryStyleForPseudoElement(PseudoElement& pseudo_element,
+                                              const StyleRecalcChange,
+                                              const StyleRecalcContext&);
 
   void RecalcTransitionPseudoStyle();
 
@@ -911,6 +935,10 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
 
   String preferred_stylesheet_set_name_;
 
+  // Flag to track counter changes in the document, indicating
+  // the need to call UpdateCounters.
+  bool counters_changed_{false};
+
   bool uses_root_font_relative_units_{false};
   bool uses_glyph_relative_units_{false};
   bool uses_line_height_units_{false};
@@ -929,7 +957,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   int64_t skipped_container_recalc_{0};
   bool in_layout_tree_rebuild_{false};
   bool in_container_query_style_recalc_{false};
-  bool in_position_fallback_style_recalc_{false};
+  bool in_position_try_style_recalc_{false};
   bool in_dom_removal_{false};
   bool in_detach_scope_{false};
   bool in_apply_animation_update_{false};
@@ -937,7 +965,7 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   bool viewport_style_dirty_{false};
   bool fonts_need_update_{false};
   bool counter_styles_need_update_{false};
-  bool position_fallback_styles_dirty_{false};
+  bool position_try_styles_dirty_{false};
 
   // Set to true if we allow marking style dirty from style recalc. Ideally, we
   // should get rid of this, but we keep track of where we allow it with
@@ -1070,6 +1098,10 @@ class CORE_EXPORT StyleEngine final : public GarbageCollected<StyleEngine>,
   // Cached because it can be expensive to compute anew for each element.
   // You must call UpdateViewportSize() once before resolving style.
   CSSToLengthConversionData::ViewportSize viewport_size_;
+
+  // Stores various "flip sets" used to implement <try-tactic> from
+  // CSS Anchor Positioning.
+  TryValueFlips try_value_flips_;
 };
 
 void PossiblyScheduleNthPseudoInvalidations(Node& node);

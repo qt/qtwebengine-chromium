@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2021-2023 The Khronos Group Inc.
+# Copyright (c) 2021-2024 The Khronos Group Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import os
 import re
 import json
 from generators.base_generator import BaseGenerator
+from generators.generator_utils import IsNonVulkanSprivCapability
 
 #
 # Generate SPIR-V grammar helper for SPIR-V opcodes, enums, etc
@@ -32,8 +33,6 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
         self.opnames = []
         self.atomicsOps = []
         self.groupOps = []
-        self.debugOps = []
-        self.annotationOps = []
         self.imageGatherOps = []
         self.imageSampleOps = []
         self.imageFetchOps = []
@@ -83,18 +82,6 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             instructions = data['instructions']
             operandKinds = data['operand_kinds']
 
-            # Build list from json of all capabilities that are only for kernel
-            # This needs to be done before loop instructions
-            kernelCapability = ['Kernel']
-            # some SPV_INTEL_* are not allowed in Vulkan and are just adding unused opcodes
-            # TODO bring in vk.xml to cross check valid extensions/capabilities instead of starting another hardcoded list
-            kernelCapability.append('ArbitraryPrecisionIntegersINTEL')
-            kernelCapability.append('ArbitraryPrecisionFixedPointINTEL')
-            kernelCapability.append('ArbitraryPrecisionFloatingPointINTEL')
-            kernelCapability.append('SubgroupAvcMotionEstimationINTEL')
-            kernelCapability.append('SubgroupAvcMotionEstimationIntraINTEL')
-            kernelCapability.append('SubgroupAvcMotionEstimationChromaINTEL')
-
             for operandKind in operandKinds:
                 kind = operandKind['kind']
                 category = operandKind['category']
@@ -110,22 +97,20 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                 elif category == 'BitEnum':
                     self.kindBitEnum.append(kind)
 
-                if kind == 'Capability':
-                    for enum in operandKind['enumerants']:
-                        if 'capabilities' in enum and len(enum['capabilities']) == 1 and enum['capabilities'][0] == 'Kernel':
-                            kernelCapability.append(enum['enumerant'])
-                elif kind == 'ImageOperands':
+                if kind == 'ImageOperands':
                     values = [] # prevent alias from being duplicatd
                     for enum in operandKind['enumerants']:
                         count = 0  if 'parameters' not in enum else len(enum['parameters'])
                         if enum['value'] not in values:
                             self.imageOperandsParamCount[count].append(enum['enumerant'])
                             values.append(enum['value'])
-                self.addToStringList(operandKind, 'StorageClass', self.storageClassList)
-                self.addToStringList(operandKind, 'ExecutionModel', self.executionModelList)
-                self.addToStringList(operandKind, 'ExecutionMode', self.executionModeList)
-                self.addToStringList(operandKind, 'Decoration', self.decorationList)
-                self.addToStringList(operandKind, 'BuiltIn', self.builtInList)
+                # Use EXT/KHR Alias names where possible
+                # Core issue is SPIR-V grammar sometimes puts alias both before/after the promotoed name
+                self.addToStringList(operandKind, 'StorageClass', self.storageClassList, ['CallableDataNV', 'IncomingCallableDataNV', 'RayPayloadNV', 'HitAttributeNV', 'IncomingRayPayloadNV', 'ShaderRecordBufferNV'])
+                self.addToStringList(operandKind, 'ExecutionModel', self.executionModelList, ['RayGenerationNV', 'IntersectionNV', 'AnyHitNV', 'ClosestHitNV', 'MissNV', 'CallableNV'])
+                self.addToStringList(operandKind, 'ExecutionMode', self.executionModeList, ['OutputLinesNV', 'OutputPrimitivesNV', 'OutputTrianglesNV'])
+                self.addToStringList(operandKind, 'Decoration', self.decorationList, ['PerPrimitiveNV'])
+                self.addToStringList(operandKind, 'BuiltIn', self.builtInList, ['BaryCoordNV', 'BaryCoordNoPerspNV', 'LaunchIdNV', 'LaunchSizeNV', 'WorldRayOriginNV', 'WorldRayDirectionNV', 'ObjectRayOriginNV', 'ObjectRayDirectionNV', 'RayTminNV', 'RayTmaxNV', 'InstanceCustomIndexNV', 'ObjectToWorldNV', 'WorldToObjectNV', 'HitKindNV', 'IncomingRayFlagsNV'])
                 self.addToStringList(operandKind, 'Dim', self.dimList)
                 self.addToStringList(operandKind, 'CooperativeMatrixOperands', self.cooperativeMatrixList, ['NoneKHR'])
 
@@ -155,7 +140,7 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                 if 'capabilities' in instruction:
                     notSupported = True
                     for capability in instruction['capabilities']:
-                        if capability not in kernelCapability:
+                        if not IsNonVulkanSprivCapability(capability):
                             notSupported = False
                             break
                     if notSupported:
@@ -177,10 +162,6 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                     self.atomicsOps.append(opname)
                 if instruction['class'] == 'Non-Uniform':
                     self.groupOps.append(opname)
-                if instruction['class'] == 'Debug':
-                    self.debugOps.append(opname)
-                if instruction['class'] == 'Annotation':
-                    self.annotationOps.append(opname)
                 if re.search("OpImage.*Gather", opname) is not None:
                     self.imageGatherOps.append(opname)
                 if re.search("OpImageFetch.*", opname) is not None:
@@ -206,22 +187,14 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
 
                             operands = self.opcodes[opcode]['operands']
                             if kind in self.kindId:
-                                if opname in ['OpLoopMerge', 'OpSelectionMerge', 'OpBranch']:
-                                    operands.append('Label')
-                                elif opname == 'OpBranchConditional' and 'Condition' not in operand['name']:
-                                    operands.append('Label')
-                                else:
-                                    operands.append('Id')
+                                operands.append('Id')
                             elif kind in self.kindLiteral:
                                 if kind == 'LiteralString':
                                     operands.append('LiteralString')
                                 else:
                                     operands.append('Literal')
                             elif kind in self.kindComposite:
-                                if opname == 'OpSwitch':
-                                    operands.append('Label')
-                                else:
-                                    operands.append('Composite')
+                                operands.append('Composite')
                             elif kind in self.kindValueEnum:
                                 operands.append('ValueEnum')
                             elif kind in self.kindBitEnum:
@@ -262,13 +235,26 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
                     elif sampledImageRef != 0:
                         self.imageAccessOperand[sampledImageRef].append(opname)
 
+                # We want to manually mark "Label" if an ID is used for Control Flow
+                # It is easier to manage the few cases here then complex the operand logic above
+                if opname == 'OpLoopMerge':
+                    self.opcodes[opcode]['operands'] = ['Label', 'Label', 'BitEnum']
+                if opname == 'OpSelectionMerge':
+                    self.opcodes[opcode]['operands'] = ['Label', 'BitEnum']
+                if opname == 'OpBranch':
+                    self.opcodes[opcode]['operands'] = ['Label']
+                if opname == 'OpBranchConditional':
+                    self.opcodes[opcode]['operands'] = ['Id', 'Label', 'Label', 'Literal']
+                if opname == 'OpSwitch':
+                    self.opcodes[opcode]['operands'] = ['Id', 'Label', 'Label']
+
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
             // See {os.path.basename(__file__)} for modifications
 
             /***************************************************************************
             *
-            * Copyright (c) 2021-2023 The Khronos Group Inc.
+            * Copyright (c) 2021-2024 The Khronos Group Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -341,8 +327,6 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
         # \n is not allowed in f-string until 3.12
         atomicCase = "\n".join([f"        case spv::{f}:" for f in self.atomicsOps])
         groupCase = "\n".join([f"        case spv::{f}:" for f in self.groupOps])
-        debugCase = "\n".join([f"        case spv::{f}:" for f in self.debugOps])
-        annotationCase = "\n".join([f"        case spv::{f}:" for f in self.annotationOps])
         out.append(f'''
             // Any non supported operation will be covered with other VUs
             static constexpr bool AtomicOperation(uint32_t opcode) {{
@@ -358,24 +342,6 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
             static constexpr bool GroupOperation(uint32_t opcode) {{
                 switch (opcode) {{
             {groupCase}
-                        return true;
-                    default:
-                        return false;
-                }}
-            }}
-
-           static constexpr  bool DebugOperation(uint32_t opcode) {{
-                switch (opcode) {{
-            {debugCase}
-                        return true;
-                    default:
-                        return false;
-                }}
-            }}
-
-            static constexpr bool AnnotationOperation(uint32_t opcode) {{
-                switch (opcode) {{
-            {annotationCase}
                         return true;
                     default:
                         return false;
@@ -536,6 +502,7 @@ class SpirvGrammarHelperOutputGenerator(BaseGenerator):
 
         out.append('''
             enum class OperandKind {
+                Invalid = 0,
                 Id,
                 Label, // Id but for Control Flow
                 Literal,

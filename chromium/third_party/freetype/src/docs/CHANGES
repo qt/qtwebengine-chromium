@@ -1,6 +1,8 @@
-CHANGES BETWEEN 2.13.2 and 2.13.3 (202Y-Mmm-DD)
+CHANGES BETWEEN 2.13.2 and 2.13.3 (2024-Mmm-DD)
 
   I. IMPORTANT BUG FIXES
+
+  - Rare double-free crashes in the cache subsystem have been fixed.
 
   - Excessive stack allocation in the autohinter has been fixed.
 
@@ -10,6 +12,16 @@ CHANGES BETWEEN 2.13.2 and 2.13.3 (202Y-Mmm-DD)
   - The B/W rasterizer  has  received a major upkeep  that resulted in
     large performance improvement.  The rendering speed  has increased
     and even doubled for very complex glyphs.
+
+  - If the new configuration option `TT_CONFIG_OPTION_GPOS_KERNING` is
+    defined,  `FT_Get_Kerning`  understands rudimentary  GPOS  kerning
+    (for TrueType fonts  only).  This is not enabled  by default since
+    its usage  is very  limited, mainly  for legacy  applications that
+    have to support TrueType fonts automatically converted from 'kern'
+    tables to GPOS kerning.  If you need proper (GPOS) kerning support
+    please use a higher-level library like HarfBuzz.
+
+    Code contributed by David Saltzman <davidbsaltzman@gmail.com>.
 
 
 ======================================================================
@@ -5684,7 +5696,7 @@ Extensions support:
 
 ------------------------------------------------------------------------
 
-Copyright (C) 2000-2023 by
+Copyright (C) 2000-2024 by
 David Turner, Robert Wilhelm, and Werner Lemberg.
 
 This  file  is  part  of the  FreeType  project, and may  only be  used,

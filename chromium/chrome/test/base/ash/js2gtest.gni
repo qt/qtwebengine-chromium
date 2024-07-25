@@ -107,8 +107,15 @@ template("js2gtest") {
       "./" + rebase_path(v8_shell_path, root_build_dir),
     ]
     args += rebase_path(js2gtest_js_input_libraries, root_build_dir)
+
+    if (defined(invoker.parameterized)) {
+      parameterized = invoker.parameterized
+    } else {
+      parameterized = "false"
+    }
     args += [
       invoker.test_type,
+      parameterized,
       "{{source}}",
       rebase_path("//", root_build_dir),  # Path to source root.
       gen_source_pattern,
@@ -125,6 +132,9 @@ template("js2gtest") {
   if (defined(invoker.extra_js_files)) {
     copy_target_name = target_name + "_copy"
     copy(copy_target_name) {
+      if (defined(invoker.deps)) {
+        deps = invoker.deps
+      }
       visibility = [ ":$source_set_name" ]
       sources = invoker.extra_js_files
       outputs = [ copied_source_pattern ]

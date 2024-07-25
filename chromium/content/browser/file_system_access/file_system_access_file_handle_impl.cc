@@ -37,10 +37,10 @@
 #include "storage/common/file_system/file_system_types.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom.h"
 #include "third_party/blink/public/mojom/blob/serialized_blob.mojom.h"
-#include "third_party/blink/public/mojom/file_system_access/file_system_access_capacity_allocation_host.mojom.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_cloud_identifier.mojom.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_error.mojom.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_file_handle.mojom.h"
+#include "third_party/blink/public/mojom/file_system_access/file_system_access_file_modification_host.mojom.h"
 #include "third_party/blink/public/mojom/file_system_access/file_system_access_transfer_token.mojom.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -400,12 +400,12 @@ void FileSystemAccessFileHandleImpl::DidOpenFileAndGetLength(
   }
   DCHECK_GE(length_or_error.value(), 0);
 
-  mojo::PendingRemote<blink::mojom::FileSystemAccessCapacityAllocationHost>
-      capacity_allocation_host_remote;
+  mojo::PendingRemote<blink::mojom::FileSystemAccessFileModificationHost>
+      file_modification_host_remote;
   mojo::PendingRemote<blink::mojom::FileSystemAccessAccessHandleHost>
       access_handle_host_remote = manager()->CreateAccessHandleHost(
           url(), mojo::NullReceiver(),
-          capacity_allocation_host_remote.InitWithNewPipeAndPassReceiver(),
+          file_modification_host_remote.InitWithNewPipeAndPassReceiver(),
           length_or_error.value(), std::move(lock),
           std::move(on_close_callback));
 
@@ -414,7 +414,7 @@ void FileSystemAccessFileHandleImpl::DidOpenFileAndGetLength(
       blink::mojom::FileSystemAccessAccessHandleFile::NewRegularFile(
           blink::mojom::FileSystemAccessRegularFile::New(
               std::move(file), length_or_error.value(),
-              std::move(capacity_allocation_host_remote))),
+              std::move(file_modification_host_remote))),
       std::move(access_handle_host_remote));
 }
 
@@ -475,7 +475,7 @@ void FileSystemAccessFileHandleImpl::DidGetMetaDataForBlob(
   base::FilePath::StringType extension = url().path().Extension();
   if (!extension.empty()) {
     std::string mime_type;
-    // TODO(https://crbug.com/962306): Using GetMimeTypeFromExtension and
+    // TODO(crbug.com/41458368): Using GetMimeTypeFromExtension and
     // including platform defined mime type mappings might be nice/make sense,
     // however that method can potentially block and thus can't be called from
     // the IO thread.
@@ -484,7 +484,7 @@ void FileSystemAccessFileHandleImpl::DidGetMetaDataForBlob(
       content_type = std::move(mime_type);
     }
   }
-  // TODO(https://crbug.com/962306): Consider some kind of fallback type when
+  // TODO(crbug.com/41458368): Consider some kind of fallback type when
   // the above mime type detection fails.
 
   mojo::PendingRemote<blink::mojom::Blob> blob_remote;
@@ -515,7 +515,7 @@ void FileSystemAccessFileHandleImpl::CreateFileWriterImpl(
   DCHECK_EQ(GetWritePermissionStatus(),
             blink::mojom::PermissionStatus::GRANTED);
 
-  // TODO(crbug.com/1241401): Expand this check to all backends.
+  // TODO(crbug.com/40194651): Expand this check to all backends.
   if (url().type() == storage::kFileSystemTypeLocal) {
     base::ThreadPool::PostTaskAndReplyWithResult(
         FROM_HERE, {base::MayBlock()},
@@ -648,7 +648,7 @@ void FileSystemAccessFileHandleImpl::DidTakeSwapLock(
     // existence check and when file contents are copied to the new file.
     // However, since we've acquired an exclusive lock to the swap file, this
     // is only possible if the file is created external to this API.
-    // TODO(https://crbug.com/1382215): Consider requiring a lock to create an
+    // TODO(crbug.com/40245515): Consider requiring a lock to create an
     // empty file, e.g. parent.getFileHandle(swapFileName, {create: true}).
     manager()->DoFileSystemOperation(
         FROM_HERE, &FileSystemOperationRunner::FileExists,
@@ -692,7 +692,7 @@ void FileSystemAccessFileHandleImpl::DidCheckSwapFileExists(
   }
 
 #if BUILDFLAG(IS_MAC)
-  // TODO(https://crbug.com/1413443): Expand use of copy-on-write swap files
+  // TODO(crbug.com/40255657): Expand use of copy-on-write swap files
   // to other file systems which support it.
   if (CanUseCowSwapFile()) {
     CreateClonedSwapFile(count, swap_url, auto_close, std::move(lock),

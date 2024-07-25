@@ -6,19 +6,19 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <random>
+#include <string_view>
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/run_loop.h"
-#include "base/strings/string_piece.h"
 #include "base/task/single_thread_task_executor.h"
 #include "base/time/time.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/video_frame.h"
 #include "media/muxers/live_webm_muxer_delegate.h"
 #include "media/muxers/webm_muxer.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 // Min and max number of encodec video/audio packets to send in the WebmMuxer.
 const int kMinNumIterations = 1;
@@ -43,7 +43,7 @@ struct Env {
 };
 Env* env = new Env();
 
-void OnWriteCallback(base::StringPiece data) {}
+void OnWriteCallback(std::string_view data) {}
 
 // Entry point for LibFuzzer.
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
@@ -64,7 +64,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
                            input_type.has_audio,
                            std::make_unique<media::LiveWebmMuxerDelegate>(
                                base::BindRepeating(&OnWriteCallback)),
-                           absl::nullopt);
+                           std::nullopt);
     base::RunLoop().RunUntilIdle();
 
     int num_iterations = kMinNumIterations + rng() % kMaxNumIterations;
@@ -81,7 +81,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         auto parameters = media::Muxer::VideoParameters(*video_frame);
         parameters.codec = video_codec;
         muxer.PutFrame(
-            media::Muxer::EncodedFrame{parameters, absl::nullopt, str,
+            media::Muxer::EncodedFrame{parameters, std::nullopt, str,
                                        has_alpha_frame ? str : std::string(),
                                        is_key_frame != 0},
             base::TimeDelta() + base::Milliseconds(index));
@@ -98,7 +98,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         const media::AudioParameters params(
             media::AudioParameters::AUDIO_PCM_LOW_LATENCY, layout, sample_rate,
             60 * sample_rate);
-        muxer.PutFrame(media::Muxer::EncodedFrame{params, absl::nullopt, str,
+        muxer.PutFrame(media::Muxer::EncodedFrame{params, std::nullopt, str,
                                                   std::string(), true},
                        base::TimeDelta() + base::Milliseconds(index));
         base::RunLoop().RunUntilIdle();

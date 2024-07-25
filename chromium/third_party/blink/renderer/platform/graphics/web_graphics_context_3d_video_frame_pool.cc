@@ -5,7 +5,9 @@
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
 
 #include "base/feature_list.h"
+#include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/client_shared_image.h"
@@ -18,9 +20,11 @@
 #include "media/renderers/video_frame_rgba_to_yuva_converter.h"
 #include "media/video/gpu_video_accelerator_factories.h"
 #include "media/video/renderable_gpu_memory_buffer_video_frame_pool.h"
+#include "perfetto/tracing/track_event_args.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/perfetto/include/perfetto/tracing/track.h"
 
 namespace blink {
 
@@ -56,8 +60,8 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
       return nullptr;
     }
     auto client_shared_image = sii->CreateSharedImage(
-        si_format, gpu_memory_buffer->GetSize(), color_space, surface_origin,
-        alpha_type, usage, "WebGraphicsContext3DVideoFramePool",
+        {si_format, gpu_memory_buffer->GetSize(), color_space, surface_origin,
+         alpha_type, usage, "WebGraphicsContext3DVideoFramePool"},
         gpu_memory_buffer->CloneHandle());
     CHECK(client_shared_image);
     sync_token = sii->GenVerifiedSyncToken();
@@ -75,9 +79,10 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
     auto* sii = SharedImageInterface();
     if (!sii || !gmb_manager_)
       return nullptr;
-    auto client_shared_image = sii->CreateSharedImage(
-        gpu_memory_buffer, gmb_manager_, plane, color_space, surface_origin,
-        alpha_type, usage, "WebGraphicsContext2DVideoFramePool");
+    auto client_shared_image =
+        sii->CreateSharedImage(gpu_memory_buffer, gmb_manager_, plane,
+                               {color_space, surface_origin, alpha_type, usage,
+                                "WebGraphicsContext2DVideoFramePool"});
     CHECK(client_shared_image);
     sync_token = sii->GenVerifiedSyncToken();
     return client_shared_image;
@@ -104,7 +109,7 @@ class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
 
   base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper>
       weak_context_provider_;
-  raw_ptr<gpu::GpuMemoryBufferManager, ExperimentalRenderer> gmb_manager_;
+  raw_ptr<gpu::GpuMemoryBufferManager> gmb_manager_;
 };
 
 }  // namespace
@@ -148,6 +153,10 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
     const gpu::MailboxHolder& src_mailbox_holder,
     const gfx::ColorSpace& dst_color_space,
     FrameReadyCallback callback) {
+  TRACE_EVENT("media", "CopyRGBATextureToVideoFrame");
+  int flow_id = trace_flow_seqno_.GetNext();
+  TRACE_EVENT_INSTANT("media", "CopyRGBATextureToVideoFrame",
+                      perfetto::Flow::ProcessScoped(flow_id));
   if (!weak_context_provider_)
     return false;
   auto* context_provider = weak_context_provider_->ContextProvider();
@@ -200,7 +209,7 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
   auto on_query_done_cb =
       [](scoped_refptr<media::VideoFrame> frame,
          base::WeakPtr<blink::WebGraphicsContext3DProviderWrapper> ctx_wrapper,
-         unsigned query_id, FrameReadyCallback callback) {
+         unsigned query_id, int flow_id, FrameReadyCallback callback) {
         if (ctx_wrapper) {
           if (auto* ctx_provider = ctx_wrapper->ContextProvider()) {
             if (auto* ri_provider = ctx_provider->RasterContextProvider()) {
@@ -209,6 +218,8 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
             }
           }
         }
+        TRACE_EVENT_INSTANT("media", "CopyRGBATextureToVideoFrame",
+                            perfetto::TerminatingFlow::ProcessScoped(flow_id));
         std::move(callback).Run(std::move(frame));
       };
 
@@ -217,7 +228,7 @@ bool WebGraphicsContext3DVideoFramePool::CopyRGBATextureToVideoFrame(
   context_support->SignalQuery(
       query_id,
       base::BindOnce(on_query_done_cb, dst_frame, weak_context_provider_,
-                     query_id, std::move(callback)));
+                     query_id, flow_id, std::move(callback)));
 
   return true;
 }

@@ -40,6 +40,7 @@ fnptr g_c_api_test_fnptr = NULL;  // Extern, so can't know it doesn't change.
 // Function to call from gtest harness to ensure linker resolution.
 int CheckPDFiumCApi() {
     // fpdf_annot.h
+    CHK(FPDFAnnot_AddFileAttachment);
     CHK(FPDFAnnot_AddInkStroke);
     CHK(FPDFAnnot_AppendAttachmentPoints);
     CHK(FPDFAnnot_AppendObject);
@@ -48,6 +49,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAnnot_GetAttachmentPoints);
     CHK(FPDFAnnot_GetBorder);
     CHK(FPDFAnnot_GetColor);
+    CHK(FPDFAnnot_GetFileAttachment);
     CHK(FPDFAnnot_GetFlags);
     CHK(FPDFAnnot_GetFocusableSubtypes);
     CHK(FPDFAnnot_GetFocusableSubtypesCount);
@@ -257,6 +259,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFTextObj_GetText);
     CHK(FPDFTextObj_GetTextRenderMode);
     CHK(FPDFTextObj_SetTextRenderMode);
+    CHK(FPDFText_LoadCidType2Font);
     CHK(FPDFText_LoadFont);
     CHK(FPDFText_LoadStandardFont);
     CHK(FPDFText_SetCharcodes);
@@ -369,6 +372,7 @@ int CheckPDFiumCApi() {
     CHK(FPDF_StructElement_Attr_GetNumberValue);
     CHK(FPDF_StructElement_Attr_GetStringValue);
     CHK(FPDF_StructElement_Attr_GetType);
+    CHK(FPDF_StructElement_Attr_GetValue);
     CHK(FPDF_StructElement_CountChildren);
     CHK(FPDF_StructElement_GetActualText);
     CHK(FPDF_StructElement_GetAltText);

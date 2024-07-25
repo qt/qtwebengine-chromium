@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-#include "build/build_config.h"
+#include "partition_alloc/build_config.h"
 #include "partition_alloc/page_allocator.h"
 #include "partition_alloc/partition_alloc_base/cpu.h"
 #include "partition_alloc/partition_alloc_buildflags.h"
@@ -145,7 +145,7 @@ TEST(PartitionAllocMemoryTaggingTest, TagMemoryRangeIncrementBadAlign) {
 }
 #endif  // defined(ARCH_CPU_64_BITS)
 
-#if BUILDFLAG(HAS_MEMORY_TAGGING)
+#if PA_BUILDFLAG(HAS_MEMORY_TAGGING)
 #if BUILDFLAG(IS_ANDROID)
 TEST(PartitionAllocMemoryTaggingTest,
      ChangeMemoryTaggingModeForAllThreadsPerProcess) {
@@ -163,12 +163,14 @@ TEST(PartitionAllocMemoryTaggingTest,
 
   // Skip changing to kDisabled, because scudo does not support enabling MTE
   // once it is disabled.
-  ChangeMemoryTaggingModeForAllThreadsPerProcess(
+  bool success = ChangeMemoryTaggingModeForAllThreadsPerProcess(
       TagViolationReportingMode::kAsynchronous);
+  EXPECT_TRUE(success);
   EXPECT_EQ(GetMemoryTaggingModeForCurrentThread(),
             TagViolationReportingMode::kAsynchronous);
-  ChangeMemoryTaggingModeForAllThreadsPerProcess(
+  success = ChangeMemoryTaggingModeForAllThreadsPerProcess(
       TagViolationReportingMode::kSynchronous);
+  EXPECT_TRUE(success);
   // End with mode changed back to synchronous.
   EXPECT_EQ(GetMemoryTaggingModeForCurrentThread(),
             TagViolationReportingMode::kSynchronous);
@@ -212,6 +214,6 @@ TEST(PartitionAllocMemoryTaggingTest, ChangeMemoryTaggingModeForCurrentThread) {
   // Restore mode to original.
   ChangeMemoryTaggingModeForCurrentThread(original_mode);
 }
-#endif  // BUILDFLAG(HAS_MEMORY_TAGGING)
+#endif  // PA_BUILDFLAG(HAS_MEMORY_TAGGING)
 
 }  // namespace partition_alloc::internal

@@ -3,6 +3,44 @@
 All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 14.2.0 2024-05-02
+* Improve checking for location aliasing errors
+* Fix undefined behavior in parser
+* Add bounds check to gl_SampleMask
+* Fix alignment and padding of matrices consuming one vector
+* Remove duplicate SPIR-V decorations
+* Check for exponent overflow in float parser
+* Fix bug in relaxed verification rules
+* Fix disassembly of debugBreak
+* Fix bug when importing SPIR-V extended intruction set
+* Fix issues with the interaction of cooperative_matrix and spirv_intrinsics
+* Support SPV_QCOM_image_processing2
+* Support files with UTF8BOM character
+
+## 14.1.0 2024-03-08
+* Add a new --abosute-path command-line option to output absolute paths in error messages
+* Support GL_EXT_control_flow_attributes2
+* Support GL_ARB_shading_language_include
+* Fix HLSL built-in passthrough via inout
+* Enable -Wimplicit-fallthrough and fix warnings
+* Fix -Wmissing_field_initializer warnings
+* Document supported dependencies in known_good.json
+* Clear spirv vector before use
+* Emit debug info for accelerationStructure and rayQuery variables
+* Support NV_shader_atomic_fp16_vector
+* Support GL_EXT_expect_assume_support
+* Allow external control of whether glslang will be tested or installed
+* Improve debug source and line info
+* Support GL_KHR_shader_subgroup_rotate
+* Add SPIRV-Tools-opt dependency if ENABLE_OPT
+* Support EXT_shader_quad_control
+* Add OpAssumeTrueKHR and OpExpectKHR
+* Support GL_EXT_maximal_reconvergence
+* Remove generation of deprecated Target.cmake files
+* Fix array size of gl_SampleMask and gl_SampleMaskIn
+* Support GL_ARB_texture_multisample_extension
+* Emit DebugTypePointer when non-semantic debug info is enabled
+
 ## 14.0.0 2023-12-21
 
 ### Breaking changes

@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,8 +18,9 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/unguessable_token.h"
+#include "components/attribution_reporting/eligibility.h"
 #include "components/attribution_reporting/features.h"
-#include "components/attribution_reporting/registration_eligibility.mojom-shared.h"
+#include "components/attribution_reporting/registration_eligibility.mojom-forward.h"
 #include "components/attribution_reporting/suitable_origin.h"
 #include "content/browser/attribution_reporting/attribution_background_registrations_id.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager.h"
@@ -27,8 +29,7 @@
 #include "net/http/http_response_headers.h"
 #include "services/network/public/cpp/attribution_reporting_runtime_features.h"
 #include "services/network/public/cpp/trigger_verification.h"
-#include "services/network/public/mojom/attribution.mojom-shared.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "services/network/public/mojom/attribution.mojom-forward.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
@@ -46,8 +47,8 @@ std::unique_ptr<KeepAliveAttributionRequestHelper>
 KeepAliveAttributionRequestHelper::CreateIfNeeded(
     network::mojom::AttributionReportingEligibility eligibility,
     const GURL& request_url,
-    const absl::optional<base::UnguessableToken>& attribution_src_token,
-    const absl::optional<std::string>& devtools_request_id,
+    const std::optional<base::UnguessableToken>& attribution_src_token,
+    const std::optional<std::string>& devtools_request_id,
     network::AttributionReportingRuntimeFeatures runtime_features,
     const AttributionSuitableContext& context) {
   if (!base::FeatureList::IsEnabled(
@@ -55,21 +56,10 @@ KeepAliveAttributionRequestHelper::CreateIfNeeded(
     return nullptr;
   }
 
-  RegistrationEligibility registration_eligibility;
-  switch (eligibility) {
-    case network::mojom::AttributionReportingEligibility::kEmpty:
-      return nullptr;
-    case network::mojom::AttributionReportingEligibility::kUnset:
-    case network::mojom::AttributionReportingEligibility::kTrigger:
-      registration_eligibility = RegistrationEligibility::kTrigger;
-      break;
-    case network::mojom::AttributionReportingEligibility::kEventSource:
-    case network::mojom::AttributionReportingEligibility::kNavigationSource:
-      registration_eligibility = RegistrationEligibility::kSource;
-      break;
-    case network::mojom::AttributionReportingEligibility::kEventSourceOrTrigger:
-      registration_eligibility = RegistrationEligibility::kSourceOrTrigger;
-      break;
+  std::optional<RegistrationEligibility> registration_eligibility =
+      attribution_reporting::GetRegistrationEligibility(eligibility);
+  if (!registration_eligibility.has_value()) {
+    return nullptr;
   }
 
   AttributionDataHostManager* data_host_manager = context.data_host_manager();
@@ -77,7 +67,7 @@ KeepAliveAttributionRequestHelper::CreateIfNeeded(
     return nullptr;
   }
 
-  absl::optional<blink::AttributionSrcToken> token;
+  std::optional<blink::AttributionSrcToken> token;
   if (attribution_src_token.has_value()) {
     token = blink::AttributionSrcToken(attribution_src_token.value());
   }
@@ -86,10 +76,8 @@ KeepAliveAttributionRequestHelper::CreateIfNeeded(
   BackgroundRegistrationsId id(unique_id_counter.GetNext());
 
   data_host_manager->NotifyBackgroundRegistrationStarted(
-      id, context.context_origin(), context.is_nested_within_fenced_frame(),
-      registration_eligibility,
-      /*render_frame_id=*/context.root_render_frame_id(),
-      context.last_navigation_id(), std::move(token), devtools_request_id);
+      id, context, *registration_eligibility, std::move(token),
+      devtools_request_id);
   return base::WrapUnique(new KeepAliveAttributionRequestHelper(
       id, data_host_manager,
       /*reporting_url=*/request_url, runtime_features));

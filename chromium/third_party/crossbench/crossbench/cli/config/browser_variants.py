@@ -191,7 +191,7 @@ class BrowserVariantsConfig:
       browser_config = self._maybe_downloaded_binary(
           cast(BrowserConfig, BrowserConfig.parse(raw_browser_data)))
       browser_cls = self._get_browser_cls(browser_config)
-    if browser_config.driver.type != BrowserDriverType.ANDROID and (
+    if not browser_config.driver.type.is_remote and (
         not browser_config.path.exists()):
       raise ConfigError(
           f"browsers['{name}'].path='{browser_config.path}' does not exist.")
@@ -321,6 +321,8 @@ class BrowserVariantsConfig:
         return browsers.ChromeAppleScript
       if driver == BrowserDriverType.ANDROID:
         return browsers.ChromeWebDriverAndroid
+      if driver == BrowserDriverType.LINUX_SSH:
+        return browsers.ChromeWebDriverSsh
     if "chromium" in path_str:
       # TODO: technically this should be ChromiumWebDriver
       if driver == BrowserDriverType.WEB_DRIVER:

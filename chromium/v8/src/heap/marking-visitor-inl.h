@@ -15,9 +15,12 @@
 #include "src/heap/pretenuring-handler-inl.h"
 #include "src/heap/progress-bar.h"
 #include "src/heap/spaces.h"
+#include "src/objects/compressed-slots.h"
 #include "src/objects/descriptor-array.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/objects.h"
 #include "src/objects/property-details.h"
+#include "src/objects/slots.h"
 #include "src/objects/smi.h"
 #include "src/objects/string.h"
 #include "src/sandbox/external-pointer-inl.h"
@@ -57,14 +60,14 @@ void MarkingVisitorBase<ConcreteVisitor>::ProcessStrongHeapObject(
   SynchronizePageAccess(heap_object);
   if (!ShouldMarkObject(heap_object)) return;
   // TODO(chromium:1495151): Remove after diagnosing.
-  if (V8_UNLIKELY(!BasicMemoryChunk::FromHeapObject(heap_object)->IsMarking() &&
+  if (V8_UNLIKELY(!MemoryChunk::FromHeapObject(heap_object)->IsMarking() &&
                   IsFreeSpaceOrFiller(
                       heap_object, ObjectVisitorWithCageBases::cage_base()))) {
     heap_->isolate()->PushStackTraceAndDie(
         reinterpret_cast<void*>(host->map().ptr()),
         reinterpret_cast<void*>(host->address()),
         reinterpret_cast<void*>(slot.address()),
-        reinterpret_cast<void*>(BasicMemoryChunk::FromHeapObject(heap_object)
+        reinterpret_cast<void*>(MemoryChunkMetadata::FromHeapObject(heap_object)
                                     ->owner()
                                     ->identity()));
   }
@@ -104,8 +107,12 @@ void MarkingVisitorBase<ConcreteVisitor>::VisitPointersImpl(
     Tagged<HeapObject> host, TSlot start, TSlot end) {
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
   for (TSlot slot = start; slot < end; ++slot) {
-    typename TSlot::TObject object =
-        slot.Relaxed_Load(ObjectVisitorWithCageBases::cage_base());
+    const std::optional<Tagged<Object>> optional_object =
+        this->GetObjectFilterReadOnlyAndSmiFast(slot);
+    if (!optional_object) {
+      continue;
+    }
+    typename TSlot::TObject object = *optional_object;
     Tagged<HeapObject> heap_object;
     if (object.GetHeapObjectIfStrong(&heap_object)) {
       // If the reference changes concurrently from strong to weak, the write
@@ -169,17 +176,56 @@ void MarkingVisitorBase<ConcreteVisitor>::VisitCodeTarget(
 template <typename ConcreteVisitor>
 void MarkingVisitorBase<ConcreteVisitor>::VisitExternalPointer(
     Tagged<HeapObject> host, ExternalPointerSlot slot) {
-#ifdef V8_ENABLE_SANDBOX
+#ifdef V8_COMPRESS_POINTERS
   DCHECK_NE(slot.tag(), kExternalPointerNullTag);
-  ExternalPointerHandle handle = slot.Relaxed_LoadHandle();
-  ExternalPointerTable* table = IsSharedExternalPointerType(slot.tag())
-                                    ? shared_external_pointer_table_
-                                    : external_pointer_table_;
-  ExternalPointerTable::Space* space = IsSharedExternalPointerType(slot.tag())
-                                           ? shared_external_pointer_space_
-                                           : heap_->external_pointer_space();
+  if (slot.HasExternalPointerHandle()) {
+    ExternalPointerHandle handle = slot.Relaxed_LoadHandle();
+    ExternalPointerTable* table;
+    ExternalPointerTable::Space* space;
+    if (IsSharedExternalPointerType(slot.tag())) {
+      table = shared_external_pointer_table_;
+      space = shared_external_pointer_space_;
+    } else {
+      table = external_pointer_table_;
+      if (v8_flags.sticky_mark_bits) {
+        // Everything is considered old during major GC.
+        DCHECK(!Heap::InYoungGeneration(host));
+        if (handle == kNullExternalPointerHandle) return;
+        // The object may either be in young or old EPT.
+        if (table->Contains(heap_->young_external_pointer_space(), handle)) {
+          space = heap_->young_external_pointer_space();
+        } else {
+          DCHECK(table->Contains(heap_->old_external_pointer_space(), handle));
+          space = heap_->old_external_pointer_space();
+        }
+      } else {
+        space = Heap::InYoungGeneration(host)
+                    ? heap_->young_external_pointer_space()
+                    : heap_->old_external_pointer_space();
+      }
+    }
+    table->Mark(space, handle, slot.address());
+  }
+#endif  // V8_COMPRESS_POINTERS
+}
+
+template <typename ConcreteVisitor>
+void MarkingVisitorBase<ConcreteVisitor>::VisitCppHeapPointer(
+    Tagged<HeapObject> host, CppHeapPointerSlot slot) {
+#ifdef V8_COMPRESS_POINTERS
+  DCHECK_NE(slot.tag(), kExternalPointerNullTag);
+  const ExternalPointerHandle handle = slot.Relaxed_LoadHandle();
+  if (handle == kNullExternalPointerHandle) {
+    return;
+  }
+  ExternalPointerTable* table = cpp_heap_pointer_table_;
+  ExternalPointerTable::Space* space = heap_->cpp_heap_pointer_space();
   table->Mark(space, handle, slot.address());
-#endif  // V8_ENABLE_SANDBOX
+#endif  // V8_COMPRESS_POINTERS
+  if (auto cpp_heap_pointer = slot.try_load(heap_->isolate())) {
+    local_marking_worklists_->cpp_marking_state()->MarkAndPush(
+        reinterpret_cast<void*>(cpp_heap_pointer));
+  }
 }
 
 template <typename ConcreteVisitor>
@@ -209,27 +255,7 @@ void MarkingVisitorBase<ConcreteVisitor>::VisitIndirectPointer(
 template <typename ConcreteVisitor>
 void MarkingVisitorBase<ConcreteVisitor>::VisitTrustedPointerTableEntry(
     Tagged<HeapObject> host, IndirectPointerSlot slot) {
-#ifdef V8_ENABLE_SANDBOX
-  DCHECK_NE(slot.tag(), kUnknownIndirectPointerTag);
-
-  IndirectPointerHandle handle = slot.Relaxed_LoadHandle();
-
-  // We must not see an uninitialized 'self' indirect pointer as we might
-  // otherwise fail to mark the table entry as alive.
-  DCHECK_NE(handle, kNullIndirectPointerHandle);
-
-  if (slot.tag() == kCodeIndirectPointerTag) {
-    CodePointerTable* table = GetProcessWideCodePointerTable();
-    CodePointerTable::Space* space = heap_->code_pointer_space();
-    table->Mark(space, handle);
-  } else {
-    TrustedPointerTable* table = trusted_pointer_table_;
-    TrustedPointerTable::Space* space = heap_->trusted_pointer_space();
-    table->Mark(space, handle);
-  }
-#else
-  UNREACHABLE();
-#endif
+  concrete_visitor()->MarkPointerTableEntry(host, slot);
 }
 
 // ===========================================================================
@@ -304,9 +330,9 @@ int MarkingVisitorBase<ConcreteVisitor>::VisitSharedFunctionInfo(
     DCHECK(IsBaselineCodeFlushingEnabled(code_flush_mode_));
     Tagged<Code> baseline_code = shared_info->baseline_code(kAcquireLoad);
     // Visit the bytecode hanging off baseline code.
-    VisitPointer(baseline_code,
-                 baseline_code->RawField(
-                     Code::kDeoptimizationDataOrInterpreterDataOffset));
+    VisitProtectedPointer(
+        baseline_code, baseline_code->RawProtectedPointerField(
+                           Code::kDeoptimizationDataOrInterpreterDataOffset));
     local_weak_objects_->code_flushing_candidates_local.Push(shared_info);
   } else {
     // In other cases, record as a flushing candidate since we have old
@@ -336,7 +362,7 @@ bool MarkingVisitorBase<ConcreteVisitor>::HasBytecodeArrayForFlushing(
     // If baseline code flushing isn't enabled and we have baseline data on SFI
     // we cannot flush baseline / bytecode.
     if (!IsBaselineCodeFlushingEnabled(code_flush_mode_)) return false;
-    data = baseline_code->bytecode_or_interpreter_data(heap_->isolate());
+    data = baseline_code->bytecode_or_interpreter_data();
   } else if (!IsByteCodeFlushingEnabled(code_flush_mode_)) {
     // If bytecode flushing isn't enabled and there is no baseline code there is
     // nothing to flush.
@@ -417,7 +443,7 @@ bool MarkingVisitorBase<ConcreteVisitor>::ShouldFlushBaselineCode(
 #ifdef THREAD_SANITIZER
   // This is needed because TSAN does not process the memory fence
   // emitted after page initialization.
-  BasicMemoryChunk::FromAddress(maybe_code.ptr())->SynchronizedHeapLoad();
+  MemoryChunk::FromAddress(maybe_code.ptr())->SynchronizedLoad();
 #endif
   if (!IsCode(maybe_code)) return false;
   Tagged<Code> code = Code::cast(maybe_code);
@@ -474,7 +500,7 @@ template <typename ConcreteVisitor>
 int MarkingVisitorBase<ConcreteVisitor>::VisitFixedArray(
     Tagged<Map> map, Tagged<FixedArray> object) {
   ProgressBar& progress_bar =
-      MemoryChunk::FromHeapObject(object)->ProgressBar();
+      MutablePageMetadata::FromHeapObject(object)->ProgressBar();
   return concrete_visitor()->CanUpdateValuesInHeap() && progress_bar.IsEnabled()
              ? VisitFixedArrayWithProgressBar(map, object, progress_bar)
              : VisitFixedArrayRegularly(map, object);
@@ -485,46 +511,54 @@ int MarkingVisitorBase<ConcreteVisitor>::VisitFixedArray(
 // ===========================================================================
 
 template <typename ConcreteVisitor>
-template <typename T>
+template <typename T, typename TBodyDescriptor>
 inline int MarkingVisitorBase<ConcreteVisitor>::
     VisitEmbedderTracingSubClassNoEmbedderTracing(Tagged<Map> map,
                                                   Tagged<T> object) {
-  return concrete_visitor()->VisitJSObjectSubclass(map, object);
+  return concrete_visitor()->template VisitJSObjectSubclass<T, TBodyDescriptor>(
+      map, object);
 }
 
 template <typename ConcreteVisitor>
-template <typename T>
+template <typename T, typename TBodyDescriptor>
 inline int MarkingVisitorBase<ConcreteVisitor>::
     VisitEmbedderTracingSubClassWithEmbedderTracing(Tagged<Map> map,
                                                     Tagged<T> object) {
-  const bool requires_snapshot =
-      local_marking_worklists_->SupportsExtractWrapper();
+  const int size =
+      VisitEmbedderTracingSubClassNoEmbedderTracing<T, TBodyDescriptor>(map,
+                                                                        object);
+  if (size == 0) {
+    return 0;
+  }
+
+  DCHECK(local_marking_worklists_->SupportsExtractWrapper());
+
+  // Process embedder fields
   MarkingWorklists::Local::WrapperSnapshot wrapper_snapshot;
-  const bool valid_snapshot =
-      requires_snapshot &&
-      local_marking_worklists_->ExtractWrapper(map, object, wrapper_snapshot);
-  const int size = concrete_visitor()->VisitJSObjectSubclass(map, object);
-  if (size && valid_snapshot) {
+  if (local_marking_worklists_->ExtractWrapper(map, object, wrapper_snapshot)) {
     local_marking_worklists_->PushExtractedWrapper(wrapper_snapshot);
   }
   return size;
 }
 
 template <typename ConcreteVisitor>
-template <typename T>
+template <typename T, typename TBodyDescriptor>
 int MarkingVisitorBase<ConcreteVisitor>::VisitEmbedderTracingSubclass(
     Tagged<Map> map, Tagged<T> object) {
   DCHECK(object->MayHaveEmbedderFields());
-  if (V8_LIKELY(trace_embedder_fields_)) {
-    return VisitEmbedderTracingSubClassWithEmbedderTracing(map, object);
+  if (V8_UNLIKELY(trace_embedder_fields_)) {
+    return VisitEmbedderTracingSubClassWithEmbedderTracing<T, TBodyDescriptor>(
+        map, object);
   }
-  return VisitEmbedderTracingSubClassNoEmbedderTracing(map, object);
+  return VisitEmbedderTracingSubClassNoEmbedderTracing<T, TBodyDescriptor>(
+      map, object);
 }
 
 template <typename ConcreteVisitor>
 int MarkingVisitorBase<ConcreteVisitor>::VisitJSApiObject(
     Tagged<Map> map, Tagged<JSObject> object) {
-  return VisitEmbedderTracingSubclass(map, object);
+  return VisitEmbedderTracingSubclass<
+      JSObject, JSAPIObjectWithEmbedderSlots::BodyDescriptor>(map, object);
 }
 
 template <typename ConcreteVisitor>
@@ -781,6 +815,32 @@ int MarkingVisitorBase<ConcreteVisitor>::VisitTransitionArray(
   TransitionArray::BodyDescriptor::IterateBody(map, array, size, this);
   local_weak_objects_->transition_arrays_local.Push(array);
   return size;
+}
+
+template <typename ConcreteVisitor>
+void FullMarkingVisitorBase<ConcreteVisitor>::MarkPointerTableEntry(
+    Tagged<HeapObject> host, IndirectPointerSlot slot) {
+#ifdef V8_ENABLE_SANDBOX
+  DCHECK_NE(slot.tag(), kUnknownIndirectPointerTag);
+
+  IndirectPointerHandle handle = slot.Relaxed_LoadHandle();
+
+  // We must not see an uninitialized 'self' indirect pointer as we might
+  // otherwise fail to mark the table entry as alive.
+  DCHECK_NE(handle, kNullIndirectPointerHandle);
+
+  if (slot.tag() == kCodeIndirectPointerTag) {
+    CodePointerTable* table = GetProcessWideCodePointerTable();
+    CodePointerTable::Space* space = this->heap_->code_pointer_space();
+    table->Mark(space, handle);
+  } else {
+    TrustedPointerTable* table = this->trusted_pointer_table_;
+    TrustedPointerTable::Space* space = this->heap_->trusted_pointer_space();
+    table->Mark(space, handle);
+  }
+#else
+  UNREACHABLE();
+#endif
 }
 
 }  // namespace internal

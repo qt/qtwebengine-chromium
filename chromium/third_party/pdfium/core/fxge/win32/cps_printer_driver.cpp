@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxge/win32/cps_printer_driver.h"
 
 #include <stdint.h>
@@ -11,16 +16,17 @@
 #include <sstream>
 #include <utility>
 
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/notreached.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_path.h"
 #include "core/fxge/dib/cfx_dibbase.h"
+#include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_imagerenderer.h"
 #include "core/fxge/win32/cpsoutput.h"
-#include "third_party/base/check.h"
-#include "third_party/base/notreached.h"
 
 namespace {
 
@@ -157,7 +163,7 @@ bool CPSPrinterDriver::GetClipBox(FX_RECT* pRect) {
   return true;
 }
 
-bool CPSPrinterDriver::SetDIBits(const RetainPtr<const CFX_DIBBase>& pBitmap,
+bool CPSPrinterDriver::SetDIBits(RetainPtr<const CFX_DIBBase> bitmap,
                                  uint32_t color,
                                  const FX_RECT& src_rect,
                                  int left,
@@ -165,7 +171,7 @@ bool CPSPrinterDriver::SetDIBits(const RetainPtr<const CFX_DIBBase>& pBitmap,
                                  BlendMode blend_type) {
   if (blend_type != BlendMode::kNormal)
     return false;
-  return m_PSRenderer.SetDIBits(pBitmap, color, left, top);
+  return m_PSRenderer.SetDIBits(std::move(bitmap), color, left, top);
 }
 
 bool CPSPrinterDriver::StretchDIBits(RetainPtr<const CFX_DIBBase> bitmap,
@@ -214,8 +220,7 @@ bool CPSPrinterDriver::MultiplyAlpha(float alpha) {
   NOTREACHED_NORETURN();
 }
 
-bool CPSPrinterDriver::MultiplyAlphaMask(
-    const RetainPtr<const CFX_DIBBase>& mask) {
+bool CPSPrinterDriver::MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask) {
   // PostScript doesn't support transparency. All callers are using
   // `CFX_DIBitmap`-backed raster devices anyway.
   NOTREACHED_NORETURN();

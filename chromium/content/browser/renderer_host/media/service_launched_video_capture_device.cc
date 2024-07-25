@@ -85,7 +85,7 @@ void ServiceLaunchedVideoCaptureDevice::ApplySubCaptureTarget(
     base::OnceCallback<void(media::mojom::ApplySubCaptureTargetResult)>
         callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // TODO(crbug.com/1264849): Implement if necessary.
+  // TODO(crbug.com/40203554): Implement if necessary.
   std::move(callback).Run(
       media::mojom::ApplySubCaptureTargetResult::kNotImplemented);
 }
@@ -109,10 +109,7 @@ void ServiceLaunchedVideoCaptureDevice::OnUtilizationReport(
     media::VideoCaptureFeedback feedback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (feedback != last_feedback_) {
-    subscription_->ProcessFeedback(feedback);
-    last_feedback_ = feedback;
-  }
+  subscription_->ProcessFeedback(feedback);
 }
 
 void ServiceLaunchedVideoCaptureDevice::

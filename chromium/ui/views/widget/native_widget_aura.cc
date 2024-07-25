@@ -5,6 +5,7 @@
 #include "ui/views/widget/native_widget_aura.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -55,6 +56,7 @@
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/widget/window_reorderer.h"
 #include "ui/wm/core/coordinate_conversion.h"
+#include "ui/wm/core/scoped_animation_disabler.h"
 #include "ui/wm/core/shadow_types.h"
 #include "ui/wm/core/transient_window_manager.h"
 #include "ui/wm/core/window_animations.h"
@@ -309,7 +311,7 @@ void NativeWidgetAura::InitNativeWidget(Widget::InitParams params) {
   // the correct values.
   OnSizeConstraintsChanged();
 
-  absl::optional<int64_t> target_display;
+  std::optional<int64_t> target_display;
 #if BUILDFLAG(IS_CHROMEOS)
   target_display = params.display_id;
 #endif
@@ -602,14 +604,14 @@ std::string NativeWidgetAura::GetWorkspace() const {
 void NativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
   if (!window_)
     return;
-  SetBoundsInternal(bounds, absl::nullopt);
+  SetBoundsInternal(bounds, std::nullopt);
 }
 
 void NativeWidgetAura::SetBoundsInternal(const gfx::Rect& bounds,
-                                         absl::optional<int64_t> display_id) {
+                                         std::optional<int64_t> display_id) {
   display::Display dst_display;
   auto* screen = display::Screen::GetScreen();
-  // TODO(crbug.com/1480073): Call SetBoundsInScreen directly.
+  // TODO(crbug.com/40281188): Call SetBoundsInScreen directly.
   if (!display_id ||
       !screen->GetDisplayWithDisplayId(display_id.value(), &dst_display)) {
     dst_display = screen->GetDisplayMatching(bounds);
@@ -680,9 +682,10 @@ void NativeWidgetAura::SetShape(std::unique_ptr<Widget::ShapeRects> shape) {
 void NativeWidgetAura::Close() {
   // |window_| may already be deleted by parent window. This can happen
   // when this widget is child widget or has transient parent
-  // and ownership is WIDGET_OWNS_NATIVE_WIDGET.
+  // and ownership is WIDGET_OWNS_NATIVE_WIDGET or CLIENT_OWNS_WIDGET.
   DCHECK(window_ ||
-         ownership_ == Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET);
+         ownership_ == Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET ||
+         ownership_ == Widget::InitParams::CLIENT_OWNS_WIDGET);
   if (window_) {
     Hide();
     window_->SetProperty(aura::client::kModalKey, ui::MODAL_TYPE_NONE);
@@ -722,6 +725,14 @@ void NativeWidgetAura::Show(ui::WindowShowState show_state,
       show_state == ui::SHOW_STATE_FULLSCREEN) {
     window_->SetProperty(aura::client::kShowStateKey, show_state);
   }
+  // Disable the window animation for an initially minimized widget, because it
+  // will create a detached layer tree for minimizing animation, which can be
+  // briefly visible.
+  std::optional<wm::ScopedAnimationDisabler> disabler;
+  if (show_state == ui::SHOW_STATE_MINIMIZED) {
+    disabler.emplace(window_);
+  }
+
   window_->Show();
   if (delegate_->CanActivate()) {
     if (show_state != ui::SHOW_STATE_INACTIVE)
@@ -851,7 +862,7 @@ void NativeWidgetAura::SetAspectRatio(const gfx::SizeF& aspect_ratio,
   if (window_) {
     // aura::client::kAspectRatio is owned, which allows for passing by value.
     window_->SetProperty(aura::client::kAspectRatio, aspect_ratio);
-    // TODO(crbug.com/1407629): send `excluded_margin`.
+    // TODO(crbug.com/40887946): send `excluded_margin`.
   }
 }
 
@@ -867,6 +878,12 @@ void NativeWidgetAura::RunShellDrag(View* view,
                                     ui::mojom::DragEventSource source) {
   if (window_)
     views::RunShellDrag(window_, std::move(data), location, operation, source);
+}
+
+void NativeWidgetAura::CancelShellDrag(View* view) {
+  if (window_) {
+    views::CancelShellDrag(window_);
+  }
 }
 
 void NativeWidgetAura::SchedulePaintInRect(const gfx::Rect& rect) {
@@ -1411,8 +1428,9 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
 
   // First notify all the widgets that they are being disassociated
   // from their previous parent.
-  for (auto* widget : widgets)
+  for (Widget* widget : widgets) {
     widget->NotifyNativeViewHierarchyWillChange();
+  }
 
   Widget* child_widget = Widget::GetWidgetForNativeView(native_view);
 
@@ -1424,8 +1442,9 @@ void NativeWidgetPrivate::ReparentNativeView(gfx::NativeView native_view,
   }
 
   // And now, notify them that they have a brand new parent.
-  for (auto* widget : widgets)
+  for (Widget* widget : widgets) {
     widget->NotifyNativeViewHierarchyChanged();
+  }
 }
 
 // static

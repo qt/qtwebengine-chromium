@@ -15,6 +15,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "ui/accessibility/accessibility_features.h"
 
 class ReadAnythingAppTest : public InProcessBrowserTest {
@@ -101,7 +102,7 @@ IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest,
   ASSERT_TRUE(RunTest("update_theme_letter_spacing.js"));
 }
 
-// TODO(crbug.com/1442570): unflake and re-enable
+// TODO(crbug.com/40910623): unflake and re-enable
 IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest,
                        DISABLED_ConnectedCallback_ShowLoadingScreen) {
   ASSERT_TRUE(RunTest("connected_callback_show_loading_screen.js"));
@@ -112,6 +113,10 @@ IN_PROC_BROWSER_TEST_F(
     OnSelectionChange_NothingSelectedOnLoadingScreenSelection) {
   ASSERT_TRUE(RunTest(
       "on_selection_change_nothing_selected_on_loading_screen_selection.js"));
+}
+
+IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest, UpdateContent_AllHeadings) {
+  ASSERT_TRUE(RunTest("update_content_all_headings.js"));
 }
 
 IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest, UpdateContent_HidesLoadingScreen) {
@@ -156,10 +161,6 @@ IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest, UpdateContent_ClearContainer) {
   ASSERT_TRUE(RunTest("update_content_clear_container.js"));
 }
 
-IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest, UpdateContent_Selection) {
-  ASSERT_TRUE(RunTest("update_content_selection.js"));
-}
-
 IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest, UpdateContent_Selection_Backwards) {
   ASSERT_TRUE(RunTest("update_content_selection_backwards.js"));
 }
@@ -187,7 +188,7 @@ IN_PROC_BROWSER_TEST_F(ReadAnythingAppTest,
   ASSERT_TRUE(RunTest("update_content_selection_with_inline_text.js"));
 }
 
-// TODO(crbug.com/1521475): Test is flaky on macOS 12
+// TODO(crbug.com/41494444): Test is flaky on macOS 12
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_UpdateContent_SetSelectedText \
   DISABLED_UpdateContent_SetSelectedText

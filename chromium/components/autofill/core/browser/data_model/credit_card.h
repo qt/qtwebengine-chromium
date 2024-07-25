@@ -37,6 +37,7 @@ inline constexpr char kMasterCard[] = "masterCardCC";
 inline constexpr char kMirCard[] = "mirCC";
 inline constexpr char kTroyCard[] = "troyCC";
 inline constexpr char kUnionPay[] = "unionPayCC";
+inline constexpr char kVerveCard[] = "verveCC";
 inline constexpr char kVisaCard[] = "visaCC";
 
 struct AutofillMetadata;
@@ -246,7 +247,9 @@ class CreditCard : public AutofillDataModel {
   Issuer card_issuer() const { return card_issuer_; }
   void set_card_issuer(Issuer card_issuer) { card_issuer_ = card_issuer; }
   const std::string& issuer_id() const { return issuer_id_; }
-  void set_issuer_id(const std::string& issuer_id) { issuer_id_ = issuer_id; }
+  void set_issuer_id(const std::string_view issuer_id) {
+    issuer_id_ = std::string(issuer_id);
+  }
 
   // If the card numbers for |this| and |imported_card| match, and merging the
   // two wouldn't result in unverified data overwriting verified data,
@@ -517,7 +520,7 @@ class CreditCard : public AutofillDataModel {
   // some dependencies around `guid_` for server cards exist. See the server_id
   // constructor of `CreditCard()`. Notably, for server cards the `guid_` is
   // not persisted and should not be used.
-  // TODO(crbug.com/1121806): Create a variant of the different ids, since
+  // TODO(crbug.com/40146355): Create a variant of the different ids, since
   // only one of them should be populated based on the `record_type()`.
   std::string guid_;
 
@@ -567,7 +570,7 @@ class CreditCard : public AutofillDataModel {
   // The nickname of the card. May be empty when nickname is not set.
   std::u16string nickname_;
 
-  // TODO(crbug.com/1394514): Consider removing this field and all its usage
+  // TODO(crbug.com/40248631): Consider removing this field and all its usage
   // after `issuer_id_` is used.
   // The issuer for the card. This is populated from the sync response. It has a
   // default value of CreditCard::Issuer::kIssuerUnknown.
@@ -579,7 +582,7 @@ class CreditCard : public AutofillDataModel {
 
   // For masked server cards, this is the ID assigned by the server to uniquely
   // identify this card. |server_id_| is the legacy version of this.
-  // TODO(crbug.com/1121806): remove server_id_ after full deprecation
+  // TODO(crbug.com/40146355): remove server_id_ after full deprecation
   int64_t instrument_id_;
 
   // The virtual card enrollment state of this card. If it is kEnrolled, then

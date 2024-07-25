@@ -16,13 +16,13 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
 #include "include/private/SkColorData.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/base/SkVx.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
@@ -391,7 +391,7 @@ void SkGradientBaseShader::AppendGradientFillStages(SkRasterPipeline* p,
                 SkASSERT(t_l <= t_r);
                 if (t_l < t_r) {
                     float c_scale = sk_ieee_float_divide(1, t_r - t_l);
-                    if (sk_float_isfinite(c_scale)) {
+                    if (SkIsFinite(c_scale)) {
                         init_stop_pos(ctx, stopCount, t_l, c_scale, c_l, c_r);
                         stopCount += 1;
                     }
@@ -540,26 +540,23 @@ bool SkGradientBaseShader::isOpaque() const {
     return fColorsAreOpaque && (this->getTileMode() != SkTileMode::kDecal);
 }
 
-static unsigned rounded_divide(unsigned numer, unsigned denom) {
-    return (numer + (denom >> 1)) / denom;
-}
-
-bool SkGradientBaseShader::onAsLuminanceColor(SkColor* lum) const {
-    // we just compute an average color.
-    // possibly we could weight this based on the proportional width for each color
-    //   assuming they are not evenly distributed in the fPos array.
-    int r = 0;
-    int g = 0;
-    int b = 0;
-    const int n = fColorCount;
-    // TODO: use linear colors?
-    for (int i = 0; i < n; ++i) {
-        SkColor c = this->getLegacyColor(i);
-        r += SkColorGetR(c);
-        g += SkColorGetG(c);
-        b += SkColorGetB(c);
+bool SkGradientBaseShader::onAsLuminanceColor(SkColor4f* lum) const {
+    // We just compute an average color. There are several things we could do better:
+    // 1) We already have a different average_gradient_color helper later in this file, that weights
+    //    contribution by the relative size of each band.
+    // 2) Colors should be converted to some standard color space! These could be in any space.
+    // 3) Do we want to average in the source space, sRGB, or some linear space?
+    SkColor4f color{0, 0, 0, 1};
+    for (int i = 0; i < fColorCount; ++i) {
+        color.fR += fColors[i].fR;
+        color.fG += fColors[i].fG;
+        color.fB += fColors[i].fB;
     }
-    *lum = SkColorSetRGB(rounded_divide(r, n), rounded_divide(g, n), rounded_divide(b, n));
+    const float scale = 1.0f / fColorCount;
+    color.fR *= scale;
+    color.fG *= scale;
+    color.fB *= scale;
+    *lum = color;
     return true;
 }
 

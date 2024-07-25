@@ -95,10 +95,10 @@ WaylandScreen::WaylandScreen(WaylandConnection* connection)
     if (format == gfx::BufferFormat::RGBA_8888)
       image_format_alpha_ = gfx::BufferFormat::RGBA_8888;
 
-      // TODO(1128997): |image_format_no_alpha_| should use RGBX_8888 when it's
-      // available, but for some reason Chromium gets broken when it's used.
-      // Though,  we can import RGBX_8888 dma buffer to EGLImage successfully.
-      // Enable that back when the issue is resolved.
+      // TODO(crbug.com/40719968): |image_format_no_alpha_| should use RGBX_8888
+      // when it's available, but for some reason Chromium gets broken when it's
+      // used. Though,  we can import RGBX_8888 dma buffer to EGLImage
+      // successfully. Enable that back when the issue is resolved.
 #endif  // !BUILDFLAG(IS_CHROMEOS_LACROS)
 
     if (format == gfx::BufferFormat::RGBA_F16)
@@ -361,7 +361,7 @@ display::Display WaylandScreen::GetDisplayForAcceleratedWidget(
 
   if (display_id_map_.find(entered_output_id.value()) ==
       display_id_map_.end()) {
-    NOTREACHED();
+    DUMP_WILL_BE_NOTREACHED_NORETURN();
     return GetPrimaryDisplay();
   }
 

@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef CORE_FXGE_APPLE_FX_QUARTZ_DEVICE_H_
 #define CORE_FXGE_APPLE_FX_QUARTZ_DEVICE_H_
 
@@ -11,8 +16,8 @@
 #include <stdint.h>
 
 #include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/span.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/base/containers/span.h"
 
 class CFX_DIBitmap;
 class CFX_Matrix;

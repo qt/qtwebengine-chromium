@@ -58,6 +58,15 @@ def xnnpack_optional_dnnl_deps():
     """Optional Intel DNNL dependencies."""
     return []
 
+def xnnpack_slinky_srcs():
+    return []
+
+def xnnpack_slinky_deps():
+    return []
+
+def xnnpack_slinky_defines():
+    return []
+
 def xnnpack_cc_library(
         name,
         srcs = [],
@@ -251,6 +260,7 @@ def xnnpack_aggregate_library(
             "//build_config:emscripten_wasmsimd": wasmsimd_deps,
             "//build_config:emscripten_wasmrelaxedsimd": wasmrelaxedsimd_deps,
             "//build_config:riscv": riscv_deps,
+            "//conditions:default": [],
         }),
         defines = defines,
         compatible_with = compatible_with,

@@ -10,6 +10,7 @@
 
 #import <Metal/Metal.h>
 
+#include "include/core/SkTextureCompressionType.h"
 #include "src/gpu/PipelineUtils.h"
 #include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 
@@ -46,13 +47,9 @@ uint32_t MtlFormatChannels(MTLPixelFormat);
 
 size_t MtlFormatBytesPerBlock(MTLPixelFormat);
 
-#if defined(SK_DEBUG) || defined(GR_TEST_UTILS)
-const char* MtlFormatToString(MTLPixelFormat);
-#endif
+SkTextureCompressionType MtlFormatToCompressionType(MTLPixelFormat);
 
-#ifdef SK_BUILD_FOR_IOS
-bool MtlIsAppInBackground();
-#endif
+const char* MtlFormatToString(MTLPixelFormat);
 
 }  // namespace skgpu
 

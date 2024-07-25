@@ -9,14 +9,14 @@
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
 #include "fxjs/cjs_result.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_resources.h"
 #include "fxjs/xfa/cfxjse_context.h"
 #include "fxjs/xfa/cfxjse_isolatetracker.h"
 #include "fxjs/xfa/cfxjse_value.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-external.h"
 #include "v8/include/v8-function-callback.h"
@@ -192,13 +192,14 @@ bool DynPropQueryAdapter(v8::Isolate* pIsolate,
   return nPropType != FXJSE_ClassPropType::kNone;
 }
 
-void NamedPropertyQueryCallback(
+v8::Intercepted NamedPropertyQueryCallback(
     v8::Local<v8::Name> property,
     const v8::PropertyCallbackInfo<v8::Integer>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
       AsClassDescriptor(info.Data().As<v8::External>()->Value());
-  if (!pClass)
-    return;
+  if (!pClass) {
+    return v8::Intercepted::kNo;
+  }
 
   v8::HandleScope scope(info.GetIsolate());
   v8::String::Utf8Value szPropName(info.GetIsolate(), property);
@@ -206,35 +207,38 @@ void NamedPropertyQueryCallback(
   if (DynPropQueryAdapter(info.GetIsolate(), pClass, info.Holder(),
                           szFxPropName)) {
     info.GetReturnValue().Set(v8::DontDelete);
-    return;
+    return v8::Intercepted::kYes;
   }
-  const int32_t iV8Absent = 64;
-  info.GetReturnValue().Set(iV8Absent);
+
+  return v8::Intercepted::kNo;
 }
 
-void NamedPropertyGetterCallback(
+v8::Intercepted NamedPropertyGetterCallback(
     v8::Local<v8::Name> property,
     const v8::PropertyCallbackInfo<v8::Value>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
       AsClassDescriptor(info.Data().As<v8::External>()->Value());
-  if (!pClass)
-    return;
+  if (!pClass) {
+    return v8::Intercepted::kNo;
+  }
 
   v8::String::Utf8Value szPropName(info.GetIsolate(), property);
   ByteStringView szFxPropName(*szPropName, szPropName.length());
   std::unique_ptr<CFXJSE_Value> pNewValue = DynPropGetterAdapter(
       info.GetIsolate(), pClass, info.Holder(), szFxPropName);
   info.GetReturnValue().Set(pNewValue->DirectGetValue());
+  return v8::Intercepted::kYes;
 }
 
-void NamedPropertySetterCallback(
+v8::Intercepted NamedPropertySetterCallback(
     v8::Local<v8::Name> property,
     v8::Local<v8::Value> value,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
+    const v8::PropertyCallbackInfo<void>& info) {
   const FXJSE_CLASS_DESCRIPTOR* pClass =
       AsClassDescriptor(info.Data().As<v8::External>()->Value());
-  if (!pClass)
-    return;
+  if (!pClass) {
+    return v8::Intercepted::kNo;
+  }
 
   v8::String::Utf8Value szPropName(info.GetIsolate(), property);
   ByteStringView szFxPropName(*szPropName, szPropName.length());
@@ -242,6 +246,7 @@ void NamedPropertySetterCallback(
   DynPropSetterAdapter(info.GetIsolate(), pClass, info.Holder(), szFxPropName,
                        pNewValue.get());
   info.GetReturnValue().Set(value);
+  return v8::Intercepted::kYes;
 }
 
 void NamedPropertyEnumeratorCallback(
@@ -299,18 +304,15 @@ CFXJSE_Class* CFXJSE_Class::Create(
       hFunctionTemplate->InstanceTemplate();
   SetUpNamedPropHandler(pIsolate, hObjectTemplate, pClassDescriptor);
 
-  if (pClassDescriptor->methNum) {
-    for (int32_t i = 0; i < pClassDescriptor->methNum; i++) {
-      v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
-          pIsolate, V8FunctionCallback_Wrapper,
-          v8::External::New(pIsolate, const_cast<FXJSE_FUNCTION_DESCRIPTOR*>(
-                                          pClassDescriptor->methods + i)));
-      fun->RemovePrototype();
-      hObjectTemplate->Set(
-          fxv8::NewStringHelper(pIsolate, pClassDescriptor->methods[i].name),
-          fun,
-          static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete));
-    }
+  for (const auto& method : pClassDescriptor->methods) {
+    v8::Local<v8::FunctionTemplate> fun = v8::FunctionTemplate::New(
+        pIsolate, V8FunctionCallback_Wrapper,
+        v8::External::New(pIsolate,
+                          const_cast<FXJSE_FUNCTION_DESCRIPTOR*>(&method)));
+    fun->RemovePrototype();
+    hObjectTemplate->Set(
+        fxv8::NewStringHelper(pIsolate, method.name), fun,
+        static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete));
   }
 
   if (bIsJSGlobal) {

@@ -8,10 +8,10 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
-#include <optional>
 #include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/time/time.h"
@@ -19,6 +19,7 @@
 #include "build/build_config.h"
 #include "pdf/document_layout.h"
 #include "printing/mojom/print.mojom-forward.h"
+#include "services/screen_ai/buildflags/buildflags.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/cursor/mojom/cursor_type.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
@@ -33,6 +34,10 @@
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "pdf/flatten_pdf_result.h"
+#endif
+
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+#include "services/screen_ai/public/mojom/screen_ai_service.mojom-forward.h"
 #endif
 
 class SkBitmap;
@@ -270,8 +275,6 @@ class PDFEngine {
     virtual SkColor GetBackgroundColor() const = 0;
 
     // Sets selection status.
-    virtual void SetIsSelecting(bool is_selecting) {}
-
     virtual void SelectionChanged(const gfx::Rect& left,
                                   const gfx::Rect& right) {}
 
@@ -475,6 +478,8 @@ class PDFEngine {
   // Returns the focus info of current focus item.
   virtual AccessibilityFocusInfo GetFocusInfo() = 0;
 
+  virtual bool IsPDFDocTagged() = 0;
+
   virtual uint32_t GetLoadedByteSize() = 0;
   virtual bool ReadLoadedBytes(uint32_t length, void* buffer) = 0;
 
@@ -556,6 +561,11 @@ class PDFEngineExports {
                              int* page_count,
                              float* max_page_width) = 0;
 
+  // Gets the PDF document metadata (see section 14.3.3 "Document Information
+  // Dictionary" of the ISO 32000-1:2008 spec).
+  virtual std::optional<DocumentMetadata> GetPDFDocMetadata(
+      base::span<const uint8_t> pdf_buffer) = 0;
+
   // Whether the PDF is Tagged (see ISO 32000-1:2008 14.8 "Tagged PDF").
   // Returns true if it's a tagged (accessible) PDF, false if it's a valid
   // PDF but untagged, and nullopt if the PDF can't be parsed.
@@ -577,6 +587,15 @@ class PDFEngineExports {
   virtual std::optional<gfx::SizeF> GetPDFPageSizeByIndex(
       base::span<const uint8_t> pdf_buffer,
       int page_index) = 0;
+
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+  // Converts an inaccessible PDF to a searchable PDF. See `Searchify` in pdf.h
+  // for more details.
+  virtual std::vector<uint8_t> Searchify(
+      base::span<const uint8_t> pdf_buffer,
+      base::RepeatingCallback<screen_ai::mojom::VisualAnnotationPtr(
+          const SkBitmap& bitmap)> perform_ocr_callback) = 0;
+#endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 };
 
 }  // namespace chrome_pdf

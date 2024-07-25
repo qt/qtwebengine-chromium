@@ -443,18 +443,18 @@ public:
 
   /// \brief Creates an OpBitFieldInsert SPIR-V instruction for the given
   /// arguments.
-  SpirvBitFieldInsert *
-  createBitFieldInsert(QualType resultType, SpirvInstruction *base,
-                       SpirvInstruction *insert, SpirvInstruction *offset,
-                       SpirvInstruction *count, SourceLocation);
+  SpirvInstruction *createBitFieldInsert(QualType resultType,
+                                         SpirvInstruction *base,
+                                         SpirvInstruction *insert,
+                                         unsigned bitOffset, unsigned bitCount,
+                                         SourceLocation, SourceRange);
 
   /// \brief Creates an OpBitFieldUExtract or OpBitFieldSExtract SPIR-V
   /// instruction for the given arguments.
-  SpirvBitFieldExtract *createBitFieldExtract(QualType resultType,
-                                              SpirvInstruction *base,
-                                              SpirvInstruction *offset,
-                                              SpirvInstruction *count,
-                                              bool isSigned, SourceLocation);
+  SpirvInstruction *createBitFieldExtract(QualType resultType,
+                                          SpirvInstruction *base,
+                                          unsigned bitOffset, unsigned bitCount,
+                                          SourceLocation, SourceRange);
 
   /// \brief Creates an OpEmitVertex instruction.
   void createEmitVertex(SourceLocation, SourceRange range = {});
@@ -830,6 +830,20 @@ private:
   SpirvVariable *createCloneVarForFxcCTBuffer(QualType astType,
                                               const SpirvType *spvType,
                                               SpirvInstruction *var);
+
+  /// \brief Emulates OpBitFieldInsert SPIR-V instruction for the given
+  /// arguments.
+  SpirvInstruction *
+  createEmulatedBitFieldInsert(QualType resultType, uint32_t baseTypeBitwidth,
+                               SpirvInstruction *base, SpirvInstruction *insert,
+                               unsigned bitOffset, unsigned bitCount,
+                               SourceLocation, SourceRange);
+
+  SpirvInstruction *
+  createEmulatedBitFieldExtract(QualType resultType, uint32_t baseTypeBitwidth,
+                                SpirvInstruction *base, unsigned bitOffset,
+                                unsigned bitCount, SourceLocation loc,
+                                SourceRange range);
 
 private:
   ASTContext &astContext;

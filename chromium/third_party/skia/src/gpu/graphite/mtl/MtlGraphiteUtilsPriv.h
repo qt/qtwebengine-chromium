@@ -23,8 +23,10 @@ namespace skgpu::graphite {
 class MtlSharedContext;
 
 MTLPixelFormat MtlDepthStencilFlagsToFormat(SkEnumBitMask<DepthStencilFlags>);
+SkEnumBitMask<DepthStencilFlags> MtlFormatToDepthStencilFlags(MTLPixelFormat);
 
 sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedContext,
+                                               std::string_view label,
                                                std::string_view msl,
                                                ShaderErrorHandler* errorHandler);
 } // namespace skgpu::graphite

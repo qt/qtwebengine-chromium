@@ -47,6 +47,8 @@ std::vector<Command> supported_commands = {
     Command::kOpenNTPAndStartCustomizeChromeTutorial,
     Command::kStartPasswordManagerTutorial,
     Command::kStartSavedTabGroupTutorial,
+    Command::kOpenAISettings,
+    Command::kOpenSafetyCheckFromWhatsNew,
 };
 
 const ui::ElementContext kTestContext1(1);
@@ -79,6 +81,11 @@ class TestCommandHandler : public BrowserCommandHandler {
     // cannot be executed in a unittest.
   }
 
+  void OpenAISettings() override {
+    // The functionality of opening the AI settings is removed, as it
+    // cannot be executed in a unittest.
+  }
+
   bool TutorialServiceExists() override { return tutorial_service_exists_; }
 
   CommandUpdater* GetCommandUpdater() override {
@@ -102,10 +109,6 @@ class TestCommandHandler : public BrowserCommandHandler {
     tab_groups_feature_supported_ = is_supported;
   }
 
-  void SetBrowserSupportsCustomizeChromeSidePanel(bool is_supported) {
-    customize_chrome_side_panel_feature_supported_ = is_supported;
-  }
-
   void SetDefaultSearchProviderToGoogle(bool is_google) {
     default_search_provider_is_google_ = is_google;
   }
@@ -117,10 +120,6 @@ class TestCommandHandler : public BrowserCommandHandler {
  protected:
   bool BrowserSupportsTabGroups() override {
     return tab_groups_feature_supported_;
-  }
-
-  bool BrowserSupportsCustomizeChromeSidePanel() override {
-    return customize_chrome_side_panel_feature_supported_;
   }
 
   bool DefaultSearchProviderIsGoogle() override {
@@ -136,7 +135,6 @@ class TestCommandHandler : public BrowserCommandHandler {
   std::unique_ptr<CommandUpdater> command_updater_;
 
   bool tab_groups_feature_supported_ = true;
-  bool customize_chrome_side_panel_feature_supported_ = true;
   bool default_search_provider_is_google_ = true;
   bool saved_tab_groups_feature_supported_ = true;
 };
@@ -157,7 +155,8 @@ class TestTutorialService : public user_education::TutorialService {
       user_education::TutorialIdentifier id,
       ui::ElementContext context,
       base::OnceClosure completed_callback = base::DoNothing(),
-      base::OnceClosure aborted_callback = base::DoNothing()) override {
+      base::OnceClosure aborted_callback = base::DoNothing(),
+      base::RepeatingClosure restart_callback = base::DoNothing()) override {
     running_id_ = id;
   }
 
@@ -183,7 +182,8 @@ class MockTutorialService : public TestTutorialService {
               (user_education::TutorialIdentifier,
                ui::ElementContext,
                base::OnceClosure,
-               base::OnceClosure));
+               base::OnceClosure,
+               base::RepeatingClosure));
   MOCK_METHOD(void,
               LogStartedFromWhatsNewPage,
               (user_education::TutorialIdentifier, bool));
@@ -205,6 +205,8 @@ class MockCommandHandler : public TestCommandHandler {
   MOCK_METHOD(void, OpenFeedbackForm, ());
 
   MOCK_METHOD(void, OpenPasswordManager, ());
+
+  MOCK_METHOD(void, OpenAISettings, ());
 };
 
 class MockCommandUpdater : public CommandUpdaterImpl {
@@ -356,6 +358,20 @@ TEST_F(BrowserCommandHandlerTest, OpenSafetyCheckCommand) {
       NavigateToURL(GURL(chrome::GetSettingsUrl(chrome::kSafetyCheckSubPage)),
                     DispositionFromClick(*info)));
   EXPECT_TRUE(ExecuteCommand(Command::kOpenSafetyCheck, std::move(info)));
+}
+
+TEST_F(BrowserCommandHandlerTest, OpenSafetyCheckFromWhatsNewCommand) {
+  // The OpenSafetyCheck command opens a new settings window with the Safety
+  // Check, and the correct disposition.
+  ClickInfoPtr info = ClickInfo::New();
+  info->middle_button = true;
+  info->meta_key = true;
+  EXPECT_CALL(
+      *command_handler_,
+      NavigateToURL(GURL(chrome::GetSettingsUrl(chrome::kSafetyCheckSubPage)),
+                    DispositionFromClick(*info)));
+  EXPECT_TRUE(
+      ExecuteCommand(Command::kOpenSafetyCheckFromWhatsNew, std::move(info)));
 }
 
 TEST_F(BrowserCommandHandlerTest,
@@ -554,12 +570,6 @@ TEST_F(BrowserCommandHandlerTest,
   // Allow command to be executed.
   command_handler_->SetTutorialServiceExists(true);
 
-  // If the customize chrome side panel is not enabled, dont run the command.
-  command_handler_->SetBrowserSupportsCustomizeChromeSidePanel(false);
-  EXPECT_FALSE(
-      CanExecuteCommand(Command::kOpenNTPAndStartCustomizeChromeTutorial));
-  command_handler_->SetBrowserSupportsCustomizeChromeSidePanel(true);
-
   // If the search provider is not set to Google, dont run the command
   command_handler_->SetDefaultSearchProviderToGoogle(false);
   EXPECT_FALSE(
@@ -663,4 +673,16 @@ TEST_F(BrowserCommandHandlerTest, StartSavedTabGroupTutorialCommand) {
 
   // Manually call tutorial started callback.
   command_handler_->OnTutorialStarted(kSavedTabGroupTutorialId, &service);
+}
+
+TEST_F(BrowserCommandHandlerTest, OpenAISettingsCommand) {
+  // By default, opening the password manager is allowed.
+  EXPECT_TRUE(CanExecuteCommand(Command::kOpenAISettings));
+  ClickInfoPtr info = ClickInfo::New();
+  info->middle_button = true;
+  info->meta_key = true;
+  // The OpenAISettings command opens a new settings window with the
+  // AI settings and the correct disposition.
+  EXPECT_CALL(*command_handler_, OpenAISettings());
+  EXPECT_TRUE(ExecuteCommand(Command::kOpenAISettings, std::move(info)));
 }

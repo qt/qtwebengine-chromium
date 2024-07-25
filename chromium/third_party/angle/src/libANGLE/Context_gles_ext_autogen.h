@@ -340,16 +340,16 @@
                                      GLint level, GLint baseViewIndex, GLsizei numViews);          \
     /* GL_OVR_multiview2 */                                                                        \
     /* GL_QCOM_framebuffer_foveated */                                                             \
-    void framebufferFoveationConfig(GLuint framebuffer, GLuint numLayers,                          \
+    void framebufferFoveationConfig(FramebufferID framebufferPacked, GLuint numLayers,             \
                                     GLuint focalPointsPerLayer, GLuint requestedFeatures,          \
                                     GLuint *providedFeatures);                                     \
-    void framebufferFoveationParameters(GLuint framebuffer, GLuint layer, GLuint focalPoint,       \
-                                        GLfloat focalX, GLfloat focalY, GLfloat gainX,             \
-                                        GLfloat gainY, GLfloat foveaArea);                         \
+    void framebufferFoveationParameters(FramebufferID framebufferPacked, GLuint layer,             \
+                                        GLuint focalPoint, GLfloat focalX, GLfloat focalY,         \
+                                        GLfloat gainX, GLfloat gainY, GLfloat foveaArea);          \
     /* GL_QCOM_render_shared_exponent */                                                           \
     /* GL_QCOM_shading_rate */                                                                     \
     /* GL_QCOM_texture_foveated */                                                                 \
-    void textureFoveationParameters(GLuint texture, GLuint layer, GLuint focalPoint,               \
+    void textureFoveationParameters(TextureID texturePacked, GLuint layer, GLuint focalPoint,      \
                                     GLfloat focalX, GLfloat focalY, GLfloat gainX, GLfloat gainY,  \
                                     GLfloat foveaArea);                                            \
     /* GL_WEBGL_video_texture */                                                                   \
@@ -432,6 +432,7 @@
     /* GL_ANGLE_multiview_multisample */                                                           \
     /* GL_ANGLE_polygon_mode */                                                                    \
     /* GL_ANGLE_program_binary */                                                                  \
+    /* GL_ANGLE_program_binary_readiness_query */                                                  \
     /* GL_ANGLE_program_cache_control */                                                           \
     /* GL_ANGLE_provoking_vertex */                                                                \
     /* GL_ANGLE_read_only_depth_stencil_feedback_loops */                                          \

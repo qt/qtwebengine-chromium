@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/svg/svg_length_functions.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/clear_collection_scope.h"
 
 namespace blink {
 
@@ -38,6 +39,11 @@ FontHeight ComputeEmphasisMarkOutsets(const ComputedStyle& style,
 }
 
 }  // namespace
+
+void LogicalRubyColumn::Trace(Visitor* visitor) const {
+  visitor->Trace(annotation_items);
+  visitor->Trace(state_stack);
+}
 
 InlineBoxState::InlineBoxState(const InlineBoxState&& state)
     : fragment_start(state.fragment_start),
@@ -137,8 +143,7 @@ void InlineBoxState::ComputeTextMetrics(const ComputedStyle& styleref,
   FontHeight emphasis_marks_outsets =
       ComputeEmphasisMarkOutsets(styleref, fontref);
   FontHeight leading_space = CalculateLeadingSpace(
-      styleref.ComputedLineHeightAsFixed(fontref), text_metrics,
-      styleref.TextBoxTrim(), styleref.GetWritingMode());
+      styleref.ComputedLineHeightAsFixed(fontref), text_metrics);
   if (emphasis_marks_outsets.IsEmpty()) {
     text_metrics.AddLeading(leading_space);
   } else {
@@ -152,7 +157,7 @@ void InlineBoxState::ComputeTextMetrics(const ComputedStyle& styleref,
 
   metrics.Unite(text_metrics);
 
-  include_used_fonts = styleref.LineHeight().IsNegative();
+  include_used_fonts = styleref.LineHeight().IsAuto();
 }
 
 void InlineBoxState::ResetTextMetrics() {
@@ -169,14 +174,14 @@ void InlineBoxState::EnsureTextMetrics(const ComputedStyle& styleref,
 
 void InlineBoxState::AccumulateUsedFonts(const ShapeResultView* shape_result) {
   const auto baseline_type = style->GetFontBaseline();
-  HashSet<const SimpleFontData*> fallback_fonts;
+  HeapHashSet<Member<const SimpleFontData>> fallback_fonts;
+  ClearCollectionScope clear_scope(&fallback_fonts);
   shape_result->FallbackFonts(&fallback_fonts);
   for (const SimpleFontData* const fallback_font : fallback_fonts) {
     FontHeight fallback_metrics =
         fallback_font->GetFontMetrics().GetFontHeight(baseline_type);
     FontHeight leading_space = CalculateLeadingSpace(
-        fallback_font->GetFontMetrics().FixedLineSpacing(), fallback_metrics,
-        style->TextBoxTrim(), style->GetWritingMode());
+        fallback_font->GetFontMetrics().FixedLineSpacing(), fallback_metrics);
     fallback_metrics.AddLeading(leading_space);
     metrics.Unite(fallback_metrics);
   }
@@ -199,6 +204,12 @@ bool InlineBoxState::CanAddTextOfStyle(const ComputedStyle& text_style) const {
       style->GetFont().PrimaryFont() == text_style.GetFont().PrimaryFont())
     return true;
   return false;
+}
+
+void InlineLayoutStateStack::Trace(Visitor* visitor) const {
+  visitor->Trace(stack_);
+  visitor->Trace(box_data_list_);
+  visitor->Trace(ruby_column_list_);
 }
 
 InlineBoxState* InlineLayoutStateStack::OnBeginPlaceItems(
@@ -450,6 +461,17 @@ void InlineLayoutStateStack::AddBoxData(const ConstraintSpace& space,
               box_data.margin_border_padding_line_right);
   }
 
+  for (const auto& logical_column : ruby_column_list_) {
+    unsigned base_start = logical_column->start_index;
+    if (box->fragment_start <= base_start && base_start < fragment_end) {
+      if (!box_data.ruby_column_list) {
+        box_data.ruby_column_list =
+            MakeGarbageCollected<HeapVector<Member<LogicalRubyColumn>>>();
+      }
+      box_data.ruby_column_list->push_back(logical_column);
+    }
+  }
+
   DCHECK((*line_box)[box->fragment_start].IsPlaceholder());
   DCHECK_GT(fragment_end, box->fragment_start);
   if (fragment_end > box->fragment_start + 1)
@@ -528,7 +550,7 @@ void InlineLayoutStateStack::UpdateAfterReorder(LogicalLineItems* line_box) {
     box_data.fragment_start = box_data.fragment_end = 0;
 
   // Scan children and update start/end from their box_data_index.
-  Vector<BoxData> fragmented_boxes;
+  HeapVector<BoxData> fragmented_boxes;
   for (unsigned index = 0; index < line_box->size();)
     index = UpdateBoxDataFragmentRange(line_box, index, &fragmented_boxes);
 
@@ -553,7 +575,7 @@ void InlineLayoutStateStack::UpdateAfterReorder(LogicalLineItems* line_box) {
 unsigned InlineLayoutStateStack::UpdateBoxDataFragmentRange(
     LogicalLineItems* line_box,
     unsigned index,
-    Vector<BoxData>* fragmented_boxes) {
+    HeapVector<BoxData>* fragmented_boxes) {
   // Find the first line box item that should create a box fragment.
   for (; index < line_box->size(); index++) {
     LogicalLineItem* start = &(*line_box)[index];
@@ -609,7 +631,7 @@ unsigned InlineLayoutStateStack::UpdateBoxDataFragmentRange(
 }
 
 void InlineLayoutStateStack::UpdateFragmentedBoxDataEdges(
-    Vector<BoxData>* fragmented_boxes) {
+    HeapVector<BoxData>* fragmented_boxes) {
   DCHECK(!fragmented_boxes->empty());
   // Append in the descending order of |fragmented_box_data_index| because the
   // indices will change as boxes are inserted into |box_data_list_|.
@@ -652,7 +674,7 @@ void InlineLayoutStateStack::UpdateFragmentedBoxDataEdges(
 }
 
 void InlineLayoutStateStack::BoxData::UpdateFragmentEdges(
-    Vector<BoxData, 4>& list) {
+    HeapVector<BoxData, 4>& list) {
   DCHECK(fragmented_box_data_index);
 
   // If this box has the right edge, move it to the last fragment.
@@ -680,8 +702,9 @@ LayoutUnit InlineLayoutStateStack::ComputeInlinePositions(
     child.rect.offset.inline_offset += position;
     // Box margins/boders/paddings will be processed later.
     // TODO(kojii): we could optimize this if the reordering did not occur.
-    if (!child.HasFragment())
+    if (!child.HasFragment() && !child.IsRubyLinePlaceholder()) {
       continue;
+    }
     position += child.inline_size;
   }
 
@@ -753,17 +776,38 @@ LayoutUnit InlineLayoutStateStack::ComputeInlinePositions(
   return position;
 }
 
+void InlineLayoutStateStack::MoveBoxDataInBlockDirection(LayoutUnit diff) {
+  for (BoxData& box_data : box_data_list_) {
+    box_data.rect.offset.block_offset += diff;
+  }
+}
+
+void InlineLayoutStateStack::MoveBoxDataInInlineDirection(LayoutUnit diff) {
+  for (BoxData& box_data : box_data_list_) {
+    box_data.rect.offset.inline_offset += diff;
+  }
+}
+
 void InlineLayoutStateStack::ApplyRelativePositioning(
     const ConstraintSpace& space,
-    LogicalLineItems* line_box) {
-  if (box_data_list_.empty())
+    LogicalLineItems* line_box,
+    const LogicalOffset* parent_offset) {
+  if (box_data_list_.empty() && ruby_column_list_.empty() && !parent_offset) {
     return;
+  }
 
   // The final position of any inline boxes, (<span>, etc) are stored on
   // |BoxData::rect|. As we don't have a mapping from |LogicalLineItem| to
   // |BoxData| we store the accumulated relative offsets, and then apply the
   // final adjustment at the end of this function.
   Vector<LogicalOffset, 32> accumulated_offsets(line_box->size());
+
+  if (parent_offset) {
+    for (unsigned index = 0; index < line_box->size(); ++index) {
+      (*line_box)[index].rect.offset += *parent_offset;
+      accumulated_offsets[index] = *parent_offset;
+    }
+  }
 
   for (BoxData& box_data : box_data_list_) {
     unsigned start = box_data.fragment_start;
@@ -782,12 +826,25 @@ void InlineLayoutStateStack::ApplyRelativePositioning(
   // Apply the final accumulated relative position offset for each box.
   for (BoxData& box_data : box_data_list_)
     box_data.rect.offset += accumulated_offsets[box_data.fragment_start];
+
+  for (auto& logical_column : ruby_column_list_) {
+    logical_column->state_stack.ApplyRelativePositioning(
+        space, logical_column->annotation_items,
+        &accumulated_offsets[logical_column->start_index]);
+  }
 }
 
 void InlineLayoutStateStack::CreateBoxFragments(const ConstraintSpace& space,
                                                 LogicalLineItems* line_box,
                                                 bool is_opaque) {
-  DCHECK(!box_data_list_.empty());
+  for (auto& logical_column : ruby_column_list_) {
+    logical_column->state_stack.CreateBoxFragments(
+        space, logical_column->annotation_items, /* is_opaque */ false);
+  }
+
+  if (!HasBoxFragments()) {
+    return;
+  }
 
   for (BoxData& box_data : box_data_list_) {
     unsigned start = box_data.fragment_start;
@@ -849,14 +906,7 @@ const LayoutResult* InlineLayoutStateStack::BoxData::CreateBoxFragment(
         {true, has_line_right_edge, true, has_line_left_edge});
   }
 
-  for (unsigned i = fragment_start; i < fragment_end; i++) {
-    LogicalLineItem& child = (*line_box)[i];
-
-    // If |child| has a fragment created by previous |CreateBoxFragment|, skip
-    // children that were already added to |child|.
-    if (child.children_count)
-      i += child.children_count - 1;
-
+  auto handle_box_child = [&](LogicalLineItem& child) {
     if (child.out_of_flow_positioned_box) {
       DCHECK(item->GetLayoutObject()->IsLayoutInline());
       BlockNode oof_box(To<LayoutBox>(child.out_of_flow_positioned_box.Get()));
@@ -867,9 +917,10 @@ const LayoutResult* InlineLayoutStateStack::BoxData::CreateBoxFragment(
       LogicalOffset static_offset = child.rect.offset - rect.offset;
 
       box.AddOutOfFlowInlineChildCandidate(oof_box, static_offset,
-                                           child.container_direction);
+                                           child.container_direction,
+                                           child.is_hidden_for_paint);
       child.out_of_flow_positioned_box = nullptr;
-      continue;
+      return;
     }
 
     // Propagate any OOF-positioned descendants from any atomic-inlines, etc.
@@ -881,10 +932,35 @@ const LayoutResult* InlineLayoutStateStack::BoxData::CreateBoxFragment(
               ComputeRelativeOffsetForInline(space, child_style),
           ComputeRelativeOffsetForOOFInInline(space, child_style));
     }
+  };
+
+  for (unsigned i = fragment_start; i < fragment_end; i++) {
+    LogicalLineItem& child = (*line_box)[i];
+
+    // If |child| has a fragment created by previous |CreateBoxFragment|, skip
+    // children that were already added to |child|.
+    if (child.children_count) {
+      i += child.children_count - 1;
+    }
+
+    handle_box_child(child);
 
     // |FragmentItems| has a flat list of all descendants, except
     // OOF-positioned descendants. We still create a |PhysicalBoxFragment|,
     // but don't add children to it and keep them in the flat list.
+  }
+  if (ruby_column_list) {
+    for (auto& logical_column : *ruby_column_list) {
+      for (unsigned i = 0; i < logical_column->annotation_items->size(); ++i) {
+        LogicalLineItem& child = (*logical_column->annotation_items)[i];
+        if (child.children_count) {
+          i += child.children_count - 1;
+        }
+        handle_box_child(child);
+      }
+      logical_column->annotation_items->SetPropagated();
+    }
+    ruby_column_list.Clear();
   }
 
   // Inline boxes that produce DisplayItemClient should do full paint
@@ -893,6 +969,10 @@ const LayoutResult* InlineLayoutStateStack::BoxData::CreateBoxFragment(
 
   box.MoveOutOfFlowDescendantCandidatesToDescendants();
   return box.ToInlineBoxFragment();
+}
+
+void InlineLayoutStateStack::BoxData::Trace(Visitor* visitor) const {
+  visitor->Trace(ruby_column_list);
 }
 
 InlineLayoutStateStack::PositionPending
@@ -1053,7 +1133,7 @@ InlineLayoutStateStack::ApplyBaselineShift(InlineBoxState* box,
       // 'Percentages: refer to the 'line-height' of the element itself'.
       // https://www.w3.org/TR/CSS22/visudet.html#propdef-vertical-align
       const Length& length = style.GetVerticalAlignLength();
-      LayoutUnit line_height = length.IsPercentOrCalc()
+      LayoutUnit line_height = length.HasPercent()
                                    ? style.ComputedLineHeightAsFixed()
                                    : box->text_metrics.LineHeight();
       baseline_shift = -ValueForLength(length, line_height);
@@ -1149,8 +1229,7 @@ FontHeight InlineLayoutStateStack::MetricsForTopAndBottomAlign(
     // Include the line-height property. The inline box has the height of the
     // font metrics without the line-height included.
     FontHeight leading_space =
-        CalculateLeadingSpace(style.ComputedLineHeightAsFixed(), box_metrics,
-                              style.TextBoxTrim(), style.GetWritingMode());
+        CalculateLeadingSpace(style.ComputedLineHeightAsFixed(), box_metrics);
     box_metrics.AddLeading(leading_space);
     metrics.Unite(box_metrics);
   }
@@ -1177,6 +1256,11 @@ FontHeight InlineLayoutStateStack::MetricsForTopAndBottomAlign(
     }
   }
   return max;
+}
+
+LogicalRubyColumn& InlineLayoutStateStack::CreateRubyColumn() {
+  ruby_column_list_.push_back(MakeGarbageCollected<LogicalRubyColumn>());
+  return *ruby_column_list_.back();
 }
 
 #if DCHECK_IS_ON()

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import type * as TimelineModel from '../../models/timeline_model/timeline_model.js';
+import * as Root from '../../core/root/root.js';
 import * as TraceEngine from '../../models/trace/trace.js';
 import type * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
@@ -12,6 +12,8 @@ import {AnimationsTrackAppender} from './AnimationsTrackAppender.js';
 import {getEventLevel} from './AppenderUtils.js';
 import * as TimelineComponents from './components/components.js';
 import {getEventStyle} from './EventUICategory.js';
+import {ExtensionDataGatherer} from './ExtensionDataGatherer.js';
+import {ExtensionTrackAppender} from './ExtensionTrackAppender.js';
 import {GPUTrackAppender} from './GPUTrackAppender.js';
 import {InteractionsTrackAppender} from './InteractionsTrackAppender.js';
 import {LayoutShiftsTrackAppender} from './LayoutShiftsTrackAppender.js';
@@ -80,7 +82,8 @@ export interface TrackAppender {
 }
 
 export const TrackNames =
-    ['Animations', 'Timings', 'Interactions', 'GPU', 'LayoutShifts', 'Thread', 'Thread_AuctionWorklet'] as const;
+    ['Animations', 'Timings', 'Interactions', 'GPU', 'LayoutShifts', 'Thread', 'Thread_AuctionWorklet', 'Extension'] as
+    const;
 // Network track will use TrackAppender interface, but it won't be shown in Main flamechart.
 // So manually add it to TrackAppenderName.
 export type TrackAppenderName = typeof TrackNames[number]|'Network';
@@ -97,12 +100,6 @@ export class CompatibilityTracksAppender {
   #allTrackAppenders: TrackAppender[] = [];
   #visibleTrackNames: Set<TrackAppenderName> = new Set([...TrackNames]);
 
-  // TODO(crbug.com/1416533)
-  // These are used only for compatibility with the legacy flame chart
-  // architecture of the panel. Once all tracks have been migrated to
-  // use the new engine and flame chart architecture, the reference can
-  // be removed.
-  #legacyTimelineModel: TimelineModel.TimelineModel.TimelineModelImpl;
   #legacyEntryTypeByLevel: EntryType[];
   #timingsTrackAppender: TimingsTrackAppender;
   #animationsTrackAppender: AnimationsTrackAppender;
@@ -127,7 +124,7 @@ export class CompatibilityTracksAppender {
   constructor(
       flameChartData: PerfUI.FlameChart.FlameChartTimelineData,
       traceParsedData: TraceEngine.Handlers.Types.TraceParseData, entryData: TimelineFlameChartEntry[],
-      legacyEntryTypeByLevel: EntryType[], legacyTimelineModel: TimelineModel.TimelineModel.TimelineModelImpl) {
+      legacyEntryTypeByLevel: EntryType[]) {
     this.#flameChartData = flameChartData;
     this.#traceParsedData = traceParsedData;
     this.#entryData = entryData;
@@ -137,7 +134,6 @@ export class CompatibilityTracksAppender {
         /* lightnessSpace= */ 50,
         /* alphaSpace= */ 0.7);
     this.#legacyEntryTypeByLevel = legacyEntryTypeByLevel;
-    this.#legacyTimelineModel = legacyTimelineModel;
     this.#timingsTrackAppender = new TimingsTrackAppender(this, this.#traceParsedData, this.#colorGenerator);
     this.#allTrackAppenders.push(this.#timingsTrackAppender);
 
@@ -156,6 +152,9 @@ export class CompatibilityTracksAppender {
     this.#allTrackAppenders.push(this.#layoutShiftsTrackAppender);
 
     this.#addThreadAppenders();
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.TIMELINE_EXTENSIONS)) {
+      this.#addExtensionAppenders();
+    }
     ThemeSupport.ThemeSupport.instance().addEventListener(ThemeSupport.ThemeChangeEvent.eventName, () => {
       for (const group of this.#flameChartData.groups) {
         // We only need to update the color here, because FlameChart will call `scheduleUpdate()` when theme is changed.
@@ -179,34 +178,11 @@ export class CompatibilityTracksAppender {
     return this.#flameChartData;
   }
 
-  modifyTree(
-      group: PerfUI.FlameChart.Group, node: TraceEngine.Types.TraceEvents.SyntheticTraceEntry,
-      action: TraceEngine.EntriesFilter.FilterAction): void {
-    const threadTrackAppender = this.#trackForGroup.get(group);
-    if (threadTrackAppender instanceof ThreadAppender) {
-      threadTrackAppender.modifyTree(node, action);
-    } else {
-      console.warn('Could not modify tree in not thread track');
+  #addExtensionAppenders(): void {
+    const tracks = ExtensionDataGatherer.instance().getExtensionData();
+    for (const trackData of tracks) {
+      this.#allTrackAppenders.push(new ExtensionTrackAppender(this, trackData));
     }
-  }
-
-  findPossibleContextMenuActions(
-      group: PerfUI.FlameChart.Group,
-      node: TraceEngine.Types.TraceEvents.SyntheticTraceEntry): TraceEngine.EntriesFilter.PossibleFilterActions|void {
-    const threadTrackAppender = this.#trackForGroup.get(group);
-    if (threadTrackAppender instanceof ThreadAppender) {
-      return threadTrackAppender.findPossibleContextMenuActions(node);
-    }
-    console.warn('Could not modify tree in not thread track');
-  }
-
-  findHiddenDescendantsAmount(group: PerfUI.FlameChart.Group, node: TraceEngine.Types.TraceEvents.SyntheticTraceEntry):
-      number|void {
-    const threadTrackAppender = this.#trackForGroup.get(group);
-    if (threadTrackAppender instanceof ThreadAppender) {
-      return threadTrackAppender.findHiddenDescendantsAmount(node);
-    }
-    console.warn('Could not find hidden entries because non thread tracks are not modifiable');
   }
 
   #addThreadAppenders(): void {
@@ -246,6 +222,7 @@ export class CompatibilityTracksAppender {
     };
     const threads = TraceEngine.Handlers.Threads.threadsInTrace(this.#traceParsedData);
     const processedAuctionWorkletsIds = new Set<TraceEngine.Types.TraceEvents.ProcessID>();
+    const showAllEvents = Root.Runtime.experiments.isEnabled('timeline-show-all-events');
 
     for (const {pid, tid, name, type} of threads) {
       if (this.#traceParsedData.Meta.traceIsGeneric) {
@@ -254,6 +231,10 @@ export class CompatibilityTracksAppender {
         // OTHER for all threads.
         this.#threadAppenders.push(new ThreadAppender(
             this, this.#traceParsedData, pid, tid, name, TraceEngine.Handlers.Threads.ThreadType.OTHER));
+        continue;
+      }
+      // These threads have no useful information. Omit them
+      if ((name === 'Chrome_ChildIOThread' || name === 'Compositor' || name === 'GpuMemoryThread') && !showAllEvents) {
         continue;
       }
 
@@ -283,19 +264,6 @@ export class CompatibilityTracksAppender {
 
     this.#threadAppenders.sort((a, b) => weight(a) - weight(b));
     this.#allTrackAppenders.push(...this.#threadAppenders);
-  }
-  /**
-   * Given a trace event returns instantiates a legacy SDK.Event. This should
-   * be used for compatibility purposes only.
-   */
-  getLegacyEvent(event: TraceEngine.Types.TraceEvents.TraceEventData): TraceEngine.Legacy.Event|null {
-    const process = this.#legacyTimelineModel.tracingModel()?.getProcessById(event.pid);
-    const thread = process?.threadById(event.tid);
-    if (!thread) {
-      return null;
-    }
-    return TraceEngine.Legacy.PayloadEvent.fromPayload(
-        event as unknown as TraceEngine.TracingManager.EventPayload, thread);
   }
 
   timingsTrackAppender(): TimingsTrackAppender {
@@ -563,6 +531,16 @@ export class CompatibilityTracksAppender {
       // period.
       // Therefore we mark them as visible so they are appended onto the Thread
       // track, and hence accessible by the CountersGraph view.
+      return true;
+    }
+
+    // Gate the visibility of post message events behind the experiement flag
+    if (TraceEngine.Types.TraceEvents.isTraceEventSchedulePostMessage(entry) ||
+        TraceEngine.Types.TraceEvents.isTraceEventHandlePostMessage(entry)) {
+      return Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.TIMELINE_SHOW_POST_MESSAGE_EVENTS);
+    }
+
+    if (TraceEngine.Types.Extensions.isSyntheticExtensionEntry(entry)) {
       return true;
     }
 

@@ -13,7 +13,9 @@
     #error Define SK_OPTS_TARGET before including SkOpts_SetTarget
 #endif
 
-#if SK_OPTS_TARGET == SK_OPTS_TARGET_DEFAULT
+#if defined(SK_OPTS_NS)
+    // For testing define SK_OPTS_NS before including.
+#elif SK_OPTS_TARGET == SK_OPTS_TARGET_DEFAULT
 
     #if defined(SK_ARM_HAS_NEON)
         #define SK_OPTS_NS neon
@@ -35,6 +37,10 @@
         #define SK_OPTS_NS sse2
     #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
         #define SK_OPTS_NS sse
+    #elif SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+        #define SK_OPTS_NS lasx
+    #elif SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+        #define SK_OPTS_NS lsx
     #else
         #define SK_OPTS_NS portable
     #endif

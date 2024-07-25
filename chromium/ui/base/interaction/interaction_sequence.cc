@@ -6,7 +6,9 @@
 
 #include <list>
 #include <memory>
+#include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "base/callback_list.h"
@@ -18,10 +20,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
-#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
 
@@ -107,7 +107,7 @@ struct InteractionSequence::SubsequenceData {
   Builder builder;
   SubsequenceCondition condition;
   std::unique_ptr<InteractionSequence> sequence;
-  absl::optional<bool> result;
+  std::optional<bool> result;
   AbortedData aborted_data;
 };
 
@@ -191,7 +191,7 @@ InteractionSequence::Builder& InteractionSequence::Builder::AddStep(
       << " kShown steps with transition_only_on_event are not compatible with"
          " named elements since a named element ceases to be valid when it"
          " becomes hidden.";
-  if (auto* context = absl::get_if<ElementContext>(&step->context)) {
+  if (auto* context = std::get_if<ElementContext>(&step->context)) {
     DCHECK(*context) << "Explicit context must be valid.";
     if (!configuration_->context)
       configuration_->context = *context;
@@ -263,8 +263,7 @@ InteractionSequence::StepBuilder::SetElementID(ElementIdentifier element_id) {
 }
 
 InteractionSequence::StepBuilder&
-InteractionSequence::StepBuilder::SetElementName(
-    const base::StringPiece& name) {
+InteractionSequence::StepBuilder::SetElementName(std::string_view name) {
   step_->element_name = std::string(name);
   step_->context = ContextMode::kAny;
   return *this;
@@ -273,10 +272,8 @@ InteractionSequence::StepBuilder::SetElementName(
 InteractionSequence::StepBuilder& InteractionSequence::StepBuilder::SetContext(
     StepContext context) {
   DCHECK(context != StepContext(ElementContext()));
-  DCHECK(context == StepContext(ContextMode::kAny) ||
-         !step_->uses_named_element());
   step_->context = context;
-  if (const ContextMode* mode = absl::get_if<ContextMode>(&context)) {
+  if (const ContextMode* mode = std::get_if<ContextMode>(&context)) {
     step_->in_any_context = *mode == ContextMode::kAny;
   } else {
     step_->in_any_context = false;
@@ -379,15 +376,14 @@ InteractionSequence::StepBuilder::SetEndCallback(
 }
 
 InteractionSequence::StepBuilder&
-InteractionSequence::StepBuilder::SetDescription(
-    const base::StringPiece& description) {
+InteractionSequence::StepBuilder::SetDescription(std::string_view description) {
   step_->description = std::string(description);
   return *this;
 }
 
 InteractionSequence::StepBuilder&
 InteractionSequence::StepBuilder::FormatDescription(
-    const base::StringPiece& format_string) {
+    std::string_view format_string) {
   step_->description = base::StringPrintfNonConstexpr(
       format_string.data(), step_->description.c_str());
   return *this;
@@ -474,7 +470,7 @@ void InteractionSequence::FailForTesting() {
 }
 
 void InteractionSequence::NameElement(TrackedElement* element,
-                                      const base::StringPiece& name) {
+                                      std::string_view name) {
   DCHECK(!name.empty());
   named_elements_[std::string(name)] = SafeElementReference(element);
   DCHECK(!current_step_ || current_step_->element_name != name);
@@ -495,8 +491,7 @@ void InteractionSequence::NameElement(TrackedElement* element,
   MaybeWatchForEarlyTrigger(current_step_.get());
 }
 
-TrackedElement* InteractionSequence::GetNamedElement(
-    const base::StringPiece& name) {
+TrackedElement* InteractionSequence::GetNamedElement(std::string_view name) {
   const auto it = named_elements_.find(std::string(name));
   TrackedElement* result = nullptr;
   if (it != named_elements_.end()) {
@@ -508,7 +503,7 @@ TrackedElement* InteractionSequence::GetNamedElement(
 }
 
 const TrackedElement* InteractionSequence::GetNamedElement(
-    const base::StringPiece& name) const {
+    std::string_view name) const {
   return const_cast<InteractionSequence*>(this)->GetNamedElement(name);
 }
 
@@ -532,8 +527,8 @@ InteractionSequence::AbortedData InteractionSequence::BuildAbortedData(
       if (reason == AbortedReason::kSubsequenceFailed) {
         for (const auto& data : next_step()->subsequence_data) {
           aborted_data.subsequence_failures.emplace_back(
-              data.result == false ? absl::make_optional(data.aborted_data)
-                                   : absl::nullopt);
+              data.result == false ? std::make_optional(data.aborted_data)
+                                   : std::nullopt);
         }
       }
     }
@@ -542,6 +537,16 @@ InteractionSequence::AbortedData InteractionSequence::BuildAbortedData(
     aborted_data.element_id = current_step_->id;
     aborted_data.element = SafeElementReference(current_step_->element);
     aborted_data.step_description = current_step_->description;
+    if (reason == AbortedReason::kElementHiddenDuringStep && next_step()) {
+      // This may be due to the next step failing to happen, so store the next
+      // step as well as a convenience (if present).
+      AbortedData waiting_for;
+      waiting_for.step_index = aborted_data.step_index + 1;
+      waiting_for.step_type = next_step()->type;
+      waiting_for.element_id = next_step()->id;
+      waiting_for.step_description = next_step()->description;
+      aborted_data.subsequence_failures.emplace_back(std::move(waiting_for));
+    }
   }
   return aborted_data;
 }
@@ -710,10 +715,10 @@ void InteractionSequence::OnElementHiddenWaitingForEvent(
   // Figure out which contexts to look in based on the pending step.
   ElementContext ctx;
   if (const ElementContext* ctx_ptr =
-          absl::get_if<ElementContext>(&next_step()->context)) {
+          std::get_if<ElementContext>(&next_step()->context)) {
     ctx = *ctx_ptr;
   } else {
-    switch (absl::get<ContextMode>(next_step()->context)) {
+    switch (std::get<ContextMode>(next_step()->context)) {
       case ContextMode::kInitial:
         ctx = context();
         break;
@@ -962,7 +967,7 @@ void InteractionSequence::StageNextStep() {
   // those cases should be true (any other ContextMode would have been
   // overwritten).
   ElementContext context;
-  if (auto* context_ptr = absl::get_if<ElementContext>(&next->context)) {
+  if (auto* context_ptr = std::get_if<ElementContext>(&next->context)) {
     context = *context_ptr;
   } else {
     DCHECK(StepContext(ContextMode::kAny) == next->context);
@@ -1104,7 +1109,7 @@ void InteractionSequence::StageNextStep() {
         } else {
           // This subsequence cannot run, so clear it out.
           subsequence_data.sequence.reset();
-          subsequence_data.result = absl::nullopt;
+          subsequence_data.result = std::nullopt;
         }
       }
       if (!found) {
@@ -1169,9 +1174,8 @@ bool InteractionSequence::AbortedDuringCallback() const {
   return true;
 }
 
-bool InteractionSequence::MatchesNameIfSpecified(
-    const TrackedElement* element,
-    const base::StringPiece& name) const {
+bool InteractionSequence::MatchesNameIfSpecified(const TrackedElement* element,
+                                                 std::string_view name) const {
   if (name.empty())
     return true;
 
@@ -1186,9 +1190,10 @@ ElementContext InteractionSequence::UpdateNextStepContext(
   // A different mechanism is used to determine the context for named elements.
   CHECK(!next.uses_named_element());
   // If the context is already set, nothing needs to be done.
-  if (auto* context = absl::get_if<ElementContext>(&next.context))
+  if (auto* context = std::get_if<ElementContext>(&next.context)) {
     return *context;
-  switch (absl::get<ContextMode>(next.context)) {
+  }
+  switch (std::get<ContextMode>(next.context)) {
     case ContextMode::kAny:
       // Any is a valid context already.
       return ElementContext();
@@ -1199,7 +1204,7 @@ ElementContext InteractionSequence::UpdateNextStepContext(
       ElementContext current_context = context();
       if (current_step) {
         const ElementContext* const temp =
-            absl::get_if<ElementContext>(&current_step->context);
+            std::get_if<ElementContext>(&current_step->context);
         DCHECK(temp)
             << "Previous step should always have a context set at this point.";
         if (temp)
@@ -1296,12 +1301,12 @@ void InteractionSequence::BuildSubsequences(const Step* current_step) {
   for (auto& subsequence_data : next_step()->subsequence_data) {
     if (!subsequence_data.sequence) {
       subsequence_data.builder.SetContext(configuration_->context);
-      subsequence_data.builder.SetCompletedCallback(base::BindOnce(
-          &InteractionSequence::OnSubsequenceCompleted, base::Unretained(this),
-          base::Unretained(&subsequence_data)));
-      subsequence_data.builder.SetAbortedCallback(base::BindOnce(
-          &InteractionSequence::OnSubsequenceAborted, base::Unretained(this),
-          base::Unretained(&subsequence_data)));
+      subsequence_data.builder.SetCompletedCallback(
+          base::BindOnce(&InteractionSequence::OnSubsequenceCompleted,
+                         AsWeakPtr(), SubsequenceHandle(&subsequence_data)));
+      subsequence_data.builder.SetAbortedCallback(
+          base::BindOnce(&InteractionSequence::OnSubsequenceAborted,
+                         AsWeakPtr(), SubsequenceHandle(&subsequence_data)));
       subsequence_data.sequence =
           subsequence_data.builder.BuildSubsequence(current_step);
       // This will prevent internal transitions until the current step
@@ -1391,6 +1396,18 @@ void PrintTo(const InteractionSequence::AbortedData& data, std::ostream* os) {
       }
       ++i;
     }
+  } else if (data.aborted_reason ==
+                 InteractionSequence::AbortedReason::kElementHiddenDuringStep &&
+             !data.subsequence_failures.empty() &&
+             data.subsequence_failures[0].has_value()) {
+    const auto& next_step = data.subsequence_failures[0].value();
+    *os << "; while waiting for { step " << next_step.step_index << " (";
+    if (next_step.step_description.empty()) {
+      *os << next_step.step_type;
+    } else {
+      *os << next_step.step_description;
+    }
+    *os << "); id " << next_step.element_id << " }";
   }
 }
 

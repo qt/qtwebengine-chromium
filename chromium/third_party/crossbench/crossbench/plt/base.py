@@ -348,6 +348,12 @@ class Platform(abc.ABC):
     else:
       pathlib.Path(path).unlink()
 
+  def rename(self, src_path: Union[str, pathlib.Path],
+             dst_path: Union[str, pathlib.Path]) -> None:
+    """Remove a single file on this platform."""
+    assert self.is_local, "Unsupported operation on remote platform"
+    pathlib.Path(src_path).rename(dst_path)
+
   def symlink_or_copy(self, src: pathlib.Path,
                       dst: pathlib.Path) -> pathlib.Path:
     """Windows does not support symlinking without admin support.

@@ -6,6 +6,7 @@
 #define COMPONENTS_VIZ_SERVICE_DISPLAY_OVERLAY_PROCESSOR_INTERFACE_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "base/containers/flat_map.h"
@@ -18,7 +19,6 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gpu_task_scheduler_helper.h"
 #include "gpu/ipc/common/surface_handle.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/ca_layer_result.h"
 #include "ui/gfx/color_space.h"
@@ -73,7 +73,7 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
     OutputSurfaceOverlayPlane& operator=(const OutputSurfaceOverlayPlane&);
     ~OutputSurfaceOverlayPlane();
     // Display's rotation information.
-    gfx::OverlayTransform transform;
+    gfx::OverlayTransform transform = gfx::OVERLAY_TRANSFORM_NONE;
     // Rect on the display to position to. This takes in account of Display's
     // rotation.
     gfx::RectF display_rect;
@@ -83,23 +83,23 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
     // Size of output surface in pixels.
     gfx::Size resource_size;
     // Format of the buffer to scanout.
-    gfx::BufferFormat format;
+    gfx::BufferFormat format = gfx::BufferFormat::BGRA_8888;
     // ColorSpace of the buffer for scanout.
     gfx::ColorSpace color_space;
     // Enable blending when we have underlay.
-    bool enable_blending;
+    bool enable_blending = false;
     // Opacity of the overlay independent of buffer alpha. When rendered:
     // src-alpha = |opacity| * buffer-component-alpha.
-    float opacity;
+    float opacity = 1.0f;
     // Mailbox corresponding to the buffer backing the primary plane.
     gpu::Mailbox mailbox;
     // Hints for overlay prioritization.
-    gfx::OverlayPriorityHint priority_hint;
+    gfx::OverlayPriorityHint priority_hint = gfx::OverlayPriorityHint::kNone;
     // Specifies the rounded corners.
     gfx::RRectF rounded_corners;
     // Optional damage rect. If none is provided the damage is assumed to be
     // |resource_size| (full damage).
-    absl::optional<gfx::Rect> damage_rect;
+    std::optional<gfx::Rect> damage_rect;
   };
 
   // TODO(weiliangc): Eventually the asymmetry between primary plane and
@@ -155,13 +155,14 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
       gfx::Rect* damage_rect,
       std::vector<gfx::Rect>* content_bounds) = 0;
 
-  // For Mac, if we successfully generated a candidate list for CALayerOverlay,
-  // we no longer need the |output_surface_plane|. This function takes a pointer
-  // to the absl::optional instance so the instance can be reset.
+  // If we successfully generated a candidates list for delegated compositing
+  // during |ProcessForOverlays|, we no longer need the |output_surface_plane|.
+  // This function takes a pointer to the std::optional instance so the instance
+  // can be reset.
   // TODO(weiliangc): Internalize the |output_surface_plane| inside the overlay
   // processor.
   virtual void AdjustOutputSurfaceOverlay(
-      absl::optional<OutputSurfaceOverlayPlane>* output_surface_plane) = 0;
+      std::optional<OutputSurfaceOverlayPlane>* output_surface_plane) = 0;
 
   // Before the overlay refactor to use OverlayProcessorOnGpu, overlay
   // candidates are stored inside DirectRenderer. Those overlay candidates are
@@ -197,6 +198,10 @@ class VIZ_SERVICE_EXPORT OverlayProcessorInterface {
   // For Lacros, get damage that was not assigned to any overlay candidates
   // during ProcessForOverlays.
   virtual gfx::RectF GetUnassignedDamage() const;
+
+  // Supports gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90 and
+  // gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270 transforms.
+  virtual bool SupportsFlipRotateTransform() const;
 
  protected:
   OverlayProcessorInterface() = default;

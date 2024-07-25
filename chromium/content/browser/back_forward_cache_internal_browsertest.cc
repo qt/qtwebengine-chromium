@@ -33,6 +33,7 @@
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/fenced_frame_test_util.h"
 #include "content/public/test/mock_web_contents_observer.h"
+#include "content/public/test/scoped_accessibility_mode_override.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
@@ -103,7 +104,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, BackForwardCacheFlush) {
 IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, ForEachRenderFrameHost) {
   // There are sometimes unexpected messages from a renderer to the browser,
   // which caused test flakiness on macOS.
-  // TODO(crbug.com/1263536): Fix the test flakiness.
+  // TODO(crbug.com/40800266): Fix the test flakiness.
   DoNotFailForUnexpectedMessagesWhileCached();
 
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -1090,7 +1091,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
 // updated during the "freeze" event in a way that would have prevented the
 // document from entering the BackForwardCache in the first place.
 //
-// TODO(https://crbug.com/996267): The document should be evicted.
+// TODO(crbug.com/41477477): The document should be evicted.
 //
 // ┌───────┐                     ┌────────┐
 // │browser│                     │renderer│
@@ -2220,7 +2221,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
 #endif
 
 IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest, PageshowMetrics) {
-  // TODO(https://crbug.com/1099395): Do not check for unexpected messages
+  // TODO(crbug.com/40702446): Do not check for unexpected messages
   // because the input task queue is not currently frozen, causing flakes in
   // this test.
   DoNotFailForUnexpectedMessagesWhileCached();
@@ -3210,7 +3211,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
 
   // 3) Go back to A, which should restore the page saved in the back-forward
   // cache and use the old user agent.
-  // TODO(https://crbug.com/1194880): This should use the new UA override.
+  // TODO(crbug.com/40758687): This should use the new UA override.
   {
     FrameNavigateParamsCapturer params_capturer(root);
     controller.GoBack();
@@ -3551,7 +3552,8 @@ IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithFlagForScreenReader,
   BackForwardCacheDisabledTester tester;
 
   // Use Screen Reader.
-  EnableAccessibilityForWebContents(shell()->web_contents());
+  ScopedAccessibilityModeOverride scoped_accessibility_mode(
+      shell()->web_contents(), ui::kAXModeComplete);
 
   // Navigate to Page A.
   EXPECT_TRUE(NavigateToURL(shell(), url_a));
@@ -3614,7 +3616,8 @@ IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithFlagForAXEvents,
   EXPECT_TRUE(NavigateToURL(shell()->web_contents(), url_a));
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
   // Use Screen Reader.
-  EnableAccessibilityForWebContents(shell()->web_contents());
+  ScopedAccessibilityModeOverride scoped_accessibility_mode(
+      shell()->web_contents(), ui::kAXModeComplete);
 
   // Wait until we receive the kLoadComplete AX event. This means that the
   // kLoadStart event has definitely already passed and any kLoadStart we see
@@ -3635,7 +3638,7 @@ IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithFlagForAXEvents,
   BrowserAccessibilityManager* manager =
       rfh_a->GetOrCreateBrowserAccessibilityManager();
   manager->SetGeneratedEventCallbackForTesting(
-      base::BindRepeating([](RenderFrameHostImpl* render_frame_host,
+      base::BindRepeating([](BrowserAccessibilityManager* manager,
                              ui::AXEventGenerator::Event event,
                              ui::AXNodeID event_target_id) { FAIL(); }));
   // Generate an event.
@@ -3671,6 +3674,114 @@ IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithFlagForAXEvents,
     // LOAD_START event.
     EXPECT_EQ(current_frame_host(), rfh_a.get());
     ExpectRestored(FROM_HERE);
+
+    ASSERT_TRUE(waiter_start.WaitForNotification());
+    auto* waiter_start_rfhi = static_cast<RenderFrameHostImpl*>(
+        waiter_start.event_browser_accessibility_manager()->delegate());
+    EXPECT_EQ(waiter_start_rfhi, rfh_a.get());
+  }
+}
+
+class BackForwardCacheBrowserTestWithFlagForAXLocationChange
+    : public BackForwardCacheBrowserTest,
+      public ::testing::WithParamInterface<bool> {
+ protected:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    EnableFeatureAndSetParams(features::kEnableBackForwardCacheForScreenReader,
+                              "", "true");
+    if (ShouldEvictOnAXLocationChange()) {
+      DisableFeature(features::kDoNotEvictOnAXLocationChange);
+    } else {
+      EnableFeatureAndSetParams(features::kDoNotEvictOnAXLocationChange, "",
+                                "");
+    }
+    BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
+  }
+
+  bool ShouldEvictOnAXLocationChange() { return GetParam(); }
+};
+
+INSTANTIATE_TEST_SUITE_P(All,
+                         BackForwardCacheBrowserTestWithFlagForAXLocationChange,
+                         ::testing::Bool());
+
+IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestWithFlagForAXLocationChange,
+                       EvictOnAXLocationChangeOrNot) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
+
+  // 1) Navigate to A.
+  EXPECT_TRUE(NavigateToURL(shell()->web_contents(), url_a));
+  RenderFrameHostImplWrapper rfh_a(current_frame_host());
+  // Use Screen Reader.
+  ScopedAccessibilityModeOverride scoped_accessibility_mode(
+      shell()->web_contents(), ui::kAXModeComplete);
+
+  // Wait until we receive the kLoadComplete AX event. This means that the
+  // kLoadStart event has definitely already passed and any kLoadStart we see
+  // from this frame in the future is newly generated.
+  AccessibilityNotificationWaiter waiter_complete(
+      shell()->web_contents(), ui::kAXModeComplete,
+      ax::mojom::Event::kLoadComplete);
+  ASSERT_TRUE(waiter_complete.WaitForNotification());
+
+  // 2) Navigate to B.
+  EXPECT_TRUE(NavigateToURL(shell()->web_contents(), url_b));
+  RenderFrameHostImplWrapper rfh_b(current_frame_host());
+  ASSERT_TRUE(rfh_a.get());
+  EXPECT_TRUE(rfh_a->IsInBackForwardCache());
+
+  // 3) Set the callback for location change.
+  BrowserAccessibilityManager* manager =
+      rfh_a->GetOrCreateBrowserAccessibilityManager();
+  // This callback will count the number of times location change happens.
+  // Note that this callback runs even when the page is in back/forward cache.
+  int location_change_counter_for_testing = 0;
+  manager->SetLocationChangeCallbackForTesting(base::BindRepeating(
+      [](int* location_change_counter_for_testing) {
+        // Increment the location change count.
+        *location_change_counter_for_testing += 1;
+      },
+      &location_change_counter_for_testing));
+
+  // Generate a location change event.
+  std::vector<blink::mojom::LocationChangesPtr> changes_1;
+  ui::AXRelativeBounds relative_bounds_1;
+  relative_bounds_1.bounds =
+      gfx::RectF(/*x=*/1, /*y=*/2, /*width=*/3, /*height=*/4);
+  changes_1.push_back(blink::mojom::LocationChanges::New(0, relative_bounds_1));
+  rfh_a->HandleAXLocationChanges(rfh_a->GetAXTreeID(), std::move(changes_1),
+                                 /*reset_token=*/1);
+
+  // Generate another location change event.
+  std::vector<blink::mojom::LocationChangesPtr> changes_2;
+  ui::AXRelativeBounds relative_bounds_2;
+  relative_bounds_2.bounds =
+      gfx::RectF(/*x=*/2, /*y=*/3, /*width=*/4, /*height=*/5);
+  changes_2.push_back(blink::mojom::LocationChanges::New(0, relative_bounds_2));
+  rfh_a->HandleAXLocationChanges(rfh_a->GetAXTreeID(), std::move(changes_2),
+                                 /*reset_token=*/1);
+
+  // 4) Navigate back.
+  ASSERT_TRUE(HistoryGoBack(web_contents()));
+
+  if (ShouldEvictOnAXLocationChange()) {
+    const uint64_t reason = DisallowActivationReasonId::kAXLocationChange;
+    ExpectNotRestored({NotRestoredReason::kIgnoreEventAndEvict}, {}, {}, {},
+                      {reason}, FROM_HERE);
+    EXPECT_EQ(0, location_change_counter_for_testing);
+  } else {
+    AccessibilityNotificationWaiter waiter_start(shell()->web_contents(),
+                                                 ui::kAXModeComplete,
+                                                 ax::mojom::Event::kLoadStart);
+    // Ensure that |rfh_a| is successfully restored from bfcache and that we see
+    // LOAD_START event.
+    EXPECT_EQ(current_frame_host(), rfh_a.get());
+    ExpectRestored(FROM_HERE);
+
+    // Location change should have happened twice.
+    EXPECT_EQ(2, location_change_counter_for_testing);
 
     ASSERT_TRUE(waiter_start.WaitForNotification());
     auto* waiter_start_rfhi = static_cast<RenderFrameHostImpl*>(
@@ -3752,7 +3863,7 @@ IN_PROC_BROWSER_TEST_F(
 // Test that a series of cross-site navigations (which use different processes)
 // use the background limit.
 //
-// TODO(crbug.com/1203418): This test is flaky. It has been reenabled with
+// TODO(crbug.com/40179515): This test is flaky. It has been reenabled with
 // improved failure output (https://crrev.com/c/2862346). It's OK to disable it
 // again when it fails.
 IN_PROC_BROWSER_TEST_F(
@@ -3949,8 +4060,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
   // Navigate forward to b.com again and block with an error again.
   NavigateAndBlock(url_b, /*history_offset=*/1);
   ExpectNotRestored(
-      {NotRestoredReason::kHTTPStatusNotOK, NotRestoredReason::kNoResponseHead,
-       NotRestoredReason::kErrorDocument},
+      {NotRestoredReason::kHTTPStatusNotOK, NotRestoredReason::kErrorDocument},
       {}, {}, {}, {}, FROM_HERE);
 }
 
@@ -3987,8 +4097,7 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTest,
       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID());
   // The reasons from the old entry should be copied to the new entry.
   ExpectNotRestored(
-      {NotRestoredReason::kHTTPStatusNotOK, NotRestoredReason::kNoResponseHead,
-       NotRestoredReason::kErrorDocument},
+      {NotRestoredReason::kHTTPStatusNotOK, NotRestoredReason::kErrorDocument},
       {}, {}, {}, {}, FROM_HERE);
 }
 

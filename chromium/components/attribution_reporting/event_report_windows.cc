@@ -9,12 +9,14 @@
 #include <algorithm>
 #include <functional>
 #include <iterator>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/containers/flat_set.h"
+#include "base/not_fatal_until.h"
 #include "base/ranges/algorithm.h"
 #include "base/time/time.h"
 #include "base/types/expected.h"
@@ -24,7 +26,6 @@
 #include "components/attribution_reporting/parsing_utils.h"
 #include "components/attribution_reporting/source_registration_error.mojom-shared.h"
 #include "components/attribution_reporting/source_type.mojom-shared.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace attribution_reporting {
 
@@ -32,11 +33,6 @@ namespace {
 
 using ::attribution_reporting::mojom::SourceRegistrationError;
 using ::attribution_reporting::mojom::SourceType;
-
-constexpr char kEventReportWindow[] = "event_report_window";
-constexpr char kEventReportWindows[] = "event_report_windows";
-constexpr char kStartTime[] = "start_time";
-constexpr char kEndTimes[] = "end_times";
 
 bool IsValid(base::TimeDelta start_time,
              const base::flat_set<base::TimeDelta>& end_times) {
@@ -58,33 +54,33 @@ bool IsStrictlyIncreasing(const std::vector<base::TimeDelta>& end_times) {
 base::Time ReportTimeFromDeadline(base::Time source_time,
                                   base::TimeDelta deadline) {
   // Valid conversion reports should always have a valid reporting deadline.
-  DCHECK(deadline.is_positive());
+  CHECK(deadline.is_positive(), base::NotFatalUntil::M128);
   return source_time + deadline;
 }
 
 }  // namespace
 
 // static
-absl::optional<EventReportWindows> EventReportWindows::FromDefaults(
+std::optional<EventReportWindows> EventReportWindows::FromDefaults(
     base::TimeDelta report_window,
     SourceType source_type) {
   if (!IsReportWindowValid(report_window)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   return EventReportWindows(report_window, source_type);
 }
 
 // static
-absl::optional<EventReportWindows> EventReportWindows::Create(
+std::optional<EventReportWindows> EventReportWindows::Create(
     base::TimeDelta start_time,
     std::vector<base::TimeDelta> end_times) {
   if (!IsStrictlyIncreasing(end_times)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   base::flat_set<base::TimeDelta> end_times_set(base::sorted_unique,
                                                 std::move(end_times));
   if (!IsValid(start_time, end_times_set)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   return EventReportWindows(start_time, std::move(end_times_set));
 }
@@ -134,17 +130,25 @@ EventReportWindows::EventReportWindows(EventReportWindows&&) = default;
 EventReportWindows& EventReportWindows::operator=(EventReportWindows&&) =
     default;
 
+// Follows the steps detailed in
+// https://wicg.github.io/attribution-reporting-api/#obtain-an-event-level-report-delivery-time
+// Starting from step 2.
 base::Time EventReportWindows::ComputeReportTime(
     base::Time source_time,
     base::Time trigger_time) const {
-  // Follows the steps detailed in
-  // https://wicg.github.io/attribution-reporting-api/#obtain-an-event-level-report-delivery-time
-  // Starting from step 2.
-  DCHECK_LE(source_time, trigger_time);
+  // It is possible for a source to have an assigned time of T and a trigger
+  // that is attributed to it to have a time of T-X e.g. due to user-initiated
+  // clock changes.
+  //
+  // TODO(crbug.com/40282914): Assume `source_time` is smaller than
+  // `trigger_time` once attribution time resolution is implemented in storage.
+  const base::Time trigger_time_floored =
+      source_time < trigger_time ? trigger_time
+                                 : source_time + base::Microseconds(1);
   base::TimeDelta reporting_window_to_use = *end_times_.rbegin();
 
   for (base::TimeDelta reporting_window : end_times_) {
-    if (source_time + reporting_window <= trigger_time) {
+    if (source_time + reporting_window <= trigger_time_floored) {
       continue;
     }
     reporting_window_to_use = reporting_window;
@@ -155,8 +159,9 @@ base::Time EventReportWindows::ComputeReportTime(
 
 base::Time EventReportWindows::ReportTimeAtWindow(base::Time source_time,
                                                   int window_index) const {
-  DCHECK_GE(window_index, 0);
-  DCHECK_LT(static_cast<size_t>(window_index), end_times_.size());
+  CHECK_GE(window_index, 0, base::NotFatalUntil::M128);
+  CHECK_LT(static_cast<size_t>(window_index), end_times_.size(),
+           base::NotFatalUntil::M128);
 
   return ReportTimeFromDeadline(source_time,
                                 *std::next(end_times_.begin(), window_index));
@@ -168,7 +173,7 @@ EventReportWindows::WindowResult EventReportWindows::FallsWithin(
   // that is attributed to it to have a time of T-X e.g. due to user-initiated
   // clock changes.
   //
-  // TODO(crbug.com/1489333): Assume trigger moment is not negative once
+  // TODO(crbug.com/40283992): Assume trigger moment is not negative once
   // attribution time resolution is implemented in storage.
   base::TimeDelta bounded_trigger_moment =
       trigger_moment.is_negative() ? base::Microseconds(0) : trigger_moment;
@@ -232,10 +237,10 @@ EventReportWindows::ParseWindowsJSON(const base::Value& v,
 
   base::TimeDelta start_time = base::Seconds(0);
   if (const base::Value* start_time_value = dict->Find(kStartTime)) {
-    absl::optional<int> int_value = start_time_value->GetIfInt();
+    std::optional<int> int_value = start_time_value->GetIfInt();
     if (!int_value.has_value()) {
       return base::unexpected(
-          SourceRegistrationError::kEventReportWindowsStartTimeWrongType);
+          SourceRegistrationError::kEventReportWindowsStartTimeInvalid);
     }
     start_time = base::Seconds(*int_value);
     if (start_time.is_negative() || start_time > expiry) {
@@ -251,18 +256,10 @@ EventReportWindows::ParseWindowsJSON(const base::Value& v,
   }
 
   const base::Value::List* end_times_list = end_times_value->GetIfList();
-  if (!end_times_list) {
+  if (!end_times_list || end_times_list->empty() ||
+      end_times_list->size() > kMaxEventLevelReportWindows) {
     return base::unexpected(
-        SourceRegistrationError::kEventReportWindowsEndTimesWrongType);
-  }
-
-  if (end_times_list->empty()) {
-    return base::unexpected(
-        SourceRegistrationError::kEventReportWindowsEndTimesListEmpty);
-  }
-  if (end_times_list->size() > kMaxEventLevelReportWindows) {
-    return base::unexpected(
-        SourceRegistrationError::kEventReportWindowsEndTimesListTooLong);
+        SourceRegistrationError::kEventReportWindowsEndTimesListInvalid);
   }
 
   std::vector<base::TimeDelta> end_times;
@@ -270,12 +267,8 @@ EventReportWindows::ParseWindowsJSON(const base::Value& v,
 
   base::TimeDelta start_duration = start_time;
   for (const auto& item : *end_times_list) {
-    const absl::optional<int> item_int = item.GetIfInt();
-    if (!item_int.has_value()) {
-      return base::unexpected(
-          SourceRegistrationError::kEventReportWindowsEndTimeValueWrongType);
-    }
-    if (item_int.value() <= 0) {
+    const std::optional<int> item_int = item.GetIfInt();
+    if (!item_int.has_value() || item_int.value() <= 0) {
       return base::unexpected(
           SourceRegistrationError::kEventReportWindowsEndTimeValueInvalid);
     }

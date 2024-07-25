@@ -4,12 +4,15 @@
 
 #include "third_party/blink/renderer/modules/ml/webnn/ml_graph_test_base.h"
 
+#include "base/notreached.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
 #include "third_party/blink/renderer/modules/ml/ml.h"
 #include "third_party/blink/renderer/modules/ml/webnn/ml_graph_builder.h"
+#include "v8-exception.h"
 
 namespace blink {
 
@@ -18,84 +21,54 @@ MLGraph* ToMLGraph(V8TestingScope* scope, ScriptValue value) {
       scope->GetIsolate(), value.V8Value(), scope->GetExceptionState());
 }
 
-std::string TestVarietyToString(
-    const ::testing::TestParamInfo<TestVariety>& info) {
-  BackendType backend_type = info.param.backend_type;
-  ExecutionMode execution_mode = info.param.execution_mode;
-  std::string name;
-
-  switch (backend_type) {
+std::string TestParamInfoToString(
+    const ::testing::TestParamInfo<BackendType>& info) {
+  switch (info.param) {
     case BackendType::kFake:
-      // The name of Fake backend from test parameter doesn't output avoid
-      // duplicating with the fixture name |FakeMLGraphTest|.
-      name += "";
-      break;
+      return "FakeBackend";
     case BackendType::kXnnpack:
-      name += "Xnnpack_";
-      break;
-    case BackendType::kModelLoader:
-      name += "ModelLoader_";
-      break;
+      return "Xnnpack";
     case BackendType::kWebNNService:
-      name += "WebNNService_";
-      break;
+      return "WebNNService";
   }
-
-  switch (execution_mode) {
-    case ExecutionMode::kAsync:
-      name += "Async";
-      break;
-    case ExecutionMode::kSync:
-      name += "Sync";
-      break;
-  }
-  return name;
 }
 
-BackendType MLGraphTestBase::GetBackendType() {
-  return GetParam().backend_type;
-}
-
-ExecutionMode MLGraphTestBase::GetExecutionMode() {
-  return GetParam().execution_mode;
+std::pair<String, String> GetErrorNameAndMessage(V8TestingScope* scope,
+                                                 ScriptValue value) {
+  v8::Local<v8::Object> object;
+  if (!value.V8Value()
+           ->ToObject(scope->GetScriptState()->GetContext())
+           .ToLocal(&object)) {
+    return {"undefined", "undefined"};
+  }
+  const auto& Get = [&scope, object](const String& key) -> String {
+    v8::Local<v8::Value> prop_value;
+    if (!object
+             ->Get(scope->GetScriptState()->GetContext(),
+                   V8AtomicString(scope->GetScriptState()->GetIsolate(), key))
+             .ToLocal(&prop_value)) {
+      return "undefined";
+    }
+    return ToCoreStringWithUndefinedOrNullCheck(
+        scope->GetScriptState()->GetIsolate(), prop_value);
+  };
+  return {Get("name"), Get("message")};
 }
 
 MLGraphTestBase::BuildResult MLGraphTestBase::BuildGraph(
     V8TestingScope& scope,
     MLGraphBuilder* builder,
     const MLNamedOperands& named_operands) {
-  switch (GetExecutionMode()) {
-    case ExecutionMode::kAsync: {
-      ScriptPromiseTester tester(
-          scope.GetScriptState(),
-          builder->build(scope.GetScriptState(), named_operands,
-                         scope.GetExceptionState()));
-      tester.WaitUntilSettled();
-      if (tester.IsFulfilled()) {
-        return BuildResult{.graph = ToMLGraph(&scope, tester.Value()),
-                           .exception = nullptr};
-      } else {
-        return BuildResult{.graph = nullptr,
-                           .exception = V8DOMException::ToWrappable(
-                               scope.GetIsolate(), tester.Value().V8Value())};
-      }
-    }
-    case ExecutionMode::kSync: {
-      auto* graph = builder->buildSync(scope.GetScriptState(), named_operands,
-                                       scope.GetExceptionState());
-      if (graph) {
-        return BuildResult{.graph = static_cast<MLGraph*>(graph),
-                           .exception = nullptr};
-      } else {
-        return BuildResult{
-            .graph = nullptr,
-            .exception = MakeGarbageCollected<DOMException>(
-                scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
-                scope.GetExceptionState().Message())};
-      }
-    }
-    default:
-      NOTREACHED();
+  ScriptPromiseTester tester(
+      scope.GetScriptState(),
+      builder->build(scope.GetScriptState(), named_operands,
+                     scope.GetExceptionState()));
+  tester.WaitUntilSettled();
+  if (tester.IsFulfilled()) {
+    return BuildResult{.graph = ToMLGraph(&scope, tester.Value())};
+  } else {
+    auto [name, message] = GetErrorNameAndMessage(&scope, tester.Value());
+    return BuildResult{.error_name = name, .error_message = message};
   }
 }
 
@@ -104,50 +77,32 @@ MLComputeResult* ToMLComputeResult(V8TestingScope* scope, ScriptValue value) {
       scope->GetIsolate(), value.V8Value(), scope->GetExceptionState());
 }
 
-DOMException* MLGraphTestBase::ComputeGraph(V8TestingScope& scope,
-                                            MLGraph* graph,
-                                            MLNamedArrayBufferViews& inputs,
-                                            MLNamedArrayBufferViews& outputs) {
-  switch (GetExecutionMode()) {
-    case ExecutionMode::kAsync: {
-      auto* resolver =
-          MakeGarbageCollected<ScriptPromiseResolver>(scope.GetScriptState());
-      ScriptPromiseTester tester(scope.GetScriptState(), resolver->Promise());
-      graph->ComputeAsync(ScopedMLTrace("ComputeAsync"), inputs, outputs,
-                          resolver, scope.GetExceptionState());
-      tester.WaitUntilSettled();
-      if (tester.IsFulfilled()) {
-        // For `MLGraph::ComputeAsync()`, the input and output ArrayBufferViews
-        // are transferred. The new ArrayBufferViews are returned via the
-        // MLComputeResult. Set the inputs and outputs to the returned ones, so
-        // the user code could check the outputs in the same way as for
-        // `MLGraph::ComputeSync()`.
-        auto* results = ToMLComputeResult(&scope, tester.Value());
-        inputs = results->inputs();
-        outputs = results->outputs();
-        return nullptr;
-      } else {
-        return V8DOMException::ToWrappable(scope.GetIsolate(),
-                                           tester.Value().V8Value());
-      }
-    }
-    case ExecutionMode::kSync: {
-      graph->ComputeSync(inputs, outputs, scope.GetExceptionState());
-      if (scope.GetExceptionState().HadException()) {
-        return MakeGarbageCollected<DOMException>(
-            scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
-            scope.GetExceptionState().Message());
-      } else {
-        return nullptr;
-      }
-    }
-    default:
-      NOTREACHED();
+std::pair<String, String> MLGraphTestBase::ComputeGraph(
+    V8TestingScope& scope,
+    MLGraph* graph,
+    MLNamedArrayBufferViews& inputs,
+    MLNamedArrayBufferViews& outputs) {
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<MLComputeResult>>(
+      scope.GetScriptState());
+  ScriptPromiseTester tester(scope.GetScriptState(), resolver->Promise());
+  graph->Compute(ScopedMLTrace("Compute"), inputs, outputs, resolver,
+                 scope.GetExceptionState());
+  tester.WaitUntilSettled();
+  if (tester.IsFulfilled()) {
+    // For `MLGraph::Compute()`, the input and output ArrayBufferViews
+    // are transferred. The new ArrayBufferViews are returned via the
+    // MLComputeResult. Set the inputs and outputs to the returned ones.
+    auto* results = ToMLComputeResult(&scope, tester.Value());
+    inputs = results->inputs();
+    outputs = results->outputs();
+    return {};
+  } else {
+    return GetErrorNameAndMessage(&scope, tester.Value());
   }
 }
 
-ScriptPromise MLGraphTestBase::CreateContext(V8TestingScope& scope,
-                                             MLContextOptions* options) {
+ScriptPromiseUntyped MLGraphTestBase::CreateContext(V8TestingScope& scope,
+                                                    MLContextOptions* options) {
   auto* ml = MakeGarbageCollected<ML>(scope.GetExecutionContext());
   return ml->createContext(scope.GetScriptState(), options,
                            scope.GetExceptionState());
@@ -164,6 +119,14 @@ MLGraphBuilder* MLGraphTestBase::CreateGraphBuilder(V8TestingScope& scope,
   auto* context = NativeValueTraits<MLContext>::NativeValue(
       scope.GetIsolate(), tester.Value().V8Value(), scope.GetExceptionState());
   return MLGraphBuilder::Create(context);
+}
+
+void ExpectFloatArrayEqual(const Vector<float>& data,
+                           const Vector<float>& expected_data) {
+  EXPECT_EQ(data.size(), expected_data.size());
+  for (wtf_size_t i = 0; i < data.size(); ++i) {
+    EXPECT_FLOAT_EQ(data[i], expected_data[i]);
+  }
 }
 
 }  // namespace blink

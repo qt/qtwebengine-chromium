@@ -78,6 +78,18 @@ double CSSMathFunctionValue::ComputeDegrees() const {
   return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
 }
 
+double CSSMathFunctionValue::ComputeDegrees(
+    const CSSLengthResolver& length_resolver) const {
+  DCHECK_EQ(kCalcAngle, expression_->Category());
+  return ClampToPermittedRange(expression_->ComputeNumber(length_resolver));
+}
+
+double CSSMathFunctionValue::ComputeSeconds(
+    const CSSLengthResolver& length_resolver) const {
+  DCHECK_EQ(kCalcTime, expression_->Category());
+  return ClampToPermittedRange(expression_->ComputeNumber(length_resolver));
+}
+
 double CSSMathFunctionValue::ComputeLengthPx(
     const CSSLengthResolver& length_resolver) const {
   // |CSSToLengthConversionData| only resolves relative length units, but not
@@ -103,6 +115,16 @@ double CSSMathFunctionValue::ComputeNumber(
   // percentages.
   DCHECK_EQ(kCalcNumber, expression_->Category());
   DCHECK(!expression_->HasPercentage());
+  double value =
+      ClampToPermittedRange(expression_->ComputeNumber(length_resolver));
+  return std::isnan(value) ? 0.0 : value;
+}
+
+double CSSMathFunctionValue::ComputePercentage(
+    const CSSLengthResolver& length_resolver) const {
+  // |CSSToLengthConversionData| only resolves relative length units, but not
+  // percentages.
+  DCHECK_EQ(kCalcPercent, expression_->Category());
   double value =
       ClampToPermittedRange(expression_->ComputeNumber(length_resolver));
   return std::isnan(value) ? 0.0 : value;
@@ -200,6 +222,19 @@ const CSSValue& CSSMathFunctionValue::PopulateWithTreeScope(
   return *MakeGarbageCollected<CSSMathFunctionValue>(
       &expression_->PopulateWithTreeScope(tree_scope),
       value_range_in_target_context_);
+}
+
+const CSSMathFunctionValue* CSSMathFunctionValue::TransformAnchors(
+    LogicalAxis logical_axis,
+    const TryTacticTransform& transform,
+    const WritingDirectionMode& writing_direction) const {
+  const CSSMathExpressionNode* transformed =
+      expression_->TransformAnchors(logical_axis, transform, writing_direction);
+  if (transformed != expression_) {
+    return MakeGarbageCollected<CSSMathFunctionValue>(
+        transformed, value_range_in_target_context_);
+  }
+  return this;
 }
 
 }  // namespace blink

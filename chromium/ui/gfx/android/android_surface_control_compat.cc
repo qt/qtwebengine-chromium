@@ -343,6 +343,12 @@ int32_t OverlayTransformToWindowTransform(gfx::OverlayTransform transform) {
       return ANATIVEWINDOW_TRANSFORM_ROTATE_180;
     case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270:
       return ANATIVEWINDOW_TRANSFORM_ROTATE_90;
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
+      return ANATIVEWINDOW_TRANSFORM_MIRROR_VERTICAL |
+             ANATIVEWINDOW_TRANSFORM_ROTATE_90;
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
+      return ANATIVEWINDOW_TRANSFORM_MIRROR_HORIZONTAL |
+             ANATIVEWINDOW_TRANSFORM_ROTATE_90;
   };
   NOTREACHED();
   return ANATIVEWINDOW_TRANSFORM_IDENTITY;
@@ -800,7 +806,7 @@ void SurfaceControl::Transaction::SetBuffer(const Surface& surface,
       fence_fd.is_valid() ? fence_fd.release() : -1);
   // In T OS, setBuffer call setOnComplete internally, so Apply() is required to
   // decrease ref count of SurfaceControl.
-  // TODO(crbug.com/1395271): remove this if AOSP fix the issue
+  // TODO(crbug.com/40249006): remove this if AOSP fix the issue
   if (base::android::BuildInfo::GetInstance()->sdk_int() >=
       base::android::SDK_VERSION_T) {
     need_to_apply_ = true;
@@ -862,7 +868,7 @@ void SurfaceControl::Transaction::SetDamageRect(const Surface& surface,
 void SurfaceControl::Transaction::SetColorSpace(
     const Surface& surface,
     const gfx::ColorSpace& color_space,
-    const absl::optional<HDRMetadata>& metadata) {
+    const std::optional<HDRMetadata>& metadata) {
   // Populate the data space and brightness ratios.
   uint64_t data_space = ADATASPACE_UNKNOWN;
   float extended_range_brightness_ratio = 1.f;

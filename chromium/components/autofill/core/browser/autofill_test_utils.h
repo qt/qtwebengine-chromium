@@ -15,6 +15,7 @@
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/autofill_wallet_usage_data.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/data_model/credit_card_benefit.h"
 #include "components/autofill/core/browser/data_model/credit_card_cloud_token_data.h"
 #include "components/autofill/core/browser/data_model/iban.h"
 #include "components/autofill/core/browser/field_types.h"
@@ -23,8 +24,8 @@
 #include "components/autofill/core/browser/payments/card_unmask_challenge_option.h"
 #include "components/autofill/core/browser/proto/api_v1.pb.h"
 #include "components/autofill/core/browser/proto/server.pb.h"
-#include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
+#include "components/autofill/core/browser/ui/suggestion_type.h"
 #include "components/autofill/core/common/autofill_test_utils.h"
 
 class PrefService;
@@ -39,10 +40,12 @@ class AutofillExternalDelegate;
 class AutofillProfile;
 class BankAccount;
 struct FormData;
-struct FormFieldData;
+class FormFieldData;
 struct FormDataPredictions;
 struct FormFieldDataPredictions;
 class PaymentsAutofillTable;
+class TestAutofillClient;
+class TestPersonalDataManager;
 
 // Defined by pair-wise equality of all members.
 bool operator==(const FormFieldDataPredictions& a,
@@ -97,10 +100,12 @@ std::unique_ptr<PrefService> PrefServiceForTesting(
 AutofillProfile GetFullValidProfileForCanada();
 
 // Returns a profile full of dummy info.
-AutofillProfile GetFullProfile();
+AutofillProfile GetFullProfile(
+    AddressCountryCode country_code = AddressCountryCode("US"));
 
 // Returns a profile full of dummy info, different to the above.
-AutofillProfile GetFullProfile2();
+AutofillProfile GetFullProfile2(
+    AddressCountryCode country_code = AddressCountryCode("US"));
 
 // Returns a profile full of dummy info, different to the above.
 AutofillProfile GetFullCanadianProfile();
@@ -199,6 +204,25 @@ VirtualCardUsageData GetVirtualCardUsageData2();
 std::vector<CardUnmaskChallengeOption> GetCardUnmaskChallengeOptions(
     const std::vector<CardUnmaskChallengeOptionType>& types);
 
+// Each Get returns an active CreditCardBenefit with dummy info.
+// One getter for each benefit type.
+CreditCardFlatRateBenefit GetActiveCreditCardFlatRateBenefit();
+CreditCardCategoryBenefit GetActiveCreditCardCategoryBenefit();
+CreditCardMerchantBenefit GetActiveCreditCardMerchantBenefit();
+
+// Returns a set of merchant origin webpages used for a merchant credit card
+// benefit.
+base::flat_set<url::Origin> GetOriginsForMerchantBenefit();
+
+// Adds `card` with a set `benefit` and `issuer_id` to `personal_data`. Also
+// configures a category benefit with the `optimization_guide`.
+void SetUpCreditCardAndBenefitData(
+    CreditCard& card,
+    const CreditCardBenefit& benefit,
+    const std::string& issuer_id,
+    TestPersonalDataManager& personal_data,
+    AutofillOptimizationGuide* optimization_guide);
+
 // A unit testing utility that is common to a number of the Autofill unit
 // tests.  |SetProfileInfo| provides a quick way to populate a profile with
 // c-strings.
@@ -287,30 +311,18 @@ void ReenableSystemServices();
 void SetServerCreditCards(PaymentsAutofillTable* table,
                           const std::vector<CreditCard>& cards);
 
-// Adds an element at the end of |possible_field_types| and
-// |possible_field_types_validities| given |possible_type| and their
-// corresponding |validity_state|.
-void InitializePossibleTypesAndValidities(
-    std::vector<FieldTypeSet>& possible_field_types,
-    std::vector<FieldTypeValidityStatesMap>& possible_field_types_validities,
-    const std::vector<FieldType>& possible_type,
-    const std::vector<AutofillDataModel::ValidityState>& validity_state = {});
+// Adds `possible_types` at the end of `possible_field_types`.
+void InitializePossibleTypes(std::vector<FieldTypeSet>& possible_field_types,
+                             const std::vector<FieldType>& possible_types);
 
 // Fills the upload |field| with the information passed by parameter.
 void FillUploadField(AutofillUploadContents::Field* field,
                      unsigned signature,
-                     unsigned autofill_type,
-                     unsigned validity_state = 0);
+                     unsigned autofill_type);
 
 void FillUploadField(AutofillUploadContents::Field* field,
                      unsigned signature,
-                     const std::vector<unsigned>& autofill_type,
-                     const std::vector<unsigned>& validity_state = {});
-
-void FillUploadField(AutofillUploadContents::Field* field,
-                     unsigned signature,
-                     unsigned autofill_type,
-                     const std::vector<unsigned>& validity_states);
+                     const std::vector<unsigned>& autofill_type);
 
 // Creates the structure of signatures that would be encoded by
 // `EncodeUploadRequest()` and `EncodeAutofillPageQueryRequest()`
@@ -371,7 +383,7 @@ void AddFieldPredictionsToForm(
     ::autofill::AutofillQueryResponse_FormSuggestion* form_suggestion);
 
 Suggestion CreateAutofillSuggestion(
-    PopupItemId popup_item_id,
+    SuggestionType type,
     const std::u16string& main_text_value = std::u16string(),
     const Suggestion::Payload& payload = Suggestion::Payload());
 

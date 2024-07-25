@@ -601,8 +601,8 @@ void MediaCodecVideoDecoder::OnOverlayInfoChanged(
   surface_chooser_helper_.SetIsPersistentVideo(
       overlay_info_.is_persistent_video);
   surface_chooser_helper_.UpdateChooserState(
-      overlay_changed ? absl::make_optional(CreateOverlayFactoryCb())
-                      : absl::nullopt);
+      overlay_changed ? std::make_optional(CreateOverlayFactoryCb())
+                      : std::nullopt);
 }
 
 void MediaCodecVideoDecoder::OnSurfaceChosen(
@@ -779,14 +779,14 @@ void MediaCodecVideoDecoder::OnCodecConfigured(
   // Since we can't get the coded size w/o rendering the frame, we try to guess
   // in cases where we are unable to render the frame (resolution changes). If
   // we can't guess, there will be a visible rendering glitch.
-  absl::optional<gfx::Size> coded_size_alignment;
+  std::optional<gfx::Size> coded_size_alignment;
   if (base::FeatureList::IsEnabled(kMediaCodecCodedSizeGuessing)) {
     coded_size_alignment = MediaCodecUtil::LookupCodedSizeAlignment(name);
     if (coded_size_alignment) {
       MEDIA_LOG(INFO, media_log_) << "Using a coded size alignment of "
                                   << coded_size_alignment->ToString();
     } else {
-      // TODO(crbug.com/1456427): If the known cases work well, we can try
+      // TODO(crbug.com/40917948): If the known cases work well, we can try
       // guessing generically since we get a glitch either way.
       MEDIA_LOG(WARNING, media_log_)
           << "Unable to lookup coded size alignment for codec " << name;
@@ -917,7 +917,7 @@ bool MediaCodecVideoDecoder::QueueInput() {
   PendingDecode& pending_decode = pending_decodes_.front();
   if (!pending_decode.buffer->end_of_stream() &&
       pending_decode.buffer->is_key_frame() &&
-      pending_decode.buffer->data_size() > max_input_size_) {
+      pending_decode.buffer->size() > max_input_size_) {
     // If we we're already using the provided resolution, try to guess something
     // larger based on the actual input size.
     if (decoder_config_.coded_size().width() == last_width_) {
@@ -928,7 +928,7 @@ bool MediaCodecVideoDecoder::QueueInput() {
               ? 2
               : 4;
       const size_t max_pixels =
-          (pending_decode.buffer->data_size() * compression_ratio * 2) / 3;
+          (pending_decode.buffer->size() * compression_ratio * 2) / 3;
       if (max_pixels > 8294400)  // 4K
         decoder_config_.set_coded_size(gfx::Size(7680, 4320));
       else if (max_pixels > 2088960)  // 1080p

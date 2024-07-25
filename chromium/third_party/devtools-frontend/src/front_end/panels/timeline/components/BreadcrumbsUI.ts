@@ -7,19 +7,19 @@ import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as IconButton from '../../../ui/components/icon_button/icon_button.js';
 import * as LitHtml from '../../../ui/lit-html/lit-html.js';
 
-import {type Breadcrumb, flattenBreadcrumbs} from './Breadcrumbs.js';
+import {flattenBreadcrumbs} from './Breadcrumbs.js';
 import breadcrumbsUIStyles from './breadcrumbsUI.css.js';
 
 const {render, html} = LitHtml;
 
 export interface BreadcrumbsUIData {
-  breadcrumb: Breadcrumb;
+  breadcrumb: TraceEngine.Types.File.Breadcrumb;
 }
 
 export class BreadcrumbRemovedEvent extends Event {
   static readonly eventName = 'breadcrumbremoved';
 
-  constructor(public breadcrumb: Breadcrumb) {
+  constructor(public breadcrumb: TraceEngine.Types.File.Breadcrumb) {
     super(BreadcrumbRemovedEvent.eventName);
   }
 }
@@ -28,7 +28,7 @@ export class BreadcrumbsUI extends HTMLElement {
   static readonly litTagName = LitHtml.literal`devtools-breadcrumbs-ui`;
   readonly #shadow = this.attachShadow({mode: 'open'});
   readonly #boundRender = this.#render.bind(this);
-  #breadcrumb: Breadcrumb|null = null;
+  #breadcrumb: TraceEngine.Types.File.Breadcrumb|null = null;
 
   connectedCallback(): void {
     this.#shadow.adoptedStyleSheets = [breadcrumbsUIStyles];
@@ -39,7 +39,7 @@ export class BreadcrumbsUI extends HTMLElement {
     void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
   }
 
-  #removeBreadcrumb(breadcrumb: Breadcrumb): void {
+  #removeBreadcrumb(breadcrumb: TraceEngine.Types.File.Breadcrumb): void {
     this.dispatchEvent(new BreadcrumbRemovedEvent(breadcrumb));
   }
 
@@ -67,11 +67,11 @@ export class BreadcrumbsUI extends HTMLElement {
     });
   }
 
-  #renderElement(breadcrumb: Breadcrumb, index: number): LitHtml.LitTemplate {
+  #renderElement(breadcrumb: TraceEngine.Types.File.Breadcrumb, index: number): LitHtml.LitTemplate {
     const breadcrumbRange = TraceEngine.Helpers.Timing.microSecondsToMilliseconds(breadcrumb.window.range);
     // clang-format off
     return html`
-          <div class="breadcrumb" @click=${(): void => this.#removeBreadcrumb(breadcrumb)}>
+          <div class="breadcrumb" @click=${() => this.#removeBreadcrumb(breadcrumb)}>
            <span class="${(index !== 0 && breadcrumb.child === null) ? 'last-breadcrumb' : ''} range">
             ${(index === 0) ?
               `Full range (${breadcrumbRange.toFixed(2)}ms)` :
@@ -107,10 +107,9 @@ export class BreadcrumbsUI extends HTMLElement {
   }
 }
 
-ComponentHelpers.CustomElements.defineComponent('devtools-breadcrumbs-ui', BreadcrumbsUI);
+customElements.define('devtools-breadcrumbs-ui', BreadcrumbsUI);
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLElementTagNameMap {
     'devtools-breadcrumbs-ui': BreadcrumbsUI;
   }

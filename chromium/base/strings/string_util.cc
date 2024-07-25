@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/strings/string_util.h"
 
 #include <errno.h>
@@ -15,6 +20,7 @@
 #include <wchar.h>
 
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -28,7 +34,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 
@@ -391,7 +396,7 @@ std::u16string ReplaceStringPlaceholders(
     StringPiece16 format_string,
     const std::vector<std::u16string>& subst,
     std::vector<size_t>* offsets) {
-  absl::optional<std::u16string> replacement =
+  std::optional<std::u16string> replacement =
       internal::DoReplaceStringPlaceholders(
           format_string, subst,
           /*placeholder_prefix*/ u'$',
@@ -405,7 +410,7 @@ std::u16string ReplaceStringPlaceholders(
 std::string ReplaceStringPlaceholders(StringPiece format_string,
                                       const std::vector<std::string>& subst,
                                       std::vector<size_t>* offsets) {
-  absl::optional<std::string> replacement =
+  std::optional<std::string> replacement =
       internal::DoReplaceStringPlaceholders(
           format_string, subst,
           /*placeholder_prefix*/ '$',

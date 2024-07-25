@@ -1,6 +1,6 @@
 <style include="demo">
   cr-tabs,
-  iron-pages {
+  cr-page-selector {
     width: 100%;
   }
 
@@ -14,14 +14,15 @@
 
 <h1>cr-tabs</h1>
 <div class="demos">
-  <cr-tabs tab-names="[[tabNames_]]" selected="{{selectedTabIndex_}}"></cr-tabs>
-  <iron-pages selected="[[selectedTabIndex_]]">
+  <cr-tabs id="tabs" tab-names="[[tabNames_]]" selected="{{selectedTabIndex_}}">
+  </cr-tabs>
+  <cr-page-selector selected="[[selectedTabIndex_]]">
     <template is="dom-repeat" items="[[tabNames_]]" as="tabName">
       <div class="tab-contents">
         [[tabName]] contents
       </div>
     </template>
-  </iron-pages>
+  </cr-page-selector>
 </div>
 
 <div class="demos">

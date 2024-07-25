@@ -21,13 +21,6 @@ group("remoting_all") {
     }
   }
 
-  if (is_android) {
-    deps += [
-      "//remoting/android:remoting_apk",
-      "//remoting/android:remoting_test_apk",
-    ]
-  }
-
   if (is_ios) {
     deps += [
       "//remoting/ios:all",
@@ -150,7 +143,7 @@ test("remoting_unittests") {
     ]
   }
 
-  # TODO(crbug.com/1052397): Change to !is_chromeos once lacros-chrome is switched to target_os=chromeos.
+  # TODO(crbug.com/40118868): Change to !is_chromeos once lacros-chrome is switched to target_os=chromeos.
   if (!is_chromeos) {
     deps += [ "//remoting/client/display:unit_tests" ]
   }

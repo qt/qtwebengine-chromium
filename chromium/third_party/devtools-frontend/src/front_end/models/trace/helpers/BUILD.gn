@@ -4,10 +4,12 @@
 
 import("../../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../../scripts/build/ninja/devtools_module.gni")
+import("../../../../third_party/typescript/typescript.gni")
 import("../../visibility.gni")
 
 devtools_module("helpers") {
   sources = [
+    "Extensions.ts",
     "SamplesIntegrator.ts",
     "Timing.ts",
     "Trace.ts",
@@ -32,4 +34,21 @@ devtools_entrypoint("bundle") {
   ]
 
   visibility += devtools_models_visibility
+}
+
+ts_library("unittests") {
+  testonly = true
+
+  sources = [
+    "SamplesIntegrator.test.ts",
+    "Timing.test.ts",
+    "Trace.test.ts",
+    "TreeHelpers.test.ts",
+  ]
+
+  deps = [
+    "../../../core/platform:bundle",
+    "../../../models/trace:bundle",
+    "../../../testing",
+  ]
 }

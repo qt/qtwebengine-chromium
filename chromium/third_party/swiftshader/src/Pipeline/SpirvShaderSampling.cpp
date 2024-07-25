@@ -75,6 +75,9 @@ SpirvEmitter::ImageSampler *SpirvEmitter::getImageSampler(const vk::Device *devi
 			samplerState.ycbcrModel = vkSamplerState->ycbcrModel;
 			samplerState.studioSwing = vkSamplerState->studioSwing;
 			samplerState.swappedChroma = vkSamplerState->swappedChroma;
+			samplerState.chromaFilter = vkSamplerState->chromaFilter == VK_FILTER_LINEAR ?  FILTER_LINEAR : FILTER_POINT;
+			samplerState.chromaXOffset = vkSamplerState->chromaXOffset;
+			samplerState.chromaYOffset = vkSamplerState->chromaYOffset;
 
 			samplerState.mipLodBias = vkSamplerState->mipLodBias;
 			samplerState.maxAnisotropy = vkSamplerState->maxAnisotropy;
@@ -107,6 +110,12 @@ SpirvEmitter::ImageSampler *SpirvEmitter::getImageSampler(const vk::Device *devi
 			{
 				samplerState.minLod = 0.0f;
 				samplerState.maxLod = 0.0f;
+			}
+			// Otherwise make sure LOD is clamped for robustness
+			else
+			{
+				samplerState.minLod = imageViewState.minLod;
+				samplerState.maxLod = imageViewState.maxLod;
 			}
 		}
 		else if(samplerMethod == Write)

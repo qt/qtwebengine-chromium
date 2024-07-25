@@ -39,14 +39,18 @@
 #include "components/omnibox/browser/autocomplete_match.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
 #include "components/omnibox/browser/autocomplete_result.h"
-#include "components/omnibox/browser/autocomplete_scoring_model_service.h"
 #include "components/omnibox/browser/omnibox_field_trial.h"
+#include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "components/search_engines/template_url.h"
 #include "content/public/browser/web_ui.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
 #include "third_party/metrics_proto/omnibox_focus_type.pb.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image.h"
+
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
+#include "components/omnibox/browser/autocomplete_scoring_model_service.h"
+#endif
 
 using bookmarks::BookmarkModel;
 
@@ -81,7 +85,7 @@ std::string SuggestionAnswerTypeToString(int answer_type) {
     case SuggestionAnswer::ANSWER_TYPE_PLAY_INSTALL:
       return "play install";
     default:
-      return std::to_string(answer_type);
+      return base::NumberToString(answer_type);
   }
 }
 
@@ -134,12 +138,15 @@ struct TypeConverter<mojom::SignalsPtr, AutocompleteMatch::ScoringSignals> {
     // - autocomplete_scoring_model_handler.cc
     //   `AutocompleteScoringModelHandler::ExtractInputFromScoringSignals()`
     // - autocomplete_match.cc `AutocompleteMatch::MergeScoringSignals()`
+    // - autocomplete_controller.cc `RecordScoringSignalCoverageForProvider()`
     // - omnibox.mojom `struct Signals`
     // - omnibox_page_handler.cc
     //   `TypeConverter<AutocompleteMatch::ScoringSignals, mojom::SignalsPtr>`
     // - omnibox_page_handler.cc `TypeConverter<mojom::SignalsPtr,
     //   AutocompleteMatch::ScoringSignals>`
     // - omnibox_util.ts `signalNames`
+    // - omnibox/histograms.xml
+    //   `Omnibox.URLScoringModelExecuted.ScoringSignalCoverage`
 
     mojom::SignalsPtr mojom_signals(mojom::Signals::New());
 
@@ -167,6 +174,7 @@ struct TypeConverter<mojom::SignalsPtr, AutocompleteMatch::ScoringSignals> {
     PROTO_TO_MOJOM_SIGNAL(length_of_url);
     PROTO_TO_MOJOM_SIGNAL(site_engagement);
     PROTO_TO_MOJOM_SIGNAL(allowed_to_be_default_match);
+    PROTO_TO_MOJOM_SIGNAL(search_suggest_relevance);
 
     return mojom_signals;
   }
@@ -181,12 +189,15 @@ struct TypeConverter<AutocompleteMatch::ScoringSignals, mojom::SignalsPtr> {
     // - autocomplete_scoring_model_handler.cc
     // `AutocompleteScoringModelHandler::ExtractInputFromScoringSignals()`
     // - autocomplete_match.cc `AutocompleteMatch::MergeScoringSignals()`
+    // - autocomplete_controller.cc `RecordScoringSignalCoverageForProvider()`
     // - omnibox.mojom `struct Signals`
     // - omnibox_page_handler.cc
     // `TypeConverter<AutocompleteMatch::ScoringSignals, mojom::SignalsPtr>`
     // - omnibox_page_handler.cc `TypeConverter<mojom::SignalsPtr,
     // AutocompleteMatch::ScoringSignals>`
     // - omnibox_util.ts `signalNames`
+    // - omnibox/histograms.xml
+    //   `Omnibox.URLScoringModelExecuted.ScoringSignalCoverage`
 
     AutocompleteMatch::ScoringSignals signals;
 
@@ -214,6 +225,7 @@ struct TypeConverter<AutocompleteMatch::ScoringSignals, mojom::SignalsPtr> {
     MOJOM_TO_PROTO_SIGNAL(length_of_url);
     MOJOM_TO_PROTO_SIGNAL(site_engagement);
     MOJOM_TO_PROTO_SIGNAL(allowed_to_be_default_match);
+    PROTO_TO_MOJOM_SIGNAL(search_suggest_relevance);
 
     return signals;
   }
@@ -435,9 +447,7 @@ void OmniboxPageHandler::OnBitmapFetched(mojom::AutocompleteControllerType type,
                                          const std::string& image_url,
                                          const SkBitmap& bitmap) {
   auto data = gfx::Image::CreateFrom1xBitmap(bitmap).As1xPNGBytes();
-  std::string base_64;
-  base::Base64Encode(base::StringPiece(data->front_as<char>(), data->size()),
-                     &base_64);
+  std::string base_64 = base::Base64Encode(*data);
   const char kDataUrlPrefix[] = "data:image/png;base64,";
   std::string data_url = GURL(kDataUrlPrefix + base_64).spec();
   page_->HandleAnswerImageData(type, image_url, data_url);
@@ -500,6 +510,7 @@ void OmniboxPageHandler::StartOmniboxQuery(const std::string& input_string,
 }
 
 void OmniboxPageHandler::GetMlModelVersion(GetMlModelVersionCallback callback) {
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   if (auto* service = GetMlService()) {
     auto version = service->GetModelVersion();
     if (version == -1) {
@@ -512,10 +523,14 @@ void OmniboxPageHandler::GetMlModelVersion(GetMlModelVersionCallback callback) {
   } else {
     std::move(callback).Run(-1);
   }
+#else
+  std::move(callback).Run(-1);
+#endif
 }
 
 void OmniboxPageHandler::StartMl(mojom::SignalsPtr mojom_signals,
                                  StartMlCallback callback) {
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   if (auto* service = GetMlService()) {
     AutocompleteMatch::ScoringSignals signals =
         mojo::ConvertTo<AutocompleteMatch::ScoringSignals>(mojom_signals);
@@ -525,6 +540,9 @@ void OmniboxPageHandler::StartMl(mojom::SignalsPtr mojom_signals,
   } else {
     std::move(callback).Run(-1);
   }
+#else
+  std::move(callback).Run(-1);
+#endif
 }
 
 std::unique_ptr<AutocompleteController> OmniboxPageHandler::CreateController(
@@ -549,8 +567,12 @@ OmniboxPageHandler::GetAutocompleteControllerType(
 }
 
 AutocompleteScoringModelService* OmniboxPageHandler::GetMlService() {
+#if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
   return OmniboxFieldTrial::IsMlUrlScoringEnabled()
              ? AutocompleteScoringModelServiceFactory::GetInstance()
                    ->GetForProfile(profile_)
              : nullptr;
+#else
+  return nullptr;
+#endif
 }

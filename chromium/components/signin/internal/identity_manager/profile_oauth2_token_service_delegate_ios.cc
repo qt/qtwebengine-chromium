@@ -163,10 +163,10 @@ ProfileOAuth2TokenServiceIOSDelegate::~ProfileOAuth2TokenServiceIOSDelegate() {
 void ProfileOAuth2TokenServiceIOSDelegate::Shutdown() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   accounts_.clear();
-  ClearAuthError(absl::nullopt);
+  ClearAuthError(std::nullopt);
 }
 
-void ProfileOAuth2TokenServiceIOSDelegate::LoadCredentials(
+void ProfileOAuth2TokenServiceIOSDelegate::LoadCredentialsInternal(
     const CoreAccountId& primary_account_id,
     bool is_syncing) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -264,7 +264,7 @@ void ProfileOAuth2TokenServiceIOSDelegate::ReloadCredentials(
   }
 }
 
-void ProfileOAuth2TokenServiceIOSDelegate::UpdateCredentials(
+void ProfileOAuth2TokenServiceIOSDelegate::UpdateCredentialsInternal(
     const CoreAccountId& account_id,
     const std::string& refresh_token) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -272,7 +272,8 @@ void ProfileOAuth2TokenServiceIOSDelegate::UpdateCredentials(
                   "authentication.";
 }
 
-void ProfileOAuth2TokenServiceIOSDelegate::RevokeAllCredentials() {
+void ProfileOAuth2TokenServiceIOSDelegate::RevokeAllCredentialsInternal(
+    signin_metrics::SourceForRefreshTokenOperation source) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   ScopedBatchChange batch(this);
@@ -286,7 +287,7 @@ void ProfileOAuth2TokenServiceIOSDelegate::RevokeAllCredentials() {
 
 void ProfileOAuth2TokenServiceIOSDelegate::
     ReloadAllAccountsFromSystemWithPrimaryAccount(
-        const absl::optional<CoreAccountId>& primary_account_id) {
+        const std::optional<CoreAccountId>& primary_account_id) {
   ReloadCredentials(primary_account_id.value_or(CoreAccountId()));
 }
 

@@ -47,7 +47,8 @@ TEST_F(ContainerNodeTest, HasOnlyTextIgnoresComments) {
 TEST_F(ContainerNodeTest, CannotFindTextInElementWithoutDescendants) {
   SetBodyContent(R"HTML(<body><span id="id"></span></body>)HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString("anything"));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("anything"), [](const String&) { return true; });
 
   EXPECT_TRUE(text.empty());
 }
@@ -56,7 +57,8 @@ TEST_F(ContainerNodeTest, CannotFindTextInElementWithNonTextDescendants) {
   SetBodyContent(R"HTML(<body><span id="id"> Hello
       <span></span> world! </span></body>)HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString("Hello"));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("Hello"), [](const String&) { return true; });
 
   EXPECT_TRUE(text.empty());
 }
@@ -64,7 +66,8 @@ TEST_F(ContainerNodeTest, CannotFindTextInElementWithNonTextDescendants) {
 TEST_F(ContainerNodeTest, CannotFindTextInElementWithoutMatchingSubtring) {
   SetBodyContent(R"HTML(<body><span id="id"> Hello </span></body>)HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString("Goodbye"));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("Goodbye"), [](const String&) { return true; });
 
   EXPECT_TRUE(text.empty());
 }
@@ -73,9 +76,20 @@ TEST_F(ContainerNodeTest, CanFindTextInElementWithOnlyTextDescendants) {
   SetBodyContent(
       R"HTML(<body><span id="id"> Find me please </span></body>)HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString("me"));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("me"), [](const String&) { return true; });
 
   EXPECT_EQ(String(" Find me please "), text);
+}
+
+TEST_F(ContainerNodeTest, CannotFindTextIfTheValidatorRejectsIt) {
+  SetBodyContent(
+      R"HTML(<body><span id="id"> Find me please </span></body>)HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("me"), [](const String&) { return false; });
+
+  EXPECT_TRUE(text.empty());
 }
 
 TEST_F(ContainerNodeTest, CanFindTextInElementWithManyDescendants) {
@@ -100,7 +114,8 @@ TEST_F(ContainerNodeTest, CanFindTextInElementWithManyDescendants) {
       </body>
     )HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString(" me "));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString(" me "), [](const String&) { return true; });
 
   EXPECT_EQ(String(" Find me please "), text);
 }
@@ -113,9 +128,26 @@ TEST_F(ContainerNodeTest, FindTextInElementWithFirstMatch) {
       </div></body>
     )HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString(" match "));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString(" match "), [](const String&) { return true; });
 
   EXPECT_EQ(String(" Text match #1 "), text);
+}
+
+TEST_F(ContainerNodeTest, FindTextInElementWithValidatorApprovingTheSecond) {
+  SetBodyContent(R"HTML(
+      <body><div id="id">
+        <div> Text match #1 </div>
+        <div> Text match #2 </div>
+      </div></body>
+    )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString(" match "), [](const String& potential_match) {
+        return potential_match == " Text match #2 ";
+      });
+
+  EXPECT_EQ(String(" Text match #2 "), text);
 }
 
 TEST_F(ContainerNodeTest, FindTextInElementWithSubstringIgnoresComments) {
@@ -125,9 +157,102 @@ TEST_F(ContainerNodeTest, FindTextInElementWithSubstringIgnoresComments) {
     </body>
   )HTML");
 
-  String text = GetDocument().FindTextInElementWith(AtomicString("comment"));
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("comment"), [](const String&) { return true; });
 
   EXPECT_EQ(String(" Before comment,  after comment. "), text);
+}
+
+TEST_F(ContainerNodeTest, FindTextInElementWithSubstringIgnoresAsciiCase) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p id="id"> MaGiC RaInBoW. </p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("magic"), [](const String&) { return true; });
+
+  EXPECT_EQ(String(" MaGiC RaInBoW. "), text);
+}
+
+TEST_F(ContainerNodeTest, CanFindTextInReadonlyTextInputElement) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><input id="id" type="text" readonly="" value=" MaGiC RaInBoW. "></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("magic"), [](const String&) { return true; });
+
+  EXPECT_EQ(String(" MaGiC RaInBoW. "), text);
+}
+
+TEST_F(ContainerNodeTest, CannotFindTextInNonReadonlyTextInputElement) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><input id="id" type="text" value=" MaGiC RaInBoW. "></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("magic"), [](const String&) { return true; });
+
+  EXPECT_TRUE(text.empty());
+}
+
+TEST_F(ContainerNodeTest, CannotFindTextInNonTextInputElement) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><input id="id" type="url" readonly="" value=" MaGiC RaInBoW. "></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("magic"), [](const String&) { return true; });
+
+  EXPECT_TRUE(text.empty());
+}
+
+TEST_F(ContainerNodeTest, FindTextInTheValueOfTheReadonlyInputFirst) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><input id="id" type="text" readonly="" value="lookup value">lookup
+        text children</input></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("lookup"), [](const String&) { return true; });
+
+  EXPECT_EQ(String("lookup value"), text);
+}
+
+TEST_F(ContainerNodeTest, FindTextInTheValueOfTheReadonlyInputWithTypeTEXT) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><input id="id" type="TEXT" readonly="" value="lookup value"></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("lookup"), [](const String&) { return true; });
+
+  EXPECT_EQ(String("lookup value"), text);
+}
+
+TEST_F(ContainerNodeTest, CanFindTextInTextarea) {
+  SetBodyContent(R"HTML(
+    <body>
+      <p><textarea id="id">lookup text children</textarea></p>
+    </body>
+  )HTML");
+
+  String text = GetDocument().FindTextInElementWith(
+      AtomicString("lookup"), [](const String&) { return true; });
+
+  EXPECT_EQ(String("lookup text children"), text);
 }
 
 }  // namespace blink

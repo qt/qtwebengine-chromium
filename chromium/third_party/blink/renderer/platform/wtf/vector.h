@@ -35,7 +35,7 @@
 #include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/template_util.h"
+#include "base/ranges/algorithm.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/partition_allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
@@ -46,6 +46,7 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"  // For default Vector template parameters.
 #include "third_party/blink/renderer/platform/wtf/hash_table_deleted_value_type.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/type_traits.h"
 #include "third_party/blink/renderer/platform/wtf/vector_traits.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
@@ -170,8 +171,7 @@ struct VectorTypeOperations {
     if constexpr (VectorTraits<T>::kCanInitializeWithMemset) {
       size_t size =
           reinterpret_cast<char*>(end) - reinterpret_cast<char*>(begin);
-      if constexpr (!Allocator::kIsGarbageCollected ||
-                    !IsTraceableInCollectionTrait<VectorTraits<T>>::value) {
+      if constexpr (!Allocator::kIsGarbageCollected || !IsTraceable<T>::value) {
         if (size != 0) {
           // NOLINTNEXTLINE(bugprone-undefined-memory-manipulation)
           memset(begin, 0, size);
@@ -204,7 +204,7 @@ struct VectorTypeOperations {
         }
       }
     } else if constexpr (Allocator::kIsGarbageCollected &&
-                         IsTraceableInCollectionTrait<VectorTraits<T>>::value) {
+                         IsTraceable<T>::value) {
       static_assert(VectorTraits<T>::kCanMoveWithMemcpy);
       AtomicWriteMemcpy(dst, src,
                         reinterpret_cast<const char*>(src_end) -
@@ -246,7 +246,7 @@ struct VectorTypeOperations {
         }
       }
     } else if constexpr (Allocator::kIsGarbageCollected &&
-                         IsTraceableInCollectionTrait<VectorTraits<T>>::value) {
+                         IsTraceable<T>::value) {
       static_assert(VectorTraits<T>::kCanMoveWithMemcpy);
       if (dst < src) {
         for (T *s = src, *d = dst; s < src_end; ++s, ++d)
@@ -276,7 +276,7 @@ struct VectorTypeOperations {
     if constexpr (!VectorTraits<T>::kCanMoveWithMemcpy) {
       std::swap_ranges(src, src_end, dst);
     } else if constexpr (Allocator::kIsGarbageCollected &&
-                         IsTraceableInCollectionTrait<VectorTraits<T>>::value) {
+                         IsTraceable<T>::value) {
       static_assert(VectorTraits<T>::kCanMoveWithMemcpy);
       constexpr size_t boundary = std::max(alignof(T), sizeof(size_t));
       alignas(boundary) char buf[sizeof(T)];
@@ -306,7 +306,7 @@ struct VectorTypeOperations {
     if constexpr (!VectorTraits<T>::kCanCopyWithMemcpy) {
       std::copy(src, src_end, dst);
     } else if constexpr (Allocator::kIsGarbageCollected &&
-                         IsTraceableInCollectionTrait<VectorTraits<T>>::value) {
+                         IsTraceable<T>::value) {
       static_assert(VectorTraits<T>::kCanCopyWithMemcpy);
       AtomicWriteMemcpy(dst, src,
                         reinterpret_cast<const char*>(src_end) -
@@ -506,8 +506,7 @@ class VectorBufferBase {
     // Tracing and finalization access all slots of a vector backing. In case
     // there's work to be done there unused slots should be cleared.
     return Allocator::kIsGarbageCollected &&
-           (IsTraceableInCollectionTrait<VectorTraits<T>>::value ||
-            VectorTraits<T>::kNeedsDestruction);
+           (IsTraceable<T>::value || VectorTraits<T>::kNeedsDestruction);
   }
 
   void AllocateBufferNoBarrier(wtf_size_t new_capacity) {
@@ -1472,8 +1471,6 @@ class Vector
   const T* const* GetBufferSlot() const { return Base::BufferSlot(); }
 
  private:
-  static constexpr void CheckTypeConstraints();
-
   void ExpandCapacity(wtf_size_t new_min_capacity);
   T* ExpandCapacity(wtf_size_t new_min_capacity, T*);
   T* ExpandCapacity(wtf_size_t new_min_capacity, const T* data) {
@@ -1501,37 +1498,41 @@ class Vector
   using Base::BufferSafe;
   using Base::size_;
   using Base::SwapVectorBuffer;
+
+  struct TypeConstraints {
+    constexpr TypeConstraints() {
+      // This condition is relied upon by TraceCollectionIfEnabled.
+      static_assert(!IsWeak<T>::value);
+      static_assert(!IsStackAllocatedType<T>);
+      static_assert(!std::is_polymorphic_v<T> ||
+                        !VectorTraits<T>::kCanInitializeWithMemset,
+                    "Cannot initialize with memset if there is a vtable.");
+      static_assert(Allocator::kIsGarbageCollected || !IsDisallowNew<T> ||
+                        !IsTraceable<T>::value,
+                    "Cannot put DISALLOW_NEW() objects that have trace methods "
+                    "into an off-heap Vector.");
+      static_assert(
+          Allocator::kIsGarbageCollected || !IsMemberType<T>::value,
+          "Cannot put Member into an off-heap Vector. Use HeapVector instead.");
+      static_assert(
+          Allocator::kIsGarbageCollected || !IsWeakMemberType<T>::value,
+          "WeakMember is not allowed in Vector nor HeapVector.");
+      static_assert(
+          Allocator::kIsGarbageCollected ||
+              !IsPointerToGarbageCollectedType<T>::value,
+          "Cannot put raw pointers to garbage-collected classes into an "
+          "off-heap Vector.  Use HeapVector<Member<T>> instead.");
+    }
+  };
+  NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
 };
 
 //
 // Vector out-of-line implementation
 //
 
-// static
-template <typename T, wtf_size_t inlineCapacity, typename Allocator>
-constexpr void Vector<T, inlineCapacity, Allocator>::CheckTypeConstraints() {
-  static_assert(!std::is_polymorphic<T>::value ||
-                    !VectorTraits<T>::kCanInitializeWithMemset,
-                "Cannot initialize with memset if there is a vtable.");
-  static_assert(Allocator::kIsGarbageCollected || !IsDisallowNew<T> ||
-                    !IsTraceable<T>::value,
-                "Cannot put DISALLOW_NEW() objects that have trace methods "
-                "into an off-heap Vector.");
-  static_assert(
-      Allocator::kIsGarbageCollected || !IsMemberType<T>::value,
-      "Cannot put Member into an off-heap Vector. Use HeapVector instead.");
-  static_assert(Allocator::kIsGarbageCollected || !IsWeakMemberType<T>::value,
-                "WeakMember is not allowed in Vector nor HeapVector.");
-  static_assert(Allocator::kIsGarbageCollected ||
-                    !IsPointerToGarbageCollectedType<T>::value,
-                "Cannot put raw pointers to garbage-collected classes into an "
-                "off-heap Vector.  Use HeapVector<Member<T>> instead.");
-}
-
 template <typename T, wtf_size_t inlineCapacity, typename Allocator>
 inline Vector<T, inlineCapacity, Allocator>::Vector() {
-  CheckTypeConstraints();
-
   ANNOTATE_NEW_BUFFER(begin(), capacity(), 0);
   size_ = 0;
 }
@@ -1539,8 +1540,6 @@ inline Vector<T, inlineCapacity, Allocator>::Vector() {
 template <typename T, wtf_size_t inlineCapacity, typename Allocator>
 inline Vector<T, inlineCapacity, Allocator>::Vector(wtf_size_t size)
     : Base(size) {
-  CheckTypeConstraints();
-
   ANNOTATE_NEW_BUFFER(begin(), capacity(), size);
   size_ = size;
   TypeOperations::Initialize(begin(), end());
@@ -1550,8 +1549,6 @@ template <typename T, wtf_size_t inlineCapacity, typename Allocator>
 inline Vector<T, inlineCapacity, Allocator>::Vector(wtf_size_t size,
                                                     const T& val)
     : Base(size) {
-  CheckTypeConstraints();
-
   ANNOTATE_NEW_BUFFER(begin(), capacity(), size);
   size_ = size;
   TypeOperations::UninitializedFill(begin(), end(), val,
@@ -1676,10 +1673,7 @@ void Vector<T, inlineCapacity, Allocator>::assign(const Collection& other) {
     resize(base::checked_cast<wtf_size_t>(other.size()));
   }
 
-  auto src = other.begin();
-  auto src_end = other.end();
-  for (wtf_size_t i = 0; src != src_end; ++src, ++i)
-    at(i) = *src;
+  base::ranges::copy(other, begin());
 }
 
 template <typename T, wtf_size_t inlineCapacity, typename Allocator>
@@ -1742,7 +1736,18 @@ operator=(std::initializer_list<T> elements) {
 template <typename T, wtf_size_t inlineCapacity, typename Allocator>
 template <typename U>
 bool Vector<T, inlineCapacity, Allocator>::Contains(const U& value) const {
-  return Find(value) != kNotFound;
+  // Do not reuse Find because the compiler will generate extra code to
+  // handle finding the kNotFound-th element in the array.  kNotFound is part
+  // of wtf_size_t, but not used as an index due to runtime restrictions.  See
+  // kNotFound.
+  const T* b = begin();
+  const T* e = end();
+  for (const T* iter = b; iter < e; ++iter) {
+    if (TypeOperations::CompareElement(*iter, value)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 template <typename T, wtf_size_t inlineCapacity, typename Allocator>
@@ -2377,23 +2382,6 @@ wtf_size_t EraseIf(Vector<T, inline_capacity, Allocator>& v, Pred pred) {
 }
 
 }  // namespace WTF
-
-namespace base {
-
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ <= 7
-// Workaround for g++7 and earlier family.
-// Due to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=80654, without this
-// absl::optional<WTF::Vector<T>> where T is non-copyable causes a compile
-// error. As we know it is not trivially copy constructible, explicitly declare
-// so.
-//
-// It completes the declaration in base/template_util.h that was provided
-// for std::vector
-template <typename T>
-struct is_trivially_copy_constructible<WTF::Vector<T>> : std::false_type {};
-#endif
-
-}  // namespace base
 
 using WTF::Vector;
 

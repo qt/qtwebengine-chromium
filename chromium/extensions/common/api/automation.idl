@@ -21,6 +21,7 @@
     // present in earlier versions of LaCros.
     ariaAttributeChangedDeprecated,
     ariaCurrentChanged,
+    ariaNotificationsPosted,
     atomicChanged,
     autoCompleteChanged,
     autocorrectionOccured,
@@ -31,7 +32,6 @@
     checkedStateChanged,
     checkedStateDescriptionChanged,
     childrenChanged,
-    classNameChanged,
     clicked,
     collapsed,
     controlsChanged,
@@ -79,7 +79,7 @@
     mediaStoppedPlaying,
     menuEnd,
     menuItemSelected,
-    menuListValueChanged,
+    menuListValueChangedDeprecated,
     menuPopupEnd,
     menuPopupStart,
     menuStart,
@@ -93,7 +93,6 @@
     nameChanged,
     objectAttributeChanged,
     orientationChanged,
-    otherAttributeChanged,
     parentChanged,
     placeholderChanged,
     portalActivated,
@@ -170,12 +169,12 @@
     dateTime,
     definition,
     descriptionList,
-    descriptionListDetail,
-    descriptionListTerm,
+    descriptionListDetailDeprecated,
+    descriptionListTermDeprecated,
     desktop,
     details,
     dialog,
-    directory,
+    directoryDeprecated,
     disclosureTriangle,
     disclosureTriangleGrouped,
     // --------------------------------------------------------------
@@ -327,6 +326,7 @@
     search,
     searchBox,
     section,
+    sectionWithoutName,
     slider,
     spinButton,
     splitter,
@@ -584,6 +584,7 @@ enum IntentInputEventType {
   insertTranspose,
   insertReplacementText,
   insertCompositionText,
+  insertLink,
   // Deletion.
   deleteWordBackward,
   deleteWordForward,
@@ -1548,12 +1549,12 @@ enum PositionType {
     // listen to changes across all trees. Pass a filter to determine what
     // specific tree changes to listen to, and note that listnening to all
     // tree changes can be expensive.
-    [nocompile, doesNotSupportPromises="Event callback"]
+    [nocompile, trailingCallbackIsFunctionParameter]
     static void addTreeChangeObserver(
         TreeChangeObserverFilter filter, TreeChangeObserver observer);
 
     // Remove a tree change observer.
-    [nocompile, doesNotSupportPromises="Event callback"]
+    [nocompile, trailingCallbackIsFunctionParameter]
     static void removeTreeChangeObserver(
         TreeChangeObserver observer);
 

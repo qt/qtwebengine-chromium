@@ -35,6 +35,8 @@
 
 #include <stdint.h>
 
+#include <string_view>
+
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/scheduler/public/non_main_thread.h"
@@ -102,6 +104,7 @@ TEST(KURLTest, Getters) {
     // contents are printed on failure.
     EXPECT_EQ(String(c.protocol), kurl.Protocol()) << url;
     EXPECT_EQ(String(c.host), kurl.Host()) << url;
+    EXPECT_EQ(String(c.host), kurl.HostView()) << url;
     EXPECT_EQ(c.port, kurl.Port()) << url;
     EXPECT_EQ(String(c.user), kurl.User()) << url;
     EXPECT_EQ(String(c.pass), kurl.Pass()) << url;
@@ -794,7 +797,7 @@ TEST(KURLTest, IsHierarchical) {
   for (const char* input : standard_urls) {
     SCOPED_TRACE(input);
     KURL url(input);
-    EXPECT_TRUE(url.IsHierarchical());
+    EXPECT_TRUE(url.IsStandard());
     EXPECT_TRUE(url.CanSetHostOrPort());
     EXPECT_TRUE(url.CanSetPathname());
   }
@@ -811,7 +814,7 @@ TEST(KURLTest, IsHierarchical) {
   for (const char* input : nonstandard_urls) {
     SCOPED_TRACE(input);
     KURL url(input);
-    EXPECT_FALSE(url.IsHierarchical());
+    EXPECT_FALSE(url.IsStandard());
     EXPECT_FALSE(url.CanSetHostOrPort());
     EXPECT_FALSE(url.CanSetPathname());
   }
@@ -1257,7 +1260,7 @@ class KURLTestTraits {
  public:
   using UrlType = blink::KURL;
 
-  static UrlType CreateUrlFromString(base::StringPiece s) {
+  static UrlType CreateUrlFromString(std::string_view s) {
     return blink::KURL(String::FromUTF8(s));
   }
 

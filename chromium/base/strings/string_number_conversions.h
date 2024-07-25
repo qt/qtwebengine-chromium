@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef BASE_STRINGS_STRING_NUMBER_CONVERSIONS_H_
 #define BASE_STRINGS_STRING_NUMBER_CONVERSIONS_H_
 
@@ -106,6 +111,7 @@ BASE_EXPORT bool StringToDouble(StringPiece16 input, double* output);
 //   std::numeric_limits<size_t>::max() / 2
 BASE_EXPORT std::string HexEncode(const void* bytes, size_t size);
 BASE_EXPORT std::string HexEncode(base::span<const uint8_t> bytes);
+BASE_EXPORT std::string HexEncode(StringPiece chars);
 
 // Appends a hex representation of `byte`, as two uppercase (by default)
 // characters, to `output`. This is a useful primitive in larger conversion

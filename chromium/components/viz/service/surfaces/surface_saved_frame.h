@@ -6,6 +6,7 @@
 #define COMPONENTS_VIZ_SERVICE_SURFACES_SURFACE_SAVED_FRAME_H_
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "base/containers/flat_map.h"
@@ -16,7 +17,11 @@
 #include "components/viz/common/quads/compositor_render_pass.h"
 #include "components/viz/common/resources/release_callback.h"
 #include "components/viz/service/viz_service_export.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "gpu/command_buffer/client/client_shared_image.h"
+
+namespace gpu {
+class SharedImageInterface;
+}
 
 namespace viz {
 
@@ -24,7 +29,7 @@ class Surface;
 
 class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
  public:
-  using TransitionDirectiveCompleteCallback =
+  using CopyFinishedCallback =
       base::OnceCallback<void(const CompositorFrameTransitionDirective&)>;
 
   struct RenderPassDrawData {
@@ -42,13 +47,17 @@ class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
 
     OutputCopyResult& operator=(OutputCopyResult&& other);
 
-    // Texture representation.
-    gpu::Mailbox mailbox;
     gpu::SyncToken sync_token;
     gfx::ColorSpace color_space;
 
+    // Texture representation.
+    gpu::Mailbox mailbox;
+
     // Software bitmap representation.
     SkBitmap bitmap;
+
+    // Software image representation.
+    scoped_refptr<gpu::ClientSharedImage> shared_image;
 
     // This is information needed to draw the texture as if it was a part of the
     // original frame.
@@ -68,12 +77,16 @@ class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
 
     FrameResult& operator=(FrameResult&& other);
 
-    std::vector<absl::optional<OutputCopyResult>> shared_results;
+    std::vector<std::optional<OutputCopyResult>> shared_results;
     base::flat_set<ViewTransitionElementResourceId> empty_resource_ids;
   };
 
+  static std::unique_ptr<SurfaceSavedFrame> CreateForTesting(
+      CompositorFrameTransitionDirective directive);
+
   SurfaceSavedFrame(CompositorFrameTransitionDirective directive,
-                    TransitionDirectiveCompleteCallback finished_callback);
+                    gpu::SharedImageInterface* shared_image_interface,
+                    CopyFinishedCallback finished_callback);
   ~SurfaceSavedFrame();
 
   // Returns true iff the frame is valid and complete.
@@ -85,7 +98,7 @@ class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
   // frame.
   void RequestCopyOfOutput(Surface* surface);
 
-  [[nodiscard]] absl::optional<FrameResult> TakeResult();
+  [[nodiscard]] std::optional<FrameResult> TakeResult();
 
   // For testing functionality that ensures that we have a valid frame.
   void CompleteSavedFrameForTesting();
@@ -93,12 +106,16 @@ class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
   base::flat_set<ViewTransitionElementResourceId> GetEmptyResourceIds() const;
 
  private:
+  explicit SurfaceSavedFrame(CompositorFrameTransitionDirective directive);
+
   std::unique_ptr<CopyOutputRequest> CreateCopyRequestIfNeeded(
       const CompositorRenderPass& render_pass,
-      const CompositorRenderPassList& render_pass_list) const;
+      const CompositorRenderPassList& render_pass_list,
+      bool is_software);
 
   void NotifyCopyOfOutputComplete(size_t shared_index,
                                   const RenderPassDrawData& info,
+                                  bool is_software,
                                   std::unique_ptr<CopyOutputResult> result);
 
   size_t ExpectedResultCount() const;
@@ -132,9 +149,14 @@ class VIZ_SERVICE_EXPORT SurfaceSavedFrame {
   bool IsSharedElementRenderPass(CompositorRenderPassId pass_id) const;
 
   CompositorFrameTransitionDirective directive_;
-  TransitionDirectiveCompleteCallback directive_finished_callback_;
+  raw_ptr<gpu::SharedImageInterface> shared_image_interface_;
+  CopyFinishedCallback directive_finished_callback_;
 
-  absl::optional<FrameResult> frame_result_;
+  // Store the blit images while the copy output request is ongoing.
+  base::flat_map<size_t, scoped_refptr<gpu::ClientSharedImage>>
+      blit_shared_images_;
+
+  std::optional<FrameResult> frame_result_;
 
   // This is the number of copy requests we requested. We decrement this value
   // anytime we get a result back. When it reaches 0, we notify that this frame

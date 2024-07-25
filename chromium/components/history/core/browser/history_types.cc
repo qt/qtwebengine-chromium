@@ -44,6 +44,26 @@ VisitRow::~VisitRow() = default;
 
 VisitRow::VisitRow(const VisitRow&) = default;
 
+// VisitedLinkRow --------------------------------------------------------------
+
+bool operator==(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return std::tie(lhs.id, lhs.link_url_id, lhs.top_level_url, lhs.frame_url,
+                  lhs.visit_count) == std::tie(rhs.id, rhs.link_url_id,
+                                               rhs.top_level_url, rhs.frame_url,
+                                               rhs.visit_count);
+}
+
+bool operator!=(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const VisitedLinkRow& lhs, const VisitedLinkRow& rhs) {
+  return std::tie(lhs.id, lhs.link_url_id, lhs.top_level_url, lhs.frame_url,
+                  lhs.visit_count) < std::tie(rhs.id, rhs.link_url_id,
+                                              rhs.top_level_url, rhs.frame_url,
+                                              rhs.visit_count);
+}
+
 // QueryResults ----------------------------------------------------------------
 
 QueryResults::QueryResults() = default;
@@ -244,6 +264,17 @@ FilteredURL::~FilteredURL() = default;
 
 FilteredURL::ExtendedInfo::ExtendedInfo() = default;
 
+// GetAllAppIdsResult -------------------------------------------------------
+
+GetAllAppIdsResult::GetAllAppIdsResult() = default;
+
+GetAllAppIdsResult::GetAllAppIdsResult(GetAllAppIdsResult&& other) = default;
+
+GetAllAppIdsResult& GetAllAppIdsResult::operator=(GetAllAppIdsResult&& other) =
+    default;
+
+GetAllAppIdsResult::~GetAllAppIdsResult() = default;
+
 // DomainsVisitedResult -------------------------------------------------------
 
 DomainsVisitedResult::DomainsVisitedResult() = default;
@@ -283,7 +314,7 @@ HistoryAddPageArgs::HistoryAddPageArgs()
                          base::Time(),
                          0,
                          0,
-                         absl::nullopt,
+                         std::nullopt,
                          GURL(),
                          RedirectList(),
                          ui::PAGE_TRANSITION_LINK,
@@ -291,19 +322,19 @@ HistoryAddPageArgs::HistoryAddPageArgs()
                          SOURCE_BROWSED,
                          false,
                          true,
-                         absl::nullopt,
-                         absl::nullopt,
-                         absl::nullopt,
-                         absl::nullopt,
-                         absl::nullopt,
-                         absl::nullopt) {}
+                         std::nullopt,
+                         std::nullopt,
+                         std::nullopt,
+                         std::nullopt,
+                         std::nullopt,
+                         std::nullopt) {}
 
 HistoryAddPageArgs::HistoryAddPageArgs(
     const GURL& url,
     base::Time time,
     ContextID context_id,
     int nav_entry_id,
-    absl::optional<int64_t> local_navigation_id,
+    std::optional<int64_t> local_navigation_id,
     const GURL& referrer,
     const RedirectList& redirects,
     ui::PageTransition transition,
@@ -311,12 +342,12 @@ HistoryAddPageArgs::HistoryAddPageArgs(
     VisitSource source,
     bool did_replace_entry,
     bool consider_for_ntp_most_visited,
-    absl::optional<std::u16string> title,
-    absl::optional<GURL> top_level_url,
-    absl::optional<Opener> opener,
-    absl::optional<int64_t> bookmark_id,
-    absl::optional<std::string> app_id,
-    absl::optional<VisitContextAnnotations::OnVisitFields> context_annotations)
+    std::optional<std::u16string> title,
+    std::optional<GURL> top_level_url,
+    std::optional<Opener> opener,
+    std::optional<int64_t> bookmark_id,
+    std::optional<std::string> app_id,
+    std::optional<VisitContextAnnotations::OnVisitFields> context_annotations)
     : url(url),
       time(time),
       context_id(context_id),
@@ -388,7 +419,7 @@ bool DeletionTimeRange::IsAllTime() const {
 // static
 DeletionInfo DeletionInfo::ForAllHistory() {
   return DeletionInfo(DeletionTimeRange::AllTime(), false, {}, {},
-                      absl::nullopt);
+                      std::nullopt);
 }
 
 // static
@@ -396,18 +427,19 @@ DeletionInfo DeletionInfo::ForUrls(URLRows deleted_rows,
                                    std::set<GURL> favicon_urls) {
   return DeletionInfo(DeletionTimeRange::Invalid(), false,
                       std::move(deleted_rows), std::move(favicon_urls),
-                      absl::nullopt);
+                      std::nullopt);
 }
 
 DeletionInfo::DeletionInfo(const DeletionTimeRange& time_range,
                            bool is_from_expiration,
                            URLRows deleted_rows,
                            std::set<GURL> favicon_urls,
-                           absl::optional<std::set<GURL>> restrict_urls)
+                           std::optional<std::set<GURL>> restrict_urls)
     : DeletionInfo(time_range,
                    is_from_expiration,
                    Reason::kOther,
                    std::move(deleted_rows),
+                   /*deleted_visit_ids=*/{},
                    std::move(favicon_urls),
                    std::move(restrict_urls)) {}
 
@@ -415,12 +447,14 @@ DeletionInfo::DeletionInfo(const DeletionTimeRange& time_range,
                            bool is_from_expiration,
                            Reason deletion_reason,
                            URLRows deleted_rows,
+                           std::set<VisitID> deleted_visit_ids,
                            std::set<GURL> favicon_urls,
-                           absl::optional<std::set<GURL>> restrict_urls)
+                           std::optional<std::set<GURL>> restrict_urls)
     : time_range_(time_range),
       is_from_expiration_(is_from_expiration),
       deletion_reason_(deletion_reason),
       deleted_rows_(std::move(deleted_rows)),
+      deleted_visit_ids_(std::move(deleted_visit_ids)),
       favicon_urls_(std::move(favicon_urls)),
       restrict_urls_(std::move(restrict_urls)) {
   // If time_range is all time or invalid, restrict_urls should be empty.
@@ -435,6 +469,20 @@ DeletionInfo::~DeletionInfo() = default;
 DeletionInfo::DeletionInfo(DeletionInfo&& other) noexcept = default;
 
 DeletionInfo& DeletionInfo::operator=(DeletionInfo&& rhs) noexcept = default;
+
+// DeletedVisit ----------------------------------------------------------------
+
+DeletedVisit::DeletedVisit(VisitRow visit)
+    : visit_row(visit), deleted_visited_link(std::nullopt) {}
+
+DeletedVisit::DeletedVisit(VisitRow visit,
+                           DeletedVisitedLink deleted_visited_link)
+    : visit_row(visit), deleted_visited_link(deleted_visited_link) {}
+
+DeletedVisit::DeletedVisit(const DeletedVisit& other) = default;
+DeletedVisit& DeletedVisit::operator=(const DeletedVisit& other) = default;
+
+DeletedVisit::~DeletedVisit() = default;
 
 // Clusters --------------------------------------------------------------------
 
@@ -515,13 +563,9 @@ ClusterVisit& ClusterVisit::operator=(ClusterVisit&&) = default;
 
 ClusterKeywordData::ClusterKeywordData() = default;
 ClusterKeywordData::ClusterKeywordData(
-    const std::vector<std::string>& entity_collections)
-    : entity_collections(entity_collections) {}
-ClusterKeywordData::ClusterKeywordData(
     ClusterKeywordData::ClusterKeywordType type,
-    float score,
-    const std::vector<std::string>& entity_collections)
-    : type(type), score(score), entity_collections(entity_collections) {}
+    float score)
+    : type(type), score(score) {}
 ClusterKeywordData::ClusterKeywordData(const ClusterKeywordData&) = default;
 ClusterKeywordData::ClusterKeywordData(ClusterKeywordData&&) = default;
 ClusterKeywordData& ClusterKeywordData::operator=(const ClusterKeywordData&) =
@@ -531,13 +575,11 @@ ClusterKeywordData& ClusterKeywordData::operator=(ClusterKeywordData&&) =
 ClusterKeywordData::~ClusterKeywordData() = default;
 
 bool ClusterKeywordData::operator==(const ClusterKeywordData& data) const {
-  return type == data.type && std::fabs(score - data.score) < kScoreEpsilon &&
-         entity_collections == data.entity_collections;
+  return type == data.type && std::fabs(score - data.score) < kScoreEpsilon;
 }
 
 std::string ClusterKeywordData::ToString() const {
-  return base::StringPrintf("ClusterKeywordData{%d, %f, {%s}}", type, score,
-                            base::JoinString(entity_collections, ",").c_str());
+  return base::StringPrintf("ClusterKeywordData{%d, %f}", type, score);
 }
 
 std::ostream& operator<<(std::ostream& out, const ClusterKeywordData& data) {
@@ -573,8 +615,8 @@ Cluster::Cluster(int64_t cluster_id,
                  const base::flat_map<std::u16string, ClusterKeywordData>&
                      keyword_to_data_map,
                  bool should_show_on_prominent_ui_surfaces,
-                 absl::optional<std::u16string> label,
-                 absl::optional<std::u16string> raw_label,
+                 std::optional<std::u16string> label,
+                 std::optional<std::u16string> raw_label,
                  query_parser::Snippet::MatchPositions label_match_positions,
                  std::vector<std::string> related_searches,
                  float search_match_score)

@@ -7,9 +7,13 @@
 
 #include "base/memory/raw_ref.h"
 #include "base/time/time.h"
+#include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_manager_test_api.h"
+#include "components/autofill/core/browser/autofill_trigger_details.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
 #include "components/autofill/core/browser/filling_product.h"
+#include "components/autofill/core/browser/form_filler_test_api.h"
+#include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -18,18 +22,6 @@ namespace autofill {
 // Exposes some testing operations for BrowserAutofillManager.
 class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
  public:
-  static void DeterminePossibleFieldTypesForUpload(
-      const std::vector<AutofillProfile>& profiles,
-      const std::vector<CreditCard>& credit_cards,
-      const std::u16string& last_unlocked_credit_card_cvc,
-      const std::string& app_locale,
-      FormStructure* form) {
-    // For tests, the observed_submission is hardcoded to true.
-    BrowserAutofillManager::DeterminePossibleFieldTypesForUpload(
-        profiles, credit_cards, last_unlocked_credit_card_cvc, app_locale,
-        /*observed_submission=*/true, form);
-  }
-
   explicit BrowserAutofillManagerTestApi(BrowserAutofillManager* manager)
       : AutofillManagerTestApi(manager), manager_(*manager) {}
 
@@ -46,20 +38,6 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
 
   AutofillExternalDelegate* external_delegate() {
     return manager_->external_delegate_.get();
-  }
-
-  void set_limit_before_refill(base::TimeDelta limit) {
-    manager_->limit_before_refill_ = limit;
-  }
-
-  bool ShouldTriggerRefill(const FormStructure& form_structure,
-                           RefillTriggerReason refill_trigger_reason) {
-    return manager_->ShouldTriggerRefill(form_structure, refill_trigger_reason);
-  }
-
-  void TriggerRefill(const FormData& form,
-                     const AutofillTriggerDetails& trigger_details) {
-    manager_->TriggerRefill(form, trigger_details);
   }
 
   void PreProcessStateMatchingTypes(
@@ -100,21 +78,6 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
     manager_->OnCreditCardFetched(result, credit_card);
   }
 
-  void FillOrPreviewDataModelForm(
-      mojom::ActionPersistence action_persistence,
-      const FormData& form,
-      const FormFieldData& field,
-      absl::variant<const AutofillProfile*, const CreditCard*>
-          profile_or_credit_card,
-      const std::u16string* optional_cvc,
-      FormStructure* form_structure,
-      AutofillField* autofill_field) {
-    return manager_->FillOrPreviewDataModelForm(
-        action_persistence, form, field, profile_or_credit_card, optional_cvc,
-        form_structure, autofill_field,
-        {.trigger_source = AutofillTriggerSource::kPopup});
-  }
-
   base::flat_map<std::string, VirtualCardUsageData::VirtualCardLastFour>
   GetVirtualCreditCardsForStandaloneCvcField(const url::Origin& origin) {
     return manager_->GetVirtualCreditCardsForStandaloneCvcField(origin);
@@ -138,13 +101,23 @@ class BrowserAutofillManagerTestApi : public AutofillManagerTestApi {
         consider_form_as_secure_for_testing;
   }
 
-  void AddFormFillEntry(
-      base::span<const FormFieldData* const> filled_fields,
-      base::span<const AutofillField* const> filled_autofill_fields,
-      FillingProduct filling_product,
-      bool is_refill) {
-    manager_->form_autofill_history_.AddFormFillEntry(
-        filled_fields, filled_autofill_fields, filling_product, is_refill);
+  FormFiller& form_filler() { return *manager_->form_filler_; }
+
+  void set_form_filler(std::unique_ptr<FormFiller> form_filler) {
+    manager_->form_filler_ = std::move(form_filler);
+  }
+
+  std::vector<Suggestion> GetProfileSuggestions(
+      const FormData& form,
+      const FormFieldData& field,
+      AutofillSuggestionTriggerSource trigger_source =
+          AutofillSuggestionTriggerSource::kFormControlElementClicked) {
+    FormStructure* form_structure;
+    AutofillField* autofill_field;
+    CHECK(manager_->GetCachedFormAndField(form, field, &form_structure,
+                                          &autofill_field));
+    return manager_->GetProfileSuggestions(form, form_structure, field,
+                                           autofill_field, trigger_source);
   }
 
  private:

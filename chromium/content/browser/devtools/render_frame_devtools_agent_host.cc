@@ -28,6 +28,7 @@
 #include "content/browser/devtools/protocol/background_service_handler.h"
 #include "content/browser/devtools/protocol/browser_handler.h"
 #include "content/browser/devtools/protocol/device_access_handler.h"
+#include "content/browser/devtools/protocol/device_orientation_handler.h"
 #include "content/browser/devtools/protocol/dom_handler.h"
 #include "content/browser/devtools/protocol/emulation_handler.h"
 #include "content/browser/devtools/protocol/fedcm_handler.h"
@@ -337,6 +338,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
       session->CreateAndAddHandler<protocol::BrowserHandler>(
           session->GetClient()->MayWriteLocalFiles());
   session->CreateAndAddHandler<protocol::DeviceAccessHandler>();
+  session->CreateAndAddHandler<protocol::DeviceOrientationHandler>();
   session->CreateAndAddHandler<protocol::DOMHandler>(
       session->GetClient()->MayReadLocalFiles());
   auto* emulation_handler =
@@ -360,8 +362,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
       base::BindRepeating(
           &RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories,
           base::Unretained(this)),
-      session->GetClient()->MayReadLocalFiles(),
-      session->GetClient()->IsTrusted());
+      session->GetClient());
   session->CreateAndAddHandler<protocol::FetchHandler>(
       GetIOContext(), base::BindRepeating(
                           [](RenderFrameDevToolsAgentHost* self,
@@ -374,8 +375,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
   const bool may_attach_to_brower = session->GetClient()->IsTrusted();
   session->CreateAndAddHandler<protocol::ServiceWorkerHandler>(
       /* allow_inspect_worker= */ may_attach_to_brower);
-  session->CreateAndAddHandler<protocol::StorageHandler>(
-      session->GetClient()->IsTrusted());
+  session->CreateAndAddHandler<protocol::StorageHandler>(session->GetClient());
   session->CreateAndAddHandler<protocol::SystemInfoHandler>(
       /* is_browser_session= */ false);
   auto* target_handler = session->CreateAndAddHandler<protocol::TargetHandler>(
@@ -440,18 +440,12 @@ void RenderFrameDevToolsAgentHost::InspectElement(RenderFrameHost* frame_host,
   // so we need to transform the coordinates from the root space
   // to the local frame root widget's space.
   if (host->frame_host_) {
-    if (RenderWidgetHostView* view = host->frame_host_->GetView()) {
+    if (RenderWidgetHostViewBase* view = host->frame_host_->GetView()) {
       point = gfx::ToRoundedPoint(
           view->TransformRootPointToViewCoordSpace(gfx::PointF(point)));
     }
   }
   host->GetRendererChannel()->InspectElement(point);
-}
-
-void RenderFrameDevToolsAgentHost::GetUniqueFormControlId(
-    int node_id,
-    GetUniqueFormControlIdCallback callback) {
-  GetRendererChannel()->GetUniqueFormControlId(node_id, std::move(callback));
 }
 
 RenderFrameDevToolsAgentHost::~RenderFrameDevToolsAgentHost() {

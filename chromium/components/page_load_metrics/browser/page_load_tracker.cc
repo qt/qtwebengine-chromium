@@ -11,12 +11,14 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
+#include "components/page_load_metrics/browser/features.h"
 #include "components/page_load_metrics/browser/page_load_metrics_embedder_interface.h"
 #include "components/page_load_metrics/browser/page_load_metrics_forward_observer.h"
 #include "components/page_load_metrics/browser/page_load_metrics_memory_tracker.h"
@@ -33,6 +35,7 @@
 #include "page_load_metrics_observer_delegate.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "third_party/blink/public/mojom/input/input_event.mojom-shared.h"
 
 namespace page_load_metrics {
 
@@ -76,33 +79,36 @@ void RecordLargestContentfulPaintImageLoadTiming(
     const page_load_metrics::mojom::LargestContentfulPaintTiming&
         largest_contentful_paint,
     base::TimeDelta document_ttfb) {
-  if (largest_contentful_paint.largest_image_load_start.has_value()) {
+  if (largest_contentful_paint.resource_load_timings->load_start.has_value()) {
     UMA_HISTOGRAM_BOOLEAN(
         internal::kImageLoadStartLessThanDocumentTTFB,
-        largest_contentful_paint.largest_image_load_start < document_ttfb);
+        largest_contentful_paint.resource_load_timings->load_start <
+            document_ttfb);
   }
 
-  if (largest_contentful_paint.largest_image_load_start.has_value() &&
-      largest_contentful_paint.largest_image_load_end.has_value()) {
+  if (largest_contentful_paint.resource_load_timings->load_start.has_value() &&
+      largest_contentful_paint.resource_load_timings->load_end.has_value()) {
     UMA_HISTOGRAM_BOOLEAN(
         internal::kImageLoadEndLessThanLoadStart,
-        largest_contentful_paint.largest_image_load_end <
-            largest_contentful_paint.largest_image_load_start);
+        largest_contentful_paint.resource_load_timings->load_end <
+            largest_contentful_paint.resource_load_timings->load_start);
   }
 
-  if (largest_contentful_paint.largest_image_load_end.has_value() &&
+  if (largest_contentful_paint.resource_load_timings->load_end.has_value() &&
       largest_contentful_paint.largest_image_paint.has_value()) {
-    UMA_HISTOGRAM_BOOLEAN(internal::kImageLCPLessThanLoadEnd,
-                          largest_contentful_paint.largest_image_paint <
-                              largest_contentful_paint.largest_image_load_end);
+    UMA_HISTOGRAM_BOOLEAN(
+        internal::kImageLCPLessThanLoadEnd,
+        largest_contentful_paint.largest_image_paint <
+            largest_contentful_paint.resource_load_timings->load_end);
   }
 
   // If the images load_start is less than document_ttfb, then something may be
   // wrong with the metric. Attempt to diagnose the cause and record it to UMA,
   // or report 'Unknown' if no cause is identified. This code may be removed
   // when https://crbug.com/1431906 is resolved.
-  if (largest_contentful_paint.largest_image_load_start.has_value() &&
-      largest_contentful_paint.largest_image_load_start < document_ttfb) {
+  if (largest_contentful_paint.resource_load_timings->load_start.has_value() &&
+      largest_contentful_paint.resource_load_timings->load_start <
+          document_ttfb) {
     if (largest_contentful_paint.is_loaded_from_memory_cache &&
         largest_contentful_paint.is_preloaded_with_early_hints) {
       RecordImageLoadStartLessThanDocumentTtfbCause(
@@ -148,11 +154,11 @@ PageEndReason EndReasonForPageTransition(ui::PageTransition transition) {
 }
 
 bool IsNavigationUserInitiated(content::NavigationHandle* handle) {
-  // TODO(crbug.com/617904): Browser initiated navigations should have
+  // TODO(crbug.com/41257523): Browser initiated navigations should have
   // HasUserGesture() set to true. In the meantime, we consider all
   // browser-initiated navigations to be user initiated.
   //
-  // TODO(crbug.com/637345): Some browser-initiated navigations incorrectly
+  // TODO(crbug.com/40480474): Some browser-initiated navigations incorrectly
   // report that they are renderer-initiated. We will currently report that
   // these navigations are not user initiated, when in fact they are user
   // initiated.
@@ -266,9 +272,7 @@ internal::PageLoadTrackerPageType CalculatePageType(
              content::FrameType::kFencedFrameRoot) {
     return internal::PageLoadTrackerPageType::kFencedFramesPage;
   }
-  content::WebContentsDelegate* delegate =
-      navigation_handle->GetWebContents()->GetDelegate();
-  return (delegate && delegate->IsInPreviewMode())
+  return navigation_handle->GetWebContents()->IsInPreviewMode()
              ? internal::PageLoadTrackerPageType::kPreviewPrimaryPage
              : internal::PageLoadTrackerPageType::kPrimaryPage;
 }
@@ -591,6 +595,14 @@ void PageLoadTracker::Commit(content::NavigationHandle* navigation_handle) {
               ->GetPage()
               .GetContentsMimeType()),
       /*permit_forwarding=*/false);
+  InvokeAndPruneObservers(
+      "PageLoadMetricsObserver::ShouldObserveScheme",
+      base::BindRepeating(
+          [](const GURL& url, PageLoadMetricsObserverInterface* observer) {
+            return observer->ShouldObserveScheme(url);
+          },
+          navigation_handle->GetURL()),
+      /*permit_forwarding=*/false);
   InvokeAndPruneObservers("PageLoadMetricsObserver::OnCommit",
                           base::BindRepeating(
                               [](content::NavigationHandle* navigation_handle,
@@ -743,6 +755,20 @@ void PageLoadTracker::Redirect(content::NavigationHandle* navigation_handle) {
 }
 
 void PageLoadTracker::OnInputEvent(const blink::WebInputEvent& event) {
+  static const bool do_not_send_continuous_events =
+      !base::FeatureList::IsEnabled(
+          features::kSendContinuousInputEventsToObservers);
+  using Type = blink::mojom::EventType;
+  const bool is_continuous_event =
+      (event.GetType() == Type::kTouchMove ||
+       event.GetType() == Type::kGestureScrollUpdate ||
+       event.GetType() == Type::kGesturePinchUpdate);
+  if (do_not_send_continuous_events && is_continuous_event) {
+    return;
+  }
+
+  // TODO(b/328601354): Confirm continuous input events are not required for
+  // page load tracker observers and rename the API to reflect the same.
   for (const auto& observer : observers_) {
     observer->OnUserInput(event, metrics_update_dispatcher_.timing());
   }
@@ -1019,7 +1045,7 @@ void PageLoadTracker::OnTimingChanged() {
 
   // Record UMA if the LCP candidate changes.
 
-  // TODO(crbug.com/1431906): This is to track irregularities in the LCP timing
+  // TODO(crbug.com/40902605): This is to track irregularities in the LCP timing
   // values in the UKM recording. We would remove this code once we have
   // identified all of the conditions where these irregularities happen.
   bool largest_contentful_image_changed =
@@ -1128,7 +1154,7 @@ void PageLoadTracker::OnSoftNavigationChanged(
     return;
   }
 
-  // TODO(crbug.com/1451911): For soft navigation detections, the count and
+  // TODO(crbug.com/40065440): For soft navigation detections, the count and
   // start time should be monotonically increasing and navigation id different
   // each time. But we do see check failures on
   // soft_navigation_metrics.count >= soft_navigation_metrics_->count when this
@@ -1223,10 +1249,10 @@ base::TimeTicks PageLoadTracker::GetNavigationStart() const {
   return navigation_start_;
 }
 
-absl::optional<base::TimeDelta>
+std::optional<base::TimeDelta>
 PageLoadTracker::DurationSinceNavigationStartForTime(
-    const absl::optional<base::TimeTicks>& time) const {
-  absl::optional<base::TimeDelta> duration;
+    const std::optional<base::TimeTicks>& time) const {
+  std::optional<base::TimeDelta> duration;
 
   if (!time.has_value()) {
     return duration;
@@ -1237,12 +1263,12 @@ PageLoadTracker::DurationSinceNavigationStartForTime(
   return duration;
 }
 
-absl::optional<base::TimeDelta> PageLoadTracker::GetTimeToFirstBackground()
+std::optional<base::TimeDelta> PageLoadTracker::GetTimeToFirstBackground()
     const {
   return DurationSinceNavigationStartForTime(first_background_time_);
 }
 
-absl::optional<base::TimeDelta> PageLoadTracker::GetTimeToFirstForeground()
+std::optional<base::TimeDelta> PageLoadTracker::GetTimeToFirstForeground()
     const {
   return DurationSinceNavigationStartForTime(first_foreground_time_);
 }
@@ -1268,7 +1294,7 @@ PrerenderingState PageLoadTracker::GetPrerenderingState() const {
   return prerendering_state_;
 }
 
-absl::optional<base::TimeDelta> PageLoadTracker::GetActivationStart() const {
+std::optional<base::TimeDelta> PageLoadTracker::GetActivationStart() const {
   return activation_start_;
 }
 
@@ -1296,12 +1322,12 @@ const UserInitiatedInfo& PageLoadTracker::GetPageEndUserInitiatedInfo() const {
   return page_end_user_initiated_info_;
 }
 
-absl::optional<base::TimeDelta> PageLoadTracker::GetTimeToPageEnd() const {
+std::optional<base::TimeDelta> PageLoadTracker::GetTimeToPageEnd() const {
   if (page_end_reason_ != END_NONE) {
     return DurationSinceNavigationStartForTime(page_end_time_);
   }
   DCHECK(page_end_time_.is_null());
-  return absl::optional<base::TimeDelta>();
+  return std::nullopt;
 }
 
 const base::TimeTicks& PageLoadTracker::GetPageEndTime() const {
@@ -1347,7 +1373,7 @@ const mojom::InputTiming& PageLoadTracker::GetPageInputTiming() const {
   return metrics_update_dispatcher_.page_input_timing();
 }
 
-const absl::optional<blink::SubresourceLoadMetrics>&
+const std::optional<blink::SubresourceLoadMetrics>&
 PageLoadTracker::GetSubresourceLoadMetrics() const {
   return metrics_update_dispatcher_.subresource_load_metrics();
 }
@@ -1476,6 +1502,12 @@ void PageLoadTracker::OnSharedStorageWorkletHostCreated() {
   }
 }
 
+void PageLoadTracker::OnSharedStorageSelectURLCalled() {
+  for (const auto& observer : observers_) {
+    observer->OnSharedStorageSelectURLCalled();
+  }
+}
+
 void PageLoadTracker::UpdateMetrics(
     content::RenderFrameHost* render_frame_host,
     mojom::PageLoadTimingPtr timing,
@@ -1485,7 +1517,7 @@ void PageLoadTracker::UpdateMetrics(
     mojom::FrameRenderDataUpdatePtr render_data,
     mojom::CpuTimingPtr cpu_timing,
     mojom::InputTimingPtr input_timing_delta,
-    const absl::optional<blink::SubresourceLoadMetrics>&
+    const std::optional<blink::SubresourceLoadMetrics>&
         subresource_load_metrics,
     mojom::SoftNavigationMetricsPtr soft_navigation_metrics) {
   if (parent_tracker_) {

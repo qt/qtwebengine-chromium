@@ -53,8 +53,7 @@ class BlobBytesStreamer {
     DCHECK_EQ(result, MOJO_RESULT_OK);
 
     while (true) {
-      uint32_t num_bytes = base::saturated_cast<uint32_t>(
-          data_[current_item_]->length() - current_item_offset_);
+      size_t num_bytes = data_[current_item_]->length() - current_item_offset_;
       MojoResult write_result =
           pipe_->WriteData(data_[current_item_]->data() + current_item_offset_,
                            &num_bytes, MOJO_WRITE_DATA_FLAG_NONE);
@@ -181,7 +180,7 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!file.IsValid()) {
-    std::move(callback).Run(absl::nullopt);
+    std::move(callback).Run(std::nullopt);
     return;
   }
 
@@ -189,7 +188,7 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
                                     base::checked_cast<int64_t>(file_offset));
   bool seek_failed = seek_distance < 0;
   if (seek_failed) {
-    std::move(callback).Run(absl::nullopt);
+    std::move(callback).Run(std::nullopt);
     return;
   }
 
@@ -222,7 +221,7 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
           data->data() + data_offset + written, writing_size);
       bool write_failed = actual_written < 0;
       if (write_failed) {
-        std::move(callback).Run(absl::nullopt);
+        std::move(callback).Run(std::nullopt);
         return;
       }
       written += actual_written;
@@ -232,12 +231,12 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
   }
 
   if (!file.Flush()) {
-    std::move(callback).Run(absl::nullopt);
+    std::move(callback).Run(std::nullopt);
     return;
   }
   base::File::Info info;
   if (!file.GetInfo(&info)) {
-    std::move(callback).Run(absl::nullopt);
+    std::move(callback).Run(std::nullopt);
     return;
   }
   std::move(callback).Run(info.last_modified);

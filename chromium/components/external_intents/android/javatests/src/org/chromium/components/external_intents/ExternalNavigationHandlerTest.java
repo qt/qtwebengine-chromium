@@ -28,7 +28,6 @@ import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.MediumTest;
 import androidx.test.filters.SmallTest;
 
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -193,7 +192,7 @@ public class ExternalNavigationHandlerTest {
     private final TestExternalNavigationDelegate mDelegate;
     private ExternalNavigationHandlerForTesting mUrlHandler;
 
-    private Context mApplicationContextToRestore;
+    private Context mRealApplicationContext;
 
     public ExternalNavigationHandlerTest() {
         mDelegate = new TestExternalNavigationDelegate();
@@ -201,7 +200,7 @@ public class ExternalNavigationHandlerTest {
 
     @Before
     public void setUp() {
-        mApplicationContextToRestore = ContextUtils.getApplicationContext();
+        mRealApplicationContext = ContextUtils.getApplicationContext();
         mContext = new TestContext(InstrumentationRegistry.getTargetContext(), mDelegate);
         mModalDialogManager = new FakeModalDialogManager(ModalDialogManager.ModalDialogType.APP);
 
@@ -212,11 +211,6 @@ public class ExternalNavigationHandlerTest {
         mDelegate.setWindowAndroid(mWindowAndroidMock);
         mUrlHandler = new ExternalNavigationHandlerForTesting(mDelegate);
         NativeLibraryTestUtils.loadNativeLibraryNoBrowserProcess();
-    }
-
-    @After
-    public void tearDown() {
-        ContextUtils.initApplicationContextForTests(mApplicationContextToRestore);
     }
 
     private RedirectHandler redirectHandlerForLinkClick() {
@@ -1147,7 +1141,7 @@ public class ExternalNavigationHandlerTest {
                                 filter,
                                 new Instrumentation.ActivityResult(Activity.RESULT_OK, null),
                                 true);
-        Intent dummyIntent = new Intent(mApplicationContextToRestore, BlankUiTestActivity.class);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
         dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Activity activity =
                 InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
@@ -1217,7 +1211,7 @@ public class ExternalNavigationHandlerTest {
 
     private void doTestFallbackUrl_ChromeCanHandle_Incognito(final boolean clearRedirectHandler) {
         mDelegate.add(new IntentActivity("https", "package"));
-        Intent dummyIntent = new Intent(mApplicationContextToRestore, BlankUiTestActivity.class);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
         dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Activity activity =
                 InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
@@ -1307,7 +1301,7 @@ public class ExternalNavigationHandlerTest {
                                 filter,
                                 new Instrumentation.ActivityResult(Activity.RESULT_OK, null),
                                 true);
-        Intent dummyIntent = new Intent(mApplicationContextToRestore, BlankUiTestActivity.class);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
         dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Activity activity =
                 InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
@@ -1390,7 +1384,7 @@ public class ExternalNavigationHandlerTest {
     @MediumTest
     public void testFallbackUrl_ChromeCanHandle_Incognito_DelegateHandleDialogPresentation() {
         mDelegate.add(new IntentActivity("https", "package"));
-        Intent dummyIntent = new Intent(mApplicationContextToRestore, BlankUiTestActivity.class);
+        Intent dummyIntent = new Intent(mRealApplicationContext, BlankUiTestActivity.class);
         dummyIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Activity activity =
                 InstrumentationRegistry.getInstrumentation().startActivitySync(dummyIntent);
@@ -1695,24 +1689,21 @@ public class ExternalNavigationHandlerTest {
         checkUrl(INTENT_URL_WITH_CHAIN_FALLBACK_URL, redirectHandler)
                 .expecting(OverrideUrlLoadingResultType.OVERRIDE_WITH_NAVIGATE_TAB, IGNORE);
 
-        // As a result of intent resolution fallback, we have clobberred the current tab.
-        // The fall-back URL was HTTP-schemed, but it was effectively redirected to a new intent
-        // URL using javascript. However, we do not allow chained fallback intent, so we do NOT
-        // override URL loading here.
+        mDelegate.setCanResolveActivityForExternalSchemes(true);
+        // As a result of intent resolution fallback, we have clobberred the current tab and the
+        // sending site has learned that an app is not installed. In order to prevent chaining this
+        // and learning about more not-installed apps, even URLs that would otherwise successfully
+        // launch an app will use the fallback URL.
         redirectHandler.updateNewUrlLoading(PageTransition.LINK, false, false, 0, 0, false, true);
         checkUrl(INTENT_URL_WITH_FALLBACK_URL, redirectHandler)
-                .expecting(OverrideUrlLoadingResultType.NO_OVERRIDE, IGNORE);
-
-        // Now enough time (2 seconds) have passed.
-        // New URL loading should not be affected.
-        // (The URL happened to be the same as previous one.)
-        // TODO(changwan): this is not likely cause flakiness, but it may be better to refactor
-        // systemclock or pass the new time as parameter.
-        long lastUserInteractionTimeInMillis = SystemClock.elapsedRealtime() + 2 * 1000L;
-        redirectHandler.updateNewUrlLoading(
-                PageTransition.LINK, false, true, lastUserInteractionTimeInMillis, 1, false, true);
-        checkUrl(INTENT_URL_WITH_FALLBACK_URL, redirectHandler)
                 .expecting(OverrideUrlLoadingResultType.OVERRIDE_WITH_NAVIGATE_TAB, IGNORE);
+
+        // New user gesture.
+        redirectHandler.updateNewUrlLoading(PageTransition.LINK, false, true, 0, 0, false, true);
+        checkUrl(INTENT_URL_WITH_FALLBACK_URL, redirectHandler)
+                .expecting(
+                        OverrideUrlLoadingResultType.OVERRIDE_WITH_EXTERNAL_INTENT,
+                        START_OTHER_ACTIVITY);
     }
 
     @Test
@@ -3052,23 +3043,23 @@ public class ExternalNavigationHandlerTest {
         @Override
         protected OverrideUrlLoadingResult startActivity(
                 Intent intent,
+                ExternalNavigationParams params,
                 boolean requiresIntentChooser,
                 QueryIntentActivitiesSupplier resolvingInfos,
                 ResolveActivitySupplier resolveActivity,
                 GURL browserFallbackUrl,
-                GURL intentDataUrl,
-                ExternalNavigationParams params) {
+                GURL intentDataUrl) {
             mStartActivityIntent = intent;
             mRequiresIntentChooser = requiresIntentChooser;
             if (mSendIntentsForReal) {
                 return super.startActivity(
                         intent,
+                        params,
                         requiresIntentChooser,
                         resolvingInfos,
                         resolveActivity,
                         browserFallbackUrl,
-                        intentDataUrl,
-                        params);
+                        intentDataUrl);
             }
             return OverrideUrlLoadingResult.forExternalIntent();
         }

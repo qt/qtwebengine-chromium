@@ -1,6 +1,6 @@
-/* Copyright (c) 2023 The Khronos Group Inc.
- * Copyright (c) 2023 Valve Corporation
- * Copyright (c) 2023 LunarG, Inc.
+/* Copyright (c) 2023-2024 The Khronos Group Inc.
+ * Copyright (c) 2023-2024 Valve Corporation
+ * Copyright (c) 2023-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ class DescriptorSet : public vvl::DescriptorSet {
         VkBuffer buffer{VK_NULL_HANDLE};
         VkDeviceAddress device_addr{0};
 
-        std::map<uint32_t, std::vector<uint32_t>> UsedDescriptors(const DescriptorSet &set) const;
+        std::map<uint32_t, std::vector<uint32_t>> UsedDescriptors(const DescriptorSet &set, uint32_t shader_set) const;
     };
     void PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet *write_descs) override;
     void PerformWriteUpdate(const VkWriteDescriptorSet &) override;
@@ -54,7 +54,8 @@ class DescriptorSet : public vvl::DescriptorSet {
     std::shared_ptr<State> GetOutputState();
 
   protected:
-    bool SkipBinding(const vvl::DescriptorBinding &binding) const override { return true; }
+    bool SkipBinding(const vvl::DescriptorBinding &binding, bool is_dynamic_accessed) const override { return true; }
+
   private:
     struct Layout {
         VmaAllocation allocation{nullptr};

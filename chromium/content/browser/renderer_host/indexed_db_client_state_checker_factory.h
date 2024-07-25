@@ -20,9 +20,10 @@ class CONTENT_EXPORT IndexedDBClientStateCheckerFactory {
   IndexedDBClientStateCheckerFactory() = delete;
   ~IndexedDBClientStateCheckerFactory() = delete;
 
-  // Factory method that returns the `PendingRemote` bound to either a
-  // `NoDocumentIndexedDBClientStateChecker` or a
-  // `DocumentIndexedDBClientStateChecker` depending on the `rfh_id`.
+  // Factory method that creates and returns a client state checker for the
+  // given render frame (which is null for worker contexts). This method is
+  // called on the browser UI thread and the remote it returns is suitable for
+  // use from other (privileged) threads or processes.
   static mojo::PendingRemote<storage::mojom::IndexedDBClientStateChecker>
   InitializePendingRemote(const GlobalRenderFrameHostId& rfh_id);
 

@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/core/paint/inline_paint_context.h"
 #include "third_party/blink/renderer/core/paint/line_relative_rect.h"
 #include "third_party/blink/renderer/core/paint/paint_controller_paint_test.h"
+#include "third_party/blink/renderer/core/paint/paint_info.h"
 #include "third_party/blink/renderer/core/paint/text_decoration_painter.h"
 #include "third_party/blink/renderer/core/paint/text_paint_style.h"
 #include "third_party/blink/renderer/core/paint/text_painter.h"
@@ -51,7 +52,7 @@ TEST_P(HighlightPainterTest, FastSpellingGrammarPaintCase) {
     PhysicalRect physical_rect{};
     const FragmentItem& text_item = *cursor.CurrentItem();
     const ComputedStyle& style = text_item.Style();
-    absl::optional<HighlightPainter::SelectionPaintState> maybe_selection;
+    std::optional<HighlightPainter::SelectionPaintState> maybe_selection;
     HighlightPainter::SelectionPaintState* selection = nullptr;
     if (text_item.GetLayoutObject()->IsSelected()) {
       maybe_selection.emplace(cursor, physical_offset);
@@ -60,9 +61,10 @@ TEST_P(HighlightPainterTest, FastSpellingGrammarPaintCase) {
     }
 
     GraphicsContext graphics_context{RootPaintController()};
-    PaintInfo paint_info{graphics_context, cull_rect, PaintPhase::kForeground};
+    PaintInfo paint_info{graphics_context, cull_rect, PaintPhase::kForeground,
+                         /*descendant_painting_blocked=*/false};
     TextPaintStyle text_style =
-        TextPainterBase::TextPaintingStyle(GetDocument(), style, paint_info);
+        TextPainter::TextPaintingStyle(GetDocument(), style, paint_info);
     if (selection) {
       selection->ComputeSelectionStyle(GetDocument(), style,
                                        text_item.GetLayoutObject()->GetNode(),
@@ -71,16 +73,16 @@ TEST_P(HighlightPainterTest, FastSpellingGrammarPaintCase) {
     LineRelativeRect rotated_rect =
         LineRelativeRect::CreateFromLineBox(physical_rect, true);
     TextPainter text_painter(
-        graphics_context, text_item.ScaledFont(), rect,
-        LineRelativeOffset::CreateFromBoxOrigin(physical_offset),
-        &inline_context, true);
-    TextDecorationPainter decoration_painter(text_painter, text_item,
+        graphics_context, /*svg_context_paints*/ nullptr,
+        text_item.ScaledFont(), rect,
+        LineRelativeOffset::CreateFromBoxOrigin(physical_offset), true);
+    TextDecorationPainter decoration_painter(text_painter, &inline_context,
                                              paint_info, style, text_style,
                                              rotated_rect, selection);
     HighlightPainter highlight_painter(
         cursor.Current()->TextPaintInfo(cursor.Items()), text_painter,
-        decoration_painter, paint_info, cursor, text_item, {}, physical_offset,
-        style, text_style, selection, false);
+        decoration_painter, paint_info, cursor, text_item, physical_offset,
+        style, text_style, selection);
 
     EXPECT_EQ(highlight_painter.PaintCase(), expected)
         << "(line " << line << ")";

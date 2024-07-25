@@ -55,10 +55,8 @@ class DummyWidgetScheduler final : public WidgetScheduler {
       const WebInputEventAttribution& web_input_event_attribution) override {}
   void DidHandleInputEventOnMainThread(const WebInputEvent& web_input_event,
                                        WebInputEventResult result) override {}
-  void DidAnimateForInputOnCompositorThread() override {}
   void DidRunBeginMainFrame() override {}
   void SetHidden(bool hidden) override {}
-  void SetHasTouchHandler(bool has_touch_handler) override {}
 };
 
 class DummyFrameScheduler : public FrameScheduler {
@@ -86,13 +84,12 @@ class DummyFrameScheduler : public FrameScheduler {
   void SetFrameVisible(bool) override {}
   bool IsFrameVisible() const override { return true; }
   void SetVisibleAreaLarge(bool) override {}
-  bool IsVisibleAreaLarge() const override { return false; }
   void SetHadUserActivation(bool) override {}
-  bool HadUserActivation() const override { return false; }
   bool IsPageVisible() const override { return true; }
   void SetPaused(bool) override {}
   void SetShouldReportPostedTasksWhenDisabled(bool) override {}
   void SetCrossOriginToNearestMainFrame(bool) override {}
+  void SetAgentClusterId(const base::UnguessableToken&) override {}
   bool IsCrossOriginToNearestMainFrame() const override { return false; }
   void SetIsAdFrame(bool is_ad_frame) override {}
   bool IsAdFrame() const override { return false; }
@@ -149,6 +146,9 @@ class DummyFrameScheduler : public FrameScheduler {
   void ReportActiveSchedulerTrackedFeatures() override {}
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override {
     return base::SingleThreadTaskRunner::GetCurrentDefault();
+  }
+  base::TimeDelta UnreportedTaskTime() const override {
+    return base::TimeDelta();
   }
 
  private:
@@ -246,7 +246,7 @@ class SimpleMainThread : public MainThread {
  private:
   bool IsSimpleMainThread() const override { return true; }
 
-  raw_ptr<ThreadScheduler, ExperimentalRenderer> scheduler_ptr_;
+  raw_ptr<ThreadScheduler> scheduler_ptr_;
   scoped_refptr<base::SingleThreadTaskRunner>
       main_thread_task_runner_for_testing_;
 };
@@ -346,12 +346,14 @@ class DummyWebMainThreadScheduler : public WebThreadScheduler,
   void ForEachMainThreadIsolate(
       base::RepeatingCallback<void(v8::Isolate* isolate)> callback) override {
     if (isolate_) {
-      callback.Run(isolate_);
+      callback.Run(isolate_.get());
     }
   }
 
+  void SetRendererBackgroundedForTesting(bool) override {}
+
  private:
-  v8::Isolate* isolate_ = nullptr;
+  raw_ptr<v8::Isolate> isolate_ = nullptr;
 };
 
 class DummyAgentGroupScheduler : public AgentGroupScheduler {

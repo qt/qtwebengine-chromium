@@ -233,11 +233,16 @@ class IDBRequestTest : public testing::Test {
   }
 
   void FinishLoadingResult(IDBRequest* request) {
-    request->queue_item_->OnResultLoadComplete();
+    V8TestingScope scope;
+    Vector<std::unique_ptr<IDBValue>> values;
+    values.push_back(CreateIDBValueForTesting(scope.GetIsolate(),
+                                              /*create_wrapped_value=*/false));
+    request->queue_item_->OnLoadComplete(std::move(values),
+                                         /*error=*/nullptr);
   }
 
   test::TaskEnvironment task_environment_;
-  raw_ptr<URLLoaderMockFactory, ExperimentalRenderer> url_loader_mock_factory_;
+  raw_ptr<URLLoaderMockFactory> url_loader_mock_factory_;
   Persistent<IDBDatabase> db_;
   Persistent<IDBTransaction> transaction_;
   Persistent<IDBObjectStore> store_;
@@ -516,7 +521,7 @@ class AsyncTraceStateForTesting : public IDBRequest::AsyncTraceState {
     return *this;
   }
 
-  absl::optional<IDBRequest::TypeForMetrics> type() const {
+  std::optional<IDBRequest::TypeForMetrics> type() const {
     return IDBRequest::AsyncTraceState::type();
   }
   const base::TimeTicks& start_time() const {

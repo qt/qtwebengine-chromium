@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "include/v8-internal.h"
 #include "src/base/functional.h"
 #include "src/base/logging.h"
 #include "src/codegen/machine-type.h"
@@ -28,6 +29,7 @@ class MaybeRegisterRepresentation {
     kTagged,
     kCompressed,
     kSimd128,
+    kSimd256,
     kNone,  // No register representation.
   };
 
@@ -51,6 +53,15 @@ class MaybeRegisterRepresentation {
     return MaybeRegisterRepresentation(Enum::kWord64);
   }
 
+  static constexpr MaybeRegisterRepresentation WordPtr() {
+    if constexpr (kSystemPointerSize == 4) {
+      return Word32();
+    } else {
+      DCHECK_EQ(kSystemPointerSize, 8);
+      return Word64();
+    }
+  }
+
   static constexpr MaybeRegisterRepresentation Float32() {
     return MaybeRegisterRepresentation(Enum::kFloat32);
   }
@@ -71,17 +82,12 @@ class MaybeRegisterRepresentation {
     return MaybeRegisterRepresentation(Enum::kSimd128);
   }
 
-  static constexpr MaybeRegisterRepresentation None() {
-    return MaybeRegisterRepresentation(Enum::kNone);
+  static constexpr MaybeRegisterRepresentation Simd256() {
+    return MaybeRegisterRepresentation(Enum::kSimd256);
   }
 
-  static constexpr MaybeRegisterRepresentation PointerSized() {
-    if constexpr (kSystemPointerSize == 4) {
-      return Word32();
-    } else {
-      DCHECK_EQ(kSystemPointerSize, 8);
-      return Word64();
-    }
+  static constexpr MaybeRegisterRepresentation None() {
+    return MaybeRegisterRepresentation(Enum::kNone);
   }
 
   constexpr bool IsWord() const {
@@ -94,6 +100,7 @@ class MaybeRegisterRepresentation {
       case Enum::kTagged:
       case Enum::kCompressed:
       case Enum::kSimd128:
+      case Enum::kSimd256:
       case Enum::kNone:
         return false;
     }
@@ -109,6 +116,7 @@ class MaybeRegisterRepresentation {
       case Enum::kTagged:
       case Enum::kCompressed:
       case Enum::kSimd128:
+      case Enum::kSimd256:
       case Enum::kNone:
         return false;
     }
@@ -124,6 +132,7 @@ class MaybeRegisterRepresentation {
       case Enum::kFloat32:
       case Enum::kFloat64:
       case Enum::kSimd128:
+      case Enum::kSimd256:
       case Enum::kNone:
         return false;
     }
@@ -140,6 +149,7 @@ class MaybeRegisterRepresentation {
       case Enum::kTagged:
       case Enum::kCompressed:
       case Enum::kSimd128:
+      case Enum::kSimd256:
       case Enum::kNone:
         UNREACHABLE();
     }
@@ -161,6 +171,8 @@ class MaybeRegisterRepresentation {
         return MachineRepresentation::kCompressed;
       case Simd128():
         return MachineRepresentation::kSimd128;
+      case Simd256():
+        return MachineRepresentation::kSimd256;
       case None():
         UNREACHABLE();
     }
@@ -182,6 +194,8 @@ class MaybeRegisterRepresentation {
         return kSystemPointerSize;
       case Simd128():
         return 128;
+      case Simd256():
+        return 256;
       case None():
         UNREACHABLE();
     }
@@ -204,6 +218,7 @@ class RegisterRepresentation : public MaybeRegisterRepresentation {
     kCompressed =
         static_cast<int>(MaybeRegisterRepresentation::Enum::kCompressed),
     kSimd128 = static_cast<int>(MaybeRegisterRepresentation::Enum::kSimd128),
+    kSimd256 = static_cast<int>(MaybeRegisterRepresentation::Enum::kSimd256),
   };
 
   explicit constexpr RegisterRepresentation(Enum value)
@@ -226,6 +241,11 @@ class RegisterRepresentation : public MaybeRegisterRepresentation {
   static constexpr RegisterRepresentation Word64() {
     return RegisterRepresentation(Enum::kWord64);
   }
+  // The equivalent of intptr_t/uintptr_t: An integral type with the same size
+  // as machine pointers.
+  static constexpr RegisterRepresentation WordPtr() {
+    return RegisterRepresentation(MaybeRegisterRepresentation::WordPtr());
+  }
   static constexpr RegisterRepresentation Float32() {
     return RegisterRepresentation(Enum::kFloat32);
   }
@@ -242,13 +262,11 @@ class RegisterRepresentation : public MaybeRegisterRepresentation {
   static constexpr RegisterRepresentation Compressed() {
     return RegisterRepresentation(Enum::kCompressed);
   }
-  // The equivalent of intptr_t/uintptr_t: An integral type with the same size
-  // as machine pointers.
-  static constexpr RegisterRepresentation PointerSized() {
-    return RegisterRepresentation(MaybeRegisterRepresentation::PointerSized());
-  }
   static constexpr RegisterRepresentation Simd128() {
     return RegisterRepresentation(Enum::kSimd128);
+  }
+  static constexpr RegisterRepresentation Simd256() {
+    return RegisterRepresentation(Enum::kSimd256);
   }
 
   static RegisterRepresentation FromMachineRepresentation(
@@ -274,22 +292,60 @@ class RegisterRepresentation : public MaybeRegisterRepresentation {
         return Float64();
       case MachineRepresentation::kSimd128:
         return Simd128();
+      case MachineRepresentation::kSimd256:
+        return Simd256();
       case MachineRepresentation::kMapWord:
+      case MachineRepresentation::kProtectedPointer:
       case MachineRepresentation::kIndirectPointer:
       case MachineRepresentation::kSandboxedPointer:
       case MachineRepresentation::kNone:
+        UNREACHABLE();
+    }
+  }
+
+  static constexpr RegisterRepresentation FromMachineType(MachineType type) {
+    switch (type.representation()) {
+      case MachineRepresentation::kBit:
+      case MachineRepresentation::kWord8:
+      case MachineRepresentation::kWord16:
+      case MachineRepresentation::kWord32:
+        return RegisterRepresentation::Word32();
+      case MachineRepresentation::kWord64:
+        return RegisterRepresentation::Word64();
+      case MachineRepresentation::kTagged:
+      case MachineRepresentation::kTaggedSigned:
+      case MachineRepresentation::kTaggedPointer:
+        return RegisterRepresentation::Tagged();
+      case MachineRepresentation::kMapWord:
+        // Turboshaft does not support map packing.
+        DCHECK(!V8_MAP_PACKING_BOOL);
+        return RegisterRepresentation::Tagged();
+      case MachineRepresentation::kFloat32:
+        return RegisterRepresentation::Float32();
+      case MachineRepresentation::kFloat64:
+        return RegisterRepresentation::Float64();
+      case MachineRepresentation::kProtectedPointer:
+      case MachineRepresentation::kIndirectPointer:
+      case MachineRepresentation::kSandboxedPointer:
+        return RegisterRepresentation::WordPtr();
+      case MachineRepresentation::kSimd128:
+        return RegisterRepresentation::Simd128();
       case MachineRepresentation::kSimd256:
+        return RegisterRepresentation::Simd256();
+      case MachineRepresentation::kNone:
+      case MachineRepresentation::kCompressedPointer:
+      case MachineRepresentation::kCompressed:
         UNREACHABLE();
     }
   }
 
   constexpr bool AllowImplicitRepresentationChangeTo(
-      RegisterRepresentation dst_rep) const;
+      RegisterRepresentation dst_rep, bool graph_created_from_turbofan) const;
 
   constexpr RegisterRepresentation MapTaggedToWord() const {
     if (this->value() == RegisterRepresentation::Tagged()) {
       return COMPRESS_POINTERS_BOOL ? RegisterRepresentation::Word32()
-                                    : RegisterRepresentation::PointerSized();
+                                    : RegisterRepresentation::WordPtr();
     }
     return *this;
   }
@@ -309,23 +365,25 @@ V8_INLINE size_t hash_value(MaybeRegisterRepresentation rep) {
 }
 
 constexpr bool RegisterRepresentation::AllowImplicitRepresentationChangeTo(
-    RegisterRepresentation dst_rep) const {
+    RegisterRepresentation dst_rep, bool graph_created_from_turbofan) const {
   if (*this == dst_rep) {
     return true;
   }
   switch (dst_rep.value()) {
     case RegisterRepresentation::Word32():
-      // TODO(mliedtke): Remove this once JS graph building and JS reducers
-      // always produce explicit truncations.
-      // We allow implicit 64- to 32-bit truncation.
-      if (*this == RegisterRepresentation::Word64()) {
-        return true;
-      }
       // We allow implicit tagged -> untagged conversions.
       // Even without pointer compression, we use `Word32And` for Smi-checks on
       // tagged values.
       if (*this == any_of(RegisterRepresentation::Tagged(),
                           RegisterRepresentation::Compressed())) {
+        return true;
+      }
+      if (graph_created_from_turbofan &&
+          *this == RegisterRepresentation::Word64()) {
+        // TODO(12783): Remove this once Turboshaft graphs are not constructed
+        // via Turbofan any more. Unfortunately Turbofan has many implicit
+        // truncations which are hard to fix. Still, for wasm it is required
+        // that truncations in Turboshaft are explicit.
         return true;
       }
       break;
@@ -339,14 +397,14 @@ constexpr bool RegisterRepresentation::AllowImplicitRepresentationChangeTo(
     case RegisterRepresentation::Tagged():
       // We allow implicit untagged -> tagged conversions. This is only safe for
       // Smi values.
-      if (*this == RegisterRepresentation::PointerSized()) {
+      if (*this == RegisterRepresentation::WordPtr()) {
         return true;
       }
       break;
     case RegisterRepresentation::Compressed():
       // Compression is a no-op.
       if (*this == any_of(RegisterRepresentation::Tagged(),
-                          RegisterRepresentation::PointerSized(),
+                          RegisterRepresentation::WordPtr(),
                           RegisterRepresentation::Word32())) {
         return true;
       }
@@ -393,8 +451,8 @@ class WordRepresentation : public RegisterRepresentation {
     return WordRepresentation(Enum::kWord64);
   }
 
-  static constexpr WordRepresentation PointerSized() {
-    return WordRepresentation(RegisterRepresentation::PointerSized());
+  static constexpr WordRepresentation WordPtr() {
+    return WordRepresentation(RegisterRepresentation::WordPtr());
   }
 
   constexpr Enum value() const {
@@ -473,9 +531,11 @@ class MemoryRepresentation {
     kAnyTagged,
     kTaggedPointer,
     kTaggedSigned,
+    kProtectedPointer,
     kIndirectPointer,
     kSandboxedPointer,
     kSimd128,
+    kSimd256
   };
 
   explicit constexpr MemoryRepresentation(Enum value) : value_(value) {}
@@ -513,6 +573,13 @@ class MemoryRepresentation {
   static constexpr MemoryRepresentation Uint64() {
     return MemoryRepresentation(Enum::kUint64);
   }
+  static constexpr MemoryRepresentation UintPtr() {
+    if constexpr (Is64()) {
+      return Uint64();
+    } else {
+      return Uint32();
+    }
+  }
   static constexpr MemoryRepresentation Float32() {
     return MemoryRepresentation(Enum::kFloat32);
   }
@@ -528,22 +595,20 @@ class MemoryRepresentation {
   static constexpr MemoryRepresentation TaggedSigned() {
     return MemoryRepresentation(Enum::kTaggedSigned);
   }
+  static constexpr MemoryRepresentation ProtectedPointer() {
+    return MemoryRepresentation(Enum::kProtectedPointer);
+  }
   static constexpr MemoryRepresentation IndirectPointer() {
     return MemoryRepresentation(Enum::kIndirectPointer);
   }
   static constexpr MemoryRepresentation SandboxedPointer() {
     return MemoryRepresentation(Enum::kSandboxedPointer);
   }
-  static constexpr MemoryRepresentation PointerSized() {
-    if constexpr (kSystemPointerSize == 4) {
-      return Uint32();
-    } else {
-      DCHECK_EQ(kSystemPointerSize, 8);
-      return Uint64();
-    }
-  }
   static constexpr MemoryRepresentation Simd128() {
     return MemoryRepresentation(Enum::kSimd128);
+  }
+  static constexpr MemoryRepresentation Simd256() {
+    return MemoryRepresentation(Enum::kSimd256);
   }
 
   bool IsWord() const {
@@ -562,9 +627,11 @@ class MemoryRepresentation {
       case AnyTagged():
       case TaggedPointer():
       case TaggedSigned():
+      case ProtectedPointer():
       case IndirectPointer():
       case SandboxedPointer():
       case Simd128():
+      case Simd256():
         return false;
     }
   }
@@ -586,9 +653,11 @@ class MemoryRepresentation {
       case AnyTagged():
       case TaggedPointer():
       case TaggedSigned():
+      case ProtectedPointer():
       case IndirectPointer():
       case SandboxedPointer():
       case Simd128():
+      case Simd256():
         UNREACHABLE();
     }
   }
@@ -610,8 +679,10 @@ class MemoryRepresentation {
       case Float32():
       case Float64():
       case IndirectPointer():
+      case ProtectedPointer():
       case SandboxedPointer():
       case Simd128():
+      case Simd256():
         return false;
     }
   }
@@ -633,8 +704,10 @@ class MemoryRepresentation {
       case Float32():
       case Float64():
       case IndirectPointer():
+      case ProtectedPointer():
       case SandboxedPointer():
       case Simd128():
+      case Simd256():
         return false;
     }
   }
@@ -658,13 +731,16 @@ class MemoryRepresentation {
       case AnyTagged():
       case TaggedPointer():
       case TaggedSigned():
-        return RegisterRepresentation::Tagged();
       case IndirectPointer():
         return RegisterRepresentation::Tagged();
+      case ProtectedPointer():
+        return RegisterRepresentation::WordPtr();
       case SandboxedPointer():
         return RegisterRepresentation::Word64();
       case Simd128():
         return RegisterRepresentation::Simd128();
+      case Simd256():
+        return RegisterRepresentation::Simd256();
     }
   }
 
@@ -683,6 +759,8 @@ class MemoryRepresentation {
         return AnyTagged();
       case RegisterRepresentation::Simd128():
         return Simd128();
+      case RegisterRepresentation::Simd256():
+        return Simd256();
       case RegisterRepresentation::Compressed():
         UNREACHABLE();
     }
@@ -729,12 +807,16 @@ class MemoryRepresentation {
         return MachineType::TaggedPointer();
       case TaggedSigned():
         return MachineType::TaggedSigned();
+      case ProtectedPointer():
+        return MachineType::ProtectedPointer();
       case IndirectPointer():
         return MachineType::IndirectPointer();
       case SandboxedPointer():
         return MachineType::SandboxedPointer();
       case Simd128():
         return MachineType::Simd128();
+      case Simd256():
+        return MachineType::Simd256();
     }
   }
 
@@ -756,6 +838,8 @@ class MemoryRepresentation {
         // Turboshaft does not support map packing.
         DCHECK(!V8_MAP_PACKING_BOOL);
         return TaggedPointer();
+      case MachineRepresentation::kProtectedPointer:
+        return ProtectedPointer();
       case MachineRepresentation::kIndirectPointer:
         return IndirectPointer();
       case MachineRepresentation::kTagged:
@@ -768,9 +852,10 @@ class MemoryRepresentation {
         return SandboxedPointer();
       case MachineRepresentation::kSimd128:
         return Simd128();
+      case MachineRepresentation::kSimd256:
+        return Simd256();
       case MachineRepresentation::kNone:
       case MachineRepresentation::kBit:
-      case MachineRepresentation::kSimd256:
       case MachineRepresentation::kCompressedPointer:
       case MachineRepresentation::kCompressed:
         UNREACHABLE();
@@ -802,12 +887,14 @@ class MemoryRepresentation {
         return SandboxedPointer();
       case MachineRepresentation::kSimd128:
         return Simd128();
+      case MachineRepresentation::kSimd256:
+        return Simd256();
       case MachineRepresentation::kNone:
       case MachineRepresentation::kMapWord:
       case MachineRepresentation::kBit:
-      case MachineRepresentation::kSimd256:
       case MachineRepresentation::kCompressedPointer:
       case MachineRepresentation::kCompressed:
+      case MachineRepresentation::kProtectedPointer:
       case MachineRepresentation::kIndirectPointer:
         UNREACHABLE();
     }
@@ -838,9 +925,12 @@ class MemoryRepresentation {
       case AnyTagged():
       case TaggedPointer():
       case TaggedSigned():
+      case ProtectedPointer():
         return kTaggedSizeLog2;
       case Simd128():
         return 4;
+      case Simd256():
+        return 5;
     }
   }
 
@@ -863,7 +953,8 @@ V8_INLINE size_t hash_value(MemoryRepresentation rep) {
   return static_cast<size_t>(rep.value());
 }
 
-std::ostream& operator<<(std::ostream& os, MemoryRepresentation rep);
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                           MemoryRepresentation rep);
 
 }  // namespace v8::internal::compiler::turboshaft
 

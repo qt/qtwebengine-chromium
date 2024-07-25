@@ -5,10 +5,11 @@
 #ifndef DEVICE_BLUETOOTH_CHROMEOS_BLUETOOTH_UTILS_H_
 #define DEVICE_BLUETOOTH_CHROMEOS_BLUETOOTH_UTILS_H_
 
+#include <optional>
+
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_export.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class TimeDelta;
@@ -55,7 +56,18 @@ enum class ConnectionFailureReason {
   kAuthCanceled = 8,
   kAuthRejected = 9,
   kInprogress = 10,
-  kMaxValue = kInprogress
+  kNotFound = 11,
+  kBluetoothDisabled = 12,
+  kDeviceNotReady = 13,
+  kAlreadyConnected = 14,
+  kDeviceAlreadyExists = 15,
+  kInvalidArgs = 16,
+  kNonAuthTimeout = 17,
+  kNoMemory = 18,
+  kJniEnvironment = 19,
+  kJniThreadAttach = 20,
+  kWakelock = 21,
+  kMaxValue = kWakelock
 };
 
 // This enum is tied directly to a UMA enum defined in
@@ -113,6 +125,10 @@ enum class BluetoothTransportType {
   kMaxValue = kInvalid
 };
 
+// Converts ConnectErrorCode to ConnectionFailureReason.
+DEVICE_BLUETOOTH_EXPORT ConnectionFailureReason GetConnectionFailureReason(
+    device::BluetoothDevice::ConnectErrorCode error_code);
+
 // Return filtered devices based on the filter type and max number of devices.
 DEVICE_BLUETOOTH_EXPORT device::BluetoothAdapter::DeviceList
 FilterBluetoothDeviceList(const BluetoothAdapter::DeviceList& devices,
@@ -126,13 +142,13 @@ DEVICE_BLUETOOTH_EXPORT bool IsUnsupportedDevice(
 
 // Record outcome of user attempting to pair to a device.
 DEVICE_BLUETOOTH_EXPORT void RecordPairingResult(
-    absl::optional<ConnectionFailureReason> failure_reason,
+    std::optional<ConnectionFailureReason> failure_reason,
     BluetoothTransport transport,
     base::TimeDelta duration);
 
 // Record outcome of user attempting to reconnect to a previously paired device.
 DEVICE_BLUETOOTH_EXPORT void RecordUserInitiatedReconnectionAttemptResult(
-    absl::optional<ConnectionFailureReason> failure_reason,
+    std::optional<ConnectionFailureReason> failure_reason,
     UserInitiatedReconnectionUISurfaces surface);
 
 // Record how long it took for a user to find and select the device they wished
@@ -170,7 +186,7 @@ DEVICE_BLUETOOTH_EXPORT void RecordUiSurfaceDisplayed(
 // Record how long it took for an attempted user initiated bluetooth device
 // reconnection to occur.
 DEVICE_BLUETOOTH_EXPORT void RecordUserInitiatedReconnectionAttemptDuration(
-    absl::optional<ConnectionFailureReason> failure_reason,
+    std::optional<ConnectionFailureReason> failure_reason,
     BluetoothTransport transport,
     base::TimeDelta duration);
 

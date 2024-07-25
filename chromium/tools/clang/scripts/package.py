@@ -105,7 +105,7 @@ def PackageInArchive(directory_path, archive_path):
         tar_xz.add(os.path.join(directory_path, f),
                    arcname=f,
                    filter=PrintTarProgress)
-        # TODO(crbug.com/1261812) Stop making gzip'ed archives once the
+        # TODO(crbug.com/40202359) Stop making gzip'ed archives once the
         # goma/reclient push processes are updated to consume the .xz files
         # instead.
         tar_gz.add(os.path.join(directory_path, f), arcname=f)
@@ -117,7 +117,7 @@ def MaybeUpload(do_upload,
                 gcs_platform,
                 extra_gsutil_args=[]):
   gsutil_args = ['cp'] + extra_gsutil_args + [
-      '-n', '-a', 'public-read', filename,
+      '-n', filename,
       'gs://%s/%s/' % (gcs_bucket, gcs_platform)
   ]
   if do_upload:
@@ -314,15 +314,21 @@ def main():
           'lib/clang/$V/lib/x86_64-unknown-fuchsia/libclang_rt.asan_static.a')
   if sys.platform == 'darwin':
     want.extend([
+      # Add llvm-objcopy for its use as install_name_tool.
+      'bin/llvm-objcopy',
+
       # AddressSanitizer runtime.
       'lib/clang/$V/lib/darwin/libclang_rt.asan_iossim_dynamic.dylib',
       'lib/clang/$V/lib/darwin/libclang_rt.asan_osx_dynamic.dylib',
 
-      # OS X and iOS builtin libraries for the _IsOSVersionAtLeast runtime
-      # function.
+      # Builtin libraries for the _IsOSVersionAtLeast runtime function.
       'lib/clang/$V/lib/darwin/libclang_rt.ios.a',
       'lib/clang/$V/lib/darwin/libclang_rt.iossim.a',
       'lib/clang/$V/lib/darwin/libclang_rt.osx.a',
+      'lib/clang/$V/lib/darwin/libclang_rt.watchos.a',
+      'lib/clang/$V/lib/darwin/libclang_rt.watchossim.a',
+      'lib/clang/$V/lib/darwin/libclang_rt.xros.a',
+      'lib/clang/$V/lib/darwin/libclang_rt.xrossim.a',
 
       # Profile runtime (used by profiler and code coverage).
       'lib/clang/$V/lib/darwin/libclang_rt.profile_iossim.a',
@@ -482,12 +488,28 @@ def main():
   # on. This can include shared libraries, as well as other dependencies not
   # explicitly mentioned in the source code (those would be found by reclient's
   # include scanner) such as sanitizer ignore lists.
+  #
+  # These paths are written relative to the package root, and will be rebased
+  # to wherever the reclient config file is written when added to the file.
   reclient_inputs = {
       'clang': [
+        # Note: These have to match the `want` list exactly. `want` uses
+        # a glob, so these must too.
         'lib/clang/$V/share/asan_*list.txt',
         'lib/clang/$V/share/cfi_*list.txt',
       ],
   }
+  if sys.platform == 'win32':
+    # TODO(crbug.com/335997052): Remove this again once we have a compiler
+    # flag that tells clang-cl to not auto-add it (and then explicitly pass
+    # it via GN).
+    reclient_inputs['clang'].extend([
+        'lib/clang/$V/lib/windows/clang_rt.ubsan_standalone-x86_64.lib',
+        'lib/clang/$V/lib/windows/clang_rt.ubsan_standalone_cxx-x86_64.lib',
+        'lib/clang/$V/lib/windows/clang_rt.profile-i386.lib',
+        'lib/clang/$V/lib/windows/clang_rt.profile-x86_64.lib',
+        'lib/clang/$V/lib/windows/clang_rt.profile-aarch64.lib',
+        ])
 
   # Check that all non-glob wanted files exist on disk.
   want = [w.replace('$V', RELEASE_VERSION) for w in want]
@@ -565,8 +587,10 @@ def main():
     os.symlink('lld', os.path.join(pdir, 'bin', 'wasm-ld'))
     os.symlink('llvm-readobj', os.path.join(pdir, 'bin', 'llvm-readelf'))
 
-  if sys.platform.startswith('linux'):
+  if sys.platform.startswith('linux') or sys.platform == 'darwin':
     os.symlink('llvm-objcopy', os.path.join(pdir, 'bin', 'llvm-strip'))
+    os.symlink('llvm-objcopy',
+               os.path.join(pdir, 'bin', 'llvm-install-name-tool'))
 
     # Make `--target=*-cros-linux-gnu` work with
     # LLVM_ENABLE_PER_TARGET_RUNTIME_DIR=ON.
@@ -630,12 +654,15 @@ def main():
   PackageInArchive(clang_tidy_dir, clang_tidy_dir)
   MaybeUpload(args.upload, args.bucket, clang_tidy_dir + '.t*z', gcs_platform)
 
-  # Zip up clangd for users who opt into it.
+  # Zip up clangd and related tools for users who opt into it.
   clangd_dir = 'clangd-' + stamp
   shutil.rmtree(clangd_dir, ignore_errors=True)
   os.makedirs(os.path.join(clangd_dir, 'bin'))
   shutil.copy(os.path.join(LLVM_RELEASE_DIR, 'bin', 'clangd' + exe_ext),
               os.path.join(clangd_dir, 'bin'))
+  shutil.copy(
+      os.path.join(LLVM_RELEASE_DIR, 'bin', 'clang-include-cleaner' + exe_ext),
+      os.path.join(clangd_dir, 'bin'))
   PackageInArchive(clangd_dir, clangd_dir)
   MaybeUpload(args.upload, args.bucket, clangd_dir + '.t*z', gcs_platform)
 

@@ -4,6 +4,7 @@
 
 #include "base/test/metrics/histogram_tester.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_test_base.h"
+#include "components/autofill/core/browser/payments/credit_card_access_manager_test_api.h"
 #include "components/autofill/core/browser/payments/test_credit_card_fido_authenticator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -35,8 +36,9 @@ class BetterAuthMetricsTest : public AutofillMetricsBaseTest,
   FormData SetUpCreditCardUnmaskingPreflightCallTest() {
     CreditCardAccessManager& access_manager =
         autofill_manager().GetCreditCardAccessManager();
-    access_manager.SetUnmaskDetailsRequestInProgressForTesting(
-        IsUnmaskDetailsRequestInProgress());
+    test_api(access_manager)
+        .set_unmask_details_request_in_progress(
+            IsUnmaskDetailsRequestInProgress());
     static_cast<TestCreditCardFidoAuthenticator*>(
         access_manager.GetOrCreateFidoAuthenticator())
         ->set_is_user_opted_in(IsUserOptedInToFido());
@@ -81,9 +83,9 @@ TEST_P(BetterAuthMetricsTest, CreditCardUnmaskingPreflightCall_FidoEligible) {
   // Check that the correct metrics are logged even if suggestions are shown
   // multiple times in a row.
   DidShowAutofillSuggestions(form, /*field_index=*/0,
-                             PopupItemId::kCreditCardEntry);
+                             SuggestionType::kCreditCardEntry);
   DidShowAutofillSuggestions(form, /*field_index=*/0,
-                             PopupItemId::kCreditCardEntry);
+                             SuggestionType::kCreditCardEntry);
 
   // If a server card is available, and a previous request was not made, then a
   // preflight flow is initiated and a preflight call is made.
@@ -114,7 +116,7 @@ TEST_P(BetterAuthMetricsTest,
   base::HistogramTester histogram_tester;
   const FormData& form = SetUpCreditCardUnmaskingPreflightCallTest();
   DidShowAutofillSuggestions(form, /*field_index=*/0,
-                             PopupItemId::kCreditCardEntry);
+                             SuggestionType::kCreditCardEntry);
 
   // If the preflight flow is initiated, we will always log it.
   if (HasServerCard() && !IsUnmaskDetailsRequestInProgress()) {

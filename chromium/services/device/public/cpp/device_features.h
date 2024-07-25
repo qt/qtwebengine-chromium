@@ -22,10 +22,9 @@ DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kGenericSensorExtraClasses);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kWinrtGeolocationImplementation);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kMacCoreLocationBackend);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
-    kCrOSGeolocationReducedWifiPollingInterval);
-DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(
     kEnableBluetoothSerialPortProfileInSerialApi);
 DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kGeolocationDiagnosticsObserver);
+DEVICE_FEATURES_EXPORT BASE_DECLARE_FEATURE(kSerialPortConnected);
 
 }  // namespace features
 

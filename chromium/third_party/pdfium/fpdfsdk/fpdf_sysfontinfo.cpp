@@ -10,7 +10,10 @@
 
 #include <memory>
 
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_font.h"
@@ -19,7 +22,6 @@
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/systemfontinfo_iface.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "xfa/fgas/font/cfgas_fontmgr.h"
@@ -155,10 +157,17 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_AddInstalledFont(void* mapper,
 
 FPDF_EXPORT void FPDF_CALLCONV
 FPDF_SetSystemFontInfo(FPDF_SYSFONTINFO* pFontInfoExt) {
+  auto* mapper = CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper();
+  if (!pFontInfoExt) {
+    std::unique_ptr<SystemFontInfoIface> info = mapper->TakeSystemFontInfo();
+    // Delete `info` when it goes out of scope here.
+    return;
+  }
+
   if (pFontInfoExt->version != 1)
     return;
 
-  CFX_GEModule::Get()->GetFontMgr()->GetBuiltinMapper()->SetSystemFontInfo(
+  mapper->SetSystemFontInfo(
       std::make_unique<CFX_ExternalFontInfo>(pFontInfoExt));
 
 #ifdef PDF_ENABLE_XFA
@@ -202,16 +211,19 @@ void* DefaultGetFont(struct _FPDF_SYSFONTINFO* pThis, const char* family) {
   return pDefault->m_pFontInfo->GetFont(family);
 }
 
+// TODO(tsepez): should be UNSAFE_BUFFER_USAGE.
 static unsigned long DefaultGetFontData(struct _FPDF_SYSFONTINFO* pThis,
                                         void* hFont,
                                         unsigned int table,
                                         unsigned char* buffer,
                                         unsigned long buf_size) {
   auto* pDefault = static_cast<FPDF_SYSFONTINFO_DEFAULT*>(pThis);
-  return pdfium::base::checked_cast<unsigned long>(
-      pDefault->m_pFontInfo->GetFontData(hFont, table, {buffer, buf_size}));
+  // SAFETY: required from caller.
+  return pdfium::checked_cast<unsigned long>(pDefault->m_pFontInfo->GetFontData(
+      hFont, table, UNSAFE_BUFFERS(pdfium::make_span(buffer, buf_size))));
 }
 
+// TODO(tsepez): should be UNSAFE_BUFFER_USAGE.
 static unsigned long DefaultGetFaceName(struct _FPDF_SYSFONTINFO* pThis,
                                         void* hFont,
                                         char* buffer,
@@ -222,7 +234,7 @@ static unsigned long DefaultGetFaceName(struct _FPDF_SYSFONTINFO* pThis,
     return 0;
 
   const unsigned long copy_length =
-      pdfium::base::checked_cast<unsigned long>(name.GetLength() + 1);
+      pdfium::checked_cast<unsigned long>(name.GetLength() + 1);
   if (copy_length <= buf_size)
     strncpy(buffer, name.c_str(), copy_length * sizeof(ByteString::CharType));
 

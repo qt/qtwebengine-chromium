@@ -36,6 +36,10 @@ public:
     TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
                                              Mipmapped mipmapped) const override;
 
+    TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
+                                                Mipmapped mipmapped,
+                                                Protected) const override;
+
     TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                           Discardable discardable) const override;
 
@@ -45,9 +49,13 @@ public:
 
     TextureInfo getDefaultStorageTextureInfo(SkColorType) const override;
 
+    ImmutableSamplerInfo getImmutableSamplerInfo(sk_sp<TextureProxy> proxy) const override;
+
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override { return {}; }
+
+    GraphiteResourceKey makeSamplerKey(const SamplerDesc&) const override;
 
     uint32_t channelMask(const TextureInfo&) const override;
 
@@ -79,12 +87,12 @@ public:
 
     bool supportsYcbcrConversion() const { return fSupportsYcbcrConversion; }
 
+    bool supportsDeviceFaultInfo() const { return fSupportsDeviceFaultInfo; }
+
     uint32_t maxVertexAttributes() const {
         return fMaxVertexAttributes;
     }
     uint64_t maxUniformBufferRange() const { return fMaxUniformBufferRange; }
-
-    uint64_t getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const;
 
     const VkPhysicalDeviceMemoryProperties2& physicalDeviceMemoryProperties2() const {
         return fPhysicalDeviceMemoryProperties2;
@@ -180,13 +188,6 @@ private:
 
         // Indicates that a format is only supported if we are wrapping a texture with it.
         SkDEBUGCODE(bool fIsWrappedOnly = false;)
-
-    private:
-        bool isTexturable(VkFormatFeatureFlags) const;
-        bool isRenderable(VkFormatFeatureFlags) const;
-        bool isStorage(VkFormatFeatureFlags) const;
-        bool isTransferSrc(VkFormatFeatureFlags) const;
-        bool isTransferDst(VkFormatFeatureFlags) const;
     };
 
     // Map SkColorType to VkFormat.
@@ -235,6 +236,7 @@ private:
     bool fShouldAlwaysUseDedicatedImageMemory = false;
     bool fGpuOnlyBuffersMorePerformant = false;
     bool fShouldPersistentlyMapCpuToGpuBuffers = true;
+    bool fSupportsDeviceFaultInfo = false;
 };
 
 } // namespace skgpu::graphite

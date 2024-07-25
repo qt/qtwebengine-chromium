@@ -35,7 +35,6 @@
 #include "base/system/sys_info.h"
 #include "build/build_config.h"
 #include "components/crash/core/common/crash_key.h"
-#include "net/cookies/cookie_util.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -164,7 +163,7 @@ void V8Initializer::MessageHandlerInMainThread(v8::Local<v8::Message> message,
     return;
 
   // If called during context initialization, there will be no entered context.
-  ScriptState* script_state = ScriptState::Current(isolate);
+  ScriptState* script_state = ScriptState::ForCurrentRealm(isolate);
   if (!script_state->ContextIsValid())
     return;
 
@@ -172,9 +171,9 @@ void V8Initializer::MessageHandlerInMainThread(v8::Local<v8::Message> message,
 
   UseCounter::Count(context, WebFeature::kUnhandledExceptionCountInMainThread);
   base::UmaHistogramBoolean("V8.UnhandledExceptionCountInMainThread", true);
-  ukm::builders::ThirdPartyCookies_BreakageIndicator(context->UkmSourceID())
-      .SetBreakageIndicatorType(static_cast<int>(
-          net::cookie_util::BreakageIndicatorType::UNCAUGHT_JS_ERROR))
+  ukm::builders::ThirdPartyCookies_BreakageIndicator_UncaughtJSError(
+      context->UkmSourceID())
+      .SetHasOccurred(1)
       .Record(context->UkmRecorder());
 
   std::unique_ptr<SourceLocation> location =
@@ -207,13 +206,13 @@ void V8Initializer::MessageHandlerInMainThread(v8::Local<v8::Message> message,
 void V8Initializer::MessageHandlerInWorker(v8::Local<v8::Message> message,
                                            v8::Local<v8::Value> data) {
   v8::Isolate* isolate = message->GetIsolate();
-
   // During the frame teardown, there may not be a valid context.
-  ScriptState* script_state = ScriptState::Current(isolate);
+  ScriptState* script_state = ScriptState::ForCurrentRealm(isolate);
   if (!script_state->ContextIsValid())
     return;
 
   ExecutionContext* context = ExecutionContext::From(script_state);
+  CHECK(context);
 
   UseCounter::Count(context, WebFeature::kUnhandledExceptionCountInWorker);
   base::UmaHistogramBoolean("V8.UnhandledExceptionCountInWorker", true);
@@ -264,10 +263,10 @@ static void PromiseRejectHandler(v8::PromiseRejectMessage data,
   ExecutionContext* context = ExecutionContext::From(script_state);
 
   v8::Local<v8::Value> exception = data.GetValue();
-  if (V8DOMWrapper::IsWrapper(isolate, exception)) {
-    // Try to get the stack & location from a wrapped exception object (e.g.
-    // DOMException).
-    DCHECK(exception->IsObject());
+  if (V8PerIsolateData::From(isolate)->HasInstance(
+          DOMException::GetStaticWrapperTypeInfo(), exception)) {
+    // Try to get the stack & location from a wrapped DOMException object.
+    CHECK(exception->IsObject());
     auto private_error = V8PrivateProperty::GetSymbol(
         isolate, kPrivatePropertyDOMExceptionError);
     v8::Local<v8::Value> error;
@@ -321,7 +320,7 @@ void V8Initializer::PromiseRejectHandlerInMainThread(
     return;
 
   // Bail out if called during context initialization.
-  ScriptState* script_state = ScriptState::Current(isolate);
+  ScriptState* script_state = ScriptState::ForCurrentRealm(isolate);
   if (!script_state->ContextIsValid())
     return;
 
@@ -335,7 +334,7 @@ static void PromiseRejectHandlerInWorker(v8::PromiseRejectMessage data) {
 
   // Bail out if called during context initialization.
   v8::Isolate* isolate = promise->GetIsolate();
-  ScriptState* script_state = ScriptState::Current(isolate);
+  ScriptState* script_state = ScriptState::ForCurrentRealm(isolate);
   if (!script_state->ContextIsValid())
     return;
 
@@ -505,7 +504,7 @@ void V8Initializer::WasmAsyncResolvePromiseCallback(
     v8::Local<v8::Promise::Resolver> resolver,
     v8::Local<v8::Value> compilation_result,
     v8::WasmAsyncSuccess success) {
-  ScriptState* script_state = ScriptState::MaybeFrom(context);
+  ScriptState* script_state = ScriptState::MaybeFrom(isolate, context);
   if (!script_state ||
       !IsInParallelAlgorithmRunnable(ExecutionContext::From(script_state),
                                      script_state)) {
@@ -606,6 +605,15 @@ bool WasmJSStringBuiltinsEnabledCallback(v8::Local<v8::Context> context) {
       execution_context);
 }
 
+bool WasmJSPromiseIntegrationEnabledCallback(v8::Local<v8::Context> context) {
+  ExecutionContext* execution_context = ToExecutionContext(context);
+  if (!execution_context) {
+    return false;
+  }
+  return RuntimeEnabledFeatures::WebAssemblyJSPromiseIntegrationEnabled(
+      execution_context);
+}
+
 bool JavaScriptCompileHintsMagicEnabledCallback(
     v8::Local<v8::Context> context) {
   ExecutionContext* execution_context = ToExecutionContext(context);
@@ -621,8 +629,9 @@ v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
     v8::Local<v8::Data> v8_host_defined_options,
     v8::Local<v8::Value> v8_referrer_resource_url,
     v8::Local<v8::String> v8_specifier,
-    v8::Local<v8::FixedArray> v8_import_assertions) {
-  ScriptState* script_state = ScriptState::From(context);
+    v8::Local<v8::FixedArray> v8_import_attributes) {
+  v8::Isolate* isolate = context->GetIsolate();
+  ScriptState* script_state = ScriptState::From(isolate, context);
 
   Modulator* modulator = Modulator::From(script_state);
   if (!modulator) {
@@ -637,7 +646,7 @@ v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
     // See crbug.com/972960 .
     //
     // We use the v8 promise API directly here.
-    // We can't use ScriptPromiseResolver here since it assumes a valid
+    // We can't use ScriptPromiseResolverBase here since it assumes a valid
     // ScriptState.
     v8::Local<v8::Promise::Resolver> resolver;
     if (!v8::Promise::Resolver::New(script_state->GetContext())
@@ -668,14 +677,13 @@ v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
 
   ModuleRequest module_request(
       specifier, TextPosition::MinimumPosition(),
-      ModuleRecord::ToBlinkImportAssertions(
+      ModuleRecord::ToBlinkImportAttributes(
           script_state->GetContext(), v8::Local<v8::Module>(),
-          v8_import_assertions, /*v8_import_assertions_has_positions=*/false));
+          v8_import_attributes, /*v8_import_attributes_has_positions=*/false));
 
-  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(
+  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<IDLAny>>(
       script_state,
       ExceptionContext(ExceptionContextType::kUnknown, "", "import"));
-  ScriptPromise promise = resolver->Promise();
 
   String invalid_attribute_key;
   if (module_request.HasInvalidImportAttributeKey(&invalid_attribute_key)) {
@@ -690,15 +698,15 @@ v8::MaybeLocal<v8::Promise> HostImportModuleDynamically(
     modulator->ResolveDynamically(module_request, referrer_info, resolver);
   }
 
-  return v8::Local<v8::Promise>::Cast(promise.V8Value());
+  return resolver->Promise().V8Promise();
 }
 
 // https://html.spec.whatwg.org/C/#hostgetimportmetaproperties
 void HostGetImportMetaProperties(v8::Local<v8::Context> context,
                                  v8::Local<v8::Module> module,
                                  v8::Local<v8::Object> meta) {
-  ScriptState* script_state = ScriptState::From(context);
   v8::Isolate* isolate = context->GetIsolate();
+  ScriptState* script_state = ScriptState::From(isolate, context);
   v8::HandleScope handle_scope(isolate);
 
   Modulator* modulator = Modulator::From(script_state);
@@ -756,6 +764,7 @@ void V8Initializer::InitializeV8Common(v8::Isolate* isolate) {
   isolate->SetWasmInstanceCallback(WasmInstanceOverride);
   isolate->SetWasmImportedStringsEnabledCallback(
       WasmJSStringBuiltinsEnabledCallback);
+  isolate->SetWasmJSPIEnabledCallback(WasmJSPromiseIntegrationEnabledCallback);
   isolate->SetSharedArrayBufferConstructorEnabledCallback(
       SharedArrayBufferConstructorEnabledCallback);
   isolate->SetJavaScriptCompileHintsMagicEnabledCallback(

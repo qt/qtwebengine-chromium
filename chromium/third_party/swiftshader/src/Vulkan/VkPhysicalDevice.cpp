@@ -471,6 +471,11 @@ static void getPhysicalDeviceExtendedDynamicStateFeaturesEXT(VkPhysicalDeviceExt
 	features->extendedDynamicState = VK_TRUE;
 }
 
+static void getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *features)
+{
+	features->vertexInputDynamicState = VK_TRUE;
+}
+
 static void getPhysicalDevice4444FormatsFeaturesEXT(VkPhysicalDevice4444FormatsFeaturesEXT *features)
 {
 	features->formatA4R4G4B4 = VK_TRUE;
@@ -597,6 +602,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
 			getPhysicalDeviceExtendedDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
+			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
+			getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIVATE_DATA_FEATURES:
 			getPhysicalDevicePrivateDataFeatures(reinterpret_cast<VkPhysicalDevicePrivateDataFeatures *>(curExtension));
@@ -1670,6 +1678,13 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicSt
 	return CheckFeature(requested, supported, extendedDynamicState);
 }
 
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, vertexInputDynamicState);
+}
+
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDevicePrivateDataFeatures *requested) const
 {
 	auto supported = getSupportedFeatures(requested);
@@ -2116,6 +2131,7 @@ void PhysicalDevice::GetFormatProperties(Format format, VkFormatProperties3 *pFo
 		pFormatProperties->optimalTilingFeatures |=
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
 		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT |
+		    VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT |
 		    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
 		    VK_FORMAT_FEATURE_TRANSFER_DST_BIT |
 		    VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT |

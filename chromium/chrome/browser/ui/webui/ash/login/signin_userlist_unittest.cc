@@ -12,7 +12,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/ash/login/screens/user_selection_screen.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/ash/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/ash/settings/scoped_cros_settings_test_helper.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
@@ -52,11 +51,8 @@ class SigninPrepareUserListTest : public testing::Test {
   void SetUp() override {
     testing::Test::SetUp();
     profile_manager_ = std::make_unique<TestingProfileManager>(
-        TestingBrowserProcess::GetGlobal());
+        TestingBrowserProcess::GetGlobal(), &local_state_);
     ASSERT_TRUE(profile_manager_->SetUp());
-    controller_ = std::make_unique<MultiProfileUserController>(
-        TestingBrowserProcess::GetGlobal()->local_state(), fake_user_manager_);
-    fake_user_manager_->set_multi_profile_user_controller(controller_.get());
 
     for (size_t i = 0; i < std::size(kUsersPublic); ++i)
       fake_user_manager_->AddPublicAccountUser(
@@ -74,8 +70,6 @@ class SigninPrepareUserListTest : public testing::Test {
   }
 
   void TearDown() override {
-    fake_user_manager_->set_multi_profile_user_controller(nullptr);
-    controller_.reset();
     profile_manager_.reset();
     testing::Test::TearDown();
   }
@@ -83,13 +77,13 @@ class SigninPrepareUserListTest : public testing::Test {
   FakeChromeUserManager* user_manager() { return fake_user_manager_; }
 
  private:
+  ScopedTestingLocalState local_state_{TestingBrowserProcess::GetGlobal()};
   content::BrowserTaskEnvironment task_environment_;
   ScopedCrosSettingsTestHelper cros_settings_test_helper_;
   raw_ptr<FakeChromeUserManager, DanglingUntriaged> fake_user_manager_;
   user_manager::ScopedUserManager user_manager_enabler_;
   std::unique_ptr<TestingProfileManager> profile_manager_;
   std::map<std::string, proximity_auth::mojom::AuthType> user_auth_type_map;
-  std::unique_ptr<MultiProfileUserController> controller_;
 };
 
 TEST_F(SigninPrepareUserListTest, AlwaysKeepOwnerInList) {

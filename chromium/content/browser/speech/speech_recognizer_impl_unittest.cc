@@ -2,22 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/speech/speech_recognizer_impl.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
 #include <memory>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ref_counted.h"
+#include "base/numerics/byte_conversions.h"
 #include "base/run_loop.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/sys_byteorder.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread.h"
-#include "content/browser/speech/speech_recognition_engine.h"
-#include "content/browser/speech/speech_recognizer_impl.h"
+#include "content/browser/speech/network_speech_recognition_engine_impl.h"
 #include "content/public/browser/google_streaming_api.pb.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
 #include "content/public/common/content_features.h"
@@ -29,6 +31,7 @@
 #include "media/audio/mock_audio_manager.h"
 #include "media/audio/test_audio_thread.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_glitch_info.h"
 #include "media/base/test_helpers.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -89,11 +92,12 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
         /*disabled_features=*/{features::kAudioServiceOutOfProcess});
 
     // SpeechRecognizer takes ownership of sr_engine.
-    SpeechRecognitionEngine* sr_engine = new SpeechRecognitionEngine(
-        base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
-            &url_loader_factory_),
-        "" /* accept_language */);
-    SpeechRecognitionEngine::Config config;
+    std::unique_ptr<NetworkSpeechRecognitionEngineImpl> sr_engine =
+        std::make_unique<NetworkSpeechRecognitionEngineImpl>(
+            base::MakeRefCounted<network::WeakWrapperSharedURLLoaderFactory>(
+                &url_loader_factory_),
+            "" /* accept_language */);
+    NetworkSpeechRecognitionEngineImpl::Config config;
     config.audio_num_bits_per_sample =
         SpeechRecognizerImpl::kNumBitsPerAudioSample;
     config.audio_sample_rate = SpeechRecognizerImpl::kAudioSampleRate;
@@ -110,14 +114,16 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
         std::make_unique<media::AudioSystemImpl>(audio_manager_.get());
     SpeechRecognizerImpl::SetAudioEnvironmentForTesting(
         audio_system_.get(), audio_capturer_source_.get());
-    recognizer_ = new SpeechRecognizerImpl(
-        this, audio_system_.get(), kTestingSessionId, false, false, sr_engine);
+    recognizer_ =
+        new SpeechRecognizerImpl(this, audio_system_.get(), kTestingSessionId,
+                                 false, false, std::move(sr_engine));
 
     int audio_packet_length_bytes =
         (SpeechRecognizerImpl::kAudioSampleRate *
-         SpeechRecognitionEngine::kAudioPacketIntervalMs *
+         NetworkSpeechRecognitionEngineImpl::kAudioPacketIntervalMs *
          ChannelLayoutToChannelCount(SpeechRecognizerImpl::kChannelLayout) *
-         SpeechRecognizerImpl::kNumBitsPerAudioSample) / (8 * 1000);
+         SpeechRecognizerImpl::kNumBitsPerAudioSample) /
+        (8 * 1000);
     audio_packet_.resize(audio_packet_length_bytes);
 
     const int channels =
@@ -220,8 +226,6 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
     CheckEventsConsistency();
   }
 
-  void OnEnvironmentEstimationComplete(int session_id) override {}
-
   void OnSoundStart(int session_id) override {
     sound_started_ = true;
     CheckEventsConsistency();
@@ -261,7 +265,7 @@ class SpeechRecognizerImplTest : public SpeechRecognitionEventListener,
     auto* capture_callback =
         static_cast<media::AudioCapturerSource::CaptureCallback*>(
             recognizer_.get());
-    capture_callback->Capture(data, base::TimeTicks::Now(), 0.0, false);
+    capture_callback->Capture(data, base::TimeTicks::Now(), {}, 0.0, false);
   }
 
   void OnCaptureError() {
@@ -472,7 +476,7 @@ TEST_F(SpeechRecognizerImplTest, StopWithData) {
       base::RunLoop().RunUntilIdle();
 
       const void* buffer;
-      uint32_t num_bytes;
+      size_t num_bytes;
       MojoResult result = consumer_handle->BeginReadData(
           &buffer, &num_bytes, MOJO_READ_DATA_FLAG_NONE);
       if (result == MOJO_RESULT_OK) {
@@ -512,9 +516,8 @@ TEST_F(SpeechRecognizerImplTest, StopWithData) {
   proto_alternative->set_transcript("123");
   std::string msg_string;
   proto_event.SerializeToString(&msg_string);
-  uint32_t prefix =
-      base::HostToNet32(base::checked_cast<uint32_t>(msg_string.size()));
-  msg_string.insert(0, reinterpret_cast<char*>(&prefix), sizeof(prefix));
+  msg_string.insert(0u, base::as_string_view(base::numerics::U32ToBigEndian(
+                            base::checked_cast<uint32_t>(msg_string.size()))));
 
   // Issue the network callback to complete the process.
   const network::TestURLLoaderFactory::PendingRequest* downstream_request;
@@ -648,8 +651,10 @@ TEST_F(SpeechRecognizerImplTest, NoSpeechCallbackIssued) {
   WaitForAudioThreadToPostDeviceInfo();
   base::RunLoop().RunUntilIdle();  // EVENT_START processing.
 
-  int num_packets = (SpeechRecognizerImpl::kNoSpeechTimeoutMs) /
-                     SpeechRecognitionEngine::kAudioPacketIntervalMs + 1;
+  int num_packets =
+      (SpeechRecognizerImpl::kNoSpeechTimeoutMs) /
+          NetworkSpeechRecognitionEngineImpl::kAudioPacketIntervalMs +
+      1;
   // The vector is already filled with zero value samples on create.
   for (int i = 0; i < num_packets; ++i) {
     Capture(audio_bus_.get());
@@ -674,7 +679,7 @@ TEST_F(SpeechRecognizerImplTest, NoSpeechCallbackNotIssued) {
   base::RunLoop().RunUntilIdle();  // EVENT_START processing.
 
   int num_packets = (SpeechRecognizerImpl::kNoSpeechTimeoutMs) /
-                     SpeechRecognitionEngine::kAudioPacketIntervalMs;
+                    NetworkSpeechRecognitionEngineImpl::kAudioPacketIntervalMs;
 
   // The vector is already filled with zero value samples on create.
   for (int i = 0; i < num_packets / 2; ++i) {
@@ -709,7 +714,7 @@ TEST_F(SpeechRecognizerImplTest, SetInputVolumeCallback) {
 
   // Feed some samples to begin with for the endpointer to do noise estimation.
   int num_packets = SpeechRecognizerImpl::kEndpointerEstimationTimeMs /
-                    SpeechRecognitionEngine::kAudioPacketIntervalMs;
+                    NetworkSpeechRecognitionEngineImpl::kAudioPacketIntervalMs;
   FillPacketWithNoise();
   for (int i = 0; i < num_packets; ++i) {
     Capture(audio_bus_.get());

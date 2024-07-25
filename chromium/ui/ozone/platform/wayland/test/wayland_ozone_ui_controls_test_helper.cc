@@ -37,7 +37,7 @@ WaylandOzoneUIControlsTestHelper::~WaylandOzoneUIControlsTestHelper() = default;
 void WaylandOzoneUIControlsTestHelper::Reset() {
   // There's nothing to do here, as the both Exo and Weston automatically reset
   // the state when we close the connection.
-  // TODO(crbug.com/1353089): do we still need this method after the switch to
+  // TODO(crbug.com/40235082): do we still need this method after the switch to
   // ui-controls instead of weston-test is complete?
 }
 
@@ -112,6 +112,14 @@ void WaylandOzoneUIControlsTestHelper::SendTouchEvent(
 
   pending_closures_.insert_or_assign(request_id, std::move(closure));
   input_emulate_->EmulateTouch(action, touch_loc, id, request_id);
+}
+
+void WaylandOzoneUIControlsTestHelper::UpdateDisplay(
+    const std::string& display_specs,
+    base::OnceClosure closure) {
+  uint32_t request_id = GetNextRequestId();
+  pending_closures_.insert_or_assign(request_id, std::move(closure));
+  input_emulate_->EmulateUpdateDisplay(display_specs, request_id);
 }
 #endif
 

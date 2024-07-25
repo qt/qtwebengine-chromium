@@ -37,6 +37,8 @@
 
 namespace blink {
 
+class MouseEvent;
+
 // Link relation bitmask values.
 // FIXME: Uncomment as the various link relations are implemented.
 enum {
@@ -105,12 +107,18 @@ class CORE_EXPORT HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
   // Element overrides:
   void SetHovered(bool hovered) override;
 
+  Element* interestTargetElement() override;
+
+  AtomicString interestAction() const override;
+
   void Trace(Visitor*) const override;
 
  protected:
   void ParseAttribute(const AttributeModificationParams&) override;
   bool SupportsFocus(UpdateBehavior update_behavior =
                          UpdateBehavior::kStyleAndLayout) const override;
+
+  void FinishParsingChildren() final;
 
  private:
   void AttributeChanged(const AttributeModificationParams&) override;
@@ -135,7 +143,7 @@ class CORE_EXPORT HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
                            bool is_trusted,
                            base::TimeTicks platform_time_stamp,
                            KURL);
-  void HandleClick(Event&);
+  void HandleClick(MouseEvent&);
 
   unsigned link_relations_ : 31;
   mutable LinkHash cached_visited_link_hash_;

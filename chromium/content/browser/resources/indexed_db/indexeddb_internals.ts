@@ -3,18 +3,19 @@
 // found in the LICENSE file.
 
 import 'chrome://resources/js/jstemplate_compiled.js';
+import './database.js';
 
 import {assert} from 'chrome://resources/js/assert.js';
 import {mojoString16ToString} from 'chrome://resources/js/mojo_type_util.js';
 import {getRequiredElement} from 'chrome://resources/js/util.js';
-import {String16} from 'chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-webui.js';
-import {Time} from 'chrome://resources/mojo/mojo/public/mojom/base/time.mojom-webui.js';
-import {Origin} from 'chrome://resources/mojo/url/mojom/origin.mojom-webui.js';
+import type {String16} from 'chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-webui.js';
+import type {Time} from 'chrome://resources/mojo/mojo/public/mojom/base/time.mojom-webui.js';
+import type {Origin} from 'chrome://resources/mojo/url/mojom/origin.mojom-webui.js';
 
-import {BucketId} from './bucket_id.mojom-webui.js';
-import {IdbTransactionMode, IdbTransactionState} from './indexed_db_bucket_types.mojom-webui.js';
-import {IdbInternalsHandler, IdbInternalsHandlerInterface, IdbPartitionMetadata} from './indexed_db_internals.mojom-webui.js';
-import {SchemefulSite} from './schemeful_site.mojom-webui.js';
+import type {BucketId} from './bucket_id.mojom-webui.js';
+import type {IdbInternalsHandlerInterface, IdbPartitionMetadata} from './indexed_db_internals.mojom-webui.js';
+import {IdbInternalsHandler} from './indexed_db_internals.mojom-webui.js';
+import type {SchemefulSite} from './schemeful_site.mojom-webui.js';
 
 // TODO: This comes from components/flags_ui/resources/flags.ts. It should be
 // extracted into a tools/typescript/definitions/jstemplate.d.ts file, and
@@ -66,40 +67,6 @@ const stringifyMojo = {
 
   schemefulSite(mojoSite: SchemefulSite): string {
     return stringifyMojo.origin(mojoSite.siteAsOrigin);
-  },
-
-  transactionState(mojoState: IdbTransactionState): string {
-    switch (mojoState) {
-      case IdbTransactionState.kBlocked:
-        return 'Blocked';
-      case IdbTransactionState.kRunning:
-        return 'Running';
-      case IdbTransactionState.kStarted:
-        return 'Started';
-      case IdbTransactionState.kCommitting:
-        return 'Comitting';
-      case IdbTransactionState.kFinished:
-        return 'Finished';
-    }
-  },
-
-  transactionMode(mojoMode: IdbTransactionMode): string {
-    switch (mojoMode) {
-      case IdbTransactionMode.kReadOnly:
-        return 'ReadOnly';
-      case IdbTransactionMode.kReadWrite:
-        return 'ReadWrite';
-      case IdbTransactionMode.kVersionChange:
-        return 'VersionChange';
-    }
-  },
-
-  partitionBucketCount(mojoPartition: IdbPartitionMetadata): number {
-    let count = 0;
-    mojoPartition.originList.forEach(
-        origin => origin.storageKeys.forEach(
-            storageKey => count += storageKey.buckets.length));
-    return count;
   },
 };
 

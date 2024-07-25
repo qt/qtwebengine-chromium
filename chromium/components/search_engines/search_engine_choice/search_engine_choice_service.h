@@ -5,11 +5,14 @@
 #ifndef COMPONENTS_SEARCH_ENGINES_SEARCH_ENGINE_CHOICE_SEARCH_ENGINE_CHOICE_SERVICE_H_
 #define COMPONENTS_SEARCH_ENGINES_SEARCH_ENGINE_CHOICE_SEARCH_ENGINE_CHOICE_SERVICE_H_
 
+#include <optional>
+
+#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "components/country_codes/country_codes.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/search_engines/search_engine_choice_utils.h"
+#include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 
 namespace policy {
 class PolicyService;
@@ -36,16 +39,6 @@ class SearchEngineChoiceService : public KeyedService {
   // additional search engine info should be shown.
   // TODO(b/318824817): To be removed post-launch.
   bool ShouldShowUpdatedSettings();
-
-#if BUILDFLAG(IS_IOS)
-  // Returns whether the search engine choice screen can be displayed or not
-  // based on device policies and profile properties.
-  // TODO(b/318801987): Move the function to some iOS-specific location and
-  //                    consider removing `is_regular_profile`.
-  bool ShouldShowChoiceScreen(const policy::PolicyService& policy_service,
-                              bool is_regular_profile,
-                              TemplateURLService* template_url_service);
-#endif
 
   // Returns the choice screen eligibility condition most relevant for the
   // profile associated with `profile_prefs` and `template_url_service`. Only
@@ -78,12 +71,28 @@ class SearchEngineChoiceService : public KeyedService {
   void RecordChoiceMade(ChoiceMadeLocation choice_location,
                         TemplateURLService* template_url_service);
 
+  // Records metrics about what was displayed on the choice screen for this
+  // profile, as captured by `display_state`.
+  // `is_from_cached_state` being `true` indicates that this is not the first
+  // time the method has been called for this profile, and that we are now
+  // calling it with some `display_state` that was cached from a previous
+  // attempt due to a mismatch between the Variations country and the one
+  // associated with the profile. Some metrics can be logged right away, while
+  // some others are logged only when the countries match.
+  // Note that due to various constraints, this might end up being a no-op and
+  // not record anything.
+  void MaybeRecordChoiceScreenDisplayState(
+      const ChoiceScreenDisplayState& display_state,
+      bool is_from_cached_state = false) const;
+
+ private:
   // Checks if the search engine choice should be prompted again, based on
   // experiment parameters. If a reprompt is needed, some preferences related to
   // the choice are cleared, which triggers a reprompt on the next page load.
   void PreprocessPrefsForReprompt();
 
- private:
+  void ProcessPendingChoiceScreenDisplayState();
+
   int GetCountryIdInternal();
 
 #if BUILDFLAG(IS_ANDROID)
@@ -99,6 +108,8 @@ class SearchEngineChoiceService : public KeyedService {
 
   base::WeakPtrFactory<SearchEngineChoiceService> weak_ptr_factory_{this};
 };
+
+void MarkSearchEngineChoiceCompletedForTesting(PrefService& prefs);
 
 }  // namespace search_engines
 

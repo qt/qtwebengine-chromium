@@ -41,6 +41,7 @@
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -62,8 +63,9 @@ void ApplyBlockElementCommand::DoApply(EditingState* editing_state) {
   // execution, which updates layout before entering doApply().
   DCHECK(!GetDocument().NeedsLayoutTreeUpdate());
 
-  if (!RootEditableElementOf(EndingSelection().Base()))
+  if (!RootEditableElementOf(EndingSelection().Anchor())) {
     return;
+  }
 
   VisiblePosition visible_end = EndingVisibleSelection().VisibleEnd();
   VisiblePosition visible_start = EndingVisibleSelection().VisibleStart();
@@ -201,10 +203,22 @@ void ApplyBlockElementCommand::FormatSelection(
             .DeepEquivalent());
     RelocatablePosition relocatable_end(end);
 
+    VisiblePosition end_of_next_of_paragraph_to_move;
     FormatRange(start, end, end_of_last_paragraph, blockquote_for_next_indent,
-                editing_state);
+                end_of_next_of_paragraph_to_move, editing_state);
     if (editing_state->IsAborted())
       return;
+
+    // If `end_of_next_of_paragraph_to_move` is updated,
+    // `relocatable_end_of_next_paragraph` should be also updated along with
+    // it.
+    if (end_of_next_of_paragraph_to_move.IsNotNull() &&
+        end_of_next_of_paragraph_to_move.IsValidFor(GetDocument())) {
+      DCHECK(RuntimeEnabledFeatures::
+                 AdjustEndOfNextParagraphIfMovedParagraphIsUpdatedEnabled());
+      relocatable_end_of_next_paragraph.SetPosition(
+          end_of_next_of_paragraph_to_move.DeepEquivalent());
+    }
 
     const Position& end_of_next_paragraph =
         relocatable_end_of_next_paragraph.GetPosition();
@@ -317,13 +331,17 @@ void ApplyBlockElementCommand::RangeForParagraphSplittingTextNodesIfNeeded(
     if (end_style->ShouldPreserveBreaks() && start == end &&
         end.OffsetInContainerNode() <
             static_cast<int>(To<Text>(end.ComputeContainerNode())->length())) {
-      int end_offset = end.OffsetInContainerNode();
-      // TODO(yosin) We should use |PositionMoveType::CodePoint| for
-      // |previousPositionOf()|.
-      if (!IsNewLineAtPosition(
-              PreviousPositionOf(end, PositionMoveType::kCodeUnit)) &&
-          IsNewLineAtPosition(end))
-        end = Position(end.ComputeContainerNode(), end_offset + 1);
+      if (!RuntimeEnabledFeatures::
+              NoIncreasingEndOffsetOnSplittingTextNodesEnabled()) {
+        int end_offset = end.OffsetInContainerNode();
+        // TODO(yosin) We should use |PositionMoveType::CodePoint| for
+        // |previousPositionOf()|.
+        if (!IsNewLineAtPosition(
+                PreviousPositionOf(end, PositionMoveType::kCodeUnit)) &&
+            IsNewLineAtPosition(end)) {
+          end = Position(end.ComputeContainerNode(), end_offset + 1);
+        }
+      }
       if (is_end_and_end_of_last_paragraph_on_same_node &&
           end.OffsetInContainerNode() >=
               end_of_last_paragraph.OffsetInContainerNode())

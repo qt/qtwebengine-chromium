@@ -30,13 +30,15 @@
 
 #include <string>
 
-#include "dawn/native/dawn_platform.h"
-
 #include "absl/container/flat_hash_set.h"
+#include "dawn/common/NonMovable.h"
+#include "dawn/common/StackAllocated.h"
 #include "dawn/native/EncodingContext.h"
 #include "dawn/native/Error.h"
 #include "dawn/native/ObjectBase.h"
 #include "dawn/native/PassResourceUsage.h"
+#include "dawn/native/dawn_platform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native {
 
@@ -113,19 +115,16 @@ class CommandEncoder final : public ApiObjectBase {
     // `InternalUsageScope` is a scoped class that temporarily changes validation such that the
     // command encoder includes internal resource usages.
     friend class InternalUsageScope;
-    class [[nodiscard]] InternalUsageScope : public NonMovable {
+    class [[nodiscard]] InternalUsageScope : public NonMovable, public StackAllocated {
       public:
         ~InternalUsageScope();
 
       private:
-        // Disable heap allocation
-        void* operator new(size_t) = delete;
-
         // Only CommandEncoder can make this class.
         friend class CommandEncoder;
         InternalUsageScope(CommandEncoder* encoder);
 
-        CommandEncoder* mEncoder;
+        raw_ptr<CommandEncoder> mEncoder;
         UsageValidationMode mUsageValidationMode;
     };
 

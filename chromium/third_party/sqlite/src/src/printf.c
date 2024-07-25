@@ -498,6 +498,7 @@ void sqlite3_str_vappendf(
         if( xtype==etFLOAT ){
           iRound = -precision;
         }else if( xtype==etGENERIC ){
+          if( precision==0 ) precision = 1;
           iRound = precision;
         }else{
           iRound = precision+1;
@@ -1369,7 +1370,7 @@ void sqlite3_str_appendf(StrAccum *p, const char *zFormat, ...){
 
 
 /*****************************************************************************
-** Reference counted string storage
+** Reference counted string/blob storage
 *****************************************************************************/
 
 /*

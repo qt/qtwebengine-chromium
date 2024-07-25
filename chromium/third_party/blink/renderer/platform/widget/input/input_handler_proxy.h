@@ -224,6 +224,9 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
       float max_page_scale_factor) override;
   void DeliverInputForBeginFrame(const viz::BeginFrameArgs& args) override;
   void DeliverInputForHighLatencyMode() override;
+  void DidFinishImplFrame() override;
+  bool HasQueuedInput() const override;
+  void SetWaitForLateScrollEvents(bool enabled) override;
 
   // SnapFlingClient implementation.
   bool GetSnapFlingInfoAndSetAnimatingSnapTarget(
@@ -258,8 +261,7 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   friend class test::InputHandlerProxyMomentumScrollJankTest;
   friend class test::InputHandlerProxyForceHandlingOnMainThread;
 
-  void DispatchSingleInputEvent(std::unique_ptr<EventWithCallback>,
-                                const base::TimeTicks);
+  void DispatchSingleInputEvent(std::unique_ptr<EventWithCallback>);
   void DispatchQueuedInputEvents(bool frame_aligned);
   void UpdateElasticOverscroll();
 
@@ -328,17 +330,16 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
                          uint32_t main_thread_hit_tested_reasons,
                          uint32_t main_thread_repaint_reasons);
 
-  bool HasQueuedEventsReadyForDispatch(bool frame_aligned);
+  bool HasQueuedEventsReadyForDispatch(bool frame_aligned) const;
 
-  raw_ptr<InputHandlerProxyClient, ExperimentalRenderer> client_;
+  raw_ptr<InputHandlerProxyClient> client_;
 
   // The input handler object is owned by the compositor delegate. The input
   // handler must call WillShutdown() on this class before it is deleted at
   // which point this pointer will be cleared.
-  raw_ptr<cc::InputHandler, ExperimentalRenderer> input_handler_;
+  raw_ptr<cc::InputHandler> input_handler_;
 
-  raw_ptr<SynchronousInputHandler, ExperimentalRenderer>
-      synchronous_input_handler_;
+  raw_ptr<SynchronousInputHandler> synchronous_input_handler_;
 
   // This should be true when a pinch is in progress. The sequence of events is
   // as follows: GSB GPB GSU GPU ... GPE GSE.
@@ -347,8 +348,7 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   bool gesture_pinch_in_progress_ = false;
   bool in_inertial_scrolling_ = false;
   bool scroll_sequence_ignored_;
-  absl::optional<EventDisposition>
-      main_thread_touch_sequence_start_disposition_;
+  std::optional<EventDisposition> main_thread_touch_sequence_start_disposition_;
 
   // Used to animate rubber-band/bounce over-scroll effect.
   std::unique_ptr<ElasticOverscrollController> elastic_overscroll_controller_;
@@ -357,12 +357,12 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   // within a single touch sequence. This value will get returned for
   // subsequent TouchMove events to allow passive events not to block
   // scrolling.
-  absl::optional<EventDisposition> touch_result_;
+  std::optional<EventDisposition> touch_result_;
 
   // The result of the last mouse wheel event in a wheel phase sequence. This
   // value is used to determine whether the next wheel scroll is blocked on the
   // Main thread or not.
-  absl::optional<EventDisposition> mouse_wheel_result_;
+  std::optional<EventDisposition> mouse_wheel_result_;
 
   // Used to record overscroll notifications while an event is being
   // dispatched.  If the event causes overscroll, the overscroll metadata is
@@ -373,7 +373,7 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
 
   // Set only when the compositor input handler is handling a gesture. Tells
   // which source device is currently performing a gesture based scroll.
-  absl::optional<blink::WebGestureDevice> currently_active_gesture_device_;
+  std::optional<blink::WebGestureDevice> currently_active_gesture_device_;
 
   base::OnceClosure queue_flushed_callback_;
 
@@ -390,7 +390,7 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
   // latency component should be added for injected GestureScrollUpdates.
   bool last_injected_gesture_was_begin_;
 
-  raw_ptr<const base::TickClock, ExperimentalRenderer> tick_clock_;
+  raw_ptr<const base::TickClock> tick_clock_;
 
   std::unique_ptr<cc::SnapFlingController> snap_fling_controller_;
 
@@ -420,6 +420,24 @@ class PLATFORM_EXPORT InputHandlerProxy : public cc::InputHandlerClient,
 
   // Swipe to move cursor feature.
   std::unique_ptr<CursorControlHandler> cursor_control_handler_;
+
+  // The most recent viz::BeginFrameArgs that was received in
+  // DeliverInputForBeginFrame. Which will be the active frame for all
+  // subsequent events arriving in HandleInputEventWithLatencyInfo. If frame
+  // production stops this will be outdated.
+  viz::BeginFrameArgs current_begin_frame_args_;
+
+  // When true, we will not enqueue late scroll events, as detected by
+  // `enqueue_scroll_events_`.
+  bool do_not_enqueue_late_scroll_events_ = false;
+
+  // When true, scroll events arriving in HandleInputEventWithLatencyInfo
+  // will be enqueued to be dispatched during the next
+  // DeliverInputForBeginFrame. When false, the scroll events will be dispatched
+  // immediately. This will occur if DeliverInputForBeginFrame was called while
+  // scrolling, with an empty `compositor_event_queue_`, until frame production
+  // has started, or completed.
+  bool enqueue_scroll_events_ = true;
 };
 
 }  // namespace blink

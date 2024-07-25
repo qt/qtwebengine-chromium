@@ -50,14 +50,20 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/html/forms/text_control_element.h"
+#include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_br_element.h"
+#include "third_party/blink/renderer/core/html/html_marquee_element.h"
+#include "third_party/blink/renderer/core/html/html_table_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
+#include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_request.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_node_data.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
+#include "third_party/blink/renderer/core/svg/svg_foreign_object_element.h"
+#include "third_party/blink/renderer/core/svg/svg_text_element.h"
 #include "third_party/blink/renderer/core/svg_element_type_helpers.h"
 #include "third_party/blink/renderer/platform/text/text_boundaries.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -501,8 +507,7 @@ PositionWithAffinity PositionForContentsPointRespectingEditingBoundary(
 
   if (result.InnerNode()) {
     return PositionRespectingEditingBoundary(
-        frame->Selection().ComputeVisibleSelectionInDOMTreeDeprecated().Start(),
-        result);
+        frame->Selection().ComputeVisibleSelectionInDOMTree().Start(), result);
   }
   return PositionWithAffinity();
 }
@@ -643,7 +648,7 @@ static Position MostBackwardOrForwardCaretPosition(
   const SelectionInDOMTree& shadow_adjusted_selection =
       SelectionAdjuster::AdjustSelectionToAvoidCrossingShadowBoundaries(
           selection);
-  const Position& adjusted_candidate = shadow_adjusted_selection.Extent();
+  const Position& adjusted_candidate = shadow_adjusted_selection.Focus();
 
   // The adjusted candidate should be between the candidate and the original
   // position. Otherwise, return the original position.
@@ -657,7 +662,7 @@ static Position MostBackwardOrForwardCaretPosition(
     const SelectionInDOMTree& editing_adjusted_selection =
         SelectionAdjuster::AdjustSelectionToAvoidCrossingEditingBoundaries(
             shadow_adjusted_selection);
-    return editing_adjusted_selection.Extent();
+    return editing_adjusted_selection.Focus();
   }
   return adjusted_candidate;
 }
@@ -729,7 +734,7 @@ static PositionTemplate<Strategy> MostBackwardCaretPosition(
   }
   const bool start_editable = IsEditable(*last_node);
   bool boundary_crossed = false;
-  absl::optional<WritingMode> writing_mode;
+  std::optional<WritingMode> writing_mode;
   for (PositionIteratorAlgorithm<Strategy> current_pos = last_visible;
        !current_pos.AtStart(); current_pos.Decrement()) {
     Node* current_node = current_pos.GetNode();
@@ -913,7 +918,7 @@ PositionTemplate<Strategy> MostForwardCaretPosition(
   }
   const bool start_editable = IsEditable(*last_node);
   bool boundary_crossed = false;
-  absl::optional<WritingMode> writing_mode;
+  std::optional<WritingMode> writing_mode;
   for (PositionIteratorAlgorithm<Strategy> current_pos = last_visible;
        !current_pos.AtEnd(); current_pos.Increment()) {
     Node* current_node = current_pos.GetNode();

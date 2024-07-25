@@ -1,6 +1,6 @@
-/* Copyright (c) 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+/* Copyright (c) 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,23 +26,21 @@
 class CommandExecutionContext;
 struct ClearAttachmentInfo;
 
-namespace vvl {
 struct LastBound;
-}  // namespace vvl
 
 namespace syncval_state {
 enum class AttachmentType { kColor, kDepth, kStencil };
 
 struct DynamicRenderingInfo {
     struct Attachment {
-        const safe_VkRenderingAttachmentInfo &info;
+        const vku::safe_VkRenderingAttachmentInfo &info;
         std::shared_ptr<const ImageViewState> view;
         std::shared_ptr<const ImageViewState> resolve_view;
         ImageRangeGen view_gen;
         std::optional<ImageRangeGen> resolve_gen;
         AttachmentType type;
 
-        Attachment(const SyncValidator &state, const safe_VkRenderingAttachmentInfo &info, const AttachmentType type_,
+        Attachment(const SyncValidator &state, const vku::safe_VkRenderingAttachmentInfo &info, const AttachmentType type_,
                    const VkOffset3D &offset, const VkExtent3D &extent);
 
         SyncStageAccessIndex GetLoadUsage() const;
@@ -61,7 +59,7 @@ struct DynamicRenderingInfo {
 
     DynamicRenderingInfo(const SyncValidator &state, const VkRenderingInfo &rendering_info);
     ClearAttachmentInfo GetClearAttachmentInfo(const VkClearAttachment &clear_attachment, const VkClearRect &rect) const;
-    safe_VkRenderingInfo info;
+    vku::safe_VkRenderingInfo info;
     std::vector<Attachment> attachments;  // All attachments (with internal typing)
 };
 

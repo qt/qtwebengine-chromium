@@ -7,11 +7,14 @@
 #include <utility>
 
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
+#include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/GpuTypes.h"
 #include "third_party/skia/include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "third_party/skia/include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "third_party/skia/include/gpu/graphite/Context.h"
 #include "third_party/skia/include/gpu/graphite/Surface.h"
@@ -38,7 +41,7 @@ SkiaOutputDeviceOffscreen::SkiaOutputDeviceOffscreen(
   // Some Vulkan drivers do not support kRGB_888x_SkColorType. Always use
   // kRGBA/BGRA_8888_SkColorType instead and initialize surface to opaque as
   // necessary.
-  // TODO(https://crbug.com/1108406): use the right color types base on GPU
+  // TODO(crbug.com/40141277): use the right color types base on GPU
   // capabilities.
   capabilities_.sk_color_types[static_cast<int>(gfx::BufferFormat::RGBA_8888)] =
       kRGBA_8888_SkColorType;
@@ -70,7 +73,7 @@ bool SkiaOutputDeviceOffscreen::Reshape(const SkImageInfo& image_info,
 }
 
 void SkiaOutputDeviceOffscreen::Present(
-    const absl::optional<gfx::Rect>& update_rect,
+    const std::optional<gfx::Rect>& update_rect,
     BufferPresentedCallback feedback,
     OutputSurfaceFrame frame) {
   // Reshape should have been called first.
@@ -89,15 +92,30 @@ void SkiaOutputDeviceOffscreen::EnsureBackbuffer() {
 
   CHECK(!backbuffer_estimated_size_);
   if (gr_context_) {
+    auto backend_format = context_state_->gr_context()->defaultBackendFormat(
+        sk_color_type_, GrRenderable::kYes);
+#if BUILDFLAG(IS_MAC)
+    DCHECK_EQ(context_state_->gr_context_type(), gpu::GrContextType::kGL);
+    // Because SkiaOutputSurface may use IOSurface, we need to ensure that we
+    // are using the correct texture target for IOSurfaces (which depends on the
+    // GL implementation). Otherwise the validateSurface will fail because of
+    // the textureType mismatch.
+    backend_format = GrBackendFormats::MakeGL(
+        GrBackendFormats::AsGLFormatEnum(backend_format),
+        gpu::GetMacOSSpecificTextureTargetForCurrentGLImplementation());
+#endif
+    DCHECK(backend_format.isValid())
+        << "GrBackendFormat is invalid for color_type: " << sk_color_type_;
+
     if (has_alpha_) {
       backend_texture_ = context_state_->gr_context()->createBackendTexture(
-          size_.width(), size_.height(), sk_color_type_, skgpu::Mipmapped::kNo,
+          size_.width(), size_.height(), backend_format, skgpu::Mipmapped::kNo,
           GrRenderable::kYes);
     } else {
       is_emulated_rgbx_ = true;
       // Initialize alpha channel to opaque.
       backend_texture_ = context_state_->gr_context()->createBackendTexture(
-          size_.width(), size_.height(), sk_color_type_, SkColors::kBlack,
+          size_.width(), size_.height(), backend_format, SkColors::kBlack,
           skgpu::Mipmapped::kNo, GrRenderable::kYes);
     }
     DCHECK(backend_texture_.isValid());
@@ -127,7 +145,13 @@ void SkiaOutputDeviceOffscreen::EnsureBackbuffer() {
     // offscreen.
     skgpu::graphite::TextureInfo texture_info = gpu::GraphiteBackendTextureInfo(
         context_state_->gr_context_type(),
-        SkColorTypeToSinglePlaneSharedImageFormat(sk_color_type_));
+        SkColorTypeToSinglePlaneSharedImageFormat(sk_color_type_),
+        /*readonly=*/false,
+        /*plane_index=*/0,
+        /*is_yuv_plane=*/false, /*mipmapped=*/false,
+        /*scanout_dcomp_surface=*/false,
+        /*supports_multiplanar_rendering=*/false,
+        /*supports_multiplanar_copy=*/false);
     graphite_texture_ =
         context_state_->gpu_main_graphite_recorder()->createBackendTexture(
             gfx::SizeToSkISize(size_), texture_info);

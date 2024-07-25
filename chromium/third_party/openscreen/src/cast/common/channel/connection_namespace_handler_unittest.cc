@@ -62,7 +62,7 @@ CastMessage MakeVersionedConnectMessage(
     message[kMessageKeyProtocolVersionList] = std::move(list);
   }
   ErrorOr<std::string> result = json::Stringify(message);
-  OSP_DCHECK(result);
+  OSP_CHECK(result);
   connect_message.set_payload_utf8(std::move(result.value()));
   return connect_message;
 }
@@ -144,8 +144,7 @@ class ConnectionNamespaceHandlerTest : public ::testing::Test {
 
   NiceMock<MockVirtualConnectionPolicy> vc_policy_;
   VirtualConnectionRouter router_;
-  ConnectionNamespaceHandler connection_namespace_handler_{&router_,
-                                                           &vc_policy_};
+  ConnectionNamespaceHandler connection_namespace_handler_{router_, vc_policy_};
 
   const std::string sender_id_{"sender-5678"};
   const std::string receiver_id_{"receiver-3245"};

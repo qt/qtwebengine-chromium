@@ -83,8 +83,7 @@ class ProxyResolvingSocketTestBase {
     while (received_contents.size() < num_bytes) {
       base::RunLoop().RunUntilIdle();
       std::vector<char> buffer(num_bytes);
-      uint32_t read_size =
-          static_cast<uint32_t>(num_bytes - received_contents.size());
+      size_t read_size = num_bytes - received_contents.size();
       MojoResult result = handle->get().ReadData(buffer.data(), &read_size,
                                                  MOJO_READ_DATA_FLAG_NONE);
       if (result == MOJO_RESULT_SHOULD_WAIT)
@@ -114,8 +113,8 @@ class ProxyResolvingSocketTestBase {
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS),
         std::move(receiver), std::move(socket_observer),
         base::BindLambdaForTesting(
-            [&](int result, const absl::optional<net::IPEndPoint>& local_addr,
-                const absl::optional<net::IPEndPoint>& peer_addr,
+            [&](int result, const std::optional<net::IPEndPoint>& local_addr,
+                const std::optional<net::IPEndPoint>& peer_addr,
                 mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
                 mojo::ScopedDataPipeProducerHandle send_pipe_handle) {
               net_error = result;
@@ -305,7 +304,7 @@ TEST_P(ProxyResolvingSocketTest, BasicReadWrite) {
     EXPECT_EQ(kTestMsg, Read(&client_socket_receive_handle, kMsgSize));
     // Write multiple times.
     for (size_t i = 0; i < kMsgSize; ++i) {
-      uint32_t num_bytes = 1;
+      size_t num_bytes = 1;
       EXPECT_EQ(MOJO_RESULT_OK,
                 client_socket_send_handle->WriteData(
                     &kTestMsg[i], &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
@@ -391,8 +390,8 @@ TEST_F(ProxyResolvingSocketMojoTest, SocketDestroyedBeforeConnectCompletes) {
       socket.InitWithNewPipeAndPassReceiver(),
       mojo::NullRemote() /* observer */,
       base::BindLambdaForTesting(
-          [&](int result, const absl::optional<net::IPEndPoint>& local_addr,
-              const absl::optional<net::IPEndPoint>& peer_addr,
+          [&](int result, const std::optional<net::IPEndPoint>& local_addr,
+              const std::optional<net::IPEndPoint>& peer_addr,
               mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
               mojo::ScopedDataPipeProducerHandle send_pipe_handle) {
             net_error = result;

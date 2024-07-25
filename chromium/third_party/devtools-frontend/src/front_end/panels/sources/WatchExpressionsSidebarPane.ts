@@ -36,7 +36,6 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 import * as Formatter from '../../models/formatter/formatter.js';
@@ -109,7 +108,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     // to an e2e test or no longer accesses this variable directly.
     this.watchExpressions = [];
     this.watchExpressionsSetting =
-        Common.Settings.Settings.instance().createLocalSetting<string[]>('watchExpressions', []);
+        Common.Settings.Settings.instance().createLocalSetting<string[]>('watch-expressions', []);
 
     this.addButton = new UI.Toolbar.ToolbarButton(
         i18nString(UIStrings.addWatchExpression), 'plus', undefined, 'add-watch-expression');
@@ -121,7 +120,7 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     this.refreshButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this.update, this);
 
     this.contentElement.classList.add('watch-expressions');
-    this.contentElement.setAttribute('jslog', `${VisualLogging.pane().context('debugger-watch')}`);
+    this.contentElement.setAttribute('jslog', `${VisualLogging.section('sources.watch')}`);
     this.contentElement.addEventListener('contextmenu', this.contextMenu.bind(this), false);
     this.treeOutline = new ObjectUI.ObjectPropertiesSection.ObjectPropertiesSectionsTreeOutline();
     this.treeOutline.hideOverflow();
@@ -287,7 +286,8 @@ export class WatchExpressionsSidebarPane extends UI.ThrottledWidget.ThrottledWid
     if (target instanceof ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement) {
       if (!target.property.synthetic) {
         contextMenu.debugSection().appendItem(
-            i18nString(UIStrings.addPropertyPathToWatch), () => this.focusAndAddExpressionToWatch(target.path()));
+            i18nString(UIStrings.addPropertyPathToWatch), () => this.focusAndAddExpressionToWatch(target.path()),
+            {jslogContext: 'add-property-path-to-watch'});
       }
       return;
     }
@@ -346,15 +346,13 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   async #evaluateExpression(executionContext: SDK.RuntimeModel.ExecutionContext, expression: string):
       Promise<SDK.RuntimeModel.EvaluationResult> {
-    if (Root.Runtime.experiments.isEnabled('evaluateExpressionsWithSourceMaps')) {
-      const callFrame = executionContext.debuggerModel.selectedCallFrame();
-      if (callFrame) {
-        const nameMap = await SourceMapScopes.NamesResolver.allVariablesInCallFrame(callFrame);
-        try {
-          expression =
-              await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptSubstitute(expression, nameMap);
-        } catch {
-        }
+    const callFrame = executionContext.debuggerModel.selectedCallFrame();
+    if (callFrame) {
+      const nameMap = await SourceMapScopes.NamesResolver.allVariablesInCallFrame(callFrame);
+      try {
+        expression =
+            await Formatter.FormatterWorkerPool.formatterWorkerPool().javaScriptSubstitute(expression, nameMap);
+      } catch {
       }
     }
 
@@ -467,13 +465,18 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
       expressionValue?: SDK.RemoteObject.RemoteObject, exceptionDetails?: Protocol.Runtime.ExceptionDetails): Element {
     const headerElement = this.element.createChild('div', 'watch-expression-header');
     const deleteButton = new Buttons.Button.Button();
-    deleteButton.variant = Buttons.Button.Variant.ROUND;
+    deleteButton.variant = Buttons.Button.Variant.ICON;
     deleteButton.iconName = 'bin';
     deleteButton.className = 'watch-expression-delete-button';
     deleteButton.jslogContext = 'delete-watch-expression';
     deleteButton.size = Buttons.Button.Size.SMALL;
     UI.Tooltip.Tooltip.install(deleteButton, i18nString(UIStrings.deleteWatchExpression));
     deleteButton.addEventListener('click', this.deleteWatchExpression.bind(this), false);
+    deleteButton.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        this.deleteWatchExpression(event);
+      }
+    });
 
     const titleElement = headerElement.createChild('div', 'watch-expression-title tree-element-title');
     titleElement.appendChild(deleteButton);

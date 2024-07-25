@@ -4,17 +4,17 @@
 
 #include "partition_alloc/gwp_asan_support.h"
 
-#if BUILDFLAG(ENABLE_GWP_ASAN_SUPPORT)
+#if PA_BUILDFLAG(ENABLE_GWP_ASAN_SUPPORT)
 
-#include "build/build_config.h"
+#include "partition_alloc/build_config.h"
 #include "partition_alloc/freeslot_bitmap_constants.h"
+#include "partition_alloc/in_slot_metadata.h"
 #include "partition_alloc/page_allocator_constants.h"
 #include "partition_alloc/partition_alloc_base/no_destructor.h"
 #include "partition_alloc/partition_alloc_check.h"
 #include "partition_alloc/partition_bucket.h"
 #include "partition_alloc/partition_lock.h"
 #include "partition_alloc/partition_page.h"
-#include "partition_alloc/partition_ref_count.h"
 #include "partition_alloc/partition_root.h"
 
 namespace partition_alloc {
@@ -96,8 +96,8 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
 
         for (uintptr_t slot_idx = 0; slot_idx < kSlotsPerSlotSpan; ++slot_idx) {
           auto slot_start = slot_span_start + slot_idx * kSlotSize;
-          PartitionRoot::RefCountPointerFromSlotStartAndSize(slot_start,
-                                                             kSlotSize)
+          PartitionRoot::InSlotMetadataPointerFromSlotStartAndSize(slot_start,
+                                                                   kSlotSize)
               ->InitalizeForGwpAsan();
           size_t global_slot_idx = (slot_start - super_page_span_start -
                                     kSuperPageGwpAsanSlotAreaBeginOffset) /
@@ -122,11 +122,11 @@ void* GwpAsanSupport::MapRegion(size_t slot_count,
 // static
 bool GwpAsanSupport::CanReuse(uintptr_t slot_start) {
   const size_t kSlotSize = 2 * internal::SystemPageSize();
-  return PartitionRoot::RefCountPointerFromSlotStartAndSize(slot_start,
-                                                            kSlotSize)
+  return PartitionRoot::InSlotMetadataPointerFromSlotStartAndSize(slot_start,
+                                                                  kSlotSize)
       ->CanBeReusedByGwpAsan();
 }
 
 }  // namespace partition_alloc
 
-#endif  // BUILDFLAG(ENABLE_GWP_ASAN_SUPPORT)
+#endif  // PA_BUILDFLAG(ENABLE_GWP_ASAN_SUPPORT)

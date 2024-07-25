@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_INTEREST_GROUP_TEST_INTEREST_GROUP_PRIVATE_AGGREGATION_MANAGER_H_
 #define CONTENT_BROWSER_INTEREST_GROUP_TEST_INTEREST_GROUP_PRIVATE_AGGREGATION_MANAGER_H_
 
+#include <stddef.h>
+
 #include <map>
 #include <optional>
 #include <string>
@@ -19,7 +21,7 @@
 #include "content/services/auction_worklet/public/mojom/private_aggregation_request.mojom-forward.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
-#include "third_party/blink/public/mojom/private_aggregation/aggregatable_report.mojom-forward.h"
+#include "third_party/blink/public/mojom/aggregation_service/aggregatable_report.mojom-forward.h"
 #include "third_party/blink/public/mojom/private_aggregation/private_aggregation_host.mojom.h"
 #include "url/origin.h"
 
@@ -45,6 +47,7 @@ class TestInterestGroupPrivateAggregationManager
       std::optional<std::string> context_id,
       std::optional<base::TimeDelta> timeout,
       std::optional<url::Origin> aggregation_coordinator_origin,
+      size_t filtering_id_max_bytes,
       mojo::PendingReceiver<blink::mojom::PrivateAggregationHost>
           pending_receiver) override;
   void ClearBudgetData(base::Time delete_begin,
@@ -84,10 +87,6 @@ class TestInterestGroupPrivateAggregationManager
   // Resets all internal state to the state just after construction.
   void Reset();
 
-  void set_allow_multiple_calls_per_origin(bool value) {
-    allow_multiple_calls_per_origin_ = value;
-  }
-
  private:
   void LogPrivateAggregationRequests(
       const std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>&
@@ -95,29 +94,26 @@ class TestInterestGroupPrivateAggregationManager
 
   const url::Origin expected_top_frame_origin_;
 
-  // Whether multiple `SendHistogramReport()` calls are permitted without a call
-  // to `TakePrivateAggregationRequests()` or `Reset()` in between.
-  bool allow_multiple_calls_per_origin_ = false;
-
   // Contributions received through `ContributeToHistogram()`.
   std::map<
-      url::Origin,
+      mojo::ReceiverId,
       std::vector<blink::mojom::AggregatableReportHistogramContributionPtr>>
       private_aggregation_contributions_;
 
   // Debug details set through `EnableDebugMode()`.
-  std::map<url::Origin, blink::mojom::DebugModeDetailsPtr>
+  std::map<mojo::ReceiverId, blink::mojom::DebugModeDetailsPtr>
       private_aggregation_debug_details_;
+
+  // Worklet origins set through `BindNewReceiver()`.
+  std::map<mojo::ReceiverId, url::Origin> private_aggregation_worklet_origins_;
 
   // Reports received through running
   // `GetLogPrivateAggregationRequestsCallback()`.
   std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>
       logged_private_aggregation_requests_;
 
-  // Bound receivers received by BindNewReceiver. Each one is associated with
-  // the worklet origin passed in to BindNewReceiver().
-  mojo::ReceiverSet<blink::mojom::PrivateAggregationHost, url::Origin>
-      receiver_set_;
+  // Bound receivers received by `BindNewReceiver()`.
+  mojo::ReceiverSet<blink::mojom::PrivateAggregationHost> receiver_set_;
 };
 
 }  // namespace content

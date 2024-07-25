@@ -14,6 +14,9 @@
 #include "build/buildflag.h"
 #include "build/chromecast_buildflags.h"
 #include "components/viz/common/surfaces/surface_id.h"
+#include "media/base/key_system_info.h"
+#include "media/base/key_systems.h"
+#include "media/base/key_systems_support_registration.h"
 #include "media/base/media_player_logging_id.h"
 #include "media/base/renderer_factory_selector.h"
 #include "media/base/routing_token_callback.h"
@@ -153,6 +156,12 @@ class MediaFactory {
   media::mojom::RemoterFactory* GetRemoterFactory();
 #endif
 
+  // Initializes the key systems remote and receivers.
+  std::unique_ptr<media::KeySystemSupportRegistration> GetSupportedKeySystems(
+      media::GetSupportedKeySystemsCB cb);
+
+  media::KeySystems* GetKeySystems();
+
   media::CdmFactory* GetCdmFactory();
 
   media::mojom::InterfaceFactory* GetMediaInterfaceFactory();
@@ -161,7 +170,7 @@ class MediaFactory {
 
   // The render frame we're helping. RenderFrameImpl owns this factory, so the
   // pointer will always be valid.
-  raw_ptr<RenderFrameImpl, ExperimentalRenderer> render_frame_;
+  raw_ptr<RenderFrameImpl> render_frame_;
 
   // The media interface provider attached to this frame, lazily initialized.
   std::unique_ptr<MediaInterfaceFactory> media_interface_factory_;
@@ -172,13 +181,18 @@ class MediaFactory {
   // Handy pointer to RenderFrame's browser interface broker. Null until
   // SetupMojo(). Lifetime matches that of the owning |render_frame_|. Will
   // always be valid once assigned.
-  raw_ptr<blink::BrowserInterfaceBrokerProxy, ExperimentalRenderer>
+  raw_ptr<blink::BrowserInterfaceBrokerProxy, DanglingUntriaged>
       interface_broker_ = nullptr;
 
   // Manages play, pause notifications for WebMediaPlayer implementations; its
   // lifetime is tied to the RenderFrame via the RenderFrameObserver interface.
-  raw_ptr<media::RendererWebMediaPlayerDelegate, ExperimentalRenderer>
+  raw_ptr<media::RendererWebMediaPlayerDelegate, DanglingUntriaged>
       media_player_delegate_ = nullptr;
+
+  // The `KeySystems` to be used by `web_encrypted_media_client_`. This object
+  // must outlive `web_encrypted_media_client_` and `cdm_factory_` since they
+  // reference it.
+  std::unique_ptr<media::KeySystems> key_systems_;
 
   // The CDM and decoder factory attached to this frame, lazily initialized.
   std::unique_ptr<media::DefaultDecoderFactory> decoder_factory_;

@@ -16,6 +16,7 @@
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "components/viz/service/display/output_surface.h"
+#include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -333,14 +334,21 @@ TEST(VideoLayerImplTest, SoftwareVideoFrameGeneratesYUVQuad) {
 
   EXPECT_EQ(1u, impl.quad_list().size());
   const viz::DrawQuad* draw_quad = impl.quad_list().ElementAt(0);
-  ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
 
-  const auto* yuv_draw_quad =
-      static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
-  EXPECT_EQ(yuv_draw_quad->uv_tex_size().height(),
-            (yuv_draw_quad->ya_tex_size().height() + 1) / 2);
-  EXPECT_EQ(yuv_draw_quad->uv_tex_size().width(),
-            (yuv_draw_quad->ya_tex_size().width() + 1) / 2);
+  if (media::IsWritePixelsYUVEnabled()) {
+    ASSERT_EQ(viz::DrawQuad::Material::kTextureContent, draw_quad->material);
+    const auto* texture_draw_quad =
+        static_cast<const viz::TextureDrawQuad*>(draw_quad);
+    EXPECT_TRUE(texture_draw_quad->is_video_frame);
+  } else {
+    ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
+    const auto* yuv_draw_quad =
+        static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
+    EXPECT_EQ(yuv_draw_quad->uv_tex_size().height(),
+              (yuv_draw_quad->ya_tex_size().height() + 1) / 2);
+    EXPECT_EQ(yuv_draw_quad->uv_tex_size().width(),
+              (yuv_draw_quad->ya_tex_size().width() + 1) / 2);
+  }
 }
 
 TEST(VideoLayerImplTest, HibitSoftwareVideoFrameGeneratesYUVQuad) {
@@ -373,12 +381,19 @@ TEST(VideoLayerImplTest, HibitSoftwareVideoFrameGeneratesYUVQuad) {
 
   EXPECT_EQ(1u, impl.quad_list().size());
   const viz::DrawQuad* draw_quad = impl.quad_list().ElementAt(0);
-  ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
 
-  const auto* yuv_draw_quad =
-      static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
-  EXPECT_EQ(5, yuv_draw_quad->uv_tex_size().height());
-  EXPECT_EQ(10, yuv_draw_quad->uv_tex_size().width());
+  if (media::IsWritePixelsYUVEnabled()) {
+    ASSERT_EQ(viz::DrawQuad::Material::kTextureContent, draw_quad->material);
+    const auto* texture_draw_quad =
+        static_cast<const viz::TextureDrawQuad*>(draw_quad);
+    EXPECT_TRUE(texture_draw_quad->is_video_frame);
+  } else {
+    ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
+    const auto* yuv_draw_quad =
+        static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
+    EXPECT_EQ(5, yuv_draw_quad->uv_tex_size().height());
+    EXPECT_EQ(10, yuv_draw_quad->uv_tex_size().width());
+  }
 }
 
 TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
@@ -387,18 +402,26 @@ TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
   LayerTreeImplTestBase impl;
   DebugSetImplThreadAndMainThreadBlocked(impl.task_runner_provider());
 
-  gpu::MailboxHolder mailbox_holders[media::VideoFrame::kMaxPlanes];
-  mailbox_holders[0].mailbox.name[0] = 1;
-  mailbox_holders[1].mailbox.name[0] = 1;
-  mailbox_holders[2].mailbox.name[0] = 1;
+  scoped_refptr<gpu::ClientSharedImage>
+      shared_images[media::VideoFrame::kMaxPlanes];
+  shared_images[0] = gpu::ClientSharedImage::CreateForTesting();
+  // Continue legacy path if feature is not enabled.
+  if (!media::IsWritePixelsYUVEnabled()) {
+    shared_images[1] = gpu::ClientSharedImage::CreateForTesting();
+    shared_images[2] = gpu::ClientSharedImage::CreateForTesting();
+  }
 
   scoped_refptr<media::VideoFrame> video_frame =
-      media::VideoFrame::WrapNativeTextures(
-          media::PIXEL_FORMAT_I420, mailbox_holders, base::DoNothing(),
-          gfx::Size(10, 10), gfx::Rect(10, 10), gfx::Size(10, 10),
-          base::TimeDelta());
+      media::VideoFrame::WrapSharedImages(
+          media::PIXEL_FORMAT_I420, shared_images, gpu::SyncToken(),
+          GL_TEXTURE_2D, base::DoNothing(), gfx::Size(10, 10),
+          gfx::Rect(10, 10), gfx::Size(10, 10), base::TimeDelta());
   ASSERT_TRUE(video_frame);
   video_frame->metadata().allow_overlay = true;
+  if (media::IsWritePixelsYUVEnabled()) {
+    video_frame->set_shared_image_format_type(
+        media::SharedImageFormatType::kSharedImageFormat);
+  }
   FakeVideoFrameProvider provider;
   provider.set_frame(video_frame);
 
@@ -415,14 +438,22 @@ TEST(VideoLayerImplTest, NativeYUVFrameGeneratesYUVQuad) {
 
   EXPECT_EQ(1u, impl.quad_list().size());
   const viz::DrawQuad* draw_quad = impl.quad_list().ElementAt(0);
-  ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
 
-  const auto* yuv_draw_quad =
-      static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
-  EXPECT_EQ(yuv_draw_quad->uv_tex_size().height(),
-            (yuv_draw_quad->ya_tex_size().height() + 1) / 2);
-  EXPECT_EQ(yuv_draw_quad->uv_tex_size().width(),
-            (yuv_draw_quad->ya_tex_size().width() + 1) / 2);
+  if (media::IsWritePixelsYUVEnabled()) {
+    ASSERT_EQ(viz::DrawQuad::Material::kTextureContent, draw_quad->material);
+    const auto* texture_draw_quad =
+        static_cast<const viz::TextureDrawQuad*>(draw_quad);
+    EXPECT_TRUE(texture_draw_quad->is_video_frame);
+  } else {
+    ASSERT_EQ(viz::DrawQuad::Material::kYuvVideoContent, draw_quad->material);
+
+    const auto* yuv_draw_quad =
+        static_cast<const viz::YUVVideoDrawQuad*>(draw_quad);
+    EXPECT_EQ(yuv_draw_quad->uv_tex_size().height(),
+              (yuv_draw_quad->ya_tex_size().height() + 1) / 2);
+    EXPECT_EQ(yuv_draw_quad->uv_tex_size().width(),
+              (yuv_draw_quad->ya_tex_size().width() + 1) / 2);
+  }
 }
 
 TEST(VideoLayerImplTest, NativeARGBFrameGeneratesTextureQuad) {
@@ -431,15 +462,16 @@ TEST(VideoLayerImplTest, NativeARGBFrameGeneratesTextureQuad) {
   LayerTreeImplTestBase impl;
   DebugSetImplThreadAndMainThreadBlocked(impl.task_runner_provider());
 
-  gpu::MailboxHolder mailbox_holders[media::VideoFrame::kMaxPlanes];
-  mailbox_holders[0].texture_target = GL_TEXTURE_2D;
-  mailbox_holders[0].mailbox.name[0] = 1;
+  scoped_refptr<gpu::ClientSharedImage>
+      shared_images[media::VideoFrame::kMaxPlanes];
+  shared_images[0] = gpu::ClientSharedImage::CreateForTesting();
 
   gfx::Size resource_size = gfx::Size(10, 10);
   scoped_refptr<media::VideoFrame> video_frame =
-      media::VideoFrame::WrapNativeTextures(
-          media::PIXEL_FORMAT_ARGB, mailbox_holders, base::DoNothing(),
-          resource_size, gfx::Rect(10, 10), resource_size, base::TimeDelta());
+      media::VideoFrame::WrapSharedImages(
+          media::PIXEL_FORMAT_ARGB, shared_images, gpu::SyncToken(),
+          GL_TEXTURE_2D, base::DoNothing(), resource_size, gfx::Rect(10, 10),
+          resource_size, base::TimeDelta());
   ASSERT_TRUE(video_frame);
   video_frame->metadata().allow_overlay = true;
   FakeVideoFrameProvider provider;

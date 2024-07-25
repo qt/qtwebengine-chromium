@@ -5,16 +5,21 @@
 #include "third_party/blink/renderer/modules/scheduler/task_attribution_tracker_impl.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 
+#include "base/memory/ptr_util.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/typed_macros.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/scheduler/script_wrappable_task_state.h"
+#include "third_party/blink/renderer/modules/scheduler/task_attribution_info_impl.h"
+#include "third_party/blink/renderer/modules/scheduler/web_scheduling_task_state.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/scheduler/public/task_attribution_info.h"
 #include "third_party/blink/renderer/platform/scheduler/public/web_scheduling_priority.h"
+#include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 
 namespace blink::scheduler {
@@ -39,109 +44,159 @@ perfetto::protos::pbzero::BlinkTaskScope::TaskScopeType ToProtoEnum(
       return ProtoType::TASK_SCOPE_SCHEDULER_POST_TASK;
     case TaskAttributionTracker::TaskScopeType::kRequestIdleCallback:
       return ProtoType::TASK_SCOPE_REQUEST_IDLE_CALLBACK;
+    case TaskAttributionTracker::TaskScopeType::kXMLHttpRequest:
+      return ProtoType::TASK_SCOPE_XML_HTTP_REQUEST;
+    case TaskAttributionTracker::TaskScopeType::kSoftNavigation:
+      return ProtoType::TASK_SCOPE_SOFT_NAVIGATION;
   }
-}
-
-int64_t TaskAttributionIdToInt(absl::optional<TaskAttributionId> id) {
-  return id ? static_cast<int64_t>(id.value().value()) : -1;
 }
 
 }  // namespace
 
-TaskAttributionTrackerImpl::TaskAttributionTrackerImpl() : next_task_id_(0) {}
-
-TaskAttributionInfo* TaskAttributionTrackerImpl::RunningTask(
-    ScriptState* script_state) const {
-  ScriptWrappableTaskState* task_state =
-      GetCurrentTaskContinuationData(script_state);
-
-  // V8 embedder state may have no value in the case of a JSPromise that wasn't
-  // yet resolved.
-  return task_state ? task_state->GetTask() : running_task_.Get();
+// static
+std::unique_ptr<TaskAttributionTracker> TaskAttributionTrackerImpl::Create(
+    v8::Isolate* isolate) {
+  return base::WrapUnique(new TaskAttributionTrackerImpl(isolate));
 }
 
-bool TaskAttributionTrackerImpl::IsAncestor(const TaskAttributionInfo& task,
-                                            TaskAttributionId ancestor_id) {
-  const TaskAttributionInfo* ancestor_task = nullptr;
-  ForEachAncestor(task, [&](const TaskAttributionInfo& ancestor) {
-    if (ancestor.Id() == ancestor_id) {
-      ancestor_task = &ancestor;
-      return IterationStatus::kStop;
-    }
-    return IterationStatus::kContinue;
-  });
-  return !!ancestor_task;
+TaskAttributionTrackerImpl::TaskAttributionTrackerImpl(v8::Isolate* isolate)
+    : next_task_id_(0), isolate_(isolate) {
+  CHECK(isolate_);
 }
 
-void TaskAttributionTrackerImpl::ForEachAncestor(
-    const TaskAttributionInfo& task,
-    base::FunctionRef<IterationStatus(const TaskAttributionInfo& task)>
-        visitor) {
-  const TaskAttributionInfo* current_task = &task;
-  while (current_task) {
-    const TaskAttributionInfo* parent_task = current_task->Parent();
-    if (visitor(*current_task) == IterationStatus::kStop) {
-      return;
-    }
-    current_task = parent_task;
+scheduler::TaskAttributionInfo* TaskAttributionTrackerImpl::RunningTask()
+    const {
+  if (ScriptWrappableTaskState* task_state =
+          ScriptWrappableTaskState::GetCurrent(isolate_)) {
+    return task_state->GetTaskAttributionInfo();
   }
+  // There won't be a running task outside of a `TaskScope` or microtask
+  // checkpoint.
+  return nullptr;
 }
 
-std::unique_ptr<TaskAttributionTracker::TaskScope>
-TaskAttributionTrackerImpl::CreateTaskScope(ScriptState* script_state,
-                                            TaskAttributionInfo* parent_task,
-                                            TaskScopeType type) {
-  return CreateTaskScope(script_state, parent_task, type,
+TaskAttributionTracker::TaskScope TaskAttributionTrackerImpl::CreateTaskScope(
+    ScriptState* script_state,
+    TaskAttributionInfo* task_state,
+    TaskScopeType type) {
+  return CreateTaskScope(script_state, task_state, type,
                          /*abort_source=*/nullptr, /*priority_source=*/nullptr);
 }
 
-std::unique_ptr<TaskAttributionTracker::TaskScope>
-TaskAttributionTrackerImpl::CreateTaskScope(ScriptState* script_state,
-                                            TaskAttributionInfo* parent_task,
-                                            TaskScopeType type,
-                                            AbortSignal* abort_source,
-                                            DOMTaskSignal* priority_source) {
-  TaskAttributionInfo* running_task_to_be_restored = running_task_;
-  ScriptWrappableTaskState* continuation_task_state_to_be_restored =
-      GetCurrentTaskContinuationData(script_state);
-
-  // This compresses the task graph when encountering long task chains.
-  // TODO(crbug.com/1501999): Consider compressing the task graph further.
-  if (!parent_task || !parent_task->MaxChainLengthReached()) {
-    next_task_id_ = next_task_id_.NextId();
-    running_task_ =
-        MakeGarbageCollected<TaskAttributionInfo>(next_task_id_, parent_task);
-  } else {
-    running_task_ = parent_task;
-  }
-
-  ExecutionContext* execution_context = ExecutionContext::From(script_state);
-  for (Observer* observer : observers_) {
-    if (observer->GetExecutionContext() == execution_context) {
-      observer->OnCreateTaskScope(*running_task_, script_state);
-    }
-  }
-
-  SetCurrentTaskContinuationData(
-      script_state, MakeGarbageCollected<ScriptWrappableTaskState>(
-                        running_task_.Get(), abort_source, priority_source));
-
-  return std::make_unique<TaskScopeImpl>(
-      script_state, this, running_task_->Id(), running_task_to_be_restored,
-      continuation_task_state_to_be_restored, type,
-      running_task_->Parent()
-          ? absl::optional<TaskAttributionId>(running_task_->Parent()->Id())
-          : absl::nullopt);
+TaskAttributionTracker::TaskScope TaskAttributionTrackerImpl::CreateTaskScope(
+    ScriptState* script_state,
+    SoftNavigationContext* soft_navigation_context) {
+  next_task_id_ = next_task_id_.NextId();
+  auto* task_state = MakeGarbageCollected<TaskAttributionInfoImpl>(
+      next_task_id_, soft_navigation_context);
+  return CreateTaskScope(script_state, task_state,
+                         TaskScopeType::kSoftNavigation,
+                         /*abort_source=*/nullptr, /*priority_source=*/nullptr);
 }
 
-void TaskAttributionTrackerImpl::TaskScopeCompleted(
-    const TaskScopeImpl& task_scope) {
-  DCHECK(running_task_);
-  DCHECK(running_task_->Id() == task_scope.GetTaskId());
-  running_task_ = task_scope.RunningTaskToBeRestored();
-  SetCurrentTaskContinuationData(
-      task_scope.GetScriptState(),
-      task_scope.ContinuationTaskStateToBeRestored());
+TaskAttributionTracker::TaskScope TaskAttributionTrackerImpl::CreateTaskScope(
+    ScriptState* script_state,
+    TaskAttributionInfo* task_state,
+    TaskScopeType type,
+    AbortSignal* abort_source,
+    DOMTaskSignal* priority_source) {
+  CHECK(script_state);
+  CHECK_EQ(script_state->GetIsolate(), isolate_);
+  ScriptWrappableTaskState* previous_task_state =
+      ScriptWrappableTaskState::GetCurrent(isolate_);
+
+  // Always propagate the current `task_state` when given. Otherwise create new
+  // state to begin propagating.
+  if (!task_state) {
+    next_task_id_ = next_task_id_.NextId();
+    task_state = MakeGarbageCollected<TaskAttributionInfoImpl>(
+        next_task_id_, /*soft_navigation_contxt=*/nullptr);
+  }
+
+  ScriptWrappableTaskState* running_task_state = nullptr;
+  if (abort_source || priority_source) {
+    running_task_state = MakeGarbageCollected<WebSchedulingTaskState>(
+        task_state, abort_source, priority_source);
+  } else {
+    // If there's no scheduling state to propagate, we can just propagate the
+    // same object.
+    running_task_state = To<TaskAttributionInfoImpl>(task_state);
+  }
+
+  ScriptWrappableTaskState::SetCurrent(script_state, running_task_state);
+
+  TaskAttributionInfo* current = running_task_state->GetTaskAttributionInfo();
+  TaskAttributionInfo* previous =
+      previous_task_state ? previous_task_state->GetTaskAttributionInfo()
+                          : nullptr;
+
+  // Fire observer callbacks after updating the CPED to keep `RunningTask()` in
+  // sync with what is passed to the observer.
+  //
+  // TODO(crbug.com/40942324): The purpose of the `Observer` mechanism is so the
+  // soft navigation layer can learn if an event ran while the scope is active,
+  // which is why we filter out soft navigation task scopes. It might be better
+  // to move event observation into event handling itself.
+  if (observer_ && type != TaskScopeType::kSoftNavigation) {
+    observer_->OnCreateTaskScope(*current);
+  }
+
+  TRACE_EVENT_BEGIN(
+      "scheduler", "BlinkTaskScope", [&](perfetto::EventContext ctx) {
+        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
+        auto* data = event->set_blink_task_scope();
+        data->set_type(ToProtoEnum(type));
+        data->set_scope_task_id(current ? current->Id().value() : 0);
+        data->set_running_task_id_to_be_restored(
+            previous ? previous->Id().value() : 0);
+      });
+
+  return TaskScope(this, script_state, previous_task_state);
+}
+
+std::optional<TaskAttributionTracker::TaskScope>
+TaskAttributionTrackerImpl::MaybeCreateTaskScopeForCallback(
+    ScriptState* script_state,
+    TaskAttributionInfo* task_state) {
+  CHECK(script_state);
+
+  TaskAttributionInfo* current_task_state = RunningTask();
+  // Always create a `TaskScope` if there's `task_state` to propagate. Always
+  // create a `TaskScope` if there's no `current_task_state` to ensure there's a
+  // `TaskScope` for top-level JS execution.
+  if (task_state || !current_task_state) {
+    return CreateTaskScope(script_state, task_state, TaskScopeType::kCallback);
+  }
+
+  // Even though we don't need to create a `TaskScope`, we still need to notify
+  // the `observer_` since it relies on the callback to set up internal state.
+  // And the `observer_` might not have been notified previously, e.g. if
+  // the outermost `TaskScope` is for propagating soft navigation state.
+  if (observer_) {
+    observer_->OnCreateTaskScope(*current_task_state);
+  }
+
+  return std::nullopt;
+}
+
+void TaskAttributionTrackerImpl::OnTaskScopeDestroyed(
+    const TaskScope& task_scope) {
+  ScriptWrappableTaskState::SetCurrent(task_scope.script_state_,
+                                       task_scope.previous_task_state_);
+  TRACE_EVENT_END("scheduler");
+}
+
+TaskAttributionTracker::ObserverScope
+TaskAttributionTrackerImpl::RegisterObserver(Observer* observer) {
+  CHECK(observer);
+  Observer* previous_observer = observer_.Get();
+  observer_ = observer;
+  return ObserverScope(this, observer, previous_observer);
+}
+
+void TaskAttributionTrackerImpl::OnObserverScopeDestroyed(
+    const ObserverScope& observer_scope) {
+  observer_ = observer_scope.PreviousObserver();
 }
 
 void TaskAttributionTrackerImpl::AddSameDocumentNavigationTask(
@@ -170,57 +225,6 @@ TaskAttributionInfo* TaskAttributionTrackerImpl::CommitSameDocumentNavigation(
     }
   }
   return nullptr;
-}
-
-void TaskAttributionTrackerImpl::SetCurrentTaskContinuationData(
-    ScriptState* script_state,
-    ScriptWrappableTaskState* task_state) {
-  ScriptWrappableTaskState::SetCurrent(script_state, task_state);
-}
-
-ScriptWrappableTaskState*
-TaskAttributionTrackerImpl::GetCurrentTaskContinuationData(
-    ScriptState* script_state) const {
-  return ScriptWrappableTaskState::GetCurrent(script_state);
-}
-
-// TaskScope's implementation
-//////////////////////////////////////
-TaskAttributionTrackerImpl::TaskScopeImpl::TaskScopeImpl(
-    ScriptState* script_state,
-    TaskAttributionTrackerImpl* task_tracker,
-    TaskAttributionId scope_task_id,
-    TaskAttributionInfo* running_task,
-    ScriptWrappableTaskState* continuation_task_state,
-    TaskScopeType type,
-    absl::optional<TaskAttributionId> parent_task_id)
-    : task_tracker_(task_tracker),
-      scope_task_id_(scope_task_id),
-      running_task_to_be_restored_(running_task),
-      continuation_state_to_be_restored_(continuation_task_state),
-      script_state_(script_state) {
-  TRACE_EVENT_BEGIN(
-      "scheduler", "BlinkTaskScope", [&](perfetto::EventContext ctx) {
-        auto* event = ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-        auto* data = event->set_blink_task_scope();
-        data->set_type(ToProtoEnum(type));
-        data->set_scope_task_id(scope_task_id_.value());
-        data->set_running_task_id_to_be_restored(TaskAttributionIdToInt(
-            running_task_to_be_restored_ ? running_task_to_be_restored_->Id()
-                                         : TaskAttributionId()));
-        data->set_continuation_task_id_to_be_restored(TaskAttributionIdToInt(
-            continuation_state_to_be_restored_ &&
-                    continuation_state_to_be_restored_->GetTask()
-                ? absl::optional<TaskAttributionId>(
-                      continuation_state_to_be_restored_->GetTask()->Id())
-                : absl::nullopt));
-        data->set_parent_task_id(TaskAttributionIdToInt(parent_task_id));
-      });
-}
-
-TaskAttributionTrackerImpl::TaskScopeImpl::~TaskScopeImpl() {
-  task_tracker_->TaskScopeCompleted(*this);
-  TRACE_EVENT_END("scheduler");
 }
 
 }  // namespace blink::scheduler

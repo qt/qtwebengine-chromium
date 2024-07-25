@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "public/fpdf_sysfontinfo.h"
 
 #include <vector>
@@ -77,9 +82,10 @@ class FPDFUnavailableSysFontInfoEmbedderTest : public EmbedderTest {
   }
 
   void TearDown() override {
+    FPDF_SetSystemFontInfo(nullptr);
     EmbedderTest::TearDown();
 
-    // Bouncing the library is the only reliable way to undo the
+    // Bouncing the library is the only reliable way to fully undo the initial
     // FPDF_SetSystemFontInfo() call at the moment.
     EmbedderTestEnvironment::GetInstance()->TearDown();
     EmbedderTestEnvironment::GetInstance()->SetUp();
@@ -103,12 +109,13 @@ class FPDFSysFontInfoEmbedderTest : public EmbedderTest {
   void TearDown() override {
     EmbedderTest::TearDown();
 
-    // Bouncing the library is the only reliable way to undo the
+    // After releasing `font_info_` from PDFium, it is safe to free it.
+    FPDF_SetSystemFontInfo(nullptr);
+    FPDF_FreeDefaultSystemFontInfo(font_info_);
+
+    // Bouncing the library is the only reliable way to fully undo the initial
     // FPDF_SetSystemFontInfo() call at the moment.
     EmbedderTestEnvironment::GetInstance()->TearDown();
-
-    // After shutdown, it is safe to release the font info.
-    FPDF_FreeDefaultSystemFontInfo(font_info_);
 
     EmbedderTestEnvironment::GetInstance()->SetUp();
   }

@@ -140,6 +140,8 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
       {"checkupTitle", IDS_PASSWORD_MANAGER_UI_CHECKUP_TITLE},
       {"clearSearch", IDS_CLEAR_SEARCH},
       {"close", IDS_CLOSE},
+      {"closePromoCardButtonAriaLabel",
+       IDS_PASSWORD_MANAGER_UI_CLOSE_PROMO_CARD_BUTTON_ARIA_LABEL},
       {"compromisedPasswordsDescription",
        IDS_PASSWORD_MANAGER_UI_COMPROMISED_PASSWORDS_DESCRIPTION},
       {"compromisedPasswordsEmpty",
@@ -169,6 +171,14 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
        IDS_PASSWORD_MANAGER_UI_DELETE_DIALOG_TITLE},
       {"done", IDS_DONE},
       {"disable", IDS_DISABLE},
+      {"disconnectCloudAuthenticatorButton",
+       IDS_PASSKEYS_MANAGER_UI_UNENROLL_BUTTON},
+      {"disconnectCloudAuthenticatorToastMessage",
+       IDS_PASSKEYS_MANAGER_UI_UNENROLL_TOAST_MESSAGE},
+      {"disconnectCloudAuthenticatorTitle",
+       IDS_PASSKEYS_MANAGER_UI_UNENROLL_TITLE},
+      {"disconnectCloudAuthenticatorDescription",
+       IDS_PASSKEYS_MANAGER_UI_UNENROLL_DESCRIPTION},
       {"displayNameCopiedToClipboard",
        IDS_PASSWORD_MANAGER_UI_DISPLAY_NAME_COPIED_TO_CLIPBOARD},
       {"displayNameLabel", IDS_PASSWORD_MANAGER_UI_DISPLAY_NAME_LABEL},
@@ -324,13 +334,12 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
       {"passwordManager",
        IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SYNCED_TO_ACCOUNT},
       // Header for the page, always "Password Manager".
+      {"passwordManagerPinChanged", IDS_PASSWORD_MANAGER_PIN_CHANGED},
       {"passwordManagerString", IDS_PASSWORD_MANAGER_UI_TITLE},
       // Page title, branded. "Google Password Manager" or "Password Manager"
       // depending on the build.
       {"passwordManagerTitle",
        IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SAVING_ON_DEVICE},
-      {"passwordMovedToastMessage",
-       IDS_PASSWORD_MANAGER_UI_PASSWORD_MOVED_TOAST_MESSAGE},
       {"passwordNoteCharacterCount",
        IDS_PASSWORD_MANAGER_UI_NOTE_CHARACTER_COUNT},
       {"passwordNoteCharacterCountWarning",
@@ -341,6 +350,7 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
       {"phishedAndLeakedPassword",
        IDS_PASSWORD_MANAGER_UI_PASSWORD_PHISHED_AND_LEAKED},
       {"phishedPassword", IDS_PASSWORD_MANAGER_UI_PASSWORD_PHISHED},
+      {"promoCardAriaLabel", IDS_PASSWORD_MANAGER_UI_PROMO_CARD_ARIA_LABEL},
       {"removeBlockedAriaDescription",
        IDS_PASSWORD_MANAGER_UI_REMOVE_BLOCKED_SITE_ARIA_DESCRIPTION},
       {"reload", IDS_RELOAD},
@@ -469,11 +479,6 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
                          ShouldBiometricAuthenticationForFillingToggleBeVisible(
                              g_browser_process->local_state()));
 #endif
-#if BUILDFLAG(IS_MAC)
-  source->AddBoolean(
-      "createPasskeysInICloudKeychainToggleVisible",
-      base::FeatureList::IsEnabled(device::kWebAuthnICloudKeychain));
-#endif
 
   source->AddBoolean(
       "enableSendPasswords",
@@ -505,7 +510,8 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
               IDS_PASSWORD_MANAGER_UI_AUTH_TIMED_OUT_DESCRIPTION),
           l10n_util::GetStringUTF16(
               IDS_PASSWORD_BUBBLES_PASSWORD_MANAGER_LINK_TEXT_SAVING_ON_DEVICE),
-          syncer::kPasswordNotesAuthValidity.Get().InMinutes()));
+          password_manager::constants::kPasswordManagerAuthValidity
+              .InMinutes()));
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   // Overwrite ubranded logo for Chrome-branded builds.
@@ -570,7 +576,6 @@ content::WebUIDataSource* CreateAndAddPasswordsUIHTMLSource(
       profile, std::make_unique<FaviconSource>(
                    profile, chrome::FaviconUrlFormat::kFavicon2));
 
-  webui::SetupChromeRefresh2023(source);
   return source;
 }
 
@@ -615,6 +620,12 @@ void AddPluralStrings(content::WebUI* web_ui) {
       "searchResults", IDS_PASSWORD_MANAGER_UI_SEARCH_RESULT);
   plural_string_handler->AddLocalizedString(
       "movePasswords", IDS_PASSWORD_MANAGER_UI_MOVE_PASSWORDS_TO_ACCOUNT);
+  plural_string_handler->AddLocalizedString(
+      "deviceOnlyListItemAriaLabel",
+      IDS_PASSWORD_MANAGER_UI_PASSWORD_LIST_ITEM_ARIA_LABEL);
+  plural_string_handler->AddLocalizedString(
+      "passwordsMovedToastMessage",
+      IDS_PASSWORD_MANAGER_UI_PASSWORD_MOVED_TOAST_MESSAGE);
   web_ui->AddMessageHandler(std::move(plural_string_handler));
 }
 
@@ -627,11 +638,13 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(PasswordManagerUI,
                                       kOverflowMenuElementId);
 DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(PasswordManagerUI,
                                       kSharePasswordElementId);
+DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(PasswordManagerUI,
+                                      kAccountStoreToggleElementId);
 DEFINE_CLASS_CUSTOM_ELEMENT_EVENT_TYPE(PasswordManagerUI,
                                        kAddShortcutCustomEventId);
 
 PasswordManagerUI::PasswordManagerUI(content::WebUI* web_ui)
-    : ui::MojoBubbleWebUIController(web_ui, /*enable_chrome_send=*/true) {
+    : TopChromeWebUIController(web_ui, /*enable_chrome_send=*/true) {
   // Set up the chrome://password-manager/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
   passwords_private_delegate_ =
@@ -684,5 +697,6 @@ void PasswordManagerUI::CreateHelpBubbleHandler(
           PasswordManagerUI::kSettingsMenuItemElementId,
           PasswordManagerUI::kAddShortcutElementId,
           PasswordManagerUI::kSharePasswordElementId,
+          PasswordManagerUI::kAccountStoreToggleElementId,
           PasswordManagerUI::kOverflowMenuElementId});
 }

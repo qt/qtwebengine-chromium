@@ -29,7 +29,6 @@
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
-#include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
 #include "third_party/blink/renderer/platform/graphics/test/gpu_test_utils.h"
 #include "third_party/blink/renderer/platform/testing/paint_test_configurations.h"
@@ -140,21 +139,19 @@ class PrintContextTest : public PaintTestConfigurations, public RenderingTest {
 
     gfx::Rect page_rect = GetPrintContext().PageRect(page_number);
 
-    auto* builder = MakeGarbageCollected<PaintRecordBuilder>();
-    GraphicsContext& context = builder->Context();
+    PaintRecordBuilder builder;
+    GraphicsContext& context = builder.Context();
     context.SetPrinting(true);
-    GetDocument().View()->PaintOutsideOfLifecycle(
-        context, PaintFlag::kOmitCompositingInfo | PaintFlag::kAddUrlMetadata,
-        CullRect(page_rect));
-    {
-      DrawingRecorder recorder(
-          context, *GetDocument().GetLayoutView(),
-          DisplayItem::kPrintedContentDestinationLocations);
-      GetPrintContext().OutputLinkedDestinations(context, page_rect);
-    }
-    builder->EndRecording().Playback(&canvas);
+    GetDocument().View()->PrintPage(context, page_number, CullRect(page_rect));
+    GetPrintContext().OutputLinkedDestinations(
+        context,
+        GetDocument().GetLayoutView()->FirstFragment().ContentsProperties(),
+        page_rect);
+    builder.EndRecording().Playback(&canvas);
     GetPrintContext().EndPrintMode();
-    return page_rect;
+
+    // The drawing operations are relative to the current page.
+    return gfx::Rect(page_rect.size());
   }
 
   static String AbsoluteBlockHtmlForLink(int x,
@@ -787,7 +784,6 @@ TEST_P(PrintContextTest, SvgMarkersOnMultiplePages) {
   PrintSinglePage(first_page_canvas, 0);
 
   MockCanvas second_page_canvas;
-  EXPECT_CALL(second_page_canvas, didTranslate(0, kPageHeight)).Times(1);
   EXPECT_CALL(second_page_canvas, didTranslate(2, 0)).Times(1);
   EXPECT_CALL(second_page_canvas, onDrawRect(SkRect::MakeWH(50, 25), _))
       .Times(1);

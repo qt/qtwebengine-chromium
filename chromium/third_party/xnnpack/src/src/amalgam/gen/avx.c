@@ -3808,7 +3808,7 @@ void xnn_f32_rsum_ukernel__avx_u32_acc4(
   vacc = _mm_add_ps(vacc, _mm_movehl_ps(vacc, vacc));
   vacc = _mm_add_ss(vacc, _mm_movehdup_ps(vacc));
   vacc = _mm_mul_ss(vacc, _mm_load_ss(&params->avx.scale));
-  _mm_store_ss(output, vacc);
+  *output += _mm_cvtss_f32(vacc);
 }
 
 void xnn_f32_vadd_minmax_ukernel__avx_u16(
@@ -5600,6 +5600,98 @@ void xnn_f32_vrndz_ukernel__avx_u16(
   }
 }
 
+void xnn_f32_vrsqrt_ukernel__avx_rsqrt_u16(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  // Constants for the Newton-Raphson iteration.
+  const __m256 vthree = _mm256_load_ps(params->avx.three);
+  const __m256 vhalf = _mm256_load_ps(params->avx.half);
+
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const __m256 vx0 = _mm256_loadu_ps(input);
+    const __m256 vx1 = _mm256_loadu_ps(input + 8);
+    input += 16;
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0_0 = _mm256_rsqrt_ps(vx0);
+    const __m256 vt0_1 = _mm256_rsqrt_ps(vx1);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1_0 = _mm256_mul_ps(vt0_0, vt0_0);
+    const __m256 vt1_1 = _mm256_mul_ps(vt0_1, vt0_1);
+    const __m256 vt2_0 = _mm256_mul_ps(vx0, vt1_0);
+    const __m256 vt2_1 = _mm256_mul_ps(vx1, vt1_1);
+    const __m256 vt3_0 = _mm256_sub_ps(vthree, vt2_0);
+    const __m256 vt3_1 = _mm256_sub_ps(vthree, vt2_1);
+    const __m256 vt4_0 = _mm256_mul_ps(vhalf, vt0_0);
+    const __m256 vt4_1 = _mm256_mul_ps(vhalf, vt0_1);
+    const __m256 vy0 = _mm256_mul_ps(vt3_0, vt4_0);
+    const __m256 vy1 = _mm256_mul_ps(vt3_1, vt4_1);
+
+    // Store the results.
+    _mm256_storeu_ps(output, vy0);
+    _mm256_storeu_ps(output + 8, vy1);
+    output += 16;
+  }
+  for (; batch >= 8 * sizeof(float); batch -= 8 * sizeof(float)) {
+    const __m256 vx = _mm256_loadu_ps(input);
+    input += 8;
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0 = _mm256_rsqrt_ps(vx);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1 = _mm256_mul_ps(vt0, vt0);
+    const __m256 vt2 = _mm256_mul_ps(vx, vt1);
+    const __m256 vt3 = _mm256_sub_ps(vthree, vt2);
+    const __m256 vt4 = _mm256_mul_ps(vhalf, vt0);
+    const __m256 vy = _mm256_mul_ps(vt3, vt4);
+
+    _mm256_storeu_ps(output, vy);
+    output += 8;
+  }
+  if XNN_UNLIKELY(batch != 0) {
+    assert(batch >= 1 * sizeof(float));
+    assert(batch <= 7 * sizeof(float));
+    const __m256i vmask = _mm256_loadu_si256((const __m256i*)((uintptr_t) &params->avx.mask_table[7] - batch));
+
+    const __m256 vx = _mm256_maskload_ps(input, vmask);
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0 = _mm256_rsqrt_ps(vx);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1 = _mm256_mul_ps(vt0, vt0);
+    const __m256 vt2 = _mm256_mul_ps(vx, vt1);
+    const __m256 vt3 = _mm256_sub_ps(vthree, vt2);
+    const __m256 vt4 = _mm256_mul_ps(vhalf, vt0);
+    __m256 vy = _mm256_mul_ps(vt3, vt4);
+
+    __m128 vy_lo = _mm256_castps256_ps128(vy);
+    if (batch & (4 * sizeof(float))) {
+      _mm_storeu_ps(output, vy_lo);
+      vy_lo = _mm256_extractf128_ps(vy, 1);
+      output += 4;
+    }
+    if (batch & (2 * sizeof(float))) {
+      _mm_storel_pi((__m64*) output, vy_lo);
+      vy_lo = _mm_movehl_ps(vy_lo, vy_lo);
+      output += 2;
+    }
+    if (batch & (1 * sizeof(float))) {
+      _mm_store_ss(output, vy_lo);
+    }
+  }
+}
+
 void xnn_f32_vsigmoid_ukernel__avx_rr2_p5_nr2_u40(
     size_t batch,
     const float* input,
@@ -5853,31 +5945,97 @@ void xnn_f32_vsigmoid_ukernel__avx_rr2_p5_nr2_u40(
   }
 }
 
-void xnn_f32_vsqrt_ukernel__avx_sqrt_u8(
-    size_t batch,
-    const float* input,
-    float* output,
+void xnn_f32_vsqrt_ukernel__avx_rsqrt_u16(
+    size_t batch, const float* input, float* output,
     const union xnn_f32_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
+    XNN_OOB_READS {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
+  // Constants for the Newton-Raphson iteration.
+  const __m256 kThree = _mm256_load_ps(params->avx.three);
+  const __m256 kHalf = _mm256_load_ps(params->avx.half);
+
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    const __m256 vx0 = _mm256_loadu_ps(input);
+    const __m256 vx1 = _mm256_loadu_ps(input + 8);
+    input += 16;
+
+    // Create a mask of the +/-0 inputs, which will be flushed to zero later.
+    const __m256 vinf_mask_0 = _mm256_cmp_ps(vx0, _mm256_setzero_ps(), _CMP_EQ_OQ);
+    const __m256 vinf_mask_1 = _mm256_cmp_ps(vx1, _mm256_setzero_ps(), _CMP_EQ_OQ);
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0_0 = _mm256_rsqrt_ps(vx0);
+    const __m256 vt0_1 = _mm256_rsqrt_ps(vx1);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1_0 = _mm256_mul_ps(vt0_0, vt0_0);
+    const __m256 vt1_1 = _mm256_mul_ps(vt0_1, vt0_1);
+    const __m256 vt2_0 = _mm256_mul_ps(vx0, vt1_0);
+    const __m256 vt2_1 = _mm256_mul_ps(vx1, vt1_1);
+    const __m256 vt3_0 = _mm256_sub_ps(kThree, vt2_0);
+    const __m256 vt3_1 = _mm256_sub_ps(kThree, vt2_1);
+    const __m256 vt4_0 = _mm256_mul_ps(kHalf, vt0_0);
+    const __m256 vt4_1 = _mm256_mul_ps(kHalf, vt0_1);
+    const __m256 vt5_0 = _mm256_mul_ps(vt3_0, vt4_0);
+    const __m256 vt5_1 = _mm256_mul_ps(vt3_1, vt4_1);
+    const __m256 vt6_0 = _mm256_andnot_ps(vinf_mask_0, vt5_0);
+    const __m256 vt6_1 = _mm256_andnot_ps(vinf_mask_1, vt5_1);
+    const __m256 vy0 = _mm256_mul_ps(vx0, vt6_0);
+    const __m256 vy1 = _mm256_mul_ps(vx1, vt6_1);
+
+    // Store the results.
+    _mm256_storeu_ps(output, vy0);
+    _mm256_storeu_ps(output + 8, vy1);
+    output += 16;
+  }
   for (; batch >= 8 * sizeof(float); batch -= 8 * sizeof(float)) {
     const __m256 vx = _mm256_loadu_ps(input);
     input += 8;
-    const __m256 vy = _mm256_sqrt_ps(vx);
+
+    // Create a mask of the +/-0 inputs, which will be flushed to zero later.
+    const __m256 vinf_mask = _mm256_cmp_ps(vx, _mm256_setzero_ps(), _CMP_EQ_OQ);
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0 = _mm256_rsqrt_ps(vx);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1 = _mm256_mul_ps(vt0, vt0);
+    const __m256 vt2 = _mm256_mul_ps(vx, vt1);
+    const __m256 vt3 = _mm256_sub_ps(kThree, vt2);
+    const __m256 vt4 = _mm256_mul_ps(kHalf, vt0);
+    const __m256 vt5 = _mm256_mul_ps(vt3, vt4);
+    const __m256 vt6 = _mm256_andnot_ps(vinf_mask, vt5);
+    const __m256 vy = _mm256_mul_ps(vx, vt6);
+
     _mm256_storeu_ps(output, vy);
     output += 8;
   }
   if XNN_UNLIKELY(batch != 0) {
     assert(batch >= 1 * sizeof(float));
     assert(batch <= 7 * sizeof(float));
-    const __m256i vmask = _mm256_loadu_si256((const __m256i*) ((uintptr_t) &params->avx.mask_table[7] - batch));
+    const __m256i vmask = _mm256_loadu_si256(
+        (const __m256i*)((uintptr_t)&params->avx.mask_table[7] - batch));
 
     const __m256 vx = _mm256_maskload_ps(input, vmask);
-    const __m256 vy = _mm256_sqrt_ps(vx);
+
+    // Create a mask of the +/-0 inputs, which will be flushed to zero later.
+    const __m256 vinf_mask = _mm256_cmp_ps(vx, _mm256_setzero_ps(), _CMP_EQ_OQ);
+
+    // Generate the initial 12-bit approximation.
+    const __m256 vt0 = _mm256_rsqrt_ps(vx);
+
+    // Do a single Newton-Raphson step as described above.
+    const __m256 vt1 = _mm256_mul_ps(vt0, vt0);
+    const __m256 vt2 = _mm256_mul_ps(vx, vt1);
+    const __m256 vt3 = _mm256_sub_ps(kThree, vt2);
+    const __m256 vt4 = _mm256_mul_ps(kHalf, vt0);
+    const __m256 vt5 = _mm256_mul_ps(vt3, vt4);
+    const __m256 vt6 = _mm256_andnot_ps(vinf_mask, vt5);
+    __m256 vy = _mm256_mul_ps(vx, vt6);
 
     __m128 vy_lo = _mm256_castps256_ps128(vy);
     if (batch & (4 * sizeof(float))) {
@@ -5896,243 +6054,106 @@ void xnn_f32_vsqrt_ukernel__avx_sqrt_u8(
   }
 }
 
-void xnn_f32_vtanh_ukernel__avx_expm1minus_rr1_lut4_p4h2ts_perm_div_u48(
+void xnn_f32_vtanh_ukernel__avx_rational_9_6_div_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
-  const __m256 vsign_mask = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.sign_mask);
-  const __m256 vsat_cutoff = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.sat_cutoff);
-  const __m256 vlog2e = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.log2e);
-  const __m256 vmagic_bias = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.magic_bias);
-  const __m128 vtable = _mm_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.table);
-  const __m256 vminus_ln2 = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.minus_ln2);
-  const __m256 vc4 = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.c4);
-  const __m256 vc3 = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.c3);
-  const __m256 vc2 = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.c2);
-  const __m256 vtwo = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.two);
-  const __m256 vminus_one = _mm256_load_ps(params->avx_expm1minus_rr1_lut4_p4h2_perm.minus_one);
+  // Cap the inputs to this value as `tanh(x)` will always be `+/-1.0f` beyond
+  // this point. This value is chosen as the first floating point number as of
+  // which the interpolation returns 1.0f.
+  const __m256 vmax_x = _mm256_set1_ps(params->avx_rational_9_6.max_abs_x);
+  const __m256 vmin_x = _mm256_set1_ps(-params->avx_rational_9_6.max_abs_x);
+  
+  // The monomial coefficients of the numerator polynomial (odd).
+  const __m256 valpha_1 = _mm256_set1_ps(params->avx_rational_9_6.alpha_1);
+  const __m256 valpha_3 = _mm256_set1_ps(params->avx_rational_9_6.alpha_3);
+  const __m256 valpha_5 = _mm256_set1_ps(params->avx_rational_9_6.alpha_5);
+  const __m256 valpha_7 = _mm256_set1_ps(params->avx_rational_9_6.alpha_7);
+  const __m256 valpha_9 = _mm256_set1_ps(params->avx_rational_9_6.alpha_9);
 
-  for (; batch >= 48 * sizeof(float); batch -= 48 * sizeof(float)) {
-    const __m256 vx0 = _mm256_loadu_ps(input);
-    const __m256 vx1 = _mm256_loadu_ps(input + 8);
-    const __m256 vx2 = _mm256_loadu_ps(input + 16);
-    const __m256 vx3 = _mm256_loadu_ps(input + 24);
-    const __m256 vx4 = _mm256_loadu_ps(input + 32);
-    const __m256 vx5 = _mm256_loadu_ps(input + 40);
-    input += 48;
+  // The monomial coefficients of the denominator polynomial (even).
+  const __m256 vbeta_0 = _mm256_set1_ps(params->avx_rational_9_6.beta_0);
+  const __m256 vbeta_2 = _mm256_set1_ps(params->avx_rational_9_6.beta_2);
+  const __m256 vbeta_4 = _mm256_set1_ps(params->avx_rational_9_6.beta_4);
+  const __m256 vbeta_6 = _mm256_set1_ps(params->avx_rational_9_6.beta_6);
 
-    __m256 vz0 = _mm256_or_ps(vx0, vsign_mask);
-    __m256 vz1 = _mm256_or_ps(vx1, vsign_mask);
-    __m256 vz2 = _mm256_or_ps(vx2, vsign_mask);
-    __m256 vz3 = _mm256_or_ps(vx3, vsign_mask);
-    __m256 vz4 = _mm256_or_ps(vx4, vsign_mask);
-    __m256 vz5 = _mm256_or_ps(vx5, vsign_mask);
 
-    const __m256 vinvsignx0 = _mm256_xor_ps(vx0, vz0);
-    vz0 = _mm256_max_ps(vsat_cutoff, vz0);
-    const __m256 vinvsignx1 = _mm256_xor_ps(vx1, vz1);
-    vz1 = _mm256_max_ps(vsat_cutoff, vz1);
-    const __m256 vinvsignx2 = _mm256_xor_ps(vx2, vz2);
-    vz2 = _mm256_max_ps(vsat_cutoff, vz2);
-    const __m256 vinvsignx3 = _mm256_xor_ps(vx3, vz3);
-    vz3 = _mm256_max_ps(vsat_cutoff, vz3);
-    const __m256 vinvsignx4 = _mm256_xor_ps(vx4, vz4);
-    vz4 = _mm256_max_ps(vsat_cutoff, vz4);
-    const __m256 vinvsignx5 = _mm256_xor_ps(vx5, vz5);
-    vz5 = _mm256_max_ps(vsat_cutoff, vz5);
+  for (; batch >= 16 * sizeof(float); batch -= 16 * sizeof(float)) {
+    __m256 vx_0 = _mm256_loadu_ps(input);
+    __m256 vx_1 = _mm256_loadu_ps(input + 8);
+    input += 16;
 
-    __m256 vn0 = _mm256_add_ps(_mm256_mul_ps(vz0, vlog2e), vmagic_bias);
-    __m256 vn1 = _mm256_add_ps(_mm256_mul_ps(vz1, vlog2e), vmagic_bias);
-    __m256 vn2 = _mm256_add_ps(_mm256_mul_ps(vz2, vlog2e), vmagic_bias);
-    __m256 vn3 = _mm256_add_ps(_mm256_mul_ps(vz3, vlog2e), vmagic_bias);
-    __m256 vn4 = _mm256_add_ps(_mm256_mul_ps(vz4, vlog2e), vmagic_bias);
-    __m256 vn5 = _mm256_add_ps(_mm256_mul_ps(vz5, vlog2e), vmagic_bias);
+    // Clamp the inputs to the interpolation range.
+    vx_0 = _mm256_min_ps(vmax_x, vx_0);
+    vx_1 = _mm256_min_ps(vmax_x, vx_1);
+    vx_0 = _mm256_max_ps(vmin_x, vx_0);
+    vx_1 = _mm256_max_ps(vmin_x, vx_1);
 
-    const __m128 vn0_hi = _mm256_extractf128_ps(vn0, 1);
-    __m128i ve0_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn0)), 21);
-    const __m128 vn1_hi = _mm256_extractf128_ps(vn1, 1);
-    __m128i ve1_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn1)), 21);
-    const __m128 vn2_hi = _mm256_extractf128_ps(vn2, 1);
-    __m128i ve2_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn2)), 21);
-    const __m128 vn3_hi = _mm256_extractf128_ps(vn3, 1);
-    __m128i ve3_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn3)), 21);
-    const __m128 vn4_hi = _mm256_extractf128_ps(vn4, 1);
-    __m128i ve4_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn4)), 21);
-    const __m128 vn5_hi = _mm256_extractf128_ps(vn5, 1);
-    __m128i ve5_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn5)), 21);
+    // Since the polynomials are odd/even, we need x^2.
+    const __m256 vx2_0 = _mm256_mul_ps(vx_0, vx_0);
+    const __m256 vx2_1 = _mm256_mul_ps(vx_1, vx_1);
 
-    __m128i ve0_hi = _mm_slli_epi32(_mm_castps_si128(vn0_hi), 21);
-    const __m128i vl0_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn0))));
-    const __m128i vl0_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn0_hi)));
-    __m128i ve1_hi = _mm_slli_epi32(_mm_castps_si128(vn1_hi), 21);
-    const __m128i vl1_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn1))));
-    const __m128i vl1_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn1_hi)));
-    __m128i ve2_hi = _mm_slli_epi32(_mm_castps_si128(vn2_hi), 21);
-    const __m128i vl2_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn2))));
-    const __m128i vl2_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn2_hi)));
-    __m128i ve3_hi = _mm_slli_epi32(_mm_castps_si128(vn3_hi), 21);
-    const __m128i vl3_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn3))));
-    const __m128i vl3_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn3_hi)));
-    __m128i ve4_hi = _mm_slli_epi32(_mm_castps_si128(vn4_hi), 21);
-    const __m128i vl4_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn4))));
-    const __m128i vl4_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn4_hi)));
-    __m128i ve5_hi = _mm_slli_epi32(_mm_castps_si128(vn5_hi), 21);
-    const __m128i vl5_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn5))));
-    const __m128i vl5_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn5_hi)));
+    // Evaluate the numerator polynomial p.
+    __m256 vp_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, valpha_9), valpha_7);
+    __m256 vp_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, valpha_9), valpha_7);
+    vp_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vp_0), valpha_5);
+    vp_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vp_1), valpha_5);
+    vp_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vp_0), valpha_3);
+    vp_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vp_1), valpha_3);
+    vp_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vp_0), valpha_1);
+    vp_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vp_1), valpha_1);
+    vp_0 = _mm256_mul_ps(vx_0, vp_0);
+    vp_1 = _mm256_mul_ps(vx_1, vp_1);
 
-    const __m128 vs0_lo = _mm_castsi128_ps(_mm_add_epi32(ve0_lo, vl0_lo));
-    const __m128 vs0_hi = _mm_castsi128_ps(_mm_add_epi32(ve0_hi, vl0_hi));
-    const __m128 vs1_lo = _mm_castsi128_ps(_mm_add_epi32(ve1_lo, vl1_lo));
-    const __m128 vs1_hi = _mm_castsi128_ps(_mm_add_epi32(ve1_hi, vl1_hi));
-    const __m128 vs2_lo = _mm_castsi128_ps(_mm_add_epi32(ve2_lo, vl2_lo));
-    const __m128 vs2_hi = _mm_castsi128_ps(_mm_add_epi32(ve2_hi, vl2_hi));
-    const __m128 vs3_lo = _mm_castsi128_ps(_mm_add_epi32(ve3_lo, vl3_lo));
-    const __m128 vs3_hi = _mm_castsi128_ps(_mm_add_epi32(ve3_hi, vl3_hi));
-    const __m128 vs4_lo = _mm_castsi128_ps(_mm_add_epi32(ve4_lo, vl4_lo));
-    const __m128 vs4_hi = _mm_castsi128_ps(_mm_add_epi32(ve4_hi, vl4_hi));
-    const __m128 vs5_lo = _mm_castsi128_ps(_mm_add_epi32(ve5_lo, vl5_lo));
-    const __m128 vs5_hi = _mm_castsi128_ps(_mm_add_epi32(ve5_hi, vl5_hi));
+    // Evaluate the denominator polynomial q.
+    __m256 vq_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vbeta_6), vbeta_4);
+    __m256 vq_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vbeta_6), vbeta_4);
+    vq_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vq_0), vbeta_2);
+    vq_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vq_1), vbeta_2);
+    vq_0 = _mm256_add_ps(_mm256_mul_ps(vx2_0, vq_0), vbeta_0);
+    vq_1 = _mm256_add_ps(_mm256_mul_ps(vx2_1, vq_1), vbeta_0);
 
-    const __m256 vs0 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs0_lo), vs0_hi, 1);
-    const __m256 vs1 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs1_lo), vs1_hi, 1);
-    const __m256 vs2 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs2_lo), vs2_hi, 1);
-    const __m256 vs3 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs3_lo), vs3_hi, 1);
-    const __m256 vs4 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs4_lo), vs4_hi, 1);
-    const __m256 vs5 = _mm256_insertf128_ps(_mm256_castps128_ps256(vs5_lo), vs5_hi, 1);
+    // Divide the numerator by the denominator.
+    const __m256 vy_0 =  _mm256_div_ps(vp_0, vq_0);
+    const __m256 vy_1 =  _mm256_div_ps(vp_1, vq_1);
 
-    vn0 = _mm256_sub_ps(vn0, vmagic_bias);
-    vn1 = _mm256_sub_ps(vn1, vmagic_bias);
-    vn2 = _mm256_sub_ps(vn2, vmagic_bias);
-    vn3 = _mm256_sub_ps(vn3, vmagic_bias);
-    vn4 = _mm256_sub_ps(vn4, vmagic_bias);
-    vn5 = _mm256_sub_ps(vn5, vmagic_bias);
 
-    const __m256 vt0 = _mm256_add_ps(_mm256_mul_ps(vn0, vminus_ln2), vz0);
-    const __m256 vt1 = _mm256_add_ps(_mm256_mul_ps(vn1, vminus_ln2), vz1);
-    const __m256 vt2 = _mm256_add_ps(_mm256_mul_ps(vn2, vminus_ln2), vz2);
-    const __m256 vt3 = _mm256_add_ps(_mm256_mul_ps(vn3, vminus_ln2), vz3);
-    const __m256 vt4 = _mm256_add_ps(_mm256_mul_ps(vn4, vminus_ln2), vz4);
-    const __m256 vt5 = _mm256_add_ps(_mm256_mul_ps(vn5, vminus_ln2), vz5);
-
-    __m256 vp0 = _mm256_add_ps(_mm256_mul_ps(vc4, vt0), vc3);
-    __m256 vp1 = _mm256_add_ps(_mm256_mul_ps(vc4, vt1), vc3);
-    __m256 vp2 = _mm256_add_ps(_mm256_mul_ps(vc4, vt2), vc3);
-    __m256 vp3 = _mm256_add_ps(_mm256_mul_ps(vc4, vt3), vc3);
-    __m256 vp4 = _mm256_add_ps(_mm256_mul_ps(vc4, vt4), vc3);
-    __m256 vp5 = _mm256_add_ps(_mm256_mul_ps(vc4, vt5), vc3);
-    vp0 = _mm256_add_ps(_mm256_mul_ps(vp0, vt0), vc2);
-    vp1 = _mm256_add_ps(_mm256_mul_ps(vp1, vt1), vc2);
-    vp2 = _mm256_add_ps(_mm256_mul_ps(vp2, vt2), vc2);
-    vp3 = _mm256_add_ps(_mm256_mul_ps(vp3, vt3), vc2);
-    vp4 = _mm256_add_ps(_mm256_mul_ps(vp4, vt4), vc2);
-    vp5 = _mm256_add_ps(_mm256_mul_ps(vp5, vt5), vc2);
-    vp0 = _mm256_mul_ps(vp0, vt0);
-    vp1 = _mm256_mul_ps(vp1, vt1);
-    vp2 = _mm256_mul_ps(vp2, vt2);
-    vp3 = _mm256_mul_ps(vp3, vt3);
-    vp4 = _mm256_mul_ps(vp4, vt4);
-    vp5 = _mm256_mul_ps(vp5, vt5);
-
-    const __m256 vts0 = _mm256_mul_ps(vt0, vs0);
-    const __m256 vsmo0 = _mm256_add_ps(vs0, vminus_one);
-    const __m256 vts1 = _mm256_mul_ps(vt1, vs1);
-    const __m256 vsmo1 = _mm256_add_ps(vs1, vminus_one);
-    const __m256 vts2 = _mm256_mul_ps(vt2, vs2);
-    const __m256 vsmo2 = _mm256_add_ps(vs2, vminus_one);
-    const __m256 vts3 = _mm256_mul_ps(vt3, vs3);
-    const __m256 vsmo3 = _mm256_add_ps(vs3, vminus_one);
-    const __m256 vts4 = _mm256_mul_ps(vt4, vs4);
-    const __m256 vsmo4 = _mm256_add_ps(vs4, vminus_one);
-    const __m256 vts5 = _mm256_mul_ps(vt5, vs5);
-    const __m256 vsmo5 = _mm256_add_ps(vs5, vminus_one);
-
-    vp0 = _mm256_add_ps(_mm256_mul_ps(vp0, vts0), vts0);
-    vp1 = _mm256_add_ps(_mm256_mul_ps(vp1, vts1), vts1);
-    vp2 = _mm256_add_ps(_mm256_mul_ps(vp2, vts2), vts2);
-    vp3 = _mm256_add_ps(_mm256_mul_ps(vp3, vts3), vts3);
-    vp4 = _mm256_add_ps(_mm256_mul_ps(vp4, vts4), vts4);
-    vp5 = _mm256_add_ps(_mm256_mul_ps(vp5, vts5), vts5);
-    const __m256 vemo0 = _mm256_add_ps(_mm256_mul_ps(vp0, vtwo), vsmo0);
-    const __m256 vemo1 = _mm256_add_ps(_mm256_mul_ps(vp1, vtwo), vsmo1);
-    const __m256 vemo2 = _mm256_add_ps(_mm256_mul_ps(vp2, vtwo), vsmo2);
-    const __m256 vemo3 = _mm256_add_ps(_mm256_mul_ps(vp3, vtwo), vsmo3);
-    const __m256 vemo4 = _mm256_add_ps(_mm256_mul_ps(vp4, vtwo), vsmo4);
-    const __m256 vemo5 = _mm256_add_ps(_mm256_mul_ps(vp5, vtwo), vsmo5);
-
-    const __m256 vepo0 = _mm256_add_ps(vemo0, vtwo);
-    const __m256 vepo1 = _mm256_add_ps(vemo1, vtwo);
-    const __m256 vepo2 = _mm256_add_ps(vemo2, vtwo);
-    const __m256 vepo3 = _mm256_add_ps(vemo3, vtwo);
-    const __m256 vepo4 = _mm256_add_ps(vemo4, vtwo);
-    const __m256 vepo5 = _mm256_add_ps(vemo5, vtwo);
-    __m256 vy0 = _mm256_div_ps(vemo0, vepo0);
-    __m256 vy1 = _mm256_div_ps(vemo1, vepo1);
-    __m256 vy2 = _mm256_div_ps(vemo2, vepo2);
-    __m256 vy3 = _mm256_div_ps(vemo3, vepo3);
-    __m256 vy4 = _mm256_div_ps(vemo4, vepo4);
-    __m256 vy5 = _mm256_div_ps(vemo5, vepo5);
-
-    vy0 = _mm256_xor_ps(vy0, vinvsignx0);
-    vy1 = _mm256_xor_ps(vy1, vinvsignx1);
-    vy2 = _mm256_xor_ps(vy2, vinvsignx2);
-    vy3 = _mm256_xor_ps(vy3, vinvsignx3);
-    vy4 = _mm256_xor_ps(vy4, vinvsignx4);
-    vy5 = _mm256_xor_ps(vy5, vinvsignx5);
-
-    _mm256_storeu_ps(output, vy0);
-    _mm256_storeu_ps(output + 8, vy1);
-    _mm256_storeu_ps(output + 16, vy2);
-    _mm256_storeu_ps(output + 24, vy3);
-    _mm256_storeu_ps(output + 32, vy4);
-    _mm256_storeu_ps(output + 40, vy5);
-    output += 48;
+    _mm256_storeu_ps(output, vy_0);
+    _mm256_storeu_ps(output + 8, vy_1);
+    output += 16;
   }
   for (; batch >= 8 * sizeof(float); batch -= 8 * sizeof(float)) {
-    const __m256 vx = _mm256_loadu_ps(input);
+    __m256 vx = _mm256_loadu_ps(input);
     input += 8;
 
-    __m256 vz = _mm256_or_ps(vx, vsign_mask);
+    // Clamp the inputs to the interpolation range.
+    vx = _mm256_min_ps(vmax_x, vx);
+    vx = _mm256_max_ps(vmin_x, vx);
 
-    const __m256 vinvsignx = _mm256_xor_ps(vx, vz);
-    vz = _mm256_max_ps(vsat_cutoff, vz);
+    // Since the polynomials are odd/even, we need x^2.
+    const __m256 vx2 = _mm256_mul_ps(vx, vx);
 
-    __m256 vn = _mm256_add_ps(_mm256_mul_ps(vz, vlog2e), vmagic_bias);
+    // Evaluate the numerator polynomial p.
+    __m256 vp = _mm256_add_ps(_mm256_mul_ps(vx2, valpha_9), valpha_7);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_5);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_3);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_1);
+    vp = _mm256_mul_ps(vx, vp);
 
-    const __m128 vn_hi = _mm256_extractf128_ps(vn, 1);
-    __m128i ve_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn)), 21);
-    __m128i ve_hi = _mm_slli_epi32(_mm_castps_si128(vn_hi), 21);
+    // Evaluate the denominator polynomial q.
+    __m256 vq = _mm256_add_ps(_mm256_mul_ps(vx2, vbeta_6), vbeta_4);
+    vq = _mm256_add_ps(_mm256_mul_ps(vx2, vq), vbeta_2);
+    vq = _mm256_add_ps(_mm256_mul_ps(vx2, vq), vbeta_0);
 
-    const __m128i vl_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn))));
-    const __m128i vl_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn_hi)));
-
-    const __m128 vs_lo = _mm_castsi128_ps(_mm_add_epi32(ve_lo, vl_lo));
-    const __m128 vs_hi = _mm_castsi128_ps(_mm_add_epi32(ve_hi, vl_hi));
-    const __m256 vs = _mm256_insertf128_ps(_mm256_castps128_ps256(vs_lo), vs_hi, 1);
-
-    vn = _mm256_sub_ps(vn, vmagic_bias);
-
-    const __m256 vt = _mm256_add_ps(_mm256_mul_ps(vn, vminus_ln2), vz);
-
-    __m256 vp = _mm256_add_ps(_mm256_mul_ps(vc4, vt), vc3);
-    vp = _mm256_add_ps(_mm256_mul_ps(vp, vt), vc2);
-    vp = _mm256_mul_ps(vp, vt);
-
-    const __m256 vts = _mm256_mul_ps(vt, vs);
-    const __m256 vsmo = _mm256_add_ps(vs, vminus_one);
-    vp = _mm256_add_ps(_mm256_mul_ps(vp, vts), vts);
-    const __m256 vemo = _mm256_add_ps(_mm256_mul_ps(vp, vtwo), vsmo);
-
-    const __m256 vepo = _mm256_add_ps(vemo, vtwo);
-    __m256 vy = _mm256_div_ps(vemo, vepo);
-
-    vy = _mm256_xor_ps(vy, vinvsignx);
+    // Divide the numerator by the denominator.
+    const __m256 vy =  _mm256_div_ps(vp, vq);
 
     _mm256_storeu_ps(output, vy);
     output += 8;
@@ -6140,45 +6161,32 @@ void xnn_f32_vtanh_ukernel__avx_expm1minus_rr1_lut4_p4h2ts_perm_div_u48(
   if XNN_UNLIKELY(batch != 0) {
     assert(batch >= 1 * sizeof(float));
     assert(batch <= 7 * sizeof(float));
-    const __m256i vmask = _mm256_loadu_si256((const __m256i*) ((uintptr_t) &params->avx_expm1minus_rr1_lut4_p4h2_perm.mask_table[7] - batch));
+    const __m256i vmask = _mm256_loadu_si256(
+        (const __m256i*) ((uintptr_t) &params->avx_rational_9_6.mask_table[7] - batch));
 
-    const __m256 vx = _mm256_maskload_ps(input, vmask);
+    __m256 vx = _mm256_maskload_ps(input, vmask);
 
-    __m256 vz = _mm256_or_ps(vx, vsign_mask);
+    // Clamp the inputs to the interpolation range.
+    vx = _mm256_min_ps(vmax_x, vx);
+    vx = _mm256_max_ps(vmin_x, vx);
 
-    const __m256 vinvsignx = _mm256_xor_ps(vx, vz);
-    vz = _mm256_max_ps(vsat_cutoff, vz);
+    // Since the polynomials are odd/even, we need x^2.
+    const __m256 vx2 = _mm256_mul_ps(vx, vx);
 
-    __m256 vn = _mm256_add_ps(_mm256_mul_ps(vz, vlog2e), vmagic_bias);
+    // Evaluate the numerator polynomial p.
+    __m256 vp = _mm256_add_ps(_mm256_mul_ps(vx2, valpha_9), valpha_7);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_5);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_3);
+    vp = _mm256_add_ps(_mm256_mul_ps(vx2, vp), valpha_1);
+    vp = _mm256_mul_ps(vx, vp);
 
-    const __m128 vn_hi = _mm256_extractf128_ps(vn, 1);
-    __m128i ve_lo = _mm_slli_epi32(_mm_castps_si128(_mm256_castps256_ps128(vn)), 21);
-    __m128i ve_hi = _mm_slli_epi32(_mm_castps_si128(vn_hi), 21);
+    // Evaluate the denominator polynomial q.
+    __m256 vq = _mm256_add_ps(_mm256_mul_ps(vx2, vbeta_6), vbeta_4);
+    vq = _mm256_add_ps(_mm256_mul_ps(vx2, vq), vbeta_2);
+    vq = _mm256_add_ps(_mm256_mul_ps(vx2, vq), vbeta_0);
 
-    const __m128i vl_lo = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(_mm256_castps256_ps128(vn))));
-    const __m128i vl_hi = _mm_castps_si128(_mm_permutevar_ps(vtable, _mm_castps_si128(vn_hi)));
-
-    const __m128 vs_lo = _mm_castsi128_ps(_mm_add_epi32(ve_lo, vl_lo));
-    const __m128 vs_hi = _mm_castsi128_ps(_mm_add_epi32(ve_hi, vl_hi));
-    const __m256 vs = _mm256_insertf128_ps(_mm256_castps128_ps256(vs_lo), vs_hi, 1);
-
-    vn = _mm256_sub_ps(vn, vmagic_bias);
-
-    const __m256 vt = _mm256_add_ps(_mm256_mul_ps(vn, vminus_ln2), vz);
-
-    __m256 vp = _mm256_add_ps(_mm256_mul_ps(vc4, vt), vc3);
-    vp = _mm256_add_ps(_mm256_mul_ps(vp, vt), vc2);
-    vp = _mm256_mul_ps(vp, vt);
-
-    const __m256 vts = _mm256_mul_ps(vt, vs);
-    const __m256 vsmo = _mm256_add_ps(vs, vminus_one);
-    vp = _mm256_add_ps(_mm256_mul_ps(vp, vts), vts);
-    const __m256 vemo = _mm256_add_ps(_mm256_mul_ps(vp, vtwo), vsmo);
-
-    const __m256 vepo = _mm256_add_ps(vemo, vtwo);
-    __m256 vy = _mm256_div_ps(vemo, vepo);
-
-    vy = _mm256_xor_ps(vy, vinvsignx);
+    // Divide the numerator by the denominator.
+    const __m256 vy =  _mm256_div_ps(vp, vq);
 
     __m128 vy_lo = _mm256_castps256_ps128(vy);
     if (batch & (4 * sizeof(float))) {
@@ -8954,507 +8962,6 @@ void xnn_qs8_f32_vcvt_ukernel__avx_u32(
       _mm_store_ss(output, vy);
     }
   }
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_1x4c8__avx_ld128(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(kc % sizeof(int8_t) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  kc = round_up_po2(kc, 8 * sizeof(int8_t));
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-
-  do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
-    w = (const int32_t*) w + 4;
-
-    size_t k = kc;
-
-
-    while (k >= 8 * sizeof(int8_t)) {
-      const __m128i va0 = _mm_loadl_epi64((const __m128i*) a0);
-      const __m128i vxa0 = _mm_cvtepi8_epi16(va0);
-      a0 += 8;
-
-      const __m128i vb01 = _mm_load_si128((const __m128i*) w);
-
-      const __m128i vxbm1 = _mm_unpackhi_epi8(vb01, vb01);
-      const __m128i vxb0 = _mm_cvtepi8_epi16(vb01);
-      const __m128i vxb1 = _mm_srai_epi16(vxbm1, 8);
-
-      vacc0x0 = _mm_add_epi32(vacc0x0, _mm_madd_epi16(vxa0, vxb0));
-      vacc0x1 = _mm_add_epi32(vacc0x1, _mm_madd_epi16(vxa0, vxb1));
-      const __m128i vb23 = _mm_load_si128((const __m128i*) ((const int8_t*) w + 16));
-
-      const __m128i vxbm3 = _mm_unpackhi_epi8(vb23, vb23);
-      const __m128i vxb2 = _mm_cvtepi8_epi16(vb23);
-      const __m128i vxb3 = _mm_srai_epi16(vxbm3, 8);
-
-      vacc0x2 = _mm_add_epi32(vacc0x2, _mm_madd_epi16(vxa0, vxb2));
-      vacc0x3 = _mm_add_epi32(vacc0x3, _mm_madd_epi16(vxa0, vxb3));
-
-      w = (const int8_t*) w + 32;
-      k -= 8 * sizeof(int8_t);
-    }
-
-    const __m128i vacc0x01 = _mm_hadd_epi32(vacc0x0, vacc0x1);
-    const __m128i vacc0x23 = _mm_hadd_epi32(vacc0x2, vacc0x3);
-
-    __m128i vacc0x0123 = _mm_hadd_epi32(vacc0x01, vacc0x23);
-
-    __m128 vscaled0x0123 = _mm_cvtepi32_ps(vacc0x0123);
-
-    const __m128 vscale = _mm_load_ps(params->fp32_sse4.scale);
-    vscaled0x0123 = _mm_mul_ps(vscaled0x0123, vscale);
-
-    const __m128 voutput_max_less_zero_point = _mm_load_ps(params->fp32_sse4.output_max_less_zero_point);
-    vscaled0x0123 = _mm_min_ps(vscaled0x0123, voutput_max_less_zero_point);
-
-    vacc0x0123 = _mm_cvtps_epi32(vscaled0x0123);
-
-    const __m128i voutput_zero_point = _mm_load_si128((const __m128i*) params->fp32_sse4.output_zero_point);
-    __m128i vacc00x0123 = _mm_adds_epi16(_mm_packs_epi32(vacc0x0123, vacc0x0123), voutput_zero_point);
-
-
-    __m128i vout = _mm_packs_epi16(vacc00x0123, vacc00x0123);
-
-    vout = _mm_max_epi8(vout, _mm_load_si128((const __m128i*) params->fp32_sse4.output_min));
-
-    if (nc >= 4) {
-      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
-        c0 += 2;
-        vout = _mm_srli_epi32(vout, 16);
-      }
-      if (nc & 1) {
-        *c0 = (int8_t) _mm_extract_epi8(vout, 0);
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_2x4c8__avx_ld128(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
-{
-  assert(mr != 0);
-  assert(mr <= 2);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(kc % sizeof(int8_t) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  kc = round_up_po2(kc, 8 * sizeof(int8_t));
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-  const int8_t* a1 = (const int8_t*) ((uintptr_t) a0 + a_stride);
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr != 2) {
-    a1 = a0;
-    c1 = c0;
-  }
-
-  do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
-    __m128i vacc1x0 = vacc0x0;
-    __m128i vacc1x1 = vacc0x1;
-    __m128i vacc1x2 = vacc0x2;
-    __m128i vacc1x3 = vacc0x3;
-    w = (const int32_t*) w + 4;
-
-    size_t k = kc;
-
-
-    while (k >= 8 * sizeof(int8_t)) {
-      const __m128i va0 = _mm_loadl_epi64((const __m128i*) a0);
-      const __m128i vxa0 = _mm_cvtepi8_epi16(va0);
-      a0 += 8;
-      const __m128i va1 = _mm_loadl_epi64((const __m128i*) a1);
-      const __m128i vxa1 = _mm_cvtepi8_epi16(va1);
-      a1 += 8;
-
-      const __m128i vb01 = _mm_load_si128((const __m128i*) w);
-
-      const __m128i vxbm1 = _mm_unpackhi_epi8(vb01, vb01);
-      const __m128i vxb0 = _mm_cvtepi8_epi16(vb01);
-      const __m128i vxb1 = _mm_srai_epi16(vxbm1, 8);
-
-      vacc0x0 = _mm_add_epi32(vacc0x0, _mm_madd_epi16(vxa0, vxb0));
-      vacc0x1 = _mm_add_epi32(vacc0x1, _mm_madd_epi16(vxa0, vxb1));
-      vacc1x0 = _mm_add_epi32(vacc1x0, _mm_madd_epi16(vxa1, vxb0));
-      vacc1x1 = _mm_add_epi32(vacc1x1, _mm_madd_epi16(vxa1, vxb1));
-      const __m128i vb23 = _mm_load_si128((const __m128i*) ((const int8_t*) w + 16));
-
-      const __m128i vxbm3 = _mm_unpackhi_epi8(vb23, vb23);
-      const __m128i vxb2 = _mm_cvtepi8_epi16(vb23);
-      const __m128i vxb3 = _mm_srai_epi16(vxbm3, 8);
-
-      vacc0x2 = _mm_add_epi32(vacc0x2, _mm_madd_epi16(vxa0, vxb2));
-      vacc0x3 = _mm_add_epi32(vacc0x3, _mm_madd_epi16(vxa0, vxb3));
-      vacc1x2 = _mm_add_epi32(vacc1x2, _mm_madd_epi16(vxa1, vxb2));
-      vacc1x3 = _mm_add_epi32(vacc1x3, _mm_madd_epi16(vxa1, vxb3));
-
-      w = (const int8_t*) w + 32;
-      k -= 8 * sizeof(int8_t);
-    }
-
-    const __m128i vacc0x01 = _mm_hadd_epi32(vacc0x0, vacc0x1);
-    const __m128i vacc0x23 = _mm_hadd_epi32(vacc0x2, vacc0x3);
-    const __m128i vacc1x01 = _mm_hadd_epi32(vacc1x0, vacc1x1);
-    const __m128i vacc1x23 = _mm_hadd_epi32(vacc1x2, vacc1x3);
-
-    __m128i vacc0x0123 = _mm_hadd_epi32(vacc0x01, vacc0x23);
-    __m128i vacc1x0123 = _mm_hadd_epi32(vacc1x01, vacc1x23);
-
-    __m128 vscaled0x0123 = _mm_cvtepi32_ps(vacc0x0123);
-    __m128 vscaled1x0123 = _mm_cvtepi32_ps(vacc1x0123);
-
-    const __m128 vscale = _mm_load_ps(params->fp32_sse4.scale);
-    vscaled0x0123 = _mm_mul_ps(vscaled0x0123, vscale);
-    vscaled1x0123 = _mm_mul_ps(vscaled1x0123, vscale);
-
-    const __m128 voutput_max_less_zero_point = _mm_load_ps(params->fp32_sse4.output_max_less_zero_point);
-    vscaled0x0123 = _mm_min_ps(vscaled0x0123, voutput_max_less_zero_point);
-    vscaled1x0123 = _mm_min_ps(vscaled1x0123, voutput_max_less_zero_point);
-
-    vacc0x0123 = _mm_cvtps_epi32(vscaled0x0123);
-    vacc1x0123 = _mm_cvtps_epi32(vscaled1x0123);
-
-    const __m128i voutput_zero_point = _mm_load_si128((const __m128i*) params->fp32_sse4.output_zero_point);
-    __m128i vacc01x0123 = _mm_adds_epi16(_mm_packs_epi32(vacc0x0123, vacc1x0123), voutput_zero_point);
-
-
-    __m128i vout = _mm_packs_epi16(vacc01x0123, vacc01x0123);
-
-    vout = _mm_max_epi8(vout, _mm_load_si128((const __m128i*) params->fp32_sse4.output_min));
-
-    if (nc >= 4) {
-      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
-      unaligned_store_u32(c1, (uint32_t) _mm_extract_epi32(vout, 1));
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-      a1 = (const int8_t*) ((uintptr_t) a1 - kc);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
-        c0 += 2;
-        unaligned_store_u16(c1, (uint16_t) _mm_extract_epi16(vout, 2));
-        c1 += 2;
-        vout = _mm_srli_epi32(vout, 16);
-      }
-      if (nc & 1) {
-        *c0 = (int8_t) _mm_extract_epi8(vout, 0);
-        *c1 = (int8_t) _mm_extract_epi8(vout, 4);
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_1x4c8__avx_ld128(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (1 * sizeof(void*)) == 0);
-  assert(a_offset % sizeof(int8_t) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  kc = round_up_po2(kc, 8 * sizeof(int8_t));
-  int8_t* c0 = c;
-
-  do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
-    w = (const int32_t*) w + 4;
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      a += 1;
-
-      size_t k = 0;
-      while (k < kc) {
-        const __m128i va0 = _mm_loadl_epi64((const __m128i*) a0);
-        const __m128i vxa0 = _mm_cvtepi8_epi16(va0);
-        a0 += 8;
-
-        const __m128i vb01 = _mm_load_si128((const __m128i*) w);
-        const __m128i vxb0 = _mm_cvtepi8_epi16(vb01);
-        const __m128i vxb1 = _mm_srai_epi16(_mm_unpackhi_epi8(vb01, vb01), 8);
-
-        vacc0x0 = _mm_add_epi32(vacc0x0, _mm_madd_epi16(vxa0, vxb0));
-        vacc0x1 = _mm_add_epi32(vacc0x1, _mm_madd_epi16(vxa0, vxb1));
-        const __m128i vb23 = _mm_load_si128((const __m128i*) ((const int8_t*) w + 16));
-        const __m128i vxb2 = _mm_cvtepi8_epi16(vb23);
-        const __m128i vxb3 = _mm_srai_epi16(_mm_unpackhi_epi8(vb23, vb23), 8);
-
-        vacc0x2 = _mm_add_epi32(vacc0x2, _mm_madd_epi16(vxa0, vxb2));
-        vacc0x3 = _mm_add_epi32(vacc0x3, _mm_madd_epi16(vxa0, vxb3));
-
-        w = (const void*) ((const int8_t*) w + 32);
-        k += 8 * sizeof(int8_t);
-      }
-      p -= 1 * sizeof(void*);
-    } while (p != 0);
-
-    const __m128i vacc0x01 = _mm_hadd_epi32(vacc0x0, vacc0x1);
-    const __m128i vacc0x23 = _mm_hadd_epi32(vacc0x2, vacc0x3);
-
-    __m128i vacc0x0123 = _mm_hadd_epi32(vacc0x01, vacc0x23);
-
-    __m128 vscaled0x0123 = _mm_cvtepi32_ps(vacc0x0123);
-
-    const __m128 vscale = _mm_load_ps(params->fp32_sse4.scale);
-    vscaled0x0123 = _mm_mul_ps(vscaled0x0123, vscale);
-
-    const __m128 voutput_max_less_zero_point = _mm_load_ps(params->fp32_sse4.output_max_less_zero_point);
-    vscaled0x0123 = _mm_min_ps(vscaled0x0123, voutput_max_less_zero_point);
-
-    vacc0x0123 = _mm_cvtps_epi32(vscaled0x0123);
-
-    const __m128i voutput_zero_point = _mm_load_si128((const __m128i*) params->fp32_sse4.output_zero_point);
-    __m128i vacc00x0123 = _mm_adds_epi16(_mm_packs_epi32(vacc0x0123, vacc0x0123), voutput_zero_point);
-
-
-    __m128i vout = _mm_packs_epi16(vacc00x0123, vacc00x0123);
-
-    vout = _mm_max_epi8(vout, _mm_load_si128((const __m128i*) params->fp32_sse4.output_min));
-
-    if (nc >= 4) {
-      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
-        c0 += 2;
-        vout = _mm_srli_epi32(vout, 16);
-      }
-      if (nc & 1) {
-        *c0 = (int8_t) _mm_extract_epi8(vout, 0);
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_2x4c8__avx_ld128(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
-{
-  assert(mr != 0);
-  assert(mr <= 2);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (2 * sizeof(void*)) == 0);
-  assert(a_offset % sizeof(int8_t) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  kc = round_up_po2(kc, 8 * sizeof(int8_t));
-  int8_t* c0 = c;
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr != 2) {
-    c1 = c0;
-  }
-
-  do {
-    __m128i vacc0x0 = _mm_cvtsi32_si128(((const int*) w)[0]);
-    __m128i vacc0x1 = _mm_cvtsi32_si128(((const int*) w)[1]);
-    __m128i vacc0x2 = _mm_cvtsi32_si128(((const int*) w)[2]);
-    __m128i vacc0x3 = _mm_cvtsi32_si128(((const int*) w)[3]);
-    __m128i vacc1x0 = vacc0x0;
-    __m128i vacc1x1 = vacc0x1;
-    __m128i vacc1x2 = vacc0x2;
-    __m128i vacc1x3 = vacc0x3;
-    w = (const int32_t*) w + 4;
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      const int8_t* restrict a1 = a[1];
-      if XNN_UNPREDICTABLE(a1 != zero) {
-        a1 = (const int8_t*) ((uintptr_t) a1 + a_offset);
-      }
-      a += 2;
-
-      size_t k = 0;
-      while (k < kc) {
-        const __m128i va0 = _mm_loadl_epi64((const __m128i*) a0);
-        const __m128i vxa0 = _mm_cvtepi8_epi16(va0);
-        a0 += 8;
-        const __m128i va1 = _mm_loadl_epi64((const __m128i*) a1);
-        const __m128i vxa1 = _mm_cvtepi8_epi16(va1);
-        a1 += 8;
-
-        const __m128i vb01 = _mm_load_si128((const __m128i*) w);
-        const __m128i vxb0 = _mm_cvtepi8_epi16(vb01);
-        const __m128i vxb1 = _mm_srai_epi16(_mm_unpackhi_epi8(vb01, vb01), 8);
-
-        vacc0x0 = _mm_add_epi32(vacc0x0, _mm_madd_epi16(vxa0, vxb0));
-        vacc0x1 = _mm_add_epi32(vacc0x1, _mm_madd_epi16(vxa0, vxb1));
-        vacc1x0 = _mm_add_epi32(vacc1x0, _mm_madd_epi16(vxa1, vxb0));
-        vacc1x1 = _mm_add_epi32(vacc1x1, _mm_madd_epi16(vxa1, vxb1));
-        const __m128i vb23 = _mm_load_si128((const __m128i*) ((const int8_t*) w + 16));
-        const __m128i vxb2 = _mm_cvtepi8_epi16(vb23);
-        const __m128i vxb3 = _mm_srai_epi16(_mm_unpackhi_epi8(vb23, vb23), 8);
-
-        vacc0x2 = _mm_add_epi32(vacc0x2, _mm_madd_epi16(vxa0, vxb2));
-        vacc0x3 = _mm_add_epi32(vacc0x3, _mm_madd_epi16(vxa0, vxb3));
-        vacc1x2 = _mm_add_epi32(vacc1x2, _mm_madd_epi16(vxa1, vxb2));
-        vacc1x3 = _mm_add_epi32(vacc1x3, _mm_madd_epi16(vxa1, vxb3));
-
-        w = (const void*) ((const int8_t*) w + 32);
-        k += 8 * sizeof(int8_t);
-      }
-      p -= 2 * sizeof(void*);
-    } while (p != 0);
-
-    const __m128i vacc0x01 = _mm_hadd_epi32(vacc0x0, vacc0x1);
-    const __m128i vacc0x23 = _mm_hadd_epi32(vacc0x2, vacc0x3);
-    const __m128i vacc1x01 = _mm_hadd_epi32(vacc1x0, vacc1x1);
-    const __m128i vacc1x23 = _mm_hadd_epi32(vacc1x2, vacc1x3);
-
-    __m128i vacc0x0123 = _mm_hadd_epi32(vacc0x01, vacc0x23);
-    __m128i vacc1x0123 = _mm_hadd_epi32(vacc1x01, vacc1x23);
-
-    __m128 vscaled0x0123 = _mm_cvtepi32_ps(vacc0x0123);
-    __m128 vscaled1x0123 = _mm_cvtepi32_ps(vacc1x0123);
-
-    const __m128 vscale = _mm_load_ps(params->fp32_sse4.scale);
-    vscaled0x0123 = _mm_mul_ps(vscaled0x0123, vscale);
-    vscaled1x0123 = _mm_mul_ps(vscaled1x0123, vscale);
-
-    const __m128 voutput_max_less_zero_point = _mm_load_ps(params->fp32_sse4.output_max_less_zero_point);
-    vscaled0x0123 = _mm_min_ps(vscaled0x0123, voutput_max_less_zero_point);
-    vscaled1x0123 = _mm_min_ps(vscaled1x0123, voutput_max_less_zero_point);
-
-    vacc0x0123 = _mm_cvtps_epi32(vscaled0x0123);
-    vacc1x0123 = _mm_cvtps_epi32(vscaled1x0123);
-
-    const __m128i voutput_zero_point = _mm_load_si128((const __m128i*) params->fp32_sse4.output_zero_point);
-    __m128i vacc01x0123 = _mm_adds_epi16(_mm_packs_epi32(vacc0x0123, vacc1x0123), voutput_zero_point);
-
-
-    __m128i vout = _mm_packs_epi16(vacc01x0123, vacc01x0123);
-
-    vout = _mm_max_epi8(vout, _mm_load_si128((const __m128i*) params->fp32_sse4.output_min));
-
-    if (nc >= 4) {
-      unaligned_store_u32(c1, (uint32_t) _mm_extract_epi32(vout, 1));
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-      unaligned_store_u32(c0, (uint32_t) _mm_cvtsi128_si32(vout));
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        unaligned_store_u16(c1, (uint16_t) _mm_extract_epi16(vout, 2));
-        c1 += 2;
-        unaligned_store_u16(c0, (uint16_t) _mm_extract_epi16(vout, 0));
-        c0 += 2;
-        vout = _mm_srli_epi32(vout, 16);
-      }
-      if (nc & 1) {
-        *c1 = (int8_t) _mm_extract_epi8(vout, 4);
-        *c0 = (int8_t) _mm_extract_epi8(vout, 0);
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
 }
 
 void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_25p16c__avx_mul16_add16(
@@ -16285,8 +15792,8 @@ void xnn_x32_transposec_ukernel__8x8_reuse_multi_avx(
     size_t block_height,
     const union xnn_x32_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(float));
-  assert(input_stride >= block_width * sizeof(float));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(float));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(float));
 
   const size_t tile_height = 8;
   const size_t tile_width = 8;
@@ -16521,8 +16028,8 @@ void xnn_x64_transposec_ukernel__4x4_reuse_multi_avx(
     size_t block_height,
     const union xnn_x64_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(double));
-  assert(input_stride >= block_width * sizeof(double));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(double));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(double));
 
   const size_t tile_height = 4;
   const size_t tile_width = 4;

@@ -6,6 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_SHARED_IMAGE_MANAGER_H_
 
 #include <optional>
+
 #include "base/containers/flat_set.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/synchronization/lock.h"
@@ -78,7 +79,7 @@ class GPU_GLES2_EXPORT SharedImageManager
   // using the same |mailbox|. This is because the underlying shared image
   // compatibility also depends on the WGPUAdapter which ProduceDawn does not
   // associate with the representation.
-  // TODO(crbug.com/1147184): Revisit this in the future for WebGPU
+  // TODO(crbug.com/40730564): Revisit this in the future for WebGPU
   // multi-adapter support.
   std::unique_ptr<DawnImageRepresentation> ProduceDawn(
       const Mailbox& mailbox,
@@ -123,6 +124,10 @@ class GPU_GLES2_EXPORT SharedImageManager
   void UpdateExternalFence(const Mailbox& mailbox,
                            scoped_refptr<gfx::D3DSharedFence> external_fence);
 #endif
+
+  // Provides the usage flags supported by the given |mailbox|. Returns nullopt
+  // if no backing is registered for `mailbox`.
+  std::optional<uint32_t> GetUsageForMailbox(const Mailbox& mailbox);
 
   // Called by SharedImageRepresentation in the destructor.
   void OnRepresentationDestroyed(const Mailbox& mailbox,

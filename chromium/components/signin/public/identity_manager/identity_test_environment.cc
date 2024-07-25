@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,7 @@
 #include "components/signin/internal/identity_manager/primary_account_mutator_impl.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/test_signin_client.h"
+#include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #include "components/signin/public/identity_manager/accounts_mutator.h"
 #include "components/signin/public/identity_manager/device_accounts_synchronizer.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -456,7 +458,7 @@ void IdentityTestEnvironment::ClearPrimaryAccount() {
 }
 
 AccountInfo IdentityTestEnvironment::MakeAccountAvailable(
-    base::StringPiece email,
+    std::string_view email,
     SimpleAccountAvailabilityOptions options) {
   auto builder = CreateAccountAvailabilityOptionsBuilder();
 
@@ -513,6 +515,24 @@ void IdentityTestEnvironment::SetCookieAccounts(
                             cookie_accounts);
 }
 
+void IdentityTestEnvironment::TriggerListAccount() {
+  const AccountsInCookieJarInfo& cookie_jar =
+      identity_manager()->GetAccountsInCookieJar();
+  // Construct the cookie params with the actual cookies in the cookie jar.
+  std::vector<CookieParamsForTest> cookie_params;
+  for (auto& account : cookie_jar.signed_in_accounts) {
+    cookie_params.emplace_back(account.email, account.gaia_id,
+                               /*signed_out=*/false);
+  }
+  for (auto& account : cookie_jar.signed_out_accounts) {
+    cookie_params.emplace_back(account.email, account.gaia_id,
+                               /*signed_out=*/true);
+  }
+
+  // Trigger the /ListAccount with the current cookie information.
+  SetCookieAccounts(cookie_params);
+}
+
 void IdentityTestEnvironment::SetAutomaticIssueOfAccessTokens(bool grant) {
   fake_token_service()->set_auto_post_fetch_response_on_message_loop(grant);
 }
@@ -522,7 +542,7 @@ void IdentityTestEnvironment::
         const std::string& token,
         const base::Time& expiration,
         const std::string& id_token) {
-  WaitForAccessTokenRequestIfNecessary(absl::nullopt);
+  WaitForAccessTokenRequestIfNecessary(std::nullopt);
   fake_token_service()->IssueTokenForAllPendingRequests(
       TokenResponseBuilder()
           .WithAccessToken(token)
@@ -552,7 +572,7 @@ void IdentityTestEnvironment::
         const base::Time& expiration,
         const std::string& id_token,
         const ScopeSet& scopes) {
-  WaitForAccessTokenRequestIfNecessary(absl::nullopt);
+  WaitForAccessTokenRequestIfNecessary(std::nullopt);
   fake_token_service()->IssueTokenForScope(scopes,
                                            TokenResponseBuilder()
                                                .WithAccessToken(token)
@@ -564,7 +584,7 @@ void IdentityTestEnvironment::
 void IdentityTestEnvironment::
     WaitForAccessTokenRequestIfNecessaryAndRespondWithError(
         const GoogleServiceAuthError& error) {
-  WaitForAccessTokenRequestIfNecessary(absl::nullopt);
+  WaitForAccessTokenRequestIfNecessary(std::nullopt);
   fake_token_service()->IssueErrorForAllPendingRequests(error);
 }
 
@@ -642,7 +662,7 @@ void IdentityTestEnvironment::HandleOnAccessTokenRequested(
 }
 
 void IdentityTestEnvironment::WaitForAccessTokenRequestIfNecessary(
-    absl::optional<CoreAccountId> account_id) {
+    std::optional<CoreAccountId> account_id) {
   // Handle HandleOnAccessTokenRequested getting called before
   // WaitForAccessTokenRequestIfNecessary.
   if (account_id) {
@@ -767,6 +787,15 @@ void IdentityTestEnvironment::SetTestURLLoaderFactory(
            "SigninClient properly.";
   }
   test_url_loader_factory_ = test_url_loader_factory;
+}
+
+int IdentityTestEnvironment::
+    GetNumCallsToPrepareForFetchingAccountCapabilities() {
+  return static_cast<FakeAccountCapabilitiesFetcherFactory*>(
+             identity_manager()
+                 ->GetAccountFetcherService()
+                 ->GetAccountCapabilitiesFetcherFactoryForTest())
+      ->GetNumCallsToPrepareForFetchingAccountCapabilities();
 }
 
 }  // namespace signin

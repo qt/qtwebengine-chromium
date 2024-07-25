@@ -1,4 +1,8 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "generate_cpp_files_for_headers", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
@@ -65,6 +69,15 @@ skia_filegroup(
     name = "decode_srcs",
     srcs = [
         "SkEncodedInfo.h",
+        "SkExif.h",
+    ],
+    visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "jpeg_decode_srcs",
+    srcs = [
+        "SkJpegMetadataDecoder.h",
     ],
     visibility = ["//src/codec:__pkg__"],
 )
@@ -75,4 +88,12 @@ skia_filegroup(
         "SkColorData.h",
     ],
     visibility = ["//src/opts:__pkg__"],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "SkIDChangeListener.h",
+        "SkWeakRefCnt.h",
+    ],
 )

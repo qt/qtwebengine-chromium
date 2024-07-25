@@ -4,6 +4,7 @@
 
 #include "net/filter/filter_source_stream.h"
 
+#include <string_view>
 #include <utility>
 
 #include "base/check_op.h"
@@ -89,7 +90,7 @@ FilterSourceStream::SourceType FilterSourceStream::ParseEncodingType(
     const std::string& encoding) {
   std::string lower_encoding = base::ToLowerASCII(encoding);
   static constexpr auto kEncodingMap =
-      base::MakeFixedFlatMap<base::StringPiece, SourceType>({
+      base::MakeFixedFlatMap<std::string_view, SourceType>({
           {"", TYPE_NONE},
           {kBrotli, TYPE_BROTLI},
           {kDeflate, TYPE_DEFLATE},
@@ -97,7 +98,7 @@ FilterSourceStream::SourceType FilterSourceStream::ParseEncodingType(
           {kXGZip, TYPE_GZIP},
           {kZstd, TYPE_ZSTD},
       });
-  auto* encoding_type = kEncodingMap.find(lower_encoding);
+  auto encoding_type = kEncodingMap.find(lower_encoding);
   if (encoding_type == kEncodingMap.end()) {
     return TYPE_UNKNOWN;
   }

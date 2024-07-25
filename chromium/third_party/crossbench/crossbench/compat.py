@@ -9,7 +9,7 @@ import enum
 import pathlib
 import sys
 import textwrap
-from typing import List, Optional, Tuple, NamedTuple, cast
+from typing import List, Optional, Tuple, NamedTuple, Type, TypeVar, cast
 
 import tabulate
 
@@ -42,10 +42,13 @@ class StrHelpDataMixin(NamedTuple):
   help: str
 
 
+StrEnumWithHelpT = TypeVar("StrEnumWithHelpT", bound="StrEnumWithHelp")
+
 class StrEnumWithHelp(StrHelpDataMixin, enum.Enum):
 
   @classmethod
-  def _missing_(cls, value) -> Optional[StrEnumWithHelp]:
+  def _missing_(cls: Type[StrEnumWithHelpT],
+                value) -> Optional[StrEnumWithHelpT]:
     value = str(value)
     for member in cls:  # pytype: disable=missing-parameter
       if member.value == value:

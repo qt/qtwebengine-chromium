@@ -15,17 +15,17 @@
 import {searchSegment} from '../../base/binary_search';
 import {duration, Time, time} from '../../base/time';
 import {Actions} from '../../common/actions';
-import {ProfileType} from '../../common/state';
+import {ProfileType, getLegacySelection} from '../../common/state';
 import {TrackData} from '../../common/track_data';
 import {TimelineFetcher} from '../../common/track_helper';
 import {FLAMEGRAPH_HOVERED_COLOR} from '../../frontend/flamegraph';
+import {FlamegraphDetailsPanel} from '../../frontend/flamegraph_panel';
 import {globals} from '../../frontend/globals';
 import {PanelSize} from '../../frontend/panel';
 import {TimeScale} from '../../frontend/time_scale';
 import {
   EngineProxy,
   Plugin,
-  PluginContext,
   PluginContextTrace,
   PluginDescriptor,
   Track,
@@ -47,7 +47,7 @@ const RECT_HEIGHT = 30.5;
 class PerfSamplesProfileTrack implements Track {
   private centerY = this.getHeight() / 2;
   private markerWidth = (this.getHeight() - MARGIN_TOP) / 2;
-  private hoveredTs: time|undefined = undefined;
+  private hoveredTs: time | undefined = undefined;
   private fetcher = new TimelineFetcher(this.onBoundsChange.bind(this));
   private upid: number;
   private engine: EngineProxy;
@@ -65,8 +65,11 @@ class PerfSamplesProfileTrack implements Track {
     this.fetcher.dispose();
   }
 
-  async onBoundsChange(start: time, end: time, resolution: duration):
-      Promise<Data> {
+  async onBoundsChange(
+    start: time,
+    end: time,
+    resolution: duration,
+  ): Promise<Data> {
     if (this.upid === undefined) {
       return {
         start,
@@ -103,33 +106,38 @@ class PerfSamplesProfileTrack implements Track {
   }
 
   render(ctx: CanvasRenderingContext2D, _size: PanelSize): void {
-    const {
-      visibleTimeScale,
-    } = globals.timeline;
+    const {visibleTimeScale} = globals.timeline;
     const data = this.fetcher.data;
 
     if (data === undefined) return;
 
     for (let i = 0; i < data.tsStarts.length; i++) {
       const centerX = Time.fromRaw(data.tsStarts[i]);
-      const selection = globals.state.currentSelection;
+      const selection = getLegacySelection(globals.state);
       const isHovered = this.hoveredTs === centerX;
-      const isSelected = selection !== null &&
-          selection.kind === 'PERF_SAMPLES' &&
-          selection.leftTs <= centerX && selection.rightTs >= centerX;
+      const isSelected =
+        selection !== null &&
+        selection.kind === 'PERF_SAMPLES' &&
+        selection.leftTs <= centerX &&
+        selection.rightTs >= centerX;
       const strokeWidth = isSelected ? 3 : 0;
       this.drawMarker(
-          ctx,
-          visibleTimeScale.timeToPx(centerX),
-          this.centerY,
-          isHovered,
-          strokeWidth);
+        ctx,
+        visibleTimeScale.timeToPx(centerX),
+        this.centerY,
+        isHovered,
+        strokeWidth,
+      );
     }
   }
 
   drawMarker(
-      ctx: CanvasRenderingContext2D, x: number, y: number, isHovered: boolean,
-      strokeWidth: number): void {
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    isHovered: boolean,
+    strokeWidth: number,
+  ): void {
     ctx.beginPath();
     ctx.moveTo(x, y - this.markerWidth);
     ctx.lineTo(x - this.markerWidth, y);
@@ -146,23 +154,29 @@ class PerfSamplesProfileTrack implements Track {
     }
   }
 
-  onMouseMove({x, y}: {x: number, y: number}) {
+  onMouseMove({x, y}: {x: number; y: number}) {
     const data = this.fetcher.data;
     if (data === undefined) return;
     const {visibleTimeScale} = globals.timeline;
     const time = visibleTimeScale.pxToHpTime(x);
     const [left, right] = searchSegment(data.tsStarts, time.toTime());
-    const index =
-        this.findTimestampIndex(left, visibleTimeScale, data, x, y, right);
+    const index = this.findTimestampIndex(
+      left,
+      visibleTimeScale,
+      data,
+      x,
+      y,
+      right,
+    );
     this.hoveredTs =
-        index === -1 ? undefined : Time.fromRaw(data.tsStarts[index]);
+      index === -1 ? undefined : Time.fromRaw(data.tsStarts[index]);
   }
 
   onMouseOut() {
     this.hoveredTs = undefined;
   }
 
-  onMouseClick({x, y}: {x: number, y: number}) {
+  onMouseClick({x, y}: {x: number; y: number}) {
     const data = this.fetcher.data;
     if (data === undefined) return false;
     const {visibleTimeScale} = globals.timeline;
@@ -170,18 +184,26 @@ class PerfSamplesProfileTrack implements Track {
     const time = visibleTimeScale.pxToHpTime(x);
     const [left, right] = searchSegment(data.tsStarts, time.toTime());
 
-    const index =
-        this.findTimestampIndex(left, visibleTimeScale, data, x, y, right);
+    const index = this.findTimestampIndex(
+      left,
+      visibleTimeScale,
+      data,
+      x,
+      y,
+      right,
+    );
 
     if (index !== -1) {
       const ts = Time.fromRaw(data.tsStarts[index]);
-      globals.makeSelection(Actions.selectPerfSamples({
-        id: index,
-        upid: this.upid,
-        leftTs: ts,
-        rightTs: ts,
-        type: ProfileType.PERF_SAMPLE,
-      }));
+      globals.makeSelection(
+        Actions.selectPerfSamples({
+          id: index,
+          upid: this.upid,
+          leftTs: ts,
+          rightTs: ts,
+          type: ProfileType.PERF_SAMPLE,
+        }),
+      );
       return true;
     }
     return false;
@@ -189,8 +211,13 @@ class PerfSamplesProfileTrack implements Track {
 
   // If the markers overlap the rightmost one will be selected.
   findTimestampIndex(
-      left: number, timeScale: TimeScale, data: Data, x: number, y: number,
-      right: number): number {
+    left: number,
+    timeScale: TimeScale,
+    data: Data,
+    x: number,
+    y: number,
+    right: number,
+  ): number {
     let index = -1;
     if (left !== -1) {
       const start = Time.fromRaw(data.tsStarts[left]);
@@ -210,20 +237,19 @@ class PerfSamplesProfileTrack implements Track {
   }
 
   isInMarker(x: number, y: number, centerX: number) {
-    return Math.abs(x - centerX) + Math.abs(y - this.centerY) <=
-        this.markerWidth;
+    return (
+      Math.abs(x - centerX) + Math.abs(y - this.centerY) <= this.markerWidth
+    );
   }
 }
 
 class PerfSamplesProfilePlugin implements Plugin {
-  onActivate(_ctx: PluginContext): void {}
-
   async onTraceLoad(ctx: PluginContextTrace): Promise<void> {
     const result = await ctx.engine.query(`
       select distinct upid, pid
       from perf_sample join thread using (utid) join process using (upid)
       where callsite_id is not null
-  `);
+    `);
     for (const it = result.iter({upid: NUM, pid: NUM}); it.valid(); it.next()) {
       const upid = it.upid;
       const pid = it.pid;
@@ -232,9 +258,19 @@ class PerfSamplesProfilePlugin implements Plugin {
         displayName: `Callstacks ${pid}`,
         kind: PERF_SAMPLES_PROFILE_TRACK_KIND,
         upid,
-        track: () => new PerfSamplesProfileTrack(ctx.engine, upid),
+        trackFactory: () => new PerfSamplesProfileTrack(ctx.engine, upid),
       });
     }
+
+    ctx.registerDetailsPanel({
+      render: (sel) => {
+        if (sel.kind === 'PERF_SAMPLES') {
+          return m(FlamegraphDetailsPanel);
+        } else {
+          return undefined;
+        }
+      },
+    });
   }
 }
 

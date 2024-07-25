@@ -190,17 +190,25 @@ void DistillerPageIOS::DistillPageImpl(const GURL& url,
         web::WebState::Create(web_state_create_params);
     AttachWebState(std::move(web_state_unique));
   }
+
+  distilling_navigation_ = true;
   // Load page using WebState.
   web::NavigationManager::WebLoadParams params(url_);
   web_state_->SetKeepRenderProcessAlive(true);
   web_state_->GetNavigationManager()->LoadURLWithParams(params);
   // LoadIfNecessary is needed because the view is not created (but needed) when
-  // loading the page. TODO(crbug.com/705819): Remove this call.
+  // loading the page. TODO(crbug.com/41309809): Remove this call.
   web_state_->GetNavigationManager()->LoadIfNecessary();
 }
 
 void DistillerPageIOS::OnLoadURLDone(
     web::PageLoadCompletionStatus load_completion_status) {
+  if (!distilling_navigation_) {
+    // This is a second navigation after the distillation request.
+    // Distillation was already requested, so ignore this one.
+    return;
+  }
+  distilling_navigation_ = false;
   // Don't attempt to distill if the page load failed or if there is no
   // WebState.
   if (load_completion_status == web::PageLoadCompletionStatus::FAILURE ||

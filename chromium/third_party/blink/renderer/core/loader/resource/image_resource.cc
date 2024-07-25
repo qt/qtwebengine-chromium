@@ -28,6 +28,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -127,10 +128,10 @@ class ImageResource::ImageResourceInfoImpl final
   bool HasCacheControlNoStoreHeader() const override {
     return resource_->HasCacheControlNoStoreHeader();
   }
-  absl::optional<ResourceError> GetResourceError() const override {
+  std::optional<ResourceError> GetResourceError() const override {
     if (resource_->LoadFailedOrCanceled())
       return resource_->GetResourceError();
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   void SetDecodedSize(size_t size) override { resource_->SetDecodedSize(size); }
@@ -167,14 +168,14 @@ class ImageResource::ImageResourceInfoImpl final
     return &resource_->Options().unsupported_image_mime_types->data;
   }
 
-  absl::optional<WebURLRequest::Priority> RequestPriority() const override {
+  std::optional<WebURLRequest::Priority> RequestPriority() const override {
     auto priority = resource_->GetResourceRequest().Priority();
     if (priority == WebURLRequest::Priority::kUnresolved) {
       // This can happen for image documents (e.g. when `<iframe
       // src="title.png">` is the LCP), because the `ImageResource` isn't
       // associated with `ResourceLoader` in such cases. For now, consider the
       // priority not available for such cases by returning nullopt.
-      return absl::nullopt;
+      return std::nullopt;
     }
     return priority;
   }
@@ -234,10 +235,9 @@ bool ImageResource::CanUseCacheValidator() const {
   return Resource::CanUseCacheValidator();
 }
 
-ImageResource* ImageResource::Create(
-    const ResourceRequest& request,
-    scoped_refptr<const DOMWrapperWorld> world) {
-  ResourceLoaderOptions options(std::move(world));
+ImageResource* ImageResource::Create(const ResourceRequest& request,
+                                     const DOMWrapperWorld* world) {
+  ResourceLoaderOptions options(world);
   return MakeGarbageCollected<ImageResource>(
       request, options, ImageResourceContent::CreateNotStarted());
 }
@@ -333,12 +333,13 @@ scoped_refptr<const SharedBuffer> ImageResource::ResourceBuffer() const {
   return GetContent()->ResourceBuffer();
 }
 
-void ImageResource::AppendData(const char* data, size_t length) {
-  v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(length);
+void ImageResource::AppendData(base::span<const char> data) {
+  v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(data.size());
   if (multipart_parser_) {
-    multipart_parser_->AppendData(data, base::checked_cast<wtf_size_t>(length));
+    multipart_parser_->AppendData(data.data(),
+                                  base::checked_cast<wtf_size_t>(data.size()));
   } else {
-    Resource::AppendData(data, length);
+    Resource::AppendData(data);
 
     // Update the image immediately if needed.
     //
@@ -515,7 +516,11 @@ void ImageResource::OnePartInMultipartReceived(
 
 void ImageResource::MultipartDataReceived(const char* bytes, size_t size) {
   DCHECK(multipart_parser_);
-  Resource::AppendData(bytes, size);
+  Resource::AppendData(
+      // SAFETY: The caller must ensure `bytes` points to `size` elements.
+      // TODO(crbug.com/40284755): Make this method take a span to capture the
+      // invariant.
+      UNSAFE_BUFFERS(base::span(bytes, size)));
 }
 
 bool ImageResource::IsAccessAllowed(

@@ -64,8 +64,16 @@ std::ostream& operator<<(std::ostream& os, WebappInstallSource source) {
       return os << "rich install ui weblayer";
     case WebappInstallSource::KIOSK:
       return os << "kiosk";
-    case WebappInstallSource::ISOLATED_APP_DEV_INSTALL:
-      return os << "isolated app dev install";
+    case WebappInstallSource::IWA_GRAPHICAL_INSTALLER:
+      return os << "isolated web app: graphical installer";
+    case WebappInstallSource::IWA_DEV_COMMAND_LINE:
+      return os << "isolated web app: dev command line";
+    case WebappInstallSource::IWA_DEV_UI:
+      return os << "isolated web app: dev UI";
+    case WebappInstallSource::IWA_EXTERNAL_POLICY:
+      return os << "isolated web app: external policy";
+    case WebappInstallSource::IWA_SHIMLESS_RMA:
+      return os << "isolated web app: shimless RMA";
     case WebappInstallSource::EXTERNAL_LOCK_SCREEN:
       return os << "external lock screen";
     case WebappInstallSource::PRELOADED_OEM:
@@ -78,8 +86,98 @@ std::ostream& operator<<(std::ostream& os, WebappInstallSource source) {
       return os << "ml promotion";
     case WebappInstallSource::PRELOADED_DEFAULT:
       return os << "preloaded default";
+    case WebappInstallSource::ALMANAC_INSTALL_APP_URI:
+      return os << "app install uri";
+    case WebappInstallSource::WEBAPK_RESTORE:
+      return os << "webapk restore";
+    case WebappInstallSource::OOBE_APP_RECOMMENDATIONS:
+      return os << "oobe app recommendations";
     case WebappInstallSource::COUNT:
       return os << "count";
+  }
+}
+
+std::ostream& operator<<(std::ostream& os, WebappUninstallSource source) {
+  switch (source) {
+    case webapps::WebappUninstallSource::kUnknown:
+      return os << "Unknown";
+    case webapps::WebappUninstallSource::kAppMenu:
+      return os << "AppMenu";
+    case webapps::WebappUninstallSource::kAppsPage:
+      return os << "AppsPage";
+    case webapps::WebappUninstallSource::kOsSettings:
+      return os << "OS Settings";
+    case webapps::WebappUninstallSource::kSync:
+      return os << "Sync";
+    case webapps::WebappUninstallSource::kAppManagement:
+      return os << "App Management";
+    case webapps::WebappUninstallSource::kMigration:
+      return os << "Migration";
+    case webapps::WebappUninstallSource::kAppList:
+      return os << "App List";
+    case webapps::WebappUninstallSource::kShelf:
+      return os << "Shelf";
+    case webapps::WebappUninstallSource::kInternalPreinstalled:
+      return os << "Internal Preinstalled";
+    case webapps::WebappUninstallSource::kExternalPreinstalled:
+      return os << "External Preinstalled";
+    case webapps::WebappUninstallSource::kExternalPolicy:
+      return os << "External Policy";
+    case webapps::WebappUninstallSource::kSystemPreinstalled:
+      return os << "System Preinstalled";
+    case webapps::WebappUninstallSource::kPlaceholderReplacement:
+      return os << "Placeholder Replacement";
+    case webapps::WebappUninstallSource::kArc:
+      return os << "Arc";
+    case webapps::WebappUninstallSource::kSubApp:
+      return os << "SubApp";
+    case webapps::WebappUninstallSource::kStartupCleanup:
+      return os << "Startup Cleanup";
+    case webapps::WebappUninstallSource::kParentUninstall:
+      return os << "Parent App Uninstalled";
+    case webapps::WebappUninstallSource::kExternalLockScreen:
+      return os << "External Lock Screen";
+    case webapps::WebappUninstallSource::kTestCleanup:
+      return os << "Test cleanup";
+    case webapps::WebappUninstallSource::kInstallUrlDeduping:
+      return os << "Install URL deduping";
+    case webapps::WebappUninstallSource::kHealthcareUserInstallCleanup:
+      return os << "Healthcare User Install Cleanup";
+    case webapps::WebappUninstallSource::kIwaEnterprisePolicy:
+      return os << "Isolated Web Apps Enterprise Policy";
+    case webapps::WebappUninstallSource::kDevtools:
+      return os << "Devtools";
+  }
+}
+
+bool IsUserUninstall(WebappUninstallSource source) {
+  switch (source) {
+    case webapps::WebappUninstallSource::kSync:
+    case webapps::WebappUninstallSource::kMigration:
+    case webapps::WebappUninstallSource::kInternalPreinstalled:
+    case webapps::WebappUninstallSource::kExternalPreinstalled:
+    case webapps::WebappUninstallSource::kExternalPolicy:
+    case webapps::WebappUninstallSource::kSystemPreinstalled:
+    case webapps::WebappUninstallSource::kPlaceholderReplacement:
+    case webapps::WebappUninstallSource::kArc:
+    case webapps::WebappUninstallSource::kSubApp:
+    case webapps::WebappUninstallSource::kStartupCleanup:
+    case webapps::WebappUninstallSource::kParentUninstall:
+    case webapps::WebappUninstallSource::kTestCleanup:
+    case webapps::WebappUninstallSource::kInstallUrlDeduping:
+    case webapps::WebappUninstallSource::kHealthcareUserInstallCleanup:
+    case webapps::WebappUninstallSource::kIwaEnterprisePolicy:
+      return false;
+    case webapps::WebappUninstallSource::kUnknown:
+    case webapps::WebappUninstallSource::kAppMenu:
+    case webapps::WebappUninstallSource::kAppsPage:
+    case webapps::WebappUninstallSource::kOsSettings:
+    case webapps::WebappUninstallSource::kAppManagement:
+    case webapps::WebappUninstallSource::kAppList:
+    case webapps::WebappUninstallSource::kShelf:
+    case webapps::WebappUninstallSource::kExternalLockScreen:
+    case webapps::WebappUninstallSource::kDevtools:
+      return true;
   }
 }
 
@@ -118,8 +216,15 @@ bool InstallableMetrics::IsReportableInstallSource(WebappInstallSource source) {
     case WebappInstallSource::RICH_INSTALL_UI_WEBLAYER:
     case WebappInstallSource::SYSTEM_DEFAULT:
     case WebappInstallSource::PRELOADED_DEFAULT:
+    case WebappInstallSource::ALMANAC_INSTALL_APP_URI:
+    case WebappInstallSource::WEBAPK_RESTORE:
+    case WebappInstallSource::OOBE_APP_RECOMMENDATIONS:
       return true;
-    case WebappInstallSource::ISOLATED_APP_DEV_INSTALL:
+    case WebappInstallSource::IWA_GRAPHICAL_INSTALLER:
+    case WebappInstallSource::IWA_DEV_UI:
+    case WebappInstallSource::IWA_DEV_COMMAND_LINE:
+    case WebappInstallSource::IWA_EXTERNAL_POLICY:
+    case WebappInstallSource::IWA_SHIMLESS_RMA:
     case WebappInstallSource::MANAGEMENT_API:
     case WebappInstallSource::SUB_APP:
     case WebappInstallSource::SYNC:

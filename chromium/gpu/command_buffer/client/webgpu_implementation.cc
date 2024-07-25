@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/client/webgpu_implementation.h"
 
+#include <dawn/wire/client/webgpu.h>
+
 #include <algorithm>
 #include <vector>
 
@@ -22,7 +24,7 @@ namespace webgpu {
 
 #if BUILDFLAG(USE_DAWN)
 DawnWireServices::~DawnWireServices() {
-  GetProcs().instanceRelease(wgpu_instance_);
+  wgpuDawnWireClientInstanceRelease(wgpu_instance_);
 }
 
 DawnWireServices::DawnWireServices(
@@ -41,10 +43,6 @@ DawnWireServices::DawnWireServices(
       }),
       wgpu_instance_(wire_client_.ReserveInstance().instance) {
   DCHECK(wgpu_instance_);
-}
-
-const DawnProcTable& DawnWireServices::GetProcs() const {
-  return dawn::wire::client::GetProcs();
 }
 
 WGPUInstance DawnWireServices::GetWGPUInstance() const {
@@ -386,14 +384,14 @@ ReservedTexture WebGPUImplementation::ReserveTexture(
     optionalDesc = &placeholderDesc;
   }
 
-  auto reservation =
+  auto reserved =
       dawn_wire_->wire_client()->ReserveTexture(device, optionalDesc);
   ReservedTexture result;
-  result.texture = reservation.texture;
-  result.id = reservation.id;
-  result.generation = reservation.generation;
-  result.deviceId = reservation.deviceId;
-  result.deviceGeneration = reservation.deviceGeneration;
+  result.texture = reserved.texture;
+  result.id = reserved.handle.id;
+  result.generation = reserved.handle.generation;
+  result.deviceId = reserved.deviceHandle.id;
+  result.deviceGeneration = reserved.deviceHandle.generation;
   return result;
 #else
   NOTREACHED();

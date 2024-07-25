@@ -25,16 +25,16 @@ TEST_F(PrivacySandboxAttestationsParserTest, EmptyProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   ASSERT_TRUE(optional_map->empty());
 }
 
-// A malformed proto returns absl::nullopt to represent an error.
+// A malformed proto returns std::nullopt to represent an error.
 TEST_F(PrivacySandboxAttestationsParserTest, InvalidProto) {
   std::string serialized_proto("invalid proto");
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_FALSE(optional_map.has_value());
 }
@@ -75,7 +75,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, OneSitePerAPIProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   ASSERT_TRUE(optional_map->size() == 5UL);
@@ -83,31 +83,31 @@ TEST_F(PrivacySandboxAttestationsParserTest, OneSitePerAPIProto) {
   const PrivacySandboxAttestationsGatedAPISet& site1apis =
       (*optional_map)[net::SchemefulSite(GURL(site1))];
   ASSERT_TRUE(site1apis.Has(PrivacySandboxAttestationsGatedAPI::kTopics));
-  ASSERT_TRUE(site1apis.Size() == 1UL);
+  ASSERT_TRUE(site1apis.size() == 1UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site2apis =
       (*optional_map)[net::SchemefulSite(GURL(site2))];
   ASSERT_TRUE(
       site2apis.Has(PrivacySandboxAttestationsGatedAPI::kProtectedAudience));
-  ASSERT_TRUE(site2apis.Size() == 1UL);
+  ASSERT_TRUE(site2apis.size() == 1UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site3apis =
       (*optional_map)[net::SchemefulSite(GURL(site3))];
   ASSERT_TRUE(
       site3apis.Has(PrivacySandboxAttestationsGatedAPI::kPrivateAggregation));
-  ASSERT_TRUE(site3apis.Size() == 1UL);
+  ASSERT_TRUE(site3apis.size() == 1UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site4apis =
       (*optional_map)[net::SchemefulSite(GURL(site4))];
   ASSERT_TRUE(
       site4apis.Has(PrivacySandboxAttestationsGatedAPI::kAttributionReporting));
-  ASSERT_TRUE(site4apis.Size() == 1UL);
+  ASSERT_TRUE(site4apis.size() == 1UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site5apis =
       (*optional_map)[net::SchemefulSite(GURL(site5))];
   ASSERT_TRUE(
       site5apis.Has(PrivacySandboxAttestationsGatedAPI::kSharedStorage));
-  ASSERT_TRUE(site5apis.Size() == 1UL);
+  ASSERT_TRUE(site5apis.size() == 1UL);
 }
 
 // Multiple attested APIs per site should work. Unknown APIs should be ignored.
@@ -133,7 +133,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, MultipleAPIsPerSiteProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   ASSERT_TRUE(optional_map->size() == 1UL);
@@ -149,7 +149,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, MultipleAPIsPerSiteProto) {
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kAttributionReporting));
   ASSERT_TRUE(
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kSharedStorage));
-  ASSERT_TRUE(site1apis.Size() == 5UL);
+  ASSERT_TRUE(site1apis.size() == 5UL);
 }
 
 // Test basic functionality of `all_apis` and `sites_attested_for_all_apis`.
@@ -180,7 +180,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, AllAPIsProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   ASSERT_TRUE(optional_map->size() == 3UL);
@@ -192,7 +192,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, AllAPIsProto) {
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kProtectedAudience));
   ASSERT_TRUE(
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kPrivateAggregation));
-  ASSERT_TRUE(site1apis.Size() == 3UL);
+  ASSERT_TRUE(site1apis.size() == 3UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site2apis =
       (*optional_map)[net::SchemefulSite(GURL(site2))];
@@ -201,7 +201,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, AllAPIsProto) {
       site2apis.Has(PrivacySandboxAttestationsGatedAPI::kProtectedAudience));
   ASSERT_TRUE(
       site2apis.Has(PrivacySandboxAttestationsGatedAPI::kPrivateAggregation));
-  ASSERT_TRUE(site2apis.Size() == 3UL);
+  ASSERT_TRUE(site2apis.size() == 3UL);
 
   const PrivacySandboxAttestationsGatedAPISet& site3apis =
       (*optional_map)[net::SchemefulSite(GURL(site3))];
@@ -209,7 +209,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, AllAPIsProto) {
       site3apis.Has(PrivacySandboxAttestationsGatedAPI::kPrivateAggregation));
   ASSERT_TRUE(
       site3apis.Has(PrivacySandboxAttestationsGatedAPI::kSharedStorage));
-  ASSERT_TRUE(site3apis.Size() == 2UL);
+  ASSERT_TRUE(site3apis.size() == 2UL);
 }
 
 // Test that nothing goes terribly wrong when the proto has multiple mappings
@@ -236,7 +236,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, RepeatedSiteProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   // The three mappings for the same site get deduplicated to 1.
@@ -251,7 +251,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, RepeatedSiteProto) {
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kProtectedAudience));
   ASSERT_TRUE(
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kPrivateAggregation));
-  ASSERT_TRUE(site1apis.Size() == 3UL);
+  ASSERT_TRUE(site1apis.size() == 3UL);
 }
 
 // Test that invalid API enums in `all_apis` are ignored.
@@ -276,7 +276,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, InvalidAllAPIsProto) {
   std::string serialized_proto;
   proto.SerializeToString(&serialized_proto);
 
-  absl::optional<PrivacySandboxAttestationsMap> optional_map =
+  std::optional<PrivacySandboxAttestationsMap> optional_map =
       ParseAttestationsFromString(serialized_proto);
   ASSERT_TRUE(optional_map.has_value());
   ASSERT_TRUE(optional_map->size() == 1UL);
@@ -292,7 +292,7 @@ TEST_F(PrivacySandboxAttestationsParserTest, InvalidAllAPIsProto) {
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kAttributionReporting));
   ASSERT_TRUE(
       site1apis.Has(PrivacySandboxAttestationsGatedAPI::kSharedStorage));
-  ASSERT_TRUE(site1apis.Size() == 5UL);
+  ASSERT_TRUE(site1apis.size() == 5UL);
 }
 
 }  // namespace privacy_sandbox

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 #include "stateless/stateless_validation.h"
 #include "utils/convert_utils.h"
+#include "error_message/error_strings.h"
 
 bool StatelessValidation::ValidateSubpassGraphicsFlags(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
                                                        uint32_t subpass, VkPipelineStageFlags2 stages, const char *vuid,
@@ -76,6 +77,13 @@ bool StatelessValidation::ValidateCreateRenderPass(VkDevice device, const VkRend
         vku::FindStructInPNextChain<VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT>(device_createinfo_pnext);
     if (attachment_feedback_loop_layout_features) {
         attachment_feedback_loop_layout = attachment_feedback_loop_layout_features->attachmentFeedbackLoopLayout;
+    }
+
+    VkBool32 dynamic_rendering_local_read = false;
+    const auto *dynamic_rendering_local_read_features =
+        vku::FindStructInPNextChain<VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR>(device_createinfo_pnext);
+    if (dynamic_rendering_local_read_features) {
+        dynamic_rendering_local_read = dynamic_rendering_local_read_features->dynamicRenderingLocalRead;
     }
 
     VkBool32 synchronization2 = false;
@@ -168,6 +176,22 @@ bool StatelessValidation::ValidateCreateRenderPass(VkDevice device, const VkRend
                                : "VUID-VkAttachmentDescription-synchronization2-06909";
                 skip |= LogError(vuid, device, attachment_loc.dot(Field::finalLayout),
                                  "is %s but the synchronization2 feature is not enabled.", string_VkImageLayout(final_layout));
+            }
+        }
+        if (!dynamic_rendering_local_read) {
+            if (initial_layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR) {
+                vuid = use_rp2 ? "VUID-VkAttachmentDescription2-dynamicRenderingLocalRead-09544"
+                               : "VUID-VkAttachmentDescription-dynamicRenderingLocalRead-09544";
+                skip |= LogError(vuid, device, attachment_loc.dot(Field::initialLayout),
+                                 "is VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR but the "
+                                 "dynamicRenderingLocalRead feature is not enabled.");
+            }
+            if (final_layout == VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR) {
+                vuid = use_rp2 ? "VUID-VkAttachmentDescription2-dynamicRenderingLocalRead-09545"
+                               : "VUID-VkAttachmentDescription-dynamicRenderingLocalRead-09545";
+                skip |= LogError(vuid, device, attachment_loc.dot(Field::finalLayout),
+                                 "is VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR but the "
+                                 "dynamicRenderingLocalRead feature is not enabled.");
             }
         }
         if (!vkuFormatIsDepthOrStencil(attachment_format)) {  // color format
@@ -384,14 +408,14 @@ bool StatelessValidation::ValidateCreateRenderPass(VkDevice device, const VkRend
 bool StatelessValidation::manual_PreCallValidateCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                                  const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
                                                                  const ErrorObject &error_obj) const {
-    safe_VkRenderPassCreateInfo2 create_info_2 = ConvertVkRenderPassCreateInfoToV2KHR(*pCreateInfo);
+    vku::safe_VkRenderPassCreateInfo2 create_info_2 = ConvertVkRenderPassCreateInfoToV2KHR(*pCreateInfo);
     return ValidateCreateRenderPass(device, create_info_2.ptr(), pAllocator, pRenderPass, error_obj);
 }
 
 bool StatelessValidation::manual_PreCallValidateCreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo2 *pCreateInfo,
                                                                   const VkAllocationCallbacks *pAllocator,
                                                                   VkRenderPass *pRenderPass, const ErrorObject &error_obj) const {
-    safe_VkRenderPassCreateInfo2 create_info_2(pCreateInfo);
+    vku::safe_VkRenderPassCreateInfo2 create_info_2(pCreateInfo);
     return ValidateCreateRenderPass(device, create_info_2.ptr(), pAllocator, pRenderPass, error_obj);
 }
 
@@ -400,10 +424,8 @@ void StatelessValidation::RecordRenderPass(VkRenderPass renderPass, const VkRend
     auto &renderpass_state = renderpasses_states[renderPass];
     lock.unlock();
 
-    renderpass_state.subpasses_flags.resize(pCreateInfo->subpassCount);
     for (uint32_t subpass = 0; subpass < pCreateInfo->subpassCount; ++subpass) {
         bool uses_color = false;
-        renderpass_state.color_attachment_count = pCreateInfo->pSubpasses[subpass].colorAttachmentCount;
 
         for (uint32_t i = 0; i < pCreateInfo->pSubpasses[subpass].colorAttachmentCount && !uses_color; ++i)
             if (pCreateInfo->pSubpasses[subpass].pColorAttachments[i].attachment != VK_ATTACHMENT_UNUSED) uses_color = true;
@@ -415,14 +437,13 @@ void StatelessValidation::RecordRenderPass(VkRenderPass renderPass, const VkRend
 
         if (uses_color) renderpass_state.subpasses_using_color_attachment.insert(subpass);
         if (uses_depthstencil) renderpass_state.subpasses_using_depthstencil_attachment.insert(subpass);
-        renderpass_state.subpasses_flags[subpass] = pCreateInfo->pSubpasses[subpass].flags;
     }
 }
 void StatelessValidation::PostCallRecordCreateRenderPass(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
                                                          const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass,
                                                          const RecordObject &record_obj) {
     if (record_obj.result != VK_SUCCESS) return;
-    safe_VkRenderPassCreateInfo2 create_info_2 = ConvertVkRenderPassCreateInfoToV2KHR(*pCreateInfo);
+    vku::safe_VkRenderPassCreateInfo2 create_info_2 = ConvertVkRenderPassCreateInfoToV2KHR(*pCreateInfo);
     RecordRenderPass(*pRenderPass, create_info_2.ptr());
 }
 
@@ -431,7 +452,7 @@ void StatelessValidation::PostCallRecordCreateRenderPass2KHR(VkDevice device, co
                                                              const RecordObject &record_obj) {
     // Track the state necessary for checking vkCreateGraphicsPipeline (subpass usage of depth and color attachments)
     if (record_obj.result != VK_SUCCESS) return;
-    safe_VkRenderPassCreateInfo2 create_info_2(pCreateInfo);
+    vku::safe_VkRenderPassCreateInfo2 create_info_2(pCreateInfo);
     RecordRenderPass(*pRenderPass, create_info_2.ptr());
 }
 
@@ -442,28 +463,120 @@ void StatelessValidation::PostCallRecordDestroyRenderPass(VkDevice device, VkRen
     renderpasses_states.erase(renderPass);
 }
 
-bool StatelessValidation::ValidateCmdBeginRenderPass(const VkRenderPassBeginInfo *const rp_begin,
+bool StatelessValidation::ValidateRenderPassStripeBeginInfo(VkCommandBuffer commandBuffer, const void *pNext,
+                                                            const VkRect2D render_area, const Location &loc) const {
+    bool skip = false;
+    const auto rp_stripe_begin = vku::FindStructInPNextChain<VkRenderPassStripeBeginInfoARM>(pNext);
+    if (!rp_stripe_begin) {
+        return skip;
+    }
+
+    if (rp_stripe_begin->stripeInfoCount > phys_dev_ext_props.renderpass_striped_props.maxRenderPassStripes) {
+        skip |= LogError("VUID-VkRenderPassStripeBeginInfoARM-stripeInfoCount-09450", commandBuffer,
+                         loc.pNext(Struct::VkRenderPassStripeBeginInfoARM, Field::stripeInfoCount),
+                         "= %" PRIu32 " is greater than maxRenderPassStripes (%" PRIu32 ").", rp_stripe_begin->stripeInfoCount,
+                         phys_dev_ext_props.renderpass_striped_props.maxRenderPassStripes);
+    }
+
+    const uint32_t width_granularity = phys_dev_ext_props.renderpass_striped_props.renderPassStripeGranularity.width;
+    const uint32_t height_granularity = phys_dev_ext_props.renderpass_striped_props.renderPassStripeGranularity.height;
+    const uint32_t last_stripe_index = (rp_stripe_begin->stripeInfoCount - 1);
+    uint32_t total_stripe_area = 0;
+    bool has_overlapping_stripes = false;
+
+    for (uint32_t i = 0; i < rp_stripe_begin->stripeInfoCount; ++i) {
+        const Location &stripe_info_loc = loc.pNext(Struct::VkRenderPassStripeBeginInfoARM, Field::pStripeInfos, i);
+        const VkRect2D stripe_area = rp_stripe_begin->pStripeInfos[i].stripeArea;
+        total_stripe_area += (stripe_area.extent.width * stripe_area.extent.height);
+
+        // Check overlapping stripes, report only first overlapping stripe info.
+        for (uint32_t index = i + 1; (!has_overlapping_stripes && i != last_stripe_index && index <= last_stripe_index); ++index) {
+            const auto rect = rp_stripe_begin->pStripeInfos[index].stripeArea;
+            has_overlapping_stripes =
+                RangesIntersect(rect.offset.x, rect.extent.width, stripe_area.offset.x, stripe_area.extent.width);
+            has_overlapping_stripes &=
+                RangesIntersect(rect.offset.y, rect.extent.height, stripe_area.offset.y, stripe_area.extent.height);
+
+            if (has_overlapping_stripes) {
+                skip |= LogError("VUID-VkRenderPassStripeBeginInfoARM-stripeArea-09451", commandBuffer, stripe_info_loc,
+                                 "(offset{%s} extent{%s}) is overlapping with pStripeInfos[%" PRIu32 "] (offset{%s} extent {%s}).",
+                                 string_VkOffset2D(stripe_area.offset).c_str(), string_VkExtent2D(stripe_area.extent).c_str(),
+                                 index, string_VkOffset2D(rect.offset).c_str(), string_VkExtent2D(rect.extent).c_str());
+                break;
+            }
+        }
+
+        if (width_granularity > 0 && (stripe_area.offset.x % width_granularity) != 0) {
+            skip |= LogError("VUID-VkRenderPassStripeInfoARM-stripeArea-09452", commandBuffer,
+                             stripe_info_loc.dot(Field::stripeArea).dot(Field::offset).dot(Field::x),
+                             "= %" PRIu32 " is not multiple of %" PRIu32 ". ", stripe_area.offset.x, width_granularity);
+        }
+
+        if (width_granularity > 0 && (stripe_area.extent.width % width_granularity) != 0 &&
+            ((stripe_area.extent.width + stripe_area.offset.x) != render_area.extent.width)) {
+            skip |= LogError("VUID-VkRenderPassStripeInfoARM-stripeArea-09453", commandBuffer,
+                             stripe_info_loc.dot(Field::stripeArea).dot(Field::extent).dot(Field::width),
+                             "= %" PRIu32 " is not multiple of %" PRIu32
+                             ", or when added to the stripeArea.offset.x is not equal render area width (%" PRIu32 ")",
+                             stripe_area.extent.width, width_granularity, render_area.extent.width);
+        }
+
+        if (height_granularity > 0 && (stripe_area.offset.y % height_granularity) != 0) {
+            skip |= LogError("VUID-VkRenderPassStripeInfoARM-stripeArea-09454", commandBuffer,
+                             stripe_info_loc.dot(Field::stripeArea).dot(Field::offset).dot(Field::y),
+                             "= %" PRIu32 ") is not multiple of %" PRIu32 ". ", stripe_area.offset.y, height_granularity);
+        }
+
+        if (height_granularity > 0 && (stripe_area.extent.height % height_granularity) != 0 &&
+            (stripe_area.extent.height + stripe_area.offset.y) != render_area.extent.height) {
+            skip |= LogError("VUID-VkRenderPassStripeInfoARM-stripeArea-09455", commandBuffer,
+                             stripe_info_loc.dot(Field::stripeArea).dot(Field::extent).dot(Field::height),
+                             "= %" PRIu32 " is not multiple of %" PRIu32
+                             ", or when added to the stripeArea.offset.y is not equal to render area height (%" PRIu32 ")",
+                             stripe_area.extent.height, height_granularity, render_area.extent.height);
+        }
+    }
+
+    // Check render area coverage if there is no overlapping stripe.
+    const uint32_t total_render_area = render_area.extent.width * render_area.extent.height;
+    if (!has_overlapping_stripes && (total_stripe_area != total_render_area)) {
+        const std::string vuid = (loc.function == Func::vkCmdBeginRenderPass) ? "VUID-VkRenderPassBeginInfo-pNext-09539"
+                                                                              : "VUID-VkRenderingInfo-pNext-09535";
+        skip |= LogError(vuid.data(), commandBuffer, loc.pNext(Struct::VkRenderPassStripeBeginInfoARM, Field::pStripeInfos),
+                         " total of stripe area = %" PRIu32 " is not covering whole render area %" PRIu32 ". ", total_stripe_area,
+                         total_render_area);
+    }
+
+    return skip;
+}
+
+bool StatelessValidation::ValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *const rp_begin,
                                                      const ErrorObject &error_obj) const {
     bool skip = false;
     if ((rp_begin->clearValueCount != 0) && !rp_begin->pClearValues) {
-        skip |= LogError("VUID-VkRenderPassBeginInfo-clearValueCount-04962", rp_begin->renderPass,
+        const LogObjectList objlist(commandBuffer, rp_begin->renderPass);
+        skip |= LogError("VUID-VkRenderPassBeginInfo-clearValueCount-04962", objlist,
                          error_obj.location.dot(Field::pRenderPassBegin).dot(Field::clearValueCount),
                          "(%" PRIu32 ") is not zero, but pRenderPassBegin->pClearValues is NULL.", rp_begin->clearValueCount);
     }
+
+    const Location loc = error_obj.location.dot(Field::pRenderPassBegin);
+    skip |= ValidateRenderPassStripeBeginInfo(commandBuffer, rp_begin->pNext, rp_begin->renderArea, loc);
+
     return skip;
 }
 
-bool StatelessValidation::manual_PreCallValidateCmdBeginRenderPass(VkCommandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
-                                                                   VkSubpassContents, const ErrorObject &error_obj) const {
-    bool skip = ValidateCmdBeginRenderPass(pRenderPassBegin, error_obj);
-    return skip;
+bool StatelessValidation::manual_PreCallValidateCmdBeginRenderPass(VkCommandBuffer commandBuffer,
+                                                                   const VkRenderPassBeginInfo *pRenderPassBegin, VkSubpassContents,
+                                                                   const ErrorObject &error_obj) const {
+    return ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin, error_obj);
 }
 
-bool StatelessValidation::manual_PreCallValidateCmdBeginRenderPass2(VkCommandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
+bool StatelessValidation::manual_PreCallValidateCmdBeginRenderPass2(VkCommandBuffer commandBuffer,
+                                                                    const VkRenderPassBeginInfo *pRenderPassBegin,
                                                                     const VkSubpassBeginInfo *,
                                                                     const ErrorObject &error_obj) const {
-    bool skip = ValidateCmdBeginRenderPass(pRenderPassBegin, error_obj);
-    return skip;
+    return ValidateCmdBeginRenderPass(commandBuffer, pRenderPassBegin, error_obj);
 }
 
 static bool UniqueRenderingInfoImageViews(const VkRenderingInfo *pRenderingInfo, VkImageView imageView) {
@@ -674,6 +787,8 @@ bool StatelessValidation::manual_PreCallValidateCmdBeginRendering(VkCommandBuffe
                              FormatHandle(fragment_density_map_attachment_info->imageView).c_str());
         }
     }
+
+    skip |= ValidateRenderPassStripeBeginInfo(commandBuffer, pRenderingInfo->pNext, pRenderingInfo->renderArea, rendering_info_loc);
 
     for (uint32_t j = 0; j < pRenderingInfo->colorAttachmentCount; ++j) {
         if (pRenderingInfo->pColorAttachments[j].imageView == VK_NULL_HANDLE) {

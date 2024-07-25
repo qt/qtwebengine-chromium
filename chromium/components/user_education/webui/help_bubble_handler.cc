@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "base/callback_list.h"
 #include "base/check.h"
@@ -132,7 +133,7 @@ struct HelpBubbleHandlerBase::ElementData {
 };
 
 void HelpBubbleHandlerBase::VisibilityProvider::SetLastKnownVisibility(
-    absl::optional<bool> visible) {
+    std::optional<bool> visible) {
   handler_->OnWebContentsVisibilityChanged(visible);
 }
 
@@ -176,7 +177,7 @@ help_bubble::mojom::HelpBubbleClient* HelpBubbleHandlerBase::GetClient() {
   return client_provider_->GetClient();
 }
 
-void HelpBubbleHandlerBase::ReportBadMessage(base::StringPiece error) {
+void HelpBubbleHandlerBase::ReportBadMessage(std::string_view error) {
   NOTREACHED() << error;
 }
 
@@ -218,6 +219,7 @@ std::unique_ptr<HelpBubbleWebUI> HelpBubbleHandlerBase::CreateHelpBubble(
     mojom_params->body_icon_name = GetFileNameFromIcon(data.params->body_icon);
   mojom_params->body_icon_alt_text =
       base::UTF16ToUTF8(data.params->body_icon_alt_text);
+  mojom_params->focus_on_show_hint = data.params->focus_on_show_hint;
   mojom_params->position = HelpBubbleArrowToPosition(data.params->arrow);
   if (data.params->progress) {
     mojom_params->progress = help_bubble::mojom::Progress::New();
@@ -256,7 +258,7 @@ void HelpBubbleHandlerBase::OnHelpBubbleClosing(
 }
 
 void HelpBubbleHandlerBase::OnWebContentsVisibilityChanged(
-    absl::optional<bool> visibility) {
+    std::optional<bool> visibility) {
   const bool old_visibility = is_web_contents_visible();
   web_contents_visibility_ = visibility;
   const bool new_visibility = is_web_contents_visible();
@@ -498,7 +500,8 @@ void HelpBubbleHandlerBase::OnFloatingHelpBubbleCreated(
 
 void HelpBubbleHandlerBase::OnFloatingHelpBubbleClosed(
     ui::ElementIdentifier anchor_id,
-    HelpBubble* help_bubble) {
+    HelpBubble* help_bubble,
+    HelpBubble::CloseReason) {
   const auto it = element_data_.find(anchor_id);
   if (it == element_data_.end()) {
     return;
@@ -550,10 +553,10 @@ class HelpBubbleHandler::VisibilityProvider
   VisibilityProvider() = default;
   ~VisibilityProvider() override = default;
 
-  absl::optional<bool> CheckIsVisible() override {
+  std::optional<bool> CheckIsVisible() override {
     auto* const contents = handler()->GetWebContents();
     if (!contents) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     CHECK(!web_contents());
     Observe(contents);
@@ -565,9 +568,7 @@ class HelpBubbleHandler::VisibilityProvider
   void OnVisibilityChanged(content::Visibility new_visibility) override {
     SetLastKnownVisibility(new_visibility == content::Visibility::VISIBLE);
   }
-  void WebContentsDestroyed() override {
-    SetLastKnownVisibility(absl::nullopt);
-  }
+  void WebContentsDestroyed() override { SetLastKnownVisibility(std::nullopt); }
 };
 
 HelpBubbleHandler::HelpBubbleHandler(
@@ -592,7 +593,7 @@ content::WebUIController* HelpBubbleHandler::GetController() {
   return controller_;
 }
 
-void HelpBubbleHandler::ReportBadMessage(base::StringPiece error) {
+void HelpBubbleHandler::ReportBadMessage(std::string_view error) {
   receiver_.ReportBadMessage(std::move(error));
 }
 

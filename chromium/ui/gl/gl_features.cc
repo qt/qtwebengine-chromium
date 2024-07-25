@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/strings/string_split.h"
 #include "build/build_config.h"
 #include "ui/gl/gl_switches.h"
 
@@ -71,6 +72,23 @@ bool IsDeviceBlocked(const char* field, const std::string& block_list) {
 }
 #endif
 
+BASE_FEATURE(kForceANGLEFeatures,
+             "ForceANGLEFeatures",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<std::string> kForcedANGLEEnabledFeaturesFP{
+    &kForceANGLEFeatures, "EnabledFeatures", ""};
+const base::FeatureParam<std::string> kForcedANGLEDisabledFeaturesFP{
+    &kForceANGLEFeatures, "DisabledFeatures", ""};
+
+void SplitAndAppendANGLEFeatureList(const std::string& list,
+                                    std::vector<std::string>& out_features) {
+  for (std::string& feature_name : base::SplitString(
+           list, ", ;", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
+    out_features.push_back(std::move(feature_name));
+  }
+}
+
 }  // namespace
 
 #if BUILDFLAG(ENABLE_VALIDATING_COMMAND_DECODER)
@@ -80,11 +98,7 @@ bool IsDeviceBlocked(const char* field, const std::string& block_list) {
 // platforms that would otherwise not default to using EGL bindings.
 BASE_FEATURE(kDefaultPassthroughCommandDecoder,
              "DefaultPassthroughCommandDecoder",
-#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CASTOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
 #endif  // !defined(PASSTHROUGH_COMMAND_DECODER_LAUNCHED)
 
@@ -172,6 +186,36 @@ bool UsePassthroughCommandDecoder() {
 
   return true;
 #endif  // defined(PASSTHROUGH_COMMAND_DECODER_LAUNCHED)
+}
+
+void GetANGLEFeaturesFromCommandLineAndFinch(
+    const base::CommandLine* command_line,
+    std::vector<std::string>& enabled_angle_features,
+    std::vector<std::string>& disabled_angle_features) {
+  SplitAndAppendANGLEFeatureList(
+      command_line->GetSwitchValueASCII(switches::kEnableANGLEFeatures),
+      enabled_angle_features);
+  SplitAndAppendANGLEFeatureList(
+      command_line->GetSwitchValueASCII(switches::kDisableANGLEFeatures),
+      disabled_angle_features);
+
+  if (base::FeatureList::IsEnabled(kForceANGLEFeatures)) {
+    SplitAndAppendANGLEFeatureList(kForcedANGLEEnabledFeaturesFP.Get(),
+                                   enabled_angle_features);
+    SplitAndAppendANGLEFeatureList(kForcedANGLEDisabledFeaturesFP.Get(),
+                                   disabled_angle_features);
+  }
+
+#if BUILDFLAG(IS_MAC)
+  if (base::FeatureList::IsEnabled(features::kWriteMetalShaderCacheToDisk)) {
+    disabled_angle_features.push_back("enableParallelMtlLibraryCompilation");
+    enabled_angle_features.push_back("compileMetalShaders");
+    enabled_angle_features.push_back("disableProgramCaching");
+  }
+  if (base::FeatureList::IsEnabled(features::kUseBuiltInMetalShaderCache)) {
+    enabled_angle_features.push_back("loadMetalShadersFromBlobCache");
+  }
+#endif
 }
 
 }  // namespace features

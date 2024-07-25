@@ -167,11 +167,11 @@ void ReadTouchCoordinates(base::span<const uint8_t> ds4_touch_data_span,
 
 // Reads the touchpad information given by `touchpad_data` and `touches_count`
 // into `pad`.
-// TODO(crbug.com/1143942): Make a member of Dualshock4Controller
+// TODO(crbug.com/40155307): Make a member of Dualshock4Controller
 template <typename Transform>
 void ProcessTouchData(base::span<const TouchPadData> touchpad_data,
                       Transform& id_transform,
-                      absl::optional<uint32_t>& initial_touch_id,
+                      std::optional<uint32_t>& initial_touch_id,
                       Gamepad* pad) {
   pad->touch_events_length = 0;
   GamepadTouch* touches = pad->touch_events;

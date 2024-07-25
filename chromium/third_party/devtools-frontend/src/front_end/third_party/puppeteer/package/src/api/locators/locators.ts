@@ -8,27 +8,27 @@ import type {
   OperatorFunction,
 } from '../../../third_party/rxjs/rxjs.js';
 import {
-  mergeMap,
-  from,
   EMPTY,
+  catchError,
+  defaultIfEmpty,
   defer,
   filter,
   first,
+  firstValueFrom,
+  from,
+  fromEvent,
   identity,
   ignoreElements,
-  retry,
-  throwIfEmpty,
-  race,
-  catchError,
-  defaultIfEmpty,
-  firstValueFrom,
-  fromEvent,
   map,
   merge,
+  mergeMap,
   noop,
   pipe,
+  race,
   raceWith,
+  retry,
   tap,
+  throwIfEmpty,
 } from '../../../third_party/rxjs/rxjs.js';
 import type {EventType} from '../../common/EventEmitter.js';
 import {EventEmitter} from '../../common/EventEmitter.js';
@@ -109,24 +109,14 @@ export enum LocatorEvent {
    */
   Action = 'action',
 }
-export {
-  /**
-   * @deprecated Use {@link LocatorEvent}.
-   */
-  LocatorEvent as LocatorEmittedEvents,
-};
+
 /**
  * @public
  */
 export interface LocatorEvents extends Record<EventType, unknown> {
   [LocatorEvent.Action]: undefined;
 }
-export type {
-  /**
-   * @deprecated Use {@link LocatorEvents}.
-   */
-  LocatorEvents as LocatorEventObject,
-};
+
 /**
  * Locators describe a strategy of locating objects and performing an action on
  * them. If the action fails because the object is not ready for the action, the
@@ -182,19 +172,23 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
       });
     },
     retryAndRaceWithSignalAndTimer: <T>(
-      signal?: AbortSignal
+      signal?: AbortSignal,
+      cause?: Error
     ): OperatorFunction<T, T> => {
       const candidates = [];
       if (signal) {
         candidates.push(
           fromEvent(signal, 'abort').pipe(
             map(() => {
+              if (signal.reason instanceof Error) {
+                signal.reason.cause = cause;
+              }
               throw signal.reason;
             })
           )
         );
       }
-      candidates.push(timeout(this._timeout));
+      candidates.push(timeout(this._timeout, cause));
       return pipe(
         retry({delay: RETRY_DELAY}),
         raceWith<T, never[]>(...candidates)
@@ -378,6 +372,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
     options?: Readonly<LocatorClickOptions>
   ): Observable<void> {
     const signal = options?.signal;
+    const cause = new Error('Locator.click');
     return this._wait(options).pipe(
       this.operators.conditions(
         [
@@ -398,7 +393,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
           })
         );
       }),
-      this.operators.retryAndRaceWithSignalAndTimer(signal)
+      this.operators.retryAndRaceWithSignalAndTimer(signal, cause)
     );
   }
 
@@ -408,6 +403,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
     options?: Readonly<ActionOptions>
   ): Observable<void> {
     const signal = options?.signal;
+    const cause = new Error('Locator.fill');
     return this._wait(options).pipe(
       this.operators.conditions(
         [
@@ -531,7 +527,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
             })
           );
       }),
-      this.operators.retryAndRaceWithSignalAndTimer(signal)
+      this.operators.retryAndRaceWithSignalAndTimer(signal, cause)
     );
   }
 
@@ -540,6 +536,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
     options?: Readonly<ActionOptions>
   ): Observable<void> {
     const signal = options?.signal;
+    const cause = new Error('Locator.hover');
     return this._wait(options).pipe(
       this.operators.conditions(
         [
@@ -559,7 +556,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
           })
         );
       }),
-      this.operators.retryAndRaceWithSignalAndTimer(signal)
+      this.operators.retryAndRaceWithSignalAndTimer(signal, cause)
     );
   }
 
@@ -568,6 +565,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
     options?: Readonly<LocatorScrollOptions>
   ): Observable<void> {
     const signal = options?.signal;
+    const cause = new Error('Locator.scroll');
     return this._wait(options).pipe(
       this.operators.conditions(
         [
@@ -600,7 +598,7 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
           })
         );
       }),
-      this.operators.retryAndRaceWithSignalAndTimer(signal)
+      this.operators.retryAndRaceWithSignalAndTimer(signal, cause)
     );
   }
 
@@ -627,9 +625,10 @@ export abstract class Locator<T> extends EventEmitter<LocatorEvents> {
    * @public
    */
   async waitHandle(options?: Readonly<ActionOptions>): Promise<HandleFor<T>> {
+    const cause = new Error('Locator.waitHandle');
     return await firstValueFrom(
       this._wait(options).pipe(
-        this.operators.retryAndRaceWithSignalAndTimer(options?.signal)
+        this.operators.retryAndRaceWithSignalAndTimer(options?.signal, cause)
       )
     );
   }

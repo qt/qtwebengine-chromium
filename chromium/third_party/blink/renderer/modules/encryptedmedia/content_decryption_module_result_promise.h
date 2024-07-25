@@ -47,24 +47,22 @@ class ContentDecryptionModuleResultPromise
                          uint32_t system_code,
                          const WebString&) override;
 
-  // It is only valid to call this before completion.
-  ScriptPromise Promise();
-
   void Trace(Visitor*) const override;
 
  protected:
   // |interface_name| and |property_name| must have static life time.
-  ContentDecryptionModuleResultPromise(ScriptState*,
+  ContentDecryptionModuleResultPromise(ScriptPromiseResolverBase*,
                                        const MediaKeysConfig&,
                                        EmeApiType api_type);
 
   // Resolves the promise with |value|. Used by subclasses to resolve the
   // promise.
-  template <typename... T>
-  void Resolve(T... value) {
+  template <typename IDLType, typename... BlinkType>
+  void Resolve(BlinkType&&... value) {
     DCHECK(IsValidToFulfillPromise());
 
-    resolver_->Resolve(value...);
+    resolver_->DowncastTo<IDLType>()->Resolve(
+        std::forward<BlinkType>(value)...);
     resolver_.Clear();
   }
 
@@ -80,7 +78,7 @@ class ContentDecryptionModuleResultPromise
   MediaKeysConfig GetMediaKeysConfig();
 
  private:
-  Member<ScriptPromiseResolver> resolver_;
+  Member<ScriptPromiseResolverBase> resolver_;
   const MediaKeysConfig config_;
   const EmeApiType api_type_;
 };

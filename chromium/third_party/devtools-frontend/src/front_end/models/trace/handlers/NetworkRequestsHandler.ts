@@ -342,8 +342,8 @@ export async function finalize(): Promise<void> {
     const {frame, url, renderBlocking} = finalSendRequest.args.data;
     const {encodedDataLength, decodedBodyLength} =
         request.resourceFinish ? request.resourceFinish.args.data : {encodedDataLength: 0, decodedBodyLength: 0};
-    const {host, protocol, pathname, search} = new URL(url);
-    const isHttps = protocol === 'https:';
+    const parsedUrl = new URL(url);
+    const isHttps = parsedUrl.protocol === 'https:';
     const requestingFrameUrl =
         Helpers.Trace.activeURLForFrameAtTime(frame, finalSendRequest.ts, rendererProcessesByFrame) || '';
 
@@ -379,23 +379,29 @@ export async function finalize(): Promise<void> {
           encodedDataLength,
           frame,
           fromServiceWorker: request.receiveResponse.args.data.fromServiceWorker,
-          host,
+          isLinkPreload: request.receiveResponse.args.data.isLinkPreload || false,
           mimeType: request.receiveResponse.args.data.mimeType,
-          pathname,
           priority: finalPriority,
           initialPriority,
-          protocol,
+          protocol: request.receiveResponse.args.data.protocol ?? 'unknown',
           redirects,
           // In the event the property isn't set, assume non-blocking.
           renderBlocking: renderBlocking ? renderBlocking : 'non_blocking',
           requestId,
           requestingFrameUrl,
           requestMethod: finalSendRequest.args.data.requestMethod,
-          search,
+          resourceType: finalSendRequest.args.data.resourceType,
           statusCode: request.receiveResponse.args.data.statusCode,
+          responseHeaders: request.receiveResponse.args.data.headers || [],
+          fetchPriorityHint: finalSendRequest.args.data.fetchPriorityHint,
+          initiator: finalSendRequest.args.data.initiator,
           stackTrace: finalSendRequest.args.data.stackTrace,
           timing,
           url,
+          failed: request.resourceFinish?.args.data.didFail ?? false,
+          finished: Boolean(request.resourceFinish),
+          connectionId: request.receiveResponse.args.data.connectionId,
+          connectionReused: request.receiveResponse.args.data.connectionReused,
         },
       },
       cat: 'loading',
@@ -409,7 +415,7 @@ export async function finalize(): Promise<void> {
       tid: finalSendRequest.tid,
     };
 
-    const requests = Platform.MapUtilities.getWithDefault(requestsByOrigin, host, () => {
+    const requests = Platform.MapUtilities.getWithDefault(requestsByOrigin, parsedUrl.host, () => {
       return {
         renderBlocking: [],
         nonRenderBlocking: [],
@@ -440,8 +446,8 @@ export function data(): NetworkRequestData {
   }
 
   return {
-    byOrigin: new Map(requestsByOrigin),
-    byTime: [...requestsByTime],
+    byOrigin: requestsByOrigin,
+    byTime: requestsByTime,
   };
 }
 

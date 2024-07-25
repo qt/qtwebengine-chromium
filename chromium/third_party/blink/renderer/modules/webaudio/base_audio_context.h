@@ -30,6 +30,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_decode_error_callback.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_decode_success_callback.h"
 #include "third_party/blink/renderer/core/dom/events/event_listener.h"
@@ -74,7 +75,6 @@ class PannerNode;
 class PeriodicWave;
 class PeriodicWaveConstraints;
 class ScriptProcessorNode;
-class ScriptPromiseResolver;
 class ScriptState;
 class SecurityOrigin;
 class StereoPannerNode;
@@ -150,25 +150,25 @@ class MODULES_EXPORT BaseAudioContext
                             ExceptionState&);
 
   // Asynchronous audio file data decoding.
-  ScriptPromise decodeAudioData(ScriptState*,
-                                DOMArrayBuffer* audio_data,
-                                V8DecodeSuccessCallback*,
-                                V8DecodeErrorCallback*,
-                                ExceptionState&);
+  ScriptPromise<AudioBuffer> decodeAudioData(ScriptState*,
+                                             DOMArrayBuffer* audio_data,
+                                             V8DecodeSuccessCallback*,
+                                             V8DecodeErrorCallback*,
+                                             ExceptionState&);
 
-  ScriptPromise decodeAudioData(ScriptState*,
-                                DOMArrayBuffer* audio_data,
-                                ExceptionState&);
+  ScriptPromise<AudioBuffer> decodeAudioData(ScriptState*,
+                                             DOMArrayBuffer* audio_data,
+                                             ExceptionState&);
 
-  ScriptPromise decodeAudioData(ScriptState*,
-                                DOMArrayBuffer* audio_data,
-                                V8DecodeSuccessCallback*,
-                                ExceptionState&);
+  ScriptPromise<AudioBuffer> decodeAudioData(ScriptState*,
+                                             DOMArrayBuffer* audio_data,
+                                             V8DecodeSuccessCallback*,
+                                             ExceptionState&);
 
   // Handles the promise and callbacks when `.decodeAudioData()` is finished
   // decoding.
   void HandleDecodeAudioData(AudioBuffer*,
-                             ScriptPromiseResolver*,
+                             ScriptPromiseResolver<AudioBuffer>*,
                              V8DecodeSuccessCallback*,
                              V8DecodeErrorCallback*,
                              ExceptionContext);
@@ -277,8 +277,6 @@ class MODULES_EXPORT BaseAudioContext
   // In DCHECK builds, fails if this thread does not own the context's lock.
   void AssertGraphOwner() const { GetDeferredTaskHandler().AssertGraphOwner(); }
 
-  using GraphAutoLocker = DeferredTaskHandler::GraphAutoLocker;
-
   // Returns the maximum numuber of channels we can support.
   static uint32_t MaxNumberOfChannels() { return kMaxNumberOfChannels; }
 
@@ -361,7 +359,7 @@ class MODULES_EXPORT BaseAudioContext
   // it creates these Promises.
   // Vector of promises created by resume(). It takes time to handle them, so we
   // collect all of the promises here until they can be resolved or rejected.
-  HeapVector<Member<ScriptPromiseResolver>> resume_resolvers_;
+  HeapVector<Member<ScriptPromiseResolver<IDLUndefined>>> resume_resolvers_;
 
   void RejectPendingDecodeAudioDataResolvers();
 
@@ -420,7 +418,7 @@ class MODULES_EXPORT BaseAudioContext
   // Vector of promises created by decodeAudioData.  This keeps the resolvers
   // alive until decodeAudioData finishes decoding and can tell the main thread
   // to resolve them.
-  HeapHashSet<Member<ScriptPromiseResolver>> decode_audio_resolvers_;
+  HeapHashSet<Member<ScriptPromiseResolverBase>> decode_audio_resolvers_;
 
   // PeriodicWave's for the builtin oscillator types.  These only depend on the
   // sample rate. so they can be shared with all OscillatorNodes in the context.
@@ -440,7 +438,7 @@ class MODULES_EXPORT BaseAudioContext
   // reference to the WorkerThread associated with the AudioWorkletGlobalScope.
   // This cannot be nullptr once it is assigned from AudioWorkletThread until
   // the BaseAudioContext goes away.
-  raw_ptr<WorkerThread, ExperimentalRenderer> audio_worklet_thread_ = nullptr;
+  raw_ptr<WorkerThread, DanglingUntriaged> audio_worklet_thread_ = nullptr;
 };
 
 }  // namespace blink

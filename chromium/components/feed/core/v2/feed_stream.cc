@@ -7,11 +7,11 @@
 #include <algorithm>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -109,11 +109,6 @@ ContentOrder GetValidWebFeedContentOrder(const PrefService& pref_service) {
   ContentOrder pref_order = prefs::GetWebFeedContentOrder(pref_service);
   if (pref_order != ContentOrder::kUnspecified)
     return pref_order;
-  // Fallback to Finch determined order.
-  std::string finch_order = base::GetFieldTrialParamValueByFeature(
-      kWebFeed, "following_feed_content_order");
-  if (finch_order == "reverse_chron")
-    return ContentOrder::kReverseChron;
   // Defaults to grouped, encompassing finch_order == "grouped".
   return ContentOrder::kGrouped;
 }
@@ -363,7 +358,7 @@ void FeedStream::StreamLoadComplete(LoadStreamTask::Result result) {
   // is called bypassing the task queue. In this case WaitForStoreInitialize
   // task is not completed first and the metadata is not populated. Thus, we
   // dont need to track content_lifetime.
-  absl::optional<feedstore::Metadata::StreamMetadata> stream_metadata;
+  std::optional<feedstore::Metadata::StreamMetadata> stream_metadata;
   if (metadata_populated_) {
     feedstore::Metadata metadata = GetMetadata();
     stream_metadata =
@@ -391,8 +386,7 @@ void FeedStream::StreamLoadComplete(LoadStreamTask::Result result) {
 
   // When done loading the for-you feed, try to refresh the web-feed if there's
   // no unread content.
-  if (base::FeatureList::IsEnabled(kWebFeed) &&
-      result.load_type != LoadType::kManualRefresh &&
+  if (IsWebFeedEnabled() && result.load_type != LoadType::kManualRefresh &&
       result.stream_type.IsForYou() && chained_web_feed_refresh_enabled_) {
     // Checking for users without follows.
     // TODO(b/229143375) - We should rate limit fetches if the server side is
@@ -465,7 +459,7 @@ void FeedStream::SetStreamStale(const StreamType& stream_type, bool is_stale) {
   }
 }
 
-bool FeedStream::SetMetadata(absl::optional<feedstore::Metadata> metadata) {
+bool FeedStream::SetMetadata(std::optional<feedstore::Metadata> metadata) {
   if (metadata) {
     SetMetadata(std::move(*metadata));
     return true;
@@ -564,7 +558,7 @@ void FeedStream::RemoveUnreadContentObserver(const StreamType& stream_type,
     UnreadContentObserver* ptr = notifier.observer().get();
     return ptr == nullptr || observer == ptr;
   };
-  base::EraseIf(stream.unread_content_notifiers, predicate);
+  std::erase_if(stream.unread_content_notifiers, predicate);
 }
 
 void FeedStream::ScheduleModelUnloadIfNoSurfacesAttached(
@@ -634,6 +628,11 @@ bool FeedStream::IsFeedEnabledByDse() {
   }
 #endif  // BUILDFLAG(IS_ANDROID)
   return true;
+}
+
+bool FeedStream::IsWebFeedEnabled() {
+  return feed::IsWebFeedEnabledForLocale(delegate_->GetCountry()) &&
+         !delegate_->IsSupervisedAccount();
 }
 
 void FeedStream::EnabledPreferencesChanged() {
@@ -781,7 +780,7 @@ void FeedStream::ExecuteOperations(
     DLOG(ERROR) << "Calling ExecuteOperations before the model is loaded";
     return;
   }
-  // TODO(crbug.com/1227897): Convert this to a task.
+  // TODO(crbug.com/40777338): Convert this to a task.
   return model->ExecuteOperations(std::move(operations));
 }
 
@@ -804,7 +803,7 @@ EphemeralChangeId FeedStream::CreateEphemeralChange(
 
 EphemeralChangeId FeedStream::CreateEphemeralChangeFromPackedData(
     SurfaceId surface_id,
-    base::StringPiece data) {
+    std::string_view data) {
   feedpacking::DismissData msg;
   msg.ParseFromArray(data.data(), data.size());
   return CreateEphemeralChange(surface_id,
@@ -832,7 +831,7 @@ bool FeedStream::RejectEphemeralChange(SurfaceId surface_id,
 }
 
 void FeedStream::ProcessThereAndBackAgain(
-    base::StringPiece data,
+    std::string_view data,
     const LoggingParameters& logging_parameters) {
   feedwire::ThereAndBackAgainData msg;
   msg.ParseFromArray(data.data(), data.size());
@@ -847,7 +846,7 @@ void FeedStream::ProcessThereAndBackAgain(
 }
 
 void FeedStream::ProcessViewAction(
-    base::StringPiece data,
+    std::string_view data,
     const LoggingParameters& logging_parameters) {
   if (!logging_parameters.view_actions_enabled)
     return;
@@ -977,7 +976,7 @@ void FeedStream::SubscribedWebFeedCount(
     base::OnceCallback<void(int)> callback) {
   subscriptions().SubscribedWebFeedCount(std::move(callback));
 }
-void FeedStream::RegisterFeedUserSettingsFieldTrial(base::StringPiece group) {
+void FeedStream::RegisterFeedUserSettingsFieldTrial(std::string_view group) {
   delegate_->RegisterFeedUserSettingsFieldTrial(group);
 }
 
@@ -1191,7 +1190,7 @@ RequestMetadata FeedStream::GetSignedInRequestMetadata() const {
 RequestMetadata FeedStream::GetRequestMetadata(const StreamType& stream_type,
                                                bool is_for_next_page) const {
   const Stream* stream = FindStream(stream_type);
-  // TODO(crbug.com/1370127) handle null single web feed streams
+  // TODO(crbug.com/40869569) handle null single web feed streams
   DCHECK(stream);
   RequestMetadata result;
   if (is_for_next_page) {
@@ -1792,9 +1791,10 @@ void FeedStream::CheckDuplicatedContentsOnRefresh() {
   base::flat_set<uint32_t> viewed_content_hashes(
       stream_metadata.viewed_content_hashes().begin(),
       stream_metadata.viewed_content_hashes().end());
-  base::EraseIf(most_recent_viewed_content_hashes,
-      [&viewed_content_hashes](
-      uint32_t x) { return viewed_content_hashes.contains(x); });
+  std::erase_if(most_recent_viewed_content_hashes,
+                [&viewed_content_hashes](uint32_t x) {
+                  return viewed_content_hashes.contains(x);
+                });
   most_recent_viewed_content_hashes.insert(
       most_recent_viewed_content_hashes.end(),
       stream_metadata.viewed_content_hashes().begin(),

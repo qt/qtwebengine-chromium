@@ -12,6 +12,7 @@
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
@@ -31,17 +32,19 @@ namespace {
 std::vector<const char*>* GetDeprecatedPrefs() {
   // Add deprecated previously tracked preferences below for them to be cleaned
   // up from both the pref files and the hash store.
-  static std::vector<const char*> prefs {
+  static std::vector<const char*> prefs{
 #if BUILDFLAG(IS_WIN)
-    // TODO(crbug/1439998): Remove after Oct 2024
-    "software_reporter.prompt_version", "software_reporter.prompt_seed",
-        "settings_reset_prompt.prompt_wave",
-        "settings_reset_prompt.last_triggered_for_default_search",
-        "settings_reset_prompt.last_triggered_for_startup_urls",
-        "settings_reset_prompt.last_triggered_for_homepage",
-        "software_reporter.reporting",
-        // Also delete the now empty dictionaries.
-        "software_reporter", "settings_reset_prompt",
+      // TODO(crbug.com/40265803): Remove after Oct 2024
+      "software_reporter.prompt_version",
+      "software_reporter.prompt_seed",
+      "settings_reset_prompt.prompt_wave",
+      "settings_reset_prompt.last_triggered_for_default_search",
+      "settings_reset_prompt.last_triggered_for_startup_urls",
+      "settings_reset_prompt.last_triggered_for_homepage",
+      "software_reporter.reporting",
+      // Also delete the now empty dictionaries.
+      "software_reporter",
+      "settings_reset_prompt",
 #endif
   };
 
@@ -76,9 +79,9 @@ PrefHashFilter::PrefHashFilter(
     : pref_hash_store_(std::move(pref_hash_store)),
       external_validation_hash_store_pair_(
           external_validation_hash_store_pair.first
-              ? absl::make_optional(
+              ? std::make_optional(
                     std::move(external_validation_hash_store_pair))
-              : absl::nullopt),
+              : std::nullopt),
       reset_on_load_observer_(std::move(reset_on_load_observer)),
       delegate_(std::move(delegate)) {
   DCHECK(pref_hash_store_);
@@ -271,6 +274,10 @@ void PrefHashFilter::FinalizeFilterOnLoad(
 
   std::move(post_filter_on_load_callback)
       .Run(std::move(pref_store_contents), prefs_altered);
+}
+
+base::WeakPtr<InterceptablePrefFilter> PrefHashFilter::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 // static

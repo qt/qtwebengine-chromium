@@ -6,8 +6,10 @@
 
 #include <string.h>
 
+#include <string_view>
+
 #include "base/base64.h"
-#include "base/big_endian.h"
+#include "base/numerics/byte_conversions.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/string_util.h"
@@ -36,7 +38,7 @@ size_t CopyClamped(base::span<const char>* input, base::span<char>* output) {
 }  // namespace
 
 MerkleIntegritySourceStream::MerkleIntegritySourceStream(
-    base::StringPiece digest_header_value,
+    std::string_view digest_header_value,
     std::unique_ptr<SourceStream> upstream)
     // TODO(ksakamoto): Use appropriate SourceType.
     : net::FilterSourceStream(SourceStream::TYPE_NONE, std::move(upstream)) {
@@ -103,10 +105,9 @@ bool MerkleIntegritySourceStream::FilterDataImpl(base::span<char>* output,
       }
       return false;
     }
-    uint64_t record_size;
-    base::ReadBigEndian(reinterpret_cast<const uint8_t*>(bytes.data()),
-                        &record_size);
-    if (record_size == 0) {
+    uint64_t record_size =
+        base::numerics::U64FromBigEndian(base::as_bytes(bytes).first<8u>());
+    if (record_size == 0u) {
       return false;
     }
     if (record_size > kMaxRecordSize) {
@@ -224,7 +225,7 @@ bool MerkleIntegritySourceStream::ProcessRecord(base::span<const char> record,
   if (!is_final) {
     // Split into data and a hash.
     base::span<const char> hash = record.subspan(record_size_);
-    record = record.subspan(0, record_size_);
+    record = record.first(record_size_);
 
     // Save the next proof.
     CHECK_EQ(static_cast<size_t>(SHA256_DIGEST_LENGTH), hash.size());

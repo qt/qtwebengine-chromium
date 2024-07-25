@@ -36,7 +36,7 @@ class ServiceWorkerLiveVersionRefImpl;
 // ServiceWorkerContextWrapper. In the near future,
 // kServiceWorkerStorageControlOnThreadPool will be the default for all
 // platforms.
-// TODO(crbug.com/1055677): Merge this implementation into ServiceWorkerStorage
+// TODO(crbug.com/40120038): Merge this implementation into ServiceWorkerStorage
 // and move the merged class to components/services/storage.
 class ServiceWorkerStorageControlImpl
     : public mojom::ServiceWorkerStorageControl {
@@ -81,7 +81,7 @@ class ServiceWorkerStorageControlImpl
       const blink::StorageKey& key,
       FindRegistrationForScopeCallback callback) override;
   void FindRegistrationForId(int64_t registration_id,
-                             const absl::optional<blink::StorageKey>& key,
+                             const std::optional<blink::StorageKey>& key,
                              FindRegistrationForIdCallback callback) override;
   void GetRegistrationsForStorageKey(
       const blink::StorageKey& key,
@@ -199,7 +199,7 @@ class ServiceWorkerStorageControlImpl
       FindRegistrationForClientUrlCallback callback,
       mojom::ServiceWorkerRegistrationDataPtr data,
       std::unique_ptr<ResourceList> resources,
-      const absl::optional<std::vector<GURL>>& scopes,
+      const std::optional<std::vector<GURL>>& scopes,
       mojom::ServiceWorkerDatabaseStatus status);
   void DidFindRegistration(
       base::OnceCallback<void(mojom::ServiceWorkerDatabaseStatus status,

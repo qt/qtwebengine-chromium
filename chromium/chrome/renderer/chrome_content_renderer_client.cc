@@ -35,10 +35,8 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/crash_keys.h"
-#include "chrome/common/pdf_util.h"
 #include "chrome/common/pepper_permission_util.h"
 #include "chrome/common/ppapi_utils.h"
-#include "chrome/common/privacy_budget/privacy_budget_settings_provider.h"
 #include "chrome/common/profiler/thread_profiler.h"
 #include "chrome/common/profiler/unwind_util.h"
 #include "chrome/common/secure_origin_allowlist.h"
@@ -62,10 +60,11 @@
 #include "chrome/renderer/net_benchmarking_extension.h"
 #include "chrome/renderer/plugins/non_loadable_plugin_placeholder.h"
 #include "chrome/renderer/plugins/pdf_plugin_placeholder.h"
-#include "chrome/renderer/plugins/plugin_uma.h"
+#include "chrome/renderer/supervised_user/supervised_user_error_page_controller_delegate_impl.h"
 #include "chrome/renderer/trusted_vault_encryption_keys_extension.h"
 #include "chrome/renderer/url_loader_throttle_provider_impl.h"
 #include "chrome/renderer/v8_unwinder.h"
+#include "chrome/renderer/web_link_preview_triggerer_impl.h"
 #include "chrome/renderer/websocket_handshake_throttle_provider_impl.h"
 #include "chrome/renderer/worker_content_settings_client.h"
 #include "chrome/services/speech/buildflags/buildflags.h"
@@ -79,6 +78,7 @@
 #include "components/content_capture/renderer/content_capture_sender.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/continuous_search/renderer/search_result_extractor_impl.h"
+#include "components/country_codes/country_codes.h"
 #include "components/dom_distiller/content/renderer/distillability_agent.h"
 #include "components/dom_distiller/content/renderer/distiller_js_render_frame_observer.h"
 #include "components/dom_distiller/core/dom_distiller_features.h"
@@ -87,6 +87,7 @@
 #include "components/error_page/common/error.h"
 #include "components/error_page/common/localized_error.h"
 #include "components/feed/buildflags.h"
+#include "components/feed/feed_feature_list.h"
 #include "components/grit/components_scaled_resources.h"
 #include "components/heap_profiling/in_process/heap_profiler_controller.h"
 #include "components/history_clusters/core/config.h"
@@ -97,9 +98,12 @@
 #include "components/no_state_prefetch/renderer/no_state_prefetch_utils.h"
 #include "components/no_state_prefetch/renderer/prerender_render_frame_observer.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/page_content_annotations/core/page_content_annotations_features.h"
 #include "components/page_load_metrics/renderer/metrics_render_frame_observer.h"
 #include "components/paint_preview/buildflags/buildflags.h"
 #include "components/password_manager/core/common/password_manager_features.h"
+#include "components/pdf/common/constants.h"
+#include "components/pdf/common/pdf_util.h"
 #include "components/permissions/features.h"
 #include "components/safe_browsing/buildflags.h"
 #include "components/safe_browsing/content/renderer/threat_dom_details.h"
@@ -107,7 +111,6 @@
 #include "components/subresource_filter/content/renderer/subresource_filter_agent.h"
 #include "components/subresource_filter/content/renderer/unverified_ruleset_dealer.h"
 #include "components/subresource_filter/core/common/common_features.h"
-#include "components/supervised_user/core/common/buildflags.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "components/variations/variations_switches.h"
 #include "components/version_info/version_info.h"
@@ -138,7 +141,6 @@
 #include "services/tracing/public/cpp/stack_sampling/tracing_sampler_profiler.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-shared.h"
 #include "third_party/blink/public/mojom/page/page_visibility_state.mojom.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -202,6 +204,7 @@
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "chrome/common/controlled_frame/controlled_frame.h"
 #include "chrome/common/initialize_extensions_client.h"
+#include "chrome/renderer/extensions/api/chrome_extensions_renderer_api_provider.h"
 #include "chrome/renderer/extensions/chrome_extensions_renderer_client.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/context_data.h"
@@ -209,6 +212,7 @@
 #include "extensions/common/manifest_handlers/csp_info.h"
 #include "extensions/common/manifest_handlers/web_accessible_resources_info.h"
 #include "extensions/common/switches.h"
+#include "extensions/renderer/api/core_extensions_renderer_api_provider.h"
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/guest_view/mime_handler_view/mime_handler_view_container_manager.h"
 #include "extensions/renderer/renderer_extension_registry.h"
@@ -218,7 +222,6 @@
 
 #if BUILDFLAG(ENABLE_PDF)
 #include "chrome/renderer/pdf/chrome_pdf_internal_plugin_delegate.h"
-#include "components/pdf/common/internal_plugin_helpers.h"
 #include "components/pdf/renderer/internal_plugin_renderer_helpers.h"
 #endif  // BUILDFLAG(ENABLE_PDF)
 
@@ -249,10 +252,6 @@
 #include "components/spellcheck/renderer/spellcheck_panel.h"
 #endif  // BUILDFLAG(HAS_SPELLCHECK_PANEL)
 #endif  // BUILDFLAG(ENABLE_SPELLCHECK)
-
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-#include "chrome/renderer/supervised_user/supervised_user_error_page_controller_delegate_impl.h"
-#endif
 
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
 #include "chrome/renderer/media/chrome_key_systems.h"
@@ -287,9 +286,16 @@ using content::RenderFrame;
 using content::RenderThread;
 using content::WebPluginInfo;
 using content::WebPluginMimeType;
-using UsesKeyboardAccessoryForSuggestions =
-    AutofillAgent::UsesKeyboardAccessoryForSuggestions;
 using ExtractAllDatalists = autofill::AutofillAgent::ExtractAllDatalists;
+using FocusRequiresScroll = autofill::AutofillAgent::FocusRequiresScroll;
+using QueryPasswordSuggestions =
+    autofill::AutofillAgent::QueryPasswordSuggestions;
+using SecureContextRequired = autofill::AutofillAgent::SecureContextRequired;
+using UserGestureRequired = autofill::AutofillAgent::UserGestureRequired;
+using UsesKeyboardAccessoryForSuggestions =
+    autofill::AutofillAgent::UsesKeyboardAccessoryForSuggestions;
+using EnableHeavyFormDataScraping =
+    autofill::PasswordAutofillAgent::EnableHeavyFormDataScraping;
 
 namespace {
 
@@ -438,10 +444,16 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   ChromeExtensionsRendererClient* chrome_extensions_renderer_client =
       ChromeExtensionsRendererClient::GetInstance();
   chrome_extensions_renderer_client->AddAPIProvider(
+      std::make_unique<extensions::CoreExtensionsRendererAPIProvider>());
+  chrome_extensions_renderer_client->AddAPIProvider(
+      std::make_unique<extensions::ChromeExtensionsRendererAPIProvider>());
+  chrome_extensions_renderer_client->AddAPIProvider(
       std::make_unique<
           controlled_frame::ControlledFrameExtensionsRendererAPIProvider>());
   chrome_extensions_renderer_client->RenderThreadStarted();
   WebSecurityPolicy::RegisterURLSchemeAsExtension(
+      WebString::FromASCII(extensions::kExtensionScheme));
+  WebSecurityPolicy::RegisterURLSchemeAsCodeCacheWithHashing(
       WebString::FromASCII(extensions::kExtensionScheme));
 #endif
 
@@ -548,14 +560,13 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   // This doesn't work in single-process mode.
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kSingleProcess)) {
-    using HeapProfilerController = heap_profiling::HeapProfilerController;
+    const auto* heap_profiler_controller =
+        heap_profiling::HeapProfilerController::GetInstance();
     // The HeapProfilerController should have been created in
     // ChromeMainDelegate::PostEarlyInitialization.
-    DCHECK_NE(HeapProfilerController::GetProfilingEnabled(),
-              HeapProfilerController::ProfilingEnabled::kNoController);
+    CHECK(heap_profiler_controller);
     if (ThreadProfiler::ShouldCollectProfilesForChildProcess() ||
-        HeapProfilerController::GetProfilingEnabled() ==
-            HeapProfilerController::ProfilingEnabled::kEnabled) {
+        heap_profiler_controller->IsEnabled()) {
       ThreadProfiler::SetMainThreadTaskRunner(
           base::SingleThreadTaskRunner::GetCurrentDefault());
       mojo::PendingRemote<metrics::mojom::CallStackProfileCollector> collector;
@@ -563,10 +574,6 @@ void ChromeContentRendererClient::RenderThreadStarted() {
       metrics::CallStackProfileBuilder::
           SetParentProfileCollectorForChildProcess(std::move(collector));
     }
-
-    // This is superfluous in single-process mode and triggers a DCHECK
-    blink::IdentifiabilityStudySettings::SetGlobalProvider(
-        std::make_unique<PrivacyBudgetSettingsProvider>());
   }
 }
 
@@ -646,16 +653,14 @@ void ChromeContentRendererClient::RenderFrameCreated(
 
   const bool search_result_extractor_enabled =
       render_frame->IsMainFrame() &&
-      optimization_guide::features::IsPageContentAnnotationEnabled();
+      page_content_annotations::features::ShouldExtractRelatedSearches();
   if (search_result_extractor_enabled) {
     continuous_search::SearchResultExtractorImpl::Create(render_frame);
   }
 
   new NetErrorHelper(render_frame);
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
   new SupervisedUserErrorPageControllerDelegateImpl(render_frame);
-#endif
 
   if (!render_frame->IsMainFrame()) {
     auto* main_frame_no_state_prefetch_helper =
@@ -686,13 +691,18 @@ void ChromeContentRendererClient::RenderFrameCreated(
   if (!render_frame->IsInFencedFrameTree() ||
       base::FeatureList::IsEnabled(blink::features::kFencedFramesAPIChanges)) {
     auto password_autofill_agent = std::make_unique<PasswordAutofillAgent>(
-        render_frame, associated_interfaces);
+        render_frame, associated_interfaces,
+        EnableHeavyFormDataScraping(
+            chrome::GetChannel() == version_info::Channel::CANARY ||
+            chrome::GetChannel() == version_info::Channel::DEV));
     auto password_generation_agent = std::make_unique<PasswordGenerationAgent>(
         render_frame, password_autofill_agent.get(), associated_interfaces);
     new AutofillAgent(
         render_frame,
-        {UsesKeyboardAccessoryForSuggestions(BUILDFLAG(IS_ANDROID)),
-         ExtractAllDatalists(false)},
+        {ExtractAllDatalists(false), FocusRequiresScroll(true),
+         QueryPasswordSuggestions(false), SecureContextRequired(false),
+         UserGestureRequired(true),
+         UsesKeyboardAccessoryForSuggestions(BUILDFLAG(IS_ANDROID))},
         std::move(password_autofill_agent),
         std::move(password_generation_agent), associated_interfaces);
 
@@ -759,7 +769,7 @@ void ChromeContentRendererClient::RenderFrameCreated(
 #endif
 #if BUILDFLAG(ENABLE_FEED_V2)
   if (render_frame->IsMainFrame() &&
-      base::FeatureList::IsEnabled(feed::kWebFeed)) {
+      feed::IsWebFeedEnabledForLocale(country_codes::GetCurrentCountryCode())) {
     new feed::RssLinkReader(render_frame, registry);
   }
 #endif
@@ -901,8 +911,7 @@ bool ChromeContentRendererClient::OverrideCreatePlugin(
       orig_mime_type, &plugin_info);
   *plugin = CreatePlugin(render_frame, params, *plugin_info);
 #else  // !BUILDFLAG(ENABLE_PLUGINS)
-  PluginUMAReporter::GetInstance()->ReportPluginMissing(orig_mime_type, url);
-  if (orig_mime_type == kPDFMimeType) {
+  if (orig_mime_type == pdf::kPDFMimeType) {
     ReportPDFLoadStatus(
         PDFLoadStatus::kShowedDisabledPluginPlaceholderForEmbeddedPdf);
 
@@ -967,8 +976,6 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
                  render_frame, original_params)
           ->plugin();
     } else {
-      PluginUMAReporter::GetInstance()->ReportPluginMissing(orig_mime_type,
-                                                            url);
       placeholder = ChromePluginPlaceholder::CreateLoadableMissingPlugin(
           render_frame, original_params);
     }
@@ -1136,8 +1143,6 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         return render_frame->CreatePlugin(info, params);
       }
       case chrome::mojom::PluginStatus::kDisabled: {
-        PluginUMAReporter::GetInstance()->ReportPluginDisabled(orig_mime_type,
-                                                               url);
         if (info.path.value() == ChromeContentClient::kPDFExtensionPluginPath) {
           ReportPDFLoadStatus(
               PDFLoadStatus::kShowedDisabledPluginPlaceholderForEmbeddedPdf);
@@ -1212,7 +1217,7 @@ GURL ChromeContentRendererClient::GetNaClContentHandlerURL(
 void ChromeContentRendererClient::GetInterface(
     const std::string& interface_name,
     mojo::ScopedMessagePipeHandle interface_pipe) {
-  // TODO(crbug.com/977637): Get rid of the use of this implementation of
+  // TODO(crbug.com/40633267): Get rid of the use of this implementation of
   // |service_manager::LocalInterfaceProvider|. This was done only to avoid
   // churning spellcheck code while eliminting the "chrome" and
   // "chrome_renderer" services. Spellcheck is (and should remain) the only
@@ -1347,10 +1352,8 @@ void ChromeContentRendererClient::PrepareErrorPage(
           http_method == "POST", std::move(alternative_error_page_info),
           error_html);
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
   SupervisedUserErrorPageControllerDelegateImpl::Get(render_frame)
       ->PrepareForErrorPage();
-#endif
 }
 
 void ChromeContentRendererClient::PrepareErrorPageForHttpStatusError(
@@ -1402,7 +1405,9 @@ void ChromeContentRendererClient::PostCompositorThreadCreated(
 }
 
 bool ChromeContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
-  return !IsStandaloneContentExtensionProcess();
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+             switches::kInitIsolateAsForeground) ||
+         !IsStandaloneContentExtensionProcess();
 }
 
 bool ChromeContentRendererClient::AllowPopup() {
@@ -1577,12 +1582,15 @@ ChromeContentRendererClient::CreateWebSocketHandshakeThrottleProvider() {
       browser_interface_broker_.get());
 }
 
-void ChromeContentRendererClient::GetSupportedKeySystems(
+std::unique_ptr<media::KeySystemSupportRegistration>
+ChromeContentRendererClient::GetSupportedKeySystems(
+    content::RenderFrame* render_frame,
     media::GetSupportedKeySystemsCB cb) {
 #if BUILDFLAG(ENABLE_LIBRARY_CDMS) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
-  GetChromeKeySystems(std::move(cb));
+  return GetChromeKeySystems(render_frame, std::move(cb));
 #else
   std::move(cb).Run({});
+  return nullptr;
 #endif
 }
 
@@ -1818,7 +1826,7 @@ void ChromeContentRendererClient::AppendContentSecurityPolicy(
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #if BUILDFLAG(ENABLE_PDF)
   // Don't apply default CSP to PDF renderers.
-  // TODO(crbug.com/1252096): Lock down the CSP once style and script are no
+  // TODO(crbug.com/40792950): Lock down the CSP once style and script are no
   // longer injected inline by `pdf::PluginResponseWriter`. That class may be a
   // better place to define such CSP, or we may continue doing so here.
   if (pdf::IsPdfRenderer())
@@ -1844,4 +1852,9 @@ void ChromeContentRendererClient::AppendContentSecurityPolicy(
                   network::mojom::ContentSecurityPolicyType::kEnforce,
                   network::mojom::ContentSecurityPolicySource::kHTTP});
 #endif
+}
+
+std::unique_ptr<blink::WebLinkPreviewTriggerer>
+ChromeContentRendererClient::CreateLinkPreviewTriggerer() {
+  return ::CreateWebLinkPreviewTriggerer();
 }

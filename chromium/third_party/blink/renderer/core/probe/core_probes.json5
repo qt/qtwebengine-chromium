@@ -54,7 +54,7 @@
     },
     InspectorAnimationAgent: {
       probes: [
-        "AnimationPlayStateChanged",
+        "AnimationUpdated",
         "DidClearDocumentOfWindowObject",
         "DidCreateAnimation",
       ]
@@ -207,6 +207,7 @@
         "WebTransportCreated",
         "WebTransportConnectionEstablished",
         "WebTransportClosed",
+        "WillCreateP2PSocketUdp",
         "WillCreateWebSocket",
         "WillDispatchEventSourceEvent",
         "WillLoadXHR",

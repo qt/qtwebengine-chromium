@@ -39,13 +39,48 @@ config_setting(
 
 cc_library(
     name = "fuzztest",
-    srcs = ["fuzztest.cc"],
     hdrs = ["fuzztest.h"],
     deps = [
         ":domain",
+        ":fuzztest_macros",
+    ],
+)
+
+cc_library(
+    name = "fuzztest_core",
+    hdrs = ["fuzztest_core.h"],
+    deps = [
+        ":domain_core",
+        ":fuzztest_macros",
+    ],
+)
+
+cc_library(
+    name = "fuzztest_macros",
+    srcs = ["fuzztest_macros.cc"],
+    hdrs = [
+        "fuzztest_macros.h",
+    ],
+    deps = [
         ":io",
         ":registration",
         ":registry",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "fuzztest_macros_test",
+    srcs = ["fuzztest_macros_test.cc"],
+    deps = [
+        ":fuzztest_macros",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -74,6 +109,8 @@ cc_library(
         ":registry",
         ":runtime",
         "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/flags:reflection",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
@@ -103,15 +140,13 @@ cc_library(
     deps = [
         ":domain_core",
         ":fuzztest",
+        ":fuzztest_macros",
         ":io",
         ":llvm_fuzzer_main",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/random:bit_gen_ref",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_googlesource_code_re2//:re2",
     ],
     alwayslink = True,
 )
@@ -161,7 +196,9 @@ cc_library(
         "-Wl,--warn-backrefs-exclude=*/centipede/*",
     ],
     deps = [
+        ":any",
         ":configuration",
+        ":corpus_database",
         ":coverage",
         ":domain_core",
         ":fixture_driver",
@@ -169,6 +206,9 @@ cc_library(
         ":runtime",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/log",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/random",
+        "@com_google_absl//absl/random:distributions",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -180,8 +220,10 @@ cc_library(
         "@com_google_fuzztest//centipede:defs",
         "@com_google_fuzztest//centipede:early_exit",
         "@com_google_fuzztest//centipede:environment",
+        "@com_google_fuzztest//centipede:mutation_input",
         "@com_google_fuzztest//centipede:runner_result",
         "@com_google_fuzztest//centipede:shared_memory_blob_sequence",
+        "@com_google_fuzztest//centipede:workdir",
     ],
 )
 
@@ -190,6 +232,7 @@ cc_library(
     srcs = ["internal/compatibility_mode.cc"],
     hdrs = ["internal/compatibility_mode.h"],
     deps = [
+        ":domain_core",
         ":fixture_driver",
         ":logging",
         ":runtime",
@@ -207,10 +250,35 @@ cc_library(
     srcs = ["internal/configuration.cc"],
     hdrs = ["internal/configuration.h"],
     deps = [
-        ":io",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
+    ],
+)
+
+cc_test(
+    name = "configuration_test",
+    srcs = ["internal/configuration_test.cc"],
+    deps = [
+        ":configuration",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "corpus_database",
+    srcs = ["internal/corpus_database.cc"],
+    hdrs = ["internal/corpus_database.h"],
+    deps = [
+        ":configuration",
+        ":io",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -258,6 +326,7 @@ cc_library(
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/random:bit_gen_ref",
         "@com_google_absl//absl/random:distributions",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
@@ -268,6 +337,7 @@ cc_library(
 # by the default Centipede mutation.
 cc_library(
     name = "domain_core",
+    srcs = ["internal/domains/domain_base.cc"],
     hdrs = [
         "domain_core.h",
         "internal/domains/aggregate_of_impl.h",
@@ -275,7 +345,9 @@ cc_library(
         "internal/domains/bit_flag_combination_of_impl.h",
         "internal/domains/container_mutation_helpers.h",
         "internal/domains/container_of_impl.h",
+        "internal/domains/domain.h",
         "internal/domains/domain_base.h",
+        "internal/domains/domain_type_erasure.h",
         "internal/domains/element_of_impl.h",
         "internal/domains/filter_impl.h",
         "internal/domains/flat_map_impl.h",
@@ -296,12 +368,15 @@ cc_library(
         ":coverage",
         ":logging",
         ":meta",
+        ":printer",
+        ":seed_seq",
         ":serialization",
         ":status",
         ":table_of_recent_compares",
         ":type_support",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/numeric:bits",
         "@com_google_absl//absl/numeric:int128",
         "@com_google_absl//absl/random",
@@ -321,12 +396,13 @@ cc_library(
     hdrs = ["internal/fixture_driver.h"],
     deps = [
         ":any",
-        ":domain",
         ":domain_core",
         ":logging",
+        ":meta",
+        ":printer",
         ":registration",
         ":type_support",
-        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
@@ -359,10 +435,13 @@ cc_library(
     hdrs = ["internal/googletest_adaptor.h"],
     deps = [
         ":configuration",
+        ":corpus_database",
+        ":flag_name",
         ":io",
         ":registry",
         ":runtime",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],
@@ -387,14 +466,16 @@ cc_library(
         "@com_google_absl//absl/hash",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(
     name = "io_test",
     srcs = ["internal/io_test.cc"],
     deps = [
-        ":fuzztest",
+        ":fuzztest_core",
         ":io",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
@@ -417,6 +498,15 @@ cc_library(
 )
 
 cc_library(
+    name = "printer",
+    hdrs = ["internal/printer.h"],
+    deps = [
+        ":meta",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "regexp_dfa",
     srcs = ["internal/domains/regexp_dfa.cc"],
     hdrs = ["internal/domains/regexp_dfa.h"],
@@ -434,11 +524,12 @@ cc_library(
     name = "registration",
     hdrs = ["internal/registration.h"],
     deps = [
-        ":domain",
         ":domain_core",
         ":meta",
+        ":printer",
         ":type_support",
         "@com_google_absl//absl/functional:any_invocable",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
     ],
@@ -468,20 +559,22 @@ cc_library(
     hdrs = ["internal/runtime.h"],
     deps = [
         ":configuration",
+        ":corpus_database",
         ":coverage",
-        ":domain",
         ":domain_core",
         ":fixture_driver",
         ":flag_name",
         ":io",
         ":logging",
         ":meta",
+        ":printer",
         ":registration",
         ":seed_seq",
         ":serialization",
         ":type_support",
         "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/functional:function_ref",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/random",
         "@com_google_absl//absl/random:bit_gen_ref",
         "@com_google_absl//absl/random:distributions",
@@ -497,7 +590,7 @@ cc_test(
     name = "runtime_test",
     srcs = ["internal/runtime_test.cc"],
     deps = [
-        ":domain",
+        ":domain_core",
         ":runtime",
         ":test_protobuf_cc_proto",
         "@com_google_absl//absl/time",
@@ -601,7 +694,6 @@ cc_test(
     name = "table_of_recent_compares_test",
     srcs = ["internal/table_of_recent_compares_test.cc"],
     deps = [
-        ":domain",
         ":table_of_recent_compares",
         "@com_google_absl//absl/random",
         "@com_google_googletest//:gtest_main",
@@ -625,11 +717,14 @@ cc_library(
     deps = [
         ":absl_helpers",
         ":meta",
+        ":printer",
         "@com_google_absl//absl/debugging:symbolize",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/numeric:int128",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
+        "@com_google_protobuf//:protobuf",
     ],
 )
 
@@ -638,6 +733,8 @@ cc_test(
     srcs = ["internal/type_support_test.cc"],
     deps = [
         ":domain",
+        ":meta",
+        ":printer",
         ":test_protobuf_cc_proto",
         ":type_support",
         "@com_google_absl//absl/numeric:int128",
@@ -645,5 +742,6 @@ cc_test(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
+        "@com_google_protobuf//:protobuf",
     ],
 )

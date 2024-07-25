@@ -24,16 +24,19 @@ class Map;
   V(BigInt, BIGINT_TYPE)                           \
   V(FixedArrayExact, FIXED_ARRAY_TYPE)
 
-#define INSTANCE_TYPE_CHECKERS_RANGE(V)           \
-  TORQUE_INSTANCE_CHECKERS_RANGE_FULLY_DEFINED(V) \
-  TORQUE_INSTANCE_CHECKERS_RANGE_ONLY_DECLARED(V)
+#define INSTANCE_TYPE_CHECKERS_RANGE(V)                  \
+  TORQUE_INSTANCE_CHECKERS_RANGE_FULLY_DEFINED(V)        \
+  TORQUE_INSTANCE_CHECKERS_RANGE_ONLY_DECLARED(V)        \
+  V(CallableJSFunction, FIRST_CALLABLE_JS_FUNCTION_TYPE, \
+    LAST_CALLABLE_JS_FUNCTION_TYPE)
 
 #define INSTANCE_TYPE_CHECKERS_CUSTOM(V) \
   V(AbstractCode)                        \
   V(ExternalString)                      \
   V(FreeSpaceOrFiller)                   \
   V(GcSafeCode)                          \
-  V(InternalizedString)
+  V(InternalizedString)                  \
+  V(PropertyDictionary)
 
 #define INSTANCE_TYPE_CHECKERS(V)  \
   INSTANCE_TYPE_CHECKERS_SINGLE(V) \

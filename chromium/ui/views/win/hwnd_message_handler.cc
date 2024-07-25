@@ -4,15 +4,17 @@
 
 #include "ui/views/win/hwnd_message_handler.h"
 
+#include <tchar.h>
+
 #include <dwmapi.h>
 #include <oleacc.h>
 #include <shellapi.h>
-#include <tchar.h>
 #include <wrl/client.h>
 
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/heap_array.h"
 #include "base/debug/gdi_debug_util_win.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -33,8 +35,8 @@
 #include "services/tracing/public/cpp/perfetto/macros.h"
 #include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_window_handle_event_info.pbzero.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/accessibility/accessibility_features.h"
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
+#include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_platform_node_win.h"
 #include "ui/accessibility/platform/ax_system_caret_win.h"
 #include "ui/base/ime/text_input_client.h"
@@ -84,7 +86,8 @@ namespace {
 // completed.
 class MoveLoopMouseWatcher {
  public:
-  MoveLoopMouseWatcher(HWNDMessageHandler* host, bool hide_on_escape);
+  MoveLoopMouseWatcher(base::WeakPtr<HWNDMessageHandler> host,
+                       bool hide_on_escape);
 
   MoveLoopMouseWatcher(const MoveLoopMouseWatcher&) = delete;
   MoveLoopMouseWatcher& operator=(const MoveLoopMouseWatcher&) = delete;
@@ -109,7 +112,7 @@ class MoveLoopMouseWatcher {
   void Unhook();
 
   // HWNDMessageHandler that created us.
-  raw_ptr<HWNDMessageHandler, AcrossTasksDanglingUntriaged> host_;
+  base::WeakPtr<HWNDMessageHandler> host_;
 
   // Should the window be hidden when escape is pressed?
   const bool hide_on_escape_;
@@ -125,9 +128,10 @@ class MoveLoopMouseWatcher {
 // static
 MoveLoopMouseWatcher* MoveLoopMouseWatcher::instance_ = nullptr;
 
-MoveLoopMouseWatcher::MoveLoopMouseWatcher(HWNDMessageHandler* host,
-                                           bool hide_on_escape)
-    : host_(host), hide_on_escape_(hide_on_escape) {
+MoveLoopMouseWatcher::MoveLoopMouseWatcher(
+    base::WeakPtr<HWNDMessageHandler> host,
+    bool hide_on_escape)
+    : host_(std::move(host)), hide_on_escape_(hide_on_escape) {
   // Only one instance can be active at a time.
   if (instance_)
     instance_->Unhook();
@@ -153,8 +157,9 @@ MoveLoopMouseWatcher::~MoveLoopMouseWatcher() {
 
 // static
 void MoveLoopMouseWatcher::UnhookForHost(HWNDMessageHandler* host) {
-  if (instance_ && instance_->host_ == host)
+  if (instance_ && instance_->host_.get() == host) {
     instance_->Unhook();
+  }
 }
 
 void MoveLoopMouseWatcher::Unhook() {
@@ -585,7 +590,7 @@ void HWNDMessageHandler::SetParentOrOwner(HWND new_parent) {
 
   if (parent) {
     // This is a child window.
-    // TODO(crbug.com/1490267): allows setting NULL parent since WinAPI permits
+    // TODO(crbug.com/40284685): allows setting NULL parent since WinAPI permits
     // it. It will require updating window styles. See
     // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent#remarks.
     DCHECK(new_parent);
@@ -793,7 +798,8 @@ bool HWNDMessageHandler::IsHeadless() const {
 bool HWNDMessageHandler::RunMoveLoop(const gfx::Vector2d& drag_offset,
                                      bool hide_on_escape) {
   ReleaseCapture();
-  MoveLoopMouseWatcher watcher(this, hide_on_escape);
+  MoveLoopMouseWatcher watcher(msg_handler_weak_factory_.GetWeakPtr(),
+                               hide_on_escape);
   // In Aura, we handle touch events asynchronously. So we need to allow nested
   // tasks while in windows move loop.
   base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
@@ -1359,7 +1365,7 @@ void HWNDMessageHandler::InitExtras() {
   // then ask element B for its fragment root, without having sent WM_GETOBJECT
   // to element B's window.
   // So we create the fragment root now to ensure it's ready if asked for.
-  if (::features::IsUiaProviderEnabled()) {
+  if (::ui::AXPlatform::GetInstance().IsUiaProviderEnabled()) {
     ax_fragment_root_ = std::make_unique<ui::AXFragmentRootWin>(hwnd(), this);
   }
 
@@ -1944,7 +1950,8 @@ LRESULT HWNDMessageHandler::OnGetObject(UINT message,
       delegate_->GetNativeViewAccessible()) {
     // Expose either the UIA or the MSAA implementation, but not both, depending
     // on the state of the feature flag.
-    if (is_uia_request && ::features::IsUiaProviderEnabled()) {
+    if (is_uia_request &&
+        ::ui::AXPlatform::GetInstance().IsUiaProviderEnabled()) {
       // Retrieve UIA object for the root view.
       Microsoft::WRL::ComPtr<IRawElementProviderSimple> root;
       ax_fragment_root_->GetNativeViewAccessible()->QueryInterface(
@@ -2748,10 +2755,20 @@ void HWNDMessageHandler::OnSysCommand(UINT notification_code,
     return;
 
   bool is_mouse_menu = (notification_code & sc_mask) == SC_MOUSEMENU;
-  if (is_mouse_menu)
+  if (is_mouse_menu) {
+    // `handling_mouse_menu_` set/reset here and below isn't reentrancy safe but
+    // we assume the nested native loop running as part of DefWindowProc() will
+    // not trigger a nested SC_MOUSEMENU as that's not possible in practice.
+    CHECK(!handling_mouse_menu_);
     handling_mouse_menu_ = true;
+  }
 
   base::WeakPtr<HWNDMessageHandler> ref(msg_handler_weak_factory_.GetWeakPtr());
+  // Since redraws occur in drag-induced nested message loops which occur here,
+  // application tasks need to run. This is safe because HWNDMessageHandler
+  // should be in the only C++ frame on the stack and is reentrancy safe in this
+  // situation.
+  base::CurrentThread::ScopedAllowApplicationTasksInNativeNestedLoop allow;
   // If the delegate can't handle it, the system implementation will be called.
   DefWindowProc(hwnd(), WM_SYSCOMMAND, notification_code,
                 MAKELPARAM(point.x(), point.y()));
@@ -2785,9 +2802,10 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
 
   // Handle touch events only on Aura for now.
   WORD num_points = LOWORD(w_param);
-  std::unique_ptr<TOUCHINPUT[]> input(new TOUCHINPUT[num_points]);
+  base::HeapArray<TOUCHINPUT> input =
+      base::HeapArray<TOUCHINPUT>::WithSize(num_points);
   if (ui::GetTouchInputInfoWrapper(reinterpret_cast<HTOUCHINPUT>(l_param),
-                                   num_points, input.get(),
+                                   num_points, input.data(),
                                    sizeof(TOUCHINPUT))) {
     // input[i].dwTime doesn't necessarily relate to the system time at all,
     // so use base::TimeTicks::Now().
@@ -3659,7 +3677,7 @@ void HWNDMessageHandler::SizeWindowToAspectRatio(UINT param,
   min_window_size = delegate_->DIPToScreenSize(min_window_size);
   max_window_size = delegate_->DIPToScreenSize(max_window_size);
 
-  absl::optional<gfx::Size> max_size_param;
+  std::optional<gfx::Size> max_size_param;
   if (!max_window_size.IsEmpty())
     max_size_param = max_window_size;
 

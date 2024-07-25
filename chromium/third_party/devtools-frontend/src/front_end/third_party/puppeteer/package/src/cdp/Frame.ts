@@ -20,6 +20,7 @@ import type {
   DeviceRequestPromptManager,
 } from './DeviceRequestPrompt.js';
 import type {FrameManager} from './FrameManager.js';
+import type {IsolatedWorldChart} from './IsolatedWorld.js';
 import {IsolatedWorld} from './IsolatedWorld.js';
 import {MAIN_WORLD, PUPPETEER_WORLD} from './IsolatedWorlds.js';
 import {
@@ -35,6 +36,7 @@ export class CdpFrame extends Frame {
   #url = '';
   #detached = false;
   #client!: CDPSession;
+  worlds!: IsolatedWorldChart;
 
   _frameManager: FrameManager;
   override _id: string;
@@ -204,6 +206,7 @@ export class CdpFrame extends Frame {
     options: {
       timeout?: number;
       waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
+      ignoreSameDocumentNavigation?: boolean;
     } = {}
   ): Promise<HTTPResponse | null> {
     const {
@@ -218,14 +221,22 @@ export class CdpFrame extends Frame {
     );
     const error = await Deferred.race([
       watcher.terminationPromise(),
-      watcher.sameDocumentNavigationPromise(),
+      ...(options.ignoreSameDocumentNavigation
+        ? []
+        : [watcher.sameDocumentNavigationPromise()]),
       watcher.newDocumentNavigationPromise(),
     ]);
     try {
       if (error) {
         throw error;
       }
-      return await watcher.navigationResponse();
+      const result = await Deferred.race<
+        Error | HTTPResponse | null | undefined
+      >([watcher.terminationPromise(), watcher.navigationResponse()]);
+      if (result instanceof Error) {
+        throw error;
+      }
+      return result || null;
     } finally {
       watcher.dispose();
     }

@@ -585,7 +585,7 @@ MediaStreamTrack* V8ScriptValueDeserializerForModules::ReadMediaStreamTrack() {
     return nullptr;
   }
 
-  absl::optional<uint32_t> sub_capture_target_version;
+  std::optional<uint32_t> sub_capture_target_version;
   // Using `switch` to ensure new enum values are handled.
   switch (track_impl_subtype) {
     case SerializedTrackImplSubtype::kTrackImplSubtypeBase:
@@ -685,9 +685,6 @@ bool V8ScriptValueDeserializerForModules::ExecutionContextExposesInterface(
           execution_context, interface_tag)) {
     return true;
   }
-  DCHECK(base::FeatureList::IsEnabled(
-      features::kSSVTrailerEnforceExposureAssertion))
-      << "V8ScriptValueDeserializer should already have handled this";
   switch (interface_tag) {
     case kCryptoKeyTag:
       return V8CryptoKey::IsExposed(execution_context);

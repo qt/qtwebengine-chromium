@@ -8,54 +8,80 @@
 #include "media/gpu/v4l2/stateless/av1_delegate.h"
 #endif
 
+#include <poll.h>
+
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/task/thread_pool.h"
+#include "base/trace_event/trace_event.h"
+#include "media/base/media_switches.h"
 #include "media/gpu/chromeos/image_processor.h"
 #include "media/gpu/gpu_video_decode_accelerator_helpers.h"
 #include "media/gpu/macros.h"
-#include "media/gpu/v4l2/stateless/utils.h"
+#include "media/gpu/v4l2/stateless/h264_delegate.h"
+#include "media/gpu/v4l2/stateless/h265_delegate.h"
 #include "media/gpu/v4l2/stateless/vp8_delegate.h"
 #include "media/gpu/v4l2/stateless/vp9_delegate.h"
 #include "media/gpu/v4l2/v4l2_status.h"
 
-namespace {
-using DequeueCB = base::RepeatingCallback<void(media::Buffer)>;
+// Logging for the decoder is following this convention:
+//
+// errors:
+// Errors should ideally only be logged from |V4L2StatelessVideoDecoder| as
+// they can easily be bubbled up to MEDIA_LOG. When a function has multiple
+// error paths it is best to log each error path. Avoid logging every error
+// path if there is a meaningful error message logged from the calling function.
+// LogError(media_log_):
+// Unrecoverable errors should be bubbled up the the media log and logged to
+// file so that they can easily be seen during runtime and in post log analysis.
+//
+// VLOGF(1):
+// Expected or recoverable events that occur on a per frame frame basis. These
+// should be available in the /var/log/chrome/chrome log
+//
+// DVLOGF(2): Same as VLOGF(1), except these happen on a per stream basis. There
+// is no need to have these in production builds.
+//
+// Tracing logging is for debugging and does not need to be in production
+// builds.
+//
+// DVLOGF(3): Per stream events.
+// DVLOGF(4): Every frame events.
+// DVLOGF(5): Events that occur multiple times per frame.
 
-void DequeueOutput(scoped_refptr<media::StatelessDevice> device,
-                   DequeueCB dequeue_cb) {
-  while (true) {
-    DVLOGF(1) << "blocking on dequeue of output";
-    auto buffer = device->DequeueBuffer(media::BufferType::kRawFrames,
-                                        media::MemoryType::kMemoryMapped, 2);
-    if (buffer) {
-      DVLOGF(1) << "output buffer dequeued " << buffer->GetIndex();
-      dequeue_cb.Run(std::move(*buffer));
-    } else {
-      break;
-    }
-  }
+namespace {
+constexpr char kTracingCategory[] = "media,gpu";
+constexpr char kBitstreamTracing[] = "V4L2 Bitstream Held Duration";
+constexpr char kBitstreamID[] = "bitstream id";
+
+constexpr size_t kTimestampCacheSize = 128;
+
+template <typename... Args>
+void LogError(const std::unique_ptr<media::MediaLog>& media_log,
+              Args&&... args) {
+  std::ostringstream error_message;
+  (error_message << ... << args);
+  LOG(ERROR) << error_message.str();
+  MEDIA_LOG(ERROR, media_log) << error_message.str();
 }
 
-void DequeueInput(scoped_refptr<media::StatelessDevice> device,
-                  DequeueCB dequeue_cb) {
-  while (true) {
-    DVLOGF(1) << "blocking on dequeue on input";
-    auto buffer = device->DequeueBuffer(media::BufferType::kCompressedData,
-                                        media::MemoryType::kMemoryMapped, 1);
-    if (buffer) {
-      DVLOGF(1) << "input buffer dequeued " << buffer->GetIndex();
-      dequeue_cb.Run(std::move(*buffer));
-    } else {
-      break;
-    }
-  }
+void WaitForRequestFD(base::ScopedFD request_fd, media::DequeueCB cb) {
+  struct pollfd pollfds[] = {{.fd = request_fd.get(), .events = POLLPRI}};
+
+  constexpr int kPollTimeoutMS = -1;
+  const int poll_result =
+      HANDLE_EINTR(poll(pollfds, std::size(pollfds), kPollTimeoutMS));
+
+  const bool success = (poll_result > 0 && pollfds[0].revents & POLLPRI);
+  std::move(cb).Run(success);
 }
 
 }  // namespace
-namespace media {
 
-constexpr size_t kTimestampCacheSize = 128;
+namespace media {
+// static
+base::AtomicRefCount V4L2StatelessVideoDecoder::num_decoder_instances_(0);
 
 // static
 std::unique_ptr<VideoDecoderMixin> V4L2StatelessVideoDecoder::Create(
@@ -92,47 +118,49 @@ V4L2StatelessVideoDecoder::V4L2StatelessVideoDecoder(
       bitstream_id_to_timestamp_(kTimestampCacheSize),
       weak_ptr_factory_for_events_(this) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
+  // Because this task runner is blocking waiting on an fd it needs to be on
+  // it's own thread. If it shares a thread with another task runner the
+  // blocking wait could cause other tasks to fail.
+  queue_task_runner_ = base::ThreadPool::CreateSingleThreadTaskRunner(
+      {base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN},
+      base::SingleThreadTaskRunnerThreadMode::DEDICATED);
 }
 
 V4L2StatelessVideoDecoder::~V4L2StatelessVideoDecoder() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
-  DCHECK(!current_decode_request_)
-      << "|current_decode_request_| should have been flushed.";
-  DCHECK(decode_request_queue_.empty())
-      << "|decode_request_queue_| is not empty, it should have been flushed.";
-}
-
-// static
-absl::optional<SupportedVideoDecoderConfigs>
-V4L2StatelessVideoDecoder::GetSupportedConfigs() {
-  const scoped_refptr<StatelessDevice> device =
-      base::MakeRefCounted<StatelessDevice>();
-  if (device->Open()) {
-    const auto configs = GetSupportedDecodeProfiles(device.get());
-    if (configs.empty()) {
-      return absl::nullopt;
-    }
-
-    return ConvertFromSupportedProfiles(configs, false);
-  }
-
-  return absl::nullopt;
+  DVLOGF(3);
+  num_decoder_instances_.Decrement();
+  // There can be requests left in the queue if the decoder is torn down without
+  // waiting for an end of stream which would trigger a flush.
+  ClearPendingRequests(DecoderStatus::Codes::kAborted);
 }
 
 void V4L2StatelessVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                            bool low_delay,
                                            CdmContext* cdm_context,
                                            InitCB init_cb,
-                                           const OutputCB& output_cb,
+                                           const PipelineOutputCB& output_cb,
                                            const WaitingCB& waiting_cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
   DCHECK(config.IsValidConfig());
   DVLOGF(3);
-
+  TRACE_EVENT0("media,gpu", "V4L2StatelessVideoDecoder::Initialize");
   if (config.is_encrypted()) {
-    VLOGF(1) << "Decoder does not support encrypted stream";
+    LogError(media_log_, "Decoder does not support encrypted stream.");
     std::move(init_cb).Run(DecoderStatus::Codes::kUnsupportedEncryptionMode);
+    return;
+  }
+
+  // Verify there's still room for more decoders before querying whether
+  // |config| is supported.
+  static const auto decoder_instances_limit =
+      V4L2StatelessVideoDecoder::GetMaxNumDecoderInstances();
+  const bool can_create_decoder =
+      num_decoder_instances_.Increment() < decoder_instances_limit;
+  if (!can_create_decoder) {
+    num_decoder_instances_.Decrement();
+    LogError(media_log_, "Can't Initialize() decoder, maximum number reached");
+    std::move(init_cb).Run(DecoderStatus::Codes::kTooManyDecoders);
     return;
   }
 
@@ -140,10 +168,11 @@ void V4L2StatelessVideoDecoder::Initialize(const VideoDecoderConfig& config,
   // can be reinitialized they are explicitly cleared.
   output_queue_.reset();
   input_queue_.reset();
+  request_queue_.reset();
 
   device_->Close();
   if (!device_->Open()) {
-    DVLOGF(1) << "Failed to open device.";
+    LogError(media_log_, "Failed to open device.");
     std::move(init_cb).Run(
         DecoderStatus(DecoderStatus::Codes::kNotInitialized)
             .AddCause(V4L2Status(V4L2Status::Codes::kNoDevice)));
@@ -152,11 +181,21 @@ void V4L2StatelessVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   if (!device_->CheckCapabilities(
           VideoCodecProfileToVideoCodec(config.profile()))) {
-    DVLOGF(1) << "Device does not have sufficient capabilities.";
+    LogError(media_log_, "Video configuration is not supported: ",
+             config.AsHumanReadableString());
+    std::move(init_cb).Run(
+        DecoderStatus(DecoderStatus::Codes::kUnsupportedConfig)
+            .AddCause(
+                V4L2Status(V4L2Status::Codes::kFailedFileCapabilitiesCheck)));
+    return;
+  }
+
+  request_queue_ = RequestQueue::Create(device_);
+  if (!request_queue_) {
     std::move(init_cb).Run(
         DecoderStatus(DecoderStatus::Codes::kNotInitialized)
             .AddCause(
-                V4L2Status(V4L2Status::Codes::kFailedFileCapabilitiesCheck)));
+                V4L2Status(V4L2Status::Codes::kFailedResourceAllocation)));
     return;
   }
 
@@ -170,6 +209,8 @@ void V4L2StatelessVideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   aspect_ratio_ = config.aspect_ratio();
 
+  resolution_changing_ = false;
+
   output_cb_ = std::move(output_cb);
   std::move(init_cb).Run(DecoderStatus::Codes::kOk);
 }
@@ -182,22 +223,17 @@ void V4L2StatelessVideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
   const int32_t bitstream_id =
       bitstream_id_generator_.GenerateNextId().GetUnsafeValue();
 
-  if (!input_queue_task_runner_) {
-    input_queue_task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
-        {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
-    CHECK(input_queue_task_runner_);
-  }
-
-  if (!output_queue_task_runner_) {
-    output_queue_task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
-        {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN});
-    CHECK(output_queue_task_runner_);
-  }
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(kTracingCategory, kBitstreamTracing,
+                                    TRACE_ID_LOCAL(bitstream_id), kBitstreamID,
+                                    bitstream_id);
 
   decode_request_queue_.push(
       DecodeRequest(std::move(buffer), std::move(decode_cb), bitstream_id));
 
-  ServiceDecodeRequestQueue();
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue,
+                     weak_ptr_factory_for_events_.GetWeakPtr()));
 }
 
 void V4L2StatelessVideoDecoder::Reset(base::OnceClosure reset_cb) {
@@ -213,26 +249,7 @@ void V4L2StatelessVideoDecoder::Reset(base::OnceClosure reset_cb) {
 
   decoder_->Reset();
 
-  // Drop all of the queued, but unprocessed frames on the floor. In a reset
-  // the expectation is all frames that are currently queued are disposed of
-  // without completing the decode process.
-
-  // First clear the request that is being processed.
-  if (current_decode_request_) {
-    std::move(current_decode_request_->decode_cb)
-        .Run(DecoderStatus::Codes::kAborted);
-    current_decode_request_ = absl::nullopt;
-  }
-
-  // Then clear out all of the ones that are queued up.
-  while (!decode_request_queue_.empty()) {
-    auto& request = decode_request_queue_.front();
-    std::move(request.decode_cb).Run(DecoderStatus::Codes::kAborted);
-    decode_request_queue_.pop();
-  }
-
-  // Remove all outstanding buffers waiting to be sent to the display.
-  display_queue_ = {};
+  ClearPendingRequests(DecoderStatus::Codes::kAborted);
 
   // If the reset happened in the middle of a flush the flush will not be
   // completed.
@@ -268,7 +285,59 @@ bool V4L2StatelessVideoDecoder::IsPlatformDecoder() const {
 
 void V4L2StatelessVideoDecoder::ApplyResolutionChange() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  NOTIMPLEMENTED();
+  DVLOGF(3);
+
+  if (input_queue_) {
+    input_queue_->StopStreaming();
+
+    // In a DRC situation only reallocate the input buffers if the resolution of
+    // the stream has increased.
+    if (input_queue_->NeedToReallocateBuffers(decoder_->GetPicSize())) {
+      input_queue_.reset();
+    }
+  }
+
+  // Always tear down the |output_queue_| because the size of the output buffers
+  // has changed.
+  output_queue_.reset();
+
+  // The driver can be busy cleaning up the resources that were freed up by
+  // resetting the queues. This delayed task allows for any messages resulting
+  // from the queue teardown to be serviced.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&V4L2StatelessVideoDecoder::ContinueApplyResolutionChange,
+                     weak_ptr_factory_for_events_.GetWeakPtr()),
+      base::Milliseconds(1));
+}
+
+void V4L2StatelessVideoDecoder::ContinueApplyResolutionChange() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
+  DVLOGF(3);
+
+  // TODO(frkoenig): There only needs to be a single buffer in order to
+  // decode. This should be investigated later to see if additional buffers
+  // provide better performance.
+  constexpr size_t kInputBuffers = 1;
+
+  if (!input_queue_) {
+    const VideoCodec codec =
+        VideoCodecProfileToVideoCodec(decoder_->GetProfile());
+    input_queue_ = InputQueue::Create(device_, codec);
+  }
+
+  resolution_changing_ = false;
+
+  if (input_queue_ &&
+      input_queue_->PrepareBuffers(kInputBuffers, decoder_->GetPicSize()) &&
+      input_queue_->StartStreaming()) {
+    ServiceDecodeRequestQueue();
+  } else {
+    LogError(media_log_, "Unable to create input queue and allocate (",
+             kInputBuffers, ") buffers");
+    ClearPendingRequests(DecoderStatus::Codes::kPlatformDecodeFailure);
+    input_queue_.reset();
+  }
 }
 
 size_t V4L2StatelessVideoDecoder::GetMaxOutputFramePoolSize() const {
@@ -280,19 +349,24 @@ size_t V4L2StatelessVideoDecoder::GetMaxOutputFramePoolSize() const {
 scoped_refptr<StatelessDecodeSurface>
 V4L2StatelessVideoDecoder::CreateSurface() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
+  DVLOGF(5);
 
-  // If there are no buffers to put the compressed bitstream into then there is
-  // no way to proceed. There only needs to be a buffer for the compressed
-  // bitstream, the uncompressed bitstream buffer will block later.
-  // |output_queue_| is checked here because the first time through the queues
-  // are not setup.
-  if (output_queue_) {
-    if (input_queue_->FreeBufferCount() == 0) {
-      DVLOGF(1) << "No free input buffers";
-      return nullptr;
-    }
+  if (!input_queue_) {
+    VLOGF(2) << "|input_queue_| has not been created yet. The queue should "
+                "have been setup as part of the resolution change.";
+    return nullptr;
   }
+
+  if (!input_queue_->BuffersAvailable()) {
+    DVLOGF(2) << "No free |input_queue_| buffers.";
+    return nullptr;
+  }
+
+  if (output_queue_ && !output_queue_->BuffersAvailable()) {
+    DVLOGF(2) << "No free |output_queue_| buffers.";
+    return nullptr;
+  }
+
   const uint64_t frame_id =
       frame_id_generator_.GenerateNextId().GetUnsafeValue();
 
@@ -300,15 +374,14 @@ V4L2StatelessVideoDecoder::CreateSurface() {
   // through the queue and make sure all are processed.
   last_frame_id_generated_ = frame_id;
 
-  // This callback is used to enqueue the buffer. It is called by the
-  // |StatelessDecodeSurface| when it is no longer referenced and therefore
-  // usable for other frames.
-  auto enqueue_cb = base::BindPostTaskToCurrentDefault(base::BindOnce(
-      &V4L2StatelessVideoDecoder::EnqueueDecodedOutputBufferByFrameID,
-      weak_ptr_factory_for_events_.GetWeakPtr(), frame_id));
+  // It is called by the |StatelessDecodeSurface| when the surface is no longer
+  // referenced and therefore usable for other frames.
+  auto return_buffer_cb = base::BindPostTaskToCurrentDefault(
+      base::BindOnce(&V4L2StatelessVideoDecoder::ReturnDecodedOutputBuffer,
+                     weak_ptr_factory_for_events_.GetWeakPtr(), frame_id));
 
-  return base::MakeRefCounted<StatelessDecodeSurface>(frame_id,
-                                                      std::move(enqueue_cb));
+  return base::MakeRefCounted<StatelessDecodeSurface>(
+      frame_id, std::move(return_buffer_cb));
 }
 
 bool V4L2StatelessVideoDecoder::SubmitFrame(
@@ -318,25 +391,22 @@ bool V4L2StatelessVideoDecoder::SubmitFrame(
     scoped_refptr<StatelessDecodeSurface> dec_surface) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
   DCHECK(dec_surface);
+  DCHECK(input_queue_);
   DVLOGF(4);
-  if (!output_queue_) {
-    // TODO(frkoenig): There only needs to be a single buffer in order to
-    // decode. This should be investigated later to see if additional buffers
-    // provide better performance.
-    constexpr size_t kInputBuffers = 1;
-    if (!input_queue_->PrepareBuffers(kInputBuffers)) {
-      return false;
-    }
-    input_queue_->StartStreaming();
 
+  if (!output_queue_) {
     // The header needs to be parsed before the video resolution and format
     // can be decided.
-    if (!device_->SetHeaders(ctrls, base::ScopedFD(-1))) {
+    if (!request_queue_->SetHeadersForFormatNegotiation(ctrls)) {
+      LogError(media_log_,
+               "Failure to send the header necessary for output queue "
+               "instantiation.");
       return false;
     }
 
     output_queue_ = OutputQueue::Create(device_);
     if (!output_queue_) {
+      LogError(media_log_, "Unable to create an output queue.");
       return false;
     }
 
@@ -350,6 +420,7 @@ bool V4L2StatelessVideoDecoder::SubmitFrame(
     // vector (CAPCM*1_Sand_E.h264).
     CHECK_LE(num_buffers, 32u);
     if (!output_queue_->PrepareBuffers(num_buffers)) {
+      LogError(media_log_, "Unable to prepare output buffers.");
       return false;
     }
 
@@ -357,19 +428,37 @@ bool V4L2StatelessVideoDecoder::SubmitFrame(
       return false;
     }
 
-    output_queue_->StartStreaming();
-
-    ArmBufferMonitor();
+    if (!output_queue_->StartStreaming()) {
+      LogError(media_log_, "Unable to start streaming on the output queue.");
+    }
   }
 
-  DVLOGF(2) << "Submitting compressed frame " << dec_surface->FrameID()
-            << " to be decoded.";
-  if (input_queue_->SubmitCompressedFrameData(ctrls, data, size,
-                                              dec_surface->FrameID())) {
+  base::ScopedFD request_fd = device_->CreateRequestFD();
+
+  if (!output_queue_->QueueBuffer()) {
+    LogError(media_log_, "Unable to queue an output buffer.");
+    return false;
+  }
+
+  if (input_queue_->SubmitCompressedFrameData(
+          data, size, dec_surface->FrameID(), request_fd)) {
     surfaces_queued_.push(std::move(dec_surface));
 
-    return true;
+    if (request_queue_->QueueRequest(ctrls, request_fd)) {
+      media::DequeueCB dequeue_cb = base::BindPostTaskToCurrentDefault(
+          base::BindOnce(&V4L2StatelessVideoDecoder::DequeueBuffers,
+                         weak_ptr_factory_for_events_.GetWeakPtr()));
+
+      queue_task_runner_->PostTask(
+          FROM_HERE, base::BindOnce(&WaitForRequestFD, std::move(request_fd),
+                                    std::move(dequeue_cb)));
+
+      return true;
+    }
   }
+
+  LogError(media_log_, "Unable to submit compressed frame ",
+           dec_surface->FrameID(), " to be decoded.");
   return false;
 }
 
@@ -379,7 +468,7 @@ void V4L2StatelessVideoDecoder::SurfaceReady(
     const gfx::Rect& visible_rect,
     const VideoColorSpace& color_space) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(3);
+  DVLOGF(4);
   // This method is arrived at when a frame is ready to be sent to the display.
   // However, the hardware may not be done decoding the frame. There exists
   // another scenario where the decode order is different from the display
@@ -407,7 +496,7 @@ void V4L2StatelessVideoDecoder::SurfaceReady(
 
 void V4L2StatelessVideoDecoder::ServiceDisplayQueue() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(3) << display_queue_.size() << " surfaces ready to be displayed";
+  DVLOGF(5) << display_queue_.size() << " surfaces ready to be displayed";
 
   // The display queue holds the order that frames are to be displayed in.
   // At the head of the queue is the next frame to display, but it may not be
@@ -427,14 +516,13 @@ void V4L2StatelessVideoDecoder::ServiceDisplayQueue() {
     // frame_id is the link between the display_queue_ and the frames that
     // have been dequeued.
     const uint64_t frame_id = display_queue_.front()->FrameID();
-    DVLOGF(2) << "frame id(" << frame_id << ") is ready to be displayed.";
+    DVLOGF(5) << "frame id(" << frame_id << ") is ready to be displayed.";
 
     // Retrieve the index of the corresponding dequeued buffer. It is expected
     // that a buffer may not be ready.
-    scoped_refptr<VideoFrame> video_frame =
-        output_queue_->GetVideoFrame(frame_id);
-    if (!video_frame) {
-      DVLOGF(2) << "No dequeued buffer ready for frame id : " << frame_id;
+    scoped_refptr<FrameResource> frame = output_queue_->GetFrame(frame_id);
+    if (!frame) {
+      DVLOGF(5) << "No dequeued buffer ready for frame id : " << frame_id;
       return;
     }
 
@@ -443,8 +531,8 @@ void V4L2StatelessVideoDecoder::ServiceDisplayQueue() {
     const auto surface = std::move(display_queue_.front());
     display_queue_.pop();
 
-    auto wrapped_frame = VideoFrame::WrapVideoFrame(
-        video_frame, video_frame->format(), surface->GetVisibleRect(),
+    auto wrapped_frame = frame->CreateWrappingFrame(
+        surface->GetVisibleRect(),
         aspect_ratio_.GetNaturalSize(surface->GetVisibleRect()));
 
     // Move the metadata associated with the surface over to the video frame.
@@ -466,7 +554,7 @@ void V4L2StatelessVideoDecoder::ServiceDisplayQueue() {
             [](scoped_refptr<StatelessDecodeSurface> surface_reference) {},
             std::move(surface))));
 
-    DVLOGF(3) << wrapped_frame->AsHumanReadableString();
+    DVLOGF(4) << wrapped_frame->AsHumanReadableString();
 
     // |output_cb_| passes the video frame off to the pipeline for further
     // processing or display.
@@ -486,6 +574,16 @@ bool V4L2StatelessVideoDecoder::CreateDecoder(VideoCodecProfile profile,
           std::make_unique<AV1Delegate>(this), profile, color_space);
       break;
 #endif
+    case VideoCodec::kH264:
+      decoder_ = std::make_unique<H264Decoder>(
+          std::make_unique<H264Delegate>(this), profile, color_space);
+      break;
+#if BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
+    case VideoCodec::kHEVC:
+      decoder_ = std::make_unique<H265Decoder>(
+          std::make_unique<H265Delegate>(this), profile, color_space);
+      break;
+#endif
     case VideoCodec::kVP8:
       decoder_ = std::make_unique<VP8Decoder>(
           std::make_unique<VP8Delegate>(this), color_space);
@@ -497,29 +595,17 @@ bool V4L2StatelessVideoDecoder::CreateDecoder(VideoCodecProfile profile,
           profile, color_space);
       break;
     default:
-      DVLOGF(1) << GetCodecName(VideoCodecProfileToVideoCodec(profile))
-                << " not supported.";
+      LogError(media_log_, GetCodecName(VideoCodecProfileToVideoCodec(profile)),
+               " not supported.");
       return false;
   }
 
   return true;
 }
 
-bool V4L2StatelessVideoDecoder::CreateInputQueue(VideoCodecProfile profile,
-                                                 const gfx::Size resolution) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
-  DCHECK(!input_queue_);
-
-  const VideoCodec codec = VideoCodecProfileToVideoCodec(profile);
-  input_queue_ = InputQueue::Create(device_, codec, resolution);
-
-  return !!input_queue_;
-}
-
 bool V4L2StatelessVideoDecoder::SetupOutputFormatForPipeline() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
+  DVLOGF(3);
   DCHECK(output_queue_);
 
   // The |output_queue_| has been already set up by the driver. This format
@@ -543,63 +629,76 @@ bool V4L2StatelessVideoDecoder::SetupOutputFormatForPipeline() {
   CroStatus::Or<ImageProcessor::PixelLayoutCandidate> status_or_output_format =
       client_->PickDecoderOutputFormat(
           candidates, visible_rect, aspect_ratio_.GetNaturalSize(visible_rect),
-          /*output_size=*/absl::nullopt, num_codec_reference_frames,
+          /*output_size=*/std::nullopt, num_codec_reference_frames,
           /*use_protected=*/false, /*need_aux_frame_pool=*/false,
-          /*allocator=*/absl::nullopt);
+          /*allocator=*/std::nullopt);
   if (!status_or_output_format.has_value()) {
+    LogError(media_log_,
+             "Unable to convert or directly display video that has a ",
+             output_queue_->GetQueueFormat().ToString(),
+             " format with a resolution of ",
+             output_queue_->GetVideoResolution().ToString());
     return false;
   }
 
   return true;
 }
 
-void V4L2StatelessVideoDecoder::ArmBufferMonitor() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
-
-  auto input_cb = base::BindPostTaskToCurrentDefault(base::BindRepeating(
-      &V4L2StatelessVideoDecoder::HandleDequeuedInputBuffers,
-      weak_ptr_factory_for_events_.GetWeakPtr()));
-
-  cancelable_input_queue_tracker_.PostTask(
-      input_queue_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&DequeueInput, device_, std::move(input_cb)));
-
-  auto output_cb = base::BindPostTaskToCurrentDefault(base::BindRepeating(
-      &V4L2StatelessVideoDecoder::HandleDequeuedOutputBuffers,
-      weak_ptr_factory_for_events_.GetWeakPtr()));
-
-  cancelable_output_queue_tracker_.PostTask(
-      output_queue_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&DequeueOutput, device_, std::move(output_cb)));
-}
-
-void V4L2StatelessVideoDecoder::HandleDequeuedOutputBuffers(Buffer buffer) {
+void V4L2StatelessVideoDecoder::DequeueBuffers(bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
   DCHECK(!surfaces_queued_.empty());
   DVLOGF(4);
 
-  auto surface = std::move(surfaces_queued_.front());
-  surfaces_queued_.pop();
-
-  DCHECK_EQ(surface->FrameID(), buffer.GetTimeAsFrameID())
-      << "The surfaces are queued as the buffer is submitted. They are "
-         "expected to be dequeued in order.";
-
-  // References that this frame holds can be removed once the frame is done
-  // decoding.
-  surface->ClearReferenceSurfaces();
-
   // |output_queue_| is responsible for tracking which buffers correspond to
   // which frames. The queue needs to know that the buffer is done, ready for
   // display, and should not be queued.
-  output_queue_->RegisterDequeuedBuffer(buffer);
+  auto output_buffer = output_queue_->DequeueBuffer();
 
-  // Check the display queue to see if there are buffers that are ready to
-  // be displayed.
+  if (output_buffer) {
+    auto surface = std::move(surfaces_queued_.front());
+    surfaces_queued_.pop();
+
+    last_frame_id_dequeued_ = output_buffer->GetTimeAsFrameID();
+
+    DCHECK_EQ(surface->FrameID(), last_frame_id_dequeued_)
+        << "The surfaces are queued as the buffer is submitted. They are "
+           "expected to be dequeued in order.";
+
+    // References that this frame holds can be removed once the frame is done
+    // decoding.
+    surface->ClearReferenceSurfaces();
+  }
+
+  // Put the just dequeued buffer into the list of available input buffers.
+  input_queue_->DequeueBuffer();
+
+  // Always check to see if there are decode requests outstanding. This can
+  // occur when there are no more surfaces. Another reason to try is EOS
+  // handling. The EOS packet does not need a surface, but can get stuck behind
+  // a decode request.
   ServiceDisplayQueue();
 
-  last_frame_id_dequeued_ = buffer.GetTimeAsFrameID();
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue,
+                     weak_ptr_factory_for_events_.GetWeakPtr()));
+}
+
+void V4L2StatelessVideoDecoder::ReturnDecodedOutputBuffer(uint64_t frame_id) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
+  DVLOGF(4) << "frame id: " << frame_id;
+  // The surface needs to be created for |SubmitFrame| to be called. But
+  // |output_queue_| is only setup during |SubmitFrame|. If |output_queue_| can
+  // not be created, this function will still get called on the destruction of
+  // the surface.
+  if (output_queue_) {
+    output_queue_->ReturnBuffer(frame_id);
+  }
+
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue,
+                     weak_ptr_factory_for_events_.GetWeakPtr()));
 
   if (flush_cb_ && (last_frame_id_generated_ == last_frame_id_dequeued_)) {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
@@ -608,49 +707,65 @@ void V4L2StatelessVideoDecoder::HandleDequeuedOutputBuffers(Buffer buffer) {
   }
 }
 
-void V4L2StatelessVideoDecoder::HandleDequeuedInputBuffers(Buffer buffer) {
+void V4L2StatelessVideoDecoder::ClearPendingRequests(DecoderStatus status) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(1);
+  DVLOGF(3);
+  // Drop all of the queued, but unprocessed frames on the floor. In a reset
+  // the expectation is all frames that are currently queued are disposed of
+  // without completing the decode process.
 
-  // Put the just dequeued buffer into the list of available input buffers.
-  input_queue_->Reclaim(buffer);
+  // First clear the request that is being processed.
+  if (current_decode_request_) {
+    std::move(current_decode_request_->decode_cb).Run(status);
+    current_decode_request_ = std::nullopt;
+  }
 
-  // Always check to see if there are decode requests outstanding. This can
-  // occur when there are no more surfaces. Another reason to try is EOS
-  // handling. The EOS packet does not need a surface, but can get stuck behind
-  // a decode request.
-  ServiceDecodeRequestQueue();
-}
+  // Then clear out all of the ones that are queued up.
+  while (!decode_request_queue_.empty()) {
+    auto& request = decode_request_queue_.front();
+    std::move(request.decode_cb).Run(status);
+    decode_request_queue_.pop();
+  }
 
-void V4L2StatelessVideoDecoder::EnqueueDecodedOutputBufferByFrameID(
-    uint64_t frame_id) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4) << "frame id: " << frame_id;
-  output_queue_->QueueBufferByFrameID(frame_id);
+  // Remove all outstanding buffers waiting to be sent to the display.
+  display_queue_ = {};
 }
 
 void V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
-  DVLOGF(4);
+  DVLOGF(5);
   DCHECK(decoder_);
 
+  // Prevent further processing of encoded chunks until the resolution change
+  // event is done.
+  if (resolution_changing_) {
+    return;
+  }
+  // Further processing of the |decode_request_queue_| needs to be held up until
+  // a resolution change has completed. During resolution change the queues are
+  // torn down. If processing was allowed to continue before the flush has
+  // completed there could be invalid pointers to the queues.
+  if (flush_cb_) {
+    DVLOGF(3) << "Flushing, no more compressed buffers can be processed.";
+    return;
+  }
   bool done = false;
   AcceleratedVideoDecoder::DecodeResult decode_result;
   do {
     decode_result = decoder_->Decode();
     switch (decode_result) {
       case AcceleratedVideoDecoder::kConfigChange:
-        VLOGF(2) << "AcceleratedVideoDecoder::kConfigChange";
-        if (!CreateInputQueue(decoder_->GetProfile(), decoder_->GetPicSize())) {
-          std::move(current_decode_request_->decode_cb)
-              .Run(DecoderStatus::Codes::kPlatformDecodeFailure);
-          VLOGF(1) << "Unable to create an input queue for "
-                   << GetProfileName(decoder_->GetProfile())
-                   << " of resolution " << decoder_->GetPicSize().ToString();
+        DVLOGF(3) << "AcceleratedVideoDecoder::kConfigChange";
+        resolution_changing_ = true;
+        if (client_) {
+          client_->PrepareChangeResolution();
         }
-        break;
+
+        // Return immediately because |current_decode_request_| is not
+        // done being processed.
+        return;
       case AcceleratedVideoDecoder::kRanOutOfStreamData:
-        VLOGF(2) << "AcceleratedVideoDecoder::kRanOutOfStreamData";
+        DVLOGF(5) << "AcceleratedVideoDecoder::kRanOutOfStreamData";
         if (decode_request_queue_.empty() && !current_decode_request_) {
           return;
         }
@@ -669,7 +784,7 @@ void V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue() {
         decode_request_queue_.pop();
 
         if (current_decode_request_->buffer->end_of_stream()) {
-          VLOGF(2) << "EOS request processing.";
+          DVLOGF(3) << "EOS request processing.";
           if (!decoder_->Flush()) {
             return;
           }
@@ -681,7 +796,7 @@ void V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue() {
           // until they are dequeued.
           if (last_frame_id_generated_ != last_frame_id_dequeued_) {
             flush_cb_ = std::move(current_decode_request_->decode_cb);
-            current_decode_request_ = absl::nullopt;
+            current_decode_request_ = std::nullopt;
             done = true;
           }
         } else {
@@ -693,14 +808,17 @@ void V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue() {
         }
         break;
       case AcceleratedVideoDecoder::kRanOutOfSurfaces:
-        VLOGF(2) << "AcceleratedVideoDecoder::kRanOutOfSurfaces";
+        DVLOGF(5) << "AcceleratedVideoDecoder::kRanOutOfSurfaces";
         // |ServiceDecodeRequestQueue| will be called again once a buffer has
         // been freed up and a surface can be created.
+
+        // Return immediately because |current_decode_request_| is not
+        // done being processed.
         return;
       case AcceleratedVideoDecoder::kDecodeError:
-        VLOGF(1) << "AcceleratedVideoDecoder::kDecodeError.";
-        done = true;
-        break;
+        LogError(media_log_, "AcceleratedVideoDecoder::Decode() failed.");
+        ClearPendingRequests(DecoderStatus::Codes::kPlatformDecodeFailure);
+        return;
       case AcceleratedVideoDecoder::kTryAgain:
         // Will be needed for h.264 CENCv1
         NOTIMPLEMENTED() << "AcceleratedVideoDecoder::kTryAgain";
@@ -709,15 +827,29 @@ void V4L2StatelessVideoDecoder::ServiceDecodeRequestQueue() {
   } while (!done);
 
   if (current_decode_request_) {
-    const DecoderStatus::Codes decode_status =
-        (decode_result == AcceleratedVideoDecoder::kDecodeError)
-            ? DecoderStatus::Codes::kPlatformDecodeFailure
-            : DecoderStatus::Codes::kOk;
-    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(current_decode_request_->decode_cb),
-                                  decode_status));
-    current_decode_request_ = absl::nullopt;
+    std::move(current_decode_request_->decode_cb)
+        .Run(DecoderStatus::Codes::kOk);
+
+    // There are multiple locations that the decode callback is run. For tracing
+    // purposes only the common path is considered. The reset/flush/error/etc.
+    // cases are ignored.
+    TRACE_EVENT_NESTABLE_ASYNC_END0(
+        kTracingCategory, kBitstreamTracing,
+        TRACE_ID_LOCAL(current_decode_request_->bitstream_id));
+
+    current_decode_request_ = std::nullopt;
   }
+}
+
+// static
+int V4L2StatelessVideoDecoder::GetMaxNumDecoderInstances() {
+  if (base::FeatureList::IsEnabled(media::kLimitConcurrentDecoderInstances)) {
+    // Legacy behaviour is to limit the number to 32 [1].
+    // [1] https://source.chromium.org/chromium/chromium/src/+/main:media/gpu/v4l2/v4l2_video_decoder.h;l=183-189;drc=90fa47c897b589bc4857fb7ccafab46a4be2e2ae
+    constexpr int kMaxNumSimultaneousDecoderInstances = 32;
+    return kMaxNumSimultaneousDecoderInstances;
+  }
+  return std::numeric_limits<int>::max();
 }
 
 }  // namespace media

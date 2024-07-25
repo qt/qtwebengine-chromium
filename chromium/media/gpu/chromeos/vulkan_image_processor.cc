@@ -4,6 +4,7 @@
 
 #include "media/gpu/chromeos/vulkan_image_processor.h"
 
+#include "base/bits.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/thread_pool.h"
@@ -72,7 +73,7 @@ class VulkanImageProcessor::VulkanPipeline {
       const std::vector<VkDescriptorSetLayoutBinding>& ubo_bindings,
       std::unique_ptr<VulkanShader> vert_shader,
       std::unique_ptr<VulkanShader> frag_shader,
-      size_t push_constants_size,
+      const std::vector<size_t>& push_constants_size,
       VkRenderPass render_pass,
       VkDevice logical_device);
 
@@ -155,7 +156,8 @@ class VulkanImageProcessor::VulkanCommandPoolWrapper {
   ~VulkanCommandPoolWrapper();
 
   static std::unique_ptr<VulkanCommandPoolWrapper> Create(
-      gpu::VulkanDeviceQueue* device_queue);
+      gpu::VulkanDeviceQueue* device_queue,
+      bool allow_protected_memory);
 
   std::unique_ptr<gpu::VulkanCommandBuffer> CreatePrimaryCommandBuffer();
 
@@ -203,6 +205,27 @@ class VulkanImageProcessor::VulkanTextureImage {
   const std::vector<VkFramebuffer> framebuffers_;
 
   VkImageLayout current_layout_;
+  const VkDevice logical_device_;
+};
+
+class VulkanImageProcessor::VulkanSampler {
+ public:
+  VulkanSampler(const VulkanSampler&) = delete;
+  VulkanSampler& operator=(const VulkanSampler&) = delete;
+
+  ~VulkanSampler();
+
+  static std::unique_ptr<VulkanSampler> Create(VkFilter filter_mode,
+                                               bool normalize_coords,
+                                               VkDevice logical_device);
+
+  VkSampler& Get();
+
+ private:
+  VulkanSampler(VkSampler sampler, VkDevice logical_device);
+
+  VkSampler sampler_;
+
   const VkDevice logical_device_;
 };
 
@@ -330,7 +353,7 @@ VulkanImageProcessor::VulkanPipeline::Create(
     const std::vector<VkDescriptorSetLayoutBinding>& ubo_bindings,
     std::unique_ptr<VulkanImageProcessor::VulkanShader> vert_shader,
     std::unique_ptr<VulkanImageProcessor::VulkanShader> frag_shader,
-    size_t push_constants_size,
+    const std::vector<size_t>& push_constants_size,
     VkRenderPass render_pass,
     VkDevice logical_device) {
   VkDescriptorSetLayoutCreateInfo descriptor_layout_info{};
@@ -347,19 +370,28 @@ VulkanImageProcessor::VulkanPipeline::Create(
     return nullptr;
   }
 
-  VkPushConstantRange push_constant_range;
-  push_constant_range.offset = 0;
-  push_constant_range.size = push_constants_size;
-  push_constant_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  std::vector<VkPushConstantRange> push_constant_range(
+      push_constants_size.size());
+  if (push_constants_size.size() > 0) {
+    push_constant_range[0].offset = 0;
+    push_constant_range[0].size =
+        base::checked_cast<uint32_t>(push_constants_size[0]);
+    push_constant_range[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  }
+  if (push_constants_size.size() > 1) {
+    push_constant_range[1].offset =
+        base::checked_cast<uint32_t>(push_constants_size[0]);
+    push_constant_range[1].size =
+        base::checked_cast<uint32_t>(push_constants_size[1]);
+    push_constant_range[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  }
 
   VkPipelineLayoutCreateInfo pipeline_layout_info{};
   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipeline_layout_info.setLayoutCount = 1;
   pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
-  if (push_constants_size) {
-    pipeline_layout_info.pPushConstantRanges = &push_constant_range;
-    pipeline_layout_info.pushConstantRangeCount = 1;
-  }
+  pipeline_layout_info.pPushConstantRanges = push_constant_range.data();
+  pipeline_layout_info.pushConstantRangeCount = push_constants_size.size();
 
   VkPipelineLayout pipeline_layout;
   if (vkCreatePipelineLayout(logical_device, &pipeline_layout_info, nullptr,
@@ -424,7 +456,7 @@ VulkanImageProcessor::VulkanPipeline::Create(
   rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
   rasterizer.lineWidth = 1.0f;
   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-  rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
 
   VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -729,13 +761,58 @@ VulkanImageProcessor::VulkanCommandPoolWrapper::CreatePrimaryCommandBuffer() {
 
 std::unique_ptr<VulkanImageProcessor::VulkanCommandPoolWrapper>
 VulkanImageProcessor::VulkanCommandPoolWrapper::Create(
-    gpu::VulkanDeviceQueue* device_queue) {
+    gpu::VulkanDeviceQueue* device_queue,
+    bool allow_protected_memory) {
   std::unique_ptr<gpu::VulkanCommandPool> command_pool =
       base::WrapUnique(new gpu::VulkanCommandPool(device_queue));
-  command_pool->Initialize();
+  command_pool->Initialize(allow_protected_memory);
 
   return base::WrapUnique(
       new VulkanCommandPoolWrapper(std::move(command_pool)));
+}
+
+VulkanImageProcessor::VulkanSampler::VulkanSampler(VkSampler sampler,
+                                                   VkDevice logical_device)
+    : sampler_(sampler), logical_device_(logical_device) {}
+
+std::unique_ptr<VulkanImageProcessor::VulkanSampler>
+VulkanImageProcessor::VulkanSampler::Create(VkFilter filter_mode,
+                                            bool normalize_coords,
+                                            VkDevice logical_device) {
+  VkSamplerCreateInfo sampler_info{
+      .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .magFilter = filter_mode,
+      .minFilter = filter_mode,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .mipLodBias = 0.0f,
+      .anisotropyEnable = VK_FALSE,
+      .compareEnable = VK_FALSE,
+      .compareOp = VK_COMPARE_OP_ALWAYS,
+      .minLod = 0.0f,
+      .maxLod = 0.0f,
+      .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+      .unnormalizedCoordinates = !normalize_coords,
+  };
+
+  VkSampler sampler;
+  if (vkCreateSampler(logical_device, &sampler_info, nullptr, &sampler) !=
+      VK_SUCCESS) {
+    LOG(ERROR) << "Could not create sampler!";
+    return nullptr;
+  }
+
+  return base::WrapUnique(new VulkanSampler(sampler, logical_device));
+}
+
+VkSampler& VulkanImageProcessor::VulkanSampler::Get() {
+  return sampler_;
+}
+
+VulkanImageProcessor::VulkanSampler::~VulkanSampler() {
+  vkDestroySampler(logical_device_, sampler_, nullptr);
 }
 
 VulkanImageProcessor::VulkanImageProcessor(
@@ -744,15 +821,32 @@ VulkanImageProcessor::VulkanImageProcessor(
         vulkan_device_queue,
     std::unique_ptr<VulkanImageProcessor::VulkanCommandPoolWrapper>
         command_pool,
-    std::unique_ptr<VulkanImageProcessor::VulkanRenderPass> render_pass,
-    std::unique_ptr<VulkanImageProcessor::VulkanPipeline> pipeline,
-    std::unique_ptr<VulkanImageProcessor::VulkanDescriptorPool> descriptor_pool)
+    std::unique_ptr<VulkanImageProcessor::VulkanRenderPass> convert_render_pass,
+    std::unique_ptr<VulkanImageProcessor::VulkanRenderPass>
+        transform_render_pass,
+    std::unique_ptr<VulkanImageProcessor::VulkanPipeline> convert_pipeline,
+    std::unique_ptr<VulkanImageProcessor::VulkanPipeline> transform_pipeline,
+    std::unique_ptr<VulkanImageProcessor::VulkanDescriptorPool>
+        convert_descriptor_pool,
+    std::unique_ptr<VulkanImageProcessor::VulkanDescriptorPool>
+        transform_descriptor_pool,
+    std::unique_ptr<VulkanImageProcessor::VulkanSampler> sampler,
+    std::unique_ptr<gpu::VulkanImage> pivot_image,
+    std::unique_ptr<VulkanImageProcessor::VulkanTextureImage> pivot_texture,
+    bool is_protected)
     : vulkan_implementation_(std::move(vulkan_implementation)),
       vulkan_device_queue_(std::move(vulkan_device_queue)),
       command_pool_(std::move(command_pool)),
-      render_pass_(std::move(render_pass)),
-      pipeline_(std::move(pipeline)),
-      descriptor_pool_(std::move(descriptor_pool)) {}
+      convert_render_pass_(std::move(convert_render_pass)),
+      transform_render_pass_(std::move(transform_render_pass)),
+      convert_pipeline_(std::move(convert_pipeline)),
+      transform_pipeline_(std::move(transform_pipeline)),
+      convert_descriptor_pool_(std::move(convert_descriptor_pool)),
+      transform_descriptor_pool_(std::move(transform_descriptor_pool)),
+      sampler_(std::move(sampler)),
+      pivot_image_(std::move(pivot_image)),
+      pivot_texture_(std::move(pivot_texture)),
+      is_protected_(is_protected) {}
 
 VulkanImageProcessor::~VulkanImageProcessor() {
   // Make sure there aren't any pending cleanup jobs before we start destroying
@@ -760,11 +854,16 @@ VulkanImageProcessor::~VulkanImageProcessor() {
   vulkan_device_queue_->GetVulkanDeviceQueue()
       ->GetFenceHelper()
       ->PerformImmediateCleanup();
+
+  pivot_image_->Destroy();
 }
 
-std::unique_ptr<VulkanImageProcessor> VulkanImageProcessor::Create() {
+std::unique_ptr<VulkanImageProcessor> VulkanImageProcessor::Create(
+    bool is_protected,
+    TiledImageFormat format,
+    const gfx::Size& max_size) {
   auto vulkan_implementation = gpu::CreateVulkanImplementation(
-      /*use_swiftshader=*/false, /*allow_protected_memory=*/false);
+      /*use_swiftshader=*/false, is_protected);
 
   if (!vulkan_implementation->InitializeVulkanInstance(
           /*using_surface=*/false)) {
@@ -779,78 +878,248 @@ std::unique_ptr<VulkanImageProcessor> VulkanImageProcessor::Create() {
   }
 
   auto command_pool = VulkanCommandPoolWrapper::Create(
-      vulkan_device_queue->GetVulkanDeviceQueue());
+      vulkan_device_queue->GetVulkanDeviceQueue(), is_protected);
   if (!command_pool) {
     return nullptr;
   }
 
-  auto render_pass = VulkanRenderPass::Create(
-      VK_FORMAT_B8G8R8A8_UNORM, vulkan_device_queue->GetVulkanDevice());
-  if (!render_pass) {
+  VkFormat out_format = format == kMM21 ? VK_FORMAT_B8G8R8A8_UNORM
+                                        : VK_FORMAT_A2R10G10B10_UNORM_PACK32;
+  auto convert_render_pass = VulkanRenderPass::Create(
+      out_format, vulkan_device_queue->GetVulkanDevice());
+  if (!convert_render_pass) {
+    return nullptr;
+  }
+  auto transform_render_pass = VulkanRenderPass::Create(
+      out_format, vulkan_device_queue->GetVulkanDevice());
+  if (!transform_render_pass) {
+    return nullptr;
+  }
+
+  std::unique_ptr<VulkanShader> convert_vert_shader = nullptr;
+  if (format == kMM21) {
+    convert_vert_shader =
+        VulkanShader::Create(kMM21ShaderVert, sizeof(kMM21ShaderVert),
+                             vulkan_device_queue->GetVulkanDevice());
+  } else {
+    convert_vert_shader =
+        VulkanShader::Create(kMT2TShaderVert, sizeof(kMT2TShaderVert),
+                             vulkan_device_queue->GetVulkanDevice());
+  }
+  if (!convert_vert_shader) {
+    return nullptr;
+  }
+  auto transform_vert_shader =
+      VulkanShader::Create(kCropRotateShaderVert, sizeof(kCropRotateShaderVert),
+                           vulkan_device_queue->GetVulkanDevice());
+  if (!transform_vert_shader) {
+    return nullptr;
+  }
+
+  std::unique_ptr<VulkanShader> convert_frag_shader = nullptr;
+  if (format == kMM21) {
+    convert_frag_shader =
+        VulkanShader::Create(kMM21ShaderFrag, sizeof(kMM21ShaderFrag),
+                             vulkan_device_queue->GetVulkanDevice());
+  } else {
+    convert_frag_shader =
+        VulkanShader::Create(kMT2TShaderFrag, sizeof(kMT2TShaderFrag),
+                             vulkan_device_queue->GetVulkanDevice());
+  }
+  if (!convert_frag_shader) {
+    return nullptr;
+  }
+  auto transform_frag_shader =
+      VulkanShader::Create(kCropRotateShaderFrag, sizeof(kCropRotateShaderFrag),
+                           vulkan_device_queue->GetVulkanDevice());
+  if (!transform_frag_shader) {
     return nullptr;
   }
 
   std::vector<VkVertexInputBindingDescription> binding_descriptions;
   std::vector<VkVertexInputAttributeDescription> attribute_descriptions;
 
-  std::vector<VkDescriptorSetLayoutBinding> descriptor_bindings(2);
+  std::vector<VkDescriptorSetLayoutBinding> descriptor_bindings(1);
   descriptor_bindings[0].binding = 0;
   descriptor_bindings[0].descriptorCount = 1;
-  descriptor_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+  descriptor_bindings[0].descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   descriptor_bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  auto transform_pipeline = VulkanPipeline::Create(
+      binding_descriptions, attribute_descriptions, descriptor_bindings,
+      std::move(transform_vert_shader), std::move(transform_frag_shader),
+      {6 * 2 * sizeof(float) + 2 * sizeof(float)}, transform_render_pass->Get(),
+      vulkan_device_queue->GetVulkanDevice());
+  if (!transform_pipeline) {
+    return nullptr;
+  }
+
+  descriptor_bindings.emplace_back();
+  descriptor_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   descriptor_bindings[1].binding = 1;
   descriptor_bindings[1].descriptorCount = 1;
   descriptor_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   descriptor_bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-  auto vert_shader =
-      VulkanShader::Create(kMM21ShaderVert, sizeof(kMM21ShaderVert),
-                           vulkan_device_queue->GetVulkanDevice());
-  if (!vert_shader) {
-    return nullptr;
-  }
-  auto frag_shader =
-      VulkanShader::Create(kMM21ShaderFrag, sizeof(kMM21ShaderFrag),
-                           vulkan_device_queue->GetVulkanDevice());
-  if (!frag_shader) {
-    return nullptr;
-  }
-
-  auto pipeline = VulkanPipeline::Create(
+  auto convert_pipeline = VulkanPipeline::Create(
       binding_descriptions, attribute_descriptions, descriptor_bindings,
-      std::move(vert_shader), std::move(frag_shader),
-      2 * 2 * sizeof(int), render_pass->Get(),
+      std::move(convert_vert_shader), std::move(convert_frag_shader),
+      {3 * 2 * sizeof(float), 2 * sizeof(float)}, convert_render_pass->Get(),
       vulkan_device_queue->GetVulkanDevice());
-  if (!pipeline) {
+  if (!convert_pipeline) {
     return nullptr;
   }
 
-  auto descriptor_pool = VulkanDescriptorPool::Create(
+  auto convert_descriptor_pool = VulkanDescriptorPool::Create(
       1, {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE},
-      pipeline->GetDescriptorSetLayout(),
+      convert_pipeline->GetDescriptorSetLayout(),
       vulkan_device_queue->GetVulkanDevice());
-  if (!descriptor_pool) {
+  if (!convert_descriptor_pool) {
     return nullptr;
   }
+  auto transform_descriptor_pool = VulkanDescriptorPool::Create(
+      1, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER},
+      transform_pipeline->GetDescriptorSetLayout(),
+      vulkan_device_queue->GetVulkanDevice());
+  if (!convert_descriptor_pool) {
+    return nullptr;
+  }
+
+  auto sampler = VulkanSampler::Create(/*filter_mode=*/VK_FILTER_LINEAR,
+                                       /*normalize_coords=*/true,
+                                       vulkan_device_queue->GetVulkanDevice());
+  if (!sampler) {
+    return nullptr;
+  }
+
+  auto pivot_image = gpu::VulkanImage::Create(
+      vulkan_device_queue->GetVulkanDeviceQueue(), max_size, out_format,
+      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+      is_protected ? VK_IMAGE_CREATE_PROTECTED_BIT : 0,
+      VK_IMAGE_TILING_OPTIMAL);
+  auto pivot_texture = VulkanTextureImage::Create(
+      *pivot_image, {out_format}, {pivot_image->size()},
+      {VK_IMAGE_ASPECT_COLOR_BIT},
+      /*is_framebuffer=*/true, convert_render_pass->Get(),
+      vulkan_device_queue->GetVulkanDevice());
 
   return base::WrapUnique(new VulkanImageProcessor(
       std::move(vulkan_implementation), std::move(vulkan_device_queue),
-      std::move(command_pool), std::move(render_pass), std::move(pipeline),
-      std::move(descriptor_pool)));
+      std::move(command_pool), std::move(convert_render_pass),
+      std::move(transform_render_pass), std::move(convert_pipeline),
+      std::move(transform_pipeline), std::move(convert_descriptor_pool),
+      std::move(transform_descriptor_pool), std::move(sampler),
+      std::move(pivot_image), std::move(pivot_texture), is_protected));
 }
 
 void VulkanImageProcessor::Process(gpu::VulkanImage& in_image,
-                                   const gfx::Size& input_coded_size,
                                    const gfx::Size& input_visible_size,
                                    gpu::VulkanImage& out_image,
-                                   const gfx::Size& output_coded_size,
-                                   const gfx::Size& output_visible_size,
+                                   const gfx::RectF& display_rect,
+                                   const gfx::RectF& crop_rect,
+                                   gfx::OverlayTransform transform,
                                    std::vector<VkSemaphore>& begin_semaphores,
                                    std::vector<VkSemaphore>& end_semaphores) {
+  CHECK(crop_rect.width() <= 1.0f && crop_rect.width() >= 0.0f);
+  CHECK(crop_rect.height() <= 1.0f && crop_rect.height() >= 0.0f);
+  CHECK(crop_rect.x() <= 1.0f && crop_rect.x() >= 0.0f);
+  CHECK(crop_rect.y() <= 1.0f && crop_rect.y() >= 0.0f);
+  CHECK(in_image.format() == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM);
+  CHECK(out_image.format() == VK_FORMAT_B8G8R8A8_UNORM ||
+        out_image.format() == VK_FORMAT_A2R10G10B10_UNORM_PACK32);
+  constexpr size_t kMM21TileWidth = 16;
+  constexpr size_t kMM21TileHeight = 32;
+  const gfx::Size input_coded_size(
+      base::bits::AlignUp(static_cast<size_t>(input_visible_size.width()),
+                          kMM21TileWidth),
+      base::bits::AlignUp(static_cast<size_t>(input_visible_size.height()),
+                          kMM21TileHeight));
+
+  const gfx::Size output_resolution(
+      static_cast<int>(display_rect.width() / crop_rect.width()),
+      static_cast<int>(display_rect.height() / crop_rect.height()));
+
+  // TODO(b/251458823): Investigate whether it's more efficient to change the
+  // vertex coordinates or the UV coordinates. The latter may optimize for
+  // contiguous writes over contiguous reads, which takes better advantage of
+  // the write combiner.
+  float x_start = -1.0f - 2.0f * crop_rect.x();
+  float x_end = 1.0f - 2.0f * crop_rect.x();
+  float y_start = -1.0f - 2.0f * crop_rect.y();
+  float y_end = 1.0f - 2.0f * crop_rect.y();
+  float vertex_push_constants[14] = {0};
+  switch (transform) {
+    case gfx::OVERLAY_TRANSFORM_NONE:
+      vertex_push_constants[0] = x_end;
+      vertex_push_constants[1] = y_start;
+      vertex_push_constants[2] = x_end;
+      vertex_push_constants[3] = y_end;
+      vertex_push_constants[4] = x_start;
+      vertex_push_constants[5] = y_start;
+      vertex_push_constants[6] = x_start;
+      vertex_push_constants[7] = y_start;
+      vertex_push_constants[8] = x_end;
+      vertex_push_constants[9] = y_end;
+      vertex_push_constants[10] = x_start;
+      vertex_push_constants[11] = y_end;
+      break;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_90:
+      vertex_push_constants[0] = x_end;
+      vertex_push_constants[1] = y_end;
+      vertex_push_constants[2] = x_start;
+      vertex_push_constants[3] = y_end;
+      vertex_push_constants[4] = x_end;
+      vertex_push_constants[5] = y_start;
+      vertex_push_constants[6] = x_end;
+      vertex_push_constants[7] = y_start;
+      vertex_push_constants[8] = x_start;
+      vertex_push_constants[9] = y_end;
+      vertex_push_constants[10] = x_start;
+      vertex_push_constants[11] = y_start;
+      break;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_180:
+      vertex_push_constants[0] = x_start;
+      vertex_push_constants[1] = y_end;
+      vertex_push_constants[2] = x_start;
+      vertex_push_constants[3] = y_start;
+      vertex_push_constants[4] = x_end;
+      vertex_push_constants[5] = y_end;
+      vertex_push_constants[6] = x_end;
+      vertex_push_constants[7] = y_end;
+      vertex_push_constants[8] = x_start;
+      vertex_push_constants[9] = y_start;
+      vertex_push_constants[10] = x_end;
+      vertex_push_constants[11] = y_start;
+      break;
+    case gfx::OVERLAY_TRANSFORM_ROTATE_CLOCKWISE_270:
+      vertex_push_constants[0] = x_start;
+      vertex_push_constants[1] = y_start;
+      vertex_push_constants[2] = x_end;
+      vertex_push_constants[3] = y_start;
+      vertex_push_constants[4] = x_start;
+      vertex_push_constants[5] = y_end;
+      vertex_push_constants[6] = x_start;
+      vertex_push_constants[7] = y_end;
+      vertex_push_constants[8] = x_end;
+      vertex_push_constants[9] = y_start;
+      vertex_push_constants[10] = x_end;
+      vertex_push_constants[11] = y_end;
+      break;
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_90:
+    case gfx::OVERLAY_TRANSFORM_FLIP_VERTICAL_CLOCKWISE_270:
+    default:
+      LOG(ERROR) << "Unsupported rotation requested for VulkanImageProcessor.";
+      return;
+  }
+  vertex_push_constants[12] = static_cast<float>(input_visible_size.width()) /
+                              static_cast<float>(pivot_image_->size().width());
+  vertex_push_constants[13] = static_cast<float>(input_visible_size.height()) /
+                              static_cast<float>(pivot_image_->size().height());
+
   auto out_texture = VulkanTextureImage::Create(
-      out_image, {VK_FORMAT_B8G8R8A8_UNORM}, {output_coded_size},
+      out_image, {out_image.format()}, {output_resolution},
       {VK_IMAGE_ASPECT_COLOR_BIT},
-      /*is_framebuffer=*/true, render_pass_->Get(),
+      /*is_framebuffer=*/true, transform_render_pass_->Get(),
       vulkan_device_queue_->GetVulkanDevice());
 
   gfx::Size uv_plane_size = gfx::Size((input_coded_size.width() + 1) / 2,
@@ -859,30 +1128,41 @@ void VulkanImageProcessor::Process(gpu::VulkanImage& in_image,
       in_image, {VK_FORMAT_R8_UNORM, VK_FORMAT_R8G8_UNORM},
       {input_coded_size, uv_plane_size},
       {VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT},
-      /*is_framebuffer=*/false, render_pass_->Get(),
+      /*is_framebuffer=*/false, convert_render_pass_->Get(),
       vulkan_device_queue_->GetVulkanDevice());
 
-  std::array<VkWriteDescriptorSet, 2> descriptor_write;
+  std::array<VkWriteDescriptorSet, 3> descriptor_write;
 
-  std::array<VkDescriptorImageInfo, 2> image_info;
+  std::array<VkDescriptorImageInfo, 3> image_info;
   image_info[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   image_info[0].imageView = in_texture->GetImageViews()[0];
   image_info[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   image_info[1].imageView = in_texture->GetImageViews()[1];
+  image_info[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  image_info[2].imageView = pivot_texture_->GetImageViews()[0];
+  image_info[2].sampler = sampler_->Get();
   descriptor_write[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  descriptor_write[0].dstSet = descriptor_pool_->Get()[0];
+  descriptor_write[0].dstSet = convert_descriptor_pool_->Get()[0];
   descriptor_write[0].dstBinding = 0;
   descriptor_write[0].dstArrayElement = 0;
   descriptor_write[0].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   descriptor_write[0].descriptorCount = 1;
   descriptor_write[0].pImageInfo = image_info.data();
   descriptor_write[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  descriptor_write[1].dstSet = descriptor_pool_->Get()[0];
+  descriptor_write[1].dstSet = convert_descriptor_pool_->Get()[0];
   descriptor_write[1].dstBinding = 1;
   descriptor_write[1].dstArrayElement = 0;
   descriptor_write[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
   descriptor_write[1].descriptorCount = 1;
   descriptor_write[1].pImageInfo = image_info.data() + 1;
+  descriptor_write[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  descriptor_write[2].dstSet = transform_descriptor_pool_->Get()[0];
+  descriptor_write[2].dstBinding = 0;
+  descriptor_write[2].dstArrayElement = 0;
+  descriptor_write[2].descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  descriptor_write[2].descriptorCount = 1;
+  descriptor_write[2].pImageInfo = image_info.data() + 2;
 
   vkUpdateDescriptorSets(vulkan_device_queue_->GetVulkanDevice(),
                          descriptor_write.size(), descriptor_write.data(), 0,
@@ -895,49 +1175,103 @@ void VulkanImageProcessor::Process(gpu::VulkanImage& in_image,
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<float>(output_visible_size.width());
-    viewport.height = static_cast<float>(output_visible_size.height());
+    viewport.width = static_cast<float>(input_coded_size.width());
+    viewport.height = static_cast<float>(input_coded_size.height());
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
+    CHECK(viewport.width <= 10000.0f && viewport.width >= 0.0f);
+    CHECK(viewport.height <= 10000.0f && viewport.height >= 0.0f);
     vkCmdSetViewport(record.handle(), 0, 1, &viewport);
 
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent.width = static_cast<float>(output_visible_size.width());
-    scissor.extent.height = static_cast<float>(output_visible_size.height());
+    scissor.extent.width = static_cast<uint32_t>(input_coded_size.width());
+    scissor.extent.height = static_cast<uint32_t>(input_coded_size.height());
     vkCmdSetScissor(record.handle(), 0, 1, &scissor);
 
     in_texture->TransitionImageLayout(command_buf.get(),
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    pivot_texture_->TransitionImageLayout(
+        command_buf.get(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     VkRenderPassBeginInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = render_pass_->Get();
-    render_pass_info.framebuffer = out_texture->GetFramebuffers()[0];
+    render_pass_info.renderPass = convert_render_pass_->Get();
+    render_pass_info.framebuffer = pivot_texture_->GetFramebuffers()[0];
     render_pass_info.renderArea.offset = {0, 0};
     render_pass_info.renderArea.extent = {
-        static_cast<uint32_t>(output_visible_size.width()),
-        static_cast<uint32_t>(output_visible_size.height())};
+        base::checked_cast<uint32_t>(input_coded_size.width()),
+        base::checked_cast<uint32_t>(input_coded_size.height())};
     VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     render_pass_info.clearValueCount = 1;
     render_pass_info.pClearValues = &clear_color;
-
     vkCmdBeginRenderPass(record.handle(), &render_pass_info,
                          VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(record.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      pipeline_->Get());
+                      convert_pipeline_->Get());
 
     vkCmdBindDescriptorSets(record.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipeline_->GetPipelineLayout(), 0, 1,
-                            descriptor_pool_->Get().data(), 0, nullptr);
+                            convert_pipeline_->GetPipelineLayout(), 0, 1,
+                            convert_descriptor_pool_->Get().data(), 0, nullptr);
 
-    int push_constants[4] = {
-        input_coded_size.width(), input_coded_size.height(),
-        input_visible_size.width(), input_visible_size.height()};
-    vkCmdPushConstants(record.handle(), pipeline_->GetPipelineLayout(),
-                       VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push_constants),
-                       push_constants);
+    float convert_vert_constants[6] = {
+        static_cast<float>(input_coded_size.width() / kMM21TileWidth), 0.0,
+        static_cast<float>(input_coded_size.width()),
+        static_cast<float>(input_coded_size.height()),
+        static_cast<float>(input_coded_size.width()),
+        static_cast<float>(input_coded_size.width() / 2)};
+    vkCmdPushConstants(record.handle(), convert_pipeline_->GetPipelineLayout(),
+                       VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(convert_vert_constants), convert_vert_constants);
+
+    float convert_frag_constants[2] = {
+        static_cast<float>(input_coded_size.width()),
+        static_cast<float>(input_coded_size.width() / 2)};
+    vkCmdPushConstants(record.handle(), convert_pipeline_->GetPipelineLayout(),
+                       VK_SHADER_STAGE_FRAGMENT_BIT,
+                       sizeof(convert_vert_constants),
+                       sizeof(convert_frag_constants), convert_frag_constants);
+
+    int num_vertices =
+        input_coded_size.GetArea() / (kMM21TileWidth * kMM21TileHeight) * 6;
+    vkCmdDraw(record.handle(), num_vertices, 1, 0, 0);
+
+    vkCmdEndRenderPass(record.handle());
+
+    pivot_texture_->TransitionImageLayout(
+        command_buf.get(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    viewport.width = static_cast<float>(output_resolution.width());
+    viewport.height = static_cast<float>(output_resolution.height());
+    vkCmdSetViewport(record.handle(), 0, 1, &viewport);
+
+    scissor.extent.width =
+        static_cast<uint32_t>(output_resolution.width() * crop_rect.width());
+    scissor.extent.height =
+        static_cast<uint32_t>(output_resolution.height() * crop_rect.height());
+    vkCmdSetScissor(record.handle(), 0, 1, &scissor);
+
+    render_pass_info.renderPass = transform_render_pass_->Get();
+    render_pass_info.framebuffer = out_texture->GetFramebuffers()[0];
+    render_pass_info.renderArea.extent = {
+        base::checked_cast<uint32_t>(output_resolution.width()),
+        base::checked_cast<uint32_t>(output_resolution.height())};
+    vkCmdBeginRenderPass(record.handle(), &render_pass_info,
+                         VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(record.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      transform_pipeline_->Get());
+
+    vkCmdBindDescriptorSets(record.handle(), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            transform_pipeline_->GetPipelineLayout(), 0, 1,
+                            transform_descriptor_pool_->Get().data(), 0,
+                            nullptr);
+
+    vkCmdPushConstants(record.handle(),
+                       transform_pipeline_->GetPipelineLayout(),
+                       VK_SHADER_STAGE_VERTEX_BIT, 0,
+                       sizeof(vertex_push_constants), vertex_push_constants);
 
     vkCmdDraw(record.handle(), 6, 1, 0, 0);
 
@@ -951,8 +1285,11 @@ void VulkanImageProcessor::Process(gpu::VulkanImage& in_image,
   auto* fence_helper =
       vulkan_device_queue_->GetVulkanDeviceQueue()->GetFenceHelper();
 
-  command_buf->Submit(begin_semaphores.size(), begin_semaphores.data(),
-                      end_semaphores.size(), end_semaphores.data());
+  if (!command_buf->Submit(begin_semaphores.size(), begin_semaphores.data(),
+                           end_semaphores.size(), end_semaphores.data(),
+                           is_protected_)) {
+    LOG(ERROR) << "Could not submit command buf!";
+  }
 
   fence_helper->EnqueueVulkanObjectCleanupForSubmittedWork(
       std::move(command_buf));

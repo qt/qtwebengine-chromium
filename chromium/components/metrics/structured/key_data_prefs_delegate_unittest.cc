@@ -14,8 +14,9 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "components/metrics/structured/histogram_util.h"
-#include "components/metrics/structured/key_data.h"
-#include "components/metrics/structured/key_util.h"
+#include "components/metrics/structured/lib/histogram_util.h"
+#include "components/metrics/structured/lib/key_data.h"
+#include "components/metrics/structured/lib/key_util.h"
 #include "components/metrics/structured/lib/proto/key.pb.h"
 #include "components/metrics/structured/structured_metrics_validator.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -90,7 +91,7 @@ class KeyDataPrefsDelegateTest : public testing::Test {
   KeyProto GetKey(const uint64_t project_name_hash) {
     auto* validators = validator::Validators::Get();
 
-    base::StringPiece project_name =
+    std::string_view project_name =
         validators->GetProjectName(project_name_hash).value();
 
     const base::Value::Dict& keys_dict = prefs_.GetDict(kTestPrefName);

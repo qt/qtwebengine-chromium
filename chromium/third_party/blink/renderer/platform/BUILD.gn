@@ -17,6 +17,8 @@ import("//third_party/blink/renderer/build/scripts/scripts.gni")
 import("//third_party/blink/renderer/config.gni")
 import("//third_party/blink/renderer/platform/platform_generated.gni")
 import("//third_party/libgav1/options.gni")
+import("//third_party/webrtc/webrtc.gni")
+import("//ui/gl/features.gni")
 import("//v8/gni/v8.gni")
 
 if (is_ios) {
@@ -118,7 +120,10 @@ blink_python_runner("color_data") {
 
 compiled_action("character_data") {
   tool = ":character_data_generator"
-  outputs = [ "$blink_platform_output_dir/character_property_data.cc" ]
+  outputs = [
+    "$blink_platform_output_dir/character_property_data.cc",
+    "$blink_platform_output_dir/text/break_iterator_data_inline_header.h",
+  ]
   args = rebase_path(outputs, root_build_dir)
 }
 
@@ -227,7 +232,19 @@ declare_args() {
   # Enable TRACE_EVENT instrumentation for Blink bindings.
   # Disabled by default as it increases binary size.
   enable_blink_bindings_tracing = extended_tracing_enabled
+
+  # Enable cooperating scheduling hooks in auto-generated Blink bindings code.
+  enable_blink_bindings_cooperating_scheduling = false
 }
+
+# ZSTD compression support has a binary size cost, don't include it on
+# size-constrained platforms.
+#
+# TODO(lizeb): Android is not as much size-constrained on high-end ARM64
+# devices, enable this later there as well. But since this is an experiment,
+# gather data on other platforms first.
+_is_size_constrained_platform = is_android || is_fuchsia
+has_zstd_compression = !_is_size_constrained_platform
 
 buildflag_header("bindings_buildflags") {
   header = "buildflags.h"
@@ -236,6 +253,8 @@ buildflag_header("bindings_buildflags") {
   flags = [
     "RCS_COUNT_EVERYTHING=$runtime_call_stats_count_everything",
     "BLINK_BINDINGS_TRACE_ENABLED=$enable_blink_bindings_tracing",
+    "BLINK_BINDINGS_COOPERATIVE_SCHEDULING_ENABLED=$enable_blink_bindings_cooperating_scheduling",
+    "HAS_ZSTD_COMPRESSION=$has_zstd_compression",
   ]
 }
 
@@ -435,6 +454,7 @@ component("platform") {
     "bindings/callback_interface_base.h",
     "bindings/callback_method_retriever.cc",
     "bindings/callback_method_retriever.h",
+    "bindings/cooperative_scheduling_helpers.h",
     "bindings/cross_thread_copier.h",
     "bindings/dictionary_base.cc",
     "bindings/dictionary_base.h",
@@ -458,10 +478,6 @@ component("platform") {
     "bindings/multi_worlds_v8_reference.cc",
     "bindings/multi_worlds_v8_reference.h",
     "bindings/name_client.h",
-    "bindings/no_alloc_direct_call_exception_state.cc",
-    "bindings/no_alloc_direct_call_exception_state.h",
-    "bindings/no_alloc_direct_call_host.cc",
-    "bindings/no_alloc_direct_call_host.h",
     "bindings/observable_array_base.cc",
     "bindings/observable_array_base.h",
     "bindings/origin_trial_features.cc",
@@ -475,6 +491,8 @@ component("platform") {
     "bindings/scoped_persistent.h",
     "bindings/script_forbidden_scope.cc",
     "bindings/script_forbidden_scope.h",
+    "bindings/script_regexp.cc",
+    "bindings/script_regexp.h",
     "bindings/script_state.cc",
     "bindings/script_state.h",
     "bindings/script_wrappable.cc",
@@ -501,6 +519,8 @@ component("platform") {
     "bindings/v8_dom_wrapper.cc",
     "bindings/v8_dom_wrapper.h",
     "bindings/v8_global_value_map.h",
+    "bindings/v8_histogram_accumulator.cc",
+    "bindings/v8_histogram_accumulator.h",
     "bindings/v8_interface_bridge.h",
     "bindings/v8_interface_bridge_base.cc",
     "bindings/v8_interface_bridge_base.h",
@@ -614,7 +634,6 @@ component("platform") {
     "fonts/font_cache_memory_dump_provider.h",
     "fonts/font_custom_platform_data.cc",
     "fonts/font_custom_platform_data.h",
-    "fonts/font_data.cc",
     "fonts/font_data.h",
     "fonts/font_data_cache.cc",
     "fonts/font_data_cache.h",
@@ -670,6 +689,8 @@ component("platform") {
     "fonts/font_variant_alternates.h",
     "fonts/font_variant_east_asian.cc",
     "fonts/font_variant_east_asian.h",
+    "fonts/font_variant_emoji.cc",
+    "fonts/font_variant_emoji.h",
     "fonts/font_variant_numeric.cc",
     "fonts/font_variant_numeric.h",
     "fonts/font_vertical_position_type.h",
@@ -719,6 +740,7 @@ component("platform") {
     "fonts/shaping/font_features.cc",
     "fonts/shaping/font_features.h",
     "fonts/shaping/glyph_bounds_accumulator.h",
+    "fonts/shaping/glyph_data.h",
     "fonts/shaping/han_kerning.cc",
     "fonts/shaping/han_kerning.h",
     "fonts/shaping/harfbuzz_face.cc",
@@ -730,7 +752,6 @@ component("platform") {
     "fonts/shaping/harfbuzz_font_data.h",
     "fonts/shaping/harfbuzz_shaper.cc",
     "fonts/shaping/harfbuzz_shaper.h",
-    "fonts/shaping/ng_shape_cache.cc",
     "fonts/shaping/ng_shape_cache.h",
     "fonts/shaping/run_segmenter.cc",
     "fonts/shaping/run_segmenter.h",
@@ -778,7 +799,6 @@ component("platform") {
     "fonts/typesetting_features.h",
     "fonts/unicode_range_set.cc",
     "fonts/unicode_range_set.h",
-    "fonts/utf16_ragel_iterator.cc",
     "fonts/utf16_ragel_iterator.h",
     "fonts/utf16_text_iterator.cc",
     "fonts/utf16_text_iterator.h",
@@ -975,6 +995,8 @@ component("platform") {
     "graphics/gpu/extensions_3d_util.h",
     "graphics/gpu/graphics_context_3d_utils.cc",
     "graphics/gpu/graphics_context_3d_utils.h",
+    "graphics/gpu/image_extractor.cc",
+    "graphics/gpu/image_extractor.h",
     "graphics/gpu/image_layer_bridge.cc",
     "graphics/gpu/image_layer_bridge.h",
     "graphics/gpu/shared_context_rate_limiter.cc",
@@ -984,6 +1006,7 @@ component("platform") {
     "graphics/gpu/webgl_image_conversion.cc",
     "graphics/gpu/webgl_image_conversion.h",
     "graphics/gpu/webgpu_callback.h",
+    "graphics/gpu/webgpu_cpp.h",
     "graphics/gpu/webgpu_mailbox_texture.cc",
     "graphics/gpu/webgpu_mailbox_texture.h",
     "graphics/gpu/webgpu_resource_provider_cache.cc",
@@ -1170,6 +1193,8 @@ component("platform") {
     "graphics/static_bitmap_image_to_video_frame_copier.h",
     "graphics/stroke_data.cc",
     "graphics/stroke_data.h",
+    "graphics/styled_stroke_data.cc",
+    "graphics/styled_stroke_data.h",
     "graphics/subtree_paint_property_update_reason.cc",
     "graphics/subtree_paint_property_update_reason.h",
     "graphics/surface_layer_bridge.cc",
@@ -1187,7 +1212,6 @@ component("platform") {
     "graphics/video_frame_sink_bundle.h",
     "graphics/video_frame_submitter.cc",
     "graphics/video_frame_submitter.h",
-    "graphics/view_transition_element_id.h",
     "graphics/visual_rect_flags.h",
     "graphics/viz_util.cc",
     "graphics/viz_util.h",
@@ -1401,11 +1425,14 @@ component("platform") {
     "text/character_emoji.cc",
     "text/character_property.h",
     "text/character_property_data.h",
+    "text/character_variation_sequences.cc",
     "text/date_components.cc",
     "text/date_components.h",
     "text/date_time_format.cc",
     "text/date_time_format.h",
     "text/decode_escape_sequences.h",
+    "text/emoji_segmentation_category.h",
+    "text/emoji_segmentation_category_inline_header.h",
     "text/han_kerning_char_type.h",
     "text/hyphenation.cc",
     "text/hyphenation.h",
@@ -1689,6 +1716,7 @@ component("platform") {
     "//third_party/blink/renderer/platform/loader",
     "//third_party/blink/renderer/platform/network",
     "//third_party/blink/renderer/platform/scheduler",
+    "//third_party/dawn/include/dawn:cpp_headers",
     "//third_party/fdlibm",
     "//third_party/pffft:pffft",
     "//ui/base/cursor",
@@ -1753,6 +1781,21 @@ component("platform") {
     "//ui/gl:buildflags",
     "//ui/native_theme",
   ]
+
+  if (has_zstd_compression) {
+    deps += [
+      "//third_party/zstd:compress",
+      "//third_party/zstd:decompress",
+    ]
+  }
+
+  if (use_dawn) {
+    deps += [ "//third_party/dawn/src/dawn/wire" ]
+  } else {
+    # If Dawn is not used, use the proc table. This gives the WebGPU implementation
+    # something to link to, though WebGPU won't be supported.
+    deps += [ "//third_party/dawn/src/dawn:proc" ]
+  }
 
   if (is_android) {
     deps += [ "//third_party/cpu_features:ndk_compat" ]
@@ -1842,6 +1885,13 @@ component("platform") {
     deps += [ "//third_party/pffft" ]
   }
 
+  if (rtc_use_h265) {
+    sources += [
+      "peerconnection/h265_parameter_sets_tracker.cc",
+      "peerconnection/h265_parameter_sets_tracker.h",
+    ]
+  }
+
   if (!is_debug && !optimize_for_size) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
@@ -1880,6 +1930,8 @@ static_library("test_support") {
     "testing/compositor_test.h",
     "testing/empty_web_media_player.cc",
     "testing/empty_web_media_player.h",
+    "testing/exception_state_matchers.cc",
+    "testing/exception_state_matchers.h",
     "testing/fake_display_item_client.h",
     "testing/find_cc_layer.cc",
     "testing/find_cc_layer.h",
@@ -2064,6 +2116,7 @@ source_set("blink_platform_unittests_sources") {
     "fonts/fallback_list_composite_key_test.cc",
     "fonts/font_cache_test.cc",
     "fonts/font_description_test.cc",
+    "fonts/font_fallback_iterator_test.cc",
     "fonts/font_family_test.cc",
     "fonts/font_global_context_test.cc",
     "fonts/font_palette_test.cc",
@@ -2086,11 +2139,13 @@ source_set("blink_platform_unittests_sources") {
     "fonts/shaping/caching_word_shaper_test.cc",
     "fonts/shaping/font_features_test.cc",
     "fonts/shaping/han_kerning_test.cc",
+    "fonts/shaping/harfbuzz_face_test.cc",
     "fonts/shaping/harfbuzz_shaper_test.cc",
     "fonts/shaping/ng_shape_cache_test.cc",
     "fonts/shaping/run_segmenter_test.cc",
     "fonts/shaping/shape_result_bloberizer_test.cc",
     "fonts/shaping/shape_result_run_info_test.cc",
+    "fonts/shaping/shape_result_spacing_test.cc",
     "fonts/shaping/shape_result_test.cc",
     "fonts/shaping/shape_result_view_test.cc",
     "fonts/shaping/shaping_line_breaker_test.cc",
@@ -2109,6 +2164,7 @@ source_set("blink_platform_unittests_sources") {
     "geometry/layout_unit_test.cc",
     "geometry/length_functions_test.cc",
     "geometry/length_test.cc",
+    "geometry/math_functions_test.cc",
     "graphics/accelerated_static_bitmap_image_test.cc",
     "graphics/bitmap_image_test.cc",
     "graphics/color_test.cc",
@@ -2129,6 +2185,8 @@ source_set("blink_platform_unittests_sources") {
     "graphics/gpu/drawing_buffer_test.cc",
     "graphics/gpu/shared_gpu_context_test.cc",
     "graphics/gpu/webgl_image_conversion_test.cc",
+    "graphics/gpu/webgpu_native_test_support.cc",
+    "graphics/gpu/webgpu_native_test_support.h",
     "graphics/gpu/webgpu_resource_provider_cache_test.cc",
     "graphics/gpu/webgpu_swap_buffer_provider_test.cc",
     "graphics/graphics_context_test.cc",
@@ -2190,6 +2248,7 @@ source_set("blink_platform_unittests_sources") {
     "peerconnection/resolution_monitor_unittest.cc",
     "peerconnection/rtc_encoded_audio_stream_transformer_test.cc",
     "peerconnection/rtc_encoded_video_stream_transformer_test.cc",
+    "peerconnection/rtc_ice_candidate_platform_test.cc",
     "peerconnection/rtc_rtp_source_test.cc",
     "peerconnection/rtc_video_decoder_adapter_test.cc",
     "peerconnection/rtc_video_decoder_factory_test.cc",
@@ -2256,6 +2315,10 @@ source_set("blink_platform_unittests_sources") {
     "widget/input/scroll_predictor_unittest.cc",
   ]
 
+  if (rtc_use_h265) {
+    sources += [ "peerconnection/h265_parameter_sets_tracker_unittest.cc" ]
+  }
+
   if (is_android) {
     sources += [ "fonts/android/font_cache_android_test.cc" ]
   } else if (is_win) {
@@ -2293,6 +2356,7 @@ source_set("blink_platform_unittests_sources") {
     "//media:test_support",
     "//media/capture/mojom:video_capture",
     "//media/mojo:test_support",
+    "//media/webrtc:webrtc",
     "//mojo/core/embedder",
     "//mojo/public/cpp/bindings/tests:for_blink_tests",
     "//mojo/public/cpp/test_support:test_utils",
@@ -2315,7 +2379,8 @@ source_set("blink_platform_unittests_sources") {
     "//third_party/blink/renderer/platform/network:unit_tests",
     "//third_party/blink/renderer/platform/scheduler:unit_tests",
     "//third_party/blink/renderer/platform/wtf",
-    "//third_party/libavif:libavif",
+    "//third_party/dawn/src/dawn/native",
+    "//third_party/dawn/src/dawn/wire",
     "//third_party/libyuv",
     "//third_party/webrtc/api/task_queue:task_queue_test",
     "//third_party/webrtc_overrides:metronome_like_task_queue_test",
@@ -2450,6 +2515,7 @@ group("blink_platform_unittests_data") {
     # Required by some image decoder tests.
     "image-decoders/testing/",
     "//third_party/blink/web_tests/images/resources/",
+    "//third_party/blink/web_tests/images/bmp-suite/",
 
     # Required by some font tests.
     "//third_party/blink/web_tests/external/wpt/fonts/",
@@ -2559,6 +2625,17 @@ fuzzer_test("mathml_operator_dictionary_fuzzer") {
   dict = "//testing/libfuzzer/fuzzers/dicts/mathml_operator_dictionary.dict"
 }
 
+if (rtc_use_h265) {
+  # Fuzzer for blink::H265ParameterSetsTracker
+  fuzzer_test("h265_parameter_sets_tracker_fuzzer") {
+    sources = [ "peerconnection/h265_parameter_sets_tracker_fuzzer.cc" ]
+    deps = [
+      ":blink_fuzzer_test_support",
+      ":platform",
+    ]
+  }
+}
+
 # Fuzzer for blink::OpenTypeMathSupportTest.
 fuzzer_test("open_type_math_support_fuzzer") {
   sources = [ "fonts/opentype/open_type_math_support_fuzzer.cc" ]
@@ -2610,8 +2687,41 @@ fuzzer_test("web_icon_sizes_fuzzer") {
   dict = "//testing/libfuzzer/fuzzers/dicts/web_icon_sizes.dict"
 }
 
+# Fuzzer for blink::AVIFImageDecoder
+fuzzer_test("blink_avif_decoder_fuzzer") {
+  sources = [ "image-decoders/avif/avif_image_decoder_fuzzer.cc" ]
+  deps = [
+    ":blink_fuzzer_test_support",
+    ":platform",
+  ]
+  seed_corpuses = [ "//third_party/blink/web_tests/images/resources/avif" ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
+}
+
+# Fuzzer for blink::ICOImageDecoder.
+fuzzer_test("blink_ico_decoder_fuzzer") {
+  sources = [ "image-decoders/ico/ico_image_decoder_fuzzer.cc" ]
+  deps = [
+    ":blink_fuzzer_test_support",
+    ":platform",
+  ]
+  seed_corpuses = [ "//third_party/blink/web_tests/images/resources/icofuzz" ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
+}
+
+# Fuzzer for blink::GIFImageDecoder
+fuzzer_test("blink_gif_decoder_fuzzer") {
+  sources = [ "image-decoders/gif/gif_image_decoder_fuzzer.cc" ]
+  deps = [
+    ":blink_fuzzer_test_support",
+    ":platform",
+  ]
+  seed_corpuses = [ "//third_party/blink/web_tests/images/resources/giffuzz" ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
+}
+
 fuzzer_test("blink_png_decoder_fuzzer") {
-  sources = [ "png_fuzzer.cc" ]
+  sources = [ "image-decoders/png/png_image_decoder_fuzzer.cc" ]
   deps = [
     ":blink_fuzzer_test_support",
     ":platform",
@@ -2623,6 +2733,28 @@ fuzzer_test("blink_png_decoder_fuzzer") {
     "//third_party/blink/web_tests/images/png-suite/samples",
     "//third_party/blink/web_tests/images/resources/pngfuzz",
   ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
+}
+
+fuzzer_test("blink_jpeg_decoder_fuzzer") {
+  sources = [ "image-decoders/jpeg/jpeg_image_decoder_fuzzer.cc" ]
+  deps = [
+    ":blink_fuzzer_test_support",
+    ":platform",
+  ]
+  seed_corpuses = [ "//third_party/blink/web_tests/images/resources/jpegfuzz" ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
+}
+
+# Fuzzer for blink::WEBPImageDecoder.
+fuzzer_test("blink_webp_decoder_fuzzer") {
+  sources = [ "image-decoders/webp/webp_image_decoder_fuzzer.cc" ]
+  deps = [
+    ":blink_fuzzer_test_support",
+    ":platform",
+  ]
+  seed_corpuses = [ "//third_party/blink/web_tests/images/resources/webpfuzz" ]
+  libfuzzer_options = [ "rss_limit_mb=8192" ]
 }
 
 # Fuzzer for blink::DateTimeFormat.

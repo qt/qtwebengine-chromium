@@ -55,7 +55,7 @@ class CreditCardCvcAuthenticator
     }
     bool did_succeed = false;
     raw_ptr<const CreditCard> card = nullptr;
-    // TODO(crbug.com/1475052): Remove CVC.
+    // TODO(crbug.com/40927733): Remove CVC.
     std::u16string cvc = std::u16string();
     std::optional<base::Value::Dict> request_options;
     std::string card_authorization_token = std::string();
@@ -130,6 +130,7 @@ class CreditCardCvcAuthenticator
   friend class autofill_metrics::AutofillMetricsBaseTest;
   friend class CreditCardAccessManagerTest;
   friend class CreditCardCvcAuthenticatorTest;
+  friend class FormFillerTest;
 
   // The associated autofill client. Weak reference.
   const raw_ptr<AutofillClient> client_;

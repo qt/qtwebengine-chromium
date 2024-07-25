@@ -79,9 +79,8 @@ class ConfigBase final : public TargetConfig {
   ResultCode AddAppContainerProfile(const wchar_t* package_name,
                                     bool create_profile) override;
   scoped_refptr<AppContainer> GetAppContainer() override;
-  ResultCode AddKernelObjectToClose(const wchar_t* handle_type,
-                                    const wchar_t* handle_name) override;
-  ResultCode SetDisconnectCsrss() override;
+  void AddKernelObjectToClose(HandleToClose handle_info) override;
+  void SetDisconnectCsrss() override;
   void SetDesktop(Desktop desktop) override;
   void SetFilterEnvironment(bool filter) override;
   bool GetEnvironmentFiltered() override;
@@ -94,6 +93,8 @@ class ConfigBase final : public TargetConfig {
   friend class PolicyDiagnostic;
   // Can call private accessors.
   friend class PolicyBase;
+  // Can ask for the low-level policy.
+  friend class TopLevelDispatcher;
 
   // Promise that no further changes will be made to the configuration, and
   // this object can be reused by multiple policies.
@@ -105,6 +106,11 @@ class ConfigBase final : public TargetConfig {
   // Lazily populates the policy_ and policy_maker_ members for internal rules.
   // Can only be called before the object is fully configured.
   LowLevelPolicy* PolicyMaker();
+
+  // Some IPCs are only configured if a matching policy has been set, this
+  // method allows TopLevelDispatcher to determine if a policy exists for a
+  // given service. Only call after calling Freeze().
+  bool NeedsIpc(IpcTag service) const;
 
 #if DCHECK_IS_ON()
   // Used to sequence-check in DCHECK builds.
@@ -127,8 +133,7 @@ class ConfigBase final : public TargetConfig {
   size_t memory_limit() { return memory_limit_; }
   uint32_t ui_exceptions() { return ui_exceptions_; }
   Desktop desktop() { return desktop_; }
-  // nullptr if no objects have been added via AddKernelObjectToClose().
-  HandleCloser* handle_closer() { return handle_closer_.get(); }
+  const HandleCloserConfig& handle_closer() { return handle_closer_; }
   bool zero_appshim() { return zero_appshim_; }
 
   TokenLevel lockdown_level_;
@@ -146,17 +151,13 @@ class ConfigBase final : public TargetConfig {
   Desktop desktop_;
   bool filter_environment_;
   bool zero_appshim_;
+  HandleCloserConfig handle_closer_;
 
   // Object in charge of generating the low level policy. Will be reset() when
   // Freeze() is called.
   std::unique_ptr<LowLevelPolicy> policy_maker_;
   // Memory structure that stores the low level policy rules for proxied calls.
   raw_ptr<PolicyGlobal> policy_;
-  // This is a map of handle-types to names that we need to close in the
-  // target process. A null set for a given type means we need to close all
-  // handles of the given type. If no entries are added this will be nullptr and
-  // no handles are closed.
-  std::unique_ptr<HandleCloser> handle_closer_;
   // The list of dlls to unload in the target process.
   std::vector<std::wstring> blocklisted_dlls_;
   // AppContainer to be applied to the target process.
@@ -215,6 +216,8 @@ class PolicyBase final : public TargetPolicy {
   friend class sandbox::BrokerServicesBase;
   // Allow PolicyDiagnostic to snapshot PolicyBase for diagnostics.
   friend class PolicyDiagnostic;
+  // Allow TopLevelDispatcher to know which IPC policy rules are necessary.
+  friend class TopLevelDispatcher;
 
   // Sets up interceptions for a new target. This policy must own |target|.
   ResultCode SetupAllInterceptions(TargetProcess& target);
@@ -244,7 +247,7 @@ class PolicyBase final : public TargetPolicy {
   HANDLE stdout_handle_;
   HANDLE stderr_handle_;
   // An opaque blob of data the delegate uses to prime any pre-sandbox hooks.
-  std::unique_ptr<std::vector<const uint8_t>> delegate_data_;
+  std::unique_ptr<const std::vector<uint8_t>> delegate_data_;
 
   std::unique_ptr<Dispatcher> dispatcher_;
 

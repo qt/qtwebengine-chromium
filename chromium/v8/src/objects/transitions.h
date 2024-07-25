@@ -55,7 +55,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   // Insert a new transition into |map|'s transition array, extending it
   // as necessary. This can trigger GC.
   static void Insert(Isolate* isolate, Handle<Map> map, Handle<Name> name,
-                     Handle<Map> target, SimpleTransitionFlag flag);
+                     Handle<Map> target, TransitionKindFlag flag);
 
   Tagged<Map> SearchTransition(Tagged<Name> name, PropertyKind kind,
                                PropertyAttributes attributes);
@@ -72,13 +72,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   // or frozen/sealed transitions.
   static bool IsSpecialTransition(ReadOnlyRoots roots, Tagged<Name> name);
 
-  enum RequestedLocation { kAnyLocation, kFieldOnly };
-  MaybeHandle<Map> FindTransitionToDataProperty(
-      Handle<Name> name, RequestedLocation requested_location = kAnyLocation);
-
-  MaybeHandle<Map> FindTransitionToField(Handle<Name> name) {
-    return FindTransitionToDataProperty(name, kFieldOnly);
-  }
+  MaybeHandle<Map> FindTransitionToField(Handle<String> name);
 
   // Find all transitions with given name and calls the callback.
   // Neither GCs nor operations requiring Isolate::full_transition_array_access
@@ -91,6 +85,15 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
 
   inline Handle<String> ExpectedTransitionKey();
   inline Handle<Map> ExpectedTransitionTarget();
+
+  template <typename Callback, typename ProtoCallback>
+  void ForEachTransition(DisallowGarbageCollection* no_gc, Callback callback,
+                         ProtoCallback proto_transition_callback);
+
+  template <typename Callback>
+  void ForEachTransition(DisallowGarbageCollection* no_gc, Callback callback) {
+    ForEachTransition(no_gc, callback, callback);
+  }
 
   int NumberOfTransitions();
   // The size of transition arrays are limited so they do not end up in large
@@ -132,11 +135,12 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   // transitions are in the form of a map where the keys are prototype objects
   // and the values are the maps they transition to.
   // PutPrototypeTransition can trigger GC.
-  static void PutPrototypeTransition(Isolate* isolate, Handle<Map>,
+  static bool PutPrototypeTransition(Isolate* isolate, Handle<Map>,
                                      Handle<Object> prototype,
                                      Handle<Map> target_map);
-  static Handle<Map> GetPrototypeTransition(Isolate* isolate, Handle<Map> map,
-                                            Handle<Object> prototype);
+  static base::Optional<Tagged<Map>> GetPrototypeTransition(
+      Isolate* isolate, Tagged<Map> map, Tagged<Object> prototype);
+  bool HasPrototypeTransitions();
 
   // During the first-time Map::Update and Map::TryUpdate, the migration target
   // map could be cached in the raw_transitions slot of the old map that is
@@ -187,13 +191,13 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   friend class TransitionArray;
 
   static inline Encoding GetEncoding(Isolate* isolate,
-                                     MaybeObject raw_transitions);
+                                     Tagged<MaybeObject> raw_transitions);
   static inline Encoding GetEncoding(Isolate* isolate,
                                      Tagged<TransitionArray> array);
   static inline Encoding GetEncoding(Isolate* isolate, Handle<Map> map);
 
   static inline Tagged<TransitionArray> GetTransitionArray(
-      Isolate* isolate, MaybeObject raw_transitions);
+      Isolate* isolate, Tagged<MaybeObject> raw_transitions);
   static inline Tagged<TransitionArray> GetTransitionArray(Isolate* isolate,
                                                            Handle<Map> map);
 
@@ -202,16 +206,16 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   static inline Tagged<Name> GetSimpleTransitionKey(Tagged<Map> transition);
   inline PropertyDetails GetSimpleTargetDetails(Tagged<Map> transition);
 
-  static inline Tagged<Map> GetTargetFromRaw(MaybeObject raw);
+  static inline Tagged<Map> GetTargetFromRaw(Tagged<MaybeObject> raw);
 
   static void EnsureHasFullTransitionArray(Isolate* isolate, Handle<Map> map);
   static void SetPrototypeTransitions(Isolate* isolate, Handle<Map> map,
                                       Handle<WeakFixedArray> proto_transitions);
   static Tagged<WeakFixedArray> GetPrototypeTransitions(Isolate* isolate,
-                                                        Handle<Map> map);
+                                                        Tagged<Map> map);
 
   static inline void ReplaceTransitions(Isolate* isolate, Handle<Map> map,
-                                        MaybeObject new_transitions);
+                                        Tagged<MaybeObject> new_transitions);
   static inline void ReplaceTransitions(
       Isolate* isolate, Handle<Map> map,
       Handle<TransitionArray> new_transitions);
@@ -225,7 +229,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
 
   Isolate* isolate_;
   Tagged<Map> map_;
-  MaybeObject raw_transitions_;
+  Tagged<MaybeObject> raw_transitions_;
   Encoding encoding_;
   bool concurrent_access_;
 
@@ -257,8 +261,8 @@ class TransitionArray : public WeakFixedArray {
   inline HeapObjectSlot GetKeySlot(int transition_number);
 
   inline Tagged<Map> GetTarget(int transition_number);
-  inline void SetRawTarget(int transition_number, MaybeObject target);
-  inline MaybeObject GetRawTarget(int transition_number);
+  inline void SetRawTarget(int transition_number, Tagged<MaybeObject> target);
+  inline Tagged<MaybeObject> GetRawTarget(int transition_number);
   inline HeapObjectSlot GetTargetSlot(int transition_number);
   inline bool GetTargetIfExists(int transition_number, Isolate* isolate,
                                 Tagged<Map>* target);
@@ -393,7 +397,8 @@ class TransitionArray : public WeakFixedArray {
                                    PropertyKind kind2,
                                    PropertyAttributes attributes2);
 
-  inline void Set(int transition_number, Tagged<Name> key, MaybeObject target);
+  inline void Set(int transition_number, Tagged<Name> key,
+                  Tagged<MaybeObject> target);
 
   OBJECT_CONSTRUCTORS(TransitionArray, WeakFixedArray);
 };

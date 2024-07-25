@@ -7,6 +7,7 @@
 #include "base/check.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/memory/memory_pressure_monitor.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/site_instance_impl.h"
@@ -27,6 +28,12 @@ SpareRenderProcessHostManager& SpareRenderProcessHostManager::GetInstance() {
 
 void SpareRenderProcessHostManager::WarmupSpareRenderProcessHost(
     BrowserContext* browser_context) {
+  if (delay_timer_) {
+    UMA_HISTOGRAM_TIMES("BrowserRenderProcessHost.SpareProcessDelayTime",
+                        delay_timer_->Elapsed());
+    delay_timer_.reset();
+  }
+
   if (spare_render_process_host_ &&
       spare_render_process_host_->GetBrowserContext() == browser_context) {
     DCHECK_EQ(browser_context->GetDefaultStoragePartition(),
@@ -34,7 +41,11 @@ void SpareRenderProcessHostManager::WarmupSpareRenderProcessHost(
     return;  // Nothing to warm up.
   }
 
+  bool had_spare_renderer = !!spare_render_process_host_;
   CleanupSpareRenderProcessHost();
+  UMA_HISTOGRAM_BOOLEAN(
+      "BrowserRenderProcessHost.SpareProcessEvictedOtherSpare",
+      had_spare_renderer);
 
   // Don't create a spare renderer for a BrowserContext that is in the
   // process of shutting down.
@@ -67,6 +78,7 @@ void SpareRenderProcessHostManager::WarmupSpareRenderProcessHost(
     return;
   }
 
+  process_startup_timer_ = std::make_unique<base::ElapsedTimer>();
   spare_render_process_host_ = RenderProcessHostImpl::CreateRenderProcessHost(
       browser_context, nullptr /* site_instance */);
   spare_render_process_host_->AddObserver(this);
@@ -74,6 +86,27 @@ void SpareRenderProcessHostManager::WarmupSpareRenderProcessHost(
 
   // The spare render process isn't ready, so wait and do the "spare render
   // process changed" callback in RenderProcessReady().
+}
+
+void SpareRenderProcessHostManager::DeferredWarmupSpareRenderProcessHost(
+    BrowserContext* browser_context,
+    base::TimeDelta delay) {
+  if (delay == base::TimeDelta::Max()) {
+    return;
+  }
+
+  deferred_warmup_timer_.Start(
+      FROM_HERE, delay,
+      base::BindOnce(
+          [](SpareRenderProcessHostManager* self,
+             base::WeakPtr<BrowserContext> browser_context) {
+            // The browser context might have been destroyed when the timer
+            // fires.
+            if (browser_context) {
+              self->WarmupSpareRenderProcessHost(browser_context.get());
+            }
+          },
+          base::Unretained(this), browser_context->GetWeakPtr()));
 }
 
 RenderProcessHost*
@@ -181,11 +214,20 @@ SpareRenderProcessHostManager::MaybeTakeSpareRenderProcessHost(
 }
 
 void SpareRenderProcessHostManager::PrepareForFutureRequests(
-    BrowserContext* browser_context) {
+    BrowserContext* browser_context,
+    std::optional<base::TimeDelta> delay) {
   if (RenderProcessHostImpl::IsSpareProcessKeptAtAllTimes()) {
     // Always keep around a spare process for the most recently requested
     // |browser_context|.
-    WarmupSpareRenderProcessHost(browser_context);
+    if (delay.has_value()) {
+      // The actual delay time is not necessarily `delay` because the
+      // process can be delayed until the page stops loading, in which case
+      // `delay` is TimeDelta::Max().
+      delay_timer_ = std::make_unique<base::ElapsedTimer>();
+      DeferredWarmupSpareRenderProcessHost(browser_context, *delay);
+    } else {
+      WarmupSpareRenderProcessHost(browser_context);
+    }
   } else {
     // Discard the ignored (probably non-matching) spare so as not to waste
     // resources.
@@ -231,6 +273,10 @@ void SpareRenderProcessHostManager::ReleaseSpareRenderProcessHost() {
 void SpareRenderProcessHostManager::RenderProcessReady(
     RenderProcessHost* host) {
   CHECK_EQ(spare_render_process_host_, host);
+  CHECK(process_startup_timer_);
+  UMA_HISTOGRAM_TIMES("BrowserRenderProcessHost.SpareProcessStartupTime",
+                      process_startup_timer_->Elapsed());
+  process_startup_timer_.reset();
   spare_render_process_host_changed_callback_list_.Notify(
       spare_render_process_host_);
 }

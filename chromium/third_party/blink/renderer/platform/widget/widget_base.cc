@@ -164,6 +164,7 @@ WidgetBase::WidgetBase(
       receiver_(this, std::move(widget), task_runner),
       next_previous_flags_(kInvalidNextPreviousFlagsValue),
       is_hidden_(hidden),
+      task_runner_(task_runner),
       request_animation_after_delay_timer_(
           std::move(task_runner),
           this,
@@ -205,7 +206,7 @@ void WidgetBase::InitializeCompositing(
   } else {
     layer_tree_view_ = std::make_unique<LayerTreeView>(this, widget_scheduler_);
 
-    absl::optional<cc::LayerTreeSettings> default_settings;
+    std::optional<cc::LayerTreeSettings> default_settings;
     if (!settings) {
       const display::ScreenInfo& screen_info = screen_infos.current();
       default_settings = GenerateLayerTreeSettings(
@@ -237,10 +238,12 @@ void WidgetBase::InitializeCompositing(
   // (e.g.  popups, plugins) must forward their input directly through
   // WidgetBaseInputHandler.
   bool uses_input_handler = frame_widget;
+  base::PlatformThreadId io_thread_id = Platform::Current()->GetIOThreadId();
   widget_input_handler_manager_ = WidgetInputHandlerManager::Create(
       weak_ptr_factory_.GetWeakPtr(), std::move(frame_widget_input_handler),
       never_composited_, widget_compositing_thread_scheduler, widget_scheduler_,
-      uses_input_handler, client_->AllowsScrollResampling());
+      uses_input_handler, client_->AllowsScrollResampling(), io_thread_id,
+      main_thread_id_);
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -369,6 +372,7 @@ scheduler::WidgetScheduler* WidgetBase::WidgetScheduler() {
 
 void WidgetBase::ForceRedraw(
     mojom::blink::Widget::ForceRedrawCallback callback) {
+  TRACE_EVENT0("renderer", "WidgetBase::ForceRedraw");
   LayerTreeHost()->RequestPresentationTimeForNextFrame(
       base::BindOnce(&OnDidPresentForceDrawFrame, std::move(callback)));
   LayerTreeHost()->SetNeedsCommitWithForcedRedraw();
@@ -385,6 +389,16 @@ void WidgetBase::GetWidgetInputHandler(
     mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host) {
   widget_input_handler_manager_->AddInterface(std::move(request),
                                               std::move(host));
+}
+
+void WidgetBase::ShowContextMenu(ui::mojom::blink::MenuSourceType source_type,
+                                 const gfx::Point& location) {
+  client_->ShowContextMenu(source_type, location);
+}
+
+void WidgetBase::BindInputTargetClient(
+    mojo::PendingReceiver<viz::mojom::blink::InputTargetClient> host) {
+  client_->BindInputTargetClient(std::move(host));
 }
 
 void WidgetBase::UpdateVisualProperties(
@@ -476,6 +490,7 @@ void WidgetBase::UpdateVisualProperties(
 void WidgetBase::UpdateScreenRects(const gfx::Rect& widget_screen_rect,
                                    const gfx::Rect& window_screen_rect,
                                    UpdateScreenRectsCallback callback) {
+  TRACE_EVENT0("renderer", "WidgetBase::UpdateScreenRects");
   if (!client_->UpdateScreenRects(widget_screen_rect, window_screen_rect)) {
     widget_screen_rect_ = widget_screen_rect;
     window_screen_rect_ = window_screen_rect;
@@ -526,8 +541,11 @@ void WidgetBase::WasShown(bool was_evicted,
 void WidgetBase::RequestSuccessfulPresentationTimeForNextFrame(
     mojom::blink::RecordContentToVisibleTimeRequestPtr visible_time_request) {
   DCHECK(visible_time_request);
-  if (is_hidden_)
+  if (is_hidden_) {
     return;
+  }
+  TRACE_EVENT0("renderer",
+               "WidgetBase::RequestSuccessfulPresentationTimeForNextFrame");
 
   if (visible_time_request->show_reason_unfolding) {
     LayerTreeHost()->RequestSuccessfulPresentationTimeForNextFrame(
@@ -547,11 +565,24 @@ void WidgetBase::RequestSuccessfulPresentationTimeForNextFrame(
 }
 
 void WidgetBase::CancelSuccessfulPresentationTimeRequest() {
-  if (is_hidden_)
+  if (is_hidden_) {
     return;
+  }
 
+  TRACE_EVENT0("renderer",
+               "WidgetBase::CancelSuccessfulPresentationTimeRequest");
   // Tab was hidden while widget keeps painting, eg. due to being captured.
   tab_switch_time_recorder_.TabWasHidden();
+}
+
+void WidgetBase::SetupRenderInputRouterConnections(
+    mojo::PendingReceiver<mojom::blink::RenderInputRouterClient> request) {
+  TRACE_EVENT("renderer", "WidgetBase::SetupRenderInputRouterConnections");
+
+  // TODO(b/322833330): Investigate binding |input_receiver_| on
+  // RendererCompositor to break dependency on CrRendererMain and avoiding
+  // contention with javascript during method calls.
+  input_receiver_.Bind(std::move(request), task_runner_);
 }
 
 void WidgetBase::ApplyViewportChanges(
@@ -584,7 +615,7 @@ void WidgetBase::OnDeferMainFrameUpdatesChanged(bool defer) {
 void WidgetBase::OnDeferCommitsChanged(
     bool defer,
     cc::PaintHoldingReason reason,
-    absl::optional<cc::PaintHoldingCommitTrigger> trigger) {
+    std::optional<cc::PaintHoldingCommitTrigger> trigger) {
   // The input handler wants to know about the commit status for metric purposes
   // and to enable/disable input.
   widget_input_handler_manager_->OnDeferCommitsChanged(defer, reason);
@@ -621,9 +652,11 @@ void WidgetBase::RequestNewLayerTreeFrameSink(
 
   const bool for_web_tests = WebTestMode();
   // Misconfigured bots (eg. crbug.com/780757) could run web tests on a
-  // machine where gpu compositing doesn't work. Don't crash in that case.
-  if (for_web_tests && Platform::Current()->IsGpuCompositingDisabled()) {
-    LOG(FATAL) << "Web tests require gpu compositing, but it is disabled.";
+  // machine where gpu compositing doesn't work. LOG(FATAL) in that case.
+  if (for_web_tests && Platform::Current()->IsGpuCompositingDisabled() &&
+      !Platform::Current()->CompositorThreadTaskRunner()) {
+    LOG(FATAL) << "Web tests require gpu compositing in single thread mode, "
+                  "but it is disabled.";
   }
 
   // TODO(jonross): Have this generated by the LayerTreeFrameSink itself, which
@@ -808,21 +841,16 @@ void WidgetBase::FinishRequestNewLayerTreeFrameSink(
   gpu::ContextCreationAttribs attributes;
   attributes.bind_generates_resource = false;
   attributes.lose_context_when_out_of_memory = true;
-  attributes.enable_gles2_interface = true;
-  attributes.enable_grcontext = true;
+  // VideoResourceUpdater was the only usage of gles2 interface from this
+  // RasterContextProvider and now we use RasterInterface in
+  // VideoResourceUpdater.
+  attributes.enable_gles2_interface = false;
+  attributes.enable_grcontext = false;
   attributes.enable_raster_interface = true;
   attributes.enable_oop_rasterization = false;
 
   constexpr bool automatic_flushes = false;
   constexpr bool support_locking = false;
-  // VideoResourceUpdater is the only usage of gles2 interface from this
-  // RasterContextProvider. Thus, if we use RasterInterface in
-  // VideoResourceUpdater, enabling gles2 interface is no longer needed.
-  if (base::FeatureList::IsEnabled(
-          media::kRasterInterfaceInVideoResourceUpdater)) {
-    attributes.enable_gles2_interface = false;
-    attributes.enable_grcontext = false;
-  }
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager =
       Platform::Current()->GetGpuMemoryBufferManager();
 
@@ -1019,7 +1047,7 @@ bool WidgetBase::ShouldRecordBeginMainFrameMetrics() {
 
 void WidgetBase::AddPresentationCallback(
     uint32_t frame_token,
-    base::OnceCallback<void(base::TimeTicks)> callback) {
+    base::OnceCallback<void(const viz::FrameTimingDetails&)> callback) {
   layer_tree_view_->AddPresentationCallback(frame_token, std::move(callback));
 }
 
@@ -1098,8 +1126,8 @@ void WidgetBase::UpdateTextInputStateInternal(bool show_virtual_keyboard,
   ui::mojom::VirtualKeyboardVisibilityRequest last_vk_visibility_request =
       ui::mojom::VirtualKeyboardVisibilityRequest::NONE;
   bool always_hide_ime = false;
-  absl::optional<gfx::Rect> control_bounds;
-  absl::optional<gfx::Rect> selection_bounds;
+  std::optional<gfx::Rect> control_bounds;
+  std::optional<gfx::Rect> selection_bounds;
   if (frame_widget) {
     new_info = frame_widget->TextInputInfo();
     // This will be used to decide whether or not to show VK when VK policy is
@@ -1286,6 +1314,11 @@ void WidgetBase::UpdateCompositionInfo(bool immediate_request) {
   if (!monitor_composition_info_ && !immediate_request)
     return;  // Do not calculate composition info if not requested.
 
+  FrameWidget* frame_widget = client_->FrameWidget();
+  if (!frame_widget) {
+    return;
+  }
+
   TRACE_EVENT0("renderer", "WidgetBase::UpdateCompositionInfo");
   gfx::Range range;
   Vector<gfx::Rect> character_bounds;
@@ -1305,13 +1338,17 @@ void WidgetBase::UpdateCompositionInfo(bool immediate_request) {
   composition_character_bounds_ = character_bounds;
   composition_range_ = range;
 
-  absl::optional<Vector<gfx::Rect>> line_bounds;
-  FrameWidget* frame_widget = client_->FrameWidget();
-  if (base::FeatureList::IsEnabled(features::kReportVisibleLineBounds) &&
-      frame_widget) {
+  std::optional<Vector<gfx::Rect>> line_bounds;
+
+  // If using the new pipeline for CursorAnchorInfo data, send data from the
+  // frame widget.
+  if (RuntimeEnabledFeatures::CursorAnchorInfoMojoPipeEnabled()) {
+    frame_widget->UpdateCursorAnchorInfo();
+    return;
+  }
+  if (RuntimeEnabledFeatures::ReportVisibleLineBoundsEnabled()) {
     line_bounds = frame_widget->GetVisibleLineBoundsOnScreen();
   }
-
   if (mojom::blink::WidgetInputHandlerHost* host =
           widget_input_handler_manager_->GetWidgetInputHandlerHost()) {
     host->ImeCompositionRangeChanged(
@@ -1847,7 +1884,7 @@ gfx::RectF WidgetBase::BlinkSpaceToDIPs(const gfx::RectF& rect) {
   return gfx::ScaleRect(rect, reverse);
 }
 
-absl::optional<int> WidgetBase::GetMaxRenderBufferBounds() const {
+std::optional<int> WidgetBase::GetMaxRenderBufferBounds() const {
   return Platform::Current()->IsGpuCompositingDisabled()
              ? max_render_buffer_bounds_sw_
              : max_render_buffer_bounds_gpu_;

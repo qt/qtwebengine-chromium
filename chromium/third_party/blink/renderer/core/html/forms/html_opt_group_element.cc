@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
+#include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_slot_element.h"
@@ -51,8 +52,7 @@ bool CanAssignToOptGroupSlot(const Node& node) {
 
 HTMLOptGroupElement::HTMLOptGroupElement(Document& document)
     : HTMLElement(html_names::kOptgroupTag, document) {
-  EnsureUserAgentShadowRoot().SetSlotAssignmentMode(
-      SlotAssignmentMode::kManual);
+  EnsureUserAgentShadowRoot(SlotAssignmentMode::kManual);
 }
 
 // An explicit empty destructor should be in html_opt_group_element.cc, because
@@ -170,8 +170,7 @@ void HTMLOptGroupElement::DidAddUserAgentShadowRoot(ShadowRoot& root) {
   DEFINE_STATIC_LOCAL(AtomicString, label_padding, ("0 2px 1px 2px"));
   DEFINE_STATIC_LOCAL(AtomicString, label_min_height, ("1.2em"));
   auto* label = MakeGarbageCollected<HTMLDivElement>(GetDocument());
-  label->setAttribute(html_names::kRoleAttr, AtomicString("group"));
-  label->setAttribute(html_names::kAriaLabelAttr, AtomicString());
+  label->setAttribute(html_names::kAriaHiddenAttr, AtomicString("true"));
   label->SetInlineStyleProperty(CSSPropertyID::kPadding, label_padding);
   label->SetInlineStyleProperty(CSSPropertyID::kMinHeight, label_min_height);
   label->SetIdAttribute(shadow_element_names::kIdOptGroupLabel);

@@ -56,54 +56,41 @@ void CookieControlsBridge::UpdateWebContents(
 }
 
 void CookieControlsBridge::OnStatusChanged(
-    CookieControlsStatus status,
     bool controls_visible,
     bool protections_on,
     CookieControlsEnforcement enforcement,
     CookieBlocking3pcdStatus blocking_status,
     base::Time expiration) {
   // Only invoke the callback when there is a change.
-  if (status_ == status && enforcement_ == enforcement &&
+  if (controls_visible_ == controls_visible &&
+      protections_on_ == protections_on && enforcement_ == enforcement &&
       expiration_ == expiration) {
     return;
   }
-  status_ = status;
+  controls_visible_ = controls_visible;
+  protections_on_ = protections_on;
   enforcement_ = enforcement;
   expiration_ = expiration;
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_CookieControlsBridge_onStatusChanged(
-      env, jobject_, static_cast<int>(status_), static_cast<int>(enforcement_),
+      env, jobject_, static_cast<bool>(controls_visible),
+      static_cast<bool>(protections_on), static_cast<int>(enforcement_),
       static_cast<int>(blocking_status),
       expiration.InMillisecondsSinceUnixEpoch());
 }
 
-void CookieControlsBridge::OnSitesCountChanged(
-    int allowed_third_party_sites_count,
-    int blocked_third_party_sites_count) {
-  // The site counts change quite frequently, so avoid unnecessary
-  // UI updates if possible.
-  if (allowed_third_party_sites_count_ == allowed_third_party_sites_count &&
-      blocked_third_party_sites_count_ == blocked_third_party_sites_count) {
-    return;
-  }
-  allowed_third_party_sites_count_ = allowed_third_party_sites_count;
-  blocked_third_party_sites_count_ = blocked_third_party_sites_count;
+void CookieControlsBridge::OnCookieControlsIconStatusChanged(
+    bool icon_visible,
+    bool protections_on,
+    CookieBlocking3pcdStatus blocking_status,
+    bool should_highlight) {
+  // This function's main use is for web's User Bypass icon, which
+  // does not observe `OnStatusChanged`. Since the Clank icon does
+  // observe `OnStatusChanged`, the only variable we need to pass
+  // on from this function is `should_highlight`.
   JNIEnv* env = base::android::AttachCurrentThread();
-  Java_CookieControlsBridge_onSitesCountChanged(
-      env, jobject_, allowed_third_party_sites_count,
-      blocked_third_party_sites_count);
-}
-
-void CookieControlsBridge::OnBreakageConfidenceLevelChanged(
-    CookieControlsBreakageConfidenceLevel level) {
-  if (level_ == level) {
-    return;
-  }
-
-  level_ = level;
-  JNIEnv* env = base::android::AttachCurrentThread();
-  Java_CookieControlsBridge_onBreakageConfidenceLevelChanged(
-      env, jobject_, static_cast<int>(level));
+  Java_CookieControlsBridge_onHighlightCookieControl(
+      env, jobject_, static_cast<bool>(should_highlight));
 }
 
 void CookieControlsBridge::SetThirdPartyCookieBlockingEnabledForSite(
@@ -118,14 +105,6 @@ void CookieControlsBridge::OnUiClosing(JNIEnv* env) {
 
 void CookieControlsBridge::OnEntryPointAnimated(JNIEnv* env) {
   controller_->OnEntryPointAnimated();
-}
-
-int CookieControlsBridge::GetCookieControlsStatus(JNIEnv* env) {
-  return static_cast<int>(controller_->GetCookieControlsStatus());
-}
-
-int CookieControlsBridge::GetBreakageConfidenceLevel(JNIEnv* env) {
-  return static_cast<int>(controller_->GetBreakageConfidenceLevel());
 }
 
 CookieControlsBridge::~CookieControlsBridge() = default;

@@ -40,14 +40,15 @@
 #include "pdf/accessibility_structs.h"
 #include "pdf/draw_utils/coordinates.h"
 #include "pdf/draw_utils/shadow.h"
+#include "pdf/input_utils.h"
 #include "pdf/loader/document_loader_impl.h"
 #include "pdf/loader/url_loader.h"
 #include "pdf/loader/url_loader_wrapper_impl.h"
 #include "pdf/pdf_features.h"
 #include "pdf/pdf_transform.h"
-#include "pdf/pdf_utils/dates.h"
 #include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
 #include "pdf/pdfium/pdfium_document.h"
+#include "pdf/pdfium/pdfium_document_metadata.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_write.h"
 #include "pdf/pdfium/pdfium_permissions.h"
 #include "pdf/pdfium/pdfium_unsupported_features.h"
@@ -63,6 +64,7 @@
 #include "third_party/pdfium/public/cpp/fpdf_scopers.h"
 #include "third_party/pdfium/public/fpdf_annot.h"
 #include "third_party/pdfium/public/fpdf_attachment.h"
+#include "third_party/pdfium/public/fpdf_catalog.h"
 #include "third_party/pdfium/public/fpdf_ext.h"
 #include "third_party/pdfium/public/fpdf_fwlevent.h"
 #include "third_party/pdfium/public/fpdf_ppo.h"
@@ -246,8 +248,8 @@ bool IsV8Initialized() {
 
 void SetUpV8() {
   if (!gin::IsolateHolder::Initialized()) {
-    // TODO(crbug.com/1111024): V8 flags for the PDF Viewer need to be set up as
-    // soon as the renderer process is created in the constructor of
+    // TODO(crbug.com/40142415): V8 flags for the PDF Viewer need to be set up
+    // as soon as the renderer process is created in the constructor of
     // `content::RenderProcessImpl`.
     const char* recommended = FPDF_GetRecommendedV8Flags();
     v8::V8::SetFlagsFromString(recommended, strlen(recommended));
@@ -308,21 +310,6 @@ bool IsLinkArea(PDFiumPage::Area area) {
 
 bool IsSelectableArea(PDFiumPage::Area area) {
   return area == PDFiumPage::TEXT_AREA || IsLinkArea(area);
-}
-
-// Normalize a blink::WebMouseEvent. For macOS, normalization means transforming
-// the ctrl + left button down events into a right button down event.
-blink::WebMouseEvent NormalizeMouseEvent(const blink::WebMouseEvent& event) {
-  blink::WebMouseEvent normalized_event = event;
-#if BUILDFLAG(IS_MAC)
-  if ((event.GetModifiers() & blink::WebInputEvent::Modifiers::kControlKey) &&
-      event.button == blink::WebPointerProperties::Button::kLeft &&
-      event.GetType() == blink::WebInputEvent::Type::kMouseDown) {
-    normalized_event.SetModifiers(
-        event.GetModifiers() & ~blink::WebInputEvent::Modifiers::kControlKey);
-  }
-#endif
-  return normalized_event;
 }
 
 // These values are intended for the JS to handle, and it doesn't have access
@@ -1126,6 +1113,10 @@ AccessibilityFocusInfo PDFiumEngine::GetFocusInfo() {
   return focus_info;
 }
 
+bool PDFiumEngine::IsPDFDocTagged() {
+  return FPDFCatalog_IsTagged(doc());
+}
+
 uint32_t PDFiumEngine::GetLoadedByteSize() {
   return doc_loader_->GetDocumentSize();
 }
@@ -1195,13 +1186,14 @@ PDFiumPage::Area PDFiumEngine::GetCharIndex(const gfx::Point& point,
 }
 
 bool PDFiumEngine::OnMouseDown(const blink::WebMouseEvent& event) {
-  switch (event.button) {
+  blink::WebMouseEvent normalized_event = NormalizeMouseEvent(event);
+  switch (normalized_event.button) {
     case blink::WebPointerProperties::Button::kLeft:
-      return OnLeftMouseDown(NormalizeMouseEvent(event));
+      return OnLeftMouseDown(normalized_event);
     case blink::WebPointerProperties::Button::kMiddle:
-      return OnMiddleMouseDown(NormalizeMouseEvent(event));
+      return OnMiddleMouseDown(normalized_event);
     case blink::WebPointerProperties::Button::kRight:
-      return OnRightMouseDown(NormalizeMouseEvent(event));
+      return OnRightMouseDown(normalized_event);
     default:
       return false;
   }
@@ -2821,7 +2813,7 @@ void PDFiumEngine::ContinueLoadingDocument(const std::string& password) {
 void PDFiumEngine::LoadPageInfo() {
   RefreshCurrentDocumentLayout();
 
-  // TODO(crbug.com/1013800): RefreshCurrentDocumentLayout() should send some
+  // TODO(crbug.com/40652841): RefreshCurrentDocumentLayout() should send some
   // sort of "current layout changed" notification, instead of proposing a new
   // layout. Proposals are never rejected currently, so this is OK for now.
   ProposeNextDocumentLayout();
@@ -2887,7 +2879,7 @@ std::vector<gfx::Size> PDFiumEngine::LoadPageSizes(
       page_available = doc_complete;
     }
 
-    // TODO(crbug.com/1013800): It'd be better if page size were independent of
+    // TODO(crbug.com/40652841): It'd be better if page size were independent of
     // layout options, and handled in the layout code.
     gfx::Size size = page_available ? GetPageSizeForLayout(i, layout_options)
                                     : default_page_size_;
@@ -3447,7 +3439,7 @@ gfx::Rect PDFiumEngine::GetVisibleRect() const {
   rv.set_x(static_cast<int>(position_.x() / current_zoom_));
   rv.set_y(static_cast<int>(position_.y() / current_zoom_));
 
-  // TODO(crbug.com/1237952): Can we avoid the need for .has_value()?
+  // TODO(crbug.com/40193305): Can we avoid the need for .has_value()?
   if (plugin_size_.has_value()) {
     rv.set_width(static_cast<int>(ceil(plugin_size_->width() / current_zoom_)));
     rv.set_height(
@@ -3796,7 +3788,7 @@ gfx::Size PDFiumEngine::ApplyDocumentLayout(
   // client_->ScrollToPage() would send another "viewport" message, triggering
   // an infinite loop.
   //
-  // TODO(crbug.com/1013800): The current implementation computes layout twice
+  // TODO(crbug.com/40652841): The current implementation computes layout twice
   // (here, and in InvalidateAllPages()). This shouldn't be too expensive at
   // realistic page counts, but could be avoided.
   UpdateDocumentLayout(&layout_);
@@ -3831,10 +3823,7 @@ gfx::Size PDFiumEngine::ApplyDocumentLayout(
 }
 
 void PDFiumEngine::SetSelecting(bool selecting) {
-  bool was_selecting = selecting_;
   selecting_ = selecting;
-  if (selecting_ != was_selecting)
-    client_->SetIsSelecting(selecting);
 }
 
 void PDFiumEngine::EnteredEditMode() {
@@ -4143,69 +4132,14 @@ void PDFiumEngine::LoadDocumentAttachmentInfoList() {
 }
 
 void PDFiumEngine::LoadDocumentMetadata() {
-  DCHECK(document_loaded_);
+  CHECK(document_loaded_);
 
-  doc_metadata_.version = GetDocumentVersion();
-  doc_metadata_.size_bytes = GetLoadedByteSize();
-  doc_metadata_.page_count = pages_.size();
-  doc_metadata_.linearized = IsLinearized();
-  doc_metadata_.has_attachments = !doc_attachment_info_list_.empty();
-  doc_metadata_.form_type = static_cast<FormType>(FPDF_GetFormType(doc()));
-
-  // Document information dictionary entries
-  doc_metadata_.title = GetTrimmedMetadataByField("Title");
-  doc_metadata_.author = GetTrimmedMetadataByField("Author");
-  doc_metadata_.subject = GetTrimmedMetadataByField("Subject");
-  doc_metadata_.keywords = GetTrimmedMetadataByField("Keywords");
-  doc_metadata_.creator = GetTrimmedMetadataByField("Creator");
-  doc_metadata_.producer = GetTrimmedMetadataByField("Producer");
-  doc_metadata_.creation_date =
-      ParsePdfDate(GetTrimmedMetadataByField("CreationDate"));
-  doc_metadata_.mod_date = ParsePdfDate(GetTrimmedMetadataByField("ModDate"));
-}
-
-std::string PDFiumEngine::GetTrimmedMetadataByField(
-    FPDF_BYTESTRING field) const {
-  DCHECK(doc());
-
-  std::u16string metadata = CallPDFiumWideStringBufferApi(
-      base::BindRepeating(&FPDF_GetMetaText, doc(), field),
-      /*check_expected_size=*/false);
-
-  return base::UTF16ToUTF8(base::TrimWhitespace(metadata, base::TRIM_ALL));
-}
-
-PdfVersion PDFiumEngine::GetDocumentVersion() const {
-  DCHECK(doc());
-
-  int version;
-  if (!FPDF_GetFileVersion(doc(), &version))
-    return PdfVersion::kUnknown;
-
-  switch (version) {
-    case 10:
-      return PdfVersion::k1_0;
-    case 11:
-      return PdfVersion::k1_1;
-    case 12:
-      return PdfVersion::k1_2;
-    case 13:
-      return PdfVersion::k1_3;
-    case 14:
-      return PdfVersion::k1_4;
-    case 15:
-      return PdfVersion::k1_5;
-    case 16:
-      return PdfVersion::k1_6;
-    case 17:
-      return PdfVersion::k1_7;
-    case 18:
-      return PdfVersion::k1_8;
-    case 20:
-      return PdfVersion::k2_0;
-    default:
-      return PdfVersion::kUnknown;
-  }
+  doc_metadata_ = GetPDFiumDocumentMetadata(
+      doc(),
+      /*size_bytes=*/GetLoadedByteSize(),
+      /*page_count=*/pages_.size(),
+      /*linearized=*/IsLinearized(),
+      /*has_attachments=*/!doc_attachment_info_list_.empty());
 }
 
 bool PDFiumEngine::HandleTabEvent(int modifiers) {

@@ -77,22 +77,12 @@ export declare enum LocatorEvent {
      */
     Action = "action"
 }
-export { 
-/**
- * @deprecated Use {@link LocatorEvent}.
- */
-LocatorEvent as LocatorEmittedEvents, };
 /**
  * @public
  */
 export interface LocatorEvents extends Record<EventType, unknown> {
     [LocatorEvent.Action]: undefined;
 }
-export type { 
-/**
- * @deprecated Use {@link LocatorEvents}.
- */
-LocatorEvents as LocatorEventObject, };
 /**
  * Locators describe a strategy of locating objects and performing an action on
  * them. If the action fails because the object is not ready for the action, the
@@ -127,7 +117,7 @@ export declare abstract class Locator<T> extends EventEmitter<LocatorEvents> {
      */
     protected operators: {
         conditions: (conditions: Array<Action<T, never>>, signal?: AbortSignal) => OperatorFunction<HandleFor<T>, HandleFor<T>>;
-        retryAndRaceWithSignalAndTimer: <T_1>(signal?: AbortSignal) => OperatorFunction<T_1, T_1>;
+        retryAndRaceWithSignalAndTimer: <T_1>(signal?: AbortSignal, cause?: Error) => OperatorFunction<T_1, T_1>;
     };
     get timeout(): number;
     setTimeout(timeout: number): Locator<T>;

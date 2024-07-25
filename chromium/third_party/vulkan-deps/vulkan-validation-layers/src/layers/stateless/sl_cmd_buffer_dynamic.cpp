@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
  */
 
 #include "stateless/stateless_validation.h"
+#include "generated/layer_chassis_dispatch.h"
 
 bool StatelessValidation::manual_PreCallValidateCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount,
                                                                         const VkViewport *pViewports,
@@ -259,8 +260,8 @@ bool StatelessValidation::manual_PreCallValidateCmdSetVertexInputEXT(
         if ((properties.bufferFeatures & VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) == 0) {
             skip |=
                 LogError("VUID-VkVertexInputAttributeDescription2EXT-format-04805", commandBuffer, attribute_loc.dot(Field::format),
-                         "(%s) is not a "
-                         "VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT supported format. (supported bufferFeatures: %s)",
+                         "(%s) doesn't support VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT.\n"
+                         "(supported bufferFeatures: %s)",
                          string_VkFormat(pVertexAttributeDescriptions[attribute].format),
                          string_VkFormatFeatureFlags2(properties.bufferFeatures).c_str());
         }
@@ -457,7 +458,7 @@ bool StatelessValidation::manual_PreCallValidateCmdSetCoarseSampleOrderNV(VkComm
     }
 
     for (uint32_t order_i = 0; order_i < customSampleOrderCount; ++order_i) {
-        skip |= ValidateCoarseSampleOrderCustomNV(&pCustomSampleOrders[order_i],
+        skip |= ValidateCoarseSampleOrderCustomNV(pCustomSampleOrders[order_i],
                                                   error_obj.location.dot(Field::pCustomSampleOrders, order_i));
     }
 
@@ -570,13 +571,13 @@ bool StatelessValidation::manual_PreCallValidateCmdSetLineWidth(VkCommandBuffer 
     return skip;
 }
 
-bool StatelessValidation::manual_PreCallValidateCmdSetLineStippleEXT(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor,
+bool StatelessValidation::manual_PreCallValidateCmdSetLineStippleKHR(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor,
                                                                      uint16_t lineStipplePattern,
                                                                      const ErrorObject &error_obj) const {
     bool skip = false;
 
     if (lineStippleFactor < 1 || lineStippleFactor > 256) {
-        skip |= LogError("VUID-vkCmdSetLineStippleEXT-lineStippleFactor-02776", commandBuffer,
+        skip |= LogError("VUID-vkCmdSetLineStippleKHR-lineStippleFactor-02776", commandBuffer,
                          error_obj.location.dot(Field::lineStippleFactor), "%" PRIu32 " is not in [1,256].", lineStippleFactor);
     }
 

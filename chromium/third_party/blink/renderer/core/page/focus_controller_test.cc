@@ -41,7 +41,7 @@ TEST_F(FocusControllerTest, DoNotCrash1) {
       "tabindex='0'></p>");
   // <div> with shadow root
   auto* host = To<Element>(GetDocument().body()->firstChild());
-  host->AttachShadowRootInternal(ShadowRootType::kOpen);
+  host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
   // "This test is for crbug.com/609012"
   Node* text = host->nextSibling();
   // <p>
@@ -65,7 +65,7 @@ TEST_F(FocusControllerTest, DoNotCrash2) {
   Node* text = target->nextSibling();
   // <div> with shadow root
   auto* host = To<Element>(text->nextSibling());
-  host->AttachShadowRootInternal(ShadowRootType::kOpen);
+  host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
 
   // Set sequential focus navigation point at text node.
   GetDocument().SetSequentialFocusNavigationStartingPoint(text);
@@ -293,8 +293,8 @@ TEST_F(FocusControllerTest,
                          recover_username, mojom::blink::FocusType::kForward));
 }
 
-// Test for FocusController::FindScopeOwnerSlot().
-TEST_F(FocusControllerTest, FindScopeOwnerSlot) {
+// Test for FocusController::FindScopeOwnerSlotOrReadingOrderContainer().
+TEST_F(FocusControllerTest, FindScopeOwnerSlotOrReadingOrderContainer) {
   const char* main_html =
       "<div id='host'>"
       "<div id='inner1'></div>"
@@ -304,7 +304,7 @@ TEST_F(FocusControllerTest, FindScopeOwnerSlot) {
   GetDocument().body()->setInnerHTML(String::FromUTF8(main_html));
   auto* host = To<Element>(GetDocument().body()->firstChild());
   ShadowRoot& shadow_root =
-      host->AttachShadowRootInternal(ShadowRootType::kOpen);
+      host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
   shadow_root.setInnerHTML(String::FromUTF8("<slot></slot>"));
 
   Element* inner1 = GetDocument().QuerySelector(AtomicString("#inner1"));
@@ -312,10 +312,14 @@ TEST_F(FocusControllerTest, FindScopeOwnerSlot) {
   auto* slot =
       To<HTMLSlotElement>(shadow_root.QuerySelector(AtomicString("slot")));
 
-  EXPECT_EQ(nullptr, FocusController::FindScopeOwnerSlot(*host));
-  EXPECT_EQ(nullptr, FocusController::FindScopeOwnerSlot(*slot));
-  EXPECT_EQ(slot, FocusController::FindScopeOwnerSlot(*inner1));
-  EXPECT_EQ(slot, FocusController::FindScopeOwnerSlot(*inner2));
+  EXPECT_EQ(nullptr,
+            FocusController::FindScopeOwnerSlotOrReadingOrderContainer(*host));
+  EXPECT_EQ(nullptr,
+            FocusController::FindScopeOwnerSlotOrReadingOrderContainer(*slot));
+  EXPECT_EQ(slot, FocusController::FindScopeOwnerSlotOrReadingOrderContainer(
+                      *inner1));
+  EXPECT_EQ(slot, FocusController::FindScopeOwnerSlotOrReadingOrderContainer(
+                      *inner2));
 }
 
 // crbug.com/1508258
@@ -328,7 +332,7 @@ TEST_F(FocusControllerTest, FocusHasChangedShouldInvalidateFocusStyle) {
 
   auto* host = GetElementById("host");
   ShadowRoot& shadow_root =
-      host->AttachShadowRootInternal(ShadowRootType::kOpen);
+      host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
   shadow_root.setInnerHTML("<div tabindex=0></div>");
   To<Element>(shadow_root.firstChild())->Focus();
 

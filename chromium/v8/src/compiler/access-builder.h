@@ -167,6 +167,11 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   // Provides access to JSTypedArray::length() field.
   static FieldAccess ForJSTypedArrayLength();
 
+  // Provides access to JSTypedArray::byteLength() field.
+  static FieldAccess ForJSTypedArrayByteLength() {
+    return ForJSArrayBufferViewByteLength();
+  }
+
   // Provides access to JSTypedArray::base_pointer() field.
   static FieldAccess ForJSTypedArrayBasePointer();
 
@@ -175,6 +180,10 @@ class V8_EXPORT_PRIVATE AccessBuilder final
 
   // Provides access to JSDataView::data_pointer() field.
   static FieldAccess ForJSDataViewDataPointer();
+
+  static FieldAccess ForJSDataViewByteLength() {
+    return ForJSArrayBufferViewByteLength();
+  }
 
   // Provides access to JSDate::value() field.
   static FieldAccess ForJSDateValue();
@@ -187,6 +196,8 @@ class V8_EXPORT_PRIVATE AccessBuilder final
 
   // Provides access to JSIteratorResult::value() field.
   static FieldAccess ForJSIteratorResultValue();
+
+  static FieldAccess ForJSPrimitiveWrapperValue();
 
   // Provides access to JSRegExp::data() field.
   static FieldAccess ForJSRegExpData();
@@ -326,9 +337,6 @@ class V8_EXPORT_PRIVATE AccessBuilder final
   // Provides access to SloppyArgumentsElements elements.
   static ElementAccess ForSloppyArgumentsElementsMappedEntry();
 
-  // Provides access to stack arguments
-  static ElementAccess ForStackArgument();
-
   // Provides access to FixedDoubleArray elements.
   static ElementAccess ForFixedDoubleArrayElement();
 
@@ -376,6 +384,7 @@ class V8_EXPORT_PRIVATE AccessBuilder final
 
 #if V8_ENABLE_WEBASSEMBLY
   static FieldAccess ForWasmArrayLength();
+  static FieldAccess ForWasmDispatchTableLength();
 #endif
 
  private:

@@ -7,16 +7,17 @@ from __future__ import annotations
 import abc
 import argparse
 import datetime as dt
-import logging
 import json
+import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, Tuple, Type
 
 from crossbench import cli_helper, compat
 
+from .action_runner.base import ActionRunner
+
 if TYPE_CHECKING:
   from crossbench.runner.run import Run
-  from crossbench.stories.story import Story
   from crossbench.types import JsonDict
 
 
@@ -32,6 +33,12 @@ class ParsingEnum(compat.StrEnum):
                                      f"choices are {choices}")
 
 
+class ActionType(ParsingEnum):
+  GET = "get"
+  WAIT = "wait"
+  SCROLL = "scroll"
+  CLICK = "click"
+
 class ScrollDirection(ParsingEnum):
   UP = "up"
   DOWN = "down"
@@ -41,13 +48,6 @@ class ButtonClick(ParsingEnum):
   LEFT = "left"
   RIGHT = "right"
   MIDDLE = "middle"
-
-
-class ActionType(ParsingEnum):
-  GET = "get"
-  WAIT = "wait"
-  SCROLL = "scroll"
-  CLICK = "click"
 
 
 ACTION_TIMEOUT = dt.timedelta(seconds=20)
@@ -91,7 +91,7 @@ class Action(abc.ABC):
     return self._timeout != dt.timedelta.max
 
   @abc.abstractmethod
-  def run(self, run: Run) -> None:
+  def runWith(self, run: Run, action_runner: ActionRunner) -> None:
     pass
 
   def validate(self) -> None:
@@ -172,30 +172,8 @@ class GetAction(Action):
   def target(self) -> WindowTarget:
     return self._target
 
-  def run(self, run: Run) -> None:
-    start_time = time.time()
-    expected_end_time = start_time + self.duration.total_seconds()
-
-    with run.actions(f"Get {self.url}", measure=False) as action:
-      action.show_url(self.url, str(self.target))
-
-      if self._ready_state != ReadyState.ANY:
-        # Make sure we also finish if readyState jumps directly
-        # from "loading" to "complete"
-        action.wait_js_condition(
-            f"""
-              let state = document.readyState;
-              return state === '{self._ready_state}' || state === "complete";
-            """, 0.2, self.timeout.total_seconds())
-        return
-      # Wait for the given duration from the start of the action.
-      wait_time_seconds = expected_end_time - time.time()
-      if wait_time_seconds > 0:
-        action.wait(wait_time_seconds)
-      elif self.duration:
-        run_duration = dt.timedelta(seconds=time.time() - start_time)
-        logging.info("%s took longer (%s) than expected action duration (%s).",
-                     self, run_duration, self.duration)
+  def runWith(self, run: Run, action_runner: ActionRunner) -> None:
+    action_runner.get(run, self)
 
   def validate(self) -> None:
     super().validate()
@@ -251,9 +229,8 @@ class DurationAction(Action):
 class WaitAction(DurationAction):
   TYPE: ActionType = ActionType.WAIT
 
-  def run(self, run: Run) -> None:
-    with run.actions("WaitAction", measure=False) as action:
-      action.wait(self.duration)
+  def runWith(self, run: Run, action_runner: ActionRunner) -> None:
+    action_runner.wait(run, self)
 
 
 class ScrollAction(DurationAction):
@@ -277,22 +254,8 @@ class ScrollAction(DurationAction):
   def direction(self) -> ScrollDirection:
     return self._direction
 
-  def run(self, run: Run) -> None:
-    time_end = time.time() + self.duration.total_seconds()
-    direction = 1 if self.direction == ScrollDirection.UP else -1
-
-    start = 0
-    end = direction
-
-    with run.actions("ScrollAction", measure=False) as action:
-      while time.time() < time_end:
-        # TODO: REMOVE COMMENT CODE ONCE pyautogui ALLOWED ON GOOGLE3
-        # if events_source == 'js'
-        action.js(f"window.scrollTo({start}, {end});")
-        start = end
-        end += 100
-        # else :
-        #   pyautogui.scroll(direction)
+  def runWith(self, run: Run, action_runner: ActionRunner) -> None:
+    action_runner.scroll(run, self)
 
   def validate(self) -> None:
     super().validate()
@@ -333,21 +296,8 @@ class ClickAction(Action):
   def selector(self) -> str:
     return self._selector
 
-  def run(self, run: Run) -> None:
-    with run.actions("ClickAction", measure=False) as action:
-      # TODO: support more selector types.
-      prefix = "xpath/"
-      if self.selector.startswith(prefix):
-        xpath: str = self.selector[len(prefix):]
-        action.js(
-            """
-              let element = document.evaluate(arguments[0], document).iterateNext();
-              if (arguments[1]) element.scrollIntoView()
-              element.click()
-            """,
-            arguments=[xpath, self._scroll_into_view])
-      else:
-        raise NotImplementedError(f"Unsupported selector: {self.selector}")
+  def runWith(self, run: Run, action_runner: ActionRunner) -> None:
+    action_runner.click(run, self)
 
   def validate(self) -> None:
     super().validate()

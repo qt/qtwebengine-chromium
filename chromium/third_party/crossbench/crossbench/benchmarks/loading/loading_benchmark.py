@@ -9,13 +9,15 @@ import logging
 import pathlib
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type
 from urllib.parse import urlparse
-from crossbench import cli_helper
 
+from crossbench import cli_helper
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
 
 from . import page_config
-from .page import (PAGE_LIST, PAGE_LIST_SMALL, PAGES, CombinedPage, LivePage,
-                   Page)
+from .action_runner.base import ActionRunner
+from .action_runner.config import ActionRunnerConfig
+from .page import (PAGE_LIST, PAGE_LIST_SMALL, PAGES, CombinedPage,
+                   InteractivePage, LivePage, Page)
 from .playback_controller import PlaybackController
 
 if TYPE_CHECKING:
@@ -43,14 +45,17 @@ class LoadingPageFilter(StoryFilter[Page]):
     kwargs = super().kwargs_from_cli(args)
     kwargs["separate"] = args.separate
     kwargs["playback"] = args.playback
+    kwargs["action_runner"] = args.action_runner
     return kwargs
 
   def __init__(self,
                story_cls: Type[Page],
                patterns: Sequence[str],
                separate: bool = True,
-               playback: Optional[PlaybackController] = None) -> None:
+               playback: Optional[PlaybackController] = None,
+               action_runner: Optional[ActionRunner] = None) -> None:
     self._playback = playback or PlaybackController.once()
+    self._action_runner = action_runner
     super().__init__(story_cls, patterns, separate)
 
   def process_all(self, patterns: Sequence[str]) -> None:
@@ -168,7 +173,6 @@ class PageLoadBenchmark(SubStoryBenchmark):
     playback_group.add_argument(
         "--playback",
         "--cycle",
-        default=PlaybackController.once(),
         type=PlaybackController.parse,
         help="Set limit on looping through/repeating the selected stories. "
         "Default is once."
@@ -181,16 +185,31 @@ class PageLoadBenchmark(SubStoryBenchmark):
         const=PlaybackController(),
         action="store_const",
         help="Equivalent to --playback=infinity")
+
+    parser.add_argument(
+        "--action-runner",
+        type=ActionRunnerConfig.parse,
+        help="Set the action runner for interactive pages.")
     return parser
 
   @classmethod
   def stories_from_cli_args(cls, args: argparse.Namespace) -> Sequence[Story]:
     if isinstance(args.stories, list):
+      cls._patch_action_runner(args, args.stories)
       if args.separate or len(args.stories) == 1:
         return args.stories
       return (CombinedPage(args.stories, "Page Scenarios - Combined",
                            args.playback),)
     return super().stories_from_cli_args(args)
+
+  @classmethod
+  def _patch_action_runner(cls, args: argparse.Namespace,
+                           stories: Sequence[Story]) -> None:
+    # TODO: remove this hack and move it to the StoryFilter / ConfigObject
+    if action_runner := args.action_runner:
+      for story in stories:
+        if isinstance(story, InteractivePage):
+          story.action_runner = action_runner
 
   @classmethod
   def aliases(cls) -> Tuple[str, ...]:

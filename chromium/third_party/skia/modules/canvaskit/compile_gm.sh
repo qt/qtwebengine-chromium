@@ -129,7 +129,7 @@ parse_targets() {
     basename $LIBPATH
   done
 }
-${NINJA} -C ${BUILD_DIR} libskia.a libskshaper.a libskunicode.a \
+${NINJA} -C ${BUILD_DIR} libskia.a libskshaper.a libskunicode_core.a libskunicode_icu.a \
   $(parse_targets $GM_LIB)
 
 echo "Generating final wasm"
@@ -146,6 +146,7 @@ SKIA_DEFINES="
 -DSK_CODEC_DECODES_JPEG \
 -DSK_SHAPER_HARFBUZZ_AVAILABLE \
 -DSK_UNICODE_AVAILABLE \
+-DSK_UNICODE_ICU_IMPLEMENTATION \
 -DSK_ENABLE_SVG \
 -DSK_TRIVIAL_ABI=[[clang::trivial_abi]]"
 
@@ -161,6 +162,7 @@ fi
 
 # These gms do not compile or link with the WASM code. Thus, we omit them.
 GLOBIGNORE="gm/compressed_textures.cpp:"\
+"gm/animated_gif.cpp:"\
 "gm/fiddle.cpp:"\
 "gm/fontations.cpp:"\
 "gm/fontations_ft_compare.cpp:"\
@@ -168,6 +170,7 @@ GLOBIGNORE="gm/compressed_textures.cpp:"\
 
 # These tests do not compile with the WASM code (require other deps).
 GLOBIGNORE+="tests/CodecTest.cpp:"\
+"tests/CodecAnimTest.cpp:"\
 "tests/ColorSpaceTest.cpp:"\
 "tests/DrawOpAtlasTest.cpp:"\
 "tests/EncodeTest.cpp:"\
@@ -215,7 +218,8 @@ EMCC_DEBUG=1 ${EMCXX} \
     $TESTS_TO_BUILD \
     $GM_LIB \
     $BUILD_DIR/libskshaper.a \
-    $BUILD_DIR/libskunicode.a \
+    $BUILD_DIR/libskunicode_core.a \
+    $BUILD_DIR/libskunicode_icu.a \
     $BUILD_DIR/libsvg.a \
     $BUILD_DIR/libskia.a \
     $BUILTIN_FONT \

@@ -4,6 +4,7 @@
 
 #include "net/socket/transport_client_socket_pool.h"
 
+#include <string_view>
 #include <utility>
 
 #include "base/auto_reset.h"
@@ -81,7 +82,7 @@ TransportClientSocketPool::Request::Request(
     RespectLimits respect_limits,
     Flags flags,
     scoped_refptr<SocketParams> socket_params,
-    const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
+    const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
     const NetLogWithSource& net_log)
     : handle_(handle),
       callback_(std::move(callback)),
@@ -244,7 +245,7 @@ void TransportClientSocketPool::RemoveHigherLayeredPool(
 int TransportClientSocketPool::RequestSocket(
     const GroupId& group_id,
     scoped_refptr<SocketParams> params,
-    const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
+    const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
     RequestPriority priority,
     const SocketTag& socket_tag,
     RespectLimits respect_limits,
@@ -298,7 +299,7 @@ int TransportClientSocketPool::RequestSocket(
 int TransportClientSocketPool::RequestSockets(
     const GroupId& group_id,
     scoped_refptr<SocketParams> params,
-    const absl::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
+    const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
     int num_sockets,
     CompletionOnceCallback callback,
     const NetLogWithSource& net_log) {
@@ -370,7 +371,7 @@ int TransportClientSocketPool::RequestSockets(
 
   // Currently we don't handle preconnect errors. So this method returns OK even
   // if failed to preconnect.
-  // TODO(crbug.com/1330235): Consider support error handlings when needed.
+  // TODO(crbug.com/40843081): Consider support error handlings when needed.
   if (pending_connect_job_count == 0)
     return OK;
   for (int i = 0; i < num_sockets - pending_connect_job_count; ++i) {
@@ -829,7 +830,7 @@ void TransportClientSocketPool::OnSSLConfigChanged(
   CheckForStalledSocketGroups();
 }
 
-// TODO(crbug.com/1206799): Get `server` as SchemeHostPort?
+// TODO(crbug.com/40181080): Get `server` as SchemeHostPort?
 void TransportClientSocketPool::OnSSLConfigForServersChanged(
     const base::flat_set<HostPortPair>& servers) {
   // Current time value. Retrieving it once at the function start rather than
@@ -842,10 +843,9 @@ void TransportClientSocketPool::OnSSLConfigForServersChanged(
 
   // If the proxy chain includes a server from `servers` and uses SSL settings
   // (HTTPS or QUIC), refresh every group.
-  // TODO(https://crbug.com/1491092): Check each ProxyServer in `proxy_chain_`.
   bool proxy_matches = false;
   for (const ProxyServer& proxy_server : proxy_chain_.proxy_servers()) {
-    if (proxy_server.is_http_like() && !proxy_server.is_http() &&
+    if (proxy_server.is_secure_http_like() &&
         servers.contains(proxy_server.host_port_pair())) {
       proxy_matches = true;
     }
@@ -912,7 +912,7 @@ bool TransportClientSocketPool::CloseOneIdleConnectionInHigherLayeredPool() {
   // This pool doesn't have any idle sockets. It's possible that a pool at a
   // higher layer is holding one of this sockets active, but it's actually idle.
   // Query the higher layers.
-  for (auto* higher_pool : higher_pools_) {
+  for (HigherLayeredPool* higher_pool : higher_pools_) {
     if (higher_pool->CloseOneIdleConnection())
       return true;
   }
@@ -1020,7 +1020,7 @@ void TransportClientSocketPool::ReleaseSocket(
   group->DecrementActiveSocketCount();
 
   bool can_resuse_socket = false;
-  base::StringPiece not_reusable_reason;
+  std::string_view not_reusable_reason;
   if (!socket->IsConnectedAndIdle()) {
     if (!socket->IsConnected()) {
       not_reusable_reason = kClosedConnectionReturnedToPool;
@@ -1310,7 +1310,7 @@ void TransportClientSocketPool::OnConnectJobComplete(Group* group,
 
   // Check if the ConnectJob is already bound to a Request. If so, result is
   // returned to that specific request.
-  absl::optional<Group::BoundRequest> bound_request =
+  std::optional<Group::BoundRequest> bound_request =
       group->FindAndRemoveBoundRequestForConnectJob(job);
   Request* request = nullptr;
   std::unique_ptr<Request> owned_request;
@@ -1592,7 +1592,7 @@ void TransportClientSocketPool::Group::OnBackupJobTimerFired(
   // connection - the timeout they used is tuned for that, and tests expect that
   // behavior.
   //
-  // TODO(https://crbug.com/929814): Replace both this and the
+  // TODO(crbug.com/41440018): Replace both this and the
   // LOAD_STATE_RESOLVING_HOST check with a callback. Use the
   // LOAD_STATE_RESOLVING_HOST callback to start the timer (And invoke the
   // OnHostResolved callback of any pending requests), and the
@@ -1835,7 +1835,7 @@ TransportClientSocketPool::Group::BindRequestToConnectJob(
   return request;
 }
 
-absl::optional<TransportClientSocketPool::Group::BoundRequest>
+std::optional<TransportClientSocketPool::Group::BoundRequest>
 TransportClientSocketPool::Group::FindAndRemoveBoundRequestForConnectJob(
     ConnectJob* connect_job) {
   for (auto bound_pair = bound_requests_.begin();
@@ -1846,7 +1846,7 @@ TransportClientSocketPool::Group::FindAndRemoveBoundRequestForConnectJob(
     bound_requests_.erase(bound_pair);
     return std::move(ret);
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 std::unique_ptr<TransportClientSocketPool::Request>

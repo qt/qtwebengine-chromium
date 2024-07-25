@@ -6,13 +6,14 @@
 #define MEDIA_GPU_WINDOWS_D3D11_TEXTURE_WRAPPER_H_
 
 #include <d3d11.h>
+
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "base/memory/weak_ptr.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/sequence_bound.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "media/base/video_frame.h"
@@ -20,7 +21,6 @@
 #include "media/gpu/media_gpu_export.h"
 #include "media/gpu/windows/d3d11_com_defs.h"
 #include "media/gpu/windows/d3d11_status.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/hdr_metadata.h"
 #include "ui/gl/gl_bindings.h"
@@ -159,7 +159,7 @@ class MEDIA_GPU_EXPORT DefaultTexture2DWrapper : public Texture2DWrapper {
   void OnError(D3D11Status status);
 
   // The first error status that we've received from |gpu_resources_|, if any.
-  absl::optional<D3D11Status> received_error_;
+  std::optional<D3D11Status> received_error_;
 
   gfx::Size size_;
   gfx::ColorSpace color_space_;

@@ -5,9 +5,9 @@
 #ifndef GOOGLE_APIS_CALENDAR_CALENDAR_API_URL_GENERATOR_H_
 #define GOOGLE_APIS_CALENDAR_CALENDAR_API_URL_GENERATOR_H_
 
+#include <optional>
 #include <string>
 
-#include <optional>
 #include "base/time/time.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "url/gurl.h"
@@ -27,7 +27,7 @@ class CalendarApiUrlGenerator {
 
   // Returns a URL to fetch a list of calendar events.
   // |calendar_id|   ID of the calendar to fetch events from. If empty,
-  //                 kPrimaryCalendarID is used in its place.
+  //                 kPrimaryCalendarId is used in its place.
   // |start_time|    Start time of the event window
   // |end_time|      End time of the aforementioned window
   // |single_events| If true, expand recurring events into instances and only

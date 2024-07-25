@@ -33,13 +33,15 @@
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fpdfdoc/cpdf_annot.h"
 #include "core/fpdfdoc/cpdf_annotlist.h"
+#include "core/fxcrt/compiler_specific.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memcpy_wrappers.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/span.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/fpdf_formfill.h"
-#include "third_party/base/containers/span.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
@@ -187,12 +189,9 @@ FPDF_EXPORT void FPDF_CALLCONV FPDFPage_Delete(FPDF_DOCUMENT document,
     return;
 
   CPDF_Document::Extension* pExtension = pDoc->GetExtension();
-  if (pExtension) {
-    pExtension->DeletePage(page_index);
-    return;
-  }
-
-  pDoc->DeletePage(page_index);
+  const uint32_t page_obj_num = pExtension ? pExtension->DeletePage(page_index)
+                                           : pDoc->DeletePage(page_index);
+  pDoc->SetPageToNullObject(page_obj_num);
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -205,7 +204,11 @@ FPDF_MovePages(FPDF_DOCUMENT document,
     return false;
   }
 
-  return doc->MovePages({page_indices, page_indices_len}, dest_page_index);
+  // SAFETY: caller ensures `page_indices` points to at least
+  // `page_indices_len` ints.
+  return doc->MovePages(
+      UNSAFE_BUFFERS(pdfium::make_span(page_indices, page_indices_len)),
+      dest_page_index);
 }
 
 FPDF_EXPORT FPDF_PAGE FPDF_CALLCONV FPDFPage_New(FPDF_DOCUMENT document,
@@ -281,7 +284,7 @@ FPDF_EXPORT int FPDF_CALLCONV FPDFPage_CountObjects(FPDF_PAGE page) {
   if (!IsPageObject(pPage))
     return -1;
 
-  return pdfium::base::checked_cast<int>(pPage->GetPageObjectCount());
+  return pdfium::checked_cast<int>(pPage->GetPageObjectCount());
 }
 
 FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV FPDFPage_GetObject(FPDF_PAGE page,
@@ -309,8 +312,7 @@ FPDFPageObj_CountMarks(FPDF_PAGEOBJECT page_object) {
   if (!pPageObj)
     return -1;
 
-  return pdfium::base::checked_cast<int>(
-      pPageObj->GetContentMarks()->CountItems());
+  return pdfium::checked_cast<int>(pPageObj->GetContentMarks()->CountItems());
 }
 
 FPDF_EXPORT FPDF_PAGEOBJECTMARK FPDF_CALLCONV
@@ -362,12 +364,13 @@ FPDFPageObjMark_GetName(FPDF_PAGEOBJECTMARK mark,
                         unsigned long* out_buflen) {
   const CPDF_ContentMarkItem* pMarkItem =
       CPDFContentMarkItemFromFPDFPageObjectMark(mark);
-  if (!pMarkItem || !out_buflen)
+  if (!pMarkItem || !out_buflen) {
     return false;
-
+  }
+  // SAFETY: required from caller.
   *out_buflen = Utf16EncodeMaybeCopyAndReturnLength(
-      WideString::FromUTF8(pMarkItem->GetName().AsStringView()), buffer,
-      buflen);
+      WideString::FromUTF8(pMarkItem->GetName().AsStringView()),
+      UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
   return true;
 }
 
@@ -398,8 +401,10 @@ FPDFPageObjMark_GetParamKey(FPDF_PAGEOBJECTMARK mark,
   CPDF_DictionaryLocker locker(pParams);
   for (auto& it : locker) {
     if (index == 0) {
+      // SAFETY: required from caller.
       *out_buflen = Utf16EncodeMaybeCopyAndReturnLength(
-          WideString::FromUTF8(it.first.AsStringView()), buffer, buflen);
+          WideString::FromUTF8(it.first.AsStringView()),
+          UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
       return true;
     }
     --index;
@@ -455,8 +460,10 @@ FPDFPageObjMark_GetParamStringValue(FPDF_PAGEOBJECTMARK mark,
   if (!pObj || !pObj->IsString())
     return false;
 
+  // SAFETY: required from caller.
   *out_buflen = Utf16EncodeMaybeCopyAndReturnLength(
-      WideString::FromUTF8(pObj->GetString().AsStringView()), buffer, buflen);
+      WideString::FromUTF8(pObj->GetString().AsStringView()),
+      UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
   return true;
 }
 
@@ -477,14 +484,11 @@ FPDFPageObjMark_GetParamBlobValue(FPDF_PAGEOBJECTMARK mark,
   if (!pObj || !pObj->IsString())
     return false;
 
-  ByteString result = pObj->GetString();
-  const unsigned long len =
-      pdfium::base::checked_cast<unsigned long>(result.GetLength());
-
-  if (buffer && len <= buflen)
-    memcpy(buffer, result.c_str(), len);
-
-  *out_buflen = len;
+  // SAFETY: required from caller.
+  auto result_span = UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen));
+  ByteString value = pObj->GetString();
+  fxcrt::try_spancpy(result_span, value.span());
+  *out_buflen = pdfium::checked_cast<unsigned long>(value.span().size());
   return true;
 }
 
@@ -971,7 +975,7 @@ FPDFPageObj_SetDashPhase(FPDF_PAGEOBJECT page_object, float phase) {
 FPDF_EXPORT int FPDF_CALLCONV
 FPDFPageObj_GetDashCount(FPDF_PAGEOBJECT page_object) {
   auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
-  return pPageObj ? pdfium::base::checked_cast<int>(
+  return pPageObj ? pdfium::checked_cast<int>(
                         pPageObj->graph_state().GetLineDashSize())
                   : -1;
 }
@@ -980,17 +984,18 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFPageObj_GetDashArray(FPDF_PAGEOBJECT page_object,
                          float* dash_array,
                          size_t dash_count) {
+  if (!dash_array) {
+    return false;
+  }
   auto* pPageObj = CPDFPageObjectFromFPDFPageObject(page_object);
-  if (!pPageObj || !dash_array)
+  if (!pPageObj) {
     return false;
+  }
 
+  // SAFETY: required from caller.
+  auto result_span = UNSAFE_BUFFERS(pdfium::make_span(dash_array, dash_count));
   auto dash_vector = pPageObj->graph_state().GetLineDashArray();
-  if (dash_vector.size() > dash_count)
-    return false;
-
-  FXSYS_memcpy(dash_array, dash_vector.data(),
-               dash_vector.size() * sizeof(float));
-  return true;
+  return fxcrt::try_spancpy(result_span, pdfium::make_span(dash_vector));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -1008,11 +1013,10 @@ FPDFPageObj_SetDashArray(FPDF_PAGEOBJECT page_object,
   std::vector<float> dashes;
   if (dash_count > 0) {
     dashes.reserve(dash_count);
-    dashes.assign(dash_array, dash_array + dash_count);
+    // TODO(crbug.com/pdfium/2155): resolve safety issues.
+    dashes.assign(dash_array, UNSAFE_BUFFERS(dash_array + dash_count));
   }
-
   pPageObj->mutable_graph_state().SetLineDash(dashes, phase, 1.0f);
-
   pPageObj->SetDirty(true);
   return true;
 }
@@ -1020,9 +1024,9 @@ FPDFPageObj_SetDashArray(FPDF_PAGEOBJECT page_object,
 FPDF_EXPORT int FPDF_CALLCONV
 FPDFFormObj_CountObjects(FPDF_PAGEOBJECT form_object) {
   const auto* pObjectList = CPDFPageObjHolderFromFPDFFormObject(form_object);
-  return pObjectList ? pdfium::base::checked_cast<int>(
-                           pObjectList->GetPageObjectCount())
-                     : -1;
+  return pObjectList
+             ? pdfium::checked_cast<int>(pObjectList->GetPageObjectCount())
+             : -1;
 }
 
 FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV

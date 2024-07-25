@@ -5,9 +5,12 @@
 #include "components/safe_browsing/core/browser/db/v4_store.h"
 
 #include <algorithm>
+#include <optional>
+#include <string_view>
 #include <utility>
 
 #include "base/base64.h"
+#include "base/debug/crash_logging.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_util.h"
@@ -15,7 +18,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/elapsed_timer.h"
@@ -26,7 +28,7 @@
 #include "components/safe_browsing/core/common/proto/webui.pb.h"
 #include "crypto/secure_hash.h"
 #include "crypto/sha2.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/protobuf/src/google/protobuf/io/zero_copy_stream_impl_lite.h"
 
 using base::TimeTicks;
@@ -337,6 +339,21 @@ class BaseFileInputStream : public google::protobuf::io::ZeroCopyInputStream {
   google::protobuf::io::CopyingInputStreamAdaptor impl_;
 };
 
+size_t GetIterationCount(const HashPrefixMap& hash_prefix_map,
+                         const IteratorMap& iterator_map) {
+  size_t max_iterations = 0;
+  for (const auto& iterator_pair : iterator_map) {
+    PrefixSize prefix_size = iterator_pair.first;
+    HashPrefixesView::const_iterator start = iterator_pair.second;
+
+    size_t distance =
+        std::distance(start, hash_prefix_map.at(prefix_size).end());
+    max_iterations += distance / prefix_size;
+  }
+
+  return max_iterations;
+}
+
 }  // namespace
 
 using ::google::protobuf::int32;
@@ -390,8 +407,7 @@ V4Store::V4Store(const scoped_refptr<base::SequencedTaskRunner>& task_runner,
 V4Store::~V4Store() = default;
 
 std::string V4Store::DebugString() const {
-  std::string state_base64;
-  base::Base64Encode(state_, &state_base64);
+  std::string state_base64 = base::Base64Encode(state_);
 
   return base::StringPrintf("path: %" PRFilePath "; state: %s",
                             store_path_.value().c_str(), state_base64.c_str());
@@ -755,7 +771,7 @@ ApplyUpdateResult V4Store::MergeUpdate(const HashPrefixMap& old_prefixes_map,
   // index is on the raw_removals list.
   int total_picked_from_old = 0;
   auto removals_iter =
-      raw_removals ? absl::make_optional(raw_removals->begin()) : absl::nullopt;
+      raw_removals ? std::make_optional(raw_removals->begin()) : std::nullopt;
   while (old_has_unmerged || additions_has_unmerged) {
     // If the same hash prefix appears in the existing store and the additions
     // list, something is clearly wrong. Discard the update.
@@ -833,10 +849,10 @@ ApplyUpdateResult V4Store::MergeUpdate(const HashPrefixMap& old_prefixes_map,
     for (size_t i = 0; i < crypto::kSHA256Length; i++) {
       if (checksum[i] != expected_checksum[i]) {
 #if DCHECK_IS_ON()
-        std::string checksum_b64, expected_checksum_b64;
-        base::Base64Encode(base::StringPiece(checksum, std::size(checksum)),
-                           &checksum_b64);
-        base::Base64Encode(expected_checksum, &expected_checksum_b64);
+        std::string checksum_b64 =
+            base::Base64Encode(base::as_byte_span(checksum));
+        std::string expected_checksum_b64 =
+            base::Base64Encode(expected_checksum);
         DVLOG(1) << "Failure: Checksum mismatch: calculated: " << checksum_b64
                  << "; expected: " << expected_checksum_b64
                  << "; store: " << *this;
@@ -940,16 +956,13 @@ StoreWriteResult V4Store::WriteToDisk(V4StoreFileFormat* file_format) {
   // Attempt writing to a temporary file first and at the end, swap the files.
   const base::FilePath new_filename = TemporaryFileForFilename(store_path_);
 
-  base::ScopedClosureRunner cleanup_on_error(base::BindOnce(
-      [](const base::FilePath& new_filename, const base::FilePath& store_path,
-         V4StoreFileFormat* file_format) {
-        base::DeleteFile(new_filename);
-        for (const auto& hash_file : file_format->hash_files()) {
-          base::DeleteFile(
-              MmapHashPrefixMap::GetPath(store_path, hash_file.extension()));
-        }
-      },
-      new_filename, store_path_, base::Unretained(file_format)));
+  absl::Cleanup cleanup_on_error = [&new_filename, this, file_format] {
+    base::DeleteFile(new_filename);
+    for (const auto& hash_file : file_format->hash_files()) {
+      base::DeleteFile(
+          MmapHashPrefixMap::GetPath(store_path_, hash_file.extension()));
+    }
+  };
 
   int64_t written = 0;
   // `write_session` must remain alive until `file_format` is committed to disk.
@@ -979,18 +992,18 @@ StoreWriteResult V4Store::WriteToDisk(V4StoreFileFormat* file_format) {
   for (const auto& hash_file : file_format->hash_files())
     file_size_ += hash_file.file_size();
 
-  // No cleanup needed, reset the closure.
-  std::ignore = cleanup_on_error.Release();
+  // No cleanup needed, cancel the cleanup.
+  std::move(cleanup_on_error).Cancel();
   CleanupExtraFiles(store_path_, *file_format);
 
   return WRITE_SUCCESS;
 }
 
 HashPrefixStr V4Store::GetMatchingHashPrefix(const FullHashStr& full_hash) {
-  return GetMatchingHashPrefix(base::StringPiece(full_hash));
+  return GetMatchingHashPrefix(std::string_view(full_hash));
 }
 
-HashPrefixStr V4Store::GetMatchingHashPrefix(base::StringPiece full_hash) {
+HashPrefixStr V4Store::GetMatchingHashPrefix(std::string_view full_hash) {
   // It should never be the case that more than one hash prefixes match a given
   // full hash. However, if that happens, this method returns any one of them.
   // It does not guarantee which one of those will be returned.
@@ -1013,6 +1026,13 @@ bool V4Store::VerifyChecksum() {
   HashPrefixStr next_smallest_prefix;
   InitializeIteratorMap(*hash_prefix_map_, &iterator_map);
   CHECK_EQ(hash_prefix_map_->view().size(), iterator_map.size());
+
+  // Crash keys added to investigate http://crbug.com/331054795
+  SCOPED_CRASH_KEY_NUMBER("SafeBrowsing", "VerifyChecksumSizeCount",
+                          iterator_map.size());
+  SCOPED_CRASH_KEY_NUMBER("SafeBrowsing", "VerifyChecksumIterations",
+                          GetIterationCount(*hash_prefix_map_, iterator_map));
+
   bool has_unmerged = GetNextSmallestUnmergedPrefix(
       *hash_prefix_map_, iterator_map, &next_smallest_prefix);
 
@@ -1040,10 +1060,10 @@ bool V4Store::VerifyChecksum() {
       RecordApplyUpdateResult(kReadFromDisk, CHECKSUM_MISMATCH_FAILURE,
                               store_path_);
 #if DCHECK_IS_ON()
-      std::string checksum_b64, expected_checksum_b64;
-      base::Base64Encode(base::StringPiece(checksum, std::size(checksum)),
-                         &checksum_b64);
-      base::Base64Encode(expected_checksum_, &expected_checksum_b64);
+      std::string checksum_b64 =
+          base::Base64Encode(base::as_byte_span(checksum));
+      std::string expected_checksum_b64 =
+          base::Base64Encode(expected_checksum_);
       DVLOG(1) << "Failure: Checksum mismatch: calculated: " << checksum_b64
                << "; expected: " << expected_checksum_b64
                << "; store: " << *this;

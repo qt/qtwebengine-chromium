@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/containers/flat_set.h"
 #include "base/i18n/case_conversion.h"
 #include "base/strings/string_split.h"
@@ -61,9 +61,9 @@ struct UsernameFieldData {
 // "Non-latin" translations are the translations of the words that have custom,
 // country specific characters.
 struct CategoryOfWords {
-  const char* const* const latin_dictionary;
+  const std::u16string_view* latin_dictionary;
   const size_t latin_dictionary_size;
-  const char* const* const non_latin_dictionary;
+  const std::u16string_view* non_latin_dictionary;
   const size_t non_latin_dictionary_size;
 };
 
@@ -77,7 +77,7 @@ void AppendValueAndShortTokens(
     std::u16string* field_data_value,
     base::flat_set<std::u16string>* field_data_short_tokens) {
   const std::u16string lowercase_value = base::i18n::ToLower(raw_value);
-  std::vector<base::StringPiece16> tokens =
+  std::vector<std::u16string_view> tokens =
       base::SplitStringPiece(lowercase_value, kDelimiters,
                              base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
@@ -89,7 +89,7 @@ void AppendValueAndShortTokens(
 
   field_data_value->reserve(field_data_value->size() + lowercase_value.size());
   std::vector<std::u16string> short_tokens;
-  for (const base::StringPiece16& token : tokens) {
+  for (const std::u16string_view& token : tokens) {
     if (token.size() < kMinimumWordLength)
       short_tokens.emplace_back(token);
     field_data_value->append(token);
@@ -106,11 +106,11 @@ UsernameFieldData ComputeUsernameFieldData(
   UsernameFieldData field_data;
   field_data.input_element = input_element;
 
-  AppendValueAndShortTokens(field.name, &field_data.developer_value,
+  AppendValueAndShortTokens(field.name(), &field_data.developer_value,
                             &field_data.developer_short_tokens);
-  AppendValueAndShortTokens(field.id_attribute, &field_data.developer_value,
+  AppendValueAndShortTokens(field.id_attribute(), &field_data.developer_value,
                             &field_data.developer_short_tokens);
-  AppendValueAndShortTokens(field.label, &field_data.user_value,
+  AppendValueAndShortTokens(field.label(), &field_data.user_value,
                             &field_data.user_short_tokens);
   return field_data;
 }
@@ -140,7 +140,7 @@ void InferUsernameFieldData(
         continue;
 
       // Find matching field data and web input element.
-      if (field_data.name == element_name) {
+      if (field_data.name() == element_name) {
         next_element_range_begin = i + 1;
         possible_usernames_data->push_back(
             ComputeUsernameFieldData(input_element, field_data));
@@ -155,18 +155,19 @@ void InferUsernameFieldData(
 bool CheckFieldWithDictionary(
     const std::u16string& value,
     const base::flat_set<std::u16string>& short_tokens,
-    const char* const* dictionary,
+    const std::u16string_view* dictionary,
     const size_t& dictionary_size) {
   for (size_t i = 0; i < dictionary_size; ++i) {
-    const std::u16string word = base::UTF8ToUTF16(dictionary[i]);
-    if (word.length() < kMinimumWordLength) {
+    if (dictionary[i].length() < kMinimumWordLength) {
       // Treat short words by looking them up in the tokens set.
-      if (short_tokens.find(word) != short_tokens.end())
+      if (short_tokens.find(dictionary[i]) != short_tokens.end()) {
         return true;
+      }
     } else {
       // Treat long words by looking them up as a substring in |value|.
-      if (value.find(word) != std::string::npos)
+      if (value.find(dictionary[i]) != std::string::npos) {
         return true;
+      }
     }
   }
   return false;
@@ -200,7 +201,7 @@ void RemoveFieldsWithNegativeWords(
       kNegativeLatin, kNegativeLatinSize, kNegativeNonLatin,
       kNegativeNonLatinSize};
 
-  base::EraseIf(
+  std::erase_if(
       *possible_usernames_data, [](const UsernameFieldData& possible_username) {
         return ContainsWordFromCategory(possible_username, kNegativeCategory);
       });

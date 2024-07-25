@@ -232,7 +232,7 @@ class TestRenderFrameObserver : public RenderFrameObserver {
     render_frame()->GetWebFrame()->PrintEnd();
   }
 
-  const raw_ptr<TestRunner, ExperimentalRenderer> test_runner_;
+  const raw_ptr<TestRunner> test_runner_;
 };
 
 }  // namespace
@@ -274,9 +274,10 @@ void WebFrameTestProxy::Initialize(blink::WebFrame* parent) {
 }
 
 void WebFrameTestProxy::Reset() {
-  // TODO(crbug.com/936696): The RenderDocument project will cause us to replace
-  // the main frame on each navigation, including to about:blank and then to the
-  // next test. So resetting the frame or RenderWidget won't be meaningful then.
+  // TODO(crbug.com/40615943): The RenderDocument project will cause us to
+  // replace the main frame on each navigation, including to about:blank and
+  // then to the next test. So resetting the frame or RenderWidget won't be
+  // meaningful then.
   CHECK(IsMainFrame());
 
   if (IsMainFrame()) {
@@ -561,6 +562,10 @@ void WebFrameTestProxy::PostAccessibilityEvent(const ui::AXEvent& event) {
   RenderFrameImpl::PostAccessibilityEvent(event);
 }
 
+void WebFrameTestProxy::HandleAXObjectDetachedForTest(unsigned axid) {
+  accessibility_controller_.Remove(axid);
+}
+
 void WebFrameTestProxy::HandleWebAccessibilityEventForTest(
     const blink::WebAXObject& object,
     const char* event_name,
@@ -643,9 +648,6 @@ void WebFrameTestProxy::HandleWebAccessibilityEventForTest(
     case ax::mojom::Event::kLocationChanged:
       event_name = "LocationChanged";
       break;
-    case ax::mojom::Event::kMenuListValueChanged:
-      event_name = "MenuListValueChanged";
-      break;
     case ax::mojom::Event::kRowCollapsed:
       event_name = "RowCollapsed";
       break;
@@ -691,6 +693,7 @@ void WebFrameTestProxy::HandleWebAccessibilityEventForTest(
     case ax::mojom::Event::kMediaStartedPlaying:
     case ax::mojom::Event::kMediaStoppedPlaying:
     case ax::mojom::Event::kMenuEnd:
+    case ax::mojom::Event::kMenuListValueChangedDeprecated:
     case ax::mojom::Event::kMenuPopupEnd:
     case ax::mojom::Event::kMenuPopupStart:
     case ax::mojom::Event::kMenuStart:

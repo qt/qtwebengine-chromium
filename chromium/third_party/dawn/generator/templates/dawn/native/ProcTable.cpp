@@ -71,7 +71,7 @@ namespace {{native_namespace}} {
                     {% endif %}
                 {%- endfor-%}
 
-                {% if method.autolock %}
+                {% if method.autolock and method.return_type.name.get() != 'future' %}
                     {% if type.name.get() != "device" %}
                         auto device = self->GetDevice();
                     {% else %}
@@ -79,7 +79,7 @@ namespace {{native_namespace}} {
                     {% endif %}
                     auto deviceLock(device->GetScopedLock());
                 {% else %}
-                    // This method is specified to not use AutoLock in json script.
+                    // This method is specified to not use AutoLock in json script or it returns a future.
                 {% endif %}
 
                 {% if method.return_type.name.canonical_case() != "void" %}
@@ -192,27 +192,20 @@ namespace {{native_namespace}} {
         return result;
     }
 
-
-    template <typename... MemberPtrPairs>
-    constexpr {{Prefix}}ProcTable MakeProcTable(int, MemberPtrPairs... pairs) {
+    constexpr {{Prefix}}ProcTable MakeProcTable() {
         {{Prefix}}ProcTable procs = {};
-        ([&](auto& pair){
-            procs.*(pair.first) = pair.second;
-        }(pairs), ...);
-        return procs;
-    }
-
-    static {{Prefix}}ProcTable gProcTable = MakeProcTable(
-        /* unused */ 0
         {% for function in by_category["function"] %}
-            , std::make_pair(&{{Prefix}}ProcTable::{{as_varName(function.name)}}, Native{{as_cppType(function.name)}})
+            procs.{{as_varName(function.name)}} = Native{{as_cppType(function.name)}};
         {% endfor %}
         {% for type in by_category["object"] %}
             {% for method in c_methods(type) %}
-                , std::make_pair(&{{Prefix}}ProcTable::{{as_varName(type.name, method.name)}}, Native{{as_MethodSuffix(type.name, method.name)}})
+                procs.{{as_varName(type.name, method.name)}} = Native{{as_MethodSuffix(type.name, method.name)}};
             {% endfor %}
         {% endfor %}
-    );
+        return procs;
+    }
+
+    static {{Prefix}}ProcTable gProcTable = MakeProcTable();
 
     const {{Prefix}}ProcTable& GetProcsAutogen() {
         return gProcTable;

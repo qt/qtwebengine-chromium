@@ -185,7 +185,6 @@ WTF::String DisplayItem::TypeAsDebugString(Type type) {
     DEBUG_STRING_CASE(RegionCapture);
     DEBUG_STRING_CASE(ScrollHitTest);
     DEBUG_STRING_CASE(ResizerScrollHitTest);
-    DEBUG_STRING_CASE(PluginScrollHitTest);
     DEBUG_STRING_CASE(ScrollbarHitTest);
     DEBUG_STRING_CASE(LayerChunk);
     DEBUG_STRING_CASE(LayerChunkForeground);
@@ -214,10 +213,9 @@ void DisplayItem::PropertiesAsJSON(JSONObject& json,
                                    const PaintArtifact& paint_artifact,
                                    bool client_known_to_be_alive) const {
   json.SetString("id", IdAsString(paint_artifact));
-  if (IsSubsequenceTombstone())
+  if (IsSubsequenceTombstone()) {
     return;
-
-  json.SetString("clientDebugName", paint_artifact.ClientDebugName(client_id_));
+  }
   if (client_known_to_be_alive) {
     json.SetString("invalidation", PaintInvalidationReasonToString(
                                        GetPaintInvalidationReason()));

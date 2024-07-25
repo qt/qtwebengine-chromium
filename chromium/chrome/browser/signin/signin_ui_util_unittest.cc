@@ -111,7 +111,7 @@ class MockSigninUiDelegate : public SigninUiDelegate {
               ());
 };
 #elif BUILDFLAG(ENABLE_DICE_SUPPORT)
-// TODO(https://crbug.com/1316608): move out testing of SigninUiDelegateImplDice
+// TODO(crbug.com/40834209): move out testing of SigninUiDelegateImplDice
 // in a separate file.
 class MockSigninUiDelegate : public SigninUiDelegateImplDice {
  public:
@@ -128,7 +128,7 @@ class MockSigninUiDelegate : public SigninUiDelegateImplDice {
 
 }  // namespace
 
-// TODO(https://crbug.com/1316608): merge SigninUiUtilTest with
+// TODO(crbug.com/40834209): merge SigninUiUtilTest with
 // MirrorSigninUiUtilTest.
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
 class SigninUiUtilTest : public BrowserWithTestWindowTest {
@@ -153,6 +153,10 @@ class SigninUiUtilTest : public BrowserWithTestWindowTest {
                   bool is_default_promo_account) {
     EnableSyncFromMultiAccountPromo(profile(), account_info, access_point_,
                                     is_default_promo_account);
+  }
+
+  void SignIn(const CoreAccountInfo& account_info) {
+    SignInFromSingleAccountPromo(profile(), account_info, access_point_);
   }
 
   void ExpectTurnSyncOn(
@@ -403,6 +407,87 @@ TEST_F(SigninUiUtilTest, EnableSyncForNewAccountWithOneTab) {
             active_contents->GetVisibleURL());
 }
 
+TEST_F(SigninUiUtilTest, SignInWithAlreadySignedInAccount) {
+  AddTab(browser(), GURL("http://example.com"));
+  CoreAccountId account_id =
+      GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
+          kMainGaiaID, kMainEmail, "refresh_token", false,
+          signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN,
+          signin_metrics::SourceForRefreshTokenOperation::kUnknown);
+  GetIdentityManager()->GetPrimaryAccountMutator()->SetPrimaryAccount(
+      account_id, signin::ConsentLevel::kSignin,
+      signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN);
+
+  SignIn(GetIdentityManager()->FindExtendedAccountInfoByAccountId(account_id));
+
+  // Verify that the primary account is still set.
+  EXPECT_TRUE(
+      GetIdentityManager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  // Verify that the active tab does not open the DICE sign-in URL.
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  content::WebContents* active_contents = tab_strip->GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+  EXPECT_EQ(GURL("http://example.com"), active_contents->GetVisibleURL());
+  tab_strip->CloseWebContentsAt(
+      tab_strip->GetIndexOfWebContents(active_contents),
+      TabCloseTypes::CLOSE_USER_GESTURE);
+}
+
+TEST_F(SigninUiUtilTest, SignInWithAccountThatNeedsReauth) {
+  AddTab(browser(), GURL("http://example.com"));
+  CoreAccountId account_id =
+      GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
+          kMainGaiaID, kMainEmail, "refresh_token", false,
+          signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN,
+          signin_metrics::SourceForRefreshTokenOperation::kUnknown);
+
+  // Add an account and then put its refresh token into an error state to
+  // require a reauth before signing in.
+  signin::UpdatePersistentErrorOfRefreshTokenForAccount(
+      GetIdentityManager(), account_id,
+      GoogleServiceAuthError(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+
+  SignIn(GetIdentityManager()->FindExtendedAccountInfoByAccountId(account_id));
+
+  // Verify that the active tab has the correct DICE sign-in URL.
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  content::WebContents* active_contents = tab_strip->GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+  EXPECT_EQ(signin::GetAddAccountURLForDice(
+                kMainEmail, GURL(google_util::kGoogleHomepageURL)),
+            active_contents->GetVisibleURL());
+  tab_strip->CloseWebContentsAt(
+      tab_strip->GetIndexOfWebContents(active_contents),
+      TabCloseTypes::CLOSE_USER_GESTURE);
+}
+
+TEST_F(SigninUiUtilTest, SignInForNewAccountWithNoTab) {
+  SignIn(CoreAccountInfo());
+
+  // Verify that the active tab has the correct DICE sign-in URL.
+  content::WebContents* active_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+  EXPECT_EQ(signin::GetAddAccountURLForDice(
+                std::string(), GURL(google_util::kGoogleHomepageURL)),
+            active_contents->GetVisibleURL());
+}
+
+TEST_F(SigninUiUtilTest, SignInForNewAccountWithOneTab) {
+  AddTab(browser(), GURL("http://foo/1"));
+
+  SignIn(CoreAccountInfo());
+
+  // Verify that the active tab has the correct DICE sign-in URL.
+  content::WebContents* active_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(active_contents);
+  EXPECT_EQ(signin::GetAddAccountURLForDice(
+                std::string(), GURL(google_util::kGoogleHomepageURL)),
+            active_contents->GetVisibleURL());
+}
+
 TEST_F(SigninUiUtilTest, GetOrderedAccountsForDisplay) {
   signin::IdentityManager* identity_manager_empty =
       IdentityManagerFactory::GetForProfile(profile());
@@ -547,10 +632,9 @@ TEST_F(SigninUiUtilTest, ShowReauthTab) {
   TabStripModel* tab_strip = browser()->tab_strip_model();
   content::WebContents* active_contents = tab_strip->GetActiveWebContents();
   ASSERT_TRUE(active_contents);
-  EXPECT_TRUE(
-      base::StartsWith(active_contents->GetVisibleURL().spec(),
-                       GaiaUrls::GetInstance()->add_account_url().spec(),
-                       base::CompareCase::INSENSITIVE_ASCII));
+  EXPECT_THAT(
+      active_contents->GetVisibleURL().spec(),
+      testing::StartsWith(GaiaUrls::GetInstance()->add_account_url().spec()));
 }
 
 TEST_F(SigninUiUtilTest,
@@ -680,10 +764,59 @@ TEST_F(SigninUiUtilTest, ShowSigninPromptFromPromoWithExistingAccount) {
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS_LACROS)
 
+#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+TEST_F(SigninUiUtilTest, GetSignInTabWithAccessPoint) {
+  signin::MakePrimaryAccountAvailable(GetIdentityManager(), "foo@example.com",
+                                      signin::ConsentLevel::kSignin);
+
+  Profile* profile = browser()->profile();
+  TabStripModel* tab_strip = browser()->tab_strip_model();
+  EXPECT_EQ(0, tab_strip->count());
+
+  // Add tabs.
+  ShowReauthForAccount(profile, "test1@gmail.com",
+                       signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
+  ShowReauthForAccount(
+      profile, "test2@gmail.com",
+      signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
+  ShowReauthForAccount(
+      profile, "test3@gmail.com",
+      signin_metrics::AccessPoint::ACCESS_POINT_PASSWORD_BUBBLE);
+  EXPECT_EQ(3, tab_strip->count());
+
+  // Look for existing tab.
+  content::WebContents* sign_in_tab = GetSignInTabWithAccessPoint(
+      *browser(),
+      signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
+  EXPECT_EQ(signin::GetAddAccountURLForDice(
+                "test2@gmail.com", GURL(google_util::kGoogleHomepageURL)),
+            sign_in_tab->GetVisibleURL());
+
+  // Look for non existing tab.
+  sign_in_tab = GetSignInTabWithAccessPoint(
+      *browser(), signin_metrics::AccessPoint::ACCESS_POINT_FORCED_SIGNIN);
+  EXPECT_EQ(nullptr, sign_in_tab);
+
+  // Two tabs with the same access point, will return the first tab found.
+  ShowReauthForAccount(profile, "test4@gmail.com",
+                       signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
+  EXPECT_EQ(4, tab_strip->count());
+
+  sign_in_tab = GetSignInTabWithAccessPoint(
+      *browser(), signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
+  EXPECT_EQ(signin::GetAddAccountURLForDice(
+                "test1@gmail.com", GURL(google_util::kGoogleHomepageURL)),
+            sign_in_tab->GetVisibleURL());
+}
+
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 class SigninUiUtilWithUnoDesktopTest : public SigninUiUtilTest {
  private:
-  base::test::ScopedFeatureList feature_list_{switches::kUnoDesktop};
+  base::test::ScopedFeatureList feature_list_{
+      switches::kExplicitBrowserSigninUIOnDesktop};
 };
 
 TEST_F(SigninUiUtilWithUnoDesktopTest, EnableSyncWithExistingWebOnlyAccount) {
@@ -717,6 +850,24 @@ TEST_F(SigninUiUtilWithUnoDesktopTest, EnableSyncWithExistingWebOnlyAccount) {
     EXPECT_EQ(1, user_action_tester.GetActionCount(
                      "Signin_Signin_FromBookmarkBubble"));
   }
+}
+
+TEST_F(SigninUiUtilWithUnoDesktopTest, SignInWithExistingWebOnlyAccount) {
+  CoreAccountId account_id =
+      GetIdentityManager()->GetAccountsMutator()->AddOrUpdateAccount(
+          kMainGaiaID, kMainEmail, "refresh_token", false,
+          signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN,
+          signin_metrics::SourceForRefreshTokenOperation::kUnknown);
+
+  // Verify that the primary account is not set before.
+  EXPECT_FALSE(
+      GetIdentityManager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  SignIn(GetIdentityManager()->FindExtendedAccountInfoByAccountId(account_id));
+
+  // Verify that the primary account has been set.
+  EXPECT_TRUE(
+      GetIdentityManager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
 }
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 

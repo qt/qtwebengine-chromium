@@ -44,6 +44,10 @@
 // path that contains a literal '#'. Using string concatenation will generate a
 // URL with a truncated path and a reference fragment, while ReplaceComponents
 // will know to escape this and produce the desired result.
+//
+// WARNING: While there is no length limit on GURLs, the Mojo serialization
+// code will replace any very long URL with an invalid GURL.
+// See url::mojom::kMaxURLChars for more details.
 class COMPONENT_EXPORT(URL) GURL {
  public:
   using Replacements = url::StringViewReplacements<char>;
@@ -57,7 +61,9 @@ class COMPONENT_EXPORT(URL) GURL {
   GURL(const GURL& other);
   GURL(GURL&& other) noexcept;
 
-  // The strings to this constructor should be UTF-8 / UTF-16.
+  // The strings to this constructor should be UTF-8 / UTF-16. They will be
+  // parsed and canonicalized. For example, the host is lower cased, and
+  // characters may be percent-encoded or percent-decoded to normalize the URL.
   explicit GURL(std::string_view url_string);
   explicit GURL(std::u16string_view url_string);
 
@@ -285,6 +291,15 @@ class COMPONENT_EXPORT(URL) GURL {
   //
   // It is an error to get the content of an invalid URL: the result will be an
   // empty string.
+  //
+  // Important note: The feature flag,
+  // url::kStandardCompliantNonSpecialSchemeURLParsing, changes the behavior of
+  // GetContent() and GetContentPiece() for some non-special URLs. See
+  // GURLTest::ContentForNonStandardURLs for the differences.
+  //
+  // Until the flag becomes enabled by default, you'll need to manually check
+  // the flag when using GetContent() and GetContentPiece() for non-special
+  // URLs. See http://crbug.com/40063064 for more details.
   std::string GetContent() const;
   std::string_view GetContentPiece() const;
 

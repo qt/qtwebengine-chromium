@@ -777,8 +777,8 @@ namespace {
 
 constexpr int kPushedStackSpace =
     (kNumCalleeSaved + 2) * kSystemPointerSize +
-    kNumCalleeSavedDoubles * kDoubleSize + 5 * kSystemPointerSize +
-    EntryFrameConstants::kNextExitFrameFPOffset - kSystemPointerSize;
+    kNumCalleeSavedDoubles * kDoubleSize + 7 * kSystemPointerSize +
+    EntryFrameConstants::kNextFastCallFramePCOffset - kSystemPointerSize;
 
 // Called with the native C calling convention. The corresponding function
 // signature is either:
@@ -842,35 +842,44 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
     __ mov(kRootRegister, r2);
   }
 
-  // save r6 to r0
-  __ mov(r0, r6);
-
   // Push a frame with special values setup to mark it as an entry frame.
   //   Bad FP (-1)
   //   SMI Marker
   //   SMI Marker
   //   kCEntryFPAddress
   //   Frame type
-  __ lay(sp, MemOperand(sp, -5 * kSystemPointerSize));
-  pushed_stack_space += 5 * kSystemPointerSize;
-
-  // Push a bad frame pointer to fail if it is used.
-  __ mov(r9, Operand(-1));
-
-  __ mov(r8, Operand(StackFrame::TypeToMarker(type)));
-  __ mov(r7, Operand(StackFrame::TypeToMarker(type)));
-  // Save copies of the top frame descriptor on the stack.
-  __ Move(r1, ExternalReference::Create(IsolateAddressId::kCEntryFPAddress,
-                                        masm->isolate()));
-  __ LoadU64(r6, MemOperand(r1));
-  __ StoreMultipleP(r6, r9, MemOperand(sp, kSystemPointerSize));
-
   // Clear c_entry_fp, now we've pushed its previous value to the stack.
   // If the c_entry_fp is not already zero and we don't clear it, the
   // StackFrameIteratorForProfiler will assume we are executing C++ and miss the
   // JS frames on top.
-  __ mov(r6, Operand::Zero());
-  __ StoreU64(r6, MemOperand(r1));
+  pushed_stack_space += 7 * kSystemPointerSize;
+
+  // Push a bad frame pointer to fail if it is used.
+  __ mov(r0, Operand(-1));
+  __ push(r0);
+
+  __ mov(r0, Operand(StackFrame::TypeToMarker(type)));
+  __ push(r0);
+  __ push(r0);
+
+  __ mov(r0, Operand::Zero());
+  __ Move(ip, ExternalReference::Create(IsolateAddressId::kCEntryFPAddress,
+                                        masm->isolate()));
+  __ LoadU64(r9, MemOperand(ip));
+  __ StoreU64(r0, MemOperand(ip));
+  __ push(r9);
+
+  __ Move(ip,
+          ExternalReference::fast_c_call_caller_fp_address(masm->isolate()));
+  __ LoadU64(r9, MemOperand(ip));
+  __ StoreU64(r0, MemOperand(ip));
+  __ push(r9);
+
+  __ Move(ip,
+          ExternalReference::fast_c_call_caller_pc_address(masm->isolate()));
+  __ LoadU64(r9, MemOperand(ip));
+  __ StoreU64(r0, MemOperand(ip));
+  __ push(r9);
 
 #ifdef V8_COMPRESS_POINTERS_IN_SHARED_CAGE
   // Initialize the pointer cage base register.
@@ -881,15 +890,9 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
   Register scrach = r8;
 
   // Set up frame pointer for the frame to be pushed.
-  // Need to add kSystemPointerSize, because sp has one extra
-  // frame already for the frame type being pushed later.
-  __ lay(fp, MemOperand(sp, -EntryFrameConstants::kNextExitFrameFPOffset +
-                                kSystemPointerSize));
+  __ lay(fp, MemOperand(sp, -EntryFrameConstants::kNextFastCallFramePCOffset));
   pushed_stack_space +=
-      EntryFrameConstants::kNextExitFrameFPOffset - kSystemPointerSize;
-
-  // restore r6
-  __ mov(r6, r0);
+      EntryFrameConstants::kNextFastCallFramePCOffset - kSystemPointerSize;
 
   // If this is the outermost JS call, set js_entry_sp value.
   Label non_outermost_js;
@@ -906,7 +909,7 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
   __ mov(scrach, Operand(StackFrame::INNER_JSENTRY_FRAME));
 
   __ bind(&cont);
-  __ StoreU64(scrach, MemOperand(sp));  // frame-type
+  __ push(scrach);  // frame-type
 
   // Jump to a faked try block that does the invoke, with a faked catch
   // block that sets the exception.
@@ -963,6 +966,16 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
   __ bind(&non_outermost_js_2);
 
   // Restore the top frame descriptors from the stack.
+  __ pop(r5);
+  __ Move(scrach,
+          ExternalReference::fast_c_call_caller_pc_address(masm->isolate()));
+  __ StoreU64(r5, MemOperand(scrach));
+
+  __ pop(r5);
+  __ Move(scrach,
+          ExternalReference::fast_c_call_caller_fp_address(masm->isolate()));
+  __ StoreU64(r5, MemOperand(scrach));
+
   __ pop(r5);
   __ Move(scrach, ExternalReference::Create(IsolateAddressId::kCEntryFPAddress,
                                             masm->isolate()));
@@ -3158,6 +3171,16 @@ void Builtins::Generate_WasmOnStackReplace(MacroAssembler* masm) {
 }
 
 void Builtins::Generate_JSToWasmWrapperAsm(MacroAssembler* masm) { __ Trap(); }
+
+void Builtins::Generate_WasmToOnHeapWasmToJsTrampoline(MacroAssembler* masm) {
+  // Load the code pointer from the WasmApiFunctionRef and tail-call there.
+  Register api_function_ref = wasm::kGpParamRegisters[0];
+  Register scratch = ip;
+  __ LoadTaggedField(scratch, FieldMemOperand(api_function_ref,
+                                              WasmApiFunctionRef::kCodeOffset));
+  __ LoadU64(scratch, FieldMemOperand(scratch, Code::kInstructionStartOffset));
+  __ Jump(scratch);
+}
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
@@ -3297,7 +3320,7 @@ void Builtins::Generate_CEntry(MacroAssembler* masm, int result_size,
     __ mov(r2, Operand::Zero());
     __ mov(r3, Operand::Zero());
     __ Move(r4, ExternalReference::isolate_address(masm->isolate()));
-    __ CallCFunction(find_handler, 3);
+    __ CallCFunction(find_handler, 3, SetIsolateDataSlots::kNo);
   }
 
   // Retrieve the handler context, SP and FP.
@@ -3479,7 +3502,8 @@ void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
       argc = CallApiCallbackGenericDescriptor::ActualArgumentsCountRegister();
       topmost_script_having_context = CallApiCallbackGenericDescriptor::
           TopmostScriptHavingContextRegister();
-      callback = CallApiCallbackGenericDescriptor::CallHandlerInfoRegister();
+      callback =
+          CallApiCallbackGenericDescriptor::FunctionTemplateInfoRegister();
       holder = CallApiCallbackGenericDescriptor::HolderRegister();
       break;
 
@@ -3551,7 +3575,8 @@ void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
   switch (mode) {
     case CallApiCallbackMode::kGeneric:
       __ LoadTaggedField(
-          scratch2, FieldMemOperand(callback, CallHandlerInfo::kDataOffset));
+          scratch2,
+          FieldMemOperand(callback, FunctionTemplateInfo::kCallbackDataOffset));
       __ StoreU64(scratch2,
                   MemOperand(sp, FCA::kDataIndex * kSystemPointerSize));
       break;
@@ -3612,14 +3637,12 @@ void Builtins::Generate_CallApiCallbackImpl(MacroAssembler* masm,
     // Target parameter.
     static_assert(ApiCallbackExitFrameConstants::kTargetOffset ==
                   2 * kSystemPointerSize);
-    __ LoadTaggedField(
-        scratch,
-        FieldMemOperand(callback, CallHandlerInfo::kOwnerTemplateOffset));
-    __ StoreU64(scratch, MemOperand(sp, 0 * kSystemPointerSize));
+    __ StoreU64(callback, MemOperand(sp, 0 * kSystemPointerSize));
 
-    __ LoadU64(api_function_address,
-               FieldMemOperand(
-                   callback, CallHandlerInfo::kMaybeRedirectedCallbackOffset));
+    __ LoadU64(
+        api_function_address,
+        FieldMemOperand(callback,
+                        FunctionTemplateInfo::kMaybeRedirectedCallbackOffset));
 
     __ EnterExitFrame(kApiStackSpace, StackFrame::API_CALLBACK_EXIT);
   } else {
@@ -3733,8 +3756,13 @@ void Builtins::Generate_CallApiGetter(MacroAssembler* masm) {
   __ Push(smi_zero, scratch);
   __ RecordComment(
       "Load address of v8::PropertyAccessorInfo::args_ array and name handle.");
-  // name_arg = Handle<Name>(&name), name value was pushed to GC-ed stack space.
+#ifdef V8_ENABLE_DIRECT_LOCAL
+  // name_arg = Local<Name>(name), name value was pushed to GC-ed stack space.
+  __ mov(name_arg, scratch);
+#else
+  // name_arg = Local<Name>(&name), name value was pushed to GC-ed stack space.
   __ mov(name_arg, sp);
+#endif
   // property_callback_info_arg = v8::PCI::args_ (= &ShouldThrow)
   __ AddS64(property_callback_info_arg, name_arg,
             Operand(1 * kSystemPointerSize));

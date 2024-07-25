@@ -7,6 +7,7 @@ import("//build/config/compiler/compiler.gni")
 import("//build/config/coverage/coverage.gni")
 import("//build/config/rust.gni")
 import("//build/config/sanitizers/sanitizers.gni")
+import("//build/config/sysroot.gni")
 import("//build/config/v8_target_cpu.gni")
 import("//build/toolchain/cc_wrapper.gni")
 import("//build/toolchain/goma.gni")
@@ -30,8 +31,11 @@ declare_args() {
       (target_os == "android" || target_os == "win")
 
   # Use -MD instead of -MMD for compiler commands. This is useful for tracking
-  # the comprehensive set of dependencies.
-  system_headers_in_deps = false
+  # the comprehensive set of dependencies.  It's also required when building
+  # without the sysroot so that updates to system header files trigger a
+  # rebuild (when using the sysroot, the CR_SYSROOT_KEY define takes care of
+  # this already).
+  system_headers_in_deps = !use_sysroot
 }
 
 # When the arg is set via args.gn, it applies to all toolchains. In order to not
@@ -210,14 +214,11 @@ template("single_gcc_toolchain") {
       }
 
       # C/C++ (clang) rewrapper prefix to use when use_remoteexec is true.
-      compiler_prefix = "${rbe_bin_dir}/rewrapper -cfg=${toolchain_rbe_cc_cfg_file} -exec_root=${rbe_exec_root} "
+      compiler_prefix = "${rbe_bin_dir}/rewrapper -cfg=${toolchain_rbe_cc_cfg_file}${rbe_bug_326584510_missing_inputs} -exec_root=${rbe_exec_root} "
     } else if (toolchain_uses_goma &&
                (!defined(invoker.needs_gomacc_path_arg) ||
                 !invoker.needs_gomacc_path_arg)) {
       compiler_prefix = "${goma_path} "
-      if (use_goma_rust) {
-        rust_compiler_prefix = compiler_prefix
-      }
     } else {
       compiler_prefix = "${toolchain_cc_wrapper} "
 
@@ -234,14 +235,6 @@ template("single_gcc_toolchain") {
       }
       link_prefix = "${rbe_bin_dir}/rewrapper -cfg=${toolchain_rbe_link_cfg_file} -exec_root=${rbe_exec_root} "
       not_needed([ "goma_path" ])
-    } else if (use_goma_thin_lto && toolchain_uses_goma && use_thin_lto) {
-      # remote_ld.py uses autoninja in an attempt to set a reasonable
-      # number of jobs, but this results in too low a value on
-      # Chrome OS builders. So we pass in an explicit value.
-      link_prefix =
-          "\"$python_path\" " +
-          rebase_path("//tools/clang/scripts/remote_ld.py", root_build_dir) +
-          " --wrapper ${goma_path} --jobs 200 --ar-path ${invoker.ar} -- "
     } else {
       link_prefix = ""
       not_needed([ "goma_path" ])
@@ -882,8 +875,7 @@ template("gcc_toolchain") {
 # be specified by the invoker, and optionally toolprefix if it's a
 # cross-compile case. Note that for a cross-compile case this toolchain
 # requires a config to pass the appropriate -target option, or else it will
-# actually just be doing a native compile. The invoker can optionally override
-# use_gold too.
+# actually just be doing a native compile.
 template("clang_toolchain") {
   gcc_toolchain(target_name) {
     _path = "$clang_base_path/bin"

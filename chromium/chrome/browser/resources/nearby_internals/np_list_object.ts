@@ -6,7 +6,7 @@ import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bu
 
 import {NearbyPresenceBrowserProxy} from './nearby_presence_browser_proxy.js';
 import {getTemplate} from './np_list_object.html.js';
-import {PresenceDevice} from './types.js';
+import type {PresenceDevice} from './types.js';
 
 
 /** @polymer */
@@ -30,7 +30,7 @@ class NpObjectElement extends PolymerElement {
   private browserProxy_: NearbyPresenceBrowserProxy =
       NearbyPresenceBrowserProxy.getInstance();
 
-  onConnectClicked() {
+  private onConnectClicked_(): void {
     this.browserProxy_.connectToPresenceDevice(this.device.endpoint_id);
   }
 }

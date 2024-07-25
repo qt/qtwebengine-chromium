@@ -39,7 +39,6 @@
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
 #include "dawn/native/ExternalTexture.h"
-#include "dawn/native/Queue.h"
 #include "dawn/native/RenderBundle.h"
 #include "dawn/native/d3d/D3DError.h"
 #include "dawn/native/d3d11/BindGroupTrackerD3D11.h"
@@ -51,9 +50,9 @@
 #include "dawn/native/d3d11/PipelineLayoutD3D11.h"
 #include "dawn/native/d3d11/QuerySetD3D11.h"
 #include "dawn/native/d3d11/RenderPipelineD3D11.h"
-#include "dawn/native/d3d11/SharedFenceD3D11.h"
 #include "dawn/native/d3d11/TextureD3D11.h"
 #include "dawn/native/d3d11/UtilsD3D11.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::d3d11 {
 namespace {
@@ -103,32 +102,12 @@ class VertexBufferTracker {
     }
 
   private:
-    const ScopedSwapStateCommandRecordingContext* mCommandContext;
-    const RenderPipeline* mLastAppliedRenderPipeline = nullptr;
+    raw_ptr<const ScopedSwapStateCommandRecordingContext> mCommandContext;
+    raw_ptr<const RenderPipeline> mLastAppliedRenderPipeline = nullptr;
     PerVertexBuffer<ID3D11Buffer*> mD3D11Buffers = {};
     PerVertexBuffer<UINT> mStrides = {};
     PerVertexBuffer<UINT> mOffsets = {};
 };
-
-MaybeError SynchronizeTextureBeforeUse(
-    Texture* texture,
-    const ScopedSwapStateCommandRecordingContext* commandContext) {
-    SharedTextureMemoryBase::PendingFenceList fences;
-    SharedTextureMemoryContents* contents = texture->GetSharedTextureMemoryContents();
-    if (contents == nullptr) {
-        return {};
-    }
-
-    contents->AcquirePendingFences(&fences);
-    contents->SetLastUsageSerial(texture->GetDevice()->GetQueue()->GetPendingCommandSerial());
-
-    for (auto& fence : fences) {
-        DAWN_TRY(CheckHRESULT(commandContext->GetD3D11DeviceContext4()->Wait(
-                                  ToBackend(fence.object)->GetD3DFence(), fence.signaledValue),
-                              "ID3D11DeviceContext4::Wait"));
-    }
-    return {};
-}
 
 // Handle pixel local storage attachments and return a vector of all pixel local storage UAVs.
 // - For implicit attachments, create the texture and clear it to 0.
@@ -204,6 +183,7 @@ HandlePixelLocalStorageAndGetPixelLocalStorageUAVs(
                     break;
                 }
                 case wgpu::LoadOp::Load:
+                case wgpu::LoadOp::ExpandResolveTexture:
                     break;
                 case wgpu::LoadOp::Undefined:
                     DAWN_UNREACHABLE();
@@ -262,10 +242,13 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 mCommands.NextCommand<BeginComputePassCmd>();
                 for (TextureBase* texture :
                      GetResourceUsages().computePasses[nextComputePassNumber].referencedTextures) {
-                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                    DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
                 }
                 for (const SyncScopeResourceUsage& scope :
                      GetResourceUsages().computePasses[nextComputePassNumber].dispatchUsages) {
+                    for (TextureBase* texture : scope.textures) {
+                        DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
+                    }
                     DAWN_TRY(LazyClearSyncScope(scope));
                 }
                 DAWN_TRY(ExecuteComputePass(commandContext));
@@ -278,14 +261,14 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 auto* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
                 for (TextureBase* texture :
                      GetResourceUsages().renderPasses[nextRenderPassNumber].textures) {
-                    DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(texture), commandContext));
+                    DAWN_TRY(ToBackend(texture)->SynchronizeTextureBeforeUse(commandContext));
                 }
                 for (ExternalTextureBase* externalTexture :
                      GetResourceUsages().renderPasses[nextRenderPassNumber].externalTextures) {
                     for (auto& view : externalTexture->GetTextureViews()) {
                         if (view.Get()) {
-                            DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(view->GetTexture()),
-                                                                 commandContext));
+                            DAWN_TRY(ToBackend(view->GetTexture())
+                                         ->SynchronizeTextureBeforeUse(commandContext));
                         }
                     }
                 }
@@ -356,7 +339,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                 DAWN_TRY(buffer->EnsureDataInitialized(commandContext));
 
                 Texture* texture = ToBackend(dst.texture.Get());
-                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
+                DAWN_TRY(texture->SynchronizeTextureBeforeUse(commandContext));
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                 DAWN_ASSERT(scopedMap.GetMappedData());
@@ -381,7 +364,7 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
 
                 SubresourceRange subresources = GetSubresourcesAffectedByCopy(src, copy->copySize);
                 Texture* texture = ToBackend(src.texture.Get());
-                DAWN_TRY(SynchronizeTextureBeforeUse(texture, commandContext));
+                DAWN_TRY(texture->SynchronizeTextureBeforeUse(commandContext));
                 DAWN_TRY(
                     texture->EnsureSubresourceContentInitialized(commandContext, subresources));
 
@@ -414,10 +397,10 @@ MaybeError CommandBuffer::Execute(const ScopedSwapStateCommandRecordingContext* 
                     continue;
                 }
 
-                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->source.texture.Get()),
-                                                     commandContext));
-                DAWN_TRY(SynchronizeTextureBeforeUse(ToBackend(copy->destination.texture.Get()),
-                                                     commandContext));
+                DAWN_TRY(ToBackend(copy->source.texture.Get())
+                             ->SynchronizeTextureBeforeUse(commandContext));
+                DAWN_TRY(ToBackend(copy->destination.texture.Get())
+                             ->SynchronizeTextureBeforeUse(commandContext));
                 DAWN_TRY(Texture::Copy(commandContext, copy));
                 break;
             }
@@ -577,13 +560,14 @@ MaybeError CommandBuffer::ExecuteRenderPass(
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.
     PerColorAttachment<ID3D11RenderTargetView*> d3d11RenderTargetViews = {};
     ColorAttachmentIndex attachmentCount{};
+    bool clearWithDraw = GetDevice()->IsToggleEnabled(Toggle::ClearColorWithDraw);
     // TODO(dawn:1815): Shrink the sparse attachments to accommodate more UAVs.
     for (auto i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
         TextureView* colorTextureView = ToBackend(renderPass->colorAttachments[i].view.Get());
         DAWN_TRY_ASSIGN(d3d11RenderTargetViews[i],
                         colorTextureView->GetOrCreateD3D11RenderTargetView(
                             renderPass->colorAttachments[i].depthSlice));
-        if (renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
+        if (!clearWithDraw && renderPass->colorAttachments[i].loadOp == wgpu::LoadOp::Clear) {
             std::array<float, 4> clearColor =
                 ConvertToFloatColor(renderPass->colorAttachments[i].clearColor);
             d3d11DeviceContext->ClearRenderTargetView(d3d11RenderTargetViews[i], clearColor.data());
@@ -924,7 +908,7 @@ void CommandBuffer::HandleDebugCommands(
         }
 
         case Command::PopDebugGroup: {
-            std::ignore = iter->NextCommand<PopDebugGroupCmd>();
+            [[maybe_unused]] auto cmd = iter->NextCommand<PopDebugGroupCmd>();
             commandContext->GetD3DUserDefinedAnnotation()->EndEvent();
             break;
         }

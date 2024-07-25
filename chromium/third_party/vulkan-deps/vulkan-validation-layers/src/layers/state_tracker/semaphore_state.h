@@ -18,6 +18,7 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
+#include "state_tracker/submission_reference.h"
 #include <future>
 #include <map>
 #include <mutex>
@@ -29,11 +30,9 @@ class ValidationStateTracker;
 namespace vvl {
 
 class Queue;
-struct SubmissionLocator;
 
 class Semaphore : public RefcountedStateObject {
   public:
-    // possible payload values for binary semaphore
     enum OpType {
         kNone,
         kWait,
@@ -46,128 +45,44 @@ class Semaphore : public RefcountedStateObject {
         kExternalPermanent,
     };
 
-    static inline const char *OpTypeName(OpType t) {
-        switch (t) {
-            case kWait:
-                return "wait";
-            case kSignal:
-                return "signal";
-            case kBinaryAcquire:
-                return "acquire";
-            case kNone:
-            default:
-                return "NONE";
-        }
-    }
-
     struct SemOp {
-        SemOp(OpType ot, Queue *q, uint64_t queue_seq, uint64_t timeline_payload, Func command = Func::Empty)
-            : op_type(ot), command(command), queue(q), seq(queue_seq), payload(timeline_payload) {}
-
         OpType op_type;
-        Func command;
-        Queue *queue;
-        uint64_t seq;
         uint64_t payload;
+        SubmissionReference submit;
+        std::optional<Func> acquire_command;
 
-        bool operator<(const SemOp &rhs) const { return payload < rhs.payload; }
-
-        bool IsWait() const { return op_type == kWait; }
-        bool IsSignal() const { return op_type == kSignal; }
-        bool IsAcquire() const { return op_type == kBinaryAcquire; }
-
-        void Notify() const;
+        SemOp(OpType op_type, const SubmissionReference &submit, uint64_t payload)
+            : op_type(op_type), payload(payload), submit(submit) {}
+        SemOp(Func acquire_command, uint64_t payload)
+            : op_type(kBinaryAcquire), payload(payload), acquire_command(acquire_command) {}
     };
 
     struct TimePoint {
-        TimePoint(SemOp &op) : signal_op(), completed(), waiter(completed.get_future()) {
-            if (op.op_type == kWait) {
-                AddWaitOp(op);
-            } else {
-                signal_op.emplace(op);
-            }
-        }
-        void AddWaitOp(const SemOp &op) {
-            assert(op.op_type == kWait);
-            assert(wait_ops.empty() || wait_ops[0].payload == op.payload);
-            wait_ops.emplace_back(op);
-        }
-        std::optional<SemOp> signal_op;
-        small_vector<SemOp, 1, uint32_t> wait_ops;
+        std::optional<SubmissionReference> signal_submit;
+        small_vector<SubmissionReference, 1, uint32_t> wait_submits;
+        std::optional<Func> acquire_command;
         std::promise<void> completed;
         std::shared_future<void> waiter;
 
-        bool HasSignaler() const { return signal_op.has_value(); }
-        bool HasWaiters() const { return !wait_ops.empty(); }
+        TimePoint() : completed(), waiter(completed.get_future()) {}
+        bool HasSignaler() const { return signal_submit.has_value() || acquire_command.has_value(); }
+        bool HasWaiters() const { return !wait_submits.empty(); }
         void Notify() const;
     };
 
-#ifdef VK_USE_PLATFORM_METAL_EXT
-    static bool GetMetalExport(const VkSemaphoreCreateInfo *info) {
-        bool retval = false;
-        auto export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(info->pNext);
-        while (export_metal_object_info) {
-            if (export_metal_object_info->exportObjectType == VK_EXPORT_METAL_OBJECT_TYPE_METAL_SHARED_EVENT_BIT_EXT) {
-                retval = true;
-                break;
-            }
-            export_metal_object_info = vku::FindStructInPNextChain<VkExportMetalObjectCreateInfoEXT>(export_metal_object_info->pNext);
-        }
-        return retval;
-    }
-#endif  // VK_USE_PLATFORM_METAL_EXT
-    VkExternalSemaphoreHandleTypeFlags GetExportHandleTypes(const VkSemaphoreCreateInfo *pCreateInfo) {
-        auto export_info = vku::FindStructInPNextChain<VkExportSemaphoreCreateInfo>(pCreateInfo->pNext);
-        return export_info ? export_info->handleTypes : 0;
-    }
-
-    Semaphore(ValidationStateTracker &dev, VkSemaphore sem, const VkSemaphoreCreateInfo *pCreateInfo)
-        : Semaphore(dev, sem, vku::FindStructInPNextChain<VkSemaphoreTypeCreateInfo>(pCreateInfo->pNext), pCreateInfo) {}
-
-    Semaphore(ValidationStateTracker &dev, VkSemaphore sem, const VkSemaphoreTypeCreateInfo *type_create_info,
-                    const VkSemaphoreCreateInfo *pCreateInfo)
-        : RefcountedStateObject(sem, kVulkanObjectTypeSemaphore),
-#ifdef VK_USE_PLATFORM_METAL_EXT
-          metal_semaphore_export(GetMetalExport(pCreateInfo)),
-#endif  // VK_USE_PLATFORM_METAL_EXT
-          type(type_create_info ? type_create_info->semaphoreType : VK_SEMAPHORE_TYPE_BINARY),
-          flags(pCreateInfo->flags),
-          exportHandleTypes(GetExportHandleTypes(pCreateInfo)),
-          completed_{type == VK_SEMAPHORE_TYPE_TIMELINE ? kSignal : kNone, nullptr, 0,
-                     type_create_info ? type_create_info->initialValue : 0},
-          next_payload_(completed_.payload + 1),
-          dev_data_(dev) {
-    }
+    Semaphore(ValidationStateTracker &dev, VkSemaphore handle, const VkSemaphoreCreateInfo *pCreateInfo)
+        : Semaphore(dev, handle, vku::FindStructInPNextChain<VkSemaphoreTypeCreateInfo>(pCreateInfo->pNext), pCreateInfo) {}
 
     VkSemaphore VkHandle() const { return handle_.Cast<VkSemaphore>(); }
-    Scope Scope() const {
-        auto guard = ReadLock();
-        return scope_;
-    }
-    VkExternalSemaphoreHandleTypeFlagBits ImportedHandleType() const {
-        auto guard = ReadLock();
-        assert(imported_handle_type_.has_value());
-        return imported_handle_type_.value();
-    }
-    // This is the most recently completed operation. It is returned by value so that the caller
-    // has a correct copy even if something else is completing on this queue in a different thread.
-    SemOp Completed() const {
-        auto guard = ReadLock();
-        return completed_;
-    }
+    enum Scope Scope() const;
 
     // Enqueue a semaphore operation. For binary semaphores, the payload value is generated and
     // returned, so that every semaphore operation has a unique value.
-    void EnqueueSignal(Queue *queue, uint64_t queue_seq, uint64_t &payload);
-    void EnqueueWait(Queue *queue, uint64_t queue_seq, uint64_t &payload);
+    void EnqueueSignal(const SubmissionReference &signal_submit, uint64_t &payload);
+    void EnqueueWait(const SubmissionReference &wait_submit, uint64_t &payload);
 
-    // Binary only special cases enqueue functions
-    void EnqueueAcquire(Func command);
-
-    // Signal queue(s) that need to retire because a wait on this payload has finished
-    void Notify(uint64_t payload);
-
-    std::shared_future<void> Wait(uint64_t payload);
+    // Enqueue binary semaphore signal from swapchain image acquire command
+    void EnqueueAcquire(Func acquire_command);
 
     // Helper for retiring timeline semaphores and then retiring all queues using the semaphore
     void NotifyAndWait(const Location &loc, uint64_t payload);
@@ -175,32 +90,51 @@ class Semaphore : public RefcountedStateObject {
     // Remove completed operations and signal any waiters. This should only be called by Queue
     void Retire(Queue *current_queue, const Location &loc, uint64_t payload);
 
-    // look for most recent / highest payload operation that matches
-    std::optional<SemOp> LastOp(const std::function<bool(const SemOp &, bool is_pending)> &filter = nullptr) const;
+    // Look for most recent / highest payload operation that matches
+    std::optional<SemOp> LastOp(
+        const std::function<bool(OpType op_type, uint64_t payload, bool is_pending)> &filter = nullptr) const;
 
-    // Returns queue submission associated with the last binary signal.
-    std::optional<SubmissionLocator> GetLastBinarySignalSubmission() const;
+    // Returns pending queue submission that signals this binary semaphore.
+    std::optional<SubmissionReference> GetPendingBinarySignalSubmission() const;
+
+    // Returns pending queue submission that waits on this binary semaphore.
+    std::optional<SubmissionReference> GetPendingBinaryWaitSubmission() const;
+
+    // Current payload value.
+    // If a queue submission command is pending execution, then the returned value may immediately be out of date.
+    uint64_t CurrentPayload() const;
 
     bool CanBinaryBeSignaled() const;
     bool CanBinaryBeWaited() const;
-    bool HasPendingOps() const {
-        auto guard = ReadLock();
-        return !timeline_.empty();
-    }
 
+    bool HasImportedHandleType() const;
+    VkExternalSemaphoreHandleTypeFlagBits ImportedHandleType() const;
     void Import(VkExternalSemaphoreHandleTypeFlagBits handle_type, VkSemaphoreImportFlags flags);
     void Export(VkExternalSemaphoreHandleTypeFlagBits handle_type);
-#ifdef VK_USE_PLATFORM_METAL_EXT
-    const bool metal_semaphore_export;
-#endif  // VK_USE_PLATFORM_METAL_EXT
+
     const VkSemaphoreType type;
     const VkSemaphoreCreateFlags flags;
     const VkExternalSemaphoreHandleTypeFlags exportHandleTypes;
 
+#ifdef VK_USE_PLATFORM_METAL_EXT
+    static bool GetMetalExport(const VkSemaphoreCreateInfo *info);
+    const bool metal_semaphore_export;
+#endif  // VK_USE_PLATFORM_METAL_EXT
+
   private:
+    Semaphore(ValidationStateTracker &dev, VkSemaphore handle, const VkSemaphoreTypeCreateInfo *type_create_info,
+              const VkSemaphoreCreateInfo *pCreateInfo);
+    VkExternalSemaphoreHandleTypeFlags GetExportHandleTypes(const VkSemaphoreCreateInfo *pCreateInfo);
+
+    // Signal queue(s) that need to retire because a wait on this payload has finished
+    void Notify(uint64_t payload);
+
+    std::shared_future<void> Wait(uint64_t payload);
+
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock_); }
     WriteLockGuard WriteLock() { return WriteLockGuard(lock_); }
 
+  private:
     enum Scope scope_ { kInternal };
     std::optional<VkExternalSemaphoreHandleTypeFlagBits> imported_handle_type_;  // has value when scope is not kInternal
 
@@ -228,3 +162,36 @@ static inline bool CanWaitBinarySemaphoreAfterOperation(Semaphore::OpType op_typ
 }
 
 }  // namespace vvl
+
+class CoreChecks;
+struct SemaphoreSubmitState {
+    const CoreChecks &core;
+    VkQueue queue;
+    VkQueueFlags queue_flags;
+
+    // This tracks how the payload of a binary semaphore changes **within the current submission**.
+    // Before the first wait or signal no map entry for the semaphore is defined, which means that
+    // semaphore's state is defined by the previous submissions on this queue or by the submissions on other queues.
+    // After the first wait/signal the map starts tracking binary payload value: true - signaled, false - unsignaled.
+    vvl::unordered_map<VkSemaphore, bool> binary_signaling_state;
+
+    vvl::unordered_set<VkSemaphore> internal_semaphores;
+    vvl::unordered_map<VkSemaphore, uint64_t> timeline_signals;
+    vvl::unordered_map<VkSemaphore, uint64_t> timeline_waits;
+
+    SemaphoreSubmitState(const CoreChecks &core_, VkQueue q_, VkQueueFlags queue_flags_)
+        : core(core_), queue(q_), queue_flags(queue_flags_) {}
+
+    bool CannotWaitBinary(const vvl::Semaphore &semaphore_state) const;
+
+    VkQueue AnotherQueueWaits(const vvl::Semaphore &semaphore_state) const;
+
+    bool ValidateBinaryWait(const Location &loc, VkQueue queue, const vvl::Semaphore &semaphore_state);
+    bool ValidateWaitSemaphore(const Location &wait_semaphore_loc, VkSemaphore semaphore, uint64_t value);
+    bool ValidateSignalSemaphore(const Location &signal_semaphore_loc, VkSemaphore semaphore, uint64_t value);
+
+    bool CannotSignalBinary(const vvl::Semaphore &semaphore_state, VkQueue &other_queue, vvl::Func &other_command) const;
+
+    bool CheckSemaphoreValue(const vvl::Semaphore &semaphore_state, std::string &where, uint64_t &bad_value,
+                             std::function<bool(const vvl::Semaphore::OpType, uint64_t, bool is_pending)> compare_func);
+};

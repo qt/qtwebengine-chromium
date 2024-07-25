@@ -36,13 +36,14 @@ void PowerBookmarkBackend::Init(bool use_database) {
 
   db_.reset();
 
-  // Substitute a dummy implementation when the feature is disabled.
+  // Substitute a dummy implementation when the feature is disabled. Note that
+  // `use_database` is the PowerBookmarkBackend feature toggle on the call site.
   if (use_database) {
     db_ = std::make_unique<PowerBookmarkDatabaseImpl>(database_dir_);
     bool success = db_->Init();
 
-    // TODO(crbug.com/1392502): Plumb in syncer::ReportUnrecoverableError as the
-    // dump_stack callback.
+    // TODO(crbug.com/40247772): Plumb in syncer::ReportUnrecoverableError as
+    // the dump_stack callback.
     auto change_processor =
         std::make_unique<syncer::ClientTagBasedModelTypeProcessor>(
             syncer::POWER_BOOKMARK, /*dump_stack=*/base::RepeatingClosure());
@@ -64,9 +65,10 @@ void PowerBookmarkBackend::Init(bool use_database) {
 
 base::WeakPtr<syncer::ModelTypeControllerDelegate>
 PowerBookmarkBackend::GetSyncControllerDelegate() {
-  if (!bridge_ && bridge_->initialized()) {
-    return nullptr;
-  }
+  // When the current method is called, the bridge is expected to exist
+  // (`use_database` in the Init() method is set iff the PowerBookmarkBackend
+  // feature toggle is enabled).
+  CHECK(bridge_);
   return bridge_->change_processor()->GetControllerDelegate();
 }
 
@@ -228,7 +230,7 @@ bool PowerBookmarkBackend::CommitAndNotify(Transaction& transaction) {
 }
 
 void PowerBookmarkBackend::NotifyPowersChanged() {
-  // TODO(crbug.com/1406371): Posting a task here causes the observer method
+  // TODO(crbug.com/40252685): Posting a task here causes the observer method
   // to be called before the callback. This behavior is pretty strange, but
   // not a problem right now. Eventually we should stop using SequenceBound
   // for the backend and post tasks directly to ensure proper ordering.

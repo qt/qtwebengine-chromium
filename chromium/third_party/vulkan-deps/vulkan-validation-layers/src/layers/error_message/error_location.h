@@ -19,12 +19,12 @@
 
 #include <cstdint>
 #include <string>
-#include <sstream>
 #include <limits>
 
 #include "generated/error_location_helper.h"
 #include "logging.h"
 #include "containers/custom_containers.h"
+#include "chassis/chassis_handle_data.h"
 
 // Holds the 'Location' of where the code is inside a function/struct/etc
 // see docs/error_object.md for more details
@@ -83,7 +83,12 @@ struct ErrorObject {
     const Location location;   // starting location (Always the function entrypoint)
     const VulkanTypedHandle handle;  // dispatchable handle is always first parameter of the function call
     const LogObjectList objlist;
-    ErrorObject(vvl::Func command_, VulkanTypedHandle handle_) : location(Location(command_)), handle(handle_), objlist(handle) {}
+    const chassis::HandleData* handle_data;
+
+    ErrorObject(vvl::Func command_, VulkanTypedHandle handle_)
+        : location(Location(command_)), handle(handle_), objlist(handle), handle_data(nullptr) {}
+    ErrorObject(vvl::Func command_, VulkanTypedHandle handle_, const chassis::HandleData* handle_data_)
+        : location(Location(command_)), handle(handle_), objlist(handle), handle_data(handle_data_) {}
 };
 
 namespace vvl {
@@ -107,6 +112,9 @@ struct LocationVuidAdapter {
 
 struct LocationCapture {
     LocationCapture(const Location& loc);
+    LocationCapture(const LocationCapture &other);
+    LocationCapture(LocationCapture &&other);
+
     const Location& Get() const { return capture.back(); }
 
   protected:
@@ -164,6 +172,18 @@ static const std::string& FindVUID(const Location& loc, const Table& table) {
         f = Func::vkCmdWaitEvents2;
     } else if (f == Func::vkCmdWriteTimestamp2KHR) {
         f = Func::vkCmdWriteTimestamp2;
+    } else if (f == Func::vkCmdBlitImage2KHR) {
+        f = Func::vkCmdBlitImage2;
+    } else if (f == Func::vkCmdCopyBufferToImage2KHR) {
+        f = Func::vkCmdCopyBufferToImage2;
+    } else if (f == Func::vkCmdCopyBuffer2KHR) {
+        f = Func::vkCmdCopyBuffer2;
+    } else if (f == Func::vkCmdCopyImage2KHR) {
+        f = Func::vkCmdCopyImage2;
+    } else if (f == Func::vkCmdCopyImageToBuffer2KHR) {
+        f = Func::vkCmdCopyImageToBuffer2;
+    } else if (f == Func::vkCmdResolveImage2KHR) {
+        f = Func::vkCmdResolveImage2;
     }
     const Location core_loc(f, loc.structure, loc.field, loc.index);
 
@@ -196,6 +216,18 @@ static const std::string& FindVUID(OuterKey key, const Location& loc, const Tabl
         f = Func::vkCmdWaitEvents2;
     } else if (f == Func::vkCmdWriteTimestamp2KHR) {
         f = Func::vkCmdWriteTimestamp2;
+    } else if (f == Func::vkCmdBlitImage2KHR) {
+        f = Func::vkCmdBlitImage2;
+    } else if (f == Func::vkCmdCopyBufferToImage2KHR) {
+        f = Func::vkCmdCopyBufferToImage2;
+    } else if (f == Func::vkCmdCopyBuffer2KHR) {
+        f = Func::vkCmdCopyBuffer2;
+    } else if (f == Func::vkCmdCopyImage2KHR) {
+        f = Func::vkCmdCopyImage2;
+    } else if (f == Func::vkCmdCopyImageToBuffer2KHR) {
+        f = Func::vkCmdCopyImageToBuffer2;
+    } else if (f == Func::vkCmdResolveImage2KHR) {
+        f = Func::vkCmdResolveImage2;
     }
     const Location core_loc(f, loc.structure, loc.field, loc.index);
 

@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -91,6 +90,11 @@ bool IsAddressAutofillManuallyTriggered(
 // Checks if the user triggered payments Autofill on a field manually through
 // the Chrome context menu.
 bool IsPaymentsAutofillManuallyTriggered(
+    AutofillSuggestionTriggerSource trigger_source);
+
+// Checks if the user triggered passwords Autofill on a field manually through
+// the Chrome context menu.
+bool IsPasswordsAutofillManuallyTriggered(
     AutofillSuggestionTriggerSource trigger_source);
 
 }  // namespace autofill

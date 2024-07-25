@@ -9,6 +9,7 @@
 #include "content/browser/file_system_access/features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/file_system_chooser_test_helpers.h"
@@ -81,7 +82,7 @@ class FileSystemAccessFileHandleImplBrowserTest : public ContentBrowserTest {
   GURL test_url_;
 };
 
-// TODO(crbug.com/1408211): Make this a WPT once crbug.com/1114920 is fixed.
+// TODO(crbug.com/40888337): Make this a WPT once crbug.com/1114920 is fixed.
 IN_PROC_BROWSER_TEST_F(FileSystemAccessFileHandleImplBrowserTest,
                        MoveLocalToSandboxed) {
   std::string file_contents = "move me to a sandboxed file system";
@@ -96,7 +97,7 @@ IN_PROC_BROWSER_TEST_F(FileSystemAccessFileHandleImplBrowserTest,
       << result.error;
 }
 
-// TODO(crbug.com/1408211): Make this a WPT once crbug.com/1114920 is fixed.
+// TODO(crbug.com/40888337): Make this a WPT once crbug.com/1114920 is fixed.
 IN_PROC_BROWSER_TEST_F(FileSystemAccessFileHandleImplBrowserTest,
                        MoveSandboxedToLocal) {
   CreateTestDirectoryInDirectory(temp_dir_.GetPath());

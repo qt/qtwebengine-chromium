@@ -47,7 +47,7 @@ struct APIEventPerContextData : public base::SupportsUserData::Data {
 
   // The associated v8::Isolate. Since this object is cleaned up at context
   // destruction, this should always be valid.
-  raw_ptr<v8::Isolate, ExperimentalRenderer> isolate;
+  raw_ptr<v8::Isolate> isolate;
 
   // A map from event name -> event emitter.
   std::map<std::string, v8::Global<v8::Object>> emitters;
@@ -267,7 +267,7 @@ void APIEventHandler::FireEventInContext(const std::string& event_name,
     // enabled). Unfortunately, massagers both transform the event args from
     // unexpected -> expected and (badly!) from expected -> unexpected. As such,
     // we simply don't validate if there's a massager attached to the event.
-    // TODO(crbug.com/1329587): Ideally, we'd be able to validate the response
+    // TODO(crbug.com/40226845): Ideally, we'd be able to validate the response
     // after the massagers run. This requires fixing our schema for at least
     // chrome.permissions events.
     if (api_response_validator_) {

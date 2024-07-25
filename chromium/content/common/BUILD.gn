@@ -135,6 +135,13 @@ source_set("common") {
     "input/mouse_wheel_event_queue.h",
     "input/passthrough_touch_event_queue.cc",
     "input/passthrough_touch_event_queue.h",
+    "input/render_input_router.cc",
+    "input/render_input_router.h",
+    "input/render_input_router_delegate.h",
+    "input/render_input_router_iterator.h",
+    "input/render_widget_host_view_input.h",
+    "input/render_widget_host_view_input_observer.cc",
+    "input/render_widget_host_view_input_observer.h",
     "input/synthetic_gesture.cc",
     "input/synthetic_gesture.h",
     "input/synthetic_gesture_controller.cc",
@@ -210,6 +217,8 @@ source_set("common") {
     "pseudonymization_salt.h",
     "service_worker/forwarded_race_network_request_url_loader_factory.cc",
     "service_worker/forwarded_race_network_request_url_loader_factory.h",
+    "service_worker/race_network_request_read_buffer_manager.cc",
+    "service_worker/race_network_request_read_buffer_manager.h",
     "service_worker/race_network_request_url_loader_client.cc",
     "service_worker/race_network_request_url_loader_client.h",
     "service_worker/race_network_request_write_buffer_manager.cc",
@@ -218,8 +227,6 @@ source_set("common") {
     "service_worker/service_worker_resource_loader.h",
     "service_worker/service_worker_router_evaluator.cc",
     "service_worker/service_worker_router_evaluator.h",
-    "set_process_title.cc",
-    "set_process_title.h",
     "skia_utils.cc",
     "skia_utils.h",
     "thread_pool_util.cc",
@@ -263,7 +270,6 @@ source_set("common") {
     ":buildflags",
     "//base",
     "//base/allocator:buildflags",
-    "//base/third_party/dynamic_annotations",
     "//build:branding_buildflags",
     "//build:chromeos_buildflags",
     "//build/util:chromium_git_revision",
@@ -449,7 +455,6 @@ source_set("common") {
     public_deps += [ "//sandbox/policy" ]
     deps += [
       ":sandbox_support_linux",
-      ":set_process_title_linux",
       "//media/gpu:buildflags",
       "//sandbox/linux:sandbox_services",
       "//sandbox/linux:seccomp_bpf",
@@ -520,14 +525,6 @@ component("main_frame_counter") {
   deps = [ "//base:base" ]
 }
 
-if (is_linux || is_chromeos) {
-  source_set("set_process_title_linux") {
-    public = [ "set_process_title_linux.h" ]
-    sources = [ "set_process_title_linux.cc" ]
-    deps = [ "//base" ]
-  }
-}
-
 # See comment at the top of //content/BUILD.gn for how this works.
 group("for_content_tests") {
   visibility = [
@@ -554,7 +551,6 @@ mojom("mojo_bindings") {
     "field_trial_recorder.mojom",
     "frame.mojom",
     "frame_messages.mojom",
-    "histogram_fetcher.mojom",
     "input/input_injector.mojom",
     "media/media_log_records.mojom",
     "native_types.mojom",
@@ -704,6 +700,7 @@ mojom("mojo_bindings") {
   public_deps = [
     "//cc/mojom",
     "//components/attribution_reporting:mojom",
+    "//components/metrics/public/mojom:histogram_fetcher_mojo_bindings",
     "//components/variations:variations_mojom",
     "//content/public/common:interfaces",
     "//ipc:mojom",
@@ -725,7 +722,6 @@ mojom("mojo_bindings") {
     "//ui/accessibility/mojom",
     "//ui/base/ime/mojom",
     "//ui/base/mojom",
-    "//ui/color:mojom",
     "//ui/display/mojom",
     "//ui/events/mojom",
     "//ui/events/mojom:event_latency_metadata_mojom",

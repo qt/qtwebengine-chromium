@@ -257,7 +257,8 @@ base::android::ScopedJavaLocalRef<jobject> NavigationControllerAndroid::LoadUrl(
     jboolean should_clear_history_list,
     const base::android::JavaParamRef<jobject>& j_additional_navigation_params,
     jlong input_start,
-    jlong navigation_ui_data_ptr) {
+    jlong navigation_ui_data_ptr,
+    jboolean is_pdf) {
   DCHECK(url);
   NavigationController::LoadURLParams params(
       GURL(ConvertJavaStringToUTF8(env, url)));
@@ -275,6 +276,7 @@ base::android::ScopedJavaLocalRef<jobject> NavigationControllerAndroid::LoadUrl(
   params.should_replace_current_entry = should_replace_current_entry;
   params.has_user_gesture = has_user_gesture;
   params.should_clear_history_list = should_clear_history_list;
+  params.is_pdf = is_pdf;
 
   if (j_additional_navigation_params) {
     params.initiator_frame_token =
@@ -438,7 +440,7 @@ void NavigationControllerAndroid::SetUseDesktopUserAgent(
     // another navigation synchronously, as it will crash due to navigation
     // re-entrancy checks. To do that, post a task to update the UA and
     // reload asynchronously.
-    // TODO(https://crbug.com/1327907): Figure out the case that leads to this
+    // TODO(crbug.com/40841494): Figure out the case that leads to this
     // situation and avoid calling this function entirely in that case. For now,
     // do a do a DumpWithoutCrashing so that we can investigate.
     GetUIThreadTaskRunner({})->PostTask(
@@ -461,7 +463,7 @@ void NavigationControllerAndroid::SetUseDesktopUserAgentInternal(
     bool reload_on_state_change) {
   // Make sure the navigation entry actually exists.
   NavigationEntry* entry = navigation_controller_->GetLastCommittedEntry();
-  // TODO(crbug.com/1414625): Early return for initial NavigationEntries as a
+  // TODO(crbug.com/40063008): Early return for initial NavigationEntries as a
   // workaround. Currently, doing a reload while on the initial NavigationEntry
   // might result in committing an unrelated pending NavigationEntry and
   // mistakenly marking that entry as an initial NavigationEntry. That will

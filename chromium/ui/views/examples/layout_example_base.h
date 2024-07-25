@@ -28,6 +28,8 @@ class VIEWS_EXAMPLES_EXPORT LayoutExampleBase : public ExampleBase,
  public:
   // Grouping of multiple textfields that provide insets.
   struct InsetTextfields {
+    void ResetControllers();
+
     raw_ptr<Textfield> left = nullptr;
     raw_ptr<Textfield> top = nullptr;
     raw_ptr<Textfield> right = nullptr;
@@ -48,7 +50,7 @@ class VIEWS_EXAMPLES_EXPORT LayoutExampleBase : public ExampleBase,
     ~ChildPanel() override;
 
     // View:
-    void Layout() override;
+    void Layout(PassKey) override;
     bool OnMousePressed(const ui::MouseEvent& event) override;
 
     void SetSelected(bool value);

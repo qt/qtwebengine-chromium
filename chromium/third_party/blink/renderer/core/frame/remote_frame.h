@@ -16,6 +16,7 @@
 #include "third_party/blink/public/mojom/security_context/insecure_request_policy.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/execution_context/remote_security_context.h"
+#include "third_party/blink/renderer/core/frame/child_frame_compositing_helper.h"
 #include "third_party/blink/renderer/core/frame/child_frame_compositor.h"
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/remote_frame_view.h"
@@ -129,7 +130,13 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   void InitializeFrameVisualProperties(const FrameVisualProperties& properties);
   // If 'propagate' is true, updated properties will be sent to the browser.
   // Returns true if visual properties have changed.
-  bool SynchronizeVisualProperties(bool propagate = true);
+  // If 'allow_paint_holding' is yes, the remote frame will display stale paint
+  // (for a timeout) until a frame with the newly synchronized visual properties
+  // has been produced by the child.
+  bool SynchronizeVisualProperties(
+      bool propagate = true,
+      ChildFrameCompositingHelper::AllowPaintHolding allow_paint_holding =
+          ChildFrameCompositingHelper::AllowPaintHolding::kNo);
   void ResendVisualProperties();
   void SetViewportIntersection(const mojom::blink::ViewportIntersectionState&);
   void UpdateCompositedLayerBounds();
@@ -139,9 +146,9 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   // Called when the main frame's zoom level is changed and should be propagated
   // to the remote's associated view.
   void ZoomLevelChanged(double zoom_level);
-  // Called when the local root's window segments change.
-  void DidChangeRootWindowSegments(
-      const std::vector<gfx::Rect>& root_widget_window_segments);
+  // Called when the local root's viewport segments change.
+  void DidChangeRootViewportSegments(
+      const std::vector<gfx::Rect>& root_widget_viewport_segments);
   // Called when the local page scale factor changed.
   void PageScaleFactorChanged(float page_scale_factor,
                               bool is_pinch_gesture_active);
@@ -201,18 +208,19 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   // until the next navigation.
   void DidUpdateFramePolicy(const FramePolicy& frame_policy) override;
   void UpdateOpener(
-      const absl::optional<blink::FrameToken>& opener_frame_token) override;
+      const std::optional<blink::FrameToken>& opener_frame_token) override;
   void DetachAndDispose() override;
   void EnableAutoResize(const gfx::Size& min_size,
                         const gfx::Size& max_size) override;
   void DisableAutoResize() override;
   void DidUpdateVisualProperties(
       const cc::RenderFrameMetadata& metadata) override;
-  void SetFrameSinkId(const viz::FrameSinkId& frame_sink_id) override;
+  void SetFrameSinkId(const viz::FrameSinkId& frame_sink_id,
+                      bool allow_paint_holding) override;
   void ChildProcessGone() override;
   void CreateRemoteChild(
       const RemoteFrameToken& token,
-      const absl::optional<FrameToken>& opener_frame_token,
+      const std::optional<FrameToken>& opener_frame_token,
       mojom::blink::TreeScopeType tree_scope_type,
       mojom::blink::FrameReplicationStatePtr replication_state,
       mojom::blink::FrameOwnerPropertiesPtr owner_properties,
@@ -222,6 +230,8 @@ class CORE_EXPORT RemoteFrame final : public Frame,
       override;
   void CreateRemoteChildren(
       Vector<mojom::blink::CreateRemoteChildParamsPtr> params) override;
+  void ForwardFencedFrameEventToEmbedder(
+      const WTF::String& event_type) override;
 
   // Called only when this frame has a local frame owner.
   gfx::Size GetOutermostMainFrameSize() const override;
@@ -274,9 +284,12 @@ class CORE_EXPORT RemoteFrame final : public Frame,
   void ApplyReplicatedPermissionsPolicyHeader();
   void RecordSentVisualProperties();
 
+  void ResendVisualPropertiesInternal(
+      ChildFrameCompositingHelper::AllowPaintHolding allow_paint_holding);
+
   Member<RemoteFrameView> view_;
   RemoteSecurityContext security_context_;
-  absl::optional<blink::FrameVisualProperties> sent_visual_properties_;
+  std::optional<blink::FrameVisualProperties> sent_visual_properties_;
   blink::FrameVisualProperties pending_visual_properties_;
   scoped_refptr<cc::Layer> cc_layer_;
   bool is_surface_layer_ = false;

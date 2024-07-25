@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -21,6 +21,7 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include "generated/chassis.h"
 #include "core_validation.h"
+#include "chassis/chassis_modification_state.h"
 
 bool CoreChecks::ValidateComputePipelineShaderState(const vvl::Pipeline &pipeline, const Location &create_info_loc) const {
     StageCreateInfo stage_create_info(&pipeline);
@@ -30,13 +31,12 @@ bool CoreChecks::ValidateComputePipelineShaderState(const vvl::Pipeline &pipelin
 bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                        const VkComputePipelineCreateInfo *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
-                                                       const ErrorObject &error_obj, void *ccpl_state_data) const {
+                                                       const ErrorObject &error_obj, PipelineStates &pipeline_states,
+                                                       chassis::CreateComputePipelines &chassis_state) const {
     bool skip = StateTracker::PreCallValidateCreateComputePipelines(device, pipelineCache, count, pCreateInfos, pAllocator,
-                                                                    pPipelines, error_obj, ccpl_state_data);
-
-    auto *ccpl_state = reinterpret_cast<create_compute_pipeline_api_state *>(ccpl_state_data);
+                                                                    pPipelines, error_obj, pipeline_states, chassis_state);
     for (uint32_t i = 0; i < count; i++) {
-        const vvl::Pipeline *pipeline = ccpl_state->pipe_state[i].get();
+        const vvl::Pipeline *pipeline = pipeline_states[i].get();
         if (!pipeline) {
             continue;
         }

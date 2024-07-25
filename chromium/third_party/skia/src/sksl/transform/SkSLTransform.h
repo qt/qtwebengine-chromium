@@ -54,6 +54,12 @@ std::unique_ptr<Expression> RewriteIndexedSwizzle(const Context& context,
 void FindAndDeclareBuiltinFunctions(Program& program);
 
 /**
+ * Copies built-in structs from modules into the program. Relies on ProgramUsage to determine
+ * which structs are necessary.
+ */
+void FindAndDeclareBuiltinStructs(Program& program);
+
+/**
  * Scans the finished program for built-in variables like `sk_FragColor` and adds them to the
  * program's shared elements.
  */
@@ -71,6 +77,12 @@ void EliminateUnreachableCode(Program& program);
  * Programs because Nops are harmless, but they waste space in long-lived module IR.
  */
 void EliminateEmptyStatements(Module& module);
+
+/**
+ * Eliminates unnecessary braces in a module (e.g., single-statement child blocks). Not implemented
+ * for Programs because extra braces are harmless, but they waste space in long-lived module IR.
+ */
+void EliminateUnnecessaryBraces(Module& module);
 
 /**
  * Eliminates functions in a program which are never called. Returns true if any changes were made.

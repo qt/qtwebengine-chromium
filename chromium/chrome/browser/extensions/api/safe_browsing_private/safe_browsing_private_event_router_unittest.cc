@@ -21,7 +21,6 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/enterprise/connectors/common.h"
-#include "chrome/browser/enterprise/connectors/connectors_prefs.h"
 #include "chrome/browser/enterprise/connectors/connectors_service.h"
 #include "chrome/browser/enterprise/connectors/reporting/realtime_reporting_client.h"
 #include "chrome/browser/enterprise/connectors/reporting/realtime_reporting_client_factory.h"
@@ -38,6 +37,7 @@
 #include "components/download/public/common/download_danger_type.h"
 #include "components/enterprise/browser/enterprise_switches.h"
 #include "components/enterprise/common/proto/connectors.pb.h"
+#include "components/enterprise/connectors/connectors_prefs.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/policy/core/common/cloud/realtime_reporting_job_configuration.h"
 #include "components/safe_browsing/core/common/features.h"
@@ -49,8 +49,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/login/users/chrome_user_manager_impl.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/ash/login/users/scoped_test_user_manager.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/ash/settings/scoped_cros_settings_test_helper.h"
 #include "chromeos/ash/components/install_attributes/stub_install_attributes.h"
@@ -208,7 +208,8 @@ class SafeBrowsingPrivateEventRouterTestBase : public testing::Test {
             event_result);
   }
 
-  void TriggerOnUrlFilteringInterstitial(const std::string& threat_type) {
+  void TriggerOnUrlFilteringInterstitial(const std::string& threat_type,
+                                         const std::string& watermark_message) {
     safe_browsing::RTLookupResponse response;
     auto* threat_info = response.add_threat_info();
     if (threat_type == "ENTERPRISE_WARNED_SEEN" ||
@@ -224,6 +225,10 @@ class SafeBrowsingPrivateEventRouterTestBase : public testing::Test {
     matched_url_navigation_rule->set_rule_id("test rule id");
     matched_url_navigation_rule->set_rule_name("test rule name");
     matched_url_navigation_rule->set_matched_url_category("test rule category");
+    if (!watermark_message.empty()) {
+      matched_url_navigation_rule->mutable_watermark_message()
+          ->set_watermark_message(watermark_message);
+    }
 
     SafeBrowsingPrivateEventRouterFactory::GetForProfile(profile_)
         ->OnUrlFilteringInterstitial(GURL("https://filteredurl.com"),
@@ -257,6 +262,17 @@ class SafeBrowsingPrivateEventRouterTestBase : public testing::Test {
     SafeBrowsingPrivateEventRouterFactory::GetForProfile(profile_)
         ->OnPasswordBreach(trigger, identities);
   }
+
+#if BUILDFLAG(ENTERPRISE_DATA_CONTROLS)
+  void TriggerOnDataControlsSensitiveDataEvent(
+      const data_controls::Verdict::TriggeredRules& triggered_rules) {
+    SafeBrowsingPrivateEventRouterFactory::GetForProfile(profile_)
+        ->OnDataControlsSensitiveDataEvent(
+            GURL(kUrl), GURL(kTabUrl), kSource, kDestination, "text/plain",
+            SafeBrowsingPrivateEventRouter::kTriggerWebContentUpload,
+            triggered_rules, safe_browsing::EventResult::BLOCKED, 12345);
+  }
+#endif  // BUILDFLAG(ENTERPRISE_DATA_CONTROLS)
 
   void SetReportingPolicy(
       bool enabled,
@@ -334,13 +350,12 @@ class SafeBrowsingPrivateEventRouterTest
     : public SafeBrowsingPrivateEventRouterTestBase {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
  public:
-  SafeBrowsingPrivateEventRouterTest() {
-    test_user_manager_ = std::make_unique<ash::ScopedTestUserManager>();
-  }
+  SafeBrowsingPrivateEventRouterTest() = default;
 
  protected:
   ash::ScopedCrosSettingsTestHelper cros_settings_test_helper_;
-  std::unique_ptr<ash::ScopedTestUserManager> test_user_manager_;
+  user_manager::ScopedUserManager test_user_manager_{
+      ash::ChromeUserManagerImpl::CreateChromeUserManager()};
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 };
 
@@ -483,7 +498,7 @@ TEST_F(SafeBrowsingPrivateEventRouterTest, TestOnDangerousDownloadOpened) {
   EXPECT_NE(nullptr, event);
 
 #if BUILDFLAG(IS_CHROMEOS)
-  // TODO(crbug.com/1501186): To fix the tests for ChromeOS.
+  // TODO(crbug.com/40941444): To fix the tests for ChromeOS.
   EXPECT_EQ("malware.exe",
 #else
   EXPECT_EQ("/path/to/malware.exe",
@@ -1126,7 +1141,7 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_CALL(*client_, UploadSecurityEventReport)
       .WillOnce(CaptureArg(&report));
 
-  TriggerOnUrlFilteringInterstitial("ENTERPRISE_BLOCKED_SEEN");
+  TriggerOnUrlFilteringInterstitial("ENTERPRISE_BLOCKED_SEEN", "");
   base::RunLoop().RunUntilIdle();
 
   Mock::VerifyAndClearExpectations(client_.get());
@@ -1155,6 +1170,8 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_EQ("test rule name",
             *triggered_rule.FindString(
                 SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName));
+  EXPECT_FALSE(triggered_rule.FindBool(
+      SafeBrowsingPrivateEventRouter::kKeyHasWatermarking));
 }
 
 TEST_F(SafeBrowsingPrivateEventRouterTest,
@@ -1165,7 +1182,8 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_CALL(*client_, UploadSecurityEventReport)
       .WillOnce(CaptureArg(&report));
 
-  TriggerOnUrlFilteringInterstitial("ENTERPRISE_WARNED_SEEN");
+  TriggerOnUrlFilteringInterstitial("ENTERPRISE_WARNED_SEEN",
+                                    "watermark message");
   base::RunLoop().RunUntilIdle();
 
   Mock::VerifyAndClearExpectations(client_.get());
@@ -1194,6 +1212,8 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_EQ("test rule name",
             *triggered_rule.FindString(
                 SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName));
+  EXPECT_TRUE(triggered_rule.FindBool(
+      SafeBrowsingPrivateEventRouter::kKeyHasWatermarking));
 }
 
 TEST_F(SafeBrowsingPrivateEventRouterTest,
@@ -1204,7 +1224,7 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_CALL(*client_, UploadSecurityEventReport)
       .WillOnce(CaptureArg(&report));
 
-  TriggerOnUrlFilteringInterstitial("ENTERPRISE_WARNED_BYPASS");
+  TriggerOnUrlFilteringInterstitial("ENTERPRISE_WARNED_BYPASS", "confidential");
   base::RunLoop().RunUntilIdle();
 
   Mock::VerifyAndClearExpectations(client_.get());
@@ -1233,6 +1253,49 @@ TEST_F(SafeBrowsingPrivateEventRouterTest,
   EXPECT_EQ("test rule name",
             *triggered_rule.FindString(
                 SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName));
+  EXPECT_TRUE(triggered_rule.FindBool(
+      SafeBrowsingPrivateEventRouter::kKeyHasWatermarking));
+}
+
+TEST_F(SafeBrowsingPrivateEventRouterTest,
+       TestOnUrlFilteringInterstitial_WatermarkAudit) {
+  SetUpRouters();
+
+  base::Value::Dict report;
+  EXPECT_CALL(*client_, UploadSecurityEventReport)
+      .WillOnce(CaptureArg(&report));
+
+  TriggerOnUrlFilteringInterstitial("", "watermark message");
+  base::RunLoop().RunUntilIdle();
+
+  Mock::VerifyAndClearExpectations(client_.get());
+  const base::Value::List* event_list =
+      report.FindList(policy::RealtimeReportingJobConfiguration::kEventListKey);
+  ASSERT_NE(nullptr, event_list);
+  ASSERT_EQ(1u, event_list->size());
+  const base::Value::Dict& wrapper = (*event_list)[0].GetDict();
+  const base::Value::Dict* event = wrapper.FindDict(
+      SafeBrowsingPrivateEventRouter::kKeyUrlFilteringInterstitialEvent);
+  ASSERT_NE(nullptr, event);
+
+  EXPECT_FALSE(
+      *event->FindBool(SafeBrowsingPrivateEventRouter::kKeyClickedThrough));
+  EXPECT_FALSE(
+      event->FindString(SafeBrowsingPrivateEventRouter::kKeyThreatType));
+
+  const base::Value::List* triggered_rule_info =
+      event->FindList(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleInfo);
+  ASSERT_NE(nullptr, triggered_rule_info);
+  ASSERT_EQ(1u, triggered_rule_info->size());
+  const base::Value::Dict& triggered_rule = (*triggered_rule_info)[0].GetDict();
+  EXPECT_EQ(
+      safe_browsing::EventResultToString(safe_browsing::EventResult::ALLOWED),
+      *event->FindString(SafeBrowsingPrivateEventRouter::kKeyEventResult));
+  EXPECT_EQ("test rule name",
+            *triggered_rule.FindString(
+                SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName));
+  EXPECT_TRUE(triggered_rule.FindBool(
+      SafeBrowsingPrivateEventRouter::kKeyHasWatermarking));
 }
 
 TEST_F(SafeBrowsingPrivateEventRouterTest, TestOnUnscannedFileEvent_Allowed) {
@@ -1504,6 +1567,68 @@ TEST_F(SafeBrowsingPrivateEventRouterTest, TestUnscannedFileEnabled) {
   Mock::VerifyAndClearExpectations(client_.get());
 }
 
+#if BUILDFLAG(ENTERPRISE_DATA_CONTROLS)
+TEST_F(SafeBrowsingPrivateEventRouterTest, TestDataControlsSensitiveDataEvent) {
+  SetUpRouters();
+
+  base::Value::Dict report;
+  EXPECT_CALL(*client_, UploadSecurityEventReport)
+      .WillOnce(CaptureArg(&report));
+
+  TriggerOnDataControlsSensitiveDataEvent({
+      {"rule_id_1", "rule_name_1"},
+      {"rule_id_2", "rule_name_2"},
+  });
+  base::RunLoop().RunUntilIdle();
+
+  Mock::VerifyAndClearExpectations(client_.get());
+  const base::Value::List* event_list =
+      report.FindList(policy::RealtimeReportingJobConfiguration::kEventListKey);
+  ASSERT_NE(event_list, nullptr);
+  ASSERT_EQ(event_list->size(), 1u);
+  const base::Value::Dict& wrapper = (*event_list)[0].GetDict();
+  const base::Value::Dict* event =
+      wrapper.FindDict(SafeBrowsingPrivateEventRouter::kKeySensitiveDataEvent);
+  ASSERT_NE(event, nullptr);
+
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyUrl), kUrl);
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyTabUrl),
+            kTabUrl);
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeySource),
+            kSource);
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyDestination),
+            kDestination);
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyContentSize),
+            "12345");
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyContentType),
+            "text/plain");
+  EXPECT_EQ(*event->FindString(SafeBrowsingPrivateEventRouter::kKeyTrigger),
+            SafeBrowsingPrivateEventRouter::kTriggerWebContentUpload);
+  EXPECT_EQ(
+      *event->FindString(SafeBrowsingPrivateEventRouter::kKeyEventResult),
+      safe_browsing::EventResultToString(safe_browsing::EventResult::BLOCKED));
+
+  const base::Value::List* triggered_rule_info =
+      event->FindList(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleInfo);
+  ASSERT_NE(triggered_rule_info, nullptr);
+  ASSERT_EQ(triggered_rule_info->size(), 2u);
+  const base::Value::Dict& rule_1 = (*triggered_rule_info)[0].GetDict();
+  EXPECT_EQ(
+      *rule_1.FindString(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName),
+      "rule_name_1");
+  EXPECT_EQ(
+      *rule_1.FindString(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleId),
+      "rule_id_1");
+  const base::Value::Dict& rule_2 = (*triggered_rule_info)[1].GetDict();
+  EXPECT_EQ(
+      *rule_2.FindString(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleName),
+      "rule_name_2");
+  EXPECT_EQ(
+      *rule_2.FindString(SafeBrowsingPrivateEventRouter::kKeyTriggeredRuleId),
+      "rule_id_2");
+}
+#endif  // BUILDFLAG(ENTERPRISE_DATA_CONTROLS)
+
 // Tests to make sure the feature flag and policy control real-time reporting
 // as expected.  The parameter for these tests is a tuple of bools:
 //
@@ -1536,18 +1661,16 @@ class SafeBrowsingIsRealtimeReportingEnabledTest
     }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-    auto user_manager = std::make_unique<ash::FakeChromeUserManager>();
+    user_manager_.Reset(std::make_unique<ash::FakeChromeUserManager>());
     const AccountId account_id(
         AccountId::FromUserEmail(profile_->GetProfileUserName()));
-    const user_manager::User* user = user_manager->AddUserWithAffiliation(
+    const user_manager::User* user = user_manager_->AddUserWithAffiliation(
         account_id, /*is_affiliated=*/is_manageable_);
     ash::ProfileHelper::Get()->SetUserToProfileMappingForTesting(user,
                                                                  profile_);
-    user_manager->UserLoggedIn(account_id, user->username_hash(),
-                               /*browser_restart=*/false,
-                               /*is_child=*/false);
-    scoped_user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
-        std::move(user_manager));
+    user_manager_->UserLoggedIn(account_id, user->username_hash(),
+                                /*browser_restart=*/false,
+                                /*is_child=*/false);
     profile_->ScopedCrosSettingsTestHelper()
         ->InstallAttributes()
         ->SetCloudManaged("domain.com", "device_id");
@@ -1562,7 +1685,8 @@ class SafeBrowsingIsRealtimeReportingEnabledTest
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
  private:
-  std::unique_ptr<user_manager::ScopedUserManager> scoped_user_manager_;
+  user_manager::TypedScopedUserManager<ash::FakeChromeUserManager>
+      user_manager_;
 #endif
 };
 

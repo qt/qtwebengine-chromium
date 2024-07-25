@@ -60,6 +60,8 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_frame_widget_impl.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
+#include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 #include "third_party/blink/renderer/core/html/html_details_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
@@ -483,8 +485,8 @@ void TextFinder::ReportFindInPageResultToAccessibility(int identifier) {
   Node* end_node = active_match_->endContainer();
   ax_object_cache->HandleTextMarkerDataAdded(start_node, end_node);
 
-  int32_t start_id = ax_object_cache->GetAXID(start_node);
-  int32_t end_id = ax_object_cache->GetAXID(end_node);
+  int32_t start_id = start_node->GetDomNodeId();
+  int32_t end_id = end_node->GetDomNodeId();
 
   auto params = mojom::blink::FindInPageResultAXParams::New(
       identifier, active_match_index_ + 1, start_id,

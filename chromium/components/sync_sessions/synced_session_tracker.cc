@@ -88,7 +88,7 @@ void PopulateSyncedSessionWindowFromSpecifics(
   // The session window must be initially empty (reset via
   // ResetSessionTracking()) to avoid leaving dangling pointers in
   // |synced_tab_map|.
-  // TODO(crbug.com/803205): replace with a DCHECK once PutTabInWindow() isn't
+  // TODO(crbug.com/41365570): replace with a DCHECK once PutTabInWindow() isn't
   // crashing anymore.
   CHECK(session_window->tabs.empty());
 
@@ -241,17 +241,17 @@ const sessions::SessionTab* SyncedSessionTracker::LookupSessionTab(
   return tab_iter->second;
 }
 
-absl::optional<sync_pb::SyncEnums::BrowserType>
+std::optional<sync_pb::SyncEnums::BrowserType>
 SyncedSessionTracker::LookupWindowType(const std::string& session_tag,
                                        SessionID window_id) const {
   const TrackedSession* session = LookupTrackedSession(session_tag);
   if (!session) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   auto window_iter = session->synced_window_map.find(window_id);
   if (window_iter == session->synced_window_map.end()) {
-    return absl::nullopt;  // We have no record of this window.
+    return std::nullopt;  // We have no record of this window.
   }
 
   return window_iter->second->window_type;
@@ -502,8 +502,8 @@ void SyncedSessionTracker::PutTabInWindow(const std::string& session_tag,
         break;
       }
     }
-    // TODO(crbug.com/803205): replace with a DCHECK once PutTabInWindow() isn't
-    // crashing anymore.
+    // TODO(crbug.com/41365570): replace with a DCHECK once PutTabInWindow()
+    // isn't crashing anymore.
     CHECK(tab) << " Unable to find tab " << tab_id
                << " within unmapped tabs or previously mapped windows."
                << " https://crbug.com/803205";
@@ -534,7 +534,7 @@ void SyncedSessionTracker::OnTabNodeSeen(const std::string& session_tag,
 sessions::SessionTab* SyncedSessionTracker::GetTab(
     const std::string& session_tag,
     SessionID tab_id) {
-  // TODO(crbug.com/803205): replace with a DCHECK once PutTabInWindow() isn't
+  // TODO(crbug.com/41365570): replace with a DCHECK once PutTabInWindow() isn't
   // crashing anymore.
   CHECK(tab_id.is_valid());
 

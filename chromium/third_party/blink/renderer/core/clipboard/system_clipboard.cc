@@ -371,9 +371,9 @@ void SystemClipboard::WriteDataObject(DataObject* data_object) {
   // a type. This prevents stomping on clipboard contents that might have been
   // written by extension functions such as chrome.bookmarkManagerPrivate.copy.
   //
-  // TODO(slangley): Use a mojo struct to send web_drag_data and allow receiving
-  // side to extract the data required.
-  // TODO(dcheng): Properly support text/uri-list here.
+  // TODO(crbug.com/332555471): Use a mojo struct to send web_drag_data and
+  // allow receiving side to extract the data required.
+  // TODO(crbug.com/332571415): Properly support text/uri-list here.
   HashMap<String, String> custom_data;
   WebDragData data = data_object->ToWebDragData();
   for (const WebDragData::Item& item : data.Items()) {
@@ -419,12 +419,12 @@ void SystemClipboard::ReadAvailableCustomAndStandardFormats(
 void SystemClipboard::ReadUnsanitizedCustomFormat(
     const String& type,
     mojom::blink::ClipboardHost::ReadUnsanitizedCustomFormatCallback callback) {
-  // TODO(ansollan): Add test coverage for all functions with this check in
-  // |SystemClipboard| and consider if it's appropriate to throw exceptions or
-  // reject promises if the context is detached.
+  // TODO(crbug.com/332555472): Add test coverage for all functions with this
+  //  check in `SystemClipboard` and consider if it's appropriate to throw
+  // exceptions or reject promises if the context is detached.
   if (!clipboard_.is_bound())
     return;
-  // The format size restriction is added in `ClipboardWriter::IsValidType`.
+  // The format size restriction is added in `ClipboardItem::supports`.
   DCHECK_LT(type.length(), mojom::blink::ClipboardHost::kMaxFormatSize);
   clipboard_->ReadUnsanitizedCustomFormat(type, std::move(callback));
 }
@@ -437,7 +437,7 @@ void SystemClipboard::WriteUnsanitizedCustomFormat(const String& type,
       data.size() >= mojom::blink::ClipboardHost::kMaxDataSize) {
     return;
   }
-  // The format size restriction is added in `ClipboardWriter::IsValidType`.
+  // The format size restriction is added in `ClipboardItem::supports`.
   DCHECK_LT(type.length(), mojom::blink::ClipboardHost::kMaxFormatSize);
   clipboard_->WriteUnsanitizedCustomFormat(type, std::move(data));
 }

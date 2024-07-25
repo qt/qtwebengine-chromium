@@ -16,6 +16,7 @@
 #include "cc/paint/image_provider.h"
 #include "cc/paint/render_surface_filters.h"
 #include "components/viz/common/display/renderer_settings.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_util.h"
 #include "components/viz/common/quads/aggregated_render_pass_draw_quad.h"
@@ -39,6 +40,7 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
+#include "third_party/skia/include/core/SkMaskFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPoint.h"
@@ -229,6 +231,7 @@ void SoftwareRenderer::ClearFramebuffer() {
 }
 
 void SoftwareRenderer::BeginDrawingRenderPass(
+    const AggregatedRenderPass* render_pass,
     bool needs_clear,
     const gfx::Rect& render_pass_update_rect) {
   if (render_pass_update_rect == current_viewport_rect_) {
@@ -394,7 +397,7 @@ void SoftwareRenderer::DrawPictureQuad(const PictureDrawQuad* quad) {
 
   SkCanvas* raster_canvas = current_canvas_;
 
-  absl::optional<skia::OpacityFilterCanvas> opacity_canvas;
+  std::optional<skia::OpacityFilterCanvas> opacity_canvas;
   if (needs_transparency || disable_image_filtering) {
     // TODO(aelias): This isn't correct in all cases. We should detect these
     // cases and fall back to a persistent bitmap backing
@@ -672,6 +675,78 @@ void SoftwareRenderer::CopyDrawnRenderPass(
       return;
   }
 
+  bitmap.setImmutable();
+
+  // Returning kNativeTextures results is only supported with blit requests, so
+  // we copy to client provided image.
+  if (request->result_destination() ==
+          CopyOutputResult::Destination::kNativeTextures &&
+      request->has_blit_request()) {
+    const auto& blit_request = request->blit_request();
+
+    auto representation = resource_provider()->GetSharedImageRepresentation(
+        blit_request.mailbox(0).mailbox, blit_request.mailbox(0).sync_token);
+
+    if (!representation) {
+      DLOG(ERROR) << "BlitRequest: Couldn't create shared image representation";
+    }
+
+    const auto dest_rect =
+        gfx::Rect(blit_request.destination_region_offset(),
+                  gfx::Size(bitmap.width(), bitmap.height()));
+
+    if (!gfx::Rect(representation->size()).Contains(dest_rect)) {
+      DLOG(ERROR) << "BlitRequest: Destination is outside of shared image";
+      return;
+    }
+
+    // TODO(crbug.com/330920521): This should be write access, but
+    // MemoryImageRepresentation doesn't have one and there are no
+    // synchronization requirements.
+    auto read_access = representation->BeginScopedReadAccess();
+    if (!read_access) {
+      DLOG(ERROR) << "BlitRequest: Couldn't access the shared image";
+      return;
+    }
+
+    auto surface = SkSurfaces::WrapPixels(
+        read_access->pixmap().info(), read_access->pixmap().writable_addr(),
+        read_access->pixmap().rowBytes(), nullptr);
+
+    CHECK(surface);
+
+    if (blit_request.letterboxing_behavior() ==
+        LetterboxingBehavior::kLetterbox) {
+      surface->getCanvas()->clear(SK_ColorBLACK);
+    }
+
+    SkPaint blit_request_paint;
+    blit_request_paint.setBlendMode(SkBlendMode::kSrc);
+    surface->getCanvas()->drawImage(SkImages::RasterFromBitmap(bitmap),
+                                    dest_rect.x(), dest_rect.y(),
+                                    SkSamplingOptions(), &blit_request_paint);
+
+    for (const BlendBitmap& blend_bitmap : blit_request.blend_bitmaps()) {
+      SkPaint blend_bitmap_paint;
+      blend_bitmap_paint.setBlendMode(SkBlendMode::kSrcOver);
+
+      surface->getCanvas()->drawImageRect(
+          blend_bitmap.image(), gfx::RectToSkRect(blend_bitmap.source_region()),
+          gfx::RectToSkRect(blend_bitmap.destination_region()),
+          SkSamplingOptions(SkFilterMode::kLinear), &blend_bitmap_paint,
+          SkCanvas::kFast_SrcRectConstraint);
+    }
+
+    request->SendResult(std::make_unique<CopyOutputTextureResult>(
+        CopyOutputResult::Format::RGBA, geometry.result_selection,
+        CopyOutputResult::TextureResult(
+            request->blit_request().mailbox(0).mailbox, gpu::SyncToken(),
+            representation->color_space()),
+        CopyOutputResult::ReleaseCallbacks()));
+
+    return;
+  }
+
   // Deliver the result. SoftwareRenderer supports system memory destinations
   // only. For legacy reasons, if a RGBA texture request is being made, clients
   // are prepared to accept system memory results.
@@ -688,10 +763,6 @@ void SoftwareRenderer::DidChangeVisibility() {
     output_surface_->EnsureBackbuffer();
   else
     output_surface_->DiscardBackbuffer();
-}
-
-void SoftwareRenderer::GenerateMipmap() {
-  NOTIMPLEMENTED();
 }
 
 bool SoftwareRenderer::ShouldApplyBackdropFilters(
@@ -766,10 +837,10 @@ SkBitmap SoftwareRenderer::GetBackdropBitmap(
 gfx::Rect SoftwareRenderer::GetBackdropBoundingBoxForRenderPassQuad(
     const AggregatedRenderPassDrawQuad* quad,
     const cc::FilterOperations* backdrop_filters,
-    absl::optional<gfx::RRectF> backdrop_filter_bounds_input,
+    std::optional<gfx::RRectF> backdrop_filter_bounds_input,
     gfx::Transform contents_device_transform,
     gfx::Transform* backdrop_filter_bounds_transform,
-    absl::optional<gfx::RRectF>* backdrop_filter_bounds,
+    std::optional<gfx::RRectF>* backdrop_filter_bounds,
     gfx::Rect* unclipped_rect) const {
   DCHECK(backdrop_filter_bounds_transform);
   DCHECK(backdrop_filter_bounds);
@@ -809,7 +880,7 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
       BackdropFiltersForPass(quad->render_pass_id);
   if (!ShouldApplyBackdropFilters(backdrop_filters, quad))
     return nullptr;
-  absl::optional<gfx::RRectF> backdrop_filter_bounds_input =
+  std::optional<gfx::RRectF> backdrop_filter_bounds_input =
       BackdropFilterBoundsForPass(quad->render_pass_id);
 
   if (backdrop_filter_bounds_input.has_value()) {
@@ -826,7 +897,7 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
       current_frame()->target_to_device_transform);
   contents_device_transform.Flatten();
 
-  absl::optional<gfx::RRectF> backdrop_filter_bounds;
+  std::optional<gfx::RRectF> backdrop_filter_bounds;
   gfx::Transform backdrop_filter_bounds_transform;
   gfx::Rect unclipped_rect;
   gfx::Rect backdrop_rect = GetBackdropBoundingBoxForRenderPassQuad(
@@ -880,7 +951,8 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
   DCHECK(!FiltersForPass(quad->render_pass_id))
       << "Filters should always be in a separate Effect node";
 
-  // TODO(989238): Software renderer does not support/implement kClamp_TileMode.
+  // TODO(crbug.com/40036319): Software renderer does not support/implement
+  // kClamp_TileMode.
   SkIRect result_rect;
   sk_sp<SkImage> filtered_image =
       ApplyImageFilter(filter.get(), quad, backdrop_bitmap,

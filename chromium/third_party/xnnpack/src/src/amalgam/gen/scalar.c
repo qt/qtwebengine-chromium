@@ -239,7 +239,7 @@ void xnn_f16_qs8_vcvt_ukernel__scalar_imagic_u4(
   }
 }
 
-void xnn_f16_rminmax_ukernel__scalar_u4_acc4(
+void xnn_f16_rmax_ukernel__scalar_u2_acc2(
     size_t batch,
     const void* input,
     void* output,
@@ -253,47 +253,65 @@ void xnn_f16_rminmax_ukernel__scalar_u4_acc4(
   const uint16_t* i = (const uint16_t*) input;
   uint16_t* o = (uint16_t*) output;
 
-  float vmin0 = fp16_ieee_to_fp32_value(*i);
-  float vmax0 = fp16_ieee_to_fp32_value(*i);
-  float vmin1 = vmin0;
-  float vmax1 = vmax0;
-  float vmin2 = vmin0;
-  float vmax2 = vmax0;
-  float vmin3 = vmin0;
-  float vmax3 = vmax0;
-  for (; batch >= 4 * sizeof(uint16_t); batch -= 4 * sizeof(uint16_t)) {
-    const float vt0 = fp16_ieee_to_fp32_value(i[0]);
-    const float vt1 = fp16_ieee_to_fp32_value(i[1]);
-    const float vt2 = fp16_ieee_to_fp32_value(i[2]);
-    const float vt3 = fp16_ieee_to_fp32_value(i[3]);
-    i += 4;
+  int16_t vt = math_signcomplement_f16(*i);
+  int16_t vmax0 = vt;
+  int16_t vmax1 = vt;
+  for (; batch >= 2 * sizeof(uint16_t); batch -= 2 * sizeof(uint16_t)) {
+    const int16_t vt0 = math_signcomplement_f16(i[0]);
+    const int16_t vt1 = math_signcomplement_f16(i[1]);
+    i += 2;
 
-    vmin0 = math_min_f32(vmin0, vt0);
-    vmax0 = math_max_f32(vmax0, vt0);
-    vmin1 = math_min_f32(vmin1, vt1);
-    vmax1 = math_max_f32(vmax1, vt1);
-    vmin2 = math_min_f32(vmin2, vt2);
-    vmax2 = math_max_f32(vmax2, vt2);
-    vmin3 = math_min_f32(vmin3, vt3);
-    vmax3 = math_max_f32(vmax3, vt3);
+    vmax0 = math_max_s16(vmax0, vt0);
+    vmax1 = math_max_s16(vmax1, vt1);
   }
-  vmin0 = math_min_f32(vmin0, vmin1);
-  vmax0 = math_max_f32(vmax0, vmax1);
-  vmin2 = math_min_f32(vmin2, vmin3);
-  vmax2 = math_max_f32(vmax2, vmax3);
-  vmin0 = math_min_f32(vmin0, vmin2);
-  vmax0 = math_max_f32(vmax0, vmax2);
+  vmax0 = math_max_s16(vmax0, vmax1);
 
   if XNN_UNLIKELY(batch != 0) {
-    do {
-      const float vt = fp16_ieee_to_fp32_value(*i++);
-      vmin0 = math_min_f32(vmin0, vt);
-      vmax0 = math_max_f32(vmax0, vt);
-      batch -= sizeof(uint16_t);
-    } while (batch != 0);
+    vt = math_signcomplement_f16(*i);
+    vmax0 = math_max_s16(vmax0, vt);
   }
-  o[0] = fp16_ieee_from_fp32_value(vmin0);
-  o[1] = fp16_ieee_from_fp32_value(vmax0);
+  o[0] = (uint16_t) math_signcomplement_f16((uint16_t) vmax0);
+}
+
+void xnn_f16_rminmax_ukernel__scalar_u2_acc2(
+    size_t batch,
+    const void* input,
+    void* output,
+    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(uint16_t) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  const uint16_t* i = (const uint16_t*) input;
+  uint16_t* o = (uint16_t*) output;
+
+  int16_t vt = math_signcomplement_f16(*i);
+  int16_t vmin0 = vt;
+  int16_t vmax0 = vt;
+  int16_t vmin1 = vt;
+  int16_t vmax1 = vt;
+  for (; batch >= 2 * sizeof(uint16_t); batch -= 2 * sizeof(uint16_t)) {
+    const int16_t vt0 = math_signcomplement_f16(i[0]);
+    const int16_t vt1 = math_signcomplement_f16(i[1]);
+    i += 2;
+
+    vmin0 = math_min_s16(vmin0, vt0);
+    vmax0 = math_max_s16(vmax0, vt0);
+    vmin1 = math_min_s16(vmin1, vt1);
+    vmax1 = math_max_s16(vmax1, vt1);
+  }
+  vmin0 = math_min_s16(vmin0, vmin1);
+  vmax0 = math_max_s16(vmax0, vmax1);
+
+  if XNN_UNLIKELY(batch != 0) {
+    vt = math_signcomplement_f16(*i);
+    vmin0 = math_min_s16(vmin0, vt);
+    vmax0 = math_max_s16(vmax0, vt);
+  }
+  o[0] = (uint16_t) math_signcomplement_f16((uint16_t) vmin0);
+  o[1] = (uint16_t) math_signcomplement_f16((uint16_t) vmax0);
 }
 
 void xnn_f32_argmaxpool_ukernel_4x__scalar_c1(
@@ -10603,7 +10621,7 @@ void xnn_f32_rsum_ukernel__scalar_u4_acc4(
   }
   const float vscale = params->scalar.scale;
   vacc0 *= vscale;
-  *output = vacc0;
+  *output += vacc0;
 }
 
 void xnn_f32_spmm_minmax_ukernel_8x1__scalar(
@@ -13994,6 +14012,67 @@ void xnn_f32_vrndz_ukernel__scalar_libm_u4(
   }
 }
 
+void xnn_f32_vrsqrt_ukernel__scalar_rsqrt_u1(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  for (; batch >= sizeof(float); batch -= sizeof(float)) {
+    const float vx = *input++;
+    const float vy = 1.0f / sqrtf(vx);
+    *output++ = vy;
+  }
+}
+
+void xnn_f32_vrsqrt_ukernel__scalar_rsqrt_u4(
+    size_t batch,
+    const float* input,
+    float* output,
+    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+{
+  assert(batch != 0);
+  assert(batch % sizeof(float) == 0);
+  assert(input != NULL);
+  assert(output != NULL);
+
+  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
+    const float vx0 = input[0];
+    const float vx1 = input[1];
+    const float vx2 = input[2];
+    const float vx3 = input[3];
+    input += 4;
+
+    const float vt0 = sqrtf(vx0);
+    const float vt1 = sqrtf(vx1);
+    const float vt2 = sqrtf(vx2);
+    const float vt3 = sqrtf(vx3);
+    const float vy0 = 1.0f / vt0;
+    const float vy1 = 1.0f / vt1;
+    const float vy2 = 1.0f / vt2;
+    const float vy3 = 1.0f / vt3;
+
+    output[0] = vy0;
+    output[1] = vy1;
+    output[2] = vy2;
+    output[3] = vy3;
+    output += 4;
+  }
+  if XNN_UNLIKELY(batch != 0) {
+    do {
+      const float vx = *input++;
+      const float vy = 1.0f / sqrtf(vx);
+      *output++ = vy;
+      batch -= sizeof(float);
+    } while (batch != 0);
+  }
+}
+
 extern XNN_INTERNAL const uint32_t xnn_table_exp2minus_k_over_64[64];
 
 void xnn_f32_vsigmoid_ukernel__scalar_rr2_lut64_p2_div_u2(
@@ -14127,176 +14206,65 @@ void xnn_f32_vsqrt_ukernel__scalar_sqrt_u1(
   }
 }
 
-extern XNN_INTERNAL const uint32_t xnn_table_exp2minus_k_over_8[8];
-
-void xnn_f32_vtanh_ukernel__scalar_expm1minus_rr1_lut8_p4h3ts_div_u4(
+void xnn_f32_vtanh_ukernel__scalar_rational_9_6_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
   assert(output != NULL);
 
-  const float vsat_cutoff = params->scalar_expm1minus_rr1_lut8_p4h3.sat_cutoff;
-  const float vminus_log2e = params->scalar_expm1minus_rr1_lut8_p4h3.minus_log2e;
-  const float vmagic_bias = params->scalar_expm1minus_rr1_lut8_p4h3.magic_bias;
-  const uint32_t vindex_mask = UINT32_C(0x7);
-  const float vln2 = params->scalar_expm1minus_rr1_lut8_p4h3.ln2;
-  const float vc4 = params->scalar_expm1minus_rr1_lut8_p4h3.c4;
-  const float vc3 = params->scalar_expm1minus_rr1_lut8_p4h3.c3;
-  const float vc2 = params->scalar_expm1minus_rr1_lut8_p4h3.c2;
-  const float vminus_two = params->scalar_expm1minus_rr1_lut8_p4h3.minus_two;
-  const float vone = params->scalar_expm1minus_rr1_lut8_p4h3.one;
+  // Cap the inputs to this value as `tanh(x)` will always be `+/-1.0f` beyond
+  // this point. This value is chosen as the first floating point number as of
+  // which the interpolation returns 1.0f.
+  const float max_x = 7.623543739319f;
+  const float min_x = -7.623543739319f;
+  
+  // The monomial coefficients of the numerator polynomial (odd).
+  const float alpha_1 = -9.022999554873e-03f;
+  const float alpha_3 = -1.146968104877e-03f;
+  const float alpha_5 = -2.432360815874e-05f;
+  const float alpha_7 = -6.458659385089e-08f;
+  const float alpha_9 = 5.535878699892e-11f;
 
-  for (; batch >= 4 * sizeof(float); batch -= 4 * sizeof(float)) {
-    const float vx0 = input[0];
-    const float vx1 = input[1];
-    const float vx2 = input[2];
-    const float vx3 = input[3];
-    input += 4;
+  // The monomial coefficients of the denominator polynomial (even).
+  const float beta_0 = -9.023001417518e-03f;
+  const float beta_2 = -4.154618829489e-03f;
+  const float beta_4 = -2.061512641376e-04f;
+  const float beta_6 = -1.774490101525e-06f;
+  
+  for (; batch >= sizeof(float); batch -= sizeof(float)) {
+    float x = *input;
+    input++;
 
-    float vz0 = fabsf(vx0);
-    float vz1 = fabsf(vx1);
-    float vz2 = fabsf(vx2);
-    float vz3 = fabsf(vx3);
+    // Clamp the inputs to the interpolation range. Note that we don't use
+    //`fminf` or `fmaxf` since they let `NaN`s through.
+    x = max_x < x ? max_x : x;
+    x = x < min_x ? min_x : x;
 
-    vz0 = math_pmin_f32(vz0, vsat_cutoff);
-    vz1 = math_pmin_f32(vz1, vsat_cutoff);
-    vz2 = math_pmin_f32(vz2, vsat_cutoff);
-    vz3 = math_pmin_f32(vz3, vsat_cutoff);
+    // Since the polynomials are odd/even, we need x^2.
+    const float x2 = x * x;
 
-    float vn0 = vz0 * vminus_log2e + vmagic_bias;
-    float vn1 = vz1 * vminus_log2e + vmagic_bias;
-    float vn2 = vz2 * vminus_log2e + vmagic_bias;
-    float vn3 = vz3 * vminus_log2e + vmagic_bias;
+    // Evaluate the numerator polynomial p.
+    float p = x2 * alpha_9 + alpha_7;
+    p = x2 * p + alpha_5;
+    p = x2 * p + alpha_3;
+    p = x2 * p + alpha_1;
+    p = x * p;
 
-    const uint32_t vb0 = float_as_uint32(vn0);
-    vn0 -= vmagic_bias;
-    const uint32_t vb1 = float_as_uint32(vn1);
-    vn1 -= vmagic_bias;
-    const uint32_t vb2 = float_as_uint32(vn2);
-    vn2 -= vmagic_bias;
-    const uint32_t vb3 = float_as_uint32(vn3);
-    vn3 -= vmagic_bias;
+    // Evaluate the denominator polynomial q.
+    float q = x2 * beta_6 + beta_4;
+    q = x2 * q + beta_2;
+    q = x2 * q + beta_0;
 
-    const uint32_t vidx0 = vb0 & vindex_mask;
-    const uint32_t vidx1 = vb1 & vindex_mask;
-    const uint32_t vidx2 = vb2 & vindex_mask;
-    const uint32_t vidx3 = vb3 & vindex_mask;
+    // Divide the numerator by the denominator.
+    const float y =  p / q;
 
-    const uint32_t vl0 = xnn_table_exp2minus_k_over_8[vidx0];
-    uint32_t ve0 = vb0 << 20;
-    const uint32_t vl1 = xnn_table_exp2minus_k_over_8[vidx1];
-    uint32_t ve1 = vb1 << 20;
-    const uint32_t vl2 = xnn_table_exp2minus_k_over_8[vidx2];
-    uint32_t ve2 = vb2 << 20;
-    const uint32_t vl3 = xnn_table_exp2minus_k_over_8[vidx3];
-    uint32_t ve3 = vb3 << 20;
-
-    ve0 += vl0;
-    ve1 += vl1;
-    ve2 += vl2;
-    ve3 += vl3;
-
-    const float vt0 = vn0 * vln2 + vz0;
-    const float vs0 = uint32_as_float(ve0);
-    const float vt1 = vn1 * vln2 + vz1;
-    const float vs1 = uint32_as_float(ve1);
-    const float vt2 = vn2 * vln2 + vz2;
-    const float vs2 = uint32_as_float(ve2);
-    const float vt3 = vn3 * vln2 + vz3;
-    const float vs3 = uint32_as_float(ve3);
-
-    float vp0 = vc4 * vt0 + vc3;
-    float vp1 = vc4 * vt1 + vc3;
-    float vp2 = vc4 * vt2 + vc3;
-    float vp3 = vc4 * vt3 + vc3;
-    vp0 = vp0 * vt0 + vc2;
-    vp1 = vp1 * vt1 + vc2;
-    vp2 = vp2 * vt2 + vc2;
-    vp3 = vp3 * vt3 + vc2;
-    vp0 = vp0 * vt0 + vminus_two;
-    vp1 = vp1 * vt1 + vminus_two;
-    vp2 = vp2 * vt2 + vminus_two;
-    vp3 = vp3 * vt3 + vminus_two;
-
-    const float vts0 = vt0 * vs0;
-    const float vsmo0 = vs0 - vone;
-    const float vts1 = vt1 * vs1;
-    const float vsmo1 = vs1 - vone;
-    const float vts2 = vt2 * vs2;
-    const float vsmo2 = vs2 - vone;
-    const float vts3 = vt3 * vs3;
-    const float vsmo3 = vs3 - vone;
-
-    const float vemo0 = vp0 * vts0 + vsmo0;
-    const float vemo1 = vp1 * vts1 + vsmo1;
-    const float vemo2 = vp2 * vts2 + vsmo2;
-    const float vemo3 = vp3 * vts3 + vsmo3;
-
-    const float vepo0 = vemo0 - vminus_two;
-    const float vepo1 = vemo1 - vminus_two;
-    const float vepo2 = vemo2 - vminus_two;
-    const float vepo3 = vemo3 - vminus_two;
-
-    float vy0 = vemo0 / vepo0;
-    float vy1 = vemo1 / vepo1;
-    float vy2 = vemo2 / vepo2;
-    float vy3 = vemo3 / vepo3;
-
-    vy0 = copysignf(vy0, vx0);
-    vy1 = copysignf(vy1, vx1);
-    vy2 = copysignf(vy2, vx2);
-    vy3 = copysignf(vy3, vx3);
-
-    output[0] = vy0;
-    output[1] = vy1;
-    output[2] = vy2;
-    output[3] = vy3;
-    output += 4;
-  }
-  if XNN_UNLIKELY(batch != 0) {
-    do {
-      const float vx = *input++;
-
-      float vz = fabsf(vx);
-
-      vz = math_pmin_f32(vz, vsat_cutoff);
-
-      float vn = vz * vminus_log2e + vmagic_bias;
-
-      const uint32_t vb = float_as_uint32(vn);
-      vn -= vmagic_bias;
-
-      const uint32_t vidx = vb & vindex_mask;
-      const uint32_t vl = xnn_table_exp2minus_k_over_8[vidx];
-      uint32_t ve = vb << 20;
-      ve += vl;
-      const float vs = uint32_as_float(ve);
-
-      const float vt = vn * vln2 + vz;
-
-      float vp = vc4 * vt + vc3;
-      vp = vp * vt + vc2;
-      vp = vp * vt + vminus_two;
-
-      const float vts = vt * vs;
-      const float vsmo = vs - vone;
-      const float vemo = vp * vts + vsmo;
-
-      const float vepo = vemo - vminus_two;
-
-      float vy = vemo / vepo;
-
-      vy = copysignf(vy, vx);
-
-      *output++ = vy;
-
-      batch -= sizeof(float);
-    } while (batch != 0);
+    *output = y;
+    output++;
   }
 }
 
@@ -18649,1096 +18617,6 @@ void xnn_qs8_gavgpool_minmax_fp32_ukernel_7x__scalar_imagic_c4(
       *output++ = (int8_t) vout;
     } while (--channels != 0);
   }
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_1x2__scalar_imagic(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-
-  do {
-    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
-    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
-    w = (const int32_t*) w + 2;
-
-    size_t k = kc;
-    do {
-      const int32_t va0 = (int32_t) *a0++;
-
-      const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-      const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-      w = (const int8_t*) w + 2;
-
-      vacc0x0 += va0 * vb0;
-      vacc0x1 += va0 * vb1;
-
-      k -= sizeof(int8_t);
-    } while (k != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-
-    const float vscale = params->fp32_scalar_imagic.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-
-    const float vmagic_bias = params->fp32_scalar_imagic.magic_bias;
-    vfpacc0x0 += vmagic_bias;
-    vfpacc0x1 += vmagic_bias;
-
-    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
-
-    const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
-    vout0x0 = math_max_s32(vout0x0, vmagic_min);
-    vout0x1 = math_max_s32(vout0x1, vmagic_min);
-
-    const int32_t vmagic_max = params->fp32_scalar_imagic.magic_max;
-    vout0x0 = math_min_s32(vout0x0, vmagic_max);
-    vout0x1 = math_min_s32(vout0x1, vmagic_max);
-
-    const int32_t vmagic_bias_less_zero_point = params->fp32_scalar_imagic.magic_bias_less_zero_point;
-    vout0x0 -= vmagic_bias_less_zero_point;
-    vout0x1 -= vmagic_bias_less_zero_point;
-
-    if XNN_LIKELY(nc >= 2) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      nc -= 2;
-    } else {
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-
-  do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
-    int32_t vacc0x2 = ((const int32_t*) w)[2];
-    int32_t vacc0x3 = ((const int32_t*) w)[3];
-    w = (const int32_t*) w + 4;
-
-    size_t k = kc;
-    do {
-      const int32_t va0 = (int32_t) *a0++;
-
-      const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-      const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-      const int32_t vb2 = (int32_t) ((const int8_t*) w)[2];
-      const int32_t vb3 = (int32_t) ((const int8_t*) w)[3];
-      w = (const int8_t*) w + 4;
-
-      vacc0x0 += va0 * vb0;
-      vacc0x1 += va0 * vb1;
-      vacc0x2 += va0 * vb2;
-      vacc0x3 += va0 * vb3;
-
-      k -= sizeof(int8_t);
-    } while (k != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc0x2 = (float) vacc0x2;
-    float vfpacc0x3 = (float) vacc0x3;
-
-    const float vscale = params->fp32_scalar_lrintf.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc0x2 *= vscale;
-    vfpacc0x3 *= vscale;
-
-    const float voutput_min_less_zero_point = params->fp32_scalar_lrintf.output_min_less_zero_point;
-    vfpacc0x0 = math_max_f32(vfpacc0x0, voutput_min_less_zero_point);
-    vfpacc0x1 = math_max_f32(vfpacc0x1, voutput_min_less_zero_point);
-    vfpacc0x2 = math_max_f32(vfpacc0x2, voutput_min_less_zero_point);
-    vfpacc0x3 = math_max_f32(vfpacc0x3, voutput_min_less_zero_point);
-
-    const float voutput_max_less_zero_point = params->fp32_scalar_lrintf.output_max_less_zero_point;
-    vfpacc0x0 = math_min_f32(vfpacc0x0, voutput_max_less_zero_point);
-    vfpacc0x1 = math_min_f32(vfpacc0x1, voutput_max_less_zero_point);
-    vfpacc0x2 = math_min_f32(vfpacc0x2, voutput_max_less_zero_point);
-    vfpacc0x3 = math_min_f32(vfpacc0x3, voutput_max_less_zero_point);
-
-    const int32_t vrndacc0x0 = (int32_t) lrintf(vfpacc0x0);
-    const int32_t vrndacc0x1 = (int32_t) lrintf(vfpacc0x1);
-    const int32_t vrndacc0x2 = (int32_t) lrintf(vfpacc0x2);
-    const int32_t vrndacc0x3 = (int32_t) lrintf(vfpacc0x3);
-
-    const int32_t voutput_zero_point = params->fp32_scalar_lrintf.output_zero_point;
-    int32_t vout0x0 = vrndacc0x0 + voutput_zero_point;
-    int32_t vout0x1 = vrndacc0x1 + voutput_zero_point;
-    int32_t vout0x2 = vrndacc0x2 + voutput_zero_point;
-    int32_t vout0x3 = vrndacc0x3 + voutput_zero_point;
-
-    if XNN_LIKELY(nc >= 4) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-      c0[2] = (int8_t) vout0x2;
-      c0[3] = (int8_t) vout0x3;
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        c0[0] = (int8_t) vout0x0;
-        c0[1] = (int8_t) vout0x1;
-        vout0x0 = vout0x2;
-        c0 += 2;
-      }
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_2x2__scalar_imagic(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 2);
-  assert(nc != 0);
-  assert(kc != 0);
-
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-  const int8_t* a1 = (const int8_t*) ((uintptr_t) a0 + a_stride);
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr != 2) {
-    a1 = a0;
-    c1 = c0;
-  }
-
-  do {
-    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
-    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
-    int32_t vacc1x0 = vacc0x0;
-    int32_t vacc1x1 = vacc0x1;
-    w = (const int32_t*) w + 2;
-
-    size_t k = kc;
-    do {
-      const int32_t va0 = (int32_t) *a0++;
-      const int32_t va1 = (int32_t) *a1++;
-
-      const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-      const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-      w = (const int8_t*) w + 2;
-
-      vacc0x0 += va0 * vb0;
-      vacc0x1 += va0 * vb1;
-      vacc1x0 += va1 * vb0;
-      vacc1x1 += va1 * vb1;
-
-      k -= sizeof(int8_t);
-    } while (k != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc1x0 = (float) vacc1x0;
-    float vfpacc1x1 = (float) vacc1x1;
-
-    const float vscale = params->fp32_scalar_imagic.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc1x0 *= vscale;
-    vfpacc1x1 *= vscale;
-
-    const float vmagic_bias = params->fp32_scalar_imagic.magic_bias;
-    vfpacc0x0 += vmagic_bias;
-    vfpacc0x1 += vmagic_bias;
-    vfpacc1x0 += vmagic_bias;
-    vfpacc1x1 += vmagic_bias;
-
-    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
-    int32_t vout1x0 = (int32_t) float_as_uint32(vfpacc1x0);
-    int32_t vout1x1 = (int32_t) float_as_uint32(vfpacc1x1);
-
-    const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
-    vout0x0 = math_max_s32(vout0x0, vmagic_min);
-    vout0x1 = math_max_s32(vout0x1, vmagic_min);
-    vout1x0 = math_max_s32(vout1x0, vmagic_min);
-    vout1x1 = math_max_s32(vout1x1, vmagic_min);
-
-    const int32_t vmagic_max = params->fp32_scalar_imagic.magic_max;
-    vout0x0 = math_min_s32(vout0x0, vmagic_max);
-    vout0x1 = math_min_s32(vout0x1, vmagic_max);
-    vout1x0 = math_min_s32(vout1x0, vmagic_max);
-    vout1x1 = math_min_s32(vout1x1, vmagic_max);
-
-    const int32_t vmagic_bias_less_zero_point = params->fp32_scalar_imagic.magic_bias_less_zero_point;
-    vout0x0 -= vmagic_bias_less_zero_point;
-    vout0x1 -= vmagic_bias_less_zero_point;
-    vout1x0 -= vmagic_bias_less_zero_point;
-    vout1x1 -= vmagic_bias_less_zero_point;
-
-    if XNN_LIKELY(nc >= 2) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-      c1[0] = (int8_t) vout1x0;
-      c1[1] = (int8_t) vout1x1;
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-      a1 = (const int8_t*) ((uintptr_t) a1 - kc);
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-
-      nc -= 2;
-    } else {
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-        c1[0] = (int8_t) vout1x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_gemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    const int8_t* restrict a,
-    size_t a_stride,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 3);
-  assert(nc != 0);
-  assert(kc != 0);
-
-  const int8_t* a0 = a;
-  int8_t* c0 = c;
-  const int8_t* a1 = (const int8_t*) ((uintptr_t) a0 + a_stride);
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr < 2) {
-    a1 = a0;
-    c1 = c0;
-  }
-  const int8_t* a2 = (const int8_t*) ((uintptr_t) a1 + a_stride);
-  int8_t* c2 = (int8_t*) ((uintptr_t) c1 + cm_stride);
-  if XNN_UNPREDICTABLE(mr <= 2) {
-    a2 = a1;
-    c2 = c1;
-  }
-
-  do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
-    int32_t vacc0x2 = ((const int32_t*) w)[2];
-    int32_t vacc0x3 = ((const int32_t*) w)[3];
-    int32_t vacc1x0 = vacc0x0;
-    int32_t vacc1x1 = vacc0x1;
-    int32_t vacc1x2 = vacc0x2;
-    int32_t vacc1x3 = vacc0x3;
-    int32_t vacc2x0 = vacc0x0;
-    int32_t vacc2x1 = vacc0x1;
-    int32_t vacc2x2 = vacc0x2;
-    int32_t vacc2x3 = vacc0x3;
-    w = (const int32_t*) w + 4;
-
-    size_t k = kc;
-    do {
-      const int32_t va0 = (int32_t) *a0++;
-      const int32_t va1 = (int32_t) *a1++;
-      const int32_t va2 = (int32_t) *a2++;
-
-      const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-      const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-      const int32_t vb2 = (int32_t) ((const int8_t*) w)[2];
-      const int32_t vb3 = (int32_t) ((const int8_t*) w)[3];
-      w = (const int8_t*) w + 4;
-
-      vacc0x0 += va0 * vb0;
-      vacc0x1 += va0 * vb1;
-      vacc0x2 += va0 * vb2;
-      vacc0x3 += va0 * vb3;
-      vacc1x0 += va1 * vb0;
-      vacc1x1 += va1 * vb1;
-      vacc1x2 += va1 * vb2;
-      vacc1x3 += va1 * vb3;
-      vacc2x0 += va2 * vb0;
-      vacc2x1 += va2 * vb1;
-      vacc2x2 += va2 * vb2;
-      vacc2x3 += va2 * vb3;
-
-      k -= sizeof(int8_t);
-    } while (k != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc0x2 = (float) vacc0x2;
-    float vfpacc0x3 = (float) vacc0x3;
-    float vfpacc1x0 = (float) vacc1x0;
-    float vfpacc1x1 = (float) vacc1x1;
-    float vfpacc1x2 = (float) vacc1x2;
-    float vfpacc1x3 = (float) vacc1x3;
-    float vfpacc2x0 = (float) vacc2x0;
-    float vfpacc2x1 = (float) vacc2x1;
-    float vfpacc2x2 = (float) vacc2x2;
-    float vfpacc2x3 = (float) vacc2x3;
-
-    const float vscale = params->fp32_scalar_lrintf.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc0x2 *= vscale;
-    vfpacc0x3 *= vscale;
-    vfpacc1x0 *= vscale;
-    vfpacc1x1 *= vscale;
-    vfpacc1x2 *= vscale;
-    vfpacc1x3 *= vscale;
-    vfpacc2x0 *= vscale;
-    vfpacc2x1 *= vscale;
-    vfpacc2x2 *= vscale;
-    vfpacc2x3 *= vscale;
-
-    const float voutput_min_less_zero_point = params->fp32_scalar_lrintf.output_min_less_zero_point;
-    vfpacc0x0 = math_max_f32(vfpacc0x0, voutput_min_less_zero_point);
-    vfpacc0x1 = math_max_f32(vfpacc0x1, voutput_min_less_zero_point);
-    vfpacc0x2 = math_max_f32(vfpacc0x2, voutput_min_less_zero_point);
-    vfpacc0x3 = math_max_f32(vfpacc0x3, voutput_min_less_zero_point);
-    vfpacc1x0 = math_max_f32(vfpacc1x0, voutput_min_less_zero_point);
-    vfpacc1x1 = math_max_f32(vfpacc1x1, voutput_min_less_zero_point);
-    vfpacc1x2 = math_max_f32(vfpacc1x2, voutput_min_less_zero_point);
-    vfpacc1x3 = math_max_f32(vfpacc1x3, voutput_min_less_zero_point);
-    vfpacc2x0 = math_max_f32(vfpacc2x0, voutput_min_less_zero_point);
-    vfpacc2x1 = math_max_f32(vfpacc2x1, voutput_min_less_zero_point);
-    vfpacc2x2 = math_max_f32(vfpacc2x2, voutput_min_less_zero_point);
-    vfpacc2x3 = math_max_f32(vfpacc2x3, voutput_min_less_zero_point);
-
-    const float voutput_max_less_zero_point = params->fp32_scalar_lrintf.output_max_less_zero_point;
-    vfpacc0x0 = math_min_f32(vfpacc0x0, voutput_max_less_zero_point);
-    vfpacc0x1 = math_min_f32(vfpacc0x1, voutput_max_less_zero_point);
-    vfpacc0x2 = math_min_f32(vfpacc0x2, voutput_max_less_zero_point);
-    vfpacc0x3 = math_min_f32(vfpacc0x3, voutput_max_less_zero_point);
-    vfpacc1x0 = math_min_f32(vfpacc1x0, voutput_max_less_zero_point);
-    vfpacc1x1 = math_min_f32(vfpacc1x1, voutput_max_less_zero_point);
-    vfpacc1x2 = math_min_f32(vfpacc1x2, voutput_max_less_zero_point);
-    vfpacc1x3 = math_min_f32(vfpacc1x3, voutput_max_less_zero_point);
-    vfpacc2x0 = math_min_f32(vfpacc2x0, voutput_max_less_zero_point);
-    vfpacc2x1 = math_min_f32(vfpacc2x1, voutput_max_less_zero_point);
-    vfpacc2x2 = math_min_f32(vfpacc2x2, voutput_max_less_zero_point);
-    vfpacc2x3 = math_min_f32(vfpacc2x3, voutput_max_less_zero_point);
-
-    const int32_t vrndacc0x0 = (int32_t) lrintf(vfpacc0x0);
-    const int32_t vrndacc0x1 = (int32_t) lrintf(vfpacc0x1);
-    const int32_t vrndacc0x2 = (int32_t) lrintf(vfpacc0x2);
-    const int32_t vrndacc0x3 = (int32_t) lrintf(vfpacc0x3);
-    const int32_t vrndacc1x0 = (int32_t) lrintf(vfpacc1x0);
-    const int32_t vrndacc1x1 = (int32_t) lrintf(vfpacc1x1);
-    const int32_t vrndacc1x2 = (int32_t) lrintf(vfpacc1x2);
-    const int32_t vrndacc1x3 = (int32_t) lrintf(vfpacc1x3);
-    const int32_t vrndacc2x0 = (int32_t) lrintf(vfpacc2x0);
-    const int32_t vrndacc2x1 = (int32_t) lrintf(vfpacc2x1);
-    const int32_t vrndacc2x2 = (int32_t) lrintf(vfpacc2x2);
-    const int32_t vrndacc2x3 = (int32_t) lrintf(vfpacc2x3);
-
-    const int32_t voutput_zero_point = params->fp32_scalar_lrintf.output_zero_point;
-    int32_t vout0x0 = vrndacc0x0 + voutput_zero_point;
-    int32_t vout0x1 = vrndacc0x1 + voutput_zero_point;
-    int32_t vout0x2 = vrndacc0x2 + voutput_zero_point;
-    int32_t vout0x3 = vrndacc0x3 + voutput_zero_point;
-    int32_t vout1x0 = vrndacc1x0 + voutput_zero_point;
-    int32_t vout1x1 = vrndacc1x1 + voutput_zero_point;
-    int32_t vout1x2 = vrndacc1x2 + voutput_zero_point;
-    int32_t vout1x3 = vrndacc1x3 + voutput_zero_point;
-    int32_t vout2x0 = vrndacc2x0 + voutput_zero_point;
-    int32_t vout2x1 = vrndacc2x1 + voutput_zero_point;
-    int32_t vout2x2 = vrndacc2x2 + voutput_zero_point;
-    int32_t vout2x3 = vrndacc2x3 + voutput_zero_point;
-
-    if XNN_LIKELY(nc >= 4) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-      c0[2] = (int8_t) vout0x2;
-      c0[3] = (int8_t) vout0x3;
-      c1[0] = (int8_t) vout1x0;
-      c1[1] = (int8_t) vout1x1;
-      c1[2] = (int8_t) vout1x2;
-      c1[3] = (int8_t) vout1x3;
-      c2[0] = (int8_t) vout2x0;
-      c2[1] = (int8_t) vout2x1;
-      c2[2] = (int8_t) vout2x2;
-      c2[3] = (int8_t) vout2x3;
-
-      a0 = (const int8_t*) ((uintptr_t) a0 - kc);
-      a1 = (const int8_t*) ((uintptr_t) a1 - kc);
-      a2 = (const int8_t*) ((uintptr_t) a2 - kc);
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-      c2 = (int8_t*) ((uintptr_t) c2 + cn_stride);
-
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        c0[0] = (int8_t) vout0x0;
-        c0[1] = (int8_t) vout0x1;
-        vout0x0 = vout0x2;
-        c0 += 2;
-        c1[0] = (int8_t) vout1x0;
-        c1[1] = (int8_t) vout1x1;
-        vout1x0 = vout1x2;
-        c1 += 2;
-        c2[0] = (int8_t) vout2x0;
-        c2[1] = (int8_t) vout2x1;
-        vout2x0 = vout2x2;
-        c2 += 2;
-      }
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-        c1[0] = (int8_t) vout1x0;
-        c2[0] = (int8_t) vout2x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_1x2__scalar_imagic(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (1 * sizeof(void*)) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  int8_t* c0 = c;
-
-  do {
-    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
-    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
-    w = (const void*) ((const int32_t*) w + 2);
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      assert(a0 != NULL);
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      a += 1;
-
-      size_t k = kc;
-      do {
-        const int32_t va0 = (int32_t) *a0++;
-
-        const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-        const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-        w = (const void*) ((const int8_t*) w + 2);
-
-        vacc0x0 += va0 * vb0;
-        vacc0x1 += va0 * vb1;
-
-        k -= sizeof(int8_t);
-      } while (k != 0);
-      p -= 1 * sizeof(void*);
-    } while (p != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-
-    const float vscale = params->fp32_scalar_imagic.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-
-    const float vmagic_bias = params->fp32_scalar_imagic.magic_bias;
-    vfpacc0x0 += vmagic_bias;
-    vfpacc0x1 += vmagic_bias;
-
-    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
-
-    const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
-    vout0x0 = math_max_s32(vout0x0, vmagic_min);
-    vout0x1 = math_max_s32(vout0x1, vmagic_min);
-
-    const int32_t vmagic_max = params->fp32_scalar_imagic.magic_max;
-    vout0x0 = math_min_s32(vout0x0, vmagic_max);
-    vout0x1 = math_min_s32(vout0x1, vmagic_max);
-
-    const int32_t vmagic_bias_less_zero_point = params->fp32_scalar_imagic.magic_bias_less_zero_point;
-    vout0x0 -= vmagic_bias_less_zero_point;
-    vout0x1 -= vmagic_bias_less_zero_point;
-
-    if XNN_LIKELY(nc >= 2) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-      nc -= 2;
-    } else {
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_1x4__scalar_lrintf(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 1);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (1 * sizeof(void*)) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  int8_t* c0 = c;
-
-  do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
-    int32_t vacc0x2 = ((const int32_t*) w)[2];
-    int32_t vacc0x3 = ((const int32_t*) w)[3];
-    w = (const void*) ((const int32_t*) w + 4);
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      assert(a0 != NULL);
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      a += 1;
-
-      size_t k = kc;
-      do {
-        const int32_t va0 = (int32_t) *a0++;
-
-        const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-        const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-        const int32_t vb2 = (int32_t) ((const int8_t*) w)[2];
-        const int32_t vb3 = (int32_t) ((const int8_t*) w)[3];
-        w = (const void*) ((const int8_t*) w + 4);
-
-        vacc0x0 += va0 * vb0;
-        vacc0x1 += va0 * vb1;
-        vacc0x2 += va0 * vb2;
-        vacc0x3 += va0 * vb3;
-
-        k -= sizeof(int8_t);
-      } while (k != 0);
-      p -= 1 * sizeof(void*);
-    } while (p != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc0x2 = (float) vacc0x2;
-    float vfpacc0x3 = (float) vacc0x3;
-
-    const float vscale = params->fp32_scalar_lrintf.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc0x2 *= vscale;
-    vfpacc0x3 *= vscale;
-
-    const float voutput_min_less_zero_point = params->fp32_scalar_lrintf.output_min_less_zero_point;
-    vfpacc0x0 = math_max_f32(vfpacc0x0, voutput_min_less_zero_point);
-    vfpacc0x1 = math_max_f32(vfpacc0x1, voutput_min_less_zero_point);
-    vfpacc0x2 = math_max_f32(vfpacc0x2, voutput_min_less_zero_point);
-    vfpacc0x3 = math_max_f32(vfpacc0x3, voutput_min_less_zero_point);
-
-    const float voutput_max_less_zero_point = params->fp32_scalar_lrintf.output_max_less_zero_point;
-    vfpacc0x0 = math_min_f32(vfpacc0x0, voutput_max_less_zero_point);
-    vfpacc0x1 = math_min_f32(vfpacc0x1, voutput_max_less_zero_point);
-    vfpacc0x2 = math_min_f32(vfpacc0x2, voutput_max_less_zero_point);
-    vfpacc0x3 = math_min_f32(vfpacc0x3, voutput_max_less_zero_point);
-
-    const int32_t vrndacc0x0 = (int32_t) lrintf(vfpacc0x0);
-    const int32_t vrndacc0x1 = (int32_t) lrintf(vfpacc0x1);
-    const int32_t vrndacc0x2 = (int32_t) lrintf(vfpacc0x2);
-    const int32_t vrndacc0x3 = (int32_t) lrintf(vfpacc0x3);
-
-    const int32_t voutput_zero_point = params->fp32_scalar_lrintf.output_zero_point;
-    int32_t vout0x0 = vrndacc0x0 + voutput_zero_point;
-    int32_t vout0x1 = vrndacc0x1 + voutput_zero_point;
-    int32_t vout0x2 = vrndacc0x2 + voutput_zero_point;
-    int32_t vout0x3 = vrndacc0x3 + voutput_zero_point;
-
-    if XNN_LIKELY(nc >= 4) {
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-      c0[2] = (int8_t) vout0x2;
-      c0[3] = (int8_t) vout0x3;
-
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        c0[0] = (int8_t) vout0x0;
-        c0[1] = (int8_t) vout0x1;
-        vout0x0 = vout0x2;
-        c0 += 2;
-      }
-      if (nc & 1) {
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_2x2__scalar_imagic(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 2);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (2 * sizeof(void*)) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  int8_t* c0 = c;
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr != 2) {
-    c1 = c0;
-  }
-
-  do {
-    int32_t vacc0x0 = unaligned_indexed_load_s32(w, 0);
-    int32_t vacc0x1 = unaligned_indexed_load_s32(w, 1);
-    int32_t vacc1x0 = vacc0x0;
-    int32_t vacc1x1 = vacc0x1;
-    w = (const void*) ((const int32_t*) w + 2);
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      assert(a0 != NULL);
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      const int8_t* restrict a1 = a[1];
-      assert(a1 != NULL);
-      if XNN_UNPREDICTABLE(a1 != zero) {
-        a1 = (const int8_t*) ((uintptr_t) a1 + a_offset);
-      }
-      a += 2;
-
-      size_t k = kc;
-      do {
-        const int32_t va0 = (int32_t) *a0++;
-        const int32_t va1 = (int32_t) *a1++;
-
-        const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-        const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-        w = (const void*) ((const int8_t*) w + 2);
-
-        vacc0x0 += va0 * vb0;
-        vacc0x1 += va0 * vb1;
-        vacc1x0 += va1 * vb0;
-        vacc1x1 += va1 * vb1;
-
-        k -= sizeof(int8_t);
-      } while (k != 0);
-      p -= 2 * sizeof(void*);
-    } while (p != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc1x0 = (float) vacc1x0;
-    float vfpacc1x1 = (float) vacc1x1;
-
-    const float vscale = params->fp32_scalar_imagic.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc1x0 *= vscale;
-    vfpacc1x1 *= vscale;
-
-    const float vmagic_bias = params->fp32_scalar_imagic.magic_bias;
-    vfpacc0x0 += vmagic_bias;
-    vfpacc0x1 += vmagic_bias;
-    vfpacc1x0 += vmagic_bias;
-    vfpacc1x1 += vmagic_bias;
-
-    int32_t vout0x0 = (int32_t) float_as_uint32(vfpacc0x0);
-    int32_t vout0x1 = (int32_t) float_as_uint32(vfpacc0x1);
-    int32_t vout1x0 = (int32_t) float_as_uint32(vfpacc1x0);
-    int32_t vout1x1 = (int32_t) float_as_uint32(vfpacc1x1);
-
-    const int32_t vmagic_min = params->fp32_scalar_imagic.magic_min;
-    vout0x0 = math_max_s32(vout0x0, vmagic_min);
-    vout0x1 = math_max_s32(vout0x1, vmagic_min);
-    vout1x0 = math_max_s32(vout1x0, vmagic_min);
-    vout1x1 = math_max_s32(vout1x1, vmagic_min);
-
-    const int32_t vmagic_max = params->fp32_scalar_imagic.magic_max;
-    vout0x0 = math_min_s32(vout0x0, vmagic_max);
-    vout0x1 = math_min_s32(vout0x1, vmagic_max);
-    vout1x0 = math_min_s32(vout1x0, vmagic_max);
-    vout1x1 = math_min_s32(vout1x1, vmagic_max);
-
-    const int32_t vmagic_bias_less_zero_point = params->fp32_scalar_imagic.magic_bias_less_zero_point;
-    vout0x0 -= vmagic_bias_less_zero_point;
-    vout0x1 -= vmagic_bias_less_zero_point;
-    vout1x0 -= vmagic_bias_less_zero_point;
-    vout1x1 -= vmagic_bias_less_zero_point;
-
-    if XNN_LIKELY(nc >= 2) {
-      c1[0] = (int8_t) vout1x0;
-      c1[1] = (int8_t) vout1x1;
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-      nc -= 2;
-    } else {
-      if (nc & 1) {
-        c1[0] = (int8_t) vout1x0;
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
-}
-
-void xnn_qs8_igemm_minmax_fp32_ukernel_3x4__scalar_lrintf(
-    size_t mr,
-    size_t nc,
-    size_t kc,
-    size_t ks,
-    const int8_t** restrict a,
-    const void* restrict w,
-    int8_t* restrict c,
-    size_t cm_stride,
-    size_t cn_stride,
-    size_t a_offset,
-    const int8_t* zero,
-    const union xnn_qs8_conv_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
-{
-  assert(mr != 0);
-  assert(mr <= 3);
-  assert(nc != 0);
-  assert(kc != 0);
-  assert(ks != 0);
-  assert(ks % (3 * sizeof(void*)) == 0);
-  assert(a != NULL);
-  assert(w != NULL);
-  assert(c != NULL);
-
-  int8_t* c0 = c;
-  int8_t* c1 = (int8_t*) ((uintptr_t) c0 + cm_stride);
-  if XNN_UNPREDICTABLE(mr < 2) {
-    c1 = c0;
-  }
-  int8_t* c2 = (int8_t*) ((uintptr_t) c1 + cm_stride);
-  if XNN_UNPREDICTABLE(mr <= 2) {
-    c2 = c1;
-  }
-
-  do {
-    int32_t vacc0x0 = ((const int32_t*) w)[0];
-    int32_t vacc0x1 = ((const int32_t*) w)[1];
-    int32_t vacc0x2 = ((const int32_t*) w)[2];
-    int32_t vacc0x3 = ((const int32_t*) w)[3];
-    int32_t vacc1x0 = vacc0x0;
-    int32_t vacc1x1 = vacc0x1;
-    int32_t vacc1x2 = vacc0x2;
-    int32_t vacc1x3 = vacc0x3;
-    int32_t vacc2x0 = vacc0x0;
-    int32_t vacc2x1 = vacc0x1;
-    int32_t vacc2x2 = vacc0x2;
-    int32_t vacc2x3 = vacc0x3;
-    w = (const void*) ((const int32_t*) w + 4);
-
-    size_t p = ks;
-    do {
-      const int8_t* restrict a0 = a[0];
-      assert(a0 != NULL);
-      if XNN_UNPREDICTABLE(a0 != zero) {
-        a0 = (const int8_t*) ((uintptr_t) a0 + a_offset);
-      }
-      const int8_t* restrict a1 = a[1];
-      assert(a1 != NULL);
-      if XNN_UNPREDICTABLE(a1 != zero) {
-        a1 = (const int8_t*) ((uintptr_t) a1 + a_offset);
-      }
-      const int8_t* restrict a2 = a[2];
-      assert(a2 != NULL);
-      if XNN_UNPREDICTABLE(a2 != zero) {
-        a2 = (const int8_t*) ((uintptr_t) a2 + a_offset);
-      }
-      a += 3;
-
-      size_t k = kc;
-      do {
-        const int32_t va0 = (int32_t) *a0++;
-        const int32_t va1 = (int32_t) *a1++;
-        const int32_t va2 = (int32_t) *a2++;
-
-        const int32_t vb0 = (int32_t) ((const int8_t*) w)[0];
-        const int32_t vb1 = (int32_t) ((const int8_t*) w)[1];
-        const int32_t vb2 = (int32_t) ((const int8_t*) w)[2];
-        const int32_t vb3 = (int32_t) ((const int8_t*) w)[3];
-        w = (const void*) ((const int8_t*) w + 4);
-
-        vacc0x0 += va0 * vb0;
-        vacc0x1 += va0 * vb1;
-        vacc0x2 += va0 * vb2;
-        vacc0x3 += va0 * vb3;
-        vacc1x0 += va1 * vb0;
-        vacc1x1 += va1 * vb1;
-        vacc1x2 += va1 * vb2;
-        vacc1x3 += va1 * vb3;
-        vacc2x0 += va2 * vb0;
-        vacc2x1 += va2 * vb1;
-        vacc2x2 += va2 * vb2;
-        vacc2x3 += va2 * vb3;
-
-        k -= sizeof(int8_t);
-      } while (k != 0);
-      p -= 3 * sizeof(void*);
-    } while (p != 0);
-
-    float vfpacc0x0 = (float) vacc0x0;
-    float vfpacc0x1 = (float) vacc0x1;
-    float vfpacc0x2 = (float) vacc0x2;
-    float vfpacc0x3 = (float) vacc0x3;
-    float vfpacc1x0 = (float) vacc1x0;
-    float vfpacc1x1 = (float) vacc1x1;
-    float vfpacc1x2 = (float) vacc1x2;
-    float vfpacc1x3 = (float) vacc1x3;
-    float vfpacc2x0 = (float) vacc2x0;
-    float vfpacc2x1 = (float) vacc2x1;
-    float vfpacc2x2 = (float) vacc2x2;
-    float vfpacc2x3 = (float) vacc2x3;
-
-    const float vscale = params->fp32_scalar_lrintf.scale;
-    vfpacc0x0 *= vscale;
-    vfpacc0x1 *= vscale;
-    vfpacc0x2 *= vscale;
-    vfpacc0x3 *= vscale;
-    vfpacc1x0 *= vscale;
-    vfpacc1x1 *= vscale;
-    vfpacc1x2 *= vscale;
-    vfpacc1x3 *= vscale;
-    vfpacc2x0 *= vscale;
-    vfpacc2x1 *= vscale;
-    vfpacc2x2 *= vscale;
-    vfpacc2x3 *= vscale;
-
-    const float voutput_min_less_zero_point = params->fp32_scalar_lrintf.output_min_less_zero_point;
-    vfpacc0x0 = math_max_f32(vfpacc0x0, voutput_min_less_zero_point);
-    vfpacc0x1 = math_max_f32(vfpacc0x1, voutput_min_less_zero_point);
-    vfpacc0x2 = math_max_f32(vfpacc0x2, voutput_min_less_zero_point);
-    vfpacc0x3 = math_max_f32(vfpacc0x3, voutput_min_less_zero_point);
-    vfpacc1x0 = math_max_f32(vfpacc1x0, voutput_min_less_zero_point);
-    vfpacc1x1 = math_max_f32(vfpacc1x1, voutput_min_less_zero_point);
-    vfpacc1x2 = math_max_f32(vfpacc1x2, voutput_min_less_zero_point);
-    vfpacc1x3 = math_max_f32(vfpacc1x3, voutput_min_less_zero_point);
-    vfpacc2x0 = math_max_f32(vfpacc2x0, voutput_min_less_zero_point);
-    vfpacc2x1 = math_max_f32(vfpacc2x1, voutput_min_less_zero_point);
-    vfpacc2x2 = math_max_f32(vfpacc2x2, voutput_min_less_zero_point);
-    vfpacc2x3 = math_max_f32(vfpacc2x3, voutput_min_less_zero_point);
-
-    const float voutput_max_less_zero_point = params->fp32_scalar_lrintf.output_max_less_zero_point;
-    vfpacc0x0 = math_min_f32(vfpacc0x0, voutput_max_less_zero_point);
-    vfpacc0x1 = math_min_f32(vfpacc0x1, voutput_max_less_zero_point);
-    vfpacc0x2 = math_min_f32(vfpacc0x2, voutput_max_less_zero_point);
-    vfpacc0x3 = math_min_f32(vfpacc0x3, voutput_max_less_zero_point);
-    vfpacc1x0 = math_min_f32(vfpacc1x0, voutput_max_less_zero_point);
-    vfpacc1x1 = math_min_f32(vfpacc1x1, voutput_max_less_zero_point);
-    vfpacc1x2 = math_min_f32(vfpacc1x2, voutput_max_less_zero_point);
-    vfpacc1x3 = math_min_f32(vfpacc1x3, voutput_max_less_zero_point);
-    vfpacc2x0 = math_min_f32(vfpacc2x0, voutput_max_less_zero_point);
-    vfpacc2x1 = math_min_f32(vfpacc2x1, voutput_max_less_zero_point);
-    vfpacc2x2 = math_min_f32(vfpacc2x2, voutput_max_less_zero_point);
-    vfpacc2x3 = math_min_f32(vfpacc2x3, voutput_max_less_zero_point);
-
-    const int32_t vrndacc0x0 = (int32_t) lrintf(vfpacc0x0);
-    const int32_t vrndacc0x1 = (int32_t) lrintf(vfpacc0x1);
-    const int32_t vrndacc0x2 = (int32_t) lrintf(vfpacc0x2);
-    const int32_t vrndacc0x3 = (int32_t) lrintf(vfpacc0x3);
-    const int32_t vrndacc1x0 = (int32_t) lrintf(vfpacc1x0);
-    const int32_t vrndacc1x1 = (int32_t) lrintf(vfpacc1x1);
-    const int32_t vrndacc1x2 = (int32_t) lrintf(vfpacc1x2);
-    const int32_t vrndacc1x3 = (int32_t) lrintf(vfpacc1x3);
-    const int32_t vrndacc2x0 = (int32_t) lrintf(vfpacc2x0);
-    const int32_t vrndacc2x1 = (int32_t) lrintf(vfpacc2x1);
-    const int32_t vrndacc2x2 = (int32_t) lrintf(vfpacc2x2);
-    const int32_t vrndacc2x3 = (int32_t) lrintf(vfpacc2x3);
-
-    const int32_t voutput_zero_point = params->fp32_scalar_lrintf.output_zero_point;
-    int32_t vout0x0 = vrndacc0x0 + voutput_zero_point;
-    int32_t vout0x1 = vrndacc0x1 + voutput_zero_point;
-    int32_t vout0x2 = vrndacc0x2 + voutput_zero_point;
-    int32_t vout0x3 = vrndacc0x3 + voutput_zero_point;
-    int32_t vout1x0 = vrndacc1x0 + voutput_zero_point;
-    int32_t vout1x1 = vrndacc1x1 + voutput_zero_point;
-    int32_t vout1x2 = vrndacc1x2 + voutput_zero_point;
-    int32_t vout1x3 = vrndacc1x3 + voutput_zero_point;
-    int32_t vout2x0 = vrndacc2x0 + voutput_zero_point;
-    int32_t vout2x1 = vrndacc2x1 + voutput_zero_point;
-    int32_t vout2x2 = vrndacc2x2 + voutput_zero_point;
-    int32_t vout2x3 = vrndacc2x3 + voutput_zero_point;
-
-    if XNN_LIKELY(nc >= 4) {
-      c2[0] = (int8_t) vout2x0;
-      c2[1] = (int8_t) vout2x1;
-      c2[2] = (int8_t) vout2x2;
-      c2[3] = (int8_t) vout2x3;
-      c1[0] = (int8_t) vout1x0;
-      c1[1] = (int8_t) vout1x1;
-      c1[2] = (int8_t) vout1x2;
-      c1[3] = (int8_t) vout1x3;
-      c0[0] = (int8_t) vout0x0;
-      c0[1] = (int8_t) vout0x1;
-      c0[2] = (int8_t) vout0x2;
-      c0[3] = (int8_t) vout0x3;
-
-      c2 = (int8_t*) ((uintptr_t) c2 + cn_stride);
-      c1 = (int8_t*) ((uintptr_t) c1 + cn_stride);
-      c0 = (int8_t*) ((uintptr_t) c0 + cn_stride);
-
-      a = (const int8_t**restrict) ((uintptr_t) a - ks);
-      nc -= 4;
-    } else {
-      if (nc & 2) {
-        c2[0] = (int8_t) vout2x0;
-        c2[1] = (int8_t) vout2x1;
-        vout2x0 = vout2x2;
-        c2 += 2;
-        c1[0] = (int8_t) vout1x0;
-        c1[1] = (int8_t) vout1x1;
-        vout1x0 = vout1x2;
-        c1 += 2;
-        c0[0] = (int8_t) vout0x0;
-        c0[1] = (int8_t) vout0x1;
-        vout0x0 = vout0x2;
-        c0 += 2;
-      }
-      if (nc & 1) {
-        c2[0] = (int8_t) vout2x0;
-        c1[0] = (int8_t) vout1x0;
-        c0[0] = (int8_t) vout0x0;
-      }
-
-      nc = 0;
-    }
-  } while (nc != 0);
 }
 
 void xnn_qs8_qc8w_dwconv_minmax_fp32_ukernel_25p1c__scalar_fmagic(
@@ -28641,8 +27519,8 @@ void xnn_x16_transposec_ukernel__2x4_scalar_int(
     size_t block_height,
     const union xnn_x16_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(int16_t));
-  assert(input_stride >= block_width * sizeof(int16_t));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(int16_t));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(int16_t));
 
   const size_t tile_height = 2;
   const size_t tile_width = 4;
@@ -29056,8 +27934,8 @@ void xnn_x32_transposec_ukernel__2x4_scalar_int(
     size_t block_height,
     const union xnn_x32_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(int));
-  assert(input_stride >= block_width * sizeof(int));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(int));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(int));
 
   const size_t tile_height = 2;
   const size_t tile_width = 4;
@@ -29249,8 +28127,8 @@ void xnn_x64_transposec_ukernel__4x2_scalar_int(
     size_t block_height,
     const union xnn_x64_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(int64_t));
-  assert(input_stride >= block_width * sizeof(int64_t));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(int64_t));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(int64_t));
 
   const size_t tile_height = 4;
   const size_t tile_width = 2;
@@ -29309,25 +28187,6 @@ void xnn_x64_transposec_ukernel__4x2_scalar_int(
     o1 = (int64_t*) ((uintptr_t) o1 + output_reset);
     block_width = doz(block_width, tile_width);
   } while (block_width != 0);
-}
-
-void xnn_x8_lut_ukernel__scalar_u1(
-    size_t batch,
-    const uint8_t* input,
-    uint8_t* output,
-    const uint8_t table[restrict XNN_MIN_ELEMENTS(256)])
-{
-  assert(batch != 0);
-  assert(batch % sizeof(uint8_t) == 0);
-  assert(input != NULL);
-  assert(output != NULL);
-
-  do {
-    const size_t vx = (size_t) *input++;
-    const uint32_t vt = (uint32_t) table[vx];
-    *output++ = (uint8_t) vt;
-    batch -= sizeof(uint8_t);
-  } while (batch != 0);
 }
 
 void xnn_x8_lut_ukernel__scalar_u4(
@@ -29401,40 +28260,40 @@ void xnn_x8_packw_gemm_goi_ukernel_x16__scalar_int_u2(
     size_t n = nc;
     for (;n >= 16; n -= 16) {
       if XNN_LIKELY(b != NULL) {
-        ((uint32_t*) out)[0] = b[0];
-        ((uint32_t*) out)[1] = b[1];
-        ((uint32_t*) out)[2] = b[2];
-        ((uint32_t*) out)[3] = b[3];
-        ((uint32_t*) out)[4] = b[4];
-        ((uint32_t*) out)[5] = b[5];
-        ((uint32_t*) out)[6] = b[6];
-        ((uint32_t*) out)[7] = b[7];
-        ((uint32_t*) out)[8] = b[8];
-        ((uint32_t*) out)[9] = b[9];
-        ((uint32_t*) out)[10] = b[10];
-        ((uint32_t*) out)[11] = b[11];
-        ((uint32_t*) out)[12] = b[12];
-        ((uint32_t*) out)[13] = b[13];
-        ((uint32_t*) out)[14] = b[14];
-        ((uint32_t*) out)[15] = b[15];
+        unaligned_store_s32(out + 0 * sizeof(int32_t), b[0]);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), b[1]);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), b[2]);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), b[3]);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), b[4]);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), b[5]);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), b[6]);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), b[7]);
+        unaligned_store_s32(out + 8 * sizeof(int32_t), b[8]);
+        unaligned_store_s32(out + 9 * sizeof(int32_t), b[9]);
+        unaligned_store_s32(out + 10 * sizeof(int32_t), b[10]);
+        unaligned_store_s32(out + 11 * sizeof(int32_t), b[11]);
+        unaligned_store_s32(out + 12 * sizeof(int32_t), b[12]);
+        unaligned_store_s32(out + 13 * sizeof(int32_t), b[13]);
+        unaligned_store_s32(out + 14 * sizeof(int32_t), b[14]);
+        unaligned_store_s32(out + 15 * sizeof(int32_t), b[15]);
         b += 16;
       } else {
-        ((uint32_t*) out)[0] = 0;
-        ((uint32_t*) out)[1] = 0;
-        ((uint32_t*) out)[2] = 0;
-        ((uint32_t*) out)[3] = 0;
-        ((uint32_t*) out)[4] = 0;
-        ((uint32_t*) out)[5] = 0;
-        ((uint32_t*) out)[6] = 0;
-        ((uint32_t*) out)[7] = 0;
-        ((uint32_t*) out)[8] = 0;
-        ((uint32_t*) out)[9] = 0;
-        ((uint32_t*) out)[10] = 0;
-        ((uint32_t*) out)[11] = 0;
-        ((uint32_t*) out)[12] = 0;
-        ((uint32_t*) out)[13] = 0;
-        ((uint32_t*) out)[14] = 0;
-        ((uint32_t*) out)[15] = 0;
+        unaligned_store_s32(out + 0 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 8 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 9 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 10 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 11 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 12 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 13 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 14 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 15 * sizeof(int32_t), 0);
       }
       out += 16 * sizeof(uint32_t);
 
@@ -29585,13 +28444,13 @@ void xnn_x8_packw_gemm_goi_ukernel_x16__scalar_int_u2(
       if XNN_LIKELY(b != NULL) {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = *b++;
+          unaligned_store_s32(out, *b++);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       } else {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = 0;
+          unaligned_store_s32(out, 0);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       }
@@ -29808,72 +28667,72 @@ void xnn_x8_packw_gemm_goi_ukernel_x32__scalar_int_u2(
     size_t n = nc;
     for (;n >= 32; n -= 32) {
       if XNN_LIKELY(b != NULL) {
-        ((uint32_t*) out)[0] = b[0];
-        ((uint32_t*) out)[1] = b[1];
-        ((uint32_t*) out)[2] = b[2];
-        ((uint32_t*) out)[3] = b[3];
-        ((uint32_t*) out)[4] = b[4];
-        ((uint32_t*) out)[5] = b[5];
-        ((uint32_t*) out)[6] = b[6];
-        ((uint32_t*) out)[7] = b[7];
-        ((uint32_t*) out)[8] = b[8];
-        ((uint32_t*) out)[9] = b[9];
-        ((uint32_t*) out)[10] = b[10];
-        ((uint32_t*) out)[11] = b[11];
-        ((uint32_t*) out)[12] = b[12];
-        ((uint32_t*) out)[13] = b[13];
-        ((uint32_t*) out)[14] = b[14];
-        ((uint32_t*) out)[15] = b[15];
-        ((uint32_t*) out)[16] = b[16];
-        ((uint32_t*) out)[17] = b[17];
-        ((uint32_t*) out)[18] = b[18];
-        ((uint32_t*) out)[19] = b[19];
-        ((uint32_t*) out)[20] = b[20];
-        ((uint32_t*) out)[21] = b[21];
-        ((uint32_t*) out)[22] = b[22];
-        ((uint32_t*) out)[23] = b[23];
-        ((uint32_t*) out)[24] = b[24];
-        ((uint32_t*) out)[25] = b[25];
-        ((uint32_t*) out)[26] = b[26];
-        ((uint32_t*) out)[27] = b[27];
-        ((uint32_t*) out)[28] = b[28];
-        ((uint32_t*) out)[29] = b[29];
-        ((uint32_t*) out)[30] = b[30];
-        ((uint32_t*) out)[31] = b[31];
+        unaligned_store_s32(out + 0 * sizeof(int32_t), b[0]);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), b[1]);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), b[2]);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), b[3]);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), b[4]);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), b[5]);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), b[6]);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), b[7]);
+        unaligned_store_s32(out + 8 * sizeof(int32_t), b[8]);
+        unaligned_store_s32(out + 9 * sizeof(int32_t), b[9]);
+        unaligned_store_s32(out + 10 * sizeof(int32_t), b[10]);
+        unaligned_store_s32(out + 11 * sizeof(int32_t), b[11]);
+        unaligned_store_s32(out + 12 * sizeof(int32_t), b[12]);
+        unaligned_store_s32(out + 13 * sizeof(int32_t), b[13]);
+        unaligned_store_s32(out + 14 * sizeof(int32_t), b[14]);
+        unaligned_store_s32(out + 15 * sizeof(int32_t), b[15]);
+        unaligned_store_s32(out + 16 * sizeof(int32_t), b[16]);
+        unaligned_store_s32(out + 17 * sizeof(int32_t), b[17]);
+        unaligned_store_s32(out + 18 * sizeof(int32_t), b[18]);
+        unaligned_store_s32(out + 19 * sizeof(int32_t), b[19]);
+        unaligned_store_s32(out + 20 * sizeof(int32_t), b[20]);
+        unaligned_store_s32(out + 21 * sizeof(int32_t), b[21]);
+        unaligned_store_s32(out + 22 * sizeof(int32_t), b[22]);
+        unaligned_store_s32(out + 23 * sizeof(int32_t), b[23]);
+        unaligned_store_s32(out + 24 * sizeof(int32_t), b[24]);
+        unaligned_store_s32(out + 25 * sizeof(int32_t), b[25]);
+        unaligned_store_s32(out + 26 * sizeof(int32_t), b[26]);
+        unaligned_store_s32(out + 27 * sizeof(int32_t), b[27]);
+        unaligned_store_s32(out + 28 * sizeof(int32_t), b[28]);
+        unaligned_store_s32(out + 29 * sizeof(int32_t), b[29]);
+        unaligned_store_s32(out + 30 * sizeof(int32_t), b[30]);
+        unaligned_store_s32(out + 31 * sizeof(int32_t), b[31]);
         b += 32;
       } else {
-        ((uint32_t*) out)[0] = 0;
-        ((uint32_t*) out)[1] = 0;
-        ((uint32_t*) out)[2] = 0;
-        ((uint32_t*) out)[3] = 0;
-        ((uint32_t*) out)[4] = 0;
-        ((uint32_t*) out)[5] = 0;
-        ((uint32_t*) out)[6] = 0;
-        ((uint32_t*) out)[7] = 0;
-        ((uint32_t*) out)[8] = 0;
-        ((uint32_t*) out)[9] = 0;
-        ((uint32_t*) out)[10] = 0;
-        ((uint32_t*) out)[11] = 0;
-        ((uint32_t*) out)[12] = 0;
-        ((uint32_t*) out)[13] = 0;
-        ((uint32_t*) out)[14] = 0;
-        ((uint32_t*) out)[15] = 0;
-        ((uint32_t*) out)[16] = 0;
-        ((uint32_t*) out)[17] = 0;
-        ((uint32_t*) out)[18] = 0;
-        ((uint32_t*) out)[19] = 0;
-        ((uint32_t*) out)[20] = 0;
-        ((uint32_t*) out)[21] = 0;
-        ((uint32_t*) out)[22] = 0;
-        ((uint32_t*) out)[23] = 0;
-        ((uint32_t*) out)[24] = 0;
-        ((uint32_t*) out)[25] = 0;
-        ((uint32_t*) out)[26] = 0;
-        ((uint32_t*) out)[27] = 0;
-        ((uint32_t*) out)[28] = 0;
-        ((uint32_t*) out)[29] = 0;
-        ((uint32_t*) out)[30] = 0;
-        ((uint32_t*) out)[31] = 0;
+        unaligned_store_s32(out + 0 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 8 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 9 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 10 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 11 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 12 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 13 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 14 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 15 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 16 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 17 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 18 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 19 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 20 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 21 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 22 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 23 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 24 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 25 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 26 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 27 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 28 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 29 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 30 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 31 * sizeof(int32_t), 0);
       }
       out += 32 * sizeof(uint32_t);
 
@@ -30152,13 +29011,13 @@ void xnn_x8_packw_gemm_goi_ukernel_x32__scalar_int_u2(
       if XNN_LIKELY(b != NULL) {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = *b++;
+          unaligned_store_s32(out, *b++);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       } else {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = 0;
+          unaligned_store_s32(out, 0);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       }
@@ -30551,16 +29410,16 @@ void xnn_x8_packw_gemm_goi_ukernel_x4__scalar_int_u2(
     size_t n = nc;
     for (;n >= 4; n -= 4) {
       if XNN_LIKELY(b != NULL) {
-        ((uint32_t*) out)[0] = b[0];
-        ((uint32_t*) out)[1] = b[1];
-        ((uint32_t*) out)[2] = b[2];
-        ((uint32_t*) out)[3] = b[3];
+        unaligned_store_s32(out + 0 * sizeof(int32_t), b[0]);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), b[1]);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), b[2]);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), b[3]);
         b += 4;
       } else {
-        ((uint32_t*) out)[0] = 0;
-        ((uint32_t*) out)[1] = 0;
-        ((uint32_t*) out)[2] = 0;
-        ((uint32_t*) out)[3] = 0;
+        unaligned_store_s32(out + 0 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), 0);
       }
       out += 4 * sizeof(uint32_t);
 
@@ -30615,13 +29474,13 @@ void xnn_x8_packw_gemm_goi_ukernel_x4__scalar_int_u2(
       if XNN_LIKELY(b != NULL) {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = *b++;
+          unaligned_store_s32(out, *b++);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       } else {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = 0;
+          unaligned_store_s32(out, 0);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       }
@@ -30706,24 +29565,24 @@ void xnn_x8_packw_gemm_goi_ukernel_x8__scalar_int_u2(
     size_t n = nc;
     for (;n >= 8; n -= 8) {
       if XNN_LIKELY(b != NULL) {
-        ((uint32_t*) out)[0] = b[0];
-        ((uint32_t*) out)[1] = b[1];
-        ((uint32_t*) out)[2] = b[2];
-        ((uint32_t*) out)[3] = b[3];
-        ((uint32_t*) out)[4] = b[4];
-        ((uint32_t*) out)[5] = b[5];
-        ((uint32_t*) out)[6] = b[6];
-        ((uint32_t*) out)[7] = b[7];
+        unaligned_store_s32(out + 0 * sizeof(int32_t), b[0]);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), b[1]);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), b[2]);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), b[3]);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), b[4]);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), b[5]);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), b[6]);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), b[7]);
         b += 8;
       } else {
-        ((uint32_t*) out)[0] = 0;
-        ((uint32_t*) out)[1] = 0;
-        ((uint32_t*) out)[2] = 0;
-        ((uint32_t*) out)[3] = 0;
-        ((uint32_t*) out)[4] = 0;
-        ((uint32_t*) out)[5] = 0;
-        ((uint32_t*) out)[6] = 0;
-        ((uint32_t*) out)[7] = 0;
+        unaligned_store_s32(out + 0 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 1 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 2 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 3 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 4 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 5 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 6 * sizeof(int32_t), 0);
+        unaligned_store_s32(out + 7 * sizeof(int32_t), 0);
       }
       out += 8 * sizeof(uint32_t);
 
@@ -30810,13 +29669,13 @@ void xnn_x8_packw_gemm_goi_ukernel_x8__scalar_int_u2(
       if XNN_LIKELY(b != NULL) {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = *b++;
+          unaligned_store_s32(out, *b++);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       } else {
         size_t nb = n;
         do {
-          *((uint32_t*) out) = 0;
+          unaligned_store_s32(out, 0);
           out += sizeof(uint32_t);
         } while (--nb != 0);
       }
@@ -30922,8 +29781,8 @@ void xnn_x8_transposec_ukernel__2x4_scalar_int(
     size_t block_height,
     const union xnn_x8_transpose_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
-  assert(output_stride >= block_height * sizeof(int8_t));
-  assert(input_stride >= block_width * sizeof(int8_t));
+  assert(block_width == 1 || output_stride >= block_height * sizeof(int8_t));
+  assert(block_height == 1 || input_stride >= block_width * sizeof(int8_t));
 
   const size_t tile_height = 2;
   const size_t tile_width = 4;

@@ -186,13 +186,14 @@ void Map::GeneralizeIfCanHaveTransitionableFastElementsKind(
 Handle<Map> Map::Normalize(Isolate* isolate, Handle<Map> fast_map,
                            PropertyNormalizationMode mode, const char* reason) {
   const bool kUseCache = true;
-  return Normalize(isolate, fast_map, fast_map->elements_kind(), mode,
-                   kUseCache, reason);
+  return Normalize(isolate, fast_map, fast_map->elements_kind(),
+                   Handle<HeapObject>(), mode, kUseCache, reason);
 }
 
 bool Map::EquivalentToForNormalization(const Tagged<Map> other,
                                        PropertyNormalizationMode mode) const {
-  return EquivalentToForNormalization(other, elements_kind(), mode);
+  return EquivalentToForNormalization(other, elements_kind(), prototype(),
+                                      mode);
 }
 
 bool Map::TooManyFastProperties(StoreOrigin store_origin) const {
@@ -868,11 +869,22 @@ ACCESSORS_CHECKED(Map, native_context_or_null, Tagged<Object>,
                   kConstructorOrBackPointerOrNativeContextOffset,
                   (IsNull(value) || IsNativeContext(value)) &&
                       (IsContextMap(*this) || IsMapMap(*this)))
+// Unlike native_context_or_null() this getter allows the value to be
+// equal to Smi::uninitialized_deserialization_value().
+DEF_GETTER(Map, raw_native_context_or_null, Tagged<Object>) {
+  Tagged<Object> value = TaggedField<
+      Tagged<Object>,
+      kConstructorOrBackPointerOrNativeContextOffset>::load(cage_base, *this);
+  DCHECK(IsNull(value) || IsNativeContext(value) ||
+         value == Smi::uninitialized_deserialization_value());
+  DCHECK(IsContextMap(*this) || IsMapMap(*this));
+  return value;
+}
 #if V8_ENABLE_WEBASSEMBLY
 ACCESSORS_CHECKED(Map, wasm_type_info, Tagged<WasmTypeInfo>,
                   kConstructorOrBackPointerOrNativeContextOffset,
                   IsWasmStructMap(*this) || IsWasmArrayMap(*this) ||
-                      IsWasmInternalFunctionMap(*this))
+                      IsWasmFuncRefMap(*this))
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 bool Map::IsPrototypeValidityCellValid() const {
@@ -1005,8 +1017,10 @@ OBJECT_CONSTRUCTORS_IMPL(NormalizedMapCache, WeakFixedArray)
 CAST_ACCESSOR(NormalizedMapCache)
 NEVER_READ_ONLY_SPACE_IMPL(NormalizedMapCache)
 
-int NormalizedMapCache::GetIndex(Handle<Map> map) {
-  return map->Hash() % NormalizedMapCache::kEntries;
+int NormalizedMapCache::GetIndex(Tagged<Map> map,
+                                 Tagged<HeapObject> prototype) {
+  DisallowGarbageCollection no_gc;
+  return map->Hash(prototype) % NormalizedMapCache::kEntries;
 }
 
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsNormalizedMapCache) {

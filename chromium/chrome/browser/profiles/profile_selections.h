@@ -63,7 +63,7 @@ class ProfileSelections {
     // make sure all the cases are properly covered. Using the API, if both
     // `IsRegularProfile()` and `IsGuestSession()` are true, Regular
     // ProfileSelection logic will be used.
-    // TODO(crbug.com/1348572): remove this comment once `IsGuestSession()` is
+    // TODO(crbug.com/40233408): remove this comment once `IsGuestSession()` is
     // fixed.
     Builder& WithGuest(ProfileSelection selection);
     Builder& WithSystem(ProfileSelection selection);
@@ -159,7 +159,7 @@ class ProfileSelections {
 
   // Returns the `ProfileSelection` based on the profile information through the
   // set mapping.
-  ProfileSelection GetProfileSelection(const Profile* profile) const;
+  ProfileSelection GetProfileSelection(Profile* profile) const;
 
   // Default value for the mapping of
   // Regular Profile -> `ProfileSelection::kOriginalOnly`

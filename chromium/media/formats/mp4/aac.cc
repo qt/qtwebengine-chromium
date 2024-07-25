@@ -6,14 +6,13 @@
 
 #include <stddef.h>
 
+#include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "media/base/bit_reader.h"
 #include "media/formats/mp4/rcheck.h"
 #include "media/formats/mpeg/adts_constants.h"
 
 namespace media::mp4 {
-
-constexpr uint8_t kXHeAAcType = 42;
 
 AAC::AAC()
     : profile_(0),
@@ -190,25 +189,23 @@ ChannelLayout AAC::GetChannelLayout(bool sbr_in_mimetype) const {
   return channel_layout_;
 }
 
-std::unique_ptr<uint8_t[]> AAC::CreateAdtsFromEsds(
+base::HeapArray<uint8_t> AAC::CreateAdtsFromEsds(
     base::span<const uint8_t> buffer,
     int* adts_header_size) {
   if (profile_ == kXHeAAcType) {
-    return nullptr;
+    return base::HeapArray<uint8_t>();
   }
 
   const size_t total_size = buffer.size() + kADTSHeaderMinSize;
 
   // `total_size` might be too big; ADTS represents packet size in 13 bits.
   if (total_size >= (1 << 13)) {
-    return nullptr;
+    return base::HeapArray<uint8_t>();
   }
 
-  auto adts = std::make_unique<uint8_t[]>(total_size);
-
-  auto adts_span = base::make_span(adts.get(), total_size);
-  auto adts_header = adts_span.subspan(0, kADTSHeaderMinSize);
-  auto adts_data = adts_span.subspan(kADTSHeaderMinSize);
+  auto adts = base::HeapArray<uint8_t>::Uninit(total_size);
+  auto adts_header = adts.first(kADTSHeaderMinSize);
+  auto adts_data = adts.subspan(kADTSHeaderMinSize);
 
   SetAdtsHeader(adts_header, total_size);
 
@@ -258,7 +255,7 @@ bool AAC::ConvertEsdsToADTS(std::vector<uint8_t>* buffer,
 
   adts.insert(buffer->begin(), kADTSHeaderMinSize, 0);
 
-  SetAdtsHeader(base::make_span(adts).subspan(0, kADTSHeaderMinSize), size);
+  SetAdtsHeader(base::make_span(adts).first<kADTSHeaderMinSize>(), size);
 
   *adts_header_size = kADTSHeaderMinSize;
   return true;

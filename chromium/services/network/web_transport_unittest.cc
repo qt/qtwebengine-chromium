@@ -113,7 +113,7 @@ std::string Read(mojo::ScopedDataPipeConsumerHandle readable) {
   std::string output;
   while (true) {
     char buffer[1024];
-    uint32_t size = sizeof(buffer);
+    size_t size = sizeof(buffer);
     MojoResult result =
         readable->ReadData(buffer, &size, MOJO_READ_DATA_FLAG_NONE);
     if (result == MOJO_RESULT_SHOULD_WAIT) {
@@ -156,7 +156,7 @@ class TestHandshakeClient final : public mojom::WebTransportHandshakeClient {
   }
 
   void OnHandshakeFailed(
-      const absl::optional<net::WebTransportError>& error) override {
+      const std::optional<net::WebTransportError>& error) override {
     has_seen_handshake_failure_ = true;
     handshake_error_ = error;
     receiver_.reset();
@@ -183,7 +183,7 @@ class TestHandshakeClient final : public mojom::WebTransportHandshakeClient {
   bool has_seen_mojo_connection_error() const {
     return has_seen_mojo_connection_error_;
   }
-  absl::optional<net::WebTransportError> handshake_error() const {
+  std::optional<net::WebTransportError> handshake_error() const {
     return handshake_error_;
   }
 
@@ -196,7 +196,7 @@ class TestHandshakeClient final : public mojom::WebTransportHandshakeClient {
   bool has_seen_connection_establishment_ = false;
   bool has_seen_handshake_failure_ = false;
   bool has_seen_mojo_connection_error_ = false;
-  absl::optional<net::WebTransportError> handshake_error_;
+  std::optional<net::WebTransportError> handshake_error_;
 };
 
 class TestClient final : public mojom::WebTransportClient {
@@ -561,7 +561,7 @@ TEST_F(WebTransportTest, EchoOnUnidirectionalStreams) {
   ASSERT_EQ(MOJO_RESULT_OK,
             mojo::CreateDataPipe(&options, writable_for_outgoing,
                                  readable_for_outgoing));
-  uint32_t size = 5;
+  size_t size = 5;
   ASSERT_EQ(MOJO_RESULT_OK, writable_for_outgoing->WriteData(
                                 "hello", &size, MOJO_WRITE_DATA_FLAG_NONE));
 
@@ -689,7 +689,7 @@ TEST_F(WebTransportTest, DISABLED_EchoOnBidirectionalStream) {
   ASSERT_EQ(MOJO_RESULT_OK,
             mojo::CreateDataPipe(&options, writable_for_incoming,
                                  readable_for_incoming));
-  uint32_t size = 5;
+  size_t size = 5;
   ASSERT_EQ(MOJO_RESULT_OK, writable_for_outgoing->WriteData(
                                 "hello", &size, MOJO_WRITE_DATA_FLAG_NONE));
 

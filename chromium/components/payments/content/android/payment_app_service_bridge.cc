@@ -101,7 +101,7 @@ void JNI_PaymentAppServiceBridge_Create(
     const JavaParamRef<jstring>& jtop_origin,
     const JavaParamRef<jobject>& jpayment_request_spec,
     const JavaParamRef<jstring>& jtwa_package_name,
-    // TODO(crbug.com/1209835): Remove jmay_crawl_for_installable_payment_apps,
+    // TODO(crbug.com/40182225): Remove jmay_crawl_for_installable_payment_apps,
     // as it is no longer used.
     jboolean jmay_crawl_for_installable_payment_apps,
     jboolean jis_off_the_record,
@@ -344,9 +344,9 @@ void PaymentAppServiceBridge::SetOptOutOffered() {
   set_opt_out_offered_callback_.Run();
 }
 
-absl::optional<base::UnguessableToken>
+std::optional<base::UnguessableToken>
 PaymentAppServiceBridge::GetChromeOSTWAInstanceId() const {
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 PaymentAppServiceBridge::PaymentAppServiceBridge(

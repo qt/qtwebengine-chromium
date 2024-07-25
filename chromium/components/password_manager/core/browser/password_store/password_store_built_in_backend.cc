@@ -10,6 +10,7 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "components/password_manager/core/browser/affiliation/affiliated_match_helper.h"
+#include "components/password_manager/core/browser/password_manager_buildflags.h"
 #include "components/password_manager/core/browser/password_store/get_logins_with_affiliations_request_handler.h"
 #include "components/password_manager/core/browser/password_store/login_database.h"
 #include "components/password_manager/core/browser/password_store/login_database_async_helper.h"
@@ -18,6 +19,12 @@
 #include "components/password_manager/core/browser/password_store/password_store_consumer.h"
 #include "components/password_manager/core/browser/password_store/password_store_util.h"
 #include "components/sync/model/proxy_model_type_controller_delegate.h"
+
+#if !BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
+#include "components/password_manager/core/browser/features/password_features.h"
+#include "components/password_manager/core/browser/password_store/password_model_type_controller_delegate_android.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
+#endif  // !BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
 
 namespace password_manager {
 
@@ -29,9 +36,11 @@ using SuccessStatus = PasswordStoreBackendMetricsRecorder::SuccessStatus;
 // PasswordChangesOrError as a result.
 template <typename Result>
 base::OnceCallback<Result(Result)> ReportMetricsForResultCallback(
-    MetricInfix infix) {
+    MethodName method_name) {
   PasswordStoreBackendMetricsRecorder metrics_reporter(
-      BackendInfix("BuiltInBackend"), infix);
+      BackendInfix("BuiltInBackend"), method_name,
+      PasswordStoreBackendMetricsRecorder::PasswordStoreAndroidBackendType::
+          kNone);
   return base::BindOnce(
       [](PasswordStoreBackendMetricsRecorder reporter,
          Result result) -> Result {
@@ -52,7 +61,9 @@ PasswordStoreBuiltInBackend::PasswordStoreBuiltInBackend(
     std::unique_ptr<LoginDatabase> login_db,
     syncer::WipeModelUponSyncDisabledBehavior
         wipe_model_upon_sync_disabled_behavior,
-    std::unique_ptr<UnsyncedCredentialsDeletionNotifier> notifier) {
+    PrefService* prefs,
+    std::unique_ptr<UnsyncedCredentialsDeletionNotifier> notifier)
+    : pref_service_(prefs) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   background_task_runner_ = base::ThreadPool::CreateSequencedTaskRunner(
       {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
@@ -70,11 +81,32 @@ PasswordStoreBuiltInBackend::~PasswordStoreBuiltInBackend() {
 void PasswordStoreBuiltInBackend::Shutdown(
     base::OnceClosure shutdown_completed) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  weak_ptr_factory_.InvalidateWeakPtrs();
   affiliated_match_helper_ = nullptr;
   if (helper_) {
     background_task_runner_->DeleteSoon(FROM_HERE, std::move(helper_));
     std::move(shutdown_completed).Run();
   }
+}
+
+bool PasswordStoreBuiltInBackend::IsAbleToSavePasswords() {
+#if BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
+  return is_database_initialized_successfully_;
+#else
+  CHECK(pref_service_);
+  // Database was not initialized siccessfully, disable saving.
+  if (!is_database_initialized_successfully_) {
+    return false;
+  }
+
+  // Login database is not empty continue saving passwords.
+  if (!pref_service_->GetBoolean(prefs::kEmptyProfileStoreLoginDatabase)) {
+    return true;
+  }
+
+  // Login database is empty, disable saving if M4 feature is enabled.
+  return !features::IsUnifiedPasswordManagerSyncOnlyInGMSCoreEnabled();
+#endif
 }
 
 void PasswordStoreBuiltInBackend::InitBackend(
@@ -92,7 +124,8 @@ void PasswordStoreBuiltInBackend::InitBackend(
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
           std::move(remote_form_changes_received),
           std::move(sync_enabled_or_disabled_cb)),
-      std::move(completion));
+      base::BindOnce(&PasswordStoreBuiltInBackend::OnInitComplete,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(completion)));
 }
 
 void PasswordStoreBuiltInBackend::GetAllLoginsAsync(
@@ -105,7 +138,7 @@ void PasswordStoreBuiltInBackend::GetAllLoginsAsync(
           &LoginDatabaseAsyncHelper::GetAllLogins,
           base::Unretained(helper_.get())),  // Safe until `Shutdown()`.
       ReportMetricsForResultCallback<LoginsResultOrError>(
-          MetricInfix("GetAllLoginsAsync"))
+          MethodName("GetAllLoginsAsync"))
           .Then(std::move(callback)));
 }
 
@@ -129,7 +162,7 @@ void PasswordStoreBuiltInBackend::GetAutofillableLoginsAsync(
           &LoginDatabaseAsyncHelper::GetAutofillableLogins,
           base::Unretained(helper_.get())),  // Safe until `Shutdown()`.
       ReportMetricsForResultCallback<LoginsResultOrError>(
-          MetricInfix("GetAutofillableLoginsAsync"))
+          MethodName("GetAutofillableLoginsAsync"))
           .Then(std::move(callback)));
 }
 
@@ -157,7 +190,7 @@ void PasswordStoreBuiltInBackend::FillMatchingLoginsAsync(
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
           forms, include_psl),
       ReportMetricsForResultCallback<LoginsResultOrError>(
-          MetricInfix("FillMatchingLoginsAsync"))
+          MethodName("FillMatchingLoginsAsync"))
           .Then(std::move(callback)));
 }
 
@@ -181,7 +214,7 @@ void PasswordStoreBuiltInBackend::AddLoginAsync(
       base::BindOnce(&LoginDatabaseAsyncHelper::AddLogin,
                      base::Unretained(helper_.get()), form),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
-          MetricInfix("AddLoginAsync"))
+          MethodName("AddLoginAsync"))
           .Then(std::move(callback)));
 }
 
@@ -195,11 +228,12 @@ void PasswordStoreBuiltInBackend::UpdateLoginAsync(
       base::BindOnce(&LoginDatabaseAsyncHelper::UpdateLogin,
                      base::Unretained(helper_.get()), form),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
-          MetricInfix("UpdateLoginAsync"))
+          MethodName("UpdateLoginAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::RemoveLoginAsync(
+    const base::Location& location,
     const PasswordForm& form,
     PasswordChangesOrErrorReply callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -209,13 +243,14 @@ void PasswordStoreBuiltInBackend::RemoveLoginAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::RemoveLogin,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
-          form),
+          location, form),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
-          MetricInfix("RemoveLoginAsync"))
+          MethodName("RemoveLoginAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::RemoveLoginsCreatedBetweenAsync(
+    const base::Location& location,
     base::Time delete_begin,
     base::Time delete_end,
     PasswordChangesOrErrorReply callback) {
@@ -226,13 +261,14 @@ void PasswordStoreBuiltInBackend::RemoveLoginsCreatedBetweenAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::RemoveLoginsCreatedBetween,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
-          delete_begin, delete_end),
+          location, delete_begin, delete_end),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
-          MetricInfix("RemoveLoginsCreatedBetweenAsync"))
+          MethodName("RemoveLoginsCreatedBetweenAsync"))
           .Then(std::move(callback)));
 }
 
 void PasswordStoreBuiltInBackend::RemoveLoginsByURLAndTimeAsync(
+    const base::Location& location,
     const base::RepeatingCallback<bool(const GURL&)>& url_filter,
     base::Time delete_begin,
     base::Time delete_end,
@@ -245,9 +281,10 @@ void PasswordStoreBuiltInBackend::RemoveLoginsByURLAndTimeAsync(
       base::BindOnce(
           &LoginDatabaseAsyncHelper::RemoveLoginsByURLAndTime,
           base::Unretained(helper_.get()),  // Safe until `Shutdown()`.
-          url_filter, delete_begin, delete_end, std::move(sync_completion)),
+          location, url_filter, delete_begin, delete_end,
+          std::move(sync_completion)),
       ReportMetricsForResultCallback<PasswordChangesOrError>(
-          MetricInfix("RemoveLoginsByURLAndTimeAsync"))
+          MethodName("RemoveLoginsByURLAndTimeAsync"))
           .Then(std::move(callback)));
 }
 
@@ -270,9 +307,15 @@ SmartBubbleStatsStore* PasswordStoreBuiltInBackend::GetSmartBubbleStatsStore() {
   return this;
 }
 
-std::unique_ptr<syncer::ProxyModelTypeControllerDelegate>
+std::unique_ptr<syncer::ModelTypeControllerDelegate>
 PasswordStoreBuiltInBackend::CreateSyncControllerDelegate() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+#if !BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
+  if (password_manager::features::
+          IsUnifiedPasswordManagerSyncOnlyInGMSCoreEnabled()) {
+    return std::make_unique<PasswordModelTypeConrollerDelegateAndroid>();
+  }
+#endif
   DCHECK(helper_);
   // Note that a callback is bound for
   // GetSyncControllerDelegate() because this getter itself
@@ -288,6 +331,18 @@ PasswordStoreBuiltInBackend::CreateSyncControllerDelegate() {
 
 void PasswordStoreBuiltInBackend::OnSyncServiceInitialized(
     syncer::SyncService* sync_service) {}
+
+void PasswordStoreBuiltInBackend::RecordAddLoginAsyncCalledFromTheStore() {
+  base::UmaHistogramBoolean(
+      "PasswordManager.PasswordStore.BuiltInBackend.AddLoginCalledOnStore",
+      true);
+}
+
+void PasswordStoreBuiltInBackend::RecordUpdateLoginAsyncCalledFromTheStore() {
+  base::UmaHistogramBoolean(
+      "PasswordManager.PasswordStore.BuiltInBackend.UpdateLoginCalledOnStore",
+      true);
+}
 
 base::WeakPtr<PasswordStoreBackend> PasswordStoreBuiltInBackend::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
@@ -350,6 +405,13 @@ void PasswordStoreBuiltInBackend::InjectAffiliationAndBrandingInformation(
   }
   affiliated_match_helper_->InjectAffiliationAndBrandingInformation(
       std::move(absl::get<LoginsResult>(forms_or_error)), std::move(callback));
+}
+
+void PasswordStoreBuiltInBackend::OnInitComplete(
+    base::OnceCallback<void(bool)> completion,
+    bool result) {
+  is_database_initialized_successfully_ = result;
+  std::move(completion).Run(result);
 }
 
 }  // namespace password_manager

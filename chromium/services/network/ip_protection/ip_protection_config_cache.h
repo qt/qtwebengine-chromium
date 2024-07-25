@@ -5,11 +5,12 @@
 #ifndef SERVICES_NETWORK_IP_PROTECTION_IP_PROTECTION_CONFIG_CACHE_H_
 #define SERVICES_NETWORK_IP_PROTECTION_IP_PROTECTION_CONFIG_CACHE_H_
 
+#include <optional>
+
 #include "base/component_export.h"
 #include "services/network/ip_protection/ip_protection_proxy_list_manager.h"
 #include "services/network/ip_protection/ip_protection_token_cache_manager.h"
 #include "services/network/public/mojom/network_context.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace network {
 
@@ -34,7 +35,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) IpProtectionConfigCache {
   // Returns `nullopt` if no token is available, whether for a transient or
   // permanent reason. This method may return `nullopt` even if
   // `IsAuthTokenAvailable()` recently returned `true`.
-  virtual absl::optional<network::mojom::BlindSignedAuthTokenPtr> GetAuthToken(
+  virtual std::optional<network::mojom::BlindSignedAuthTokenPtr> GetAuthToken(
       size_t chain_index) = 0;
 
   // Invalidate any previous instruction that token requests should not be
@@ -58,6 +59,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) IpProtectionConfigCache {
 
   // Check whether a proxy chain list is available.
   virtual bool IsProxyListAvailable() = 0;
+
+  // Notify the ConfigCache that QUIC proxies failed for a request, suggesting
+  // that QUIC may not work on this network.
+  virtual void QuicProxiesFailed() = 0;
 
   // Return the currently cached proxy chain lists. This contains the lists of
   // hostnames corresponding to each proxy chain that should be used. This

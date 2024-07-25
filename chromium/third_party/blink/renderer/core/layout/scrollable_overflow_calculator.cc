@@ -32,17 +32,10 @@ ScrollableOverflowCalculator::RecalculateScrollableOverflowForFragment(
   const WritingDirectionMode writing_direction =
       node.Style().GetWritingDirection();
 
-  // TODO(ikilpatrick): The final computed scrollbars for a fragment should
-  // likely live on the PhysicalBoxFragment.
-  PhysicalBoxStrut scrollbar;
-  if (fragment.IsCSSBox()) {
-    scrollbar = ComputeScrollbarsForNonAnonymous(node).ConvertToPhysical(
-        writing_direction);
-  }
-
   ScrollableOverflowCalculator calculator(
       node, fragment.IsCSSBox(), has_block_fragmentation, fragment.Borders(),
-      scrollbar, fragment.Padding(), fragment.Size(), writing_direction);
+      fragment.Scrollbar(), fragment.Padding(), fragment.Size(),
+      writing_direction);
 
   if (const FragmentItems* items = fragment.Items()) {
     calculator.AddItems(fragment, *items);
@@ -105,7 +98,7 @@ ScrollableOverflowCalculator::ScrollableOverflowCalculator(
 }
 
 const PhysicalRect ScrollableOverflowCalculator::Result(
-    const absl::optional<PhysicalRect> inflow_bounds) {
+    const std::optional<PhysicalRect> inflow_bounds) {
   if (!inflow_bounds || !is_scroll_container_)
     return scrollable_overflow_;
 
@@ -141,6 +134,10 @@ void ScrollableOverflowCalculator::AddItemsInternal(
   }
 
   for (const auto& item : items) {
+    if (item->IsHiddenForPaint()) {
+      continue;
+    }
+
     if (const auto* line_box = item->LineBoxFragment()) {
       has_hanging = line_box->HasHanging();
       line_rect = item->RectInContainerFragment();
@@ -237,6 +234,10 @@ PhysicalRect ScrollableOverflowCalculator::AdjustOverflowForScrollOrigin(
 
 PhysicalRect ScrollableOverflowCalculator::ScrollableOverflowForPropagation(
     const PhysicalBoxFragment& child_fragment) {
+  if (child_fragment.IsHiddenForPaint()) {
+    return {};
+  }
+
   // If the fragment is anonymous, just return its scrollable-overflow (don't
   // apply any incorrect transforms, etc).
   if (!child_fragment.IsCSSBox())
@@ -244,13 +245,11 @@ PhysicalRect ScrollableOverflowCalculator::ScrollableOverflowForPropagation(
 
   PhysicalRect overflow = {{}, child_fragment.Size()};
 
-  // Collapsed table rows/sections set IsHiddenForPaint flag.
   bool ignore_scrollable_overflow =
       child_fragment.ShouldApplyLayoutContainment() ||
       child_fragment.IsInlineBox() ||
       (child_fragment.ShouldClipOverflowAlongBothAxis() &&
-       !child_fragment.ShouldApplyOverflowClipMargin()) ||
-      child_fragment.IsHiddenForPaint();
+       !child_fragment.ShouldApplyOverflowClipMargin());
 
   if (!ignore_scrollable_overflow) {
     PhysicalRect child_overflow = child_fragment.ScrollableOverflow();
@@ -279,7 +278,7 @@ PhysicalRect ScrollableOverflowCalculator::ScrollableOverflowForPropagation(
   }
 
   // Apply any transforms to the overflow.
-  if (absl::optional<gfx::Transform> transform =
+  if (std::optional<gfx::Transform> transform =
           node_.GetTransformForChildFragment(child_fragment, size_)) {
     overflow =
         PhysicalRect::EnclosingRect(transform->MapRect(gfx::RectF(overflow)));

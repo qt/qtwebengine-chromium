@@ -18,6 +18,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "components/sync/base/client_tag_hash.h"
+#include "components/sync/base/deletion_origin.h"
 #include "components/sync/base/time.h"
 #include "components/sync/model/data_type_activation_request.h"
 #include "components/sync/model/entity_change.h"
@@ -68,7 +69,8 @@ class LocalSessionWriteBatch : public LocalSessionEventHandlerImpl::WriteBatch {
   void Delete(int tab_node_id) override {
     const std::string storage_key =
         batch_->DeleteLocalTabWithoutUpdatingTracker(tab_node_id);
-    processor_->Delete(storage_key, batch_->GetMetadataChangeList());
+    processor_->Delete(storage_key, syncer::DeletionOrigin::Unspecified(),
+                       batch_->GetMetadataChangeList());
   }
 
   void Put(std::unique_ptr<sync_pb::SessionSpecifics> specifics) override {
@@ -135,7 +137,7 @@ SessionSyncBridge::CreateMetadataChangeList() {
   return std::make_unique<syncer::InMemoryMetadataChangeList>();
 }
 
-absl::optional<syncer::ModelError> SessionSyncBridge::MergeFullSyncData(
+std::optional<syncer::ModelError> SessionSyncBridge::MergeFullSyncData(
     std::unique_ptr<MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_data) {
   DCHECK(!syncing_);
@@ -179,7 +181,7 @@ void SessionSyncBridge::StartLocalSessionEventHandler() {
   notify_foreign_session_updated_cb_.Run();
 }
 
-absl::optional<syncer::ModelError>
+std::optional<syncer::ModelError>
 SessionSyncBridge::ApplyIncrementalSyncChanges(
     std::unique_ptr<MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_changes) {
@@ -261,7 +263,7 @@ SessionSyncBridge::ApplyIncrementalSyncChanges(
     notify_foreign_session_updated_cb_.Run();
   }
 
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 void SessionSyncBridge::GetData(StorageKeyList storage_keys,
@@ -374,7 +376,7 @@ void SessionSyncBridge::OnSyncStarting(
 }
 
 void SessionSyncBridge::OnStoreInitialized(
-    const absl::optional<syncer::ModelError>& error,
+    const std::optional<syncer::ModelError>& error,
     std::unique_ptr<SessionStore> store,
     std::unique_ptr<syncer::MetadataBatch> metadata_batch) {
   DCHECK(!syncing_);
@@ -446,6 +448,7 @@ void SessionSyncBridge::DeleteForeignSessionWithBatch(
   for (const std::string& deleted_storage_key :
        batch->DeleteForeignEntityAndUpdateTracker(header_storage_key)) {
     change_processor()->Delete(deleted_storage_key,
+                               syncer::DeletionOrigin::Unspecified(),
                                batch->GetMetadataChangeList());
   }
 

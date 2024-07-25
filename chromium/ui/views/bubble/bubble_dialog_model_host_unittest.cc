@@ -11,6 +11,7 @@
 #include "base/test/gtest_util.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
+#include "ui/base/models/dialog_model.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/interaction/element_tracker_views.h"
 #include "ui/views/test/views_test_base.h"
@@ -87,7 +88,7 @@ TEST_F(BubbleDialogModelHostTest, ElementIDsReportedCorrectly) {
 
   ui::DialogModelMenuItem::Params menu_item_params;
   menu_item_params.SetId(kMenuItemId);
-  // TODO(crbug.com/1324298): Remove after addressing this issue.
+  // TODO(crbug.com/40224983): Remove after addressing this issue.
   menu_item_params.SetIsEnabled(false);
   ui::DialogModel::Button::Params ok_button_params;
   ok_button_params.SetId(kOkButtonId);
@@ -242,7 +243,8 @@ TEST_F(BubbleDialogModelHostTest, TestFieldVisibility) {
   ASSERT_TRUE(bubble_widget->IsVisible());
 
   // Since the view is invisible, the tracker shouldn't know about it.
-  // TODO(1455549): It would be nice to have a means of accessing fields
+  // TODO(crbug.com/40272840): It would be nice to have a means of accessing
+  // fields
   //                regardless of state.
   EXPECT_EQ(
       views::ElementTrackerViews::GetInstance()->GetUniqueView(kField, context),
@@ -299,6 +301,46 @@ TEST_F(BubbleDialogModelHostTest, TestButtonLabelUpdate) {
   EXPECT_EQ(host->GetOkButton()->GetEnabled(), true);
   EXPECT_EQ(host->GetOkButton()->GetText(), kFinalButtonLabel);
 
+  bubble_widget->CloseNow();
+}
+
+TEST_F(BubbleDialogModelHostTest, TestButtonEnableUpdate) {
+  DEFINE_LOCAL_ELEMENT_IDENTIFIER_VALUE(kOkButtonId);
+
+  std::unique_ptr<Widget> anchor_widget =
+      CreateTestWidget(Widget::InitParams::TYPE_WINDOW);
+  anchor_widget->Show();
+
+  std::unique_ptr<ui::DialogModel> dialog_model =
+      ui::DialogModel::Builder()
+          .AddOkButton(
+              base::DoNothing(),
+              ui::DialogModel::Button::Params().SetEnabled(false).SetId(
+                  kOkButtonId))
+          .Build();
+
+  ui::DialogModel* const model = dialog_model.get();
+
+  auto host_unique = std::make_unique<BubbleDialogModelHost>(
+      std::move(dialog_model), anchor_widget->GetContentsView(),
+      BubbleBorder::Arrow::TOP_RIGHT);
+
+  auto* const host = host_unique.get();
+  Widget* const bubble_widget =
+      BubbleDialogDelegate::CreateBubble(std::move(host_unique));
+  test::WidgetVisibleWaiter waiter(bubble_widget);
+  bubble_widget->Show();
+  waiter.Wait();
+
+  ui::DialogModel::Button* const ok_button =
+      model->GetButtonByUniqueId(kOkButtonId);
+  EXPECT_FALSE(ok_button->is_enabled());
+  EXPECT_FALSE(host->GetOkButton()->GetEnabled());
+
+  model->SetButtonEnabled(ok_button, /*enabled=*/true);
+
+  EXPECT_TRUE(ok_button->is_enabled());
+  EXPECT_TRUE(host->GetOkButton()->GetEnabled());
   bubble_widget->CloseNow();
 }
 

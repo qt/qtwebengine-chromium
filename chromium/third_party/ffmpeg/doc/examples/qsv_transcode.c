@@ -38,6 +38,7 @@
 #include <errno.h>
 
 #include <libavutil/hwcontext.h>
+#include <libavutil/mem.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/opt.h>
@@ -62,10 +63,10 @@ static int str_to_dict(char* optstr, AVDictionary **opt)
         return 0;
     key = strtok(optstr, " ");
     if (key == NULL)
-        return AVERROR(ENAVAIL);
+        return AVERROR(EINVAL);
     value = strtok(NULL, " ");
     if (value == NULL)
-        return AVERROR(ENAVAIL);
+        return AVERROR(EINVAL);
     av_dict_set(opt, key, value, 0);
     do {
         key = strtok(NULL, " ");
@@ -73,7 +74,7 @@ static int str_to_dict(char* optstr, AVDictionary **opt)
             return 0;
         value = strtok(NULL, " ");
         if (value == NULL)
-            return AVERROR(ENAVAIL);
+            return AVERROR(EINVAL);
         av_dict_set(opt, key, value, 0);
     } while(key != NULL);
     return 0;
@@ -181,7 +182,7 @@ static int open_input_file(char *filename)
         break;
     default:
         fprintf(stderr, "Codec is not supportted by qsv\n");
-        return AVERROR(ENAVAIL);
+        return AVERROR(EINVAL);
     }
 
     if (!(decoder_ctx = avcodec_alloc_context3(decoder)))

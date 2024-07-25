@@ -641,6 +641,7 @@ XNN_INTERNAL void xnn_pack_f32_deconv_goki_w(
   const float* bias,
   const void* scale,
   float* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const void* params);
 
@@ -659,6 +660,7 @@ XNN_INTERNAL void xnn_pack_f16_deconv_goki_w(
   const uint16_t* bias,
   const void* scale,
   uint16_t* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const void* params);
 
@@ -677,6 +679,7 @@ XNN_INTERNAL void xnn_pack_f32_to_f16_deconv_goki_w(
   const float* bias,
   const void* scale,
   uint16_t* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const void* params);
 
@@ -695,6 +698,7 @@ XNN_INTERNAL void xnn_pack_qs8_deconv_goki_w(
   const int32_t* bias,
   const float* scale,
   void* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const struct xnn_qs8_packing_params* params);
 
@@ -713,6 +717,7 @@ XNN_INTERNAL void xnn_pack_qs8_to_qu8_deconv_goki_w(
   const int32_t* bias,
   const float* scale,
   void* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const struct xnn_qs8_packing_params* params);
 
@@ -731,6 +736,7 @@ XNN_INTERNAL void xnn_pack_qs8_to_qu8_deconv_goki_w(
   const int32_t* bias,
   const float* scale,
   void* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const struct xnn_qs8_packing_params* params);
 
@@ -749,6 +755,7 @@ XNN_INTERNAL void xnn_pack_qu8_deconv_goki_w(
   const int32_t* bias,
   const void* scale,
   void* packed_weights,
+  size_t extra_bytes,
   struct subconvolution_params* subconv_params,
   const struct xnn_qu8_packing_params* params);
 
@@ -1157,24 +1164,29 @@ XNN_INTERNAL void xnn_pack_f32_to_f16_vmulcaddc_w(
   const void* params);
 
 
+// Pack functions for prelu weights.
 typedef void (*xnn_pack_prelu_w_fn)(
-  size_t c,
-  const void* s,
+  size_t input_channels,
+  size_t slope_channels,
+  const void* slope_data,
   void* packed_weights);
 
 XNN_INTERNAL void xnn_pack_f32_prelu_w(
-  size_t c,
-  const float* s,
+  size_t input_channels,
+  size_t slope_channels,
+  const float* slope_data,
   float* packed_weights);
 
 XNN_INTERNAL void xnn_pack_f16_prelu_w(
-  size_t c,
-  const uint16_t* s,
+  size_t input_channels,
+  size_t slope_channels,
+  const uint16_t* slope_data,
   uint16_t* packed_weights);
 
 XNN_INTERNAL void xnn_pack_f32_to_f16_prelu_w(
-  size_t c,
-  const float* s,
+  size_t input_channels,
+  size_t slope_channels,
+  const float* slope_data,
   uint16_t* packed_weights);
 
 // Sparse packing functions.

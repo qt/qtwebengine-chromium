@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
@@ -60,6 +59,7 @@ TestPasswordsPrivateDelegate::TestPasswordsPrivateDelegate()
   api::passwords_private::PasswordUiEntry passkey = CreateEntry(kNumMocks);
   passkey.is_passkey = true;
   passkey.display_name = "displayName";
+  passkey.creation_time = 1000;
   current_entries_.push_back(std::move(passkey));
 }
 TestPasswordsPrivateDelegate::~TestPasswordsPrivateDelegate() = default;
@@ -432,6 +432,30 @@ void TestPasswordsPrivateDelegate::ShowExportedFileInShell(
     content::WebContents* web_contents,
     std::string file_path) {
   exported_file_shown_in_shell_ = true;
+}
+
+void TestPasswordsPrivateDelegate::ChangePasswordManagerPin(
+    content::WebContents* web_contents,
+    base::OnceCallback<void(bool)> success_callback) {
+  change_password_manager_pin_called_ = true;
+  std::move(success_callback).Run(false);
+}
+
+bool TestPasswordsPrivateDelegate::IsPasswordManagerPinAvailable(
+    content::WebContents* web_contents) {
+  return false;
+}
+
+void TestPasswordsPrivateDelegate::DisconnectCloudAuthenticator(
+    content::WebContents* web_contents,
+    base::OnceCallback<void(bool)> success_callback) {
+  disconnect_cloud_authenticator_called_ = true;
+  std::move(success_callback).Run(false);
+}
+
+bool TestPasswordsPrivateDelegate::IsConnectedToCloudAuthenticator(
+    content::WebContents* web_contents) {
+  return false;
 }
 
 base::WeakPtr<PasswordsPrivateDelegate>

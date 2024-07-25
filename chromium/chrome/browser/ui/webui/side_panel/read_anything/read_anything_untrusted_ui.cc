@@ -47,7 +47,7 @@ bool ReadAnythingUIUntrustedConfig::IsWebUIEnabled(
 }
 
 ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
-    : ui::UntrustedBubbleWebUIController(web_ui) {
+    : UntrustedTopChromeWebUIController(web_ui) {
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       web_ui->GetWebContents()->GetBrowserContext(),
       chrome::kChromeUIUntrustedReadAnythingSidePanelURL);
@@ -82,6 +82,10 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       {"playDescription", IDS_READING_MODE_PLAY_DESCRIPTION},
       {"playLabel", IDS_READING_MODE_PLAY_SPEECH},
       {"pauseLabel", IDS_READING_MODE_PAUSE_SPEECH},
+      {"stopLabel", IDS_READING_MODE_STOP_SPEECH},
+      {"playTooltip", IDS_READING_MODE_PLAY_TOOLTIP},
+      {"previewTooltip", IDS_READING_MODE_PREVIEW_TOOLTIP},
+      {"pauseTooltip", IDS_READING_MODE_PAUSE_TOOLTIP},
       {"previousSentenceLabel", IDS_READING_MODE_NAVIGATE_PREVIOUS_SENTENCE},
       {"nextSentenceLabel", IDS_READING_MODE_NAVIGATE_NEXT_SENTENCE},
       {"moreOptionsLabel", IDS_READING_MODE_MORE_OPTIONS},
@@ -91,8 +95,40 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
        IDS_READING_MODE_INCREASE_FONT_SIZE_BUTTON_LABEL},
       {"decreaseFontSizeLabel",
        IDS_READING_MODE_DECREASE_FONT_SIZE_BUTTON_LABEL},
+      {"disableLinksLabel", IDS_READING_MODE_DISABLE_LINKS_BUTTON_LABEL},
+      {"enableLinksLabel", IDS_READING_MODE_ENABLE_LINKS_BUTTON_LABEL},
       {"readingModeToolbarLabel", IDS_READING_MODE_TOOLBAR_LABEL},
+      {"readingModeReadAloudToolbarLabel",
+       IDS_READING_MODE_READ_ALOUD_TOOLBAR_LABEL},
       {"readingModeVoicePreviewText", IDS_READING_MODE_VOICE_PREVIEW_STRING},
+      {"readingModeVoiceMenuDownloading",
+       IDS_READING_MODE_VOICE_MENU_DOWNLOADING},
+      {"readingModeFontLoadingText", IDS_READING_MODE_FONT_LOADING_STRING},
+      {"readingModeLanguageMenu", IDS_READING_MODE_LANGUAGE_MENU},
+      {"readingModeLanguageMenuTitle", IDS_READING_MODE_LANGUAGE_MENU_TITLE},
+      {"readingModeLanguageMenuClose", IDS_READING_MODE_LANGUAGE_MENU_CLOSE},
+      {"readingModeLanguageMenuSearchLabel",
+       IDS_READING_MODE_LANGUAGE_MENU_SEARCH_LABEL},
+      {"readingModeLanguageMenuSearchClear",
+       IDS_READING_MODE_LANGUAGE_MENU_SEARCH_CLEAR},
+      {"readingModeLanguageMenuDownloading",
+       IDS_READING_MODE_LANGUAGE_MENU_DOWNLOADING},
+      {"readingModeLanguageMenuVoicesUnavailable",
+       IDS_READING_MODE_LANGUAGE_MENU_VOICES_UNAVAILABLE},
+      {"readingModeLanguageMenuNoInternet",
+       IDS_READING_MODE_LANGUAGE_MENU_NO_INTERNET},
+      {"readingModeLanguageMenuNoSpace",
+       IDS_READING_MODE_LANGUAGE_MENU_NO_SPACE},
+      {"readingModeLanguageMenuNoSpaceButVoicesExist",
+       IDS_READING_MODE_LANGUAGE_MENU_NO_SPACE_BUT_VOICES_EXIST},
+      {"previewVoiceAccessibilityLabel",
+       IDS_READING_MODE_VOICE_MENU_PREVIEW_LANGUAGE},
+      {"languageMenuNoResults", IDS_READING_MODE_LANGUAGE_MENU_NO_RESULTS},
+      {"readingModeVoiceDownloadedTitle",
+       IDS_READING_MODE_VOICE_DOWNLOADED_TITLE},
+      {"readingModeVoiceDownloadedMessage",
+       IDS_READING_MODE_VOICE_DOWNLOADED_MESSAGE},
+      {"menu", IDS_MENU},
   };
   for (const auto& str : kLocalizedStrings) {
     webui::AddLocalizedString(source, str.name, str.id);
@@ -108,7 +144,6 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
                           IDR_WEBUI_JS_TEST_LOADER_UTIL_JS);
   source->AddResourcePath("test_loader.html", IDR_WEBUI_TEST_LOADER_HTML);
   webui::EnableTrustedTypesCSP(source);
-  webui::SetupChromeRefresh2023(source);
   source->AddResourcePaths(base::make_span(
       kSidePanelReadAnythingResources, kSidePanelReadAnythingResourcesSize));
   source->AddResourcePath("", IDR_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_HTML);
@@ -128,13 +163,12 @@ ReadAnythingUntrustedUI::ReadAnythingUntrustedUI(content::WebUI* web_ui)
       "https://fonts.gstatic.com;");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ImgSrc,
-      "img-src 'self' chrome-untrusted://resources;");
+      "img-src 'self' data: chrome-untrusted://resources;");
   raw_ptr<Profile> profile = Profile::FromWebUI(web_ui);
 
   // If the ThemeSource isn't added here, since Read Anything is
   // chrome-untrusted, it will be unable to load stylesheets until a new tab
   // is opened.
-  // TODO(crbug.com/1465029): Remove workaround code, as this is now unneeded.
   content::URLDataSource::Add(profile, std::make_unique<ThemeSource>(
                                            profile, /*serve_untrusted=*/true));
 }
@@ -167,11 +201,19 @@ void ReadAnythingUntrustedUI::CreateUntrustedPageHandler(
   read_anything_untrusted_page_handler_ =
       std::make_unique<ReadAnythingUntrustedPageHandler>(
           std::move(page), std::move(receiver), web_ui());
+
+  if (!features::IsReadAnythingDelaySidePanelLoadEnabled()) {
+    if (embedder()) {
+      embedder()->ShowUI();
+    }
+  }
 }
 
 void ReadAnythingUntrustedUI::ShouldShowUI() {
   // Show the UI after the Side Panel content has loaded.
-  if (embedder()) {
-    embedder()->ShowUI();
+  if (features::IsReadAnythingDelaySidePanelLoadEnabled()) {
+    if (embedder()) {
+      embedder()->ShowUI();
+    }
   }
 }

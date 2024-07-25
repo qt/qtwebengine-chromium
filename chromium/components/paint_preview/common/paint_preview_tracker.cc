@@ -27,7 +27,7 @@ namespace {
 constexpr int kMaxGlyphsForDenseGlyphUsage = 10000;
 
 // Heuristically choose between a dense and sparse glyph usage map.
-// TODO(crbug/1009538): Gather data to make this heuristic better.
+// TODO(crbug.com/40101107): Gather data to make this heuristic better.
 bool ShouldUseDenseGlyphUsage(SkTypeface* typeface) {
   // DenseGlyphUsage is a bitset; it is efficient if lots of glyphs are used.
   // SparseGlyphUsage is a set; it is efficient if few glyphs are used.
@@ -40,7 +40,7 @@ bool ShouldUseDenseGlyphUsage(SkTypeface* typeface) {
 
 PaintPreviewTracker::PaintPreviewTracker(
     const base::UnguessableToken& guid,
-    const absl::optional<base::UnguessableToken>& embedding_token,
+    const std::optional<base::UnguessableToken>& embedding_token,
     bool is_main_frame)
     : guid_(guid),
       embedding_token_(embedding_token),

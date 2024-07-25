@@ -12,15 +12,19 @@
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
-#include "components/subresource_filter/content/browser/activation_state_computing_navigation_throttle.h"
-#include "components/subresource_filter/content/browser/async_document_subresource_filter.h"
+#include "components/subresource_filter/content/browser/ad_tagging_utils.h"
 #include "components/subresource_filter/content/browser/content_subresource_filter_web_contents_helper.h"
-#include "components/subresource_filter/content/browser/page_load_statistics.h"
 #include "components/subresource_filter/content/browser/profile_interaction_manager.h"
-#include "components/subresource_filter/content/browser/subresource_filter_safe_browsing_activation_throttle.h"
+#include "components/subresource_filter/content/browser/safe_browsing_child_navigation_throttle.h"
+#include "components/subresource_filter/content/browser/safe_browsing_page_activation_throttle.h"
 #include "components/subresource_filter/content/mojom/subresource_filter.mojom.h"
+#include "components/subresource_filter/content/shared/browser/activation_state_computing_navigation_throttle.h"
+#include "components/subresource_filter/content/shared/browser/page_load_statistics.h"
+#include "components/subresource_filter/content/shared/common/subresource_filter_utils.h"
+#include "components/subresource_filter/core/browser/async_document_subresource_filter.h"
 #include "components/subresource_filter/core/browser/subresource_filter_constants.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features.h"
 #include "components/subresource_filter/core/common/common_features.h"
@@ -75,7 +79,7 @@ bool ShouldInheritOpenerActivation(content::NavigationHandle* navigation_handle,
 
 bool ShouldInheritParentActivation(
     content::NavigationHandle* navigation_handle) {
-  // TODO(crbug.com/1263541): Investigate if this should apply to fenced frames
+  // TODO(crbug.com/40202987): Investigate if this should apply to fenced frames
   // as well, or if we can default them to unactivated initially.
   if (navigation_handle->IsInMainFrame()) {
     return false;
@@ -181,7 +185,7 @@ void ContentSubresourceFilterThrottleManager::ReadyToCommitInFrameNavigation(
   content::RenderFrameHost* frame_host =
       navigation_handle->GetRenderFrameHost();
 
-  absl::optional<blink::FrameAdEvidence> ad_evidence_for_navigation;
+  std::optional<blink::FrameAdEvidence> ad_evidence_for_navigation;
 
   // Update the ad status of a frame given the new navigation. This may tag or
   // untag a frame as an ad.
@@ -300,7 +304,7 @@ void ContentSubresourceFilterThrottleManager::DidFinishInFrameNavigation(
   // navigations to about:blank commit synchronously. We handle navigations
   // there where possible to ensure that any messages to the renderer contain
   // the right ad status.
-  // TODO(crbug.com/1263541): Investigate how to handle fenced frames here.
+  // TODO(crbug.com/40202987): Investigate how to handle fenced frames here.
   if (is_initial_navigation && !navigation_handle->IsInMainFrame() &&
       !(navigation_handle->HasCommitted() &&
         !navigation_handle->GetURL().IsAboutBlank()) &&
@@ -312,7 +316,7 @@ void ContentSubresourceFilterThrottleManager::DidFinishInFrameNavigation(
     // the renderer. Currently, an aborted initial load to a URL matching the
     // filter list incorrectly has its load policy saved. We avoid tagging it as
     // an ad here to ensure frames are always tagged before DidFinishNavigation.
-    // TODO(crbug.com/1148058): Once these load policies are no longer saved,
+    // TODO(crbug.com/40156884): Once these load policies are no longer saved,
     // update the DCHECK to verify that the evidence doesn't indicate a subframe
     // (regardless of the URL).
     DCHECK(!(navigation_handle->GetURL().IsAboutBlank() &&
@@ -330,8 +334,8 @@ void ContentSubresourceFilterThrottleManager::DidFinishInFrameNavigation(
     current_committed_load_has_notified_disallowed_load_ = false;
     statistics_.reset();
     if (filter) {
-      statistics_ =
-          std::make_unique<PageLoadStatistics>(filter->activation_state());
+      statistics_ = std::make_unique<PageLoadStatistics>(
+          filter->activation_state(), kUmaFilterTag);
       if (filter->activation_state().enable_logging) {
         DCHECK(filter->activation_state().activation_level !=
                mojom::ActivationLevel::kDisabled);
@@ -363,7 +367,7 @@ void ContentSubresourceFilterThrottleManager::
   // Navigations with dead RenderFrames are also excluded as any load policy
   // sent to the renderer won't be used.
   // TODO(alexmt): Remove once frequency is determined.
-  // TODO(crbug.com/1263541): Record histograms for fenced frame roots and fix
+  // TODO(crbug.com/40202987): Record histograms for fenced frame roots and fix
   // |is_same_domain_to_main_frame_| below.
   if (!passed_through_ready_to_commit || navigation_handle->IsInMainFrame() ||
       ShouldInheritActivation(navigation_handle->GetURL()) ||
@@ -408,7 +412,7 @@ ContentSubresourceFilterThrottleManager::FilterForFinishedNavigation(
   DCHECK(frame_host);
 
   std::unique_ptr<AsyncDocumentSubresourceFilter> filter;
-  absl::optional<mojom::ActivationState> activation_to_inherit;
+  std::optional<mojom::ActivationState> activation_to_inherit;
   did_inherit_opener_activation = false;
 
   if (navigation_handle->HasCommitted() && throttle) {
@@ -574,16 +578,15 @@ void ContentSubresourceFilterThrottleManager::MaybeAppendNavigationThrottles(
   DCHECK(!ShouldInheritActivation(navigation_handle->GetURL()));
 
   if (IsInSubresourceFilterRoot(navigation_handle) && database_manager_) {
-    throttles->push_back(
-        std::make_unique<SubresourceFilterSafeBrowsingActivationThrottle>(
-            navigation_handle, profile_interaction_manager_.get(),
-            content::GetIOThreadTaskRunner({}), database_manager_));
+    throttles->push_back(std::make_unique<SafeBrowsingPageActivationThrottle>(
+        navigation_handle, profile_interaction_manager_.get(),
+        content::GetIOThreadTaskRunner({}), database_manager_));
   }
 
   if (!dealer_handle_)
     return;
   if (auto filtering_throttle =
-          MaybeCreateChildFrameNavigationFilteringThrottle(navigation_handle)) {
+          MaybeCreateChildNavigationThrottle(navigation_handle)) {
     throttles->push_back(std::move(filtering_throttle));
   }
 
@@ -610,12 +613,12 @@ bool ContentSubresourceFilterThrottleManager::IsRenderFrameHostTaggedAsAd(
   return IsFrameTaggedAsAd(frame_host->GetFrameTreeNodeId());
 }
 
-absl::optional<LoadPolicy>
+std::optional<LoadPolicy>
 ContentSubresourceFilterThrottleManager::LoadPolicyForLastCommittedNavigation(
     int frame_tree_node_id) const {
   auto it = navigation_load_policies_.find(frame_tree_node_id);
   if (it == navigation_load_policies_.end())
-    return absl::nullopt;
+    return std::nullopt;
   return it->second;
 }
 
@@ -638,17 +641,22 @@ void ContentSubresourceFilterThrottleManager::LogAction(
   UMA_HISTOGRAM_ENUMERATION("SubresourceFilter.Actions2", action);
 }
 
-std::unique_ptr<ChildFrameNavigationFilteringThrottle>
-ContentSubresourceFilterThrottleManager::
-    MaybeCreateChildFrameNavigationFilteringThrottle(
-        content::NavigationHandle* navigation_handle) {
+std::unique_ptr<SafeBrowsingChildNavigationThrottle>
+ContentSubresourceFilterThrottleManager::MaybeCreateChildNavigationThrottle(
+    content::NavigationHandle* navigation_handle) {
   if (IsInSubresourceFilterRoot(navigation_handle))
     return nullptr;
   AsyncDocumentSubresourceFilter* parent_filter =
       GetParentFrameFilter(navigation_handle);
   return parent_filter
-             ? std::make_unique<ChildFrameNavigationFilteringThrottle>(
+             ? std::make_unique<SafeBrowsingChildNavigationThrottle>(
                    navigation_handle, parent_filter,
+                   /*bypass_alias_check=*/false,
+                   base::BindRepeating([](const GURL& url) {
+                     return base::StringPrintf(
+                         kDisallowChildFrameConsoleMessageFormat,
+                         url.possibly_invalid_spec().c_str());
+                   }),
                    EnsureFrameAdEvidence(navigation_handle))
              : nullptr;
 }
@@ -690,12 +698,12 @@ ContentSubresourceFilterThrottleManager::GetParentFrameFilter(
       child_frame_navigation->GetParentFrameOrOuterDocument());
 }
 
-const absl::optional<subresource_filter::mojom::ActivationState>
+const std::optional<subresource_filter::mojom::ActivationState>
 ContentSubresourceFilterThrottleManager::GetFrameActivationState(
     content::RenderFrameHost* frame_host) {
   if (AsyncDocumentSubresourceFilter* filter = GetFrameFilter(frame_host))
     return filter->activation_state();
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 AsyncDocumentSubresourceFilter*
@@ -805,19 +813,19 @@ void ContentSubresourceFilterThrottleManager::SetIsAdFrameForTesting(
   } else {
     // There's currently no legal transition that can untag a frame. Instead, to
     // mimic future behavior, we simply replace the FrameAdEvidence.
-    // TODO(crbug.com/1101584): Replace with legal transition when one exists.
+    // TODO(crbug.com/40138413): Replace with legal transition when one exists.
     tracked_ad_evidence_.erase(render_frame_host->GetFrameTreeNodeId());
     EnsureFrameAdEvidence(render_frame_host).set_is_complete();
   }
 }
 
-absl::optional<blink::FrameAdEvidence>
+std::optional<blink::FrameAdEvidence>
 ContentSubresourceFilterThrottleManager::GetAdEvidenceForFrame(
     content::RenderFrameHost* render_frame_host) {
   auto tracked_ad_evidence_it =
       tracked_ad_evidence_.find(render_frame_host->GetFrameTreeNodeId());
   if (tracked_ad_evidence_it == tracked_ad_evidence_.end())
-    return absl::nullopt;
+    return std::nullopt;
   return tracked_ad_evidence_it->second;
 }
 

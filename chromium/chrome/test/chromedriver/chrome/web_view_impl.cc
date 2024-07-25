@@ -5,6 +5,7 @@
 #include "chrome/test/chromedriver/chrome/web_view_impl.h"
 
 #include <stddef.h>
+
 #include <algorithm>
 #include <cstring>
 #include <memory>
@@ -19,7 +20,9 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notreached.h"
 #include "base/strings/pattern.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -42,6 +45,7 @@
 #include "chrome/test/chromedriver/chrome/mobile_emulation_override_manager.h"
 #include "chrome/test/chromedriver/chrome/navigation_tracker.h"
 #include "chrome/test/chromedriver/chrome/network_conditions_override_manager.h"
+#include "chrome/test/chromedriver/chrome/non_blocking_navigation_tracker.h"
 #include "chrome/test/chromedriver/chrome/page_load_strategy.h"
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/ui_events.h"
@@ -434,20 +438,32 @@ WebViewImpl::WebViewImpl(const std::string& id,
   // Child WebViews should not have their own navigation_tracker, but defer
   // all related calls to their parent. All WebViews must have either parent_
   // or navigation_tracker_
-  if (!parent_) {
-    navigation_tracker_ =
-        std::unique_ptr<PageLoadStrategy>(PageLoadStrategy::Create(
-            page_load_strategy, client_.get(), this, dialog_manager_.get()));
+  if (parent_ == nullptr) {
+    navigation_tracker_ = CreatePageLoadStrategy(page_load_strategy);
   }
   client_->SetOwner(this);
 }
 
 WebViewImpl::~WebViewImpl() = default;
 
-WebViewImpl* WebViewImpl::GetTargetForFrame(const std::string& frame) {
-  return frame.empty() ? this
-                       : static_cast<WebViewImpl*>(
-                             GetFrameTracker()->GetTargetForFrame(frame));
+std::unique_ptr<PageLoadStrategy> WebViewImpl::CreatePageLoadStrategy(
+    const std::string& strategy) {
+  if (strategy == PageLoadStrategy::kNone) {
+    return std::make_unique<NonBlockingNavigationTracker>();
+  } else if (strategy == PageLoadStrategy::kNormal) {
+    return std::make_unique<NavigationTracker>(client_.get(), this,
+                                               dialog_manager_.get(), false);
+  } else if (strategy == PageLoadStrategy::kEager) {
+    return std::make_unique<NavigationTracker>(client_.get(), this,
+                                               dialog_manager_.get(), true);
+  } else {
+    NOTREACHED() << "invalid strategy '" << strategy << "'";
+    return nullptr;
+  }
+}
+
+WebView* WebViewImpl::GetTargetForFrame(const std::string& frame) {
+  return frame.empty() ? this : GetFrameTracker()->GetTargetForFrame(frame);
 }
 
 bool WebViewImpl::IsServiceWorker() const {
@@ -466,13 +482,14 @@ std::unique_ptr<WebViewImpl> WebViewImpl::CreateChild(
   std::unique_ptr<WebViewImpl> child = std::make_unique<WebViewImpl>(
       target_id, w3c_compliant_, this, browser_info_, std::move(child_client),
       std::nullopt, "");
-  if (!IsNonBlocking()) {
+  const WebViewImpl* root_view = this;
+  while (root_view->parent_ != nullptr) {
+    root_view = root_view->parent_;
+  }
+  PageLoadStrategy* navigation_tracker = root_view->navigation_tracker_.get();
+  if (navigation_tracker && !navigation_tracker->IsNonBlocking()) {
     // Find Navigation Tracker for the top of the WebViewImpl hierarchy
-    const WebViewImpl* current_view = this;
-    while (current_view->parent_)
-      current_view = current_view->parent_;
-    PageLoadStrategy* pls = current_view->navigation_tracker_.get();
-    child->client_->AddListener(static_cast<DevToolsEventListener*>(pls));
+    child->client_->AddListener(navigation_tracker);
   }
   return child;
 }
@@ -485,13 +502,16 @@ bool WebViewImpl::WasCrashed() {
   return client_->WasCrashed();
 }
 
-Status WebViewImpl::AttachTo(DevToolsClient* parent) {
-  return static_cast<DevToolsClientImpl*>(client_.get())
-      ->AttachTo(static_cast<DevToolsClientImpl*>(parent));
+Status WebViewImpl::AttachTo(DevToolsClient* root_client) {
+  return client_->AttachTo(root_client);
 }
 
 Status WebViewImpl::AttachChildView(WebViewImpl* child) {
-  return child->AttachTo(client_->GetRootClient());
+  DevToolsClient* root_client = client_.get();
+  while (root_client->GetParentClient() != nullptr) {
+    root_client = root_client->GetParentClient();
+  }
+  return child->AttachTo(root_client);
 }
 
 Status WebViewImpl::HandleEventsUntil(const ConditionalFunc& conditional_func,
@@ -885,7 +905,7 @@ Status WebViewImpl::EvaluateScript(const std::string& frame,
   WebViewImplHolder target_holder(this);
   Status status{kOk};
 
-  WebViewImpl* target = GetTargetForFrame(frame);
+  WebView* target = GetTargetForFrame(frame);
   if (target != nullptr && target != this) {
     if (target->IsDetached())
       return Status(kTargetDetached);
@@ -915,14 +935,13 @@ Status WebViewImpl::CallFunctionWithTimeout(
   WebViewImplHolder target_holder(this);
   Status status{kOk};
 
-  WebViewImpl* target = GetTargetForFrame(frame);
+  WebView* target = GetTargetForFrame(frame);
   if (target != nullptr && target != this) {
     if (target->IsDetached()) {
       return Status(kTargetDetached);
     }
-    WebViewImpl* target_impl = static_cast<WebViewImpl*>(target);
-    return target_impl->CallFunctionWithTimeout(frame, function, args, timeout,
-                                                result);
+    return target->CallFunctionWithTimeout(frame, function, args, timeout,
+                                           result);
   }
 
   return CallFunctionWithTimeoutInternal(frame, std::move(function),
@@ -947,7 +966,7 @@ Status WebViewImpl::CallUserSyncScript(const std::string& frame,
   WebViewImplHolder target_holder(this);
   Status status{kOk};
 
-  WebViewImpl* target = GetTargetForFrame(frame);
+  WebView* target = GetTargetForFrame(frame);
   if (target != nullptr && target != this) {
     if (target->IsDetached()) {
       return Status(kTargetDetached);
@@ -980,7 +999,7 @@ Status WebViewImpl::GetFrameByFunction(const std::string& frame,
   WebViewImplHolder target_holder(this);
   Status status{kOk};
 
-  WebViewImpl* target = GetTargetForFrame(frame);
+  WebView* target = GetTargetForFrame(frame);
   if (target != nullptr && target != this) {
     if (target->IsDetached())
       return Status(kTargetDetached);
@@ -1030,10 +1049,10 @@ Status WebViewImpl::DispatchTouchEventsForMouseEvents(
       "new Promise(x => setTimeout(() => setTimeout(x, 20), 20))");
   promise_params.Set("awaitPromise", true);
   client_->SendCommand("Runtime.evaluate", promise_params);
-  for (auto it = events.begin(); it != events.end(); ++it) {
+  for (const MouseEvent& event : events) {
     base::Value::Dict params;
 
-    switch (it->type) {
+    switch (event.type) {
       case kPressedMouseEventType:
         params.Set("type", "touchStart");
         break;
@@ -1041,8 +1060,9 @@ Status WebViewImpl::DispatchTouchEventsForMouseEvents(
         params.Set("type", "touchEnd");
         break;
       case kMovedMouseEventType:
-        if (it->button == kNoneMouseButton)
+        if (event.button == kNoneMouseButton) {
           continue;
+        }
         params.Set("type", "touchMove");
         break;
       default:
@@ -1050,14 +1070,14 @@ Status WebViewImpl::DispatchTouchEventsForMouseEvents(
     }
 
     base::Value::List touch_points;
-    if (it->type != kReleasedMouseEventType) {
+    if (event.type != kReleasedMouseEventType) {
       base::Value::Dict touch_point;
-      touch_point.Set("x", it->x);
-      touch_point.Set("y", it->y);
+      touch_point.Set("x", event.x);
+      touch_point.Set("y", event.y);
       touch_points.Append(std::move(touch_point));
     }
     params.Set("touchPoints", std::move(touch_points));
-    params.Set("modifiers", it->modifiers);
+    params.Set("modifiers", event.modifiers);
     Status status = client_->SendCommand("Input.dispatchTouchEvent", params);
     if (status.IsError())
       return status;
@@ -1343,7 +1363,7 @@ Status WebViewImpl::WaitForPendingNavigations(const std::string& frame_id,
                                               bool stop_load_on_timeout) {
   // This function should not be called for child WebViews
   if (parent_ != nullptr)
-    return Status(kUnsupportedOperation,
+    return Status(kUnknownError,
                   "Call WaitForPendingNavigations only on the parent WebView");
   VLOG(0) << "Waiting for pending navigations...";
   const auto not_pending_navigation = base::BindRepeating(
@@ -1354,7 +1374,12 @@ Status WebViewImpl::WaitForPendingNavigations(const std::string& frame_id,
   // current WebView because we are executing the code in its method. Instead we
   // lock the WebView with target holder and only label the view as detached.
   WebViewImplHolder target_holder(this);
-  Status status = client_->HandleEventsUntil(not_pending_navigation, timeout);
+  bool keep_waiting = true;
+  Status status{kOk};
+  while (keep_waiting) {
+    status = client_->HandleEventsUntil(not_pending_navigation, timeout);
+    keep_waiting = status.code() == kNoSuchExecutionContext;
+  }
   if (status.code() == kTimeout && stop_load_on_timeout) {
     VLOG(0) << "Timed out. Stopping navigation...";
     navigation_tracker_->set_timed_out(true);
@@ -1363,9 +1388,14 @@ Status WebViewImpl::WaitForPendingNavigations(const std::string& frame_id,
     // stops and we cleanup properly after a command that caused a navigation
     // that timed out.  Otherwise we might have to wait for that before
     // executing the next command, and it will be counted towards its timeout.
-    Status new_status = client_->HandleEventsUntil(
-        not_pending_navigation,
-        Timeout(base::Seconds(kWaitForNavigationStopSeconds)));
+    Status new_status{kOk};
+    keep_waiting = true;
+    while (keep_waiting) {
+      new_status = client_->HandleEventsUntil(
+          not_pending_navigation,
+          Timeout(base::Seconds(kWaitForNavigationStopSeconds)));
+      keep_waiting = new_status.code() == kNoSuchExecutionContext;
+    }
     navigation_tracker_->set_timed_out(false);
     if (new_status.IsError())
       status = new_status;
@@ -1501,7 +1531,7 @@ Status WebViewImpl::SetFileInputFiles(const std::string& frame,
   if (!element.is_dict())
     return Status(kUnknownError, "'element' is not a dictionary");
 
-  WebViewImpl* target = GetTargetForFrame(frame);
+  WebView* target = GetTargetForFrame(frame);
   if (target != nullptr && target != this) {
     if (target->IsDetached())
       return Status(kTargetDetached);
@@ -1560,7 +1590,7 @@ Status WebViewImpl::SetFileInputFiles(const std::string& frame,
         base::Value::Dict cmd_result;
         base::Value::Dict params;
         params.Set("functionDeclaration", "function() { return this.files[" +
-                                              std::to_string(i) + "] }");
+                                              base::NumberToString(i) + "] }");
         params.Set("objectId", inner_remote_object_id);
 
         status = client_->SendCommandAndGetResult("Runtime.callFunctionOn",
@@ -1593,16 +1623,16 @@ Status WebViewImpl::SetFileInputFiles(const std::string& frame,
   }
 
   // Now add the new files
-  for (size_t i = 0; i < files.size(); ++i) {
-    if (!files[i].IsAbsolute()) {
+  for (const base::FilePath& file_path : files) {
+    if (!file_path.IsAbsolute()) {
       return Status(kUnknownError,
-                    "path is not absolute: " + files[i].AsUTF8Unsafe());
+                    "path is not absolute: " + file_path.AsUTF8Unsafe());
     }
-    if (files[i].ReferencesParent()) {
+    if (file_path.ReferencesParent()) {
       return Status(kUnknownError,
-                    "path is not canonical: " + files[i].AsUTF8Unsafe());
+                    "path is not canonical: " + file_path.AsUTF8Unsafe());
     }
-    file_list.Append(files[i].AsUTF8Unsafe());
+    file_list.Append(file_path.AsUTF8Unsafe());
   }
 
   base::Value::Dict set_files_params;
@@ -1699,7 +1729,8 @@ Status WebViewImpl::CallAsyncFunctionInternal(
   base::Value::List async_args;
   async_args.Append("return (" + function + ").apply(null, arguments);");
   async_args.Append(args.Clone());
-  async_args.Append(/*is_user_supplied=*/true);
+  /*is_user_supplied=*/
+  async_args.Append(true);
   std::unique_ptr<base::Value> tmp;
   Timeout local_timeout(timeout);
   Status status = CallFunctionWithTimeout(frame, kExecuteAsyncScriptScript,

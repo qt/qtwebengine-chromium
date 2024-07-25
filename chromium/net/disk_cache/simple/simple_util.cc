@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <limits>
+#include <string_view>
 
 #include "base/check_op.h"
 #include "base/files/file_util.h"
@@ -42,7 +43,7 @@ std::string GetEntryHashKeyAsHexString(const std::string& key) {
   return hash_key_str;
 }
 
-bool GetEntryHashKeyFromHexString(base::StringPiece hash_key,
+bool GetEntryHashKeyFromHexString(std::string_view hash_key,
                                   uint64_t* hash_key_out) {
   if (hash_key.size() != kEntryHashKeyAsHexStringSize) {
     return false;
@@ -102,6 +103,11 @@ int64_t GetFileSizeFromDataSize(size_t key_length, int32_t data_size) {
 
 int GetFileIndexFromStreamIndex(int stream_index) {
   return (stream_index == 2) ? 1 : 0;
+}
+
+uint32_t Crc32(base::span<const uint8_t> data) {
+  auto chars = base::as_chars(data);
+  return Crc32(chars.data(), base::checked_cast<int>(data.size()));
 }
 
 uint32_t Crc32(const char* data, int length) {

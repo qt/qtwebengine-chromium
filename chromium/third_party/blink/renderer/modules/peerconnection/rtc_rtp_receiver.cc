@@ -107,12 +107,12 @@ RTCDtlsTransport* RTCRtpReceiver::rtcpTransport() {
   return nullptr;
 }
 
-absl::optional<double> RTCRtpReceiver::playoutDelayHint() const {
+std::optional<double> RTCRtpReceiver::playoutDelayHint() const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   return playout_delay_hint_;
 }
 
-void RTCRtpReceiver::setPlayoutDelayHint(absl::optional<double> hint,
+void RTCRtpReceiver::setPlayoutDelayHint(std::optional<double> hint,
                                          ExceptionState& exception_state) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (hint.has_value() && hint.value() < 0.0) {
@@ -122,6 +122,29 @@ void RTCRtpReceiver::setPlayoutDelayHint(absl::optional<double> hint,
 
   playout_delay_hint_ = hint;
   receiver_->SetJitterBufferMinimumDelay(playout_delay_hint_);
+}
+
+std::optional<double> RTCRtpReceiver::jitterBufferTarget() const {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  return jitter_buffer_target_;
+}
+
+void RTCRtpReceiver::setJitterBufferTarget(std::optional<double> target,
+                                           ExceptionState& exception_state) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  if (target.has_value() && (target.value() < 0.0 || target.value() > 4000.0)) {
+    exception_state.ThrowRangeError(
+        "jitterBufferTarget is out of expected range 0 to 4000 ms");
+    return;
+  }
+
+  jitter_buffer_target_ = target;
+  if (jitter_buffer_target_.has_value()) {
+    receiver_->SetJitterBufferMinimumDelay(jitter_buffer_target_.value() /
+                                           1000.0);
+  } else {
+    receiver_->SetJitterBufferMinimumDelay(std::nullopt);
+  }
 }
 
 HeapVector<Member<RTCRtpSynchronizationSource>>
@@ -140,10 +163,12 @@ RTCRtpReceiver::getContributingSources(ScriptState* script_state,
       script_state, exception_state, this);
 }
 
-ScriptPromise RTCRtpReceiver::getStats(ScriptState* script_state) {
+ScriptPromise<RTCStatsReport> RTCRtpReceiver::getStats(
+    ScriptState* script_state) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
-  ScriptPromise promise = resolver->Promise();
+  auto* resolver =
+      MakeGarbageCollected<ScriptPromiseResolver<RTCStatsReport>>(script_state);
+  auto promise = resolver->Promise();
   receiver_->GetStats(WTF::BindOnce(WebRTCStatsReportCallbackResolver,
                                     WrapPersistent(resolver)));
   return promise;
@@ -161,12 +186,12 @@ RTCInsertableStreams* RTCRtpReceiver::createEncodedStreams(
     return nullptr;
   }
   if (kind() == MediaKind::kAudio)
-    return createEncodedAudioStreams(script_state, exception_state);
+    return CreateEncodedAudioStreams(script_state, exception_state);
   DCHECK_EQ(kind(), MediaKind::kVideo);
-  return createEncodedVideoStreams(script_state, exception_state);
+  return CreateEncodedVideoStreams(script_state, exception_state);
 }
 
-RTCInsertableStreams* RTCRtpReceiver::createEncodedAudioStreams(
+RTCInsertableStreams* RTCRtpReceiver::CreateEncodedAudioStreams(
     ScriptState* script_state,
     ExceptionState& exception_state) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -192,7 +217,7 @@ RTCInsertableStreams* RTCRtpReceiver::createEncodedAudioStreams(
   return encoded_audio_streams_.Get();
 }
 
-RTCInsertableStreams* RTCRtpReceiver::createEncodedVideoStreams(
+RTCInsertableStreams* RTCRtpReceiver::CreateEncodedVideoStreams(
     ScriptState* script_state,
     ExceptionState& exception_state) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);

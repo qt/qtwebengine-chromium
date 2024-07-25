@@ -23,6 +23,7 @@
 
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 
+#include "third_party/blink/public/common/loader/lcp_critical_path_predictor_util.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_image_bitmap_options.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
@@ -120,13 +121,11 @@ HTMLImageElement::HTMLImageElement(Document& document, bool created_by_parser)
       is_changed_shortly_after_mouseover_(false),
       is_auto_sized_(false),
       is_predicted_lcp_element_(false) {
-  if (base::FeatureList::IsEnabled(features::kLCPScriptObserver)) {
+  if (blink::LcppScriptObserverEnabled()) {
     if (LocalFrame* frame = document.GetFrame()) {
-      if (LCPCriticalPathPredictor* lcpp = frame->GetLCPP()) {
-        if (LCPScriptObserver* script_observer = lcpp->lcp_script_observer()) {
-          // Record scripts that created this HTMLImageElement.
-          creator_scripts_ = script_observer->GetExecutingScriptUrls();
-        }
+      if (LCPScriptObserver* script_observer = frame->GetScriptObserver()) {
+        // Record scripts that created this HTMLImageElement.
+        creator_scripts_ = script_observer->GetExecutingScriptUrls();
       }
     }
   }
@@ -397,8 +396,19 @@ void HTMLImageElement::ParseAttribute(
   } else if (name == html_names::kAttributionsrcAttr) {
     LocalDOMWindow* window = GetDocument().domWindow();
     if (window && window->GetFrame()) {
+      // Copied from `ImageLoader::DoUpdateFromElement()`.
+      network::mojom::ReferrerPolicy referrer_policy =
+          network::mojom::ReferrerPolicy::kDefault;
+      AtomicString referrer_policy_attribute =
+          FastGetAttribute(html_names::kReferrerpolicyAttr);
+      if (!referrer_policy_attribute.IsNull()) {
+        SecurityPolicy::ReferrerPolicyFromString(
+            referrer_policy_attribute, kSupportReferrerPolicyLegacyKeywords,
+            &referrer_policy);
+      }
       window->GetFrame()->GetAttributionSrcLoader()->Register(params.new_value,
-                                                              /*element=*/this);
+                                                              /*element=*/this,
+                                                              referrer_policy);
     }
   } else if (name == html_names::kSharedstoragewritableAttr &&
              RuntimeEnabledFeatures::SharedStorageAPIM118Enabled(
@@ -564,20 +574,23 @@ Node::InsertionNotificationRequest HTMLImageElement::InsertedInto(
     }
   }
 
-  if (base::FeatureList::IsEnabled(features::kLCPScriptObserver)) {
+  static const bool is_lcp_script_observer_enabled =
+      blink::LcppScriptObserverEnabled();
+  if (is_lcp_script_observer_enabled) {
     if (LocalFrame* frame = GetDocument().GetFrame()) {
-      if (LCPCriticalPathPredictor* lcpp = frame->GetLCPP()) {
-        if (LCPScriptObserver* script_observer = lcpp->lcp_script_observer()) {
-          // Record scripts that inserted this HTMLImageElement.
-          for (auto& url : script_observer->GetExecutingScriptUrls()) {
-            creator_scripts_.insert(url);
-          }
+      if (LCPScriptObserver* script_observer = frame->GetScriptObserver()) {
+        // Record scripts that inserted this HTMLImageElement.
+        for (auto& url : script_observer->GetExecutingScriptUrls()) {
+          creator_scripts_.insert(url);
         }
       }
     }
   }
 
-  if (features::
+  static const bool is_lcpp_enabled =
+      base::FeatureList::IsEnabled(features::kLCPCriticalPathPredictor);
+  if (is_lcpp_enabled &&
+      features::
           kLCPCriticalPathPredictorImageLoadPriorityEnabledForHTMLImageElement
               .Get()) {
     if (LocalFrame* frame = GetDocument().GetFrame()) {
@@ -840,8 +853,9 @@ int HTMLImageElement::y() const {
   return abs_pos.top.ToInt();
 }
 
-ScriptPromise HTMLImageElement::decode(ScriptState* script_state,
-                                       ExceptionState& exception_state) {
+ScriptPromise<IDLUndefined> HTMLImageElement::decode(
+    ScriptState* script_state,
+    ExceptionState& exception_state) {
   return GetImageLoader().Decode(script_state, exception_state);
 }
 
@@ -917,9 +931,15 @@ static SourceSizeValueResult SourceSizeValue(const Element* element,
   SourceSizeValueResult result;
 
   auto* img = DynamicTo<HTMLImageElement>(element);
-  if (auto* picture_parent =
-          DynamicTo<HTMLPictureElement>(element->parentNode())) {
-    img = DynamicTo<HTMLImageElement>(picture_parent->lastChild());
+
+  if (!img) {
+    // Lookup the <img> from the parent <picture>. The content model for
+    // <picture> is "zero or more source elements, followed by one img element,
+    // optionally intermixed with script-supporting elements."
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#the-picture-element
+    if (auto* picture = DynamicTo<HTMLPictureElement>(element->parentNode())) {
+      img = Traversal<HTMLImageElement>::LastChild(*picture);
+    }
   }
 
   String sizes = element->FastGetAttribute(html_names::kSizesAttr);
@@ -958,8 +978,8 @@ static SourceSizeValueResult SourceSizeValue(const Element* element,
   return result;
 }
 
-absl::optional<float> HTMLImageElement::GetResourceWidth() const {
-  absl::optional<float> resource_width;
+std::optional<float> HTMLImageElement::GetResourceWidth() const {
+  std::optional<float> resource_width;
   Element* element = source_.Get();
   const SourceSizeValueResult source_size_val_res =
       SourceSizeValue(element ? element : this, GetDocument());
@@ -1055,8 +1075,8 @@ void HTMLImageElement::EnsureCollapsedOrFallbackContent() {
     return;
 
   ImageResourceContent* image_content = GetImageLoader().GetContent();
-  absl::optional<ResourceError> error =
-      image_content ? image_content->GetResourceError() : absl::nullopt;
+  std::optional<ResourceError> error =
+      image_content ? image_content->GetResourceError() : std::nullopt;
   SetLayoutDisposition(error && error->ShouldCollapseInitiator()
                            ? LayoutDisposition::kCollapsed
                            : LayoutDisposition::kFallbackContent);
@@ -1111,7 +1131,7 @@ void HTMLImageElement::SetLayoutDisposition(
 
 void HTMLImageElement::AdjustStyle(ComputedStyleBuilder& builder) {
   DCHECK_EQ(layout_disposition_, LayoutDisposition::kFallbackContent);
-  HTMLImageFallbackHelper::CustomStyleForAltText(*this, builder);
+  HTMLImageFallbackHelper::AdjustHostStyle(*this, builder);
 }
 
 void HTMLImageElement::AssociateWith(HTMLFormElement* form) {

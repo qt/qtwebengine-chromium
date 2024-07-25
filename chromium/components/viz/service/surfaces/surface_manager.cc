@@ -8,9 +8,9 @@
 #include <stdint.h>
 
 #include <utility>
+#include <vector>
 
 #include "base/containers/adapters.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/containers/queue.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
@@ -19,7 +19,6 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/default_tick_clock.h"
 #include "base/trace_event/trace_event.h"
-#include "components/viz/common/features.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/surfaces/surface.h"
@@ -49,7 +48,7 @@ SurfaceObserver::HandleInteraction GetHandleInteraction(
 
 SurfaceManager::SurfaceManager(
     SurfaceManagerDelegate* delegate,
-    absl::optional<uint32_t> activation_deadline_in_frames,
+    std::optional<uint32_t> activation_deadline_in_frames,
     size_t max_uncommitted_frames)
     : delegate_(delegate),
       activation_deadline_in_frames_(activation_deadline_in_frames),
@@ -81,9 +80,13 @@ SurfaceManager::~SurfaceManager() {
 
   // All SurfaceClients and their surfaces are supposed to be
   // destroyed before SurfaceManager.
-  // TODO(crbug.com/823043): The following two DCHECKs don't hold.
+  // TODO(crbug.com/41377228): The following two DCHECKs don't hold. Destroy
+  // manually for now to avoid ~Surface calling back into a partially-destructed
+  // `this`.
   // DCHECK(surface_map_.empty());
   // DCHECK(surfaces_to_destroy_.empty());
+  surfaces_to_destroy_.clear();
+  surface_map_.clear();
 }
 
 #if DCHECK_IS_ON()
@@ -99,7 +102,7 @@ std::string SurfaceManager::SurfaceReferencesToString() {
 #endif
 
 void SurfaceManager::SetActivationDeadlineInFramesForTesting(
-    absl::optional<uint32_t> activation_deadline_in_frames) {
+    std::optional<uint32_t> activation_deadline_in_frames) {
   activation_deadline_in_frames_ = activation_deadline_in_frames;
 }
 
@@ -109,7 +112,8 @@ void SurfaceManager::SetTickClockForTesting(const base::TickClock* tick_clock) {
 
 Surface* SurfaceManager::CreateSurface(
     base::WeakPtr<SurfaceClient> surface_client,
-    const SurfaceInfo& surface_info) {
+    const SurfaceInfo& surface_info,
+    const SurfaceId& pending_copy_surface_id) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(surface_info.is_valid());
   DCHECK(surface_client);
@@ -126,9 +130,9 @@ Surface* SurfaceManager::CreateSurface(
   if (!allocation_group)
     return nullptr;
 
-  std::unique_ptr<Surface> surface =
-      std::make_unique<Surface>(surface_info, this, allocation_group,
-                                surface_client, max_uncommitted_frames_);
+  std::unique_ptr<Surface> surface = std::make_unique<Surface>(
+      surface_info, this, allocation_group, surface_client,
+      pending_copy_surface_id, max_uncommitted_frames_);
   surface->SetDependencyDeadline(
       std::make_unique<SurfaceDependencyDeadline>(tick_clock_));
   surface_map_[surface_info.id()] = std::move(surface);
@@ -255,6 +259,17 @@ SurfaceManager::GetSurfacesThatReferenceChildForTesting(
   return parents;
 }
 
+base::TimeTicks SurfaceManager::GetSurfaceReferencedTimestamp(
+    const SurfaceId& surface_id) const {
+  CHECK(surface_id.is_valid());
+  auto surface_referenced_timestamp =
+      surface_referenced_timestamps_.find(surface_id);
+  if (surface_referenced_timestamp != surface_referenced_timestamps_.end()) {
+    return surface_referenced_timestamp->second.first;
+  }
+  return base::TimeTicks();
+}
+
 SurfaceManager::SurfaceIdSet SurfaceManager::GetLiveSurfaces() {
   SurfaceIdSet reachable_surfaces;
 
@@ -297,7 +312,9 @@ void SurfaceManager::AddSurfaceReferenceImpl(
   const SurfaceId& parent_id = reference.parent_id();
   const SurfaceId& child_id = reference.child_id();
 
-  if (parent_id.frame_sink_id() == child_id.frame_sink_id()) {
+  if (parent_id.frame_sink_id() == child_id.frame_sink_id() &&
+      !parent_id.IsNewerThan(child_id)) {
+    // Only newer surfaces from the same client can keep an older surface alive.
     DLOG(ERROR) << "Cannot add self reference from " << parent_id << " to "
                 << child_id;
     return;
@@ -311,6 +328,17 @@ void SurfaceManager::AddSurfaceReferenceImpl(
   }
 
   references_[parent_id].insert(child_id);
+
+  // Increase the number of references to `child_id`.
+  if (surface_referenced_timestamps_.find(child_id) ==
+      surface_referenced_timestamps_.end()) {
+    // If the surface has never been referenced before, also record the current
+    // time as the first timestamp that the surface has been referenced.
+    surface_referenced_timestamps_[child_id] =
+        std::make_pair(base::TimeTicks::Now(), 1);
+  } else {
+    surface_referenced_timestamps_[child_id].second++;
+  }
 
   for (auto& observer : observer_list_)
     observer.OnAddedSurfaceReference(parent_id, child_id);
@@ -338,6 +366,15 @@ void SurfaceManager::RemoveSurfaceReferenceImpl(
   iter_parent->second.erase(child_iter);
   if (iter_parent->second.empty())
     references_.erase(iter_parent);
+
+  // Decrease the amount of references to `child_id`, and erase the entry from
+  // `surface_referenced_timestamps_` if we've removed the last reference.
+  CHECK(surface_referenced_timestamps_.find(child_id) !=
+        surface_referenced_timestamps_.end());
+  surface_referenced_timestamps_[child_id].second--;
+  if (surface_referenced_timestamps_[child_id].second == 0) {
+    surface_referenced_timestamps_.erase(child_id);
+  }
 }
 
 bool SurfaceManager::HasTemporaryReference(const SurfaceId& surface_id) const {
@@ -447,8 +484,7 @@ void SurfaceManager::ExpireOldTemporaryReferences() {
 
   // Some surfaces may have become eligible to garbage collection, since we
   // just removed temporary references.
-  if (base::FeatureList::IsEnabled(features::kEagerSurfaceGarbageCollection))
-    GarbageCollectSurfaces();
+  GarbageCollectSurfaces();
 }
 
 Surface* SurfaceManager::GetSurfaceForId(const SurfaceId& surface_id) const {
@@ -626,7 +662,7 @@ void SurfaceManager::MaybeGarbageCollectAllocationGroups() {
     auto list_it = frame_sink_id_to_allocation_groups_.find(
         it->second->submitter_frame_sink_id());
     DCHECK(list_it != frame_sink_id_to_allocation_groups_.end());
-    base::Erase(list_it->second, it->second.get());
+    std::erase(list_it->second, it->second.get());
     if (list_it->second.empty())
       frame_sink_id_to_allocation_groups_.erase(list_it);
     // Destroy the allocation group. Removing it from the map is done in a

@@ -38,13 +38,12 @@ class JsonString final {
         has_escape_(false),
         is_index_(true) {}
 
-  JsonString(int start, int length, bool needs_conversion,
-             bool needs_internalization, bool has_escape)
+  JsonString(int start, int length, bool needs_conversion, bool internalize,
+             bool has_escape)
       : start_(start),
         length_(length),
         needs_conversion_(needs_conversion),
-        internalize_(needs_internalization ||
-                     length_ <= kMaxInternalizedStringValueLength),
+        internalize_(internalize),
         has_escape_(has_escape),
         is_index_(false) {}
 
@@ -81,8 +80,6 @@ class JsonString final {
   bool is_index() const { return is_index_; }
 
  private:
-  static const int kMaxInternalizedStringValueLength = 10;
-
   union {
     const int start_;
     const uint32_t index_;
@@ -97,6 +94,8 @@ class JsonString final {
 struct JsonProperty {
   JsonProperty() { UNREACHABLE(); }
   explicit JsonProperty(const JsonString& string) : string(string) {}
+  JsonProperty(const JsonString& string, Handle<Object> value)
+      : string(string), value(value) {}
 
   JsonString string;
   Handle<Object> value;
@@ -185,6 +184,8 @@ class JsonParser final {
       static_cast<base::uc32>(-1);
 
  private:
+  class NamedPropertyIterator;
+
   template <typename T>
   using SmallVector = base::SmallVector<T, 16>;
   struct JsonContinuation {
@@ -322,14 +323,16 @@ class JsonParser final {
   // A JSON value is either a (double-quoted) string literal, a number literal,
   // one of "true", "false", or "null", or an object or array literal.
   template <bool should_track_json_source>
-  MaybeHandle<Object> ParseJsonValue(Handle<Object> reviver);
+  MaybeHandle<Object> ParseJsonValue();
 
-  Handle<Object> BuildJsonObject(
-      const JsonContinuation& cont,
-      const SmallVector<JsonProperty>& property_stack, Handle<Map> feedback);
-  Handle<Object> BuildJsonArray(
-      const JsonContinuation& cont,
-      const SmallVector<Handle<Object>>& element_stack);
+  V8_INLINE MaybeHandle<Object> ParseJsonValueRecursive(
+      Handle<Map> feedback = {});
+  MaybeHandle<Object> ParseJsonArray();
+  MaybeHandle<Object> ParseJsonObject(Handle<Map> feedback);
+
+  Handle<JSObject> BuildJsonObject(const JsonContinuation& cont,
+                                   Handle<Map> feedback);
+  Handle<Object> BuildJsonArray(size_t start);
 
   static const int kMaxContextCharacters = 10;
   static const int kMinOriginalSourceLengthForContext =
@@ -396,6 +399,9 @@ class JsonParser final {
   // The parsed value's source to be passed to the reviver, if the reviver is
   // callable.
   MaybeHandle<Object> parsed_val_node_;
+
+  SmallVector<Handle<Object>> element_stack_;
+  SmallVector<JsonProperty> property_stack_;
 
   // Cached pointer to the raw chars in source. In case source is on-heap, we
   // register an UpdatePointers callback. For this reason, chars_, cursor_ and

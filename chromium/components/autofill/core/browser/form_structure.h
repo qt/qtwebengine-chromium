@@ -19,7 +19,6 @@
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/strings/string_piece.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/country_type.h"
@@ -201,9 +200,6 @@ class FormStructure {
   // correctly defined by the web developer.
   bool SetSectionsFromAutocompleteOrReset();
 
-  // Classifies each field in |fields_| using the regular expressions.
-  void ParseFieldTypesWithPatterns(ParsingContext& context);
-
   // Returns the values that can be filled into the form structure for the
   // given type. For example, there's no way to fill in a value of "The Moon"
   // into ADDRESS_HOME_STATE if the form only has a
@@ -222,19 +218,6 @@ class FormStructure {
   void RationalizeFormStructure(
       AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
       LogManager* log_manager);
-
-  // Classifies each field in `fields_` into a logical section.
-  // The function consists of 2 passes:
-  //   - 1st pass: Performed only when `ignore_autocomplete` is true or none of
-  //               the fields in `fields_` has a valid autocomplete section.
-  //               Sections are identified by the heuristic that a logical
-  //               section should not include multiple fields of the same
-  //               autofill type with some exceptions, as described in the
-  //               implementation.
-  //   - 2nd pass: Separate credit card fields from all other fields.
-  // Note: `ignore_autocomplete` is set to true only when identifying sections
-  // after server response.
-  void IdentifySections(bool ignore_autocomplete);
 
   // Returns the FieldGlobalIds of the |fields_| that are eligible for manual
   // filling on form interaction.
@@ -293,13 +276,10 @@ class FormStructure {
     return has_author_specified_types_;
   }
 
-  bool has_author_specified_upi_vpa_hint() const {
-    return has_author_specified_upi_vpa_hint_;
-  }
-
   bool has_password_field() const { return has_password_field_; }
 
-  bool is_form_tag() const { return is_form_tag_; }
+  // Returns whether the form comes from an HTML form with a <form> tag.
+  bool is_form_element() const;
 
   void set_submission_event(mojom::SubmissionIndicatorEvent submission_event) {
     submission_event_ = submission_event;
@@ -352,7 +332,7 @@ class FormStructure {
     if (randomized_encoder_) {
       return randomized_encoder_.get();
     }
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   const LanguageCode& current_page_language() const {
@@ -363,7 +343,7 @@ class FormStructure {
     current_page_language_ = std::move(language);
   }
 
-  FormGlobalId global_id() const { return {host_frame_, unique_renderer_id_}; }
+  FormGlobalId global_id() const { return {host_frame_, renderer_id_}; }
 
   FormVersion version() const { return version_; }
 
@@ -394,6 +374,26 @@ class FormStructure {
   // Sets the rank of each field in the form.
   void DetermineFieldRanks();
 
+  // Considers all `GetNonActiveHeuristicSources()` and computes predictions
+  // for the PatternSources among them. If some of them match the
+  // `active_predictions`, applying the regexes is skipped entirely.
+  // `active_predictions` is nullopt if the active HeuristicSource is not a
+  // PatternSource.
+  // Reuses the `context` used to compute the main predictions for caching.
+  void DetermineNonActiveHeuristicTypes(
+      std::optional<FieldCandidatesMap> active_predictions,
+      ParsingContext& context);
+
+  // Classifies each field using the regular expressions. The classifications
+  // are returned, but not assigned to the `fields_` yet. Use
+  // `AssignBestFieldTypes()` to do so.
+  FieldCandidatesMap ParseFieldTypesWithPatterns(ParsingContext& context) const;
+
+  // Assigns the best heuristic types from the `field_type_map` to the heuristic
+  // types of the corresponding fields for the `pattern_source`.
+  void AssignBestFieldTypes(const FieldCandidatesMap& field_type_map,
+                            PatternSource pattern_source);
+
   // Production code only uses the default parameters.
   // Unit tests also test other parameters.
   struct ShouldBeParsedParams {
@@ -409,8 +409,6 @@ class FormStructure {
 
   [[nodiscard]] bool ShouldBeParsed(ShouldBeParsedParams params,
                                     LogManager* log_manager = nullptr) const;
-
-  void IdentifySectionsWithNewMethod();
 
   // Further processes the extracted |fields_|.
   void ProcessExtractedFields();
@@ -478,15 +476,8 @@ class FormStructure {
   // author, via the |autocompletetype| attribute.
   bool has_author_specified_types_ = false;
 
-  // Whether the form includes a field that explicitly sets it autocomplete
-  // type to "upi-vpa".
-  bool has_author_specified_upi_vpa_hint_ = false;
-
   // True if the form contains at least one password field.
   bool has_password_field_ = false;
-
-  // True if the form is a <form>.
-  bool is_form_tag_ = true;
 
   // True if all form fields are password fields.
   bool all_fields_are_passwords_ = false;
@@ -533,7 +524,10 @@ class FormStructure {
 
   // An identifier of the form that is unique among the forms from the same
   // frame.
-  FormRendererId unique_renderer_id_;
+  FormRendererId renderer_id_;
+
+  // A vector of all iframes in the form.
+  std::vector<FrameTokenWithPredecessor> child_frames_;
 
   // Single username details, if applicable.
   std::vector<AutofillUploadContents::SingleUsernameData> single_username_data_;

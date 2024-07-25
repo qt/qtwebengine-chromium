@@ -31,7 +31,7 @@ SimulatedCapturer::SimulatedCapturer(Environment* environment,
                                      const char* path,
                                      AVMediaType media_type,
                                      Clock::time_point start_time,
-                                     Observer* observer)
+                                     Observer& observer)
     : format_context_(MakeUniqueAVFormatContext(path)),
       now_(environment->now_function()),
       media_type_(media_type),
@@ -40,8 +40,6 @@ SimulatedCapturer::SimulatedCapturer(Environment* environment,
       packet_(MakeUniqueAVPacket()),
       decoded_frame_(MakeUniqueAVFrame()),
       next_task_(environment->now_function(), environment->task_runner()) {
-  OSP_DCHECK(observer_);
-
   if (!format_context_) {
     OnError("MakeUniqueAVFormatContext", AVERROR_UNKNOWN);
     return;  // Capturer is halted (unable to start).
@@ -119,7 +117,7 @@ void SimulatedCapturer::OnError(const char* function_name, int av_errnum) {
   // have been called from the constructor.
   next_task_.Schedule(
       [this, error_string = error.str()] {
-        observer_->OnError(this, error_string);
+        observer_.OnError(this, error_string);
         // Capturer is now halted.
       },
       Alarm::kImmediately);
@@ -191,7 +189,7 @@ void SimulatedCapturer::ConsumeNextDecodedFrame() {
                             Alarm::kImmediately);
         return;
       case AVERROR_EOF:
-        observer_->OnEndOfFile(this);
+        observer_.OnEndOfFile(this);
         return;  // Capturer is now halted.
       default:
         OnError("avcodec_receive_frame", receive_frame_result);
@@ -245,7 +243,7 @@ SimulatedAudioCapturer::SimulatedAudioCapturer(Environment* environment,
                                                int num_channels,
                                                int sample_rate,
                                                Clock::time_point start_time,
-                                               Client* client)
+                                               Client& client)
     : SimulatedCapturer(environment,
                         path,
                         AVMEDIA_TYPE_AUDIO,
@@ -255,8 +253,8 @@ SimulatedAudioCapturer::SimulatedAudioCapturer(Environment* environment,
       sample_rate_(sample_rate),
       client_(client),
       resampler_(MakeUniqueSwrContext()) {
-  OSP_DCHECK_GT(num_channels_, 0);
-  OSP_DCHECK_GT(sample_rate_, 0);
+  OSP_CHECK_GT(num_channels_, 0);
+  OSP_CHECK_GT(sample_rate_, 0);
 }
 
 SimulatedAudioCapturer::~SimulatedAudioCapturer() {
@@ -336,14 +334,14 @@ std::optional<Clock::duration> SimulatedAudioCapturer::ProcessDecodedFrame(
 
   const int64_t num_leftover_input_samples =
       swr_get_delay(resampler_.get(), input_sample_rate_);
-  OSP_DCHECK_GE(num_leftover_input_samples, 0);
+  OSP_CHECK_GE(num_leftover_input_samples, 0);
   const Clock::duration reference_time_adjustment = -ToApproximateClockDuration(
       num_leftover_input_samples, AVRational{1, input_sample_rate_});
 
   const int64_t num_output_samples_desired =
       av_rescale_rnd(num_leftover_input_samples + frame.nb_samples,
                      sample_rate_, input_sample_rate_, AV_ROUND_ZERO);
-  OSP_DCHECK_GE(num_output_samples_desired, 0);
+  OSP_CHECK_GE(num_output_samples_desired, 0);
   resampled_audio_.resize(num_channels_ * num_output_samples_desired);
   uint8_t* output_argument[1] = {
       reinterpret_cast<uint8_t*>(resampled_audio_.data())};
@@ -369,9 +367,9 @@ void SimulatedAudioCapturer::DeliverDataToClient(
   if (resampled_audio_.empty()) {
     return;
   }
-  client_->OnAudioData(resampled_audio_.data(),
-                       resampled_audio_.size() / num_channels_,
-                       capture_begin_time, capture_end_time, reference_time);
+  client_.OnAudioData(resampled_audio_.data(),
+                      resampled_audio_.size() / num_channels_,
+                      capture_begin_time, capture_end_time, reference_time);
   resampled_audio_.clear();
 }
 
@@ -380,7 +378,7 @@ SimulatedVideoCapturer::Client::~Client() = default;
 SimulatedVideoCapturer::SimulatedVideoCapturer(Environment* environment,
                                                const char* path,
                                                Clock::time_point start_time,
-                                               Client* client)
+                                               Client& client)
     : SimulatedCapturer(environment,
                         path,
                         AVMEDIA_TYPE_VIDEO,
@@ -413,8 +411,8 @@ void SimulatedVideoCapturer::DeliverDataToClient(
     Clock::time_point capture_begin_time,
     Clock::time_point capture_end_time,
     Clock::time_point reference_time) {
-  client_->OnVideoFrame(frame, capture_begin_time, capture_end_time,
-                        reference_time);
+  client_.OnVideoFrame(frame, capture_begin_time, capture_end_time,
+                       reference_time);
 }
 
 }  // namespace openscreen::cast

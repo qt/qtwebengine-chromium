@@ -43,10 +43,11 @@
 #ifdef SUPPORT_MT21_PIXEL_FORMAT_SOFTWARE_DECOMPRESSION
 #include "media/gpu/v4l2/mt21/mt21_decompressor.h"
 #endif
+#include <optional>
+
 #include "media/gpu/v4l2/v4l2_device.h"
 #include "media/video/picture.h"
 #include "media/video/video_decode_accelerator.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_fence_egl.h"
@@ -209,13 +210,11 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
     OutputRecord();
     OutputRecord(OutputRecord&&);
     ~OutputRecord();
-    EGLImageKHR egl_image;  // EGLImageKHR for the output buffer.
     int32_t picture_id;     // picture buffer id as returned to PictureReady().
-    GLuint texture_id;
     bool cleared;           // Whether the texture is cleared and safe to render
                             // from. See TextureManager for details.
     // Output frame. Used only when OutputMode is IMPORT.
-    scoped_refptr<VideoFrame> output_frame;
+    scoped_refptr<FrameResource> output_frame;
   };
 
   //
@@ -265,25 +264,6 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   void ImportBufferForPictureForImportTask(int32_t picture_buffer_id,
                                            VideoPixelFormat pixel_format,
                                            gfx::NativePixmapHandle handle);
-
-  // Create an EGLImage on |egl_device| for the buffer associated with V4L2
-  // |buffer_index| and |picture_buffer_id|, backed by |handle|.
-  // The buffer should be bound to |texture_id| and is of format described by
-  // |fourcc|. |visible_size| is the size in pixels that the EGL device will be
-  // able to see.
-  void CreateEGLImageFor(scoped_refptr<V4L2Device> egl_device,
-                         size_t buffer_index,
-                         int32_t picture_buffer_id,
-                         gfx::NativePixmapHandle handle,
-                         GLuint texture_id,
-                         const gfx::Size& visible_size,
-                         const Fourcc fourcc);
-
-  // Take the EGLImage |egl_image|, created for |picture_buffer_id|, and use it
-  // for OutputRecord at |buffer_index|.
-  void AssignEGLImage(size_t buffer_index,
-                      int32_t picture_buffer_id,
-                      EGLImageKHR egl_image);
 
   // Service I/O on the V4L2 devices.  This task should only be scheduled from
   // DevicePollTask().  If |event_pending| is true, one or more events
@@ -423,7 +403,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   void SendBufferToClient(size_t buffer_index,
                           int32_t bitstream_buffer_id,
                           V4L2ReadableBufferRef vda_buffer,
-                          scoped_refptr<VideoFrame> frame = nullptr);
+                          scoped_refptr<FrameResource> frame = nullptr);
 
   //
   // Methods run on child thread.
@@ -440,7 +420,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // image processor.
   void FrameProcessed(int32_t bitstream_buffer_id,
                       size_t output_buffer_index,
-                      scoped_refptr<VideoFrame> frame);
+                      scoped_refptr<FrameResource> frame);
 
   // Image processor notifies an error.
   void ImageProcessorError();
@@ -552,7 +532,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // thread manipulates them.
   //
 
-  absl::optional<V4L2WritableBufferRef> current_input_buffer_;
+  std::optional<V4L2WritableBufferRef> current_input_buffer_;
 
   scoped_refptr<V4L2Queue> input_queue_;
   scoped_refptr<V4L2Queue> output_queue_;
@@ -566,13 +546,14 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   std::queue<std::pair<int32_t, V4L2ReadableBufferRef>> buffers_at_ip_;
   // Keeps decoded buffers out of the free list until the client returns them.
   // First element is the VDA buffer, second is the (optional) IP buffer.
-  std::map<int32_t, std::pair<V4L2ReadableBufferRef, scoped_refptr<VideoFrame>>>
+  std::map<int32_t,
+           std::pair<V4L2ReadableBufferRef, scoped_refptr<FrameResource>>>
       buffers_at_client_;
   // Queue of buffers that have been returned by the client, but which fence
   // hasn't been signaled yet. Keeps both the VDA and (optional) IP buffer.
   std::queue<
       std::pair<std::unique_ptr<gl::GLFenceEGL>,
-                std::pair<V4L2ReadableBufferRef, scoped_refptr<VideoFrame>>>>
+                std::pair<V4L2ReadableBufferRef, scoped_refptr<FrameResource>>>>
       buffers_awaiting_fence_;
 
   // Mapping of int index to output buffer record.
@@ -614,7 +595,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
   // Chosen input format for the video profile we are decoding from.
   uint32_t input_format_fourcc_;
   // Chosen output format.
-  absl::optional<Fourcc> output_format_fourcc_;
+  std::optional<Fourcc> output_format_fourcc_;
 
   // Image processor device, if one is in use.
   scoped_refptr<V4L2Device> image_processor_device_;
@@ -626,7 +607,7 @@ class MEDIA_GPU_EXPORT V4L2VideoDecodeAccelerator
 #endif
 
   // The format of EGLImage.
-  absl::optional<Fourcc> egl_image_format_fourcc_;
+  std::optional<Fourcc> egl_image_format_fourcc_;
   // The logical dimensions of EGLImage buffer in pixels.
   gfx::Size egl_image_size_;
 

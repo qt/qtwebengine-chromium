@@ -7,19 +7,24 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
+#include "base/base64.h"
 #include "base/base64url.h"
 #include "base/containers/span.h"
 #include "base/json/json_reader.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/protobuf_matchers.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/signin/bound_session_credentials/bound_session_params_util.h"
 #include "chrome/browser/signin/bound_session_credentials/bound_session_refresh_cookie_fetcher.h"
 #include "chrome/browser/signin/bound_session_credentials/bound_session_test_cookie_manager.h"
+#include "chrome/browser/signin/bound_session_credentials/rotation_debug_info.pb.h"
 #include "chrome/browser/signin/bound_session_credentials/session_binding_helper.h"
 #include "components/signin/public/base/session_binding_test_utils.h"
 #include "components/signin/public/base/session_binding_utils.h"
@@ -28,7 +33,9 @@
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_service_impl.h"
 #include "components/unexportable_keys/unexportable_key_task_manager.h"
+#include "components/variations/scoped_variations_ids_provider.h"
 #include "crypto/scoped_mock_unexportable_key_provider.h"
+#include "crypto/unexportable_key.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/http/http_status_code.h"
@@ -43,6 +50,7 @@ namespace {
 using RefreshTestFuture =
     base::test::TestFuture<BoundSessionRefreshCookieFetcher::Result>;
 using Result = BoundSessionRefreshCookieFetcher::Result;
+using bound_session_credentials::RotationDebugInfo;
 using testing::ElementsAre;
 using unexportable_keys::BackgroundTaskPriority;
 using unexportable_keys::ServiceErrorOr;
@@ -51,6 +59,7 @@ using unexportable_keys::UnexportableKeyService;
 
 constexpr char kSessionId[] = "session_id";
 constexpr char kChallenge[] = "aGVsbG8_d29ybGQ";
+constexpr net::Error kConnectionNetError = net::ERR_UNEXPECTED;
 
 UnexportableKeyId GenerateNewKey(
     UnexportableKeyService& unexportable_key_service) {
@@ -65,7 +74,7 @@ UnexportableKeyId GenerateNewKey(
 }
 
 std::string GetChallengeFromJwt(std::string_view jwt) {
-  std::vector<base::StringPiece> parts = base::SplitStringPiece(
+  std::vector<std::string_view> parts = base::SplitStringPiece(
       jwt, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
 
   if (parts.size() != 3) {
@@ -101,14 +110,16 @@ class BoundSessionRefreshCookieFetcherImplTest : public ::testing::Test {
         unexportable_key_service_,
         *unexportable_key_service_.GetWrappedKey(binding_key_id_), kSessionId);
     fetcher_ = std::make_unique<BoundSessionRefreshCookieFetcherImpl>(
-        test_url_loader_factory_.GetSafeWeakWrapper(),
-        wait_for_network_callback_helper_, *session_binding_helper_, kGairaUrl,
-        base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName});
+        test_url_loader_factory_.GetSafeWeakWrapper(), *session_binding_helper_,
+        /*refresh_url=*/GURL(), kGaiaUrl,
+        base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName},
+        /*is_off_the_record_profile=*/false,
+        bound_session_credentials::RotationDebugInfo());
     UpdateCookieList();
   }
 
  protected:
-  const GURL kGairaUrl = GURL("https://google.com/");
+  const GURL kGaiaUrl = GURL("https://google.com/");
   const std::string k1PSIDTSCookieName = "__Secure-1PSIDTS";
   const std::string k3PSIDTSCookieName = "__Secure-3PSIDTS";
 
@@ -123,7 +134,7 @@ class BoundSessionRefreshCookieFetcherImplTest : public ::testing::Test {
         continue;
       }
       cookies_.emplace_back(
-          BoundSessionTestCookieManager::CreateCookie(kGairaUrl, cookie_name));
+          BoundSessionTestCookieManager::CreateCookie(kGaiaUrl, cookie_name));
     }
   }
 
@@ -159,7 +170,7 @@ class BoundSessionRefreshCookieFetcherImplTest : public ::testing::Test {
       network::mojom::CookieAccessDetails::Type access_type) {
     std::vector<network::mojom::CookieAccessDetailsPtr> cookie_access_details;
     cookie_access_details.emplace_back(network::mojom::CookieAccessDetails::New(
-        access_type, kGairaUrl, url::Origin(), net::SiteForCookies(),
+        access_type, kGaiaUrl, url::Origin(), net::SiteForCookies(),
         CreateReportedCookies(cookies_), std::nullopt, /*count=*/1,
         /*is_ad_tagged=*/false, net::CookieSettingOverrides()));
     fetcher_->OnCookiesAccessed(std::move(cookie_access_details));
@@ -183,24 +194,34 @@ class BoundSessionRefreshCookieFetcherImplTest : public ::testing::Test {
         "Signin.BoundSessionCredentials."
         "CookieRotationGenerateAssertionDuration",
         expect_assertion_was_generated_count);
+
+    std::vector<base::Bucket> expected_net_error_buckets;
+    if (expected_result == Result::kConnectionError) {
+      expected_net_error_buckets.emplace_back(-kConnectionNetError,
+                                              /*count=*/1);
+    }
+    EXPECT_THAT(histogram_tester_.GetAllSamples(
+                    "Signin.BoundSessionCredentials.CookieRotationNetError"),
+                testing::ElementsAreArray(expected_net_error_buckets));
   }
 
   base::test::TaskEnvironment task_environment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
+  variations::ScopedVariationsIdsProvider scoped_variations_ids_provider_{
+      variations::VariationsIdsProvider::Mode::kUseSignedInState};
   crypto::ScopedMockUnexportableKeyProvider scoped_key_provider_;
-  unexportable_keys::UnexportableKeyTaskManager unexportable_key_task_manager_;
+  unexportable_keys::UnexportableKeyTaskManager unexportable_key_task_manager_{
+      crypto::UnexportableKeyProvider::Config()};
   unexportable_keys::UnexportableKeyServiceImpl unexportable_key_service_;
   UnexportableKeyId binding_key_id_;
   std::unique_ptr<SessionBindingHelper> session_binding_helper_;
   network::TestURLLoaderFactory test_url_loader_factory_;
-  TestWaitForNetworkCallbackHelper wait_for_network_callback_helper_;
   std::unique_ptr<BoundSessionRefreshCookieFetcherImpl> fetcher_;
   net::CookieList cookies_;
   base::HistogramTester histogram_tester_;
 };
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, SuccessExpectedCookieSet) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -223,13 +244,39 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, SuccessExpectedCookieSet) {
 
   EXPECT_TRUE(future.IsReady());
   EXPECT_EQ(future.Get(), Result::kSuccess);
+  EXPECT_FALSE(fetcher_->IsChallengeReceived());
+  VerifyMetricsRecorded(Result::kSuccess,
+                        /*expect_assertion_was_generated_count=*/0);
+}
+
+TEST_F(BoundSessionRefreshCookieFetcherImplTest, SuccessNonEmptyRefreshUrl) {
+  const GURL refresh_url("https://security.google.com/CheckBinding");
+  fetcher_ = std::make_unique<BoundSessionRefreshCookieFetcherImpl>(
+      test_url_loader_factory_.GetSafeWeakWrapper(), *session_binding_helper_,
+      refresh_url, kGaiaUrl,
+      base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName},
+      /*is_off_the_record_profile=*/false,
+      bound_session_credentials::RotationDebugInfo());
+  RefreshTestFuture future;
+  fetcher_->Start(future.GetCallback());
+
+  EXPECT_EQ(test_url_loader_factory_.total_requests(), 1u);
+  network::TestURLLoaderFactory::PendingRequest* pending_request =
+      test_url_loader_factory_.GetPendingRequest(0);
+  EXPECT_EQ(pending_request->request.url, refresh_url);
+
+  SimulateOnCookiesAccessed(network::mojom::CookieAccessDetails::Type::kChange);
+  test_url_loader_factory_.SimulateResponseForPendingRequest(
+      pending_request->request.url.spec(), "");
+
+  EXPECT_TRUE(future.IsReady());
+  EXPECT_EQ(future.Get(), Result::kSuccess);
   VerifyMetricsRecorded(Result::kSuccess,
                         /*expect_assertion_was_generated_count=*/0);
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        SuccessCookiesReportedDelayed) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -254,7 +301,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        ResultNotReportedOnCookieRead) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -278,7 +324,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, CookiesNotReported) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -301,7 +346,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, CookiesNotReported) {
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        CookiesReportedExpectedCookieNotSet) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -327,7 +371,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        CookiesReportedNotAllExpectedCookiesSet) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -352,7 +395,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, FailureNetError) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -360,7 +402,7 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, FailureNetError) {
   network::TestURLLoaderFactory::PendingRequest* pending_request =
       test_url_loader_factory_.GetPendingRequest(0);
 
-  network::URLLoaderCompletionStatus status(net::ERR_UNEXPECTED);
+  network::URLLoaderCompletionStatus status(kConnectionNetError);
   test_url_loader_factory_.SimulateResponseForPendingRequest(
       pending_request->request.url, status,
       network::mojom::URLResponseHead::New(), std::string());
@@ -374,7 +416,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, FailureNetError) {
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, FailureHttpError) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -394,9 +435,9 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, FailureHttpError) {
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, ChallengeRequired) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
+  EXPECT_FALSE(fetcher_->IsChallengeReceived());
 
   SimulateChallengeRequired(CreateChallengeHeaderValue(kChallenge));
   task_environment_.RunUntilIdle();
@@ -420,13 +461,13 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, ChallengeRequired) {
 
   EXPECT_TRUE(future.IsReady());
   EXPECT_EQ(future.Get(), Result::kSuccess);
+  EXPECT_TRUE(fetcher_->IsChallengeReceived());
   VerifyMetricsRecorded(Result::kSuccess,
                         /*expect_assertion_was_generated_count=*/1);
 }
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        ChallengeRequiredNonUTF8Characters) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -438,7 +479,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        BadChallengeHeaderFormatEmpty) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
   SimulateChallengeRequired("");
@@ -449,7 +489,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        BadChallengeHeaderFormatChallengeMissing) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
   SimulateChallengeRequired("session_id=12345;");
@@ -460,7 +499,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        BadChallengeHeaderFormatChallengeFieldEmpty) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
   SimulateChallengeRequired(CreateChallengeHeaderValue(""));
@@ -471,7 +509,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
 
 TEST_F(BoundSessionRefreshCookieFetcherImplTest,
        AssertionRequestsLimitExceeded) {
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -497,10 +534,11 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, SignChallengeFailed) {
   session_binding_helper_ = std::make_unique<SessionBindingHelper>(
       unexportable_key_service_, wrapped_key, kSessionId);
   fetcher_ = std::make_unique<BoundSessionRefreshCookieFetcherImpl>(
-      test_url_loader_factory_.GetSafeWeakWrapper(),
-      wait_for_network_callback_helper_, *session_binding_helper_, kGairaUrl,
-      base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName});
-  ASSERT_FALSE(wait_for_network_callback_helper_.AreNetworkCallsDelayed());
+      test_url_loader_factory_.GetSafeWeakWrapper(), *session_binding_helper_,
+      /*refresh_url=*/GURL(), kGaiaUrl,
+      base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName},
+      /*is_off_the_record_profile_=*/false,
+      bound_session_credentials::RotationDebugInfo());
   RefreshTestFuture future;
   fetcher_->Start(future.GetCallback());
 
@@ -540,24 +578,6 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest,
             Result::kServerTransientError);
 }
 
-TEST_F(BoundSessionRefreshCookieFetcherImplTest, NetworkDelayed) {
-  wait_for_network_callback_helper_.SetNetworkCallsDelayed(true);
-  RefreshTestFuture future;
-  fetcher_->Start(future.GetCallback());
-  EXPECT_EQ(test_url_loader_factory_.total_requests(), 0u);
-
-  wait_for_network_callback_helper_.SetNetworkCallsDelayed(false);
-  EXPECT_EQ(test_url_loader_factory_.total_requests(), 1u);
-  network::TestURLLoaderFactory::PendingRequest* pending_request =
-      test_url_loader_factory_.GetPendingRequest(0);
-  EXPECT_EQ(pending_request->request.url,
-            "https://accounts.google.com/RotateBoundCookies");
-  test_url_loader_factory_.SimulateResponseForPendingRequest(
-      pending_request->request.url.spec(), "");
-
-  EXPECT_TRUE(future.Wait());
-}
-
 TEST_F(BoundSessionRefreshCookieFetcherImplTest, OnCookiesAccessedRead) {
   EXPECT_FALSE(reported_cookies_notified());
   SimulateOnCookiesAccessed(network::mojom::CookieAccessDetails::Type::kRead);
@@ -570,6 +590,46 @@ TEST_F(BoundSessionRefreshCookieFetcherImplTest, OnCookiesAccessedChange) {
   SimulateOnCookiesAccessed(network::mojom::CookieAccessDetails::Type::kChange);
   EXPECT_TRUE(reported_cookies_notified());
   EXPECT_TRUE(expected_cookies_set());
+}
+
+TEST_F(BoundSessionRefreshCookieFetcherImplTest, DebugHeaderSent) {
+  RotationDebugInfo info;
+  RotationDebugInfo::FailureCounter* counter =
+      info.add_errors_since_last_rotation();
+  counter->set_type(RotationDebugInfo::CONNECTION_ERROR);
+  counter->set_count(2);
+
+  fetcher_ = std::make_unique<BoundSessionRefreshCookieFetcherImpl>(
+      test_url_loader_factory_.GetSafeWeakWrapper(), *session_binding_helper_,
+      /*refresh_url=*/GURL(), kGaiaUrl,
+      base::flat_set<std::string>{k1PSIDTSCookieName, k3PSIDTSCookieName},
+      /*is_off_the_record_profile_=*/false, info);
+  RefreshTestFuture future;
+  // Skip some time to create a difference between the the fetcher creation time
+  // and the request start time.
+  task_environment_.FastForwardBy(base::Seconds(5));
+  base::Time time_at_start = base::Time::Now();
+  fetcher_->Start(future.GetCallback());
+  task_environment_.FastForwardBy(base::Seconds(10));
+
+  ASSERT_EQ(test_url_loader_factory_.NumPending(), 1);
+  network::TestURLLoaderFactory::PendingRequest* pending_request =
+      test_url_loader_factory_.GetPendingRequest(0);
+  auto headers = pending_request->request.headers;
+  std::string sent_info_base64;
+  ASSERT_TRUE(headers.GetHeader("Sec-Session-Google-Rotation-Debug-Info",
+                                &sent_info_base64));
+
+  std::string sent_info_serialized;
+  ASSERT_TRUE(base::Base64Decode(sent_info_base64, &sent_info_serialized));
+  RotationDebugInfo sent_info;
+  ASSERT_TRUE(sent_info.ParseFromString(sent_info_serialized));
+
+  RotationDebugInfo expected_info = info;
+  // Fetcher should set the request time when starting the request.
+  *expected_info.mutable_request_time() =
+      bound_session_credentials::TimeToTimestamp(time_at_start);
+  EXPECT_THAT(sent_info, base::test::EqualsProto(expected_info));
 }
 
 TEST(BoundSessionRefreshCookieFetcherImplParseChallengeHeaderTest,

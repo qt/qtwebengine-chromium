@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
- * Copyright (C) 2019-2023 Google Inc.
+/* Copyright (c) 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (C) 2019-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -166,7 +166,6 @@ RangeEncoder::RangeEncoder(const VkImageSubresourceRange& full_range, const Aspe
       mip_size_(full_range.layerCount),
       aspect_size_(mip_size_ * full_range.levelCount),
       aspect_bits_(param->AspectBits()),
-      mask_index_function_(param->MaskToIndexFunction()),
       encode_function_(nullptr),
       decode_function_(nullptr) {
     // Only valid to create an encoder for a *whole* image (i.e. base must be zero, and the specified limits_.selected_aspects
@@ -275,21 +274,21 @@ ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image)
 
 ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image, const AspectParameters* param)
     : RangeEncoder(image.full_range, param), total_size_(0U) {
-    if (image.createInfo.extent.depth > 1) {
-        limits_.arrayLayer = image.createInfo.extent.depth;
+    if (image.create_info.extent.depth > 1) {
+        limits_.arrayLayer = image.create_info.extent.depth;
     }
-    VkSubresourceLayout layout = {};
-    VkImageSubresource subres = {};
-    VkImageSubresourceLayers subres_layers = {limits_.aspectMask, 0, 0, limits_.arrayLayer};
-    linear_image_ = false;
 
-    // WORKAROUND for profile and mock_icd not containing valid VkSubresourceLayout yet. Treat it as optimal image.
-    if (image.createInfo.tiling == VK_IMAGE_TILING_LINEAR) {
+    linear_image_ = false;
+    if (image.create_info.tiling == VK_IMAGE_TILING_LINEAR) {
+        linear_image_ = true;
+
+        // WORKAROUND for profile and mock_icd not containing valid VkSubresourceLayout yet. Treat it as optimal image.
         const VkImageAspectFlags first_aspect = AspectBit(0);  // AspectBit returns aspects by index
-        subres = {first_aspect, 0, 0};
-        DispatchGetImageSubresourceLayout(image.store_device_as_workaround, image.image(), &subres, &layout);
-        if (layout.size > 0) {
-            linear_image_ = true;
+        VkImageSubresource mock_test_subres = {first_aspect, 0, 0};
+        VkSubresourceLayout mock_test_layout = {};
+        DispatchGetImageSubresourceLayout(image.store_device_as_workaround, image.VkHandle(), &mock_test_subres, &mock_test_layout);
+        if (mock_test_layout.size == 0) {  // Happens only for mock icd
+            linear_image_ = false;
         }
     }
 
@@ -305,15 +304,21 @@ ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image, const AspectParame
     // aliased resources can be done correctly.
     linear_image_ = false;
 
-    is_compressed_ = vkuFormatIsCompressed(image.createInfo.format);
-    texel_extent_ = vkuFormatTexelBlockExtent(image.createInfo.format);
+    is_compressed_ = vkuFormatIsCompressed(image.create_info.format);
+    texel_block_extent_ = vkuFormatTexelBlockExtent(image.create_info.format);
 
-    is_3_d_ = image.createInfo.imageType == VK_IMAGE_TYPE_3D;
+    is_3_d_ = image.create_info.imageType == VK_IMAGE_TYPE_3D;
     y_interleave_ = false;
+
+    VkSubresourceLayout layout = {};
+    VkImageSubresourceLayers subres_layers = {limits_.aspectMask, 0, 0, limits_.arrayLayer};
+
     for (uint32_t aspect_index = 0; aspect_index < limits_.aspect_index; ++aspect_index) {
+        VkImageSubresource subres = {};
         subres.aspectMask = static_cast<VkImageAspectFlags>(AspectBit(aspect_index));
         subres_layers.aspectMask = subres.aspectMask;
-        texel_sizes_.push_back(vkuFormatTexelSizeWithAspect(image.createInfo.format, static_cast<VkImageAspectFlagBits>(subres.aspectMask)));
+        texel_sizes_.push_back(
+            vkuFormatTexelSizeWithAspect(image.create_info.format, static_cast<VkImageAspectFlagBits>(subres.aspectMask)));
         IndexType aspect_size = 0;
         for (uint32_t mip_index = 0; mip_index < limits_.mipLevel; ++mip_index) {
             subres_layers.mipLevel = mip_index;
@@ -321,7 +326,7 @@ ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image, const AspectParame
             auto subres_extent = image.GetEffectiveSubresourceExtent(subres_layers);
 
             if (linear_image_) {
-                DispatchGetImageSubresourceLayout(image.store_device_as_workaround, image.image(), &subres, &layout);
+                DispatchGetImageSubresourceLayout(image.store_device_as_workaround, image.VkHandle(), &subres, &layout);
                 if (is_3_d_) {
                     if ((layout.depthPitch == 0) && (subres_extent.depth == 1)) {
                         layout.depthPitch = layout.size;  // Certain implmentations don't supply pitches when size is 1
@@ -335,8 +340,15 @@ ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image, const AspectParame
                 }
             } else {
                 layout.offset += layout.size;
-                layout.rowPitch = static_cast<VkDeviceSize>(floor(subres_extent.width * texel_sizes_[aspect_index]));
-                layout.arrayPitch = layout.rowPitch * subres_extent.height;
+
+                const double row_pitch = subres_extent.width * texel_sizes_[aspect_index];
+                // TODO: layout.rowPitch is still computed incorrectly for ASTC_10x10,
+                // but it is less trivial fix comparing to arrayPitch, so will be fixed
+                // later. There is no known rowPitch bugs, which somehow justifies why
+                // rowPitch fix is postponed, and arrayPitch, which affected Angle, was fixed.
+                layout.rowPitch = static_cast<VkDeviceSize>(row_pitch);
+
+                layout.arrayPitch = static_cast<VkDeviceSize>(row_pitch * subres_extent.height);
                 layout.depthPitch = layout.arrayPitch;
                 if (is_3_d_) {
                     layout.size = layout.depthPitch * subres_extent.depth;
@@ -345,26 +357,40 @@ ImageRangeEncoder::ImageRangeEncoder(const vvl::Image& image, const AspectParame
                     layout.size = layout.arrayPitch * limits_.arrayLayer;
                 }
             }
-            subres_info_.emplace_back(layout, subres_extent, texel_extent_, texel_sizes_[aspect_index]);
+            subres_info_.emplace_back(layout, subres_extent, texel_block_extent_, texel_sizes_[aspect_index]);
             aspect_size += layout.size;
             total_size_ += layout.size;
         }
         aspect_sizes_.emplace_back(aspect_size);
         aspect_extent_divisors_.emplace_back(
-            vkuFindMultiplaneExtentDivisors(image.createInfo.format, static_cast<VkImageAspectFlagBits>(subres.aspectMask)));
+            vkuFindMultiplaneExtentDivisors(image.create_info.format, static_cast<VkImageAspectFlagBits>(subres.aspectMask)));
     }
 }
 
 IndexType ImageRangeEncoder::Encode2D(const VkSubresourceLayout& layout, uint32_t layer, uint32_t aspect_index,
                                       const VkOffset3D& offset) const {
     assert(offset.z == 0U);
+    // The address offset of the beginning of offset.x's block is:
+    //      block_offset_in_bytes = block_offset_x * block_height * texel_sizes_[apsect]
+    //      where block_offset_x = floor(offset.x / block_width) * block_width
+    //
+    // The multiplication by block_height above ensures that we skip the entire block,
+    // including block data from other rows, which might sound unintuitive. But it makes
+    // sense because the block layout in memory is linear, and to jump to another block,
+    // even if we move only in the x direction, we must skip the entire block.
+    //
+    // Since offset.x must be a multiple of block_width, we can simplify the formula by canceling out block_width.
+    //      block_offset_in_bytes = floor(offset.x * block_height * texel_sizes_[apsect])
+    double xSize = static_cast<double>(texel_block_extent_.height * texel_sizes_[aspect_index]);
     return layout.offset + layer * layout.arrayPitch + offset.y * layout.rowPitch +
-           (offset.x ? static_cast<IndexType>(floor(offset.x * texel_sizes_[aspect_index])) : 0U);
+           (offset.x ? static_cast<IndexType>(floor(offset.x * xSize)) : 0U);
 }
 
 IndexType ImageRangeEncoder::Encode3D(const VkSubresourceLayout& layout, uint32_t aspect_index, const VkOffset3D& offset) const {
+    // See comment in Encode2D.
+    double xSize = static_cast<double>(texel_block_extent_.height * texel_sizes_[aspect_index]);
     return layout.offset + offset.z * layout.depthPitch + offset.y * layout.rowPitch +
-           (offset.x ? static_cast<IndexType>(floor(offset.x * texel_sizes_[aspect_index])) : 0U);
+           (offset.x ? static_cast<IndexType>(floor(offset.x * xSize)) : 0U);
 }
 
 void ImageRangeEncoder::Decode(const VkImageSubresource& subres, const IndexType& encode, uint32_t& out_layer,
@@ -625,8 +651,8 @@ void ImageRangeGenerator::SetUpSubresInfo() {
 
 void ImageRangeGenerator::SetUpIncrementerDefaults() {
     // These are safe defaults that most SetInitialPos* will use.  Those that need to change them, do.
-    incr_state_.y_step = encoder_->TexelExtent().height;
-    incr_state_.layer_z_step = encoder_->Is3D() ? encoder_->TexelExtent().depth : 1U;
+    incr_state_.y_step = encoder_->TexelBlockExtent().height;
+    incr_state_.layer_z_step = encoder_->Is3D() ? encoder_->TexelBlockExtent().depth : 1U;
     incr_mip_ = 1;
     single_full_size_range_ = false;
 }
@@ -731,25 +757,13 @@ template <typename AspectTraits>
 class AspectParametersImpl : public AspectParameters {
   public:
     VkImageAspectFlags AspectMask() const override { return AspectTraits::kAspectMask; }
-    MaskIndexFunc MaskToIndexFunction() const override { return &AspectTraits::MaskIndex; }
     uint32_t AspectCount() const override { return AspectTraits::kAspectCount; };
     const VkImageAspectFlagBits* AspectBits() const override { return AspectTraits::AspectBits().data(); }
-};
-
-struct NullAspectTraits {
-    static constexpr uint32_t kAspectCount = 0;
-    static constexpr VkImageAspectFlags kAspectMask = 0;
-    static uint32_t MaskIndex(VkImageAspectFlags mask) { return 0; };
-    static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
-        static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{};
-        return k_aspect_bits;
-    }
 };
 
 struct ColorAspectTraits {
     static constexpr uint32_t kAspectCount = 1;
     static constexpr VkImageAspectFlags kAspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    static uint32_t MaskIndex(VkImageAspectFlags mask) { return 0; };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{{VK_IMAGE_ASPECT_COLOR_BIT}};
         return k_aspect_bits;
@@ -759,7 +773,6 @@ struct ColorAspectTraits {
 struct DepthAspectTraits {
     static constexpr uint32_t kAspectCount = 1;
     static constexpr VkImageAspectFlags kAspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    static uint32_t MaskIndex(VkImageAspectFlags mask) { return 0; };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{{VK_IMAGE_ASPECT_DEPTH_BIT}};
         return k_aspect_bits;
@@ -769,7 +782,6 @@ struct DepthAspectTraits {
 struct StencilAspectTraits {
     static constexpr uint32_t kAspectCount = 1;
     static constexpr VkImageAspectFlags kAspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
-    static uint32_t MaskIndex(VkImageAspectFlags mask) { return 0; };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{{VK_IMAGE_ASPECT_STENCIL_BIT}};
         return k_aspect_bits;
@@ -781,11 +793,6 @@ struct DepthStencilAspectTraits {
     // VK_IMAGE_ASPECT_STENCIL_BIT = 0x00000004, >> 1 -> 2 -1 = 1
     static constexpr uint32_t kAspectCount = 2;
     static constexpr VkImageAspectFlags kAspectMask = (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
-    static uint32_t MaskIndex(VkImageAspectFlags mask) {
-        uint32_t index = (mask >> 1) - 1;
-        assert((index == 0) || (index == 1));
-        return index;
-    };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{
             {VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_ASPECT_STENCIL_BIT}};
@@ -798,11 +805,6 @@ struct Multiplane2AspectTraits {
     // VK_IMAGE_ASPECT_PLANE_1_BIT = 0x00000020, >> 4 - 1 -> 1
     static constexpr uint32_t kAspectCount = 2;
     static constexpr VkImageAspectFlags kAspectMask = (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT);
-    static uint32_t MaskIndex(VkImageAspectFlags mask) {
-        uint32_t index = (mask >> 4) - 1;
-        assert((index == 0) || (index == 1));
-        return index;
-    };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{
             {VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT}};
@@ -817,12 +819,6 @@ struct Multiplane3AspectTraits {
     static constexpr uint32_t kAspectCount = 3;
     static constexpr VkImageAspectFlags kAspectMask =
         (VK_IMAGE_ASPECT_PLANE_0_BIT | VK_IMAGE_ASPECT_PLANE_1_BIT | VK_IMAGE_ASPECT_PLANE_2_BIT);
-    static uint32_t MaskIndex(VkImageAspectFlags mask) {
-        uint32_t index = (mask >> 4) - 1;
-        index = index > 2 ? 2 : index;
-        assert((index == 0) || (index == 1) || (index == 2));
-        return index;
-    };
     static const std::array<VkImageAspectFlagBits, kAspectCount>& AspectBits() {
         static std::array<VkImageAspectFlagBits, kAspectCount> k_aspect_bits{
             {VK_IMAGE_ASPECT_PLANE_0_BIT, VK_IMAGE_ASPECT_PLANE_1_BIT, VK_IMAGE_ASPECT_PLANE_2_BIT}};
@@ -839,9 +835,8 @@ const AspectParameters* AspectParameters::Get(VkImageAspectFlags aspect_mask) {
     static const AspectParametersImpl<DepthStencilAspectTraits> k_depth_stencil_param;
     static const AspectParametersImpl<Multiplane2AspectTraits> k_mutliplane2_param;
     static const AspectParametersImpl<Multiplane3AspectTraits> k_mutliplane3_param;
-    static const AspectParametersImpl<NullAspectTraits> k_null_aspect;
 
-    const AspectParameters* param;
+    const AspectParameters* param = nullptr;
     switch (aspect_mask) {
         case ColorAspectTraits::kAspectMask:
             param = &k_color_param;
@@ -863,7 +858,6 @@ const AspectParameters* AspectParameters::Get(VkImageAspectFlags aspect_mask) {
             break;
         default:
             assert(false);
-            param = &k_null_aspect;
     }
     return param;
 }

@@ -9,11 +9,9 @@ import {addWebUiListener} from 'chrome://resources/js/cr.js';
 import {CustomElement} from 'chrome://resources/js/custom_element.js';
 
 import {getTemplate} from './app.html.js';
-import {KeyValue, Log, LogData, MetricsInternalsBrowserProxy, MetricsInternalsBrowserProxyImpl} from './browser_proxy.js';
+import type {KeyValue, Log, LogData, MetricsInternalsBrowserProxy} from './browser_proxy.js';
+import {MetricsInternalsBrowserProxyImpl} from './browser_proxy.js';
 import {getEventsPeekString, logEventToString, sizeToString, timestampToString, umaLogTypeToString} from './log_utils.js';
-// <if expr="chromeos_ash">
-import {StructuredMetricEvent, StructuredMetricsSummary, updateStructuredMetricsEvents, updateStructuredMetricsSummary} from './structured/structured_utils.js';
-// </if>
 
 /**
  * An empty log. It is appended to a logs table when there are no logs (for
@@ -73,19 +71,8 @@ export class MetricsInternalsAppElement extends CustomElement {
     await this.updateUmaSummary_();
     setInterval(() => this.updateUmaSummary_(), 3000);
 
-    // Fetch Structured Metrics tab when on ChromeOS
-    // <if expr="chromeos_ash">
-    // TODO: Implement a push model as new events are recorded.
-    await this.updateStructuredMetricsEvents_();
-    setInterval(() => this.updateStructuredMetricsSummary_(), 5000);
-
-    const eventRefreshButton = this.$('#sm-refresh-events') as HTMLElement;
-    eventRefreshButton.addEventListener(
-        'click', () => this.updateStructuredMetricsEvents_());
-    //  </if>
-
     // Set up the UMA table caption.
-    const umaTableCaption = this.$('#uma-table-caption') as HTMLElement;
+    const umaTableCaption = this.getRequiredElement('#uma-table-caption');
     const isUsingMetricsServiceObserver =
         await this.browserProxy_.isUsingMetricsServiceObserver();
     umaTableCaption.textContent = isUsingMetricsServiceObserver ?
@@ -101,7 +88,7 @@ export class MetricsInternalsAppElement extends CustomElement {
     await this.updateUmaLogsData_();
 
     // Set up the UMA "Export logs" button.
-    const exportUmaLogsButton = this.$('#export-uma-logs') as HTMLElement;
+    const exportUmaLogsButton = this.getRequiredElement('#export-uma-logs');
     exportUmaLogsButton.addEventListener('click', () => this.exportUmaLogs_());
   }
 
@@ -128,7 +115,8 @@ export class MetricsInternalsAppElement extends CustomElement {
     // Clear the table first.
     tableBody.replaceChildren();
 
-    const template = this.$('#summary-row-template') as HTMLTemplateElement;
+    const template =
+        this.getRequiredElement<HTMLTemplateElement>('#summary-row-template');
     for (const info of summary) {
       const row = template.content.cloneNode(true) as HTMLElement;
       const [key, value] = row.querySelectorAll('td');
@@ -149,8 +137,6 @@ export class MetricsInternalsAppElement extends CustomElement {
   private async updateVariationsSummary_(): Promise<void> {
     const summary: KeyValue[] =
         await this.browserProxy_.fetchVariationsSummary();
-    const variationsSummaryTableBody =
-        this.$('#variations-summary-body') as HTMLElement;
 
     // Don't re-render the table if the data has not changed.
     const newDataString = summary.toString();
@@ -159,6 +145,8 @@ export class MetricsInternalsAppElement extends CustomElement {
     }
 
     this.previousVariationsSummaryData_ = newDataString;
+    const variationsSummaryTableBody =
+        this.getRequiredElement('#variations-summary-body');
     this.updateSummaryTable_(variationsSummaryTableBody, summary);
   }
 
@@ -186,7 +174,8 @@ export class MetricsInternalsAppElement extends CustomElement {
     // Clear the table first.
     tableBody.replaceChildren();
 
-    const template = this.$('#uma-log-row-template') as HTMLTemplateElement;
+    const template =
+        this.getRequiredElement<HTMLTemplateElement>('#uma-log-row-template');
 
     // Iterate through the logs in reverse order so that the most recent log
     // shows up first.
@@ -247,7 +236,7 @@ export class MetricsInternalsAppElement extends CustomElement {
     // We don't compare the new data with the old data to prevent re-renderings
     // because this should only be called when there is an actual change.
 
-    const umaLogsTableBody = this.$('#uma-logs-body') as HTMLElement;
+    const umaLogsTableBody = this.getRequiredElement('#uma-logs-body');
     this.updateLogsTable_(umaLogsTableBody, logs.logs);
   }
 
@@ -263,43 +252,6 @@ export class MetricsInternalsAppElement extends CustomElement {
     a.download = `uma_logs_${new Date().getTime()}.json`;
     a.click();
   }
-
-  // <if expr="chromeos_ash">
-  /**
-   * Fetches summary information of the Structured Metrics service and renders
-   * it.
-   */
-  private async updateStructuredMetricsSummary_(): Promise<void> {
-    const summary: StructuredMetricsSummary =
-        await this.browserProxy_.fetchStructuredMetricsSummary();
-    const template = this.$('#summary-row-template') as HTMLTemplateElement;
-    const smSummaryBody = this.$('#sm-summary-body') as HTMLElement;
-    updateStructuredMetricsSummary(smSummaryBody, summary, template);
-  }
-
-  /**
-   * Fetches all events currently recorded by the Structured Metrics Service and
-   * renders them. It an event has been uploaded then it will not be shown
-   * again. This only shows Events recorded in Chromium. Platform2 events are
-   * not supported yet.
-   */
-  private async updateStructuredMetricsEvents_(): Promise<void> {
-    const events: StructuredMetricEvent[] =
-        await this.browserProxy_.fetchStructuredMetricsEvents();
-    const eventTemplate =
-        this.$('#structured-metrics-event-row-template') as HTMLTemplateElement;
-
-    const eventDetailsTemplate =
-        this.$('#structured-metrics-event-details-template') as
-        HTMLTemplateElement;
-    const kvTemplate = this.$('#summary-row-template') as HTMLTemplateElement;
-    const eventTableBody = this.$('#sm-events-body') as HTMLElement;
-
-    updateStructuredMetricsEvents(
-        eventTableBody, events, eventTemplate, eventDetailsTemplate,
-        kvTemplate);
-  }
-  // </if>
 }
 
 declare global {

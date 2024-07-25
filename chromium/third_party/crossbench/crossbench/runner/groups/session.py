@@ -56,7 +56,7 @@ class BrowserSessionRunGroup(RunGroup):
     self._durations = helper.Durations()
     self._browser = browser
     self._network: Network = browser.network
-    self._index = index
+    self._index: int = index
     self._runs: List[Run] = []
     self._root_dir: pathlib.Path = root_dir
     self._browser_tmp_dir: Optional[pathlib.Path] = None
@@ -123,6 +123,7 @@ class BrowserSessionRunGroup(RunGroup):
   def runner_platform(self) -> plt.Platform:
     return self.runner.platform
 
+  @property
   def network(self) -> Network:
     return self._network
 
@@ -220,8 +221,9 @@ class BrowserSessionRunGroup(RunGroup):
     self._setup_session_dir()
     with helper.ChangeCWD(self.path):
       try:
-        self._setup(is_dry_run)
-        yield self
+        with self.network.open(self.browser):
+          self._setup(is_dry_run)
+          yield self
       finally:
         self._teardown(is_dry_run)
 

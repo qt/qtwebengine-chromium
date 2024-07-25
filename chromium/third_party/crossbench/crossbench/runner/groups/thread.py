@@ -65,7 +65,10 @@ class RunThreadGroup(threading.Thread):
         for run in browser_session.runs:
           if not browser_session.is_single_run:
             self._log_run(run)
-          run.run(self.is_dry_run)
+          if not run.is_success:
+            logging.info("Skipping %s due to setup errors.", run)
+          else:
+            run.run(self.is_dry_run)
           if run.is_success:
             run.log_results()
           else:

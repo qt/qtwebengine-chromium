@@ -9,7 +9,7 @@ import {registerChildFrame} from '//components/autofill/ios/form_util/resources/
 import * as fillConstants from '//components/autofill/ios/form_util/resources/fill_constants.js';
 import {inferLabelFromNext} from '//components/autofill/ios/form_util/resources/fill_element_inference.js';
 import * as inferenceUtil from '//components/autofill/ios/form_util/resources/fill_element_inference_util.js';
-import * as fillUtil from '//components/autofill/ios/form_util/resources/fill_util.js';
+import type * as fillUtil from '//components/autofill/ios/form_util/resources/fill_util.js';
 import {gCrWeb} from '//ios/web/public/js_messaging/resources/gcrweb.js';
 
 // This file provides methods used to fill forms in JavaScript.
@@ -28,7 +28,7 @@ declare global {
  * Extracts fields from |controlElements| with |extractMask| to |formFields|.
  * The extracted fields are also placed in |elementArray|.
  *
- * TODO(crbug.com/1030490): Make |elementArray| a Map.
+ * TODO(crbug.com/40661883): Make |elementArray| a Map.
  *
  * @param controlElements The control elements that
  *     will be processed.
@@ -84,7 +84,7 @@ function extractFieldsFromControlElements(
     elementArray[i] = formField;
     fieldsExtracted[i] = true;
 
-    // TODO(crbug.com/1440471): This loop should also track which control
+    // TODO(crbug.com/40266126): This loop should also track which control
     // element appears immediately before the frame, so its index can be
     // set as the frame predecessor.
 
@@ -140,7 +140,7 @@ gCrWeb.fill.isVisibleNode = function(node: Node): boolean {
  *
  * This also uses (|controlElements|, |elementArray|) because there is no
  * guaranteed Map support on iOS yet.
- * TODO(crbug.com/1030490): Make |elementArray| a Map.
+ * TODO(crbug.com/40661883): Make |elementArray| a Map.
  *
  * @param labels The labels to match.
  * @param formElement The form element being processed.
@@ -202,7 +202,7 @@ function matchLabelsAndFields(
     }
     let labelText = inferenceUtil.findChildText(label);
     if (labelText.length === 0 && !label.htmlFor) {
-      labelText = inferLabelFromNext(fieldElement);
+      labelText = inferLabelFromNext(fieldElement)?.label || '';
     }
     // Concatenate labels because some sites might have multiple label
     // candidates.
@@ -311,7 +311,7 @@ function formOrFieldsetsToFormData(
     const currentField = formFields[fieldIdx]!;
     if (!currentField.label) {
       currentField.label =
-          gCrWeb.fill.inferLabelForElement(controlElement);
+          gCrWeb.fill.inferLabelForElement(controlElement)?.label || '';
     }
     if (currentField.label!.length > fillConstants.MAX_DATA_LENGTH) {
       currentField.label =
@@ -336,7 +336,7 @@ function formOrFieldsetsToFormData(
     const frame = iframeElements[j]!;
 
     childFrames[j]!['token'] = registerChildFrame(frame);
-    // TODO(crbug.com/1440471): Compute the actual predecessor and replace this
+    // TODO(crbug.com/40266126): Compute the actual predecessor and replace this
     // placeholder value.
     childFrames[j]!['predecessor'] = 64;
   }
@@ -402,7 +402,7 @@ gCrWeb.fill.webFormElementToFormData = function(
   form.id_attribute = formElement.getAttribute('id') || '';
 
   gCrWeb.fill.setUniqueIDIfNeeded(formElement);
-  form.unique_renderer_id = gCrWeb.fill.getUniqueID(formElement);
+  form.renderer_id = gCrWeb.fill.getUniqueID(formElement);
 
   form.frame_id = frame.__gCrWeb.message.getFrameId();
 
@@ -459,7 +459,7 @@ gCrWeb.fill.webFormControlElementToFormField = function(
   field.id_attribute = element.getAttribute('id') || '';
 
   gCrWeb.fill.setUniqueIDIfNeeded(element);
-  field.unique_renderer_id = gCrWeb.fill.getUniqueID(element);
+  field.renderer_id = gCrWeb.fill.getUniqueID(element);
 
   field.form_control_type = element.type;
   const autocompleteAttribute = element.getAttribute('autocomplete');
@@ -658,10 +658,9 @@ gCrWeb.fill.unownedFormElementsAndFieldSetsToFormData = function(
   form.name = '';
   form.origin = gCrWeb.common.removeQueryAndReferenceFromURL(frame.origin);
   form.action = '';
-  form.is_form_tag = false;
 
   if (!restrictUnownedFieldsToFormlessCheckout) {
-    // TODO(crbug.com/1440471): Pass iframe elements.
+    // TODO(crbug.com/40266126): Pass iframe elements.
     return formOrFieldsetsToFormData(
         /* formElement= */ null, /* formControlElement= */null , fieldsets,
         controlElements, /* iframeElements= */[], extractMask, form);
@@ -680,7 +679,7 @@ gCrWeb.fill.unownedFormElementsAndFieldSetsToFormData = function(
   for (let index = 0; index < count; index++) {
     const keyword = keywords[index]!;
     if (title.includes(keyword) || path.includes(keyword)) {
-      // TODO(crbug.com/1440471): Pass iframe elements.
+      // TODO(crbug.com/40266126): Pass iframe elements.
       return formOrFieldsetsToFormData(
            /* formElement= */null, /* formControlElement= */ null, fieldsets,
           controlElements, /* iframeElements= */ [], extractMask, form);
@@ -701,7 +700,7 @@ gCrWeb.fill.unownedFormElementsAndFieldSetsToFormData = function(
   if (controlElementsWithAutocomplete.length === 0) {
     return false;
   }
-  // TODO(crbug.com/1440471): Pass iframe elements.
+  // TODO(crbug.com/40266126): Pass iframe elements.
   return formOrFieldsetsToFormData(
       /* formElement= */ null , /* formControlElement= */ null, fieldsets,
       controlElementsWithAutocomplete, /* iframeElements= */ [], extractMask,

@@ -193,7 +193,7 @@ void VerifyEventsInLog(const ParsedNetLog* log,
 
     size_t expected_source_id = num_events_emitted - num_events_saved + i;
 
-    absl::optional<int> id_value = event->FindIntByDottedPath("source.id");
+    std::optional<int> id_value = event->FindIntByDottedPath("source.id");
     ASSERT_EQ(static_cast<int>(expected_source_id), id_value);
   }
 }
@@ -575,7 +575,7 @@ TEST_P(FileNetLogObserverTest, AddEventsFromMultipleThreads) {
   std::vector<std::unique_ptr<base::Thread>> threads(kNumThreads);
 
 #if BUILDFLAG(IS_FUCHSIA)
-  // TODO(https://crbug.com/959245): Diagnosting logging to determine where
+  // TODO(crbug.com/40625862): Diagnosting logging to determine where
   // this test sometimes hangs.
   LOG(ERROR) << "Create and start threads.";
 #endif

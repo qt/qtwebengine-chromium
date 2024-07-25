@@ -113,10 +113,6 @@ chrome_internal_verifier(
 )
 
 chrome_internal_verifier(
-    builder = "chromeos-jacuzzi-chrome-skylab",
-)
-
-chrome_internal_verifier(
     builder = "chromeos-jacuzzi-compile-chrome",
 )
 
@@ -137,6 +133,18 @@ chrome_internal_verifier(
 )
 
 chrome_internal_verifier(
+    builder = "fuchsia-cast-astro",
+)
+
+chrome_internal_verifier(
+    builder = "fuchsia-cast-nelson",
+)
+
+chrome_internal_verifier(
+    builder = "fuchsia-cast-sherlock",
+)
+
+chrome_internal_verifier(
     builder = "fuchsia-fyi-astro",
 )
 
@@ -146,6 +154,10 @@ chrome_internal_verifier(
 
 chrome_internal_verifier(
     builder = "fuchsia-fyi-sherlock",
+)
+
+chrome_internal_verifier(
+    builder = "fuchsia-fyi-sherlock-qemu",
 )
 
 chrome_internal_verifier(
@@ -173,24 +185,18 @@ chrome_internal_verifier(
 )
 
 chrome_internal_verifier(
+    branch_selector = branches.selector.CROS_BRANCHES,
     builder = "lacros-amd64-generic-chrome",
 )
 
 chrome_internal_verifier(
     branch_selector = branches.selector.CROS_BRANCHES,
-    builder = "lacros-amd64-generic-chrome-skylab",
-)
-
-chrome_internal_verifier(
     builder = "lacros-arm-generic-chrome",
 )
 
 chrome_internal_verifier(
-    builder = "lacros-arm-generic-chrome-skylab",
-)
-
-chrome_internal_verifier(
-    builder = "lacros-arm64-generic-chrome-skylab",
+    branch_selector = branches.selector.CROS_BRANCHES,
+    builder = "lacros-arm64-generic-chrome",
 )
 
 chrome_internal_verifier(
@@ -204,6 +210,14 @@ chrome_internal_verifier(
 
 chrome_internal_verifier(
     builder = "linux-chromeos-chrome",
+)
+
+chrome_internal_verifier(
+    builder = "linux-chromeos-chrome-with-lacros",
+)
+
+chrome_internal_verifier(
+    builder = "linux-lacros-chrome",
 )
 
 chrome_internal_verifier(
@@ -261,11 +275,6 @@ chrome_internal_verifier(
 chrome_internal_verifier(
     branch_selector = branches.selector.WINDOWS_BRANCHES,
     builder = "win-arm64-pgo",
-)
-
-chrome_internal_verifier(
-    branch_selector = branches.selector.WINDOWS_BRANCHES,
-    builder = "win-arm64-rel",
 )
 
 chrome_internal_verifier(

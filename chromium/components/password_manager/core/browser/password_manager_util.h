@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "base/functional/callback.h"
@@ -42,6 +43,10 @@ enum class GetLoginMatchType {
   kAffiliated,
   // eTLD + 1 match.
   kPSL,
+  // Singon realm is grouped with the requesting page URL as determined by the
+  // `AffiliationService`. This relation to the requesting page is weaker than
+  // `kAffiliated`.
+  kGrouped,
 };
 
 // Update |credential| to reflect usage.
@@ -70,12 +75,15 @@ void UserTriggeredManualGenerationFromContextMenu(
     password_manager::PasswordManagerClient* password_manager_client,
     autofill::AutofillClient* autofill_client);
 
+// Checks if password saving is possible at a storage level.
+bool IsAbleToSavePasswords(password_manager::PasswordManagerClient* client);
+
 // Excluding protocol from a signon_realm means to remove from the signon_realm
 // what is before the web origin (with the protocol excluded as well). For
 // example if the signon_realm is "https://www.google.com/", after
 // excluding protocol it becomes "www.google.com/".
 // This assumes that the |form|'s host is a substring of the signon_realm.
-base::StringPiece GetSignonRealmWithProtocolExcluded(
+std::string_view GetSignonRealmWithProtocolExcluded(
     const password_manager::PasswordForm& form);
 
 // For credentials returned from PasswordStore::GetLogins, specifies the type of
@@ -83,25 +91,22 @@ base::StringPiece GetSignonRealmWithProtocolExcluded(
 GetLoginMatchType GetMatchType(const password_manager::PasswordForm& form);
 
 // Given all non-blocklisted |non_federated_matches|, finds and populates
-// |non_federated_same_scheme|, |best_matches| accordingly.
-// For comparing credentials the following rule is used: non-psl match is better
-// than psl match, most recently used match is better than other matches. In
-// case of tie, an arbitrary credential from the tied ones is chosen for
-// |best_matches|.
-void FindBestMatches(
+// |non_federated_same_scheme| and returns |best_matches| as the result of the
+// function. For comparing credentials the following rule is used: non-psl match
+// is better than psl match, most recently used match is better than other
+// matches. In case of tie, an arbitrary credential from the tied ones is chosen
+// for |best_matches|.
+std::vector<password_manager::PasswordForm> FindBestMatches(
     const std::vector<raw_ptr<const password_manager::PasswordForm,
                               VectorExperimental>>& non_federated_matches,
     password_manager::PasswordForm::Scheme scheme,
     std::vector<raw_ptr<const password_manager::PasswordForm,
-                        VectorExperimental>>* non_federated_same_scheme,
-    std::vector<raw_ptr<const password_manager::PasswordForm,
-                        VectorExperimental>>* best_matches);
+                        VectorExperimental>>* non_federated_same_scheme);
 
 // Returns a form with the given |username_value| from |forms|, or nullptr if
 // none exists. If multiple matches exist, returns the first one.
 const password_manager::PasswordForm* FindFormByUsername(
-    const std::vector<raw_ptr<const password_manager::PasswordForm,
-                              VectorExperimental>>& forms,
+    base::span<const password_manager::PasswordForm> forms,
     const std::u16string& username_value);
 
 // If the user submits a form, they may have used existing credentials, new
@@ -139,10 +144,6 @@ bool ShouldShowBiometricAuthenticationBeforeFillingPromo(
     password_manager::PasswordManagerClient* client);
 #endif
 
-// Helper which checks if biometric authentication is available.
-bool CanUseBiometricAuth(device_reauth::DeviceAuthenticator* authenticator,
-                         password_manager::PasswordManagerClient* client);
-
 // Strips any authentication data, as well as query and ref portions of URL.
 GURL StripAuthAndParams(const GURL& gurl);
 
@@ -150,7 +151,7 @@ GURL StripAuthAndParams(const GURL& gurl);
 // by default. For ip-addresses, scheme "http://" is used.
 GURL ConstructGURLWithScheme(const std::string& url);
 
-// TODO(crbug.com/1261752): Deduplicate GetSignonRealm implementations.
+// TODO(crbug.com/40202333): Deduplicate GetSignonRealm implementations.
 // Returns the value of PasswordForm::signon_realm for an HTML form with the
 // origin |url|.
 std::string GetSignonRealm(const GURL& url);

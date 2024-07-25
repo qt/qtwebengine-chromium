@@ -16,7 +16,11 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/data_vector.h"
+#include "core/fxcrt/notreached.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/stl_util.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
@@ -26,10 +30,6 @@
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
 #include "fxjs/ijs_event_context.h"
 #include "fxjs/ijs_runtime.h"
-#include "third_party/base/check.h"
-#include "third_party/base/containers/contains.h"
-#include "third_party/base/notreached.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 #ifdef PDF_ENABLE_XFA
 #include "fpdfsdk/fpdfxfa/cpdfxfa_widget.h"
@@ -155,7 +155,7 @@ WideString CPDFSDK_FormFillEnvironment::GetLanguage() {
     return WideString();
 
   return WideString::FromUTF16LE(
-      {pBuff.data(), static_cast<size_t>(nActualLen)});
+      pdfium::make_span(pBuff).first(static_cast<size_t>(nActualLen)));
 #else   // PDF_ENABLE_XFA
   return WideString();
 #endif  // PDF_ENABLE_XFA
@@ -177,7 +177,7 @@ WideString CPDFSDK_FormFillEnvironment::GetPlatform() {
     return WideString();
 
   return WideString::FromUTF16LE(
-      {pBuff.data(), static_cast<size_t>(nActualLen)});
+      pdfium::make_span(pBuff).first(static_cast<size_t>(nActualLen)));
 #else   // PDF_ENABLE_XFA
   return WideString();
 #endif  // PDF_ENABLE_XFA
@@ -215,7 +215,7 @@ int CPDFSDK_FormFillEnvironment::JS_appResponse(
   return js_platform->app_response(
       js_platform, AsFPDFWideString(&bsQuestion), AsFPDFWideString(&bsTitle),
       AsFPDFWideString(&bsDefault), AsFPDFWideString(&bsLabel), bPassword,
-      response.data(), pdfium::base::checked_cast<int>(response.size()));
+      response.data(), pdfium::checked_cast<int>(response.size()));
 }
 
 void CPDFSDK_FormFillEnvironment::JS_appBeep(int nType) {
@@ -266,7 +266,7 @@ void CPDFSDK_FormFillEnvironment::JS_docmailForm(
   ByteString bsBcc = BCC.ToUTF16LE();
   ByteString bsMsg = Msg.ToUTF16LE();
   js_platform->Doc_mail(js_platform, const_cast<uint8_t*>(mailData.data()),
-                        pdfium::base::checked_cast<int>(mailData.size()), bUI,
+                        pdfium::checked_cast<int>(mailData.size()), bUI,
                         AsFPDFWideString(&bsTo), AsFPDFWideString(&bsSubject),
                         AsFPDFWideString(&bsCC), AsFPDFWideString(&bsBcc),
                         AsFPDFWideString(&bsMsg));
@@ -392,27 +392,26 @@ void CPDFSDK_FormFillEnvironment::OnSetFieldInputFocusInternal(
     ByteString bsUTFText = text.ToUTF16LE();
     auto* pBuffer = reinterpret_cast<const unsigned short*>(bsUTFText.c_str());
     m_pInfo->FFI_SetTextFieldFocus(
-        m_pInfo, pBuffer, pdfium::base::checked_cast<FPDF_DWORD>(nCharacters),
+        m_pInfo, pBuffer, pdfium::checked_cast<FPDF_DWORD>(nCharacters),
         bFocus);
   }
 }
 
 void CPDFSDK_FormFillEnvironment::OnCalculate(
     ObservedPtr<CPDFSDK_Annot>& pAnnot) {
-  CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot.Get());
-  if (pWidget)
+  ObservedPtr<CPDFSDK_Widget> pWidget(ToCPDFSDKWidget(pAnnot.Get()));
+  if (pWidget) {
     m_pInteractiveForm->OnCalculate(pWidget->GetFormField());
+  }
 }
 
 void CPDFSDK_FormFillEnvironment::OnFormat(ObservedPtr<CPDFSDK_Annot>& pAnnot) {
-  CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot.Get());
-  DCHECK(pWidget);
-
-  absl::optional<WideString> sValue =
+  ObservedPtr<CPDFSDK_Widget> pWidget(ToCPDFSDKWidget(pAnnot.Get()));
+  std::optional<WideString> sValue =
       m_pInteractiveForm->OnFormat(pWidget->GetFormField());
-  if (!pAnnot)
+  if (!pWidget) {
     return;
-
+  }
   if (sValue.has_value()) {
     m_pInteractiveForm->ResetFieldAppearance(pWidget->GetFormField(), sValue);
     m_pInteractiveForm->UpdateField(pWidget->GetFormField());
@@ -569,9 +568,10 @@ WideString CPDFSDK_FormFillEnvironment::PostRequestURL(
       AsFPDFWideString(&bsContentType), AsFPDFWideString(&bsEncode),
       AsFPDFWideString(&bsHeader), &response);
 
-  WideString wsRet =
-      WideString::FromUTF16LE({reinterpret_cast<const uint8_t*>(response.str),
-                               static_cast<size_t>(response.len)});
+  // SAFETY: required from FFI callback.
+  WideString wsRet = WideString::FromUTF16LE(UNSAFE_BUFFERS(
+      pdfium::make_span(reinterpret_cast<const uint8_t*>(response.str),
+                        static_cast<size_t>(response.len))));
 
   FPDF_BStr_Clear(&response);
   return wsRet;
@@ -756,12 +756,13 @@ bool CPDFSDK_FormFillEnvironment::SetFocusAnnot(
     return false;
 #endif  // PDF_ENABLE_XFA
 
-  if (!CPDFSDK_Annot::OnSetFocus(pAnnot, {}))
+  if (!CPDFSDK_Annot::OnSetFocus(pAnnot, {})) {
     return false;
-  if (m_pFocusAnnot)
+  }
+  if (m_pFocusAnnot) {
     return false;
-
-  m_pFocusAnnot.Reset(pAnnot.Get());
+  }
+  m_pFocusAnnot = pAnnot;
 
   // If we are not able to inform the client about the focus change, it
   // shouldn't be considered as failure.
@@ -777,7 +778,7 @@ bool CPDFSDK_FormFillEnvironment::KillFocusAnnot(Mask<FWL_EVENTFLAG> nFlags) {
   m_pFocusAnnot.Reset();
 
   if (!CPDFSDK_Annot::OnKillFocus(pFocusAnnot, nFlags)) {
-    m_pFocusAnnot.Reset(pFocusAnnot.Get());
+    m_pFocusAnnot = pFocusAnnot;
     return false;
   }
 
@@ -786,10 +787,10 @@ bool CPDFSDK_FormFillEnvironment::KillFocusAnnot(Mask<FWL_EVENTFLAG> nFlags) {
     return false;
 
   if (pFocusAnnot->GetAnnotSubtype() == CPDF_Annot::Subtype::WIDGET) {
-    CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pFocusAnnot.Get());
-    FormFieldType fieldType = pWidget->GetFieldType();
-    if (fieldType == FormFieldType::kTextField ||
-        fieldType == FormFieldType::kComboBox) {
+    const FormFieldType field_type =
+        ToCPDFSDKWidget(pFocusAnnot.Get())->GetFieldType();
+    if (field_type == FormFieldType::kTextField ||
+        field_type == FormFieldType::kComboBox) {
       OnSetFieldInputFocusInternal(WideString(), false);
     }
   }

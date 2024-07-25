@@ -106,10 +106,10 @@ cc_component("cc") {
     "layers/nine_patch_layer.h",
     "layers/nine_patch_layer_impl.cc",
     "layers/nine_patch_layer_impl.h",
-    "layers/painted_overlay_scrollbar_layer.cc",
-    "layers/painted_overlay_scrollbar_layer.h",
-    "layers/painted_overlay_scrollbar_layer_impl.cc",
-    "layers/painted_overlay_scrollbar_layer_impl.h",
+    "layers/nine_patch_thumb_scrollbar_layer.cc",
+    "layers/nine_patch_thumb_scrollbar_layer.h",
+    "layers/nine_patch_thumb_scrollbar_layer_impl.cc",
+    "layers/nine_patch_thumb_scrollbar_layer_impl.h",
     "layers/painted_scrollbar_layer.cc",
     "layers/painted_scrollbar_layer.h",
     "layers/painted_scrollbar_layer_impl.cc",
@@ -198,8 +198,6 @@ cc_component("cc") {
     "metrics/frame_sequence_tracker_collection.h",
     "metrics/frame_sorter.cc",
     "metrics/frame_sorter.h",
-    "metrics/jank_metrics.cc",
-    "metrics/jank_metrics.h",
     "metrics/latency_ukm_reporter.cc",
     "metrics/latency_ukm_reporter.h",
     "metrics/lcd_text_metrics_reporter.cc",
@@ -376,6 +374,7 @@ cc_component("cc") {
     "trees/layer_tree_frame_sink_client.h",
     "trees/layer_tree_host.cc",
     "trees/layer_tree_host.h",
+    "trees/layer_tree_host_client.cc",
     "trees/layer_tree_host_client.h",
     "trees/layer_tree_host_impl.cc",
     "trees/layer_tree_host_impl.h",
@@ -405,6 +404,7 @@ cc_component("cc") {
     "trees/presentation_time_callback_buffer.h",
     "trees/property_animation_state.cc",
     "trees/property_animation_state.h",
+    "trees/property_ids.h",
     "trees/property_tree.cc",
     "trees/property_tree.h",
     "trees/property_tree_builder.cc",
@@ -448,8 +448,6 @@ cc_component("cc") {
     "trees/viewport_layers.cc",
     "trees/viewport_layers.h",
     "trees/viewport_property_ids.h",
-    "view_transition/view_transition_element_id.cc",
-    "view_transition/view_transition_element_id.h",
     "view_transition/view_transition_request.cc",
     "view_transition/view_transition_request.h",
   ]
@@ -462,7 +460,6 @@ cc_component("cc") {
   ]
   deps = [
     "//base",
-    "//base/third_party/dynamic_annotations",
     "//build:chromeos_buildflags",
     "//components/miracle_parameter/common",
     "//components/viz/client",
@@ -479,6 +476,7 @@ cc_component("cc") {
     "//services/metrics/public/mojom",
     "//services/tracing/public/cpp:cpp",
     "//skia:skcms",
+    "//third_party/blink/public/common/tokens:tokens_headers",
     "//ui/base:features",
     "//ui/events:events_base",
     "//ui/gfx",
@@ -575,6 +573,7 @@ cc_test_static_library("test_support") {
     "test/mock_layer_tree_mutator.h",
     "test/mock_occlusion_tracker.h",
     "test/paint_image_matchers.h",
+    "test/paint_op_helper.cc",
     "test/paint_op_helper.h",
     "test/paint_op_matchers.h",
     "test/pixel_comparator.cc",
@@ -603,6 +602,7 @@ cc_test_static_library("test_support") {
     "test/solid_color_content_layer_client.h",
     "test/stub_decode_cache.cc",
     "test/stub_decode_cache.h",
+    "test/stub_input_handler_client.cc",
     "test/stub_input_handler_client.h",
     "test/stub_layer_tree_host_client.cc",
     "test/stub_layer_tree_host_client.h",
@@ -648,7 +648,6 @@ cc_test_static_library("test_support") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//base/third_party/dynamic_annotations",
     "//cc/paint",
     "//components/ukm",
     "//components/ukm:test_support",
@@ -738,7 +737,7 @@ cc_test("cc_unittests") {
     "layers/nine_patch_generator_unittest.cc",
     "layers/nine_patch_layer_impl_unittest.cc",
     "layers/nine_patch_layer_unittest.cc",
-    "layers/painted_overlay_scrollbar_layer_unittest.cc",
+    "layers/nine_patch_thumb_scrollbar_layer_unittest.cc",
     "layers/painted_scrollbar_layer_impl_unittest.cc",
     "layers/painted_scrollbar_layer_unittest.cc",
     "layers/picture_layer_impl_unittest.cc",
@@ -771,7 +770,6 @@ cc_test("cc_unittests") {
     "metrics/frame_sequence_metrics_unittest.cc",
     "metrics/frame_sequence_tracker_unittest.cc",
     "metrics/frame_sorter_unittest.cc",
-    "metrics/jank_metrics_unittest.cc",
     "metrics/predictor_jank_tracker_unittest.cc",
     "metrics/scroll_jank_dropped_frame_tracker_unittest.cc",
     "metrics/scroll_jank_ukm_reporter_unittest.cc",
@@ -950,14 +948,14 @@ cc_test("cc_unittests") {
   }
 
   if (is_fuchsia) {
-    # TODO(https://crbug.com/1022542): Some of these tests use SwiftShader,
+    # TODO(crbug.com/42050042): Some of these tests use SwiftShader,
     # which requires ambient VMEX.
     test_runner_shard = "//build/config/fuchsia/test/elf_test_ambient_exec_runner.shard.test-cml"
 
     additional_manifest_fragments = [
       "//build/config/fuchsia/test/fonts.shard.test-cml",
 
-      # TODO(https://crbug.com/1185811): Investigate removing the requirement
+      # TODO(crbug.com/40055105): Investigate removing the requirement
       # for VmexResource.
       "//build/config/fuchsia/test/mark_vmo_executable.shard.test-cml",
       "//third_party/fuchsia-sdk/sdk/pkg/vulkan/client.shard.cml",

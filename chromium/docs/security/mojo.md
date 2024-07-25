@@ -189,7 +189,7 @@ the browser process to:
     definition of proper defanging varies per platform.
 1.  Prepend its own parent directory to the basename, e.g. ~/Downloads.
 
-> TODO(https://crbug.com/779196): Even better would be to implement a C++ type
+> TODO(crbug.com/41352236): Even better would be to implement a C++ type
 > performs the appropriate sanitizations and recommend its usage directly here.
 
 
@@ -551,20 +551,7 @@ struct TokenManager {
 };
 ```
 
-There are some known exceptions to this rule because mojo does not handle
-optional primitives.
-
-**_Allowed because mojo has no support for optional primitives_**
-```c++
-  struct Foo {
-    int32 x;
-    bool has_x;  // does the value of `x` have meaning?
-    int32 y;
-    bool has_y;  // does the value of `y` have meaning?
-  };
-```
-
-Another common case where we tolerate imperfect message semantics is
+A known exception where we tolerate imperfect message semantics is
 with weakly typed integer [bitfields](#handling-bitfields).
 
 ### Handling bitfields

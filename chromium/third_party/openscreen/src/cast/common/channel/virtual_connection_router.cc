@@ -183,7 +183,7 @@ Error VirtualConnectionRouter::BroadcastFromLocalPeer(
   return error;
 }
 
-void VirtualConnectionRouter::OnError(CastSocket* socket, Error error) {
+void VirtualConnectionRouter::OnError(CastSocket* socket, const Error& error) {
   const int id = socket->socket_id();
   auto it = sockets_.find(id);
   if (it != sockets_.end()) {
@@ -197,7 +197,7 @@ void VirtualConnectionRouter::OnError(CastSocket* socket, Error error) {
 
 void VirtualConnectionRouter::OnMessage(CastSocket* socket,
                                         CastMessage message) {
-  OSP_DCHECK(socket);
+  OSP_CHECK(socket);
 
   const std::string& local_id = message.destination_id();
   if (local_id == kBroadcastId) {

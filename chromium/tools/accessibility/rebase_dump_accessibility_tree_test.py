@@ -12,7 +12,9 @@ expected results of tests in:
 
 It assumes that you've already uploaded a change and the try jobs have finished.
 It collects all of the results from try jobs on all platforms and updates the
-expectation files locally. From there you can run 'git diff' to make sure all
+expectation files locally. Sometimes, this script will pull data from flaky test
+runs, especially from content/test/data/accessibility/event/*. Run 'git diff' to
+check for potentially incorrect data pulled from those tests and make sure all
 of the changes look reasonable, then upload the change for code review.
 
 Optional argument: patchset number, otherwise will default to latest patchset
@@ -89,8 +91,14 @@ def ParseLog(logdata):
       if line[:3] != '---':
         start = start + 1  # Skip separator line of hyphens
       actual = [Fix(line) for line in lines[start : i] if line]
+
+      actual_text = '\n'.join(actual)
+      # Make sure the text ends with a newline.
+      if actual[-1][-1] != '\n':
+        actual_text += '\n'
+
       fp = open(dst_fullpath, 'w')
-      fp.write('\n'.join(actual))
+      fp.write(actual_text)
       fp.close()
       print("* %s" % os.path.relpath(dst_fullpath))
       completed_files.add(dst_fullpath)

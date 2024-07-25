@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/debug/stack_trace.h"
 
 #include <errno.h>
@@ -79,10 +84,10 @@
 #include "build/build_config.h"
 
 #if defined(USE_SYMBOLIZE)
-#include "base/third_party/symbolize/symbolize.h"
+#include "base/third_party/symbolize/symbolize.h"  // nogncheck
 
 #if BUILDFLAG(ENABLE_STACK_TRACE_LINE_NUMBERS)
-#include "base/debug/dwarf_line_no.h"
+#include "base/debug/dwarf_line_no.h"  // nogncheck
 #endif
 
 #endif
@@ -193,21 +198,20 @@ void OutputFrameId(size_t frame_id, BacktraceOutputHandler* handler) {
 
 void ProcessBacktrace(const void* const* trace,
                       size_t size,
-                      const char* prefix_string,
+                      cstring_view prefix_string,
                       BacktraceOutputHandler* handler) {
   // NOTE: This code MUST be async-signal safe (it's used by in-process
   // stack dumping signal handler). NO malloc or stdio is allowed here.
 
 #if defined(USE_SYMBOLIZE)
 #if BUILDFLAG(ENABLE_STACK_TRACE_LINE_NUMBERS)
-  uint64_t* cu_offsets =
-      static_cast<uint64_t*>(alloca(sizeof(uint64_t) * size));
+  uint64_t cu_offsets[StackTrace::kMaxTraces] = {};
   GetDwarfCompileUnitOffsets(trace, cu_offsets, size);
 #endif
 
   for (size_t i = 0; i < size; ++i) {
-    if (prefix_string)
-      handler->HandleOutput(prefix_string);
+    if (!prefix_string.empty())
+      handler->HandleOutput(prefix_string.c_str());
 
     OutputFrameId(i, handler);
     handler->HandleOutput(" ");
@@ -246,8 +250,8 @@ void ProcessBacktrace(const void* const* trace,
 #if defined(HAVE_DLADDR)
     Dl_info dl_info;
     for (size_t i = 0; i < size; ++i) {
-      if (prefix_string) {
-        handler->HandleOutput(prefix_string);
+      if (!prefix_string.empty()) {
+        handler->HandleOutput(prefix_string.c_str());
       }
 
       OutputValue(i, handler);
@@ -274,8 +278,8 @@ void ProcessBacktrace(const void* const* trace,
       for (size_t i = 0; i < size; ++i) {
         std::string trace_symbol = trace_symbols.get()[i];
         DemangleSymbols(&trace_symbol);
-        if (prefix_string)
-          handler->HandleOutput(prefix_string);
+        if (!prefix_string.empty())
+          handler->HandleOutput(prefix_string.c_str());
         handler->HandleOutput(trace_symbol.c_str());
         handler->HandleOutput("\n");
       }
@@ -916,8 +920,7 @@ class SandboxSymbolizeHelper {
           if (fd >= 0) {
             modules_.emplace(region.path, base::ScopedFD(fd));
           } else {
-            LOG(WARNING) << "Failed to open file: " << region.path
-                         << "\n  Error: " << strerror(errno);
+            PLOG(WARNING) << "Failed to open file: " << region.path;
           }
         }
       }
@@ -1043,10 +1046,20 @@ size_t CollectStackTrace(const void** trace, size_t count) {
 #endif
 }
 
-void StackTrace::PrintWithPrefix(const char* prefix_string) const {
+// static
+void StackTrace::PrintMessageWithPrefix(cstring_view prefix_string,
+                                        cstring_view message) {
+  // NOTE: This code MUST be async-signal safe (it's used by in-process
+  // stack dumping signal handler). NO malloc or stdio is allowed here.
+  if (!prefix_string.empty()) {
+    PrintToStderr(prefix_string.c_str());
+  }
+  PrintToStderr(message.c_str());
+}
+
+void StackTrace::PrintWithPrefixImpl(cstring_view prefix_string) const {
 // NOTE: This code MUST be async-signal safe (it's used by in-process
 // stack dumping signal handler). NO malloc or stdio is allowed here.
-
 #if defined(HAVE_BACKTRACE)
   PrintBacktraceOutputHandler handler;
   ProcessBacktrace(trace_, count_, prefix_string, &handler);
@@ -1054,8 +1067,9 @@ void StackTrace::PrintWithPrefix(const char* prefix_string) const {
 }
 
 #if defined(HAVE_BACKTRACE)
-void StackTrace::OutputToStreamWithPrefix(std::ostream* os,
-                                          const char* prefix_string) const {
+void StackTrace::OutputToStreamWithPrefixImpl(
+    std::ostream* os,
+    cstring_view prefix_string) const {
   StreamBacktraceOutputHandler handler(os);
   ProcessBacktrace(trace_, count_, prefix_string, &handler);
 }

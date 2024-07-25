@@ -397,6 +397,10 @@ bool AddAutofillProfileToTable(sql::Database* db,
         type == ADDRESS_HOME_ADMIN_LEVEL2) {
       continue;
     }
+    if (!base::FeatureList::IsEnabled(features::kAutofillUseINAddressModel) &&
+        type == ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY) {
+      continue;
+    }
     InsertBuilder(db, s, GetProfileTypeTokensTable(profile.source()),
                   {kGuid, kType, kValue, kVerificationStatus, kObservations});
     s.BindString(0, profile.guid());
@@ -619,7 +623,7 @@ std::unique_ptr<AutofillProfile> AddressAutofillTable::GetAutofillProfile(
   // As `SelectByGuid()` already calls `s.Step()`, do-while is used here.
   do {
     FieldType type = ToSafeFieldType(s.ColumnInt(0), UNKNOWN_TYPE);
-    if (type == UNKNOWN_TYPE) {
+    if (!GetDatabaseStoredTypesOfAutofillProfile().contains(type)) {
       // This is possible in two cases:
       // - The database was tampered with by external means.
       // - The type corresponding to `s.ColumnInt(0)` was deprecated. In this
@@ -642,7 +646,7 @@ std::unique_ptr<AutofillProfile> AddressAutofillTable::GetAutofillProfile(
 
   } while (s.Step());
 
-  // TODO(crbug.com/1464568): Define a proper migration strategy from stored
+  // TODO(crbug.com/40275657): Define a proper migration strategy from stored
   // legacy profiles into i18n ones.
   auto profile = std::make_unique<AutofillProfile>(
       guid, profile_source, AddressCountryCode(country_code));
@@ -729,7 +733,7 @@ AddressAutofillTable::GetAutofillProfileFromLegacyTable(
   return profile;
 }
 
-// TODO(crbug.com/1443393): This function's implementation is very similar to
+// TODO(crbug.com/40267335): This function's implementation is very similar to
 // `GetAutofillProfiles()`. Simplify somehow.
 bool AddressAutofillTable::GetAutofillProfilesFromLegacyTable(
     std::vector<std::unique_ptr<AutofillProfile>>* profiles) const {
@@ -750,19 +754,6 @@ bool AddressAutofillTable::GetAutofillProfilesFromLegacyTable(
   }
 
   return s.Succeeded();
-}
-
-bool AddressAutofillTable::ClearAllLocalData() {
-  sql::Transaction transaction(db_);
-  if (!transaction.Begin()) {
-    return false;  // Some error, nothing was changed.
-  }
-
-  RemoveAllAutofillProfiles(AutofillProfile::Source::kLocalOrSyncable);
-  bool changed = db_->GetLastChangeCount() > 0;
-
-  transaction.Commit();
-  return changed;
 }
 
 bool AddressAutofillTable::RemoveAutofillDataModifiedBetween(

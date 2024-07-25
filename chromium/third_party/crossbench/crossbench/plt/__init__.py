@@ -14,7 +14,9 @@ from .android_adb import AndroidAdbPlatform, adb_devices
 from .arch import MachineArch
 from .base import Platform, SubprocessError
 from .linux import LinuxPlatform
+from .linux_ssh import LinuxSshPlatform
 from .macos import MacOSPlatform
+from .ios import ios_devices
 from .posix import PosixPlatform
 from .win import WinPlatform
 

@@ -29,7 +29,7 @@
 
 #include <algorithm>
 #include <limits>
-#include <locale>
+#include <string_view>
 #include <utility>
 
 #include "source/opt/build_module.h"
@@ -39,7 +39,6 @@
 #include "src/tint/lang/core/type/sampled_texture.h"
 #include "src/tint/lang/core/type/texture_dimension.h"
 #include "src/tint/lang/spirv/reader/ast_parser/function.h"
-#include "src/tint/lang/wgsl/ast/bitcast_expression.h"
 #include "src/tint/lang/wgsl/ast/disable_validation_attribute.h"
 #include "src/tint/lang/wgsl/ast/id_attribute.h"
 #include "src/tint/lang/wgsl/ast/interpolate_attribute.h"
@@ -776,11 +775,10 @@ bool ASTParser::RegisterUserAndStructMemberNames() {
     return true;
 }
 
-bool ASTParser::IsValidIdentifier(const std::string& str) {
+bool ASTParser::IsValidIdentifier(std::string_view str) {
     if (str.empty()) {
         return false;
     }
-    std::locale c_locale("C");
     if (str[0] == '_') {
         if (str.length() == 1u || str[1] == '_') {
             // https://www.w3.org/TR/WGSL/#identifiers
@@ -788,14 +786,28 @@ bool ASTParser::IsValidIdentifier(const std::string& str) {
             // must not start with two underscores
             return false;
         }
-    } else if (!std::isalpha(str[0], c_locale)) {
-        return false;
     }
-    for (const char& ch : str) {
-        if ((ch != '_') && !std::isalnum(ch, c_locale)) {
+
+    // Must begin with an XID_Source unicode character, or underscore
+    {
+        auto* utf8 = reinterpret_cast<const uint8_t*>(str.data());
+        auto [code_point, n] = tint::utf8::Decode(utf8, str.size());
+        if (code_point != tint::CodePoint('_') && !code_point.IsXIDStart()) {
             return false;
         }
+        str = str.substr(n);
     }
+
+    // Must continue with an XID_Continue unicode character
+    while (!str.empty()) {
+        auto* utf8 = reinterpret_cast<const uint8_t*>(str.data());
+        auto [code_point, n] = tint::utf8::Decode(utf8, str.size());
+        if (!code_point.IsXIDContinue()) {
+            return false;
+        }
+        str = str.substr(n);
+    }
+
     return true;
 }
 
@@ -1528,7 +1540,7 @@ bool ASTParser::EmitModuleScopeVariables() {
         // TODO(dneto): initializers (a.k.a. initializer expression)
         if (ast_var) {
             builder_.AST().AddGlobalVariable(ast_var);
-            module_variable_.GetOrCreate(var.result_id(), [&] {
+            module_variable_.GetOrAdd(var.result_id(), [&] {
                 return ModuleVariable{ast_var, ast_address_space, ast_access};
             });
         }
@@ -1564,7 +1576,7 @@ bool ASTParser::EmitModuleScopeVariables() {
                                 storage_type, ast_initializer, {});
 
         builder_.AST().AddGlobalVariable(ast_var);
-        module_variable_.GetOrCreate(builtin_position_.per_vertex_var_id, [&] {
+        module_variable_.GetOrAdd(builtin_position_.per_vertex_var_id, [&] {
             return ModuleVariable{ast_var, ast_address_space};
         });
     }

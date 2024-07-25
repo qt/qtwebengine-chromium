@@ -23,6 +23,7 @@
 #include "chrome/grit/generated_resources.h"
 #include "chromeos/ash/services/assistant/public/cpp/assistant_prefs.h"
 #include "chromeos/ash/services/assistant/public/cpp/features.h"
+#include "chromeos/components/mahi/public/cpp/mahi_manager.h"
 #include "chromeos/constants/chromeos_features.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
@@ -46,13 +47,14 @@ using ::chromeos::settings::mojom::Subpage;
 
 namespace {
 
-bool ShouldShowQuickAnswersSettings() {
+// Whether Quick answers is supported for the current language.
+bool IsQuickAnswersSupported() {
   return QuickAnswersState::Get() && QuickAnswersState::Get()->is_eligible();
 }
 
 const std::vector<SearchConcept>& GetSearchPageSearchConcepts(
     const char* section_path) {
-  if (ShouldShowQuickAnswersSettings()) {
+  if (IsQuickAnswersSupported()) {
     static const base::NoDestructor<std::vector<SearchConcept>> tags({
         {IDS_OS_SETTINGS_TAG_PREFERRED_SEARCH_ENGINE,
          mojom::kSearchSubpagePath,
@@ -298,6 +300,8 @@ void SearchSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
       ash::features::IsOsSettingsRevampWayfindingEnabled();
 
   webui::LocalizedString kLocalizedStrings[] = {
+      {"enableMahi", IDS_OS_SETTINGS_ENABLE_MAHI},
+      {"enableMahiDesc", IDS_OS_SETTINGS_ENABLE_MAHI_DESCRIPTION},
       {"osSearchEngineLabel", kIsRevampEnabled
                                   ? IDS_OS_SETTINGS_REVAMP_SEARCH_ENGINE_LABEL
                                   : IDS_OS_SETTINGS_SEARCH_ENGINE_LABEL},
@@ -314,8 +318,11 @@ void SearchSection::AddLoadTimeData(content::WebUIDataSource* html_source) {
   };
   html_source->AddLocalizedStrings(kLocalizedStrings);
 
-  html_source->AddBoolean("shouldShowQuickAnswersSettings",
-                          ShouldShowQuickAnswersSettings());
+  html_source->AddBoolean("isQuickAnswersSupported", IsQuickAnswersSupported());
+  html_source->AddBoolean(
+      "isMahiEnabled",
+      chromeos::MahiManager::IsSupportedWithCorrectFeatureKey());
+
   const bool is_assistant_allowed = IsAssistantAllowed();
   html_source->AddBoolean("isAssistantAllowed", is_assistant_allowed);
   html_source->AddLocalizedString("osSearchPageTitle",
@@ -366,9 +373,10 @@ bool SearchSection::LogMetric(mojom::Setting setting,
 void SearchSection::RegisterHierarchy(HierarchyGenerator* generator) const {
   // Register Preferred search engine as top level settings if Quick answers is
   // not available.
-  if (!ShouldShowQuickAnswersSettings()) {
+  if (!IsQuickAnswersSupported()) {
     generator->RegisterTopLevelSetting(mojom::Setting::kPreferredSearchEngine);
   }
+  generator->RegisterTopLevelSetting(mojom::Setting::kMahiOnOff);
 
   // Search.
   generator->RegisterTopLevelSubpage(
@@ -377,7 +385,7 @@ void SearchSection::RegisterHierarchy(HierarchyGenerator* generator) const {
       mojom::kSearchSubpagePath);
   // Register Preferred search engine under Search subpage if Quick answers is
   // available.
-  if (ShouldShowQuickAnswersSettings()) {
+  if (IsQuickAnswersSupported()) {
     static constexpr mojom::Setting kSearchSettingsWithPreferredSearchEngine[] =
         {
             mojom::Setting::kQuickAnswersOnOff,
@@ -486,7 +494,7 @@ void SearchSection::UpdateQuickAnswersSearchTags() {
   updater.RemoveSearchTags(GetQuickAnswersSearchConcepts());
   updater.RemoveSearchTags(GetQuickAnswersOnSearchConcepts());
 
-  if (!ShouldShowQuickAnswersSettings()) {
+  if (!IsQuickAnswersSupported()) {
     return;
   }
 

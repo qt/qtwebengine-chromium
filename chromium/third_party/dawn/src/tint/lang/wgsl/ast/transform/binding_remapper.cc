@@ -47,6 +47,7 @@ using namespace tint::core::fluent_types;  // NOLINT
 
 namespace tint::ast::transform {
 
+BindingRemapper::Remappings::Remappings() = default;
 BindingRemapper::Remappings::Remappings(BindingPoints bp, AccessControls ac, bool may_collide)
     : binding_points(std::move(bp)),
       access_controls(std::move(ac)),
@@ -66,8 +67,7 @@ Transform::ApplyResult BindingRemapper::Apply(const Program& src,
 
     auto* remappings = inputs.Get<Remappings>();
     if (!remappings) {
-        b.Diagnostics().add_error(diag::System::Transform,
-                                  "missing transform data for " + std::string(TypeInfo().name));
+        b.Diagnostics().AddError(Source{}) << "missing transform data for " << TypeInfo().name;
         return resolver::Resolve(b);
     }
 
@@ -112,18 +112,15 @@ Transform::ApplyResult BindingRemapper::Apply(const Program& src,
             if (ac_it != remappings->access_controls.end()) {
                 core::Access access = ac_it->second;
                 if (access == core::Access::kUndefined) {
-                    b.Diagnostics().add_error(diag::System::Transform,
-                                              "invalid access mode (" +
-                                                  std::to_string(static_cast<uint32_t>(access)) +
-                                                  ")");
+                    b.Diagnostics().AddError(Source{})
+                        << "invalid access mode (" << static_cast<uint32_t>(access) << ")";
                     return resolver::Resolve(b);
                 }
                 auto* sem = src.Sem().Get(var);
                 if (sem->AddressSpace() != core::AddressSpace::kStorage) {
-                    b.Diagnostics().add_error(
-                        diag::System::Transform,
-                        "cannot apply access control to variable with address space " +
-                            std::string(tint::ToString(sem->AddressSpace())));
+                    b.Diagnostics().AddError(Source{})
+                        << "cannot apply access control to variable with address space "
+                        << sem->AddressSpace();
                     return resolver::Resolve(b);
                 }
                 auto* ty = sem->Type()->UnwrapRef();

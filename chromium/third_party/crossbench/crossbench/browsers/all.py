@@ -7,11 +7,13 @@ from __future__ import annotations
 from crossbench.browsers.chrome.applescript import ChromeAppleScript
 from crossbench.browsers.chrome.chrome import Chrome
 from crossbench.browsers.chrome.webdriver import (ChromeWebDriver,
-                                                  ChromeWebDriverAndroid)
+                                                  ChromeWebDriverAndroid,
+                                                  ChromeWebDriverSsh)
 from crossbench.browsers.chromium.applescript import ChromiumAppleScript
 from crossbench.browsers.chromium.chromium import Chromium
 from crossbench.browsers.chromium.webdriver import (ChromiumWebDriver,
-                                                    ChromiumWebDriverAndroid)
+                                                    ChromiumWebDriverAndroid,
+                                                    ChromiumWebDriverSsh)
 from crossbench.browsers.edge.edge import Edge
 from crossbench.browsers.edge.webdriver import EdgeWebDriver
 from crossbench.browsers.firefox.firefox import Firefox

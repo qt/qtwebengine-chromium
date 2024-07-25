@@ -41,7 +41,6 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/doubly_linked_list.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
-#include "third_party/blink/renderer/platform/wtf/threading_primitives.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/skia/include/core/SkSize.h"
 #include "third_party/skia/include/core/SkTypes.h"
@@ -53,7 +52,7 @@ namespace blink {
 // 2. Size of the image.
 // 3. ImageDecoder::AlphaOption
 struct DecoderCacheKey {
-  raw_ptr<const blink::ImageFrameGenerator, ExperimentalRenderer> gen_;
+  raw_ptr<const blink::ImageFrameGenerator> gen_;
   SkISize size_;
   blink::ImageDecoder::AlphaOption alpha_option_;
   cc::PaintImage::GeneratorClientId client_id_;
@@ -110,7 +109,7 @@ class CacheEntry : public DoublyLinkedListNode<CacheEntry> {
   virtual CacheType GetType() const = 0;
 
  protected:
-  raw_ptr<const ImageFrameGenerator, ExperimentalRenderer> generator_;
+  raw_ptr<const ImageFrameGenerator> generator_;
   int use_count_;
 
  private:

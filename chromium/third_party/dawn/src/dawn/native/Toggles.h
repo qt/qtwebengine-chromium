@@ -103,6 +103,7 @@ enum class Toggle {
     MetalFillEmptyOcclusionQueriesWithZero,
     UseBlitForBufferToDepthTextureCopy,
     UseBlitForBufferToStencilTextureCopy,
+    UseBlitForStencilTextureWrite,
     UseBlitForDepthTextureToTextureCopyToNonzeroSubresource,
     UseBlitForDepth16UnormTextureToBufferCopy,
     UseBlitForDepth32FloatTextureToBufferCopy,
@@ -110,6 +111,7 @@ enum class Toggle {
     UseBlitForSnormTextureToBufferCopy,
     UseBlitForBGRA8UnormTextureToBufferCopy,
     UseBlitForRGB9E5UfloatTextureCopy,
+    UseT2B2TForSRGBTextureCopy,
     D3D12ReplaceAddWithMinusWhenDstFactorIsZeroAndSrcFactorIsDstAlpha,
     D3D12PolyfillReflectVec2F32,
     VulkanClearGen12TextureWithCCSAmbiguateOnCreation,
@@ -127,11 +129,19 @@ enum class Toggle {
     ExposeWGSLTestingFeatures,
     ExposeWGSLExperimentalFeatures,
     DisablePolyfillsOnIntegerDivisonAndModulo,
+    EnableImmediateErrorHandling,
+    VulkanUseStorageInputOutput16,
+    D3D12DontUseShaderModel66OrHigher,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
     NoWorkaroundIndirectBaseVertexNotApplied,
     NoWorkaroundDstAlphaAsSrcBlendFactorForBothColorAndAlphaDoesNotWork,
+
+    ClearColorWithDraw,
+    VulkanSkipDraw,
+
+    D3D11UseUnmonitoredFence,
 
     EnumCount,
     InvalidEnum = EnumCount,

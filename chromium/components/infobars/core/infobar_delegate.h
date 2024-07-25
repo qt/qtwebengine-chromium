@@ -56,13 +56,6 @@ class InfoBarDelegate {
     PAGE_ACTION_TYPE,
   };
 
-  enum InfoBarAutomationType {
-    CONFIRM_INFOBAR,
-    PASSWORD_INFOBAR,
-    RPH_INFOBAR,
-    UNKNOWN_INFOBAR,
-  };
-
   // Unique identifier for every InfoBarDelegate subclass.  Use suffixes to mark
   // infobars specific to particular OSes/platforms.
   // KEEP IN SYNC WITH THE InfoBarIdentifier ENUM IN enums.xml.
@@ -99,7 +92,7 @@ class InfoBarDelegate {
     // Removed: GENERATED_PASSWORD_SAVED_INFOBAR_DELEGATE_ANDROID = 25,
     SAVE_PASSWORD_INFOBAR_DELEGATE_MOBILE = 26,
     // Removed: PEPPER_BROKER_INFOBAR_DELEGATE = 27,
-    PERMISSION_UPDATE_INFOBAR_DELEGATE_ANDROID = 28,
+    // Removed: PERMISSION_UPDATE_INFOBAR_DELEGATE_ANDROID = 28,
     // Removed: DURABLE_STORAGE_PERMISSION_INFOBAR_DELEGATE_ANDROID = 29,
     // Removed: NPAPI_REMOVAL_INFOBAR_DELEGATE = 30,
     // Removed: OUTDATED_PLUGIN_INFOBAR_DELEGATE = 31,
@@ -176,7 +169,7 @@ class InfoBarDelegate {
     // Removed: EXPERIMENTAL_INFOBAR_DELEGATE_LACROS = 102,
     // Removed: ROSETTA_REQUIRED_INFOBAR_DELEGATE = 103,
     // Removed: WEBID_PERMISSION_INFOBAR_DELEGATE = 104,
-    AUTOFILL_OFFER_NOTIFICATION_INFOBAR_DELEGATE = 105,
+    // Removed: AUTOFILL_OFFER_NOTIFICATION_INFOBAR_DELEGATE = 105,
     AUTOFILL_ADDRESS_PROFILE_INFOBAR_DELEGATE_IOS = 106,
     ADD_TO_READING_LIST_IOS = 107,
     IOS_PERMISSIONS_INFOBAR_DELEGATE = 108,
@@ -191,6 +184,8 @@ class InfoBarDelegate {
     PARCEL_TRACKING_INFOBAR_DELEGATE = 117,
     TEST_THIRD_PARTY_COOKIE_PHASEOUT_DELEGATE = 118,
     ENABLE_LINK_CAPTURING_INFOBAR_DELEGATE = 119,
+    DEV_TOOLS_SHARED_PROCESS_DELEGATE = 120,
+    ENHANCED_SAFE_BROWSING_INFOBAR_DELEGATE = 121,
   };
 
   // Describes navigation events, used to decide whether infobars should be
@@ -204,8 +199,13 @@ class InfoBarDelegate {
     bool did_replace_entry;
     bool is_reload;
     bool is_redirect;
+#if BUILDFLAG(IS_IOS)
     // True if the navigation was caused by a form submission.
-    bool is_form_submission = false;
+    bool is_form_submission;
+    // True if the navigation was caused by a user gesture, e.g. reload or load
+    // new content from the omnibox.
+    bool has_user_gesture;
+#endif  // BUILDFLAG(IS_IOS)
   };
 
   // Value to use when the InfoBar has no icon to show.
@@ -222,8 +222,6 @@ class InfoBarDelegate {
   // New implementers must append a new value to the InfoBarIdentifier enum here
   // and in histograms/enums.xml.
   virtual InfoBarIdentifier GetIdentifier() const = 0;
-
-  virtual InfoBarAutomationType GetInfoBarAutomationType() const;
 
   // Returns the resource ID of the icon to be shown for this InfoBar.  If the
   // value is equal to |kNoIconID|, GetIcon() will not show an icon by default.

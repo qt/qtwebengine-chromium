@@ -43,9 +43,11 @@
 #include "dawn/native/d3d12/HeapD3D12.h"
 #include "dawn/native/d3d12/QueueD3D12.h"
 #include "dawn/native/d3d12/ResidencyManagerD3D12.h"
+#include "dawn/native/d3d12/SharedBufferMemoryD3D12.h"
 #include "dawn/native/d3d12/UtilsD3D12.h"
 #include "dawn/platform/DawnPlatform.h"
 #include "dawn/platform/tracing/TraceEvent.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 namespace dawn::native::d3d12 {
 
@@ -129,6 +131,26 @@ ResultOrError<Ref<Buffer>> Buffer::Create(Device* device,
     return buffer;
 }
 
+// static
+ResultOrError<Ref<Buffer>> Buffer::CreateFromSharedBufferMemory(
+    SharedBufferMemory* memory,
+    const UnpackedPtr<BufferDescriptor>& descriptor) {
+    Device* device = ToBackend(memory->GetDevice());
+    Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
+    DAWN_TRY(buffer->InitializeAsExternalBuffer(memory->GetD3DResource(), descriptor));
+    buffer->mSharedResourceMemoryContents = memory->GetContents();
+    return buffer;
+}
+
+MaybeError Buffer::InitializeAsExternalBuffer(ComPtr<ID3D12Resource> d3d12Buffer,
+                                              const UnpackedPtr<BufferDescriptor>& descriptor) {
+    AllocationInfo info;
+    info.mMethod = AllocationMethod::kExternal;
+    mResourceAllocation = {info, 0, std::move(d3d12Buffer), nullptr};
+    mAllocatedSize = descriptor->size;
+    return {};
+}
+
 Buffer::Buffer(Device* device, const UnpackedPtr<BufferDescriptor>& descriptor)
     : BufferBase(device, descriptor) {}
 
@@ -191,10 +213,8 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     // BufferBase::MapAtCreation().
     if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
         !mappedAtCreation) {
-        CommandRecordingContext* commandRecordingContext;
-        DAWN_TRY_ASSIGN(commandRecordingContext,
-                        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
-
+        CommandRecordingContext* commandRecordingContext =
+            ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
         DAWN_TRY(ClearBuffer(commandRecordingContext, uint8_t(1u)));
     }
 
@@ -202,9 +222,8 @@ MaybeError Buffer::Initialize(bool mappedAtCreation) {
     if (GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) && !mappedAtCreation) {
         uint32_t paddingBytes = GetAllocatedSize() - GetSize();
         if (paddingBytes > 0) {
-            CommandRecordingContext* commandRecordingContext;
-            DAWN_TRY_ASSIGN(commandRecordingContext,
-                            ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
+            CommandRecordingContext* commandRecordingContext =
+                ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
 
             uint32_t clearSize = paddingBytes;
             uint64_t clearOffset = GetSize();
@@ -280,7 +299,7 @@ MaybeError Buffer::InitializeHostMapped(const BufferHostMappedPointer* hostMappe
     SetLabelImpl();
 
     // Assume the data is initialized since an external pointer was provided.
-    SetIsDataInitialized();
+    SetInitialized(true);
     return {};
 }
 
@@ -409,8 +428,10 @@ MaybeError Buffer::MapInternal(bool isWrite, size_t offset, size_t size, const c
     // evicted. This buffer should already have been made resident when it was created.
     TRACE_EVENT0(GetDevice()->GetPlatform(), General, "BufferD3D12::MapInternal");
 
-    Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-    DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockAllocation(heap));
+    if (mResourceAllocation.GetInfo().mMethod != AllocationMethod::kExternal) {
+        Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
+        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockAllocation(heap));
+    }
 
     D3D12_RANGE range = {offset, offset + size};
     // mMappedData is the pointer to the start of the resource, irrespective of offset.
@@ -447,9 +468,8 @@ MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) 
     // it in Tick() by execute the commandList and signal a fence for it even it is empty.
     // Skip the unnecessary GetPendingCommandContext() call saves an extra fence.
     if (NeedsInitialization()) {
-        CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext,
-                        ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext());
+        CommandRecordingContext* commandContext =
+            ToBackend(GetDevice()->GetQueue())->GetPendingCommandContext();
         DAWN_TRY(EnsureDataInitialized(commandContext));
     }
 
@@ -463,8 +483,10 @@ void Buffer::UnmapImpl() {
 
     // When buffers are mapped, they are locked to keep them in resident memory. We must unlock
     // them when they are unmapped.
-    Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-    ToBackend(GetDevice())->GetResidencyManager()->UnlockAllocation(heap);
+    if (mResourceAllocation.GetInfo().mMethod != AllocationMethod::kExternal) {
+        Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
+        ToBackend(GetDevice())->GetResidencyManager()->UnlockAllocation(heap);
+    }
 }
 
 void* Buffer::GetMappedPointer() {
@@ -515,7 +537,7 @@ void Buffer::DestroyImpl() {
 
             std::unique_ptr<Heap> heap;
             wgpu::Callback callback;
-            void* userdata;
+            raw_ptr<void, DisableDanglingPtrDetection> userdata;
         };
         std::unique_ptr<DisposeTask> request = std::make_unique<DisposeTask>(
             std::move(mHostMappedHeap), mHostMappedDisposeCallback, mHostMappedDisposeUserdata);
@@ -553,7 +575,7 @@ ResultOrError<bool> Buffer::EnsureDataInitializedAsDestination(
     }
 
     if (IsFullBufferRange(offset, size)) {
-        SetIsDataInitialized();
+        SetInitialized(true);
         return {false};
     }
 
@@ -568,7 +590,7 @@ MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* c
     }
 
     if (IsFullBufferOverwrittenInTextureToBufferCopy(copy)) {
-        SetIsDataInitialized();
+        SetInitialized(true);
     } else {
         DAWN_TRY(InitializeToZero(commandContext));
     }
@@ -587,7 +609,7 @@ MaybeError Buffer::InitializeToZero(CommandRecordingContext* commandContext) {
     // TODO(crbug.com/dawn/484): skip initializing the buffer when it is created on a heap
     // that has already been zero initialized.
     DAWN_TRY(ClearBuffer(commandContext, uint8_t(0u)));
-    SetIsDataInitialized();
+    SetInitialized(true);
     GetDevice()->IncrementLazyClearCountForTesting();
 
     return {};

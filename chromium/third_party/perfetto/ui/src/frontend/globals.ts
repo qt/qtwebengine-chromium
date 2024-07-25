@@ -14,13 +14,8 @@
 
 import {BigintMath} from '../base/bigint_math';
 import {assertExists} from '../base/logging';
-import {
-  duration,
-  Span,
-  Time,
-  time,
-  TimeSpan,
-} from '../base/time';
+import {createStore, Store} from '../base/store';
+import {duration, Span, Time, time, TimeSpan} from '../base/time';
 import {Actions, DeferredAction} from '../common/actions';
 import {AggregateData} from '../common/aggregation_data';
 import {Args} from '../common/arg_types';
@@ -29,42 +24,44 @@ import {
   ConversionJobName,
   ConversionJobStatus,
 } from '../common/conversion_jobs';
+import {createEmptyState} from '../common/empty_state';
 import {
   HighPrecisionTime,
   HighPrecisionTimeSpan,
 } from '../common/high_precision_time';
 import {MetricResult} from '../common/metric_data';
 import {CurrentSearchResults, SearchSummary} from '../common/search_data';
-import {onSelectionChanged} from '../common/selection_observer';
 import {
   CallsiteInfo,
   EngineConfig,
   ProfileType,
   RESOLUTION_DEFAULT,
   State,
+  getLegacySelection,
 } from '../common/state';
-import {TimestampFormat, timestampFormat} from '../common/timestamp_format';
+import {TabManager} from '../common/tab_registry';
+import {TimestampFormat, timestampFormat} from '../core/timestamp_format';
+import {TrackManager} from '../common/track_cache';
 import {setPerfHooks} from '../core/perf';
 import {raf} from '../core/raf_scheduler';
 import {Engine} from '../trace_processor/engine';
 import {HttpRpcState} from '../trace_processor/http_rpc_engine';
 
 import {Analytics, initAnalytics} from './analytics';
-import {BottomTabList} from './bottom_tab';
 import {Timeline} from './frontend_local_state';
 import {Router} from './router';
 import {horizontalScrollToTs} from './scroll_helper';
 import {ServiceWorkerController} from './service_worker_controller';
 import {SliceSqlId} from './sql_types';
-import {createStore, Store} from './store';
 import {PxSpan, TimeScale} from './time_scale';
+import {SelectionManager, LegacySelection} from '../core/selection_manager';
 
 const INSTANT_FOCUS_DURATION = 1n;
 const INCOMPLETE_SLICE_DURATION = 30_000n;
 
 type Dispatch = (action: DeferredAction) => void;
 type TrackDataStore = Map<string, {}>;
-type QueryResultsStore = Map<string, {}|undefined>;
+type QueryResultsStore = Map<string, {} | undefined>;
 type AggregateDataStore = Map<string, AggregateData>;
 type Description = Map<string, string>;
 
@@ -75,7 +72,7 @@ export interface SliceDetails {
   threadTs?: time;
   threadDur?: duration;
   priority?: number;
-  endState?: string|null;
+  endState?: string | null;
   cpu?: number;
   id?: number;
   threadStateId?: number;
@@ -163,6 +160,8 @@ export interface FlamegraphDetails {
   // When heap_graph_non_finalized_graph has a count >0, we mark the graph
   // as incomplete.
   graphIncomplete?: boolean;
+  // About to show a new graph whose data is not ready yet.
+  graphLoading?: boolean;
 }
 
 export interface CpuProfileDetails {
@@ -189,27 +188,6 @@ export interface ThreadDesc {
 }
 type ThreadMap = Map<number, ThreadDesc>;
 
-export interface FtraceEvent {
-  id: number;
-  ts: time;
-  name: string;
-  cpu: number;
-  thread: string|null;
-  process: string|null;
-  args: string;
-}
-
-export interface FtracePanelData {
-  events: FtraceEvent[];
-  offset: number;
-  numEvents: number;  // Number of events in the visible window
-}
-
-export interface FtraceStat {
-  name: string;
-  count: number;
-}
-
 function getRoot() {
   // Works out the root directory where the content should be served from
   // e.g. `http://origin/v1.2.3/`.
@@ -227,15 +205,20 @@ function getRoot() {
 
 // Options for globals.makeSelection().
 export interface MakeSelectionOpts {
-  // The ID of the next tab to reveal, or null to keep the current tab.
-  // If undefined, the 'current_selection' tab will be revealed.
-  tab?: string|null;
+  // Whether to switch to the current selection tab or not. Default = true.
+  switchToCurrentSelectionTab?: boolean;
 
   // Whether to cancel the current search selection. Default = true.
   clearSearch?: boolean;
 }
 
-type OpenQueryHandler = (query: string, title: string, tag?: string) => void;
+// All of these control additional things we can do when doing a
+// selection.
+export interface LegacySelectionArgs {
+  clearSearch: boolean;
+  switchToCurrentSelectionTab: boolean;
+  pendingScrollId: number | undefined;
+}
 
 /**
  * Global accessors for state/dispatch in the frontend.
@@ -243,15 +226,13 @@ type OpenQueryHandler = (query: string, title: string, tag?: string) => void;
 class Globals {
   readonly root = getRoot();
 
-  bottomTabList?: BottomTabList = undefined;
-
   private _testing = false;
   private _dispatch?: Dispatch = undefined;
-  private _store?: Store<State>;
+  private _store = createStore<State>(createEmptyState());
   private _timeline?: Timeline = undefined;
   private _serviceWorkerController?: ServiceWorkerController = undefined;
   private _logging?: Analytics = undefined;
-  private _isInternalUser: boolean|undefined = undefined;
+  private _isInternalUser: boolean | undefined = undefined;
 
   // TODO(hjd): Unify trackDataStore, queryResults, overviewStore, threads.
   private _trackDataStore?: TrackDataStore = undefined;
@@ -277,15 +258,16 @@ class Globals {
   private _router?: Router = undefined;
   private _embeddedMode?: boolean = undefined;
   private _hideSidebar?: boolean = undefined;
-  private _ftraceCounters?: FtraceStat[] = undefined;
-  private _ftracePanelData?: FtracePanelData = undefined;
-  private _cmdManager?: CommandManager = undefined;
+  private _cmdManager = new CommandManager();
   private _realtimeOffset = Time.ZERO;
   private _utcOffset = Time.ZERO;
   private _traceTzOffset = Time.ZERO;
-  private _openQueryHandler?: OpenQueryHandler;
+  private _tabManager = new TabManager();
+  private _trackManager = new TrackManager(this._store);
+  private _selectionManager = new SelectionManager(this._store);
+  private _hasFtrace: boolean = false;
 
-  scrollToTrackKey?: string|number;
+  scrollToTrackKey?: string | number;
   httpRpcState: HttpRpcState = {connected: false};
   newVersionAvailable = false;
   showPanningHint = false;
@@ -294,8 +276,8 @@ class Globals {
   private _publishRedraw?: () => void = undefined;
 
   private _currentSearchResults: CurrentSearchResults = {
-    sliceIds: new Float64Array(0),
-    tsStarts: new BigInt64Array(0),
+    eventIds: new Float64Array(0),
+    tses: new BigInt64Array(0),
     utids: new Float64Array(0),
     trackKeys: [],
     sources: [],
@@ -309,23 +291,20 @@ class Globals {
 
   engines = new Map<string, Engine>();
 
-  initialize(
-      dispatch: Dispatch, router: Router, initialState: State,
-      cmdManager: CommandManager) {
+  initialize(dispatch: Dispatch, router: Router) {
     this._dispatch = dispatch;
     this._router = router;
-    this._store = createStore(initialState);
-    this._cmdManager = cmdManager;
     this._timeline = new Timeline();
 
     setPerfHooks(
-        () => this.state.perfDebug,
-        () => this.dispatch(Actions.togglePerfDebug({})));
+      () => this.state.perfDebug,
+      () => this.dispatch(Actions.togglePerfDebug({})),
+    );
 
     this._serviceWorkerController = new ServiceWorkerController();
     this._testing =
-        /* eslint-disable @typescript-eslint/strict-boolean-expressions */
-        self.location && self.location.search.indexOf('testing=1') >= 0;
+      /* eslint-disable @typescript-eslint/strict-boolean-expressions */
+      self.location && self.location.search.indexOf('testing=1') >= 0;
     /* eslint-enable */
     this._logging = initAnalytics();
 
@@ -344,6 +323,7 @@ class Globals {
     this._flamegraphDetails = {};
     this._cpuProfileDetails = {};
     this.engines.clear();
+    this._selectionManager.clear();
   }
 
   // Only initialises the store - useful for testing.
@@ -527,16 +507,12 @@ class Globals {
     this._currentSearchResults = results;
   }
 
+  set hasFtrace(value: boolean) {
+    this._hasFtrace = value;
+  }
+
   get hasFtrace(): boolean {
-    return Boolean(this._ftraceCounters && this._ftraceCounters.length > 0);
-  }
-
-  get ftraceCounters(): FtraceStat[]|undefined {
-    return this._ftraceCounters;
-  }
-
-  set ftraceCounters(value: FtraceStat[]|undefined) {
-    this._ftraceCounters = value;
+    return this._hasFtrace;
   }
 
   getConversionJobStatus(name: ConversionJobName): ConversionJobStatus {
@@ -614,51 +590,50 @@ class Globals {
     return BigintMath.bitFloor(timePerPx.toTime('floor'));
   }
 
-  getCurrentEngine(): EngineConfig|undefined {
+  getCurrentEngine(): EngineConfig | undefined {
     return this.state.engine;
   }
 
-  get ftracePanelData(): FtracePanelData|undefined {
-    return this._ftracePanelData;
-  }
-
-  set ftracePanelData(data: FtracePanelData|undefined) {
-    this._ftracePanelData = data;
-  }
-
   makeSelection(action: DeferredAction<{}>, opts: MakeSelectionOpts = {}) {
-    const {
-      tab = 'current_selection',
-      clearSearch = true,
-    } = opts;
-
-    const previousState = this.state;
+    const {switchToCurrentSelectionTab = true, clearSearch = true} = opts;
+    const currentSelectionTabUri = 'current_selection';
 
     // A new selection should cancel the current search selection.
     clearSearch && globals.dispatch(Actions.setSearchIndex({index: -1}));
 
-    if (action.type === 'deselect') {
-      globals.dispatch(Actions.setCurrentTab({tab: undefined}));
-    } else if (tab !== null) {
-      globals.dispatch(Actions.setCurrentTab({tab}));
+    if (switchToCurrentSelectionTab) {
+      globals.dispatch(Actions.showTab({uri: currentSelectionTabUri}));
     }
     globals.dispatch(action);
+  }
 
-    // HACK(stevegolton + altimin): This is a workaround to allow passing the
-    // next tab state to the Bottom Tab API
-    if (this.state.currentSelection !== previousState.currentSelection) {
-      // TODO(altimin): Currently we are not triggering this when changing
-      // the set of selected tracks via toggling per-track checkboxes.
-      // Fix that.
-      onSelectionChanged(
-          this.state.currentSelection ?? undefined,
-          tab === 'current_selection');
+  setLegacySelection(
+    legacySelection: LegacySelection,
+    args: LegacySelectionArgs,
+  ): void {
+    this._selectionManager.setLegacy(legacySelection);
+    if (args.clearSearch) {
+      globals.dispatch(Actions.setSearchIndex({index: -1}));
     }
+    if (args.pendingScrollId !== undefined) {
+      globals.dispatch(
+        Actions.setPendingScrollId({
+          pendingScrollId: args.pendingScrollId,
+        }),
+      );
+    }
+    if (args.switchToCurrentSelectionTab) {
+      globals.dispatch(Actions.showTab({uri: 'current_selection'}));
+    }
+  }
+
+  clearSelection(): void {
+    globals.dispatch(Actions.setSearchIndex({index: -1}));
+    this._selectionManager.clear();
   }
 
   resetForTesting() {
     this._dispatch = undefined;
-    this._store = undefined;
     this._timeline = undefined;
     this._serviceWorkerController = undefined;
 
@@ -673,8 +648,8 @@ class Globals {
     this._numQueriesQueued = 0;
     this._metricResult = undefined;
     this._currentSearchResults = {
-      sliceIds: new Float64Array(0),
-      tsStarts: new BigInt64Array(0),
+      eventIds: new Float64Array(0),
+      tses: new BigInt64Array(0),
       utids: new Float64Array(0),
       trackKeys: [],
       sources: [],
@@ -698,6 +673,7 @@ class Globals {
   set isInternalUser(value: boolean) {
     localStorage.setItem('isInternalUser', value ? '1' : '0');
     this._isInternalUser = value;
+    raf.scheduleFullRedraw();
   }
 
   get testing() {
@@ -746,7 +722,6 @@ class Globals {
     return assertExists(this._cmdManager);
   }
 
-
   // This is the ts value at the time of the Unix epoch.
   // Normally some large negative value, because the unix epoch is normally in
   // the past compared to ts=0.
@@ -778,6 +753,14 @@ class Globals {
     this._traceTzOffset = offset;
   }
 
+  get tabManager() {
+    return this._tabManager;
+  }
+
+  get trackManager() {
+    return this._trackManager;
+  }
+
   // Offset between t=0 and the configured time domain.
   timestampOffset(): time {
     const fmt = timestampFormat();
@@ -803,14 +786,16 @@ class Globals {
     return Time.sub(ts, this.timestampOffset());
   }
 
-  findTimeRangeOfSelection(): {start: time, end: time} {
-    const selection = this.state.currentSelection;
+  findTimeRangeOfSelection(): {start: time; end: time} {
+    const selection = getLegacySelection(this.state);
     let start = Time.INVALID;
     let end = Time.INVALID;
     if (selection === null) {
       return {start, end};
     } else if (
-        selection.kind === 'SLICE' || selection.kind === 'CHROME_SLICE') {
+      selection.kind === 'SLICE' ||
+      selection.kind === 'CHROME_SLICE'
+    ) {
       const slice = this.sliceDetails;
       if (slice.ts && slice.dur !== undefined && slice.dur > 0) {
         start = slice.ts;
@@ -820,8 +805,10 @@ class Globals {
         // This will handle either:
         // a)slice.dur === -1 -> unfinished slice
         // b)slice.dur === 0  -> instant event
-        end = slice.dur === -1n ? Time.add(start, INCOMPLETE_SLICE_DURATION) :
-                                  Time.add(start, INSTANT_FOCUS_DURATION);
+        end =
+          slice.dur === -1n
+            ? Time.add(start, INCOMPLETE_SLICE_DURATION)
+            : Time.add(start, INSTANT_FOCUS_DURATION);
       }
     } else if (selection.kind === 'THREAD_STATE') {
       const threadState = this.threadStateDetails;
@@ -861,22 +848,6 @@ class Globals {
     }
 
     return {start, end};
-  }
-
-  // The implementation of the query results tab is not part of the core so we
-  // decouple globals from the implementation using this registration interface.
-  // Once we move the implementation to a plugin, this decoupling will be
-  // simpler as we just need to call a command with a well-known ID, and a
-  // plugin will provide the implementation.
-  registerOpenQueryHandler(cb: OpenQueryHandler) {
-    this._openQueryHandler = cb;
-  }
-
-  // Runs a query and displays results in a new tab.
-  // Queries will override previously opened queries with the same tag.
-  // If the tag is omitted, the results will always open in a new tab.
-  openQuery(query: string, title: string, tag?: string) {
-    assertExists(this._openQueryHandler)(query, title, tag);
   }
 
   panToTimestamp(ts: time): void {

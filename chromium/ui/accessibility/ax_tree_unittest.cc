@@ -115,7 +115,7 @@ class TestAXTreeObserver final : public AXTreeObserver {
     tree_data_changed_ = true;
   }
 
-  absl::optional<AXNodeID> unignored_parent_id_before_node_deleted;
+  std::optional<AXNodeID> unignored_parent_id_before_node_deleted;
   void OnNodeWillBeDeleted(AXTree* tree, AXNode* node) override {
     // When this observer function is called in an update, the actual node
     // deletion has not happened yet. Verify that node still exists in the tree.
@@ -340,7 +340,7 @@ class AXTreeTestWithMultipleUTFEncodings
 
 using ::testing::ElementsAre;
 
-// A macro for testing that a absl::optional has both a value and that its value
+// A macro for testing that a std::optional has both a value and that its value
 // is set to a particular expectation.
 #define EXPECT_OPTIONAL_EQ(expected, actual) \
   EXPECT_TRUE(actual.has_value());           \
@@ -376,10 +376,11 @@ TEST(AXTreeTest, SerializeSimpleAXTree) {
   initial_state.tree_data.title = "Title";
   AXSerializableTree src_tree(initial_state);
 
-  std::unique_ptr<AXTreeSource<const AXNode*>> tree_source(
-      src_tree.CreateTreeSource());
-  AXTreeSerializer<const AXNode*, std::vector<const AXNode*>> serializer(
-      tree_source.get());
+  std::unique_ptr<AXTreeSource<const AXNode*, ui::AXTreeData*, ui::AXNodeData>>
+      tree_source(src_tree.CreateTreeSource());
+  AXTreeSerializer<const AXNode*, std::vector<const AXNode*>, ui::AXTreeUpdate*,
+                   ui::AXTreeData*, ui::AXNodeData>
+      serializer(tree_source.get());
   AXTreeUpdate update;
   serializer.SerializeChanges(src_tree.root(), &update);
 
@@ -1407,16 +1408,16 @@ TEST(AXTreeTest, AttributeChangeCallbacks) {
   const std::vector<std::string>& change_log2 =
       test_observer2.attribute_change_log();
   ASSERT_EQ(11U, change_log2.size());
-  EXPECT_EQ("name changed from N2 to ", change_log2[0]);
-  EXPECT_EQ("description changed from D2 to D3", change_log2[1]);
+  EXPECT_EQ("description changed from D2 to D3", change_log2[0]);
+  EXPECT_EQ("name changed from N2 to ", change_log2[1]);
   EXPECT_EQ("value changed from  to V3", change_log2[2]);
   EXPECT_EQ("busy changed to false", change_log2[3]);
   EXPECT_EQ("modal changed to true", change_log2[4]);
-  EXPECT_EQ("minValueForRange changed from 2 to 0", change_log2[5]);
-  EXPECT_EQ("stepValueForRange changed from 3 to 0.5", change_log[6]);
-  EXPECT_EQ("valueForRange changed from 0 to 5", change_log2[7]);
-  EXPECT_EQ("scrollXMin changed from 2 to 0", change_log2[8]);
-  EXPECT_EQ("scrollX changed from 6 to 7", change_log2[9]);
+  EXPECT_EQ("valueForRange changed from 0 to 5", change_log2[5]);
+  EXPECT_EQ("minValueForRange changed from 2 to 0", change_log2[6]);
+  EXPECT_EQ("stepValueForRange changed from 0.5 to 0", change_log2[7]);
+  EXPECT_EQ("scrollX changed from 6 to 7", change_log2[8]);
+  EXPECT_EQ("scrollXMin changed from 2 to 0", change_log2[9]);
   EXPECT_EQ("scrollXMax changed from 0 to 10", change_log2[10]);
 }
 
@@ -1477,8 +1478,8 @@ TEST(AXTreeTest, IntListChangeCallbacks) {
       test_observer2.attribute_change_log();
   ASSERT_EQ(3U, change_log2.size());
   EXPECT_EQ("controlsIds changed from 2,2 to ", change_log2[0]);
-  EXPECT_EQ("radioGroupIds changed from 3 to 2,2", change_log2[1]);
-  EXPECT_EQ("flowtoIds changed from  to 3", change_log2[2]);
+  EXPECT_EQ("flowtoIds changed from  to 3", change_log2[1]);
+  EXPECT_EQ("radioGroupIds changed from 3 to 2,2", change_log2[2]);
 }
 
 // Create a very simple tree and make sure that we can get the bounds of
@@ -1819,11 +1820,10 @@ TEST(AXTreeTest, IntReverseRelations) {
       tree.GetReverseRelations(ax::mojom::IntAttribute::kActivedescendantId, 1);
   ASSERT_EQ(0U, reverse_active_descendant.size());
 
+  // Member of does not compute a reverse relation.
   auto reverse_member_of =
       tree.GetReverseRelations(ax::mojom::IntAttribute::kMemberOfId, 1);
-  ASSERT_EQ(2U, reverse_member_of.size());
-  EXPECT_TRUE(base::Contains(reverse_member_of, 3));
-  EXPECT_TRUE(base::Contains(reverse_member_of, 4));
+  ASSERT_EQ(0U, reverse_member_of.size());
 
   AXTreeUpdate update = initial_state;
   update.nodes.resize(5);
@@ -1848,9 +1848,7 @@ TEST(AXTreeTest, IntReverseRelations) {
 
   reverse_member_of =
       tree.GetReverseRelations(ax::mojom::IntAttribute::kMemberOfId, 1);
-  ASSERT_EQ(2U, reverse_member_of.size());
-  EXPECT_TRUE(base::Contains(reverse_member_of, 4));
-  EXPECT_TRUE(base::Contains(reverse_member_of, 5));
+  ASSERT_EQ(0U, reverse_member_of.size());
 }
 
 TEST(AXTreeTest, IntListReverseRelations) {
@@ -4263,10 +4261,10 @@ TEST(AXTreeTest, SetSizePosInSetPopUpButtonAndSelect) {
   // The first popupbutton should have SetSize of 0.
   AXNode* popup_button_1 = tree.GetFromId(2);
   EXPECT_OPTIONAL_EQ(0, popup_button_1->GetSetSize());
-  // The select should have SetSize of 2, since the menulistpopup
+  // The combo box select should have SetSize of 2, since the menulistpopup
   // that it wraps has a SetSize of 2.
-  AXNode* popup_button_2 = tree.GetFromId(3);
-  EXPECT_OPTIONAL_EQ(2, popup_button_2->GetSetSize());
+  AXNode* combo_box_select = tree.GetFromId(3);
+  EXPECT_OPTIONAL_EQ(2, combo_box_select->GetSetSize());
 }
 
 // Tests that PosInSet and SetSize are still correctly calculated when there

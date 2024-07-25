@@ -59,6 +59,11 @@ BASE_FEATURE(kGpuLPAC,
              "GpuLPAC",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Enables Print Compositor Low Privilege AppContainer.
+BASE_FEATURE(kPrintCompositorLPAC,
+             "PrintCompositorLPAC",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Enables Renderer AppContainer
 BASE_FEATURE(kRendererAppContainer,
              "RendererAppContainer",
@@ -69,18 +74,6 @@ BASE_FEATURE(kRendererAppContainer,
 // egregious cases.
 BASE_FEATURE(kWinSboxHighRendererJobMemoryLimits,
              "WinSboxHighRendererJobMemoryLimits",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Emergency "off switch" for closing the KsecDD handle in cryptbase.dll just
-// before sandbox lockdown in renderers.
-BASE_FEATURE(kWinSboxRendererCloseKsecDD,
-             "WinSboxRendererCloseKsecDD",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// If enabled, only warm up `bcryptprimitives!ProcessPrng` - if disabled warms
-// up `advapi32!RtlGenRandom`.
-BASE_FEATURE(kWinSboxWarmupProcessPrng,
-             "WinSboxWarmupProcessPrng",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, launch the network service within an LPAC sandbox. If disabled,
@@ -104,12 +97,22 @@ BASE_FEATURE(kWinSboxZeroAppShim,
              "WinSboxZeroAppShim",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Emergency off-switch for FSCTL mitigation.
-// If enabled, applies the FSCTL syscall lockdown mitigation to all sandboxed
-// processes, if supported by the OS.
-BASE_FEATURE(kWinSboxFsctlLockdown,
-             "WinSboxFsctlLockdown",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+// Enables pre-launch Code Integrity Guard (CIG) for Chrome network service
+// process, when running on Windows 10 1511 and above. This has no effect if
+// NetworkServiceSandbox feature is disabled, or if using a component or ASAN
+// build. See https://blogs.windows.com/blog/tag/code-integrity-guard/.
+BASE_FEATURE(kNetworkServiceCodeIntegrity,
+             "NetworkServiceCodeIntegrity",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Run win32k lockdown without applying the interceptions to fake out the
+// dllmain of gdi32 and user32. With this feature enabled, processes with
+// win32k lockdown policy will fail to load gdi32.dll and user32.dll.
+// TODO(crbug.com/326277735) this feature is under development and not
+// completely supported in every process type, may cause delayload failures.
+BASE_FEATURE(kWinSboxNoFakeGdiInit,
+             "WinSboxNoFakeGdiInit",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -183,7 +186,7 @@ bool IsNetworkSandboxSupported() {
   // Network service sandbox uses GetNetworkConnectivityHint which is only
   // supported on Windows 10 Build 19041 (20H1) so versions before that wouldn't
   // have a working network change notifier when running in the sandbox.
-  // TODO(crbug.com/1450754): Move this to an API that works earlier than 20H1
+  // TODO(crbug.com/40915451): Move this to an API that works earlier than 20H1
   // and also works in the LPAC sandbox.
   static const bool supported =
       base::win::GetVersion() >= base::win::Version::WIN10_20H1;

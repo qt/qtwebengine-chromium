@@ -169,15 +169,17 @@ void AudioTrackMojoEncoder::OnEncodeDone(media::EncoderStatus status) {
 
 void AudioTrackMojoEncoder::OnEncodeOutput(
     media::EncodedAudioBuffer encoded_buffer,
-    absl::optional<media::AudioEncoder::CodecDescription> codec_desc) {
+    std::optional<media::AudioEncoder::CodecDescription> codec_desc) {
   if (!current_status_.is_ok()) {
     LogError("Refusing to output when in error state: ", current_status_);
     return;
   }
 
+  // Don't use encoded_buffer.encoded_data.end() as the encoded data size could
+  // be smaller than the allocated encoded_data.
   std::string encoded_data(
-      reinterpret_cast<char*>(encoded_buffer.encoded_data.get()),
-      encoded_buffer.encoded_data_size);
+      encoded_buffer.encoded_data.begin(),
+      encoded_buffer.encoded_data.begin() + encoded_buffer.encoded_data_size);
   on_encoded_audio_cb_.Run(encoded_buffer.params, encoded_data,
                            std::move(codec_desc), encoded_buffer.timestamp);
 }

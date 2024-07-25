@@ -163,6 +163,7 @@ struct SwitchToTabInfo {
 struct TabOrganization {
   int32 organization_id;
   array<Tab> tabs;
+  int32 first_new_tab_index;
   mojo_base.mojom.String16 name;
 };
 
@@ -230,6 +231,9 @@ interface PageHandler {
   // Remove the tab from the tab organization.
   RemoveTabFromOrganization(int32 session_id, int32 organization_id, Tab tab);
 
+  // Reject all tab organizations in the current session.
+  RejectSession(int32 session_id);
+
   // Clear the current tab organization session state and start a new request.
   RestartSession();
 
@@ -264,8 +268,13 @@ interface PageHandler {
                   int32 organization_id,
                   UserFeedback feedback);
 
-  // Notify the backend that the UI is ready to be shown.
-  ShowUI();
+  // Notify the backend that the Organization UI is ready to be shown. The
+  // surface will only be shown once both Organization and Search are ready.
+  NotifyOrganizationUIReadyToShow();
+
+  // Notify the backend that the Search UI is ready to be shown. The
+  // surface will only be shown once both Organization and Search are ready.
+  NotifySearchUIReadyToShow();
 };
 
 // WebUI-side handler for requests from the browser.
@@ -291,6 +300,10 @@ interface Page {
 
   // Called when the top level bubble tab should change.
   TabSearchTabIndexChanged(int32 index);
+
+  // Called when state of whether the first run experience should be shown
+  // changes.
+  ShowFREChanged(bool show);
 
   // Called when the tab organization feature should be enabled/disabled.
   TabOrganizationEnabledChanged(bool enabled);

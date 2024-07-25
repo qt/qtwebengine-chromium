@@ -29,7 +29,6 @@
 #include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/accessibility/one_shot_accessibility_tree_search.h"
-#include "content/browser/accessibility/web_ax_platform_tree_manager_delegate.h"
 #include "content/public/common/content_client.h"
 #include "third_party/blink/public/strings/grit/blink_strings.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -40,6 +39,7 @@
 #include "ui/accessibility/ax_selection.h"
 #include "ui/accessibility/platform/ax_platform_node.h"
 #import "ui/accessibility/platform/ax_platform_node_mac.h"
+#include "ui/accessibility/platform/ax_platform_tree_manager_delegate.h"
 #include "ui/accessibility/platform/ax_utils_mac.h"
 #include "ui/gfx/mac/coordinate_conversion.h"
 #include "ui/strings/grit/ax_strings.h"
@@ -53,9 +53,9 @@ using content::BrowserAccessibilityManager;
 using content::BrowserAccessibilityManagerMac;
 using content::ContentClient;
 using content::OneShotAccessibilityTreeSearch;
-using content::WebAXPlatformTreeManagerDelegate;
 using ui::AXActionHandlerRegistry;
 using ui::AXNodeData;
+using ui::AXPlatformTreeManagerDelegate;
 using ui::AXPositionToAXTextMarker;
 using ui::AXRangeToAXTextMarkerRange;
 using ui::AXTextMarkerRangeToAXRange;
@@ -1106,7 +1106,7 @@ bool content::IsNSRange(id value) {
 
   // Get the delegate for the topmost BrowserAccessibilityManager, because
   // that's the only one that can convert points to their origin in the screen.
-  WebAXPlatformTreeManagerDelegate* delegate =
+  ui::AXPlatformTreeManagerDelegate* delegate =
       _owner->manager()->GetDelegateFromRootManager();
   if (delegate) {
     return gfx::ScreenRectToNSRect(
@@ -1395,7 +1395,7 @@ bool content::IsNSRange(id value) {
   if ([self internalRole] == ax::mojom::Role::kDescriptionList)
     return NSAccessibilityDefinitionListSubrole;
 
-  if ([self internalRole] == ax::mojom::Role::kDirectory ||
+  if ([self internalRole] == ax::mojom::Role::kDirectoryDeprecated ||
       [self internalRole] == ax::mojom::Role::kList) {
     return NSAccessibilityContentListSubrole;
   }
@@ -1589,14 +1589,14 @@ bool content::IsNSRange(id value) {
           ->GetManagerForRootFrame()
           ->ToBrowserAccessibilityManagerMac();
   if (!root_manager) {
-    // TODO(crbug.com/1350583) Find out why this happens -- there should always
+    // TODO(crbug.com/40234203) Find out why this happens -- there should always
     // be a root manager whenever an object is instanceActive. This used to be a
     // CHECK() but caused too many crashes, with unknown cause.
     return nil;
   }
   if (!root_manager->GetParentView()) {
-    // TODO(crbug.com/1425682) Find out why this happens, there should always be
-    // a parent view. This used to be a CHECK() but caused too many crashes.
+    // TODO(crbug.com/40898856) Find out why this happens, there should always
+    // be a parent view. This used to be a CHECK() but caused too many crashes.
     // Repro steps are available in the bug.
     return nil;
   }

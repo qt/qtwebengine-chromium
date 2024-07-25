@@ -4,9 +4,9 @@
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Diff from '../../../third_party/diff/diff.js';
+import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as LitHtml from '../../lit-html/lit-html.js';
 import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
-import * as ComponentHelpers from '../helpers/helpers.js';
 
 import diffViewStyles from './diffView.css.js';
 
@@ -214,7 +214,8 @@ class DiffRenderer {
       <div class="diff-line-number" aria-hidden="true">${baseNumber}</div>
       <div class="diff-line-number" aria-hidden="true">${curNumber}</div>
       <div class=${markerClass} aria-hidden="true">${marker}</div>
-      <div class="diff-line-content diff-line-${row.type}" data-line-number=${curNumber}>${screenReaderText}${
+      <div class="diff-line-content diff-line-${row.type}" data-line-number=${curNumber} jslog=${
+        VisualLogging.link('changes.reveal-source').track({click: true})}>${screenReaderText}${
         this.#renderRowContent(row)}</div>`;
   }
 
@@ -285,4 +286,4 @@ export class DiffView extends HTMLElement {
   }
 }
 
-ComponentHelpers.CustomElements.defineComponent('devtools-diff-view', DiffView);
+customElements.define('devtools-diff-view', DiffView);

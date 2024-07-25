@@ -63,10 +63,10 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
           mUserdata(callbackInfo.userdata),
           mBuffer(buffer) {
         DAWN_ASSERT(buffer != nullptr);
-        GetProcs().bufferReference(ToAPI(mBuffer));
+        mBuffer->AddRef();
     }
 
-    ~MapAsyncEvent() override { GetProcs().bufferRelease(ToAPI(mBuffer)); }
+    ~MapAsyncEvent() override { mBuffer.ExtractAsDangling()->Release(); }
 
     EventType GetType() override { return kType; }
 
@@ -169,7 +169,7 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
 
         auto Callback = [this, &status]() {
             if (mCallback) {
-                mCallback(status, mUserdata);
+                mCallback(status, mUserdata.ExtractAsDangling());
             }
         };
 
@@ -201,13 +201,12 @@ class Buffer::MapAsyncEvent : public TrackedEvent {
     }
 
     WGPUBufferMapCallback mCallback;
-    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
-    raw_ptr<void, DanglingUntriaged> mUserdata;
+    raw_ptr<void> mUserdata;
 
     std::optional<WGPUBufferMapAsyncStatus> mStatus;
 
     // Strong reference to the buffer so that when we call the callback we can pass the buffer.
-    Buffer* const mBuffer;
+    raw_ptr<Buffer> mBuffer;
 };
 
 // static
@@ -317,6 +316,10 @@ Buffer::~Buffer() {
     FreeMappedData();
 }
 
+ObjectType Buffer::GetObjectType() const {
+    return ObjectType::Buffer;
+}
+
 void Buffer::SetFutureStatus(WGPUBufferMapAsyncStatus status) {
     if (!mPendingMapRequest) {
         return;
@@ -351,8 +354,8 @@ WGPUFuture Buffer::MapAsyncF(WGPUMapModeFlags mode,
     }
 
     if (mPendingMapRequest) {
-        DAWN_UNUSED(GetEventManager().SetFutureReady<MapAsyncEvent>(
-            futureIDInternal, WGPUBufferMapAsyncStatus_MappingAlreadyPending));
+        [[maybe_unused]] auto id = GetEventManager().SetFutureReady<MapAsyncEvent>(
+            futureIDInternal, WGPUBufferMapAsyncStatus_MappingAlreadyPending);
         return {futureIDInternal};
     }
 
@@ -384,14 +387,14 @@ WGPUFuture Buffer::MapAsyncF(WGPUMapModeFlags mode,
     return {futureIDInternal};
 }
 
-bool Client::DoBufferMapAsyncCallback(ObjectHandle eventManager,
-                                      WGPUFuture future,
-                                      WGPUBufferMapAsyncStatus status,
-                                      uint64_t readDataUpdateInfoLength,
-                                      const uint8_t* readDataUpdateInfo) {
+WireResult Client::DoBufferMapAsyncCallback(ObjectHandle eventManager,
+                                            WGPUFuture future,
+                                            WGPUBufferMapAsyncStatus status,
+                                            uint64_t readDataUpdateInfoLength,
+                                            const uint8_t* readDataUpdateInfo) {
     return GetEventManager(eventManager)
-               .SetFutureReady<Buffer::MapAsyncEvent>(future.id, status, readDataUpdateInfoLength,
-                                                      readDataUpdateInfo) == WireResult::Success;
+        .SetFutureReady<Buffer::MapAsyncEvent>(future.id, status, readDataUpdateInfoLength,
+                                               readDataUpdateInfo);
 }
 
 void* Buffer::GetMappedRange(size_t offset, size_t size) {
@@ -447,6 +450,7 @@ void Buffer::Unmap() {
         // for mappedAtCreation usage. It is destroyed on unmap after flush to server
         // instead of at buffer destruction.
         if (mDestructWriteHandleOnUnmap) {
+            mMappedData = nullptr;
             mWriteHandle = nullptr;
             if (mReadHandle) {
                 // If it's both mappedAtCreation and MapRead we need to reset
@@ -541,9 +545,9 @@ void Buffer::FreeMappedData() {
 
     mMappedOffset = 0;
     mMappedSize = 0;
+    mMappedData = nullptr;
     mReadHandle = nullptr;
     mWriteHandle = nullptr;
-    mMappedData = nullptr;
     mMappedState = MapState::Unmapped;
 }
 

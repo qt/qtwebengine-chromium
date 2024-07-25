@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 
 #include <iterator>
@@ -19,7 +24,7 @@
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
-#include "third_party/base/check.h"
+#include "core/fxcrt/check.h"
 
 namespace {
 
@@ -91,7 +96,7 @@ WideString CPDF_FormControl::GetExportValue() const {
     csOn = pArray->GetByteStringAt(m_pField->GetControlIndex(this));
   if (csOn.IsEmpty())
     csOn = "Yes";
-  return PDF_DecodeText(csOn.raw_span());
+  return PDF_DecodeText(csOn.unsigned_span());
 }
 
 bool CPDF_FormControl::IsChecked() const {
@@ -192,10 +197,10 @@ CPDF_DefaultAppearance CPDF_FormControl::GetDefaultAppearance() const {
   return m_pForm->GetDefaultAppearance();
 }
 
-absl::optional<WideString> CPDF_FormControl::GetDefaultControlFontName() const {
+std::optional<WideString> CPDF_FormControl::GetDefaultControlFontName() const {
   RetainPtr<CPDF_Font> pFont = GetDefaultControlFont();
   if (!pFont)
-    return absl::nullopt;
+    return std::nullopt;
 
   return WideString::FromDefANSI(pFont->GetBaseFontName().AsStringView());
 }
@@ -203,7 +208,7 @@ absl::optional<WideString> CPDF_FormControl::GetDefaultControlFontName() const {
 RetainPtr<CPDF_Font> CPDF_FormControl::GetDefaultControlFont() const {
   float fFontSize;
   CPDF_DefaultAppearance cDA = GetDefaultAppearance();
-  absl::optional<ByteString> csFontNameTag = cDA.GetFont(&fFontSize);
+  std::optional<ByteString> csFontNameTag = cDA.GetFont(&fFontSize);
   if (!csFontNameTag.has_value() || csFontNameTag->IsEmpty())
     return nullptr;
 

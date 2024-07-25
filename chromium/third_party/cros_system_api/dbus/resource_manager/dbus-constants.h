@@ -51,6 +51,22 @@ enum class PressureLevelArcContainer {
   FOREGROUND = 3,
 };
 
+enum class ProcessState {
+  // The process is normal.
+  kNormal = 0,
+  // The process is background.
+  kBackground = 1,
+};
+
+enum class ThreadState {
+  kUrgentBursty = 0,
+  kUrgent = 1,
+  kBalanced = 2,
+  kEco = 3,
+  kUtility = 4,
+  kBackground = 5,
+};
+
 // Methods.
 const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
 const char kGetForegroundAvailableMemoryKBMethod[] =
@@ -63,8 +79,9 @@ const char kSetGameModeWithTimeoutMethod[] = "SetGameModeWithTimeout";
 const char kSetMemoryMarginsBps[] = "SetMemoryMarginsBps";
 const char kSetFullscreenVideoWithTimeout[] = "SetFullscreenVideoWithTimeout";
 const char kSetVmBootModeWithTimeoutMethod[] = "SetVmBootModeWithTimeout";
-const char kReportBackgroundProcessesMethod[] = "ReportBackgroundProcesses";
 const char kReportBrowserProcessesMethod[] = "ReportBrowserProcesses";
+const char kSetProcessStateMethod[] = "SetProcessState";
+const char kSetThreadStateMethod[] = "SetThreadState";
 
 // Signals.
 

@@ -68,8 +68,7 @@ BluetoothLowEnergyAdapterApple::BluetoothLowEnergyAdapterApple()
       low_energy_peripheral_manager_delegate_(
           [[BluetoothLowEnergyPeripheralManagerDelegate alloc]
               initWithAdvertisementManager:
-                  low_energy_advertisement_manager_.get()
-                                andAdapter:this]) {
+                  low_energy_advertisement_manager_.get()]) {
   DCHECK(low_energy_discovery_manager_);
 }
 
@@ -442,22 +441,22 @@ void BluetoothLowEnergyAdapterApple::LowEnergyDeviceUpdated(
   NSString* local_name = advertisement_data[CBAdvertisementDataLocalNameKey];
 
   for (auto& observer : observers_) {
-    absl::optional<std::string> device_name_opt = device_mac->GetName();
-    absl::optional<std::string> local_name_opt =
+    std::optional<std::string> device_name_opt = device_mac->GetName();
+    std::optional<std::string> local_name_opt =
         base::SysNSStringToUTF8(local_name);
 
     observer.DeviceAdvertisementReceived(
         device_mac->GetAddress(), device_name_opt,
-        local_name == nil ? absl::nullopt : local_name_opt, rssi,
-        tx_power == nil ? absl::nullopt : absl::make_optional(clamped_tx_power),
-        absl::nullopt, /* TODO(crbug.com/588083) Implement appearance */
+        local_name == nil ? std::nullopt : local_name_opt, rssi,
+        tx_power == nil ? std::nullopt : std::make_optional(clamped_tx_power),
+        std::nullopt, /* TODO(crbug.com/41240161) Implement appearance */
         advertised_uuids, service_data_map, manufacturer_data_map);
   }
 
   device_mac->UpdateAdvertisementData(
-      BluetoothDevice::ClampPower(rssi), absl::nullopt /* flags */,
+      BluetoothDevice::ClampPower(rssi), std::nullopt /* flags */,
       std::move(advertised_uuids),
-      tx_power == nil ? absl::nullopt : absl::make_optional(clamped_tx_power),
+      tx_power == nil ? std::nullopt : std::make_optional(clamped_tx_power),
       std::move(service_data_map), std::move(manufacturer_data_map));
 
   if (is_new_device) {
@@ -491,7 +490,7 @@ void BluetoothLowEnergyAdapterApple::LowEnergyCentralManagerUpdatedState() {
       // GetDevices() returns instances of BluetoothClassicDeviceMac and
       // BluetoothLowEnergyDeviceMac. The DidDisconnectPeripheral() method is
       // only available on BluetoothLowEnergyDeviceMac.
-      if (!static_cast<BluetoothDeviceMac*>(device)->IsLowEnergyDevice()) {
+      if (!device->IsLowEnergyDevice()) {
         continue;
       }
       BluetoothLowEnergyDeviceMac* device_mac =
@@ -631,10 +630,9 @@ BluetoothLowEnergyAdapterApple::GetBluetoothLowEnergyDeviceMac(
   // device_mac can be BluetoothClassicDeviceMac* or
   // BluetoothLowEnergyDeviceMac* To return valid BluetoothLowEnergyDeviceMac*
   // we need to first check with IsLowEnergyDevice()
-  BluetoothDeviceMac* device_mac =
-      static_cast<BluetoothDeviceMac*>(iter->second.get());
-  return device_mac->IsLowEnergyDevice()
-             ? static_cast<BluetoothLowEnergyDeviceMac*>(device_mac)
+  BluetoothDevice* device = iter->second.get();
+  return device->IsLowEnergyDevice()
+             ? static_cast<BluetoothLowEnergyDeviceMac*>(device)
              : nullptr;
 }
 

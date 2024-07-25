@@ -5,14 +5,17 @@
 #ifndef V8_HEAP_OBJECTS_VISITING_INL_H_
 #define V8_HEAP_OBJECTS_VISITING_INL_H_
 
+#include <optional>
+
 #include "src/base/logging.h"
 #include "src/heap/mark-compact.h"
-#include "src/heap/object-lock.h"
+#include "src/heap/object-lock-inl.h"
 #include "src/heap/objects-visiting.h"
 #include "src/objects/arguments.h"
 #include "src/objects/data-handler-inl.h"
 #include "src/objects/free-space-inl.h"
 #include "src/objects/js-array-buffer-inl.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/js-weak-refs-inl.h"
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/module-inl.h"
@@ -48,7 +51,6 @@ inline bool ContainsReadOnlyMap(PtrComprCageBase, Tagged<HeapObject>) {
   V(BytecodeArray)                        \
   V(BytecodeWrapper)                      \
   V(ByteArray)                            \
-  V(CallHandlerInfo)                      \
   V(Cell)                                 \
   V(Code)                                 \
   V(CodeWrapper)                          \
@@ -62,6 +64,7 @@ inline bool ContainsReadOnlyMap(PtrComprCageBase, Tagged<HeapObject>) {
   V(FeedbackVector)                       \
   V(FixedArray)                           \
   V(FixedDoubleArray)                     \
+  V(FunctionTemplateInfo)                 \
   V(InstructionStream)                    \
   V(PreparseData)                         \
   V(PropertyArray)                        \
@@ -126,12 +129,34 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::Visit(
     Tagged<Map> map, Tagged<HeapObject> object) {
   ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);
   switch (map->visitor_id()) {
-#define CASE(TypeName)               \
-  case kVisit##TypeName:             \
-    return visitor->Visit##TypeName( \
+#define CASE(TypeName)                                                        \
+  case kVisit##TypeName:                                                      \
+    /* If this DCHECK fails, it means that the object type wasn't added       \
+     * to the TRUSTED_VISITOR_ID_LIST.                                        \
+     * Note: This would normally be just !IsTrustedObject(obj), however we    \
+     * might see trusted objects here before they've been migrated to trusted \
+     * space, hence the second condition. */                                  \
+    DCHECK(!IsTrustedObject(object) || !IsTrustedSpaceObject(object));        \
+    return visitor->Visit##TypeName(                                          \
         map, ConcreteVisitor::template Cast<TypeName>(object));
     TYPED_VISITOR_ID_LIST(CASE)
     TORQUE_VISITOR_ID_LIST(CASE)
+#undef CASE
+#define CASE(TypeName)                                                     \
+  case kVisit##TypeName:                                                   \
+    DCHECK(IsTrustedObject(object));                                       \
+    /* Trusted objects are protected from modifications by an attacker as  \
+     * they are located outside of the sandbox. However, an attacker can   \
+     * still craft their own fake trusted objects inside the sandbox. In   \
+     * this case, bad things might happen if these objects are then        \
+     * processed by e.g. an object visitor as they will typically assume   \
+     * that these objects are trustworthy. The following check defends     \
+     * against that by ensuring that the object is outside of the sandbox. \
+     * See also crbug.com/c/1505089. */                                    \
+    SBXCHECK(OutsideSandboxOrInReadonlySpace(object));                     \
+    return visitor->Visit##TypeName(                                       \
+        map, ConcreteVisitor::template Cast<TypeName>(object));
+    TRUSTED_VISITOR_ID_LIST(CASE)
 #undef CASE
     case kVisitShortcutCandidate:
       return visitor->VisitShortcutCandidate(
@@ -151,6 +176,17 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::Visit(
     case kDataOnlyVisitorIdCount:
     case kVisitorIdCount:
       UNREACHABLE();
+  }
+  // TODO(chromium:327992715): Remove once we have some clarity why execution
+  // can reach this point.
+  {
+    Isolate* isolate;
+    if (GetIsolateFromHeapObject(object, &isolate)) {
+      isolate->PushParamsAndDie(
+          reinterpret_cast<void*>(object.ptr()),
+          reinterpret_cast<void*>(map.ptr()),
+          reinterpret_cast<void*>(static_cast<intptr_t>(map->visitor_id())));
+    }
   }
   UNREACHABLE();
   // Make the compiler happy.
@@ -193,8 +229,10 @@ void HeapVisitor<ResultType, ConcreteVisitor>::VisitMapPointerIfNeeded(
                                                         visitor);            \
     return static_cast<ResultType>(size);                                    \
   }
+
 TYPED_VISITOR_ID_LIST(VISIT)
 TORQUE_VISITOR_ID_LIST(VISIT)
+TRUSTED_VISITOR_ID_LIST(VISIT)
 #undef VISIT
 
 template <typename ResultType, typename ConcreteVisitor>
@@ -210,14 +248,6 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::VisitDataObject(
   int size = map->instance_size();
   visitor->template VisitMapPointerIfNeeded<VisitorId::kVisitDataObject>(
       object);
-#ifdef V8_ENABLE_SANDBOX
-  // The following types have external pointers, which must be visited.
-  // TODO(v8:10391) Consider adding custom visitor IDs for these and making
-  // this block not depend on V8_ENABLE_SANDBOX.
-  if (IsForeign(object, cage_base())) {
-    Foreign::BodyDescriptor::IterateBody(map, object, size, visitor);
-  }
-#endif  // V8_ENABLE_SANDBOX
   return static_cast<ResultType>(size);
 }
 
@@ -231,7 +261,9 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::VisitJSObjectFast(
 template <typename ResultType, typename ConcreteVisitor>
 ResultType HeapVisitor<ResultType, ConcreteVisitor>::VisitJSApiObject(
     Tagged<Map> map, Tagged<JSObject> object) {
-  return VisitJSObjectSubclass<JSObject, JSObject::BodyDescriptor>(map, object);
+  return VisitJSObjectSubclass<JSObject,
+                               JSAPIObjectWithEmbedderSlots::BodyDescriptor>(
+      map, object);
 }
 
 template <typename ResultType, typename ConcreteVisitor>
@@ -268,6 +300,20 @@ ResultType HeapVisitor<ResultType, ConcreteVisitor>::VisitJSObjectSubclass(
   // used fields.
   TBodyDescriptor::IterateBody(map, object, used_size, visitor);
   return size;
+}
+
+template <typename ResultType, typename ConcreteVisitor>
+template <typename TSlot>
+std::optional<Tagged<Object>>
+HeapVisitor<ResultType, ConcreteVisitor>::GetObjectFilterReadOnlyAndSmiFast(
+    TSlot slot) const {
+  auto raw = slot.Relaxed_Load_Raw();
+  // raw is either Tagged_t or Address depending on the slot type. Both can be
+  // cast to Tagged_t for the fast check.
+  if (FastInReadOnlySpaceOrSmallSmi(static_cast<Tagged_t>(raw))) {
+    return std::nullopt;
+  }
+  return TSlot::RawToTagged(ObjectVisitorWithCageBases::cage_base(), raw);
 }
 
 template <typename ResultType, typename ConcreteVisitor>

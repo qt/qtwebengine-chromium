@@ -310,6 +310,8 @@ inline Condition MaglevAssembler::IsRootConstant(Input input,
   return equal;
 }
 
+inline Register MaglevAssembler::GetFramePointer() { return rbp; }
+
 inline MemOperand MaglevAssembler::GetStackSlot(
     const compiler::AllocatedOperand& operand) {
   return MemOperand(rbp, GetFramePointerOffsetForStackSlot(operand));
@@ -513,6 +515,16 @@ inline MemOperand MaglevAssembler::StackSlotOperand(StackSlot stack_slot) {
 }
 
 inline void MaglevAssembler::IncrementInt32(Register reg) { incl(reg); }
+
+inline void MaglevAssembler::DecrementInt32(Register reg) { decl(reg); }
+
+inline void MaglevAssembler::AddInt32(Register reg, int amount) {
+  addl(reg, Immediate(amount));
+}
+
+inline void MaglevAssembler::ShiftLeft(Register reg, int amount) {
+  shll(reg, Immediate(amount));
+}
 
 inline void MaglevAssembler::IncrementAddress(Register reg, int32_t delta) {
   leaq(reg, MemOperand(reg, delta));
@@ -935,8 +947,7 @@ void MaglevAssembler::JumpIfHoleNan(DoubleRegister value, Register scratch,
 void MaglevAssembler::JumpIfNotHoleNan(DoubleRegister value, Register scratch,
                                        Label* target,
                                        Label::Distance distance) {
-  Ucomisd(value, value);
-  JumpIf(NegateCondition(ConditionForNaN()), target, distance);
+  JumpIfNotNan(value, target, distance);
   Pextrd(scratch, value, 1);
   CompareInt32AndJumpIf(scratch, kHoleNanUpper32, kNotEqual, target, distance);
 }
@@ -946,6 +957,18 @@ void MaglevAssembler::JumpIfNotHoleNan(MemOperand operand, Label* target,
   movl(kScratchRegister, MemOperand(operand, kDoubleSize / 2));
   CompareInt32AndJumpIf(kScratchRegister, kHoleNanUpper32, kNotEqual, target,
                         distance);
+}
+
+void MaglevAssembler::JumpIfNan(DoubleRegister value, Label* target,
+                                Label::Distance distance) {
+  Ucomisd(value, value);
+  JumpIf(ConditionForNaN(), target, distance);
+}
+
+void MaglevAssembler::JumpIfNotNan(DoubleRegister value, Label* target,
+                                   Label::Distance distance) {
+  Ucomisd(value, value);
+  JumpIf(NegateCondition(ConditionForNaN()), target, distance);
 }
 
 void MaglevAssembler::CompareInt32AndJumpIf(Register r1, Register r2,
@@ -1042,14 +1065,6 @@ inline void MaglevAssembler::CompareTaggedAndJumpIf(Register src1,
                                                     Label* target,
                                                     Label::Distance distance) {
   cmp_tagged(src1, src2);
-  JumpIf(cond, target, distance);
-}
-
-inline void MaglevAssembler::CompareRootAndJumpIf(Register with,
-                                                  RootIndex index,
-                                                  Condition cond, Label* target,
-                                                  Label::Distance distance) {
-  CompareRoot(with, index);
   JumpIf(cond, target, distance);
 }
 

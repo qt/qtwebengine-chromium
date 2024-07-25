@@ -28,7 +28,6 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
-#include "ui/views/views_features.h"
 
 namespace views {
 namespace {
@@ -98,7 +97,7 @@ void TouchSelectionMenuViews::ShowMenu(const gfx::Rect& anchor_rect,
   // show the menu and adjust anchor rect properly if needed, just in case the
   // menu is needed to be shown under the selection.
   gfx::Rect adjusted_anchor_rect(anchor_rect);
-  int menu_width = GetPreferredSize().width();
+  int menu_width = GetPreferredSize({}).width();
   // TODO(mfomitchev): This assumes that the handles are center-aligned to the
   // |achor_rect| edges, which is not true. We should fix this, perhaps by
   // passing down the cumulative width occupied by the handles within
@@ -122,14 +121,8 @@ void TouchSelectionMenuViews::ShowMenu(const gfx::Rect& anchor_rect,
     bounds.AdjustToFit(work_area);
     widget->SetBounds(bounds);
   }
-  // Using BubbleDialogDelegateView engages its CreateBubbleWidget() which
-  // invokes widget->StackAbove(context). That causes the bubble to stack
-  // _immediately_ above |context|; below any already-existing bubbles. That
-  // doesn't make sense for a menu, so put it back on top.
-  if (base::FeatureList::IsEnabled(features::kWidgetLayering))
-    widget->SetZOrderLevel(ui::ZOrderLevel::kFloatingWindow);
-  else
-    widget->StackAtTop();
+
+  widget->SetZOrderLevel(ui::ZOrderLevel::kFloatingWindow);
   widget->Show();
 }
 

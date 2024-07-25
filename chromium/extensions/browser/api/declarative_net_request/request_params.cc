@@ -5,6 +5,7 @@
 #include "extensions/browser/api/declarative_net_request/request_params.h"
 
 #include <algorithm>
+#include <string_view>
 
 #include "base/check.h"
 #include "base/containers/flat_map.h"
@@ -12,7 +13,6 @@
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "base/ranges/algorithm.h"
-#include "base/strings/string_piece.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -34,7 +34,7 @@ namespace {
 namespace flat_rule = url_pattern_index::flat;
 
 // Returns whether the request to `url` is third party to its `document_origin`.
-// TODO(crbug.com/696822): Look into caching this.
+// TODO(crbug.com/40508457): Look into caching this.
 bool IsThirdPartyRequest(const GURL& url, const url::Origin& document_origin) {
   if (document_origin.opaque())
     return true;
@@ -62,19 +62,18 @@ content::GlobalRenderFrameHostId GetFrameRoutingId(
   return host->GetGlobalId();
 }
 
-// Returns if the request's `response_headers` matches the `headers` condition.
-// This returns true at the end if at least one response header matches a
-// HeaderCondition. A header matches a condition if:
+// Returns true if the request's response headers matches at least one condition
+// in `header_conditions`. A header matches a condition if:
 // - the header exists AND
 // - contains a value in condition->values() if specified AND
 // - does not contain any values in condition->excluded_values() if specified.
-bool MatchesHeaders(
+bool MatchesHeaderConditions(
     const net::HttpResponseHeaders& response_headers,
     const flatbuffers::Vector<flatbuffers::Offset<flat::HeaderCondition>>&
         header_conditions) {
   for (const flat::HeaderCondition* header_condition : header_conditions) {
-    base::StringPiece header =
-        CreateString<base::StringPiece>(*header_condition->header());
+    std::string_view header =
+        CreateString<std::string_view>(*header_condition->header());
     if (!response_headers.HasHeader(header)) {
       continue;
     }
@@ -88,7 +87,7 @@ bool MatchesHeaders(
     auto has_header_value = [&response_headers,
                              header](const flatbuffers::String* value) {
       return response_headers.HasHeaderValue(
-          header, CreateString<base::StringPiece>(*value));
+          header, CreateString<std::string_view>(*value));
     };
 
     // The condition for `header` does not match if there's an excluded value,
@@ -108,19 +107,6 @@ bool MatchesHeaders(
   }
 
   return false;
-}
-
-// Returns if `response_headers` contains any headers from `excluded_headers`.
-bool MatchesExcludedHeaders(
-    const net::HttpResponseHeaders& response_headers,
-    const flatbuffers::Vector<flatbuffers::Offset<flatbuffers::String>>&
-        excluded_headers) {
-  return base::ranges::any_of(
-      excluded_headers,
-      [&response_headers](const flatbuffers::String* excluded_header) {
-        return response_headers.HasHeader(
-            CreateString<base::StringPiece>(*excluded_header));
-      });
 }
 
 bool DoEmbedderConditionsMatch(
@@ -165,17 +151,20 @@ bool DoEmbedderConditionsMatch(
   }
 
   if (response_headers) {
+    // Do not match the rule if any conditions in `excluded_response_headers()`
+    // match.
     if (embedder_conditions->excluded_response_headers() &&
-        MatchesExcludedHeaders(
+        MatchesHeaderConditions(
             *response_headers,
             *embedder_conditions->excluded_response_headers())) {
       return false;
     }
 
+    // Do not match the rule if no conditions in `response_headers()` match.
     if (embedder_conditions->response_headers() &&
         embedder_conditions->response_headers()->size() &&
-        !MatchesHeaders(*response_headers,
-                        *embedder_conditions->response_headers())) {
+        !MatchesHeaderConditions(*response_headers,
+                                 *embedder_conditions->response_headers())) {
       return false;
     }
   }
@@ -195,7 +184,11 @@ RequestParams::RequestParams(
       parent_routing_id(info.parent_routing_id),
       embedder_conditions_matcher(base::BindRepeating(DoEmbedderConditionsMatch,
                                                       info.frame_data.tab_id,
-                                                      response_headers)) {
+                                                      response_headers)),
+      // Allow/allowAllRequest rules matched in earlier rule matching stages can
+      // influence rule matches for later matching stages. Hence this
+      // information is needed from `info`.
+      allow_rule_max_priority(info.allow_rule_max_priority) {
   is_third_party = IsThirdPartyRequest(*url, first_party_origin);
 }
 

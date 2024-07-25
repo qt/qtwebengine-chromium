@@ -54,7 +54,7 @@ PerformanceManagerRegistryImpl::~PerformanceManagerRegistryImpl() {
   DCHECK(render_process_hosts_.empty());
   DCHECK(pm_owned_.empty());
   DCHECK(pm_registered_.empty());
-  // TODO(crbug.com/1084611): |observers_| and |mechanisms_| should also be
+  // TODO(crbug.com/40131811): |observers_| and |mechanisms_| should also be
   // empty by now!
 }
 
@@ -258,7 +258,7 @@ void PerformanceManagerRegistryImpl::TearDown() {
 
   service_worker_context_adapters_.clear();
 
-  for (auto* web_contents : web_contents_) {
+  for (content::WebContents* web_contents : web_contents_) {
     PerformanceManagerTabHelper* tab_helper =
         PerformanceManagerTabHelper::FromWebContents(web_contents);
     DCHECK(tab_helper);
@@ -270,7 +270,8 @@ void PerformanceManagerRegistryImpl::TearDown() {
   }
   web_contents_.clear();
 
-  for (auto* render_process_host : render_process_hosts_) {
+  for (content::RenderProcessHost* render_process_host :
+       render_process_hosts_) {
     RenderProcessUserData* user_data =
         RenderProcessUserData::GetForRenderProcessHost(render_process_host);
     DCHECK(user_data);
@@ -290,7 +291,7 @@ void PerformanceManagerRegistryImpl::TearDown() {
 
   DCHECK(pm_owned_.empty());
   DCHECK(pm_registered_.empty());
-  // TODO(crbug.com/1084611): |observers_| and |mechanisms_| should also be
+  // TODO(crbug.com/40131811): |observers_| and |mechanisms_| should also be
   // empty by now!
 }
 

@@ -6,12 +6,12 @@
 #define COMPONENTS_SODA_CONSTANTS_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 #include "base/files/file_path.h"
 #include "components/soda/pref_names.h"
 #include "components/strings/grit/components_strings.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace speech {
 
@@ -55,13 +55,15 @@ enum class LanguageCode {
   kTrTr = 26,
   kZhCn = 27,
   kZhTw = 28,
-  // TODO(evliu): Add Chrome LC Support for languages 29-33.
+  // TODO(evliu): Add Chrome LC Support for languages below.
   kDaDk = 29,
   kFrCa = 30,
   kNbNo = 31,
   kNlNl = 32,
   kSvSe = 33,
-  kMaxValue = kSvSe,
+  kRuRu = 34,
+  kViVn = 35,
+  kMaxValue = kViVn,
 };
 
 // Describes all metadata needed to dynamically install SODA language pack
@@ -224,16 +226,16 @@ const base::FilePath GetSodaBinaryPath();
 // if SODA is not installed.
 const base::FilePath GetSodaTestBinaryPath();
 
-absl::optional<SodaLanguagePackComponentConfig> GetLanguageComponentConfig(
+std::optional<SodaLanguagePackComponentConfig> GetLanguageComponentConfig(
     LanguageCode language_code);
 
-absl::optional<SodaLanguagePackComponentConfig> GetLanguageComponentConfig(
+std::optional<SodaLanguagePackComponentConfig> GetLanguageComponentConfig(
     const std::string& language_name);
 
 // Get the language component config matching a given language subtag. For
 // example, the "fr-CA" language name will return the language component config
 // for "fr-FR".
-absl::optional<SodaLanguagePackComponentConfig>
+std::optional<SodaLanguagePackComponentConfig>
 GetLanguageComponentConfigMatchingLanguageSubtag(
     const std::string& language_name);
 
@@ -250,19 +252,25 @@ const std::u16string GetLanguageDisplayName(const std::string& language_name,
 // metric string for the language code.
 const std::string GetInstallationSuccessTimeMetricForLanguagePack(
     const LanguageCode& language_code);
+const std::string GetInstallationSuccessTimeMetricForLanguage(
+    const std::string& language);
 
 // Returns the `SodaInstaller.Language.{language}.InstallationFailureTime` uma
 // metric string for the language code.
 const std::string GetInstallationFailureTimeMetricForLanguagePack(
     const LanguageCode& language_code);
+const std::string GetInstallationFailureTimeMetricForLanguage(
+    const std::string& language);
 
 // Returns the `SodaInstaller.Language.{language}.InstallationResult` uma
 // metric string for the language code..
 const std::string GetInstallationResultMetricForLanguagePack(
     const LanguageCode& language_code);
+const std::string GetInstallationResultMetricForLanguage(
+    const std::string& language);
 
 // Gets a list of locales enabled by the Finch flag.
-std::vector<std::string> GetEnabledLanguages();
+std::vector<std::string> GetLiveCaptionEnabledLanguages();
 }  // namespace speech
 
 #endif  // COMPONENTS_SODA_CONSTANTS_H_

@@ -9,11 +9,12 @@
 #include "src/heap/evacuation-allocator-inl.h"
 #include "src/heap/incremental-marking-inl.h"
 #include "src/heap/marking-state-inl.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/new-spaces.h"
 #include "src/heap/objects-visiting-inl.h"
 #include "src/heap/pretenuring-handler-inl.h"
 #include "src/heap/scavenger.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/map.h"
 #include "src/objects/objects-body-descriptors-inl.h"
 #include "src/objects/objects-inl.h"
@@ -65,7 +66,7 @@ bool Scavenger::PromotionList::Local::ShouldEagerlyProcessPromotionList()
   // now we only look into the regular object list.
   const int kProcessPromotionListThreshold =
       kRegularObjectPromotionListSegmentSize / 2;
-  return LocalPushSegmentSize() < kProcessPromotionListThreshold;
+  return LocalPushSegmentSize() >= kProcessPromotionListThreshold;
 }
 
 bool Scavenger::PromotionList::IsEmpty() const {
@@ -78,13 +79,13 @@ size_t Scavenger::PromotionList::Size() const {
          large_object_promotion_list_.Size();
 }
 
-void Scavenger::PageMemoryFence(MaybeObject object) {
+void Scavenger::PageMemoryFence(Tagged<MaybeObject> object) {
 #ifdef THREAD_SANITIZER
   // Perform a dummy acquire load to tell TSAN that there is no data race
   // with  page initialization.
   Tagged<HeapObject> heap_object;
   if (object.GetHeapObject(&heap_object)) {
-    BasicMemoryChunk::FromHeapObject(heap_object)->SynchronizedHeapLoad();
+    MemoryChunk::FromHeapObject(heap_object)->SynchronizedLoad();
   }
 #endif
 }
@@ -138,13 +139,13 @@ CopyAndForwardResult Scavenger::SemiSpaceCopyObject(
     if (!self_success) {
       allocator_.FreeLast(NEW_SPACE, target, object_size);
       MapWord map_word = object->map_word(kAcquireLoad);
-      HeapObjectReference::Update(slot, map_word.ToForwardingAddress(object));
+      UpdateHeapObjectReferenceSlot(slot, map_word.ToForwardingAddress(object));
       DCHECK(!Heap::InFromPage(*slot));
       return Heap::InToPage(*slot)
                  ? CopyAndForwardResult::SUCCESS_YOUNG_GENERATION
                  : CopyAndForwardResult::SUCCESS_OLD_GENERATION;
     }
-    HeapObjectReference::Update(slot, target);
+    UpdateHeapObjectReferenceSlot(slot, target);
     if (object_fields == ObjectFields::kMaybePointers) {
       copied_list_local_.Push(ObjectAndSize(target, object_size));
     }
@@ -194,13 +195,13 @@ CopyAndForwardResult Scavenger::PromoteObject(Tagged<Map> map,
       }
 
       MapWord map_word = object->map_word(kAcquireLoad);
-      HeapObjectReference::Update(slot, map_word.ToForwardingAddress(object));
+      UpdateHeapObjectReferenceSlot(slot, map_word.ToForwardingAddress(object));
       DCHECK(!Heap::InFromPage(*slot));
       return Heap::InToPage(*slot)
                  ? CopyAndForwardResult::SUCCESS_YOUNG_GENERATION
                  : CopyAndForwardResult::SUCCESS_OLD_GENERATION;
     }
-    HeapObjectReference::Update(slot, target);
+    UpdateHeapObjectReferenceSlot(slot, target);
 
     // During incremental marking we want to push every object in order to
     // record slots for map words. Necessary for map space compaction.
@@ -225,9 +226,9 @@ bool Scavenger::HandleLargeObject(Tagged<Map> map, Tagged<HeapObject> object,
   // TODO(hpayer): Make this check size based, i.e.
   // object_size > kMaxRegularHeapObjectSize
   if (V8_UNLIKELY(
-          BasicMemoryChunk::FromHeapObject(object)->InNewLargeObjectSpace())) {
+          MemoryChunk::FromHeapObject(object)->InNewLargeObjectSpace())) {
     DCHECK_EQ(NEW_LO_SPACE,
-              MemoryChunk::FromHeapObject(object)->owner_identity());
+              MutablePageMetadata::FromHeapObject(object)->owner_identity());
     if (object->release_compare_and_swap_map_word_forwarded(
             MapWord::FromMap(map), object)) {
       surviving_new_large_objects_.insert({object, map});
@@ -304,7 +305,7 @@ SlotCallbackResult Scavenger::EvacuateThinString(Tagged<Map> map,
     // ThinStrings always refer to internalized strings, which are always in old
     // space.
     DCHECK(!Heap::InYoungGeneration(actual));
-    HeapObjectReference::Update(slot, actual);
+    UpdateHeapObjectReferenceSlot(slot, actual);
     return REMOVE_SLOT;
   }
 
@@ -327,7 +328,7 @@ SlotCallbackResult Scavenger::EvacuateShortcutCandidate(
       object->unchecked_second() == ReadOnlyRoots(heap()).empty_string()) {
     Tagged<HeapObject> first = HeapObject::cast(object->unchecked_first());
 
-    HeapObjectReference::Update(slot, first);
+    UpdateHeapObjectReferenceSlot(slot, first);
 
     if (!Heap::InYoungGeneration(first)) {
       object->set_map_word_forwarded(first, kReleaseStore);
@@ -338,7 +339,7 @@ SlotCallbackResult Scavenger::EvacuateShortcutCandidate(
     if (first_word.IsForwardingAddress()) {
       Tagged<HeapObject> target = first_word.ToForwardingAddress(first);
 
-      HeapObjectReference::Update(slot, target);
+      UpdateHeapObjectReferenceSlot(slot, target);
       object->set_map_word_forwarded(target, kReleaseStore);
       return Heap::InYoungGeneration(target) ? KEEP_SLOT : REMOVE_SLOT;
     }
@@ -384,11 +385,11 @@ SlotCallbackResult Scavenger::EvacuateObject(THeapObjectSlot slot,
   switch (visitor_id) {
     case kVisitThinString:
       // At the moment we don't allow weak pointers to thin strings.
-      DCHECK(!(*slot)->IsWeak());
+      DCHECK(!(*slot).IsWeak());
       return EvacuateThinString(map, slot, ThinString::unchecked_cast(source),
                                 size);
     case kVisitShortcutCandidate:
-      DCHECK(!(*slot)->IsWeak());
+      DCHECK(!(*slot).IsWeak());
       // At the moment we don't allow weak pointers to cons strings.
       return EvacuateShortcutCandidate(
           map, slot, ConsString::unchecked_cast(source), size);
@@ -407,7 +408,7 @@ SlotCallbackResult Scavenger::EvacuateObject(THeapObjectSlot slot,
             map, slot, String::unchecked_cast(source), size,
             ObjectFields::kDataOnly);
       }
-      V8_FALLTHROUGH;
+      [[fallthrough]];
     default:
       return EvacuateObjectDefault(map, slot, source, size,
                                    Map::ObjectFieldsFrom(visitor_id));
@@ -431,7 +432,7 @@ SlotCallbackResult Scavenger::ScavengeObject(THeapObjectSlot p,
   // copied.
   if (first_word.IsForwardingAddress()) {
     Tagged<HeapObject> dest = first_word.ToForwardingAddress(object);
-    HeapObjectReference::Update(p, dest);
+    UpdateHeapObjectReferenceSlot(p, dest);
     DCHECK_IMPLIES(Heap::InYoungGeneration(dest),
                    Heap::InToPage(dest) || Heap::IsLargeObject(dest));
 
@@ -454,7 +455,7 @@ SlotCallbackResult Scavenger::CheckAndScavengeObject(Heap* heap, TSlot slot) {
           std::is_same<TSlot, MaybeObjectSlot>::value,
       "Only FullMaybeObjectSlot and MaybeObjectSlot are expected here");
   using THeapObjectSlot = typename TSlot::THeapObjectSlot;
-  MaybeObject object = *slot;
+  Tagged<MaybeObject> object = *slot;
   if (Heap::InFromPage(object)) {
     Tagged<HeapObject> heap_object = object.GetHeapObject();
 
@@ -487,6 +488,8 @@ class ScavengeVisitor final : public NewSpaceVisitor<ScavengeVisitor> {
   V8_INLINE int VisitJSArrayBuffer(Tagged<Map> map,
                                    Tagged<JSArrayBuffer> object);
   V8_INLINE int VisitJSApiObject(Tagged<Map> map, Tagged<JSObject> object);
+  V8_INLINE void VisitExternalPointer(Tagged<HeapObject> host,
+                                      ExternalPointerSlot slot);
 
  private:
   template <typename TSlot>
@@ -524,7 +527,12 @@ template <typename TSlot>
 void ScavengeVisitor::VisitPointersImpl(Tagged<HeapObject> host, TSlot start,
                                         TSlot end) {
   for (TSlot slot = start; slot < end; ++slot) {
-    typename TSlot::TObject object = *slot;
+    const std::optional<Tagged<Object>> optional_object =
+        this->GetObjectFilterReadOnlyAndSmiFast(slot);
+    if (!optional_object) {
+      continue;
+    }
+    typename TSlot::TObject object = *optional_object;
     Tagged<HeapObject> heap_object;
     // Treat weak references as strong.
     if (object.GetHeapObject(&heap_object)) {
@@ -543,7 +551,36 @@ int ScavengeVisitor::VisitJSArrayBuffer(Tagged<Map> map,
 
 int ScavengeVisitor::VisitJSApiObject(Tagged<Map> map,
                                       Tagged<JSObject> object) {
-  return VisitJSObject(map, object);
+  int size = JSAPIObjectWithEmbedderSlots::BodyDescriptor::SizeOf(map, object);
+  JSAPIObjectWithEmbedderSlots::BodyDescriptor::IterateBody(map, object, size,
+                                                            this);
+  return size;
+}
+
+void ScavengeVisitor::VisitExternalPointer(Tagged<HeapObject> host,
+                                           ExternalPointerSlot slot) {
+#ifdef V8_COMPRESS_POINTERS
+  DCHECK_NE(slot.tag(), kExternalPointerNullTag);
+  DCHECK(!IsSharedExternalPointerType(slot.tag()));
+  DCHECK(Heap::InYoungGeneration(host));
+
+  // If an incremental mark is in progress, there is already a whole-heap trace
+  // running that will mark live EPT entries, and the scavenger won't sweep the
+  // young EPT space.  So, leave the tracing and sweeping work to the impending
+  // major GC.
+  //
+  // The EPT entry may or may not be marked already by the incremental marker.
+  if (scavenger_->is_incremental_marking_) return;
+
+  // TODO(chromium:337580006): Remove when pointer compression always uses
+  // EPT.
+  if (!slot.HasExternalPointerHandle()) return;
+
+  ExternalPointerHandle handle = slot.Relaxed_LoadHandle();
+  Heap* heap = scavenger_->heap();
+  ExternalPointerTable& table = heap->isolate()->external_pointer_table();
+  table.Mark(heap->young_external_pointer_space(), handle, slot.address());
+#endif  // V8_COMPRESS_POINTERS
 }
 
 int ScavengeVisitor::VisitEphemeronHashTable(Tagged<Map> map,

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <string_view>
 #include <vector>
 
 #include "base/command_line.h"
@@ -15,11 +16,11 @@
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "components/autofill/core/common/dense_set.h"
 
 namespace autofill {
 
@@ -29,7 +30,7 @@ using mojom::SubmissionSource;
 
 namespace {
 
-constexpr base::StringPiece16 kSplitCharacters = u" .,-_@";
+constexpr std::u16string_view kSplitCharacters = u" .,-_@";
 
 template <typename Char>
 struct Compare : base::CaseInsensitiveCompareASCII<Char> {
@@ -91,13 +92,14 @@ void SetCheckStatus(FormFieldData* form_field_data,
                     bool isCheckable,
                     bool isChecked) {
   if (isChecked) {
-    form_field_data->check_status = FormFieldData::CheckStatus::kChecked;
+    form_field_data->set_check_status(FormFieldData::CheckStatus::kChecked);
   } else {
     if (isCheckable) {
-      form_field_data->check_status =
-          FormFieldData::CheckStatus::kCheckableButUnchecked;
+      form_field_data->set_check_status(
+          FormFieldData::CheckStatus::kCheckableButUnchecked);
     } else {
-      form_field_data->check_status = FormFieldData::CheckStatus::kNotCheckable;
+      form_field_data->set_check_status(
+          FormFieldData::CheckStatus::kNotCheckable);
     }
   }
 }
@@ -187,7 +189,8 @@ GURL StripAuthAndParams(const GURL& gurl) {
 bool IsAutofillManuallyTriggered(
     AutofillSuggestionTriggerSource trigger_source) {
   return IsAddressAutofillManuallyTriggered(trigger_source) ||
-         IsPaymentsAutofillManuallyTriggered(trigger_source);
+         IsPaymentsAutofillManuallyTriggered(trigger_source) ||
+         IsPasswordsAutofillManuallyTriggered(trigger_source);
 }
 
 bool IsAddressAutofillManuallyTriggered(
@@ -200,6 +203,12 @@ bool IsPaymentsAutofillManuallyTriggered(
     AutofillSuggestionTriggerSource trigger_source) {
   return trigger_source ==
          AutofillSuggestionTriggerSource::kManualFallbackPayments;
+}
+
+bool IsPasswordsAutofillManuallyTriggered(
+    AutofillSuggestionTriggerSource trigger_source) {
+  return trigger_source ==
+         AutofillSuggestionTriggerSource::kManualFallbackPasswords;
 }
 
 }  // namespace autofill

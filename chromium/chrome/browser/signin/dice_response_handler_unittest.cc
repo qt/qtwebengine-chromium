@@ -5,6 +5,7 @@
 #include "chrome/browser/signin/dice_response_handler.h"
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/check.h"
@@ -13,17 +14,22 @@
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/test/mock_callback.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "chrome/browser/signin/signin_features.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/about_signin_internals.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/core/browser/dice_account_reconcilor_delegate.h"
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/core/browser/signin_header_helper.h"
+#include "components/signin/core/browser/signin_metrics_service.h"
+#include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_metrics.h"
+#include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/base/test_signin_client.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
@@ -181,9 +187,13 @@ class DiceResponseHandlerTest : public testing::Test,
         signin::AccountConsistencyMethod::kDice, &signin_client_,
         account_reconcilor_.get());
 
+    signin_metrics_service_ = std::make_unique<SigninMetricsService>(
+        *identity_test_env_.identity_manager(), pref_service());
+
     dice_response_handler_ = std::make_unique<DiceResponseHandler>(
         &signin_client_, identity_test_env_.identity_manager(),
         account_reconcilor_.get(), about_signin_internals_.get(),
+        signin_metrics_service_.get(),
         /*registration_token_helper_factory=*/
         DiceResponseHandler::RegistrationTokenHelperFactory());
   }
@@ -224,8 +234,18 @@ class DiceResponseHandlerTest : public testing::Test,
     return dice_params;
   }
 
+  sync_preferences::TestingPrefServiceSyncable& pref_service() {
+    return pref_service_;
+  }
+
+  void RunSignoutTest(
+      const DiceResponseParams& dice_params,
+      const std::vector<CoreAccountId>& secondary_with_valid_refresh_tokens,
+      const CoreAccountId& primary_account,
+      bool invalid_primary_account);
+
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
-  void EnableRegistrationTokenHelper(base::StringPiece authorization_code) {
+  void EnableRegistrationTokenHelper(std::string_view authorization_code) {
     EXPECT_CALL(mock_registration_token_helper_factory_,
                 Run(_, authorization_code, _, _))
         .WillOnce(Invoke([this](Unused, Unused, Unused, auto callback) {
@@ -259,6 +279,7 @@ class DiceResponseHandlerTest : public testing::Test,
   SigninErrorController signin_error_controller_;
   std::unique_ptr<AboutSigninInternals> about_signin_internals_;
   std::unique_ptr<AccountReconcilor> account_reconcilor_;
+  std::unique_ptr<SigninMetricsService> signin_metrics_service_;
   std::unique_ptr<DiceResponseHandler> dice_response_handler_;
   int reconcilor_blocked_count_ = 0;
   int reconcilor_unblocked_count_ = 0;
@@ -311,8 +332,76 @@ class TestProcessDiceHeaderDelegate : public ProcessDiceHeaderDelegate {
   raw_ptr<DiceResponseHandlerTest> owner_;
 };
 
+void DiceResponseHandlerTest::RunSignoutTest(
+    const DiceResponseParams& dice_params,
+    const std::vector<CoreAccountId>& secondary_with_valid_refresh_tokens,
+    const CoreAccountId& primary_account,
+    bool invalid_primary_account) {
+  dice_response_handler_->ProcessDiceHeader(
+      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
+
+  // Only the token corresponding the the Dice parameter has been removed, and
+  // the user is still signed in.
+  bool has_primary_account = !primary_account.empty();
+  size_t expected_accounts_with_refresh_tokens =
+      secondary_with_valid_refresh_tokens.size() +
+      (has_primary_account ? 1U : 0U);
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(),
+            expected_accounts_with_refresh_tokens);
+  for (const CoreAccountId& account_id : secondary_with_valid_refresh_tokens) {
+    SCOPED_TRACE(account_id.ToString());
+    EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(account_id));
+    EXPECT_FALSE(
+        identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
+            account_id));
+  }
+
+  CHECK(!invalid_primary_account || has_primary_account);
+  if (has_primary_account) {
+    EXPECT_EQ(
+        identity_manager()->GetPrimaryAccountId(signin::ConsentLevel::kSignin),
+        primary_account);
+    EXPECT_EQ(
+        identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
+            primary_account),
+        invalid_primary_account);
+  } else if (identity_manager()->HasPrimaryAccount(
+                 signin::ConsentLevel::kSignin)) {
+    // In the unittest `RemoveAccount()` will not lead to the primary account
+    // being removed. Check there is no refresh token instead.
+    EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(
+        identity_manager()->GetPrimaryAccountId(
+            signin::ConsentLevel::kSignin)));
+  }
+
+  if (invalid_primary_account) {
+    auto error = identity_manager()->GetErrorStateOfRefreshTokenForAccount(
+        primary_account);
+    EXPECT_EQ(error.state(), GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+    EXPECT_EQ(error.GetInvalidGaiaCredentialsReason(),
+              GoogleServiceAuthError::InvalidGaiaCredentialsReason::
+                  CREDENTIALS_REJECTED_BY_CLIENT);
+  }
+}
+
+class SigninDiceResponseHandlerTestPreconnect
+    : public DiceResponseHandlerTest,
+      public ::testing::WithParamInterface<bool> {
+ public:
+  SigninDiceResponseHandlerTestPreconnect() {
+    feature_list_.InitWithFeatureState(
+        switches::kPreconnectAccountCapabilitiesPostSignin,
+        PreconnectEnabled());
+  }
+
+  bool PreconnectEnabled() { return GetParam(); }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
 // Checks that a SIGNIN action triggers a token exchange request.
-TEST_F(DiceResponseHandlerTest, Signin) {
+TEST_P(SigninDiceResponseHandlerTestPreconnect, Signin) {
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNIN);
   const auto& account_info = dice_params.signin_info->account_info;
   CoreAccountId account_id = identity_manager()->PickAccountIdForAccount(
@@ -346,7 +435,14 @@ TEST_F(DiceResponseHandlerTest, Signin) {
   // Check that the AccessPoint was propagated from the delegate.
   EXPECT_EQ(extended_account_info.access_point,
             signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
+  EXPECT_EQ(
+      identity_test_env_.GetNumCallsToPrepareForFetchingAccountCapabilities(),
+      PreconnectEnabled() ? 1 : 0);
 }
+
+INSTANTIATE_TEST_SUITE_P(PreconnectEnabled,
+                         SigninDiceResponseHandlerTestPreconnect,
+                         ::testing::Bool());
 
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
 // Checks that a SIGNIN action triggers a token exchange request.
@@ -778,87 +874,81 @@ TEST_F(DiceResponseHandlerTest, DeleteBeforeTimeout) {
   EXPECT_EQ(1, reconcilor_unblocked_count_);
 }
 
-TEST_F(DiceResponseHandlerTest, SignoutMainAccount) {
-  const char kSecondaryEmail[] = "other@gmail.com";
+TEST_F(DiceResponseHandlerTest, SignoutSyncPrimaryAccount) {
+  // Setup.
+  // Configure Dice params.
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
-  const auto& dice_account_info = dice_params.signout_info->account_infos[0];
-  // User is signed in to Chrome, and has some refresh token for a secondary
-  // account.
-  AccountInfo account_info = identity_test_env_.MakePrimaryAccountAvailable(
-      dice_account_info.email, signin::ConsentLevel::kSync);
-  AccountInfo secondary_account_info =
-      identity_test_env_.MakeAccountAvailable(kSecondaryEmail);
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
-  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
-      secondary_account_info.account_id));
-  EXPECT_TRUE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
-  // Receive signout response for the main account.
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
-
-  // User is not signed out, token for the main account is now invalid,
-  // secondary account is untouched.
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
-          account_info.account_id));
-  auto error = identity_manager()->GetErrorStateOfRefreshTokenForAccount(
-      account_info.account_id);
-  EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, error.state());
-  EXPECT_EQ(GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT,
-            error.GetInvalidGaiaCredentialsReason());
-
-  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
-      secondary_account_info.account_id));
-  EXPECT_FALSE(
-      identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
-          secondary_account_info.account_id));
-
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSync);
+  AccountInfo secondary_signed_out =
+      identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
   EXPECT_TRUE(
       identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
-  // Check that the reconcilor was not blocked.
-  EXPECT_EQ(0, reconcilor_blocked_count_);
-  EXPECT_EQ(0, reconcilor_unblocked_count_);
+
+  // Receive signout response including sync and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 primary_account.account_id, /*invalid_primary_account=*/true);
+}
+
+TEST_F(DiceResponseHandlerTest, SignoutSigininPrimaryAccount) {
+  // Setup.
+  // Configure Dice params.
+  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSignin);
+  AccountInfo secondary_signed_out =
+      identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
+  EXPECT_TRUE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  // Receive signout response including sync and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 /*primary_account=*/CoreAccountId(),
+                 /*invalid_primary_account=*/false);
 }
 
 TEST_F(DiceResponseHandlerTest, SignoutSecondaryAccount) {
-  const char kMainEmail[] = "main@gmail.com";
+  const char kPrimaryAccount[] = "main@gmail.com";
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
-  const auto& secondary_dice_account_info =
-      dice_params.signout_info->account_infos[0];
+  const std::string secondary_account_email =
+      dice_params.signout_info->account_infos[0].email;
   // User is signed in to Chrome, and has some refresh token for a secondary
   // account.
-  AccountInfo main_account_info =
+  AccountInfo primary_account_info =
       identity_test_env_.MakePrimaryAccountAvailable(
-          kMainEmail, signin::ConsentLevel::kSync);
-  AccountInfo secondary_account_info = identity_test_env_.MakeAccountAvailable(
-      secondary_dice_account_info.email);
+          kPrimaryAccount, signin::ConsentLevel::kSync);
+  AccountInfo secondary_account_info =
+      identity_test_env_.MakeAccountAvailable(secondary_account_email);
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       secondary_account_info.account_id));
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
-      main_account_info.account_id));
+      primary_account_info.account_id));
   EXPECT_TRUE(
       identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
   // Receive signout response for the secondary account.
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
-
-  // Only the token corresponding the the Dice parameter has been removed, and
-  // the user is still signed in.
-  EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(
-      secondary_account_info.account_id));
-  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
-      main_account_info.account_id));
-  EXPECT_TRUE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
+  RunSignoutTest(dice_params, {}, primary_account_info.account_id,
+                 /*invalid_primary_account=*/false);
 }
 
 TEST_F(DiceResponseHandlerTest, SignoutWebOnly) {
-  const char kSecondaryEmail[] = "other@gmail.com";
   DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
   const auto& dice_account_info = dice_params.signout_info->account_infos[0];
   // User is NOT signed in to Chrome, and has some refresh tokens for two
@@ -866,7 +956,7 @@ TEST_F(DiceResponseHandlerTest, SignoutWebOnly) {
   AccountInfo account_info =
       identity_test_env_.MakeAccountAvailable(dice_account_info.email);
   AccountInfo secondary_account_info =
-      identity_test_env_.MakeAccountAvailable(kSecondaryEmail);
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
   EXPECT_TRUE(
       identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
@@ -874,15 +964,9 @@ TEST_F(DiceResponseHandlerTest, SignoutWebOnly) {
   EXPECT_FALSE(
       identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
   // Receive signout response.
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
-  // Only the token corresponding the the Dice parameter has been removed.
-  EXPECT_FALSE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
-  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
-      secondary_account_info.account_id));
-  EXPECT_FALSE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync));
+  RunSignoutTest(dice_params, {secondary_account_info.account_id},
+                 /*primary_account=*/CoreAccountId(),
+                 /*invalid_primary_account=*/false);
 }
 
 // Checks that signin in progress is canceled by a signout.
@@ -907,22 +991,11 @@ TEST_F(DiceResponseHandlerTest, SigninSignoutSameAccount) {
   EXPECT_EQ(
       1u, dice_response_handler_->GetPendingDiceTokenFetchersCountForTesting());
   // Signout while signin is in flight.
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
+  RunSignoutTest(dice_params, {}, account_info.account_id,
+                 /*invalid_primary_account=*/true);
   // Check that the token fetcher has been canceled and the token is invalid.
   EXPECT_EQ(
       0u, dice_response_handler_->GetPendingDiceTokenFetchersCountForTesting());
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
-          account_info.account_id));
-  auto error = identity_manager()->GetErrorStateOfRefreshTokenForAccount(
-      account_info.account_id);
-  EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, error.state());
-  EXPECT_EQ(GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT,
-            error.GetInvalidGaiaCredentialsReason());
 }
 
 // Checks that signin in progress is not canceled by a signout for a different
@@ -980,7 +1053,7 @@ TEST_F(DiceResponseHandlerTest, SigninSignoutDifferentAccount) {
 }
 
 TEST_F(DiceResponseHandlerTest,
-       SignoutMainNonSyncAccountWithSignoutRestrictions) {
+       SignoutPrimaryNonSyncAccountWithSignoutRestrictions) {
   signin_client_.set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED);
   const char kSecondaryEmail[] = "other@gmail.com";
@@ -988,12 +1061,12 @@ TEST_F(DiceResponseHandlerTest,
   dice_params.signout_info->account_infos.push_back(
       GetDiceResponseParamsAccountInfo(kSecondaryEmail));
   const auto& dice_account_info = dice_params.signout_info->account_infos[0];
-  AccountInfo account_info = identity_test_env_.MakePrimaryAccountAvailable(
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
       dice_account_info.email, signin::ConsentLevel::kSignin);
   AccountInfo secondary_account_info =
       identity_test_env_.MakeAccountAvailable(kSecondaryEmail);
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
+  EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
+      primary_account.account_id));
   EXPECT_TRUE(identity_manager()->HasAccountWithRefreshToken(
       secondary_account_info.account_id));
   EXPECT_FALSE(
@@ -1001,26 +1074,9 @@ TEST_F(DiceResponseHandlerTest,
   EXPECT_TRUE(
       identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
   // Receive signout response.
-  dice_response_handler_->ProcessDiceHeader(
-      dice_params, std::make_unique<TestProcessDiceHeaderDelegate>(this));
-  // User is not signed out, token for the main account is now invalid.
-  // Secondary account removed.
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshToken(account_info.account_id));
-  EXPECT_TRUE(
-      identity_manager()->HasAccountWithRefreshTokenInPersistentErrorState(
-          account_info.account_id));
-  auto error = identity_manager()->GetErrorStateOfRefreshTokenForAccount(
-      account_info.account_id);
-  EXPECT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, error.state());
-  EXPECT_EQ(GoogleServiceAuthError::InvalidGaiaCredentialsReason::
-                CREDENTIALS_REJECTED_BY_CLIENT,
-            error.GetInvalidGaiaCredentialsReason());
-  EXPECT_FALSE(identity_manager()->HasAccountWithRefreshToken(
-      secondary_account_info.account_id));
+  RunSignoutTest(dice_params, {}, primary_account.account_id,
+                 /*invalid_primary_account=*/true);
 
-  EXPECT_TRUE(
-      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
   // Check that the reconcilor was not blocked.
   EXPECT_EQ(0, reconcilor_blocked_count_);
   EXPECT_EQ(0, reconcilor_unblocked_count_);
@@ -1041,4 +1097,69 @@ TEST(DiceResponseHandlerFactoryTest, NotInOffTheRecord) {
               testing::IsNull());
 }
 
+class ExplicitBrowserSigninDiceResponseHandlerSignoutTest
+    : public DiceResponseHandlerTest {
+ public:
+  ExplicitBrowserSigninDiceResponseHandlerSignoutTest() {
+    feature_list_.InitAndEnableFeature(
+        switches::kExplicitBrowserSigninUIOnDesktop);
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+TEST_F(ExplicitBrowserSigninDiceResponseHandlerSignoutTest,
+       SignoutSigninPrimaryAccount) {
+  // Setup.
+  // Configure Dice params.
+  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSignin);
+  identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
+  EXPECT_TRUE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  // Receive signout response including primary and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 primary_account.account_id,
+                 /*invalid_primary_account=*/true);
+}
+
+TEST_F(ExplicitBrowserSigninDiceResponseHandlerSignoutTest,
+       SignoutImplicitPrimaryAccountSignin) {
+  // Setup.
+  // Configure Dice params.
+  DiceResponseParams dice_params = MakeDiceParams(DiceAction::SIGNOUT);
+  const char kSecondarySignedOutEmail[] = "secondary_signed_out@gmail.com";
+  dice_params.signout_info->account_infos.push_back(
+      GetDiceResponseParamsAccountInfo(kSecondarySignedOutEmail));
+  const std::string dice_primary_account_email =
+      dice_params.signout_info->account_infos[0].email;
+  // Configure Chrome.
+  AccountInfo primary_account = identity_test_env_.MakePrimaryAccountAvailable(
+      dice_primary_account_email, signin::ConsentLevel::kSignin);
+  // Mark as implicit sign in.
+  pref_service().SetBoolean(prefs::kExplicitBrowserSignin, false);
+  identity_test_env_.MakeAccountAvailable(kSecondarySignedOutEmail);
+  AccountInfo secondary_not_signed_out =
+      identity_test_env_.MakeAccountAvailable("other@gmail.com");
+  EXPECT_EQ(identity_manager()->GetAccountsWithRefreshTokens().size(), 3U);
+  EXPECT_TRUE(
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSignin));
+
+  // Receive signout response including primary and secondary account.
+  RunSignoutTest(dice_params, {secondary_not_signed_out.account_id},
+                 /*primary_account=*/CoreAccountId(),
+                 /*invalid_primary_account=*/false);
+}
 }  // namespace

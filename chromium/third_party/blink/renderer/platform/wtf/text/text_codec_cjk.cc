@@ -54,7 +54,7 @@ class TextCodecCJK::Decoder {
   virtual void Finalize(bool flush, StringBuilder& result) {}
 
   uint8_t lead_ = 0x00;
-  absl::optional<uint8_t> prepended_byte_;
+  std::optional<uint8_t> prepended_byte_;
 };
 
 namespace {
@@ -83,11 +83,11 @@ void AppendUnencodableReplacement(UChar32 code_point,
   }
 }
 
-absl::optional<UChar> FindCodePointInJis0208(uint16_t pointer) {
+std::optional<UChar> FindCodePointInJis0208(uint16_t pointer) {
   return FindFirstInSortedPairs(EnsureJis0208EncodeIndexForDecode(), pointer);
 }
 
-absl::optional<UChar> FindCodePointJis0212(uint16_t pointer) {
+std::optional<UChar> FindCodePointJis0212(uint16_t pointer) {
   return FindFirstInSortedPairs(EnsureJis0212EncodeIndexForDecode(), pointer);
 }
 
@@ -286,7 +286,7 @@ Vector<uint8_t> EncodeShiftJis(StringView string,
     }
 
     DCHECK(range.first + 3 >= range.second);
-    for (auto* pair = range.first; pair < range.second; pair++) {
+    for (auto pair = range.first; pair < range.second; pair++) {
       uint16_t pointer = pair->second;
       if (pointer >= 8272 && pointer <= 8835)
         continue;
@@ -384,14 +384,14 @@ const std::array<std::pair<uint32_t, UChar32>, 207>& Gb18030Ranges() {
 }
 
 // https://encoding.spec.whatwg.org/#index-gb18030-ranges-code-point
-absl::optional<UChar32> IndexGb18030RangesCodePoint(uint32_t pointer) {
+std::optional<UChar32> IndexGb18030RangesCodePoint(uint32_t pointer) {
   if ((pointer > 39419 && pointer < 189000) || pointer > 1237575)
-    return absl::nullopt;
+    return std::nullopt;
   if (pointer == 7457)
     return 0xE7C7;
 
   const auto& gb18030_ranges = Gb18030Ranges();
-  auto* upper_bound =
+  auto upper_bound =
       std::upper_bound(gb18030_ranges.begin(), gb18030_ranges.end(),
                        MakeFirstAdapter(pointer), CompareFirst{});
   DCHECK(upper_bound != gb18030_ranges.begin());
@@ -404,7 +404,7 @@ absl::optional<UChar32> IndexGb18030RangesCodePoint(uint32_t pointer) {
 uint32_t Gb18030RangesPointer(UChar32 code_point) {
   if (code_point == 0xE7C7)
     return 7457;
-  auto* upper_bound =
+  auto upper_bound =
       std::upper_bound(Gb18030Ranges().begin(), Gb18030Ranges().end(),
                        MakeSecondAdapter(code_point), CompareSecond{});
   DCHECK(upper_bound != Gb18030Ranges().begin());
@@ -512,8 +512,6 @@ Vector<uint8_t> EncodeGbShared(StringView string,
                                IsGbk is_gbk) {
   Vector<uint8_t> result;
   result.ReserveInitialCapacity(string.length());
-  const bool gb18030_2022_enabled =
-      base::FeatureList::IsEnabled(blink::features::kGb18030_2022Enabled);
 
   for (UChar32 code_point : string) {
     if (IsASCII(code_point)) {
@@ -529,7 +527,7 @@ Vector<uint8_t> EncodeGbShared(StringView string,
         result.push_back(0x80);
         continue;
       }
-    } else if (gb18030_2022_enabled) {
+    } else {
       if (auto encoded = Gb18030_2022Encode(code_point)) {
         result.push_back(*encoded >> 24);
         result.push_back(*encoded >> 16);
@@ -635,7 +633,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
     result.ReserveCapacity(length);
 
     if (prepended_byte_ &&
-        ParseByte(*std::exchange(prepended_byte_, absl::nullopt), result) ==
+        ParseByte(*std::exchange(prepended_byte_, std::nullopt), result) ==
             SawError::kYes) {
       saw_error = true;
       result.Append(kReplacementCharacter);
@@ -645,7 +643,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
       }
     }
     if (second_prepended_byte_ &&
-        ParseByte(*std::exchange(second_prepended_byte_, absl::nullopt),
+        ParseByte(*std::exchange(second_prepended_byte_, std::nullopt),
                   result) == SawError::kYes &&
         stop_on_error) {
       saw_error = true;
@@ -665,7 +663,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
         }
       }
       if (prepended_byte_ &&
-          ParseByte(*std::exchange(prepended_byte_, absl::nullopt), result) ==
+          ParseByte(*std::exchange(prepended_byte_, std::nullopt), result) ==
               SawError::kYes) {
         saw_error = true;
         result.Append(kReplacementCharacter);
@@ -675,7 +673,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
         }
       }
       if (second_prepended_byte_ &&
-          ParseByte(*std::exchange(second_prepended_byte_, absl::nullopt),
+          ParseByte(*std::exchange(second_prepended_byte_, std::nullopt),
                     result) == SawError::kYes &&
           stop_on_error) {
         saw_error = true;
@@ -805,7 +803,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
         return SawError::kYes;
       case State::kEscape: {
         uint8_t lead = std::exchange(lead_, 0x00);
-        absl::optional<State> state;
+        std::optional<State> state;
         if (lead == 0x28) {
           if (byte == 0x42)
             state = State::kAscii;
@@ -846,7 +844,7 @@ class Iso2022JpDecoder : public TextCodecCJK::Decoder {
   State decoder_state_ = State::kAscii;
   State decoder_output_state_ = State::kAscii;
   bool output_ = false;
-  absl::optional<uint8_t> second_prepended_byte_;
+  std::optional<uint8_t> second_prepended_byte_;
 };
 
 // https://encoding.spec.whatwg.org/#shift_jis-decoder
@@ -927,10 +925,7 @@ class EucKrDecoder : public TextCodecCJK::Decoder {
 // Note that the same decoder is used for GB18030 and GBK.
 class Gb18030Decoder : public TextCodecCJK::Decoder {
  public:
-  Gb18030Decoder() {
-    gb18030_2022_enabled_ =
-        base::FeatureList::IsEnabled(blink::features::kGb18030_2022Enabled);
-  }
+  Gb18030Decoder() = default;
 
   String Decode(const uint8_t* bytes,
                 wtf_size_t length,
@@ -967,11 +962,9 @@ class Gb18030Decoder : public TextCodecCJK::Decoder {
       uint8_t first = std::exchange(first_, 0x00);
       uint8_t second = std::exchange(second_, 0x00);
       uint8_t third = std::exchange(third_, 0x00);
-      if (gb18030_2022_enabled_) {
-        if (auto codePoint = Gb18030_2022Decode(first, second, third, byte)) {
-          result.Append(*codePoint);
-          return SawError::kNo;
-        }
+      if (auto codePoint = Gb18030_2022Decode(first, second, third, byte)) {
+        result.Append(*codePoint);
+        return SawError::kNo;
       }
       if (auto code_point = IndexGb18030RangesCodePoint(
               ((first - 0x81) * 10 * 126 * 10) + ((second - 0x30) * 10 * 126) +
@@ -1050,7 +1043,6 @@ class Gb18030Decoder : public TextCodecCJK::Decoder {
   // I do not think it is safe to keep the reference after
   // `TextCodecCJK::Decode` finishes.
   bool* saw_error_;
-  bool gb18030_2022_enabled_ = false;
 };
 
 }  // namespace
@@ -1143,7 +1135,7 @@ String TextCodecCJK::Decoder::Decode(const uint8_t* bytes,
   result.ReserveCapacity(length);
 
   if (prepended_byte_ &&
-      ParseByte(*std::exchange(prepended_byte_, absl::nullopt), result) ==
+      ParseByte(*std::exchange(prepended_byte_, std::nullopt), result) ==
           SawError::kYes) {
     saw_error = true;
     result.Append(kReplacementCharacter);
@@ -1162,7 +1154,7 @@ String TextCodecCJK::Decoder::Decode(const uint8_t* bytes,
       }
     }
     if (prepended_byte_ &&
-        ParseByte(*std::exchange(prepended_byte_, absl::nullopt), result) ==
+        ParseByte(*std::exchange(prepended_byte_, std::nullopt), result) ==
             SawError::kYes) {
       saw_error = true;
       result.Append(kReplacementCharacter);

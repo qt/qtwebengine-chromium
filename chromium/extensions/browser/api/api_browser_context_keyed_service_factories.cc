@@ -25,7 +25,6 @@
 #include "extensions/browser/api/idle/idle_manager_factory.h"
 #include "extensions/browser/api/management/management_api.h"
 #include "extensions/browser/api/messaging/message_service.h"
-#include "extensions/browser/api/messaging/messaging_api_message_filter.h"
 #include "extensions/browser/api/networking_private/networking_private_event_router_factory.h"
 #include "extensions/browser/api/offscreen/offscreen_document_manager.h"
 #include "extensions/browser/api/power/power_api.h"
@@ -47,18 +46,17 @@
 #include "extensions/browser/api/web_request/web_request_api.h"
 #include "extensions/browser/api/web_request/web_request_proxying_url_loader_factory.h"
 #include "extensions/browser/api/web_request/web_request_proxying_websocket.h"
-#include "extensions/buildflags/buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "extensions/browser/api/clipboard/clipboard_api.h"
 #include "extensions/browser/api/socket/app_firewall_hole_manager.h"
+#include "extensions/browser/api/webcam_private/webcam_private_api.h"
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "extensions/browser/api/feedback_private/log_source_resource.h"
 #include "extensions/browser/api/media_perception_private/media_perception_api_manager.h"
 #include "extensions/browser/api/virtual_keyboard_private/virtual_keyboard_private_api.h"
-#include "extensions/browser/api/webcam_private/webcam_private_api.h"
 #endif
 
 namespace extensions {
@@ -103,9 +101,6 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   MediaPerceptionAPIManager::GetFactoryInstance();
 #endif
   MessageService::GetFactoryInstance();
-#if BUILDFLAG(ENABLE_EXTENSIONS_LEGACY_IPC)
-  MessagingAPIMessageFilter::EnsureAssociatedFactoryBuilt();
-#endif
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN) || \
     BUILDFLAG(IS_MAC)
   NetworkingPrivateEventRouterFactory::GetInstance();
@@ -121,6 +116,8 @@ void EnsureApiBrowserContextKeyedServiceFactoriesBuilt() {
   UsbDeviceManager::GetFactoryInstance();
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   VirtualKeyboardAPI::GetFactoryInstance();
+#endif
+#if BUILDFLAG(IS_CHROMEOS)
   WebcamPrivateAPI::GetFactoryInstance();
 #endif
   WebRequestAPI::GetFactoryInstance();

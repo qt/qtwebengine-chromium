@@ -123,6 +123,9 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
   using LogPrivateAggregationRequestsCallback = base::RepeatingCallback<void(
       const PrivateAggregationRequests& private_aggregation_requests)>;
 
+  using RealTimeReportingContributions =
+      std::vector<auction_worklet::mojom::RealTimeReportingContributionPtr>;
+
   // Seller-specific information about the winning bid. The top-level seller and
   // (if present) component seller associated with the winning bid have separate
   // SellerWinningBidInfos.
@@ -146,6 +149,7 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
     // returned by the component seller. Otherwise, it's the bid from the
     // bidder.
     double bid;
+    double rounded_bid;
 
     // Currency the bid is in.
     std::optional<blink::AdCurrency> bid_currency;
@@ -238,6 +242,9 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
   // `private_aggregation_requests_non_reserved` Requests made to the Private
   //  Aggregation API contributeToHistogramOnEvent() with non-reserved event
   //  type like "click". Keyed by event type of the associated requests.
+  //
+  // `real_time_contributions` Real time reporting contributions, including both
+  //  from the Real Time Reporting APIs, and platform contributions.
   InterestGroupAuctionReporter(
       InterestGroupManagerImpl* interest_group_manager,
       AuctionWorkletManager* auction_worklet_manager,
@@ -263,7 +270,9 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
       std::map<PrivateAggregationKey, PrivateAggregationRequests>
           private_aggregation_requests_reserved,
       std::map<std::string, PrivateAggregationRequests>
-          private_aggregation_requests_non_reserved);
+          private_aggregation_requests_non_reserved,
+      std::map<url::Origin, RealTimeReportingContributions>
+          real_time_contributions);
 
   ~InterestGroupAuctionReporter();
 
@@ -278,7 +287,7 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
   // at which point reports not managed by the InterestGroupAuctionReporter
   // should be sent, and the reporter can be destroyed.
   //
-  // TODO(https://crbug.com/1394777): Make InterestGroupAuctionReporter send all
+  // TODO(crbug.com/40248758): Make InterestGroupAuctionReporter send all
   // reports itself, and decouple its lifetime from the frame, so that it can
   // continue running scripts after a frame is navigated away from.
   void Start(base::OnceClosure callback);
@@ -331,11 +340,18 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
           std::vector<auction_worklet::mojom::PrivateAggregationRequestPtr>>
           private_aggregation_requests);
 
+  static double RoundBidStochastically(double bid);
+
   // Returns the result of performing stochastic rounding on `value`. We limit
   // the value to `k` bits of precision in the mantissa (not including sign) and
   // 8 bits in the exponent. So k=8 would correspond to a 16 bit floating point
   // number (more specifically, bfloat16). Public to enable testing.
   static double RoundStochasticallyToKBits(double value, unsigned k);
+
+  // As above, but passes nullopts through.
+  static std::optional<double> RoundStochasticallyToKBits(
+      std::optional<double> maybe_value,
+      unsigned k);
 
  private:
   // Starts request for a seller worklet. Invokes OnSellerWorkletReceived() on
@@ -481,7 +497,7 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
   // SellerWinningBidInfo, it points to an AuctionConfig contained within it.
   const std::unique_ptr<blink::AuctionConfig> auction_config_;
 
-  const std::optional<std::string> devtools_auction_id_;
+  const std::string devtools_auction_id_;
   const url::Origin main_frame_origin_;
   const url::Origin frame_origin_;
   const network::mojom::ClientSecurityStatePtr client_security_state_;
@@ -522,6 +538,12 @@ class CONTENT_EXPORT InterestGroupAuctionReporter {
       private_aggregation_requests_reserved_;
   std::map<std::string, PrivateAggregationRequests>
       private_aggregation_requests_non_reserved_;
+
+  // Stores all received pending Real Time Reporting contributions. until their
+  // converted histograms flushed. Keyed by the origin of the script that issued
+  // the request (i.e. the reporting origin).
+  std::map<url::Origin, RealTimeReportingContributions>
+      real_time_contributions_;
 
   std::vector<GURL> pending_report_urls_;
 

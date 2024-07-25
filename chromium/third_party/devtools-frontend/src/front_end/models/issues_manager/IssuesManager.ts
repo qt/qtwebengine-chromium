@@ -25,6 +25,7 @@ import {MixedContentIssue} from './MixedContentIssue.js';
 import {PropertyRuleIssue} from './PropertyRuleIssue.js';
 import {QuirksModeIssue} from './QuirksModeIssue.js';
 import {SharedArrayBufferIssue} from './SharedArrayBufferIssue.js';
+import {SharedDictionaryIssue} from './SharedDictionaryIssue.js';
 import {SourceFrameIssuesManager} from './SourceFrameIssuesManager.js';
 import {StylesheetLoadingIssue} from './StylesheetLoadingIssue.js';
 
@@ -69,6 +70,10 @@ const issueCodeHandlers = new Map<
   [
     Protocol.Audits.InspectorIssueCode.SharedArrayBufferIssue,
     SharedArrayBufferIssue.fromInspectorIssue,
+  ],
+  [
+    Protocol.Audits.InspectorIssueCode.SharedDictionaryIssue,
+    SharedDictionaryIssue.fromInspectorIssue,
   ],
   [
     Protocol.Audits.InspectorIssueCode.LowTextContrastIssue,
@@ -158,7 +163,7 @@ export function defaultHideIssueByCodeSetting(): HideIssueMenuSetting {
 
 export function getHideIssueByCodeSetting(): Common.Settings.Setting<HideIssueMenuSetting> {
   return Common.Settings.Settings.instance().createSetting(
-      'HideIssueByCodeSetting-Experiment-2021', defaultHideIssueByCodeSetting());
+      'hide-issue-by-code-setting-experiment-2021', defaultHideIssueByCodeSetting());
 }
 
 /**
@@ -195,7 +200,7 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     SDK.FrameManager.FrameManager.instance().addEventListener(
         SDK.FrameManager.Events.FrameAddedToTarget, this.#onFrameAddedToTarget, this);
 
-    // issueFilter uses the 'showThirdPartyIssues' setting. Clients of IssuesManager need
+    // issueFilter uses the 'show-third-party-issues' setting. Clients of IssuesManager need
     // a full update when the setting changes to get an up-to-date issues list.
     this.showThirdPartyIssuesSetting?.addChangeListener(() => this.#updateFilteredIssues());
     this.hideIssueSetting?.addChangeListener(() => this.#updateFilteredIssues());
@@ -299,6 +304,10 @@ export class IssuesManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     const issues = createIssuesFromProtocolIssue(issuesModel, inspectorIssue);
     for (const issue of issues) {
       this.addIssue(issuesModel, issue);
+      const message = issue.maybeCreateConsoleMessage();
+      if (message) {
+        issuesModel.target().model(SDK.ConsoleModel.ConsoleModel)?.addMessage(message);
+      }
     }
   }
 
@@ -444,7 +453,7 @@ export type EventTypes = {
 };
 
 // @ts-ignore
-globalThis.addIssueForTest = (issue: Protocol.Audits.InspectorIssue): void => {
+globalThis.addIssueForTest = (issue: Protocol.Audits.InspectorIssue) => {
   const mainTarget = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
   const issuesModel = mainTarget?.model(SDK.IssuesModel.IssuesModel);
   issuesModel?.issueAdded({issue});

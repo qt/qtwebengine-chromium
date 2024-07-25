@@ -78,6 +78,11 @@ const syncer::SyncService* StubPasswordManagerClient::GetSyncService() const {
   return nullptr;
 }
 
+affiliations::AffiliationService*
+StubPasswordManagerClient::GetAffiliationService() {
+  return nullptr;
+}
+
 PasswordStoreInterface* StubPasswordManagerClient::GetProfilePasswordStore()
     const {
   return nullptr;
@@ -168,5 +173,20 @@ bool StubPasswordManagerClient::IsNewTabPage() const {
 version_info::Channel StubPasswordManagerClient::GetChannel() const {
   return version_info::Channel::UNKNOWN;
 }
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_CHROMEOS)
+std::unique_ptr<
+    password_manager::PasswordCrossDomainConfirmationPopupController>
+StubPasswordManagerClient::ShowCrossDomainConfirmationPopup(
+    const gfx::RectF& element_bounds,
+    base::i18n::TextDirection text_direction,
+    const GURL& domain,
+    const std::u16string& password_origin,
+    base::OnceClosure confirmation_callback) {
+  return nullptr;
+}
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_CHROMEOS)
 
 }  // namespace password_manager

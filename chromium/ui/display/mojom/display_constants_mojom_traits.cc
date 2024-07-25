@@ -275,4 +275,12 @@ bool EnumTraits<display::mojom::VariableRefreshRateState,
   return false;
 }
 
+// static
+bool StructTraits<display::mojom::ModesetFlagsDataView, display::ModesetFlags>::
+    Read(display::mojom::ModesetFlagsDataView data,
+         display::ModesetFlags* out_flags) {
+  *out_flags = display::ModesetFlags::FromEnumBitmask(data.bitmask());
+  return true;
+}
+
 }  // namespace mojo

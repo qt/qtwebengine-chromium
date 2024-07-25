@@ -4,15 +4,23 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fde/cfde_textout.h"
 
 #include <algorithm>
 #include <utility>
 
 #include "build/build_config.h"
+#include "core/fxcrt/check.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_path.h"
@@ -21,9 +29,6 @@
 #include "core/fxge/cfx_textrenderoptions.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
-#include "third_party/base/check.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/numerics/safe_conversions.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/layout/cfgas_txtbreak.h"
 
@@ -303,12 +308,12 @@ void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
     for (size_t i = 0; i < line.GetSize(); ++i) {
       const Piece* pPiece = line.GetPieceAtIndex(i);
       size_t szCount = GetDisplayPos(pPiece);
-      if (szCount == 0)
+      if (szCount == 0) {
         continue;
-
+      }
       CFDE_TextOut::DrawString(device, m_TxtColor, m_pFont,
-                               {m_CharPos.data(), szCount}, m_fFontSize,
-                               m_Matrix);
+                               pdfium::make_span(m_CharPos).first(szCount),
+                               m_fFontSize, m_Matrix);
     }
   }
   device->RestoreState(false);
@@ -515,7 +520,7 @@ size_t CFDE_TextOut::GetDisplayPos(const Piece* pPiece) {
   CFGAS_TxtBreak::Run tr;
   tr.wsStr = m_wsText.Substr(pPiece->start_char);
   tr.pWidths = &m_CharWidths[pPiece->start_char];
-  tr.iLength = pdfium::base::checked_cast<int32_t>(pPiece->char_count);
+  tr.iLength = pdfium::checked_cast<int32_t>(pPiece->char_count);
   tr.pFont = m_pFont;
   tr.fFontSize = m_fFontSize;
   tr.dwStyles = m_dwTxtBkStyles;

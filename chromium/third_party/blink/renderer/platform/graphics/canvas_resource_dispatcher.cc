@@ -187,7 +187,7 @@ void CanvasResourceDispatcher::DispatchFrameSync(
   WTF::Vector<viz::ReturnedResource> resources;
   sink_->SubmitCompositorFrameSync(
       parent_local_surface_id_allocator_.GetCurrentLocalSurfaceId(),
-      std::move(frame), absl::nullopt, 0, &resources);
+      std::move(frame), std::nullopt, 0, &resources);
   DidReceiveCompositorFrameAck(std::move(resources));
 }
 
@@ -207,7 +207,7 @@ void CanvasResourceDispatcher::DispatchFrame(
   pending_compositor_frames_++;
   sink_->SubmitCompositorFrame(
       parent_local_surface_id_allocator_.GetCurrentLocalSurfaceId(),
-      std::move(frame), absl::nullopt, 0);
+      std::move(frame), std::nullopt, 0);
 }
 
 bool CanvasResourceDispatcher::PrepareFrame(
@@ -264,7 +264,7 @@ bool CanvasResourceDispatcher::PrepareFrame(
 
   viz::SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(gfx::Transform(), bounds, bounds, gfx::MaskFilterInfo(),
-              /*clip=*/absl::nullopt, is_opaque, /*opacity_f=*/1.f,
+              /*clip=*/std::nullopt, is_opaque, /*opacity_f=*/1.f,
               SkBlendMode::kSrcOver, /*sorting_context=*/0, /*layer_id=*/0u,
               /*fast_rounded_corner=*/false);
 
@@ -455,12 +455,13 @@ void CanvasResourceDispatcher::Reshape(const gfx::Size& size) {
 
 void CanvasResourceDispatcher::DidAllocateSharedBitmap(
     base::ReadOnlySharedMemoryRegion region,
-    const gpu::Mailbox& id) {
+    const viz::SharedBitmapId& id) {
   if (sink_)
     sink_->DidAllocateSharedBitmap(std::move(region), id);
 }
 
-void CanvasResourceDispatcher::DidDeleteSharedBitmap(const gpu::Mailbox& id) {
+void CanvasResourceDispatcher::DidDeleteSharedBitmap(
+    const viz::SharedBitmapId& id) {
   if (sink_)
     sink_->DidDeleteSharedBitmap(id);
 }

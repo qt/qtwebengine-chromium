@@ -12,6 +12,8 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_captured_wheel_action.h"
+#include "third_party/blink/renderer/core/dom/dom_exception.h"
+#include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
 #include "third_party/blink/renderer/modules/mediastream/browser_capture_media_stream_track.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_video_track.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_video_source.h"
@@ -31,6 +33,8 @@ using ::base::test::RunOnceCallback;
 using ::base::test::RunOnceCallbackRepeatedly;
 using ::testing::_;
 using ::testing::Combine;
+using ::testing::Mock;
+using ::testing::StrictMock;
 using ::testing::Values;
 using ::testing::WithParamInterface;
 
@@ -38,6 +42,11 @@ enum class ScrollDirection {
   kNone,
   kForwards,
   kBackwards,
+};
+
+class MockEventListener : public NativeEventListener {
+ public:
+  MOCK_METHOD(void, Invoke, (ExecutionContext*, Event*));
 };
 
 // TODO(crbug.com/1505223): Avoid this helper's duplication throughout Blink.
@@ -87,8 +96,10 @@ MockMediaStreamVideoSource* GetMockMediaStreamVideoSource(
   return static_cast<MockMediaStreamVideoSource*>(source);
 }
 
-MediaStreamTrack* MakeTrack(V8TestingScope& v8_scope,
-                            SurfaceType display_surface) {
+MediaStreamTrack* MakeTrack(
+    V8TestingScope& v8_scope,
+    SurfaceType display_surface,
+    int initial_zoom_level = CaptureController::getSupportedZoomLevels()[0]) {
   std::unique_ptr<MockMediaStreamVideoSource> media_stream_video_source =
       base::WrapUnique(new ::testing::NiceMock<MockMediaStreamVideoSource>(
           media::VideoCaptureFormat(gfx::Size(640, 480), 30.0,
@@ -100,8 +111,7 @@ MediaStreamTrack* MakeTrack(V8TestingScope& v8_scope,
   device.display_media_info = media::mojom::DisplayMediaInformation::New(
       display_surface,
       /*logical_surface=*/true, media::mojom::CursorCaptureType::NEVER,
-      /*capture_handle=*/nullptr,
-      /*initial_zoom_level=*/100);
+      /*capture_handle=*/nullptr, initial_zoom_level);
   media_stream_video_source->SetDevice(device);
 
   auto media_stream_video_track = std::make_unique<MediaStreamVideoTrack>(
@@ -175,18 +185,14 @@ TEST_F(CaptureControllerGetZoomLevelTest,
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   // Test avoids calling CaptureController::SetIsBound().
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kInvalidStateError));
+  controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(v8_scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kInvalidStateError);
 
   // Avoid false-positives through different error paths terminating in
   // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()),
+  EXPECT_EQ(v8_scope.GetExceptionState().Message(),
             "getDisplayMedia() not called yet.");
 }
 
@@ -198,18 +204,14 @@ TEST_F(CaptureControllerGetZoomLevelTest,
   controller->SetIsBound(true);
   // Test avoids calling CaptureController::SetVideoTrack().
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kInvalidStateError));
+  controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(v8_scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kInvalidStateError);
 
   // Avoid false-positives through different error paths terminating in
   // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()),
+  EXPECT_EQ(v8_scope.GetExceptionState().Message(),
             "Capture-session not started.");
 }
 
@@ -222,121 +224,197 @@ TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelFailsIfVideoTrackEnded) {
   controller->SetVideoTrack(track, "descriptor");
   track->stopTrack(v8_scope.GetExecutionContext());  // Ends the track.
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kInvalidStateError));
+  controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(v8_scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kInvalidStateError);
 
   // Avoid false-positives through different error paths terminating in
   // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()),
-            "Video track ended.");
+  EXPECT_EQ(v8_scope.GetExceptionState().Message(), "Video track ended.");
 }
 
-TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelSuccess) {
+TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelSuccessInitialZoomLevel) {
   V8TestingScope v8_scope;
   CaptureController* controller =
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   controller->SetIsBound(true);
-  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
-  ON_CALL(*GetMockMediaStreamVideoSource(track), GetZoomLevel(_))
-      .WillByDefault(RunOnceCallback<0>(/*zoom_level=*/90, /*error=*/""));
+  MediaStreamTrack* track = MakeTrack(
+      v8_scope, SurfaceType::BROWSER,
+      /*initial_zoom_level=*/CaptureController::getSupportedZoomLevels()[1]);
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsFulfilled());
-  ASSERT_TRUE(promise_tester.Value().V8Value()->IsNumber());
-  EXPECT_EQ(90, promise_tester.Value().V8Value().As<v8::Number>()->Value());
+  int zoom_level = controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_FALSE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(zoom_level, CaptureController::getSupportedZoomLevels()[1]);
 }
 
-// Note that the setup differs from that of GetZoomLevelSuccess only in the
-// SurfaceType provided to MakeTrack().
+TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelSuccessZoomLevelUpdate) {
+  V8TestingScope v8_scope;
+  CaptureController* controller =
+      MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(
+      v8_scope, SurfaceType::BROWSER,
+      /*initial_zoom_level=*/CaptureController::getSupportedZoomLevels()[0]);
+  controller->SetVideoTrack(track, "descriptor");
+
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[1]);
+
+  int zoom_level = controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_FALSE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(zoom_level, CaptureController::getSupportedZoomLevels()[1]);
+}
+
+// Note that the setup differs from that of GetZoomLevelSuccessInitialZoomLevel
+// only in the SurfaceType provided to MakeTrack().
 TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelFailsIfCapturingWindow) {
   V8TestingScope v8_scope;
   CaptureController* controller =
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   controller->SetIsBound(true);
-  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::WINDOW);
-  ON_CALL(*GetMockMediaStreamVideoSource(track), GetZoomLevel(_))
-      .WillByDefault(RunOnceCallback<0>(/*zoom_level=*/90, /*error=*/""));
+  MediaStreamTrack* track = MakeTrack(
+      v8_scope, SurfaceType::WINDOW,
+      /*initial_zoom_level=*/CaptureController::getSupportedZoomLevels()[1]);
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kNotSupportedError));
+  controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(v8_scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
 
   // Avoid false-positives through different error paths terminating in
   // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()),
+  EXPECT_EQ(v8_scope.GetExceptionState().Message(),
             "Action only supported for tab-capture.");
 }
 
-// Note that the setup differs from that of GetZoomLevelSuccess only in the
-// SurfaceType provided to MakeTrack().
+// Note that the setup differs from that of GetZoomLevelSuccessInitialZoomLevel
+// only in the SurfaceType provided to MakeTrack().
 TEST_F(CaptureControllerGetZoomLevelTest, GetZoomLevelFailsIfCapturingMonitor) {
   V8TestingScope v8_scope;
   CaptureController* controller =
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   controller->SetIsBound(true);
-  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::MONITOR);
-  ON_CALL(*GetMockMediaStreamVideoSource(track), GetZoomLevel(_))
-      .WillByDefault(RunOnceCallback<0>(/*zoom_level=*/90, /*error=*/""));
+  MediaStreamTrack* track = MakeTrack(
+      v8_scope, SurfaceType::MONITOR,
+      /*initial_zoom_level=*/CaptureController::getSupportedZoomLevels()[1]);
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
-
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kNotSupportedError));
+  controller->getZoomLevel(v8_scope.GetExceptionState());
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+  EXPECT_EQ(v8_scope.GetExceptionState().CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotSupportedError);
 
   // Avoid false-positives through different error paths terminating in
   // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()),
+  EXPECT_EQ(v8_scope.GetExceptionState().Message(),
             "Action only supported for tab-capture.");
 }
 
-// Note that the setup differs from that of GetZoomLevelSuccess only in the
-// simulated result from the browser process.
-TEST_F(CaptureControllerGetZoomLevelTest, SimulatedFailureFromDispatcherHost) {
+// Test suite for CaptureController functionality from the Captured Surface
+// Control spec, focusing on OnCapturedZoomLevelChange events.
+class CaptureControllerOnCapturedZoomLevelChangeTest
+    : public CaptureControllerBaseTest {
+ public:
+  ~CaptureControllerOnCapturedZoomLevelChangeTest() override = default;
+};
+
+TEST_F(CaptureControllerOnCapturedZoomLevelChangeTest, NoEventOnInit) {
   V8TestingScope v8_scope;
   CaptureController* controller =
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
-  controller->SetIsBound(true);
-  const String error = "Simulated error from dispatcher-host.";
-  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
-  ON_CALL(*GetMockMediaStreamVideoSource(track), GetZoomLevel(_))
-      .WillByDefault(RunOnceCallback<0>(/*zoom_level=*/absl::nullopt, error));
 
+  StrictMock<MockEventListener>* event_listener =
+      MakeGarbageCollected<StrictMock<MockEventListener>>();
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(0);
+  controller->addEventListener(event_type_names::kCapturedzoomlevelchange,
+                               event_listener);
+
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
+  controller->SetVideoTrack(track, "descriptor");
+}
+
+TEST_F(CaptureControllerOnCapturedZoomLevelChangeTest,
+       EventWhenDifferentFromInitValue) {
+  V8TestingScope v8_scope;
+  CaptureController* controller =
+      MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
+  StrictMock<MockEventListener>* event_listener =
+      MakeGarbageCollected<StrictMock<MockEventListener>>();
+  controller->addEventListener(event_type_names::kCapturedzoomlevelchange,
+                               event_listener);
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
-      controller->getZoomLevel(v8_scope.GetScriptState());
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(1);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[1]);
+}
 
-  ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(v8_scope, promise_tester.Value(),
-                             DOMExceptionCode::kUnknownError));
+TEST_F(CaptureControllerOnCapturedZoomLevelChangeTest,
+       NoEventWhenSameAsInitValue) {
+  V8TestingScope v8_scope;
+  CaptureController* controller =
+      MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
+  StrictMock<MockEventListener>* event_listener =
+      MakeGarbageCollected<StrictMock<MockEventListener>>();
+  controller->addEventListener(event_type_names::kCapturedzoomlevelchange,
+                               event_listener);
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
+  controller->SetVideoTrack(track, "descriptor");
 
-  // Avoid false-positives through different error paths terminating in
-  // exception with the same code.
-  EXPECT_EQ(GetDOMExceptionMessage(v8_scope, promise_tester.Value()), error);
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(0);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[0]);
+}
+
+TEST_F(CaptureControllerOnCapturedZoomLevelChangeTest,
+       EventWhenDifferentFromPreviousUpdate) {
+  V8TestingScope v8_scope;
+  CaptureController* controller =
+      MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
+  StrictMock<MockEventListener>* event_listener =
+      MakeGarbageCollected<StrictMock<MockEventListener>>();
+  controller->addEventListener(event_type_names::kCapturedzoomlevelchange,
+                               event_listener);
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
+  controller->SetVideoTrack(track, "descriptor");
+
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(1);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[1]);
+  Mock::VerifyAndClearExpectations(event_listener);
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(1);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[0]);
+}
+
+TEST_F(CaptureControllerOnCapturedZoomLevelChangeTest,
+       EventWhenSameAsPreviousUpdate) {
+  V8TestingScope v8_scope;
+  CaptureController* controller =
+      MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
+  StrictMock<MockEventListener>* event_listener =
+      MakeGarbageCollected<StrictMock<MockEventListener>>();
+  controller->addEventListener(event_type_names::kCapturedzoomlevelchange,
+                               event_listener);
+  controller->SetIsBound(true);
+  MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
+  controller->SetVideoTrack(track, "descriptor");
+
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(1);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[1]);
+  Mock::VerifyAndClearExpectations(event_listener);
+  EXPECT_CALL(*event_listener, Invoke(_, _)).Times(0);
+  track->Component()->Source()->OnZoomLevelChange(
+      MediaStreamDevice(), CaptureController::getSupportedZoomLevels()[1]);
 }
 
 // Test suite for CaptureController functionality from the
@@ -353,7 +431,7 @@ TEST_F(CaptureControllerSetZoomLevelTest,
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   // Test avoids calling CaptureController::SetIsBound().
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -376,7 +454,7 @@ TEST_F(CaptureControllerSetZoomLevelTest,
   controller->SetIsBound(true);
   // Test avoids calling CaptureController::SetVideoTrack().
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -400,7 +478,7 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfVideoTrackEnded) {
   controller->SetVideoTrack(track, "descriptor");
   track->stopTrack(v8_scope.GetExecutionContext());  // Ends the track.
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -422,14 +500,13 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelSuccessIfSupportedValue) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(
-          RunOnceCallbackRepeatedly<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallbackRepeatedly<1>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
   const Vector<int> supported_levels =
       CaptureController::getSupportedZoomLevels();
   for (int zoom_level : supported_levels) {
-    const ScriptPromise promise =
+    const ScriptPromiseUntyped promise =
         controller->setZoomLevel(v8_scope.GetScriptState(), zoom_level);
 
     ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -445,11 +522,11 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfLevelTooLow) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallback<1>(nullptr));
 
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise = controller->setZoomLevel(
+  const ScriptPromiseUntyped promise = controller->setZoomLevel(
       v8_scope.GetScriptState(),
       controller->getSupportedZoomLevels().front() - 1);
 
@@ -471,10 +548,10 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfLevelTooHigh) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallback<1>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(),
                                controller->getSupportedZoomLevels().back() + 1);
 
@@ -500,7 +577,7 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfUnsupportedValue) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallback<1>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
   // Find an unsupported value.
@@ -509,7 +586,7 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfUnsupportedValue) {
   const int unsupported_level = (supported_levels[0] + supported_levels[1]) / 2;
   ASSERT_FALSE(supported_levels.Contains(unsupported_level));
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), unsupported_level);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -532,10 +609,10 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfCapturingWindow) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::WINDOW);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallback<1>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -559,10 +636,10 @@ TEST_F(CaptureControllerSetZoomLevelTest, SetZoomLevelFailsIfCapturingMonitor) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::MONITOR);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/true, /*error=*/""));
+      .WillByDefault(RunOnceCallback<1>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -587,10 +664,11 @@ TEST_F(CaptureControllerSetZoomLevelTest, SimulatedFailureFromDispatcherHost) {
   const String error = "Simulated error from dispatcher-host.";
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SetZoomLevel(_, _))
-      .WillByDefault(RunOnceCallback<1>(/*success=*/false, error));
+      .WillByDefault(RunOnceCallback<1>(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kUnknownError, error)));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->setZoomLevel(v8_scope.GetScriptState(), 125);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -623,7 +701,7 @@ TEST_F(CaptureControllerScrollTest, SendWheelFailsIfCaptureControllerNotBound) {
       MakeGarbageCollected<CaptureController>(v8_scope.GetExecutionContext());
   // Test avoids calling CaptureController::SetIsBound().
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -646,7 +724,7 @@ TEST_F(CaptureControllerScrollTest,
   controller->SetIsBound(true);
   // Test avoids calling CaptureController::SetVideoTrack().
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -670,7 +748,7 @@ TEST_F(CaptureControllerScrollTest, SendWheelFailsIfVideoTrackEnded) {
   controller->SetVideoTrack(track, "descriptor");
   track->stopTrack(v8_scope.GetExecutionContext());  // Ends the track.
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -692,12 +770,11 @@ TEST_F(CaptureControllerScrollTest, SendWheelSuccess) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
   SimulateFrameArrival(track);
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -714,11 +791,10 @@ TEST_F(CaptureControllerScrollTest, SendWheelFailsIfCapturingWindow) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::WINDOW);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -742,11 +818,10 @@ TEST_F(CaptureControllerScrollTest, SendWheelFailsIfCapturingMonitor) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::MONITOR);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -771,11 +846,12 @@ TEST_F(CaptureControllerScrollTest, SimulatedFailureFromDispatcherHost) {
   const String error = "Simulated error from dispatcher-host.";
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/false, error));
+      .WillByDefault(RunOnceCallback<4>(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kUnknownError, error)));
   controller->SetVideoTrack(track, "descriptor");
   SimulateFrameArrival(track);
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -798,12 +874,11 @@ TEST_F(CaptureControllerScrollTest, SendWheelFailsBeforeReceivingFrames) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
   // Intentionally avoid calling SimulateFrameArrival().
 
-  const ScriptPromise promise = controller->sendWheel(
+  const ScriptPromiseUntyped promise = controller->sendWheel(
       v8_scope.GetScriptState(), CapturedWheelAction::Create());
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -829,8 +904,7 @@ TEST_F(CaptureControllerScrollTest, SendWheelScalesCorrectly) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
   SimulateFrameArrival(track, gfx::Size(200, 4000));
 
@@ -847,7 +921,7 @@ TEST_F(CaptureControllerScrollTest, SendWheelScalesCorrectly) {
                         /*wheel_delta_y=*/222,
                         /*callback=*/_));
 
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->sendWheel(v8_scope.GetScriptState(), action);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);
@@ -948,8 +1022,7 @@ TEST_P(CaptureControllerScrollParametersValidationTest, ValidateCoordinates) {
   controller->SetIsBound(true);
   MediaStreamTrack* track = MakeTrack(v8_scope, SurfaceType::BROWSER);
   ON_CALL(*GetMockMediaStreamVideoSource(track), SendWheel(_, _, _, _, _))
-      .WillByDefault(RunOnceCallback<4>(/*success=*/true,
-                                        /*error=*/""));
+      .WillByDefault(RunOnceCallback<4>(nullptr));
   controller->SetVideoTrack(track, "descriptor");
   SimulateFrameArrival(track, gfx::Size(kWidth, kHeight));
 
@@ -958,7 +1031,7 @@ TEST_P(CaptureControllerScrollParametersValidationTest, ValidateCoordinates) {
   action->setY(scroll_coordinates_.y());
   action->setWheelDeltaX(wheel_deltax_x());
   action->setWheelDeltaY(wheel_deltax_y());
-  const ScriptPromise promise =
+  const ScriptPromiseUntyped promise =
       controller->sendWheel(v8_scope.GetScriptState(), action);
 
   ScriptPromiseTester promise_tester(v8_scope.GetScriptState(), promise);

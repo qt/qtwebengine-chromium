@@ -17,9 +17,9 @@
 #include "components/user_education/views/help_bubble_delegate.h"
 #include "components/user_education/views/help_bubble_view.h"
 #include "components/user_education/views/toggle_tracked_element_attention_utils.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/interaction/element_tracker_views.h"
@@ -52,7 +52,7 @@ HelpBubbleViews::HelpBubbleViews(HelpBubbleView* help_bubble_view,
 HelpBubbleViews::~HelpBubbleViews() {
   // Needs to be called here while we still have access to HelpBubbleViews-
   // specific logic.
-  Close();
+  Close(CloseReason::kBubbleDestroyed);
 }
 
 bool HelpBubbleViews::ToggleFocusForAccessibility() {
@@ -74,7 +74,7 @@ bool HelpBubbleViews::ToggleFocusForAccessibility() {
     return false;
 
   bool set_focus = false;
-  if (anchor->IsAccessibilityFocusable()) {
+  if (anchor->GetViewAccessibility().IsAccessibilityFocusable()) {
 #if BUILDFLAG(IS_MAC)
     // Mac does not automatically pass activation on focus, so we have to do it
     // manually.
@@ -165,7 +165,7 @@ void HelpBubbleViews::CloseBubbleImpl() {
 }
 
 void HelpBubbleViews::OnWidgetDestroying(views::Widget* widget) {
-  Close();
+  Close(CloseReason::kBubbleElementDestroyed);
 }
 
 void HelpBubbleViews::OnElementHidden(ui::TrackedElement* element) {
@@ -177,7 +177,7 @@ void HelpBubbleViews::OnElementHidden(ui::TrackedElement* element) {
   anchor_hidden_subscription_ = base::CallbackListSubscription();
   anchor_bounds_changed_subscription_ = base::CallbackListSubscription();
   anchor_element_ = nullptr;
-  Close();
+  Close(CloseReason::kAnchorHidden);
 }
 
 void HelpBubbleViews::OnElementBoundsChanged(ui::TrackedElement* element) {

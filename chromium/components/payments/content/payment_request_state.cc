@@ -6,9 +6,9 @@
 
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -18,6 +18,7 @@
 #include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#include "components/autofill/core/browser/address_data_manager.h"
 #include "components/autofill/core/browser/address_normalizer.h"
 #include "components/autofill/core/browser/autofill_data_util.h"
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
@@ -195,9 +196,8 @@ void PaymentRequestState::OnDoneCreatingPaymentApps() {
     bool has_preferred_app = base::ranges::any_of(
         available_apps_, [](const auto& app) { return app->IsPreferred(); });
     if (has_preferred_app) {
-      base::EraseIf(available_apps_, [](const auto& app) {
-        return !app->IsPreferred();
-      });
+      std::erase_if(available_apps_,
+                    [](const auto& app) { return !app->IsPreferred(); });
 
       // By design, only one payment app can be preferred.
       DCHECK_EQ(available_apps_.size(), 1u);
@@ -244,10 +244,10 @@ void PaymentRequestState::SetOptOutOffered() {
     journey_logger_->SetOptOutOffered();
 }
 
-absl::optional<base::UnguessableToken>
+std::optional<base::UnguessableToken>
 PaymentRequestState::GetChromeOSTWAInstanceId() const {
   if (!payment_request_delegate_) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   return payment_request_delegate_->GetChromeOSTWAInstanceId();
@@ -403,7 +403,8 @@ void PaymentRequestState::OnPaymentAppWindowClosed() {
 void PaymentRequestState::RecordUseStats() {
   if (ShouldShowShippingSection()) {
     DCHECK(selected_shipping_profile_);
-    personal_data_manager_->RecordUseOf(selected_shipping_profile_.get());
+    personal_data_manager_->address_data_manager().RecordUseOf(
+        *selected_shipping_profile_);
   }
 
   if (ShouldShowContactSection()) {
@@ -413,7 +414,8 @@ void PaymentRequestState::RecordUseStats() {
     // should only be updated once.
     if (!ShouldShowShippingSection() || (selected_shipping_profile_->guid() !=
                                          selected_contact_profile_->guid())) {
-      personal_data_manager_->RecordUseOf(selected_contact_profile_.get());
+      personal_data_manager_->address_data_manager().RecordUseOf(
+          *selected_contact_profile_);
     }
   }
 
@@ -425,7 +427,7 @@ void PaymentRequestState::SetAvailablePaymentAppForRetry() {
   if (!selected_app_)
     return;
 
-  base::EraseIf(available_apps_, [this](const auto& payment_app) {
+  std::erase_if(available_apps_, [this](const auto& payment_app) {
     // Remove the app if it is not selected.
     return payment_app.get() != selected_app_.get();
   });
@@ -594,7 +596,7 @@ base::WeakPtr<PaymentRequestState> PaymentRequestState::AsWeakPtr() {
 
 void PaymentRequestState::PopulateProfileCache() {
   std::vector<autofill::AutofillProfile*> profiles =
-      personal_data_manager_->GetProfilesToSuggest();
+      personal_data_manager_->address_data_manager().GetProfilesToSuggest();
 
   std::vector<raw_ptr<autofill::AutofillProfile, VectorExperimental>>
       raw_profiles_for_filtering;

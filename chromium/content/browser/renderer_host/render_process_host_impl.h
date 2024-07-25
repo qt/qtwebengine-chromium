@@ -21,6 +21,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/memory/safe_ref.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation_traits.h"
 #include "base/task/single_thread_task_runner.h"
@@ -28,6 +29,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/metrics/histogram_child_process.h"
 #include "components/services/storage/public/cpp/buckets/bucket_id.h"
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
 #include "components/services/storage/public/cpp/quota_error_or.h"
@@ -73,6 +75,7 @@
 #include "third_party/blink/public/mojom/background_sync/background_sync.mojom-forward.h"
 #include "third_party/blink/public/mojom/blob/file_backed_blob_factory.mojom.h"
 #include "third_party/blink/public/mojom/buckets/bucket_manager_host.mojom-forward.h"
+#include "third_party/blink/public/mojom/call_stack_generator/call_stack_generator.mojom.h"
 #include "third_party/blink/public/mojom/dom_storage/dom_storage.mojom.h"
 #include "third_party/blink/public/mojom/filesystem/file_system.mojom-forward.h"
 #include "third_party/blink/public/mojom/frame_sinks/embedded_frame_sink.mojom-forward.h"
@@ -187,7 +190,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
       public ChildProcessLauncher::Client,
       public mojom::RendererHost,
       public blink::mojom::DomStorageProvider,
-      public memory_instrumentation::mojom::CoordinatorConnector
+      public memory_instrumentation::mojom::CoordinatorConnector,
+      public metrics::HistogramChildProcess
 #if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
     ,
       public media::stable::mojom::StableVideoDecoderTracker
@@ -243,6 +247,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   int GetID() const override;
   base::SafeRef<RenderProcessHost> GetSafeRef() const override;
   bool IsInitializedAndNotDead() override;
+  bool IsDeletingSoon() override;
   void SetBlocked(bool blocked) override;
   bool IsBlocked() override;
   base::CallbackListSubscription RegisterBlockStateChangedCallback(
@@ -283,8 +288,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
       override;
   const base::TimeTicks& GetLastInitTime() override;
   bool IsProcessBackgrounded() override;
-  void IncrementKeepAliveRefCount(uint64_t handle_id_) override;
-  void DecrementKeepAliveRefCount(uint64_t handle_id_) override;
   std::string GetKeepAliveDurations() const override;
   size_t GetShutdownDelayRefCount() const override;
   int GetRenderFrameHostCount() const override;
@@ -301,9 +304,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void DisableRefCounts() override;
   bool AreRefCountsDisabled() override;
   mojom::Renderer* GetRendererInterface() override;
-  void CreateURLLoaderFactory(
-      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
-      network::mojom::URLLoaderFactoryParamsPtr params) override;
+
+  blink::mojom::CallStackGenerator* GetJavaScriptCallStackGeneratorInterface();
 
   bool MayReuseHost() override;
   bool IsUnused() override;
@@ -356,6 +358,20 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void OnProcessLaunched() override;
   void OnProcessLaunchFailed(int error_code) override;
 
+  const std::string& GetUnresponsiveDocumentJavascriptCallStack() const;
+  const blink::LocalFrameToken& GetUnresponsiveDocumentToken() const;
+
+  void SetUnresponsiveDocumentJSCallStackAndToken(
+      const std::string& untrusted_javascript_call_stack,
+      const std::optional<blink::LocalFrameToken>& frame_token);
+
+  void InterruptJavaScriptIsolateAndCollectCallStack();
+
+  // HistogramChildProcess implementation:
+  void BindChildHistogramFetcherFactory(
+      mojo::PendingReceiver<metrics::mojom::ChildHistogramFetcherFactory>
+          factory) override;
+
   // Call this function when it is evident that the child process is actively
   // performing some operation, for example if we just received an IPC message.
   void mark_child_process_activity_time() {
@@ -364,8 +380,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Return the set of previously stored data for a `frame_token`.
   // The routing ID and frame tokens were stored on the IO thread via the
-  // RenderMessageFilter::GenerateFrameRoutingID mojo call. Returns false if
-  // `frame_token` was not found in the token table.
+  // RenderMessageFilter::GenerateSingleFrameRoutingInfo mojo call. Returns
+  // false if `frame_token` was not found in the token table.
   bool TakeStoredDataForFrameToken(const blink::LocalFrameToken& frame_token,
                                    int32_t& new_routing_id,
                                    base::UnguessableToken& devtools_frame_token,
@@ -378,6 +394,37 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // list.
   static void RegisterHost(int host_id, RenderProcessHost* host);
   static void UnregisterHost(int host_id);
+
+  // "Keep alive ref count" represents the number of the customers of this
+  // render process who wish the renderer process to be alive. While the ref
+  // count is positive, |this| object will keep the renderer process alive,
+  // unless DisableRefCounts() is called. |handle_id| is a unique identifier
+  // associated with each keep-alive request.
+  // TODO(wjmaclean): Remove |handle_id| once the causes behind
+  // https://crbug.com/1148542 are known.
+  //
+  // Here is the list of users:
+  //  - Keepalive request (if the KeepAliveRendererForKeepaliveRequests
+  //    feature is enabled):
+  //    When a fetch request with keepalive flag
+  //    (https://fetch.spec.whatwg.org/#request-keepalive-flag) specified is
+  //    pending, it wishes the renderer process to be kept alive.
+  //  - Unload handlers:
+  //    Keeps the process alive briefly to give subframe unload handlers a
+  //    chance to execute after their parent frame navigates or is detached.
+  //    See https://crbug.com/852204.
+  //  - Process reuse timer (experimental):
+  //    Keeps the process alive for a set period of time in case it can be
+  //    reused for the same site. See https://crbug.com/894253.
+  void IncrementKeepAliveRefCount(uint64_t handle_id_);
+  void DecrementKeepAliveRefCount(uint64_t handle_id_);
+
+  int keep_alive_ref_count() const { return keep_alive_ref_count_; }
+  int worker_ref_count() const { return worker_ref_count_; }
+
+  // See `navigation_state_keepalive_count_`.
+  void IncrementNavigationStateKeepAliveCount();
+  void DecrementNavigationStateKeepAliveCount();
 
   static void RegisterCreationObserver(
       RenderProcessHostCreationObserver* observer);
@@ -462,14 +509,20 @@ class CONTENT_EXPORT RenderProcessHostImpl
   static RenderProcessHost* GetProcessHostForSiteInstance(
       SiteInstanceImpl* site_instance);
 
-  // Should be called when |browser_context| is used in a navigation.
+  // Should be called when `site_instance` is used in a navigation.
   //
   // The SpareRenderProcessHostManager can decide how to respond (for example,
   // by shutting down the spare process to conserve resources, or alternatively
   // by making sure that the spare process belongs to the same BrowserContext as
   // the most recent navigation).
-  static void NotifySpareManagerAboutRecentlyUsedBrowserContext(
-      BrowserContext* browser_context);
+  //
+  // If `ignore_delay` is false, delays new spare renderer creation as per
+  // embedder's setting. Otherwise, the spare renderer creation might have been
+  // deferred previously, and this is a signal that it should now be started
+  // immediately.
+  static void NotifySpareManagerAboutRecentlyUsedSiteInstance(
+      SiteInstance* site_instance,
+      bool ignore_delay = false);
 
   // This enum backs a histogram, so do not change the order of entries or
   // remove entries and update enums.xml if adding new entries.
@@ -485,7 +538,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   };
 
   // Please keep in sync with "RenderProcessHostDelayShutdownReason" in
-  // tools/metrics/histograms/enums.xml. These values should not be renumbered.
+  // tools/metrics/histograms/metadata/browser/enums.xml. These values should
+  // not be renumbered.
   enum class DelayShutdownReason {
     kNoDelay = 0,
     // There are active or pending views other than the ones shutting down.
@@ -508,8 +562,10 @@ class CONTENT_EXPORT RenderProcessHostImpl
     kListener = 9,
     // Delays until all observer callbacks completed.
     kObserver = 10,
+    // There are NavigationStateKeepAlive objects in this process.
+    kNavigationStateKeepAlive = 11,
 
-    kMaxValue = kObserver,
+    kMaxValue = kNavigationStateKeepAlive,
   };
 
   static scoped_refptr<base::SingleThreadTaskRunner>
@@ -781,20 +837,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   void SetBatterySaverMode(bool battery_saver_mode_enabled) override;
 
-  int keep_alive_ref_count() const { return keep_alive_ref_count_; }
-  int worker_ref_count() const { return worker_ref_count_; }
-
-  // Allows overriding the URLLoaderFactory creation via CreateURLLoaderFactory.
-  // Passing a null callback will restore the default behavior.
-  // This method must be called either on the UI thread or before threads start.
-  // This |url_loader_factory_callback| is run on the UI thread.
-  using CreateNetworkFactoryCallback = base::RepeatingCallback<void(
-      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
-      int worker_process_id,
-      mojo::PendingRemote<network::mojom::URLLoaderFactory> original_factory)>;
-  static void SetNetworkFactoryForTesting(
-      const CreateNetworkFactoryCallback& url_loader_factory_callback);
-
 #if BUILDFLAG(IS_ANDROID)
   // Notifies the renderer process of memory pressure level.
   void NotifyMemoryPressureToRenderer(
@@ -849,7 +891,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   friend class VisitRelayingRenderProcessHost;
   friend class StoragePartitonInterceptor;
   friend class RenderProcessHostTestBase;
-  // TODO(crbug.com/1111231): This class is a friend so that it can call our
+  // TODO(crbug.com/40142495): This class is a friend so that it can call our
   // private mojo implementation methods, acting as a pass-through. This is only
   // necessary during the associated interface migration, after which,
   // AgentSchedulingGroupHost will not act as a pass-through to the private
@@ -970,11 +1012,29 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // Called if the backgrounded or visibility state of the process changes.
   void SendProcessStateToRenderer();
 
-  // Creates a PersistentMemoryAllocator and shares it with the renderer
-  // process for it to store histograms from that process. The allocator is
-  // available for extraction by a SubprocesMetricsProvider in order to
-  // report those histograms to UMA.
-  void CreateSharedRendererHistogramAllocator();
+  // Creates an UnsafeSharedMemoryRegion and PersistentMemoryAllocator for
+  // the renderer process to store histograms. The allocator is available for
+  // extraction by a SubprocesMetricsProvider in order to report those
+  // histograms to UMA. This must be called before launching the renderer
+  // process.
+  void CreateMetricsAllocator();
+
+  // Shares the histogram UnsafeSharedMemoryRegion, post launch, with the child
+  // renderer process via IPC. This also serves to and notify the child to send
+  // any early histograms it may have recorded before the shared memory region
+  // became available to it. This must be called just after launching the
+  // renderer process.
+  //
+  // If passing the memory region on launch is enabled, a duplicate handle to
+  // the memory region may have already been passed to the renderer process
+  // during launch. If so, the passing of the shmem handle is a NOP. There may
+  // still be early histograms recorded before the child reads its launch
+  // parameters to learn of the shared memory region.
+  //
+  // TODO(crbug.com/40109064): It may be possible to completely remove this once
+  // passing the memory region on launch is rolled-out, if the shmem parameter
+  // is consumed before the child records any histograms.
+  void ShareMetricsMemoryRegion();
 
   // Retrieves the details of the terminating child process.
   //
@@ -1122,6 +1182,15 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // We track the start-time for each |handle_id|, for crashkey reporting.
   base::flat_map<uint64_t, base::Time> keep_alive_start_times_;
 
+  // Count of NavigationStateKeepAlives that depend on state tied to this
+  // RenderProcessHost. This is related to SiteInstanceGroup::keep_alive_count_,
+  // but it aggregates the keep alive count across all SiteInstanceGroups in
+  // this process. This allows individual SiteInstanceGroups to go away even
+  // when there are NavigationStateKeepAlives in other SiteInstanceGroups in the
+  // same process. This also lets RenderProcessHosts go away even if there are
+  // NavigationStateKeepAlives in other processes in the same StoragePartition.
+  int navigation_state_keepalive_count_ = 0;
+
   // Set in DisableRefCounts(). When true, |keep_alive_ref_count_| and
   // |worker_ref_count_|, |shutdown_delay_ref_count_|, and
   // |pending_reuse_ref_count_| must no longer be modified.
@@ -1156,7 +1225,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
 #endif
 
   // Clients that contribute priority to this process.
-  base::flat_set<RenderProcessHostPriorityClient*> priority_clients_;
+  base::flat_set<raw_ptr<RenderProcessHostPriorityClient, CtnExperimental>>
+      priority_clients_;
 
   RenderProcessPriority priority_;
 
@@ -1195,7 +1265,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Owned by |browser_context_|.
   //
-  // TODO(https://crbug.com/1382971): Change back to `raw_ptr` after the ad-hoc
+  // TODO(crbug.com/40061679): Change back to `raw_ptr` after the ad-hoc
   // debugging is no longer needed to investigate the bug.
   base::WeakPtr<StoragePartitionImpl> storage_partition_impl_;
 
@@ -1233,6 +1303,9 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Records the last time we regarded the child process active.
   base::TimeTicks child_process_activity_time_;
+
+  std::string unresponsive_document_javascript_call_stack_;
+  blink::LocalFrameToken unresponsive_document_token_;
 
   // A set of flags that influence RenderProcessHost behavior.
   int flags_;
@@ -1291,6 +1364,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // The memory allocator, if any, in which the renderer will write its metrics.
   std::unique_ptr<base::PersistentMemoryAllocator> metrics_allocator_;
+  base::UnsafeSharedMemoryRegion metrics_memory_region_;
 
   bool channel_connected_ = false;
   bool sent_render_process_ready_ = false;
@@ -1309,6 +1383,8 @@ class CONTENT_EXPORT RenderProcessHostImpl
   // This will be bound to |io_thread_host_impl_|.
   mojo::PendingReceiver<mojom::ChildProcessHost> child_host_pending_receiver_;
   mojo::AssociatedRemote<mojom::Renderer> renderer_interface_;
+  mojo::Remote<blink::mojom::CallStackGenerator>
+      javascript_call_stack_generator_interface_;
   mojo::AssociatedReceiver<mojom::RendererHost> renderer_host_receiver_{this};
   mojo::Receiver<memory_instrumentation::mojom::CoordinatorConnector>
       coordinator_connector_receiver_{this};

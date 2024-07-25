@@ -12,13 +12,20 @@
 #include "base/no_destructor.h"
 #include "base/numerics/checked_math.h"
 #include "build/build_config.h"
+#include "pdf/document_metadata.h"
+#include "pdf/loader/document_loader.h"
+#include "pdf/loader/url_loader_wrapper.h"
 #include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
+#include "pdf/pdfium/pdfium_document.h"
+#include "pdf/pdfium/pdfium_document_metadata.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_write.h"
 #include "pdf/pdfium/pdfium_print.h"
 #include "pdf/pdfium/pdfium_unsupported_features.h"
 #include "printing/nup_parameters.h"
 #include "printing/units.h"
+#include "services/screen_ai/buildflags/buildflags.h"
 #include "third_party/pdfium/public/cpp/fpdf_scopers.h"
+#include "third_party/pdfium/public/fpdf_attachment.h"
 #include "third_party/pdfium/public/fpdf_catalog.h"
 #include "third_party/pdfium/public/fpdf_doc.h"
 #include "third_party/pdfium/public/fpdf_ppo.h"
@@ -29,12 +36,54 @@
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/vector2d.h"
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+#include "base/functional/callback.h"
+#include "pdf/pdfium/pdfium_searchify.h"
+#include "services/screen_ai/public/mojom/screen_ai_service.mojom.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#endif
+
 using printing::ConvertUnitFloat;
 using printing::kPointsPerInch;
 
 namespace chrome_pdf {
 
 namespace {
+
+class DataDocumentLoader : public DocumentLoader {
+ public:
+  explicit DataDocumentLoader(base::span<const uint8_t> pdf_data)
+      : pdf_data_(pdf_data) {}
+  ~DataDocumentLoader() override = default;
+
+  // DocumentLoader:
+  bool Init(std::unique_ptr<URLLoaderWrapper> loader,
+            const std::string& url) override {
+    NOTREACHED() << "PDFiumDocument doesn't call this";
+    return false;
+  }
+  bool GetBlock(uint32_t position, uint32_t size, void* buf) const override {
+    if (!IsDataAvailable(position, size)) {
+      return false;
+    }
+
+    memcpy(buf, pdf_data_.data() + position, size);
+    return true;
+  }
+  bool IsDataAvailable(uint32_t position, uint32_t size) const override {
+    CHECK_LE(position, GetDocumentSize());
+    CHECK_LE(size, GetDocumentSize() - position);
+    return true;
+  }
+  void RequestData(uint32_t position, uint32_t size) override {}
+  bool IsDocumentComplete() const override { return true; }
+  uint32_t GetDocumentSize() const override { return pdf_data_.size(); }
+  uint32_t BytesReceived() const override { return pdf_data_.size(); }
+  void ClearPendingRequests() override {}
+
+ private:
+  const base::span<const uint8_t> pdf_data_;
+};
 
 int CalculatePosition(FPDF_PAGE page,
                       const PDFiumEngineExports::RenderingSettings& settings,
@@ -418,6 +467,32 @@ bool PDFiumEngineExports::GetPDFDocInfo(base::span<const uint8_t> pdf_buffer,
   return true;
 }
 
+std::optional<DocumentMetadata> PDFiumEngineExports::GetPDFDocMetadata(
+    base::span<const uint8_t> pdf_buffer) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
+
+  DataDocumentLoader loader(pdf_buffer);
+  PDFiumDocument pdfium_doc(&loader);
+  pdfium_doc.file_access().m_FileLen = pdf_buffer.size();
+
+  pdfium_doc.CreateFPDFAvailability();
+  FPDF_AVAIL pdf_avail = pdfium_doc.fpdf_availability();
+  if (!pdf_avail) {
+    return std::nullopt;
+  }
+
+  pdfium_doc.LoadDocument("");
+  if (!pdfium_doc.doc()) {
+    return std::nullopt;
+  }
+
+  return GetPDFiumDocumentMetadata(
+      pdfium_doc.doc(), pdf_buffer.size(), FPDF_GetPageCount(pdfium_doc.doc()),
+      FPDFAvail_IsLinearized(pdf_avail) == PDF_LINEARIZED,
+      FPDFDoc_GetAttachmentCount(pdfium_doc.doc()) > 0);
+}
+
 std::optional<bool> PDFiumEngineExports::IsPDFDocTagged(
     base::span<const uint8_t> pdf_buffer) {
   ScopedUnsupportedFeature scoped_unsupported_feature(
@@ -486,5 +561,14 @@ std::optional<gfx::SizeF> PDFiumEngineExports::GetPDFPageSizeByIndex(
 
   return gfx::SizeF(size.width, size.height);
 }
+
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+std::vector<uint8_t> PDFiumEngineExports::Searchify(
+    base::span<const uint8_t> pdf_buffer,
+    base::RepeatingCallback<screen_ai::mojom::VisualAnnotationPtr(
+        const SkBitmap& bitmap)> perform_ocr_callback) {
+  return PDFiumSearchify(pdf_buffer, std::move(perform_ocr_callback));
+}
+#endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
 }  // namespace chrome_pdf

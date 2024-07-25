@@ -2,7 +2,8 @@ import { assert } from '../../../../../common/util/util.js';
 import { kTextureFormatInfo } from '../../../../format_info.js';
 import { GPUTest } from '../../../../gpu_test.js';
 import { virtualMipSize } from '../../../../util/texture/base.js';
-import { CheckContents } from '../texture_zero.spec.js';
+
+import { CheckContents } from './texture_zero_init_test.js';
 
 function makeFullscreenVertexModule(device: GPUDevice) {
   return device.createShaderModule({
@@ -152,10 +153,10 @@ const checkContents: (type: 'depth' | 'stencil', ...args: Parameters<CheckConten
       ],
       depthStencilAttachment: {
         view: texture.createView(viewDescriptor),
-        depthStoreOp: formatInfo.depth ? 'store' : undefined,
         depthLoadOp: formatInfo.depth ? 'load' : undefined,
-        stencilStoreOp: formatInfo.stencil ? 'store' : undefined,
+        depthStoreOp: formatInfo.depth ? 'store' : undefined,
         stencilLoadOp: formatInfo.stencil ? 'load' : undefined,
+        stencilStoreOp: formatInfo.stencil ? 'store' : undefined,
       },
     });
 

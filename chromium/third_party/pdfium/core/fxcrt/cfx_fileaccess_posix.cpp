@@ -13,7 +13,7 @@
 #include <memory>
 
 #include "core/fxcrt/fx_stream.h"
-#include "third_party/base/numerics/safe_conversions.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -51,15 +51,16 @@ void CFX_FileAccess_Posix::Close() {
   close(m_nFD);
   m_nFD = -1;
 }
+
 FX_FILESIZE CFX_FileAccess_Posix::GetSize() const {
   if (m_nFD < 0) {
     return 0;
   }
-  struct stat s;
-  memset(&s, 0, sizeof(s));
+  struct stat s = {};
   fstat(m_nFD, &s);
-  return pdfium::base::checked_cast<FX_FILESIZE>(s.st_size);
+  return pdfium::checked_cast<FX_FILESIZE>(s.st_size);
 }
+
 FX_FILESIZE CFX_FileAccess_Posix::GetPosition() const {
   if (m_nFD < 0) {
     return (FX_FILESIZE)-1;

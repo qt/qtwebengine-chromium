@@ -22,6 +22,7 @@
 #include <string_view>
 #include <vector>
 
+#include "absl/base/nullability.h"
 #include "absl/log/check.h"
 #include "absl/types/span.h"
 #include "./centipede/defs.h"
@@ -138,17 +139,18 @@ void RemoveSubset(const std::vector<size_t> &subset_indices,
 // appended to another such packed data and then the operation can be reversed.
 // The purpose is to allow appending blobs of data to a (possibly remote) file
 // such that when reading this file we can separate the blobs.
-// TODO(kcc): [impl] is there a lightweight equivalent in the open-source world?
-//  tar sounds too heavy.
-// TODO(kcc): [impl] investigate https://github.com/google/riegeli.
-ByteArray PackBytesForAppendFile(const ByteArray &data);
+// NOTE: The now-default blob file format (Riegeli) doesn't need this, but some
+// external clients continue to use plain blob files and are unlikely to switch
+// (e.g. Chromium).
+ByteArray PackBytesForAppendFile(ByteSpan blob);
 // Unpacks `packed_data` into `unpacked` and `hashes`.
 // `packed_data` is multiple data packed by PackBytesForAppendFile()
 // and merged together.
 // `unpacked` or `hashes` can be nullptr.
-void UnpackBytesFromAppendFile(const ByteArray &packed_data,
-                               std::vector<ByteArray> *unpacked,
-                               std::vector<std::string> *hashes = nullptr);
+void UnpackBytesFromAppendFile(
+    const ByteArray &packed_data,
+    absl::Nullable<std::vector<ByteArray> *> unpacked,
+    absl::Nullable<std::vector<std::string> *> hashes = nullptr);
 // Append the bytes from 'hash' to 'ba'.
 void AppendHashToArray(ByteArray &ba, std::string_view hash);
 // Reverse to AppendHashToArray.
@@ -164,7 +166,8 @@ ByteArray PackFeaturesAndHashAsRawBytes(const ByteArray &data,
 
 // Given a `blob` created by `PackFeaturesAndHash`, unpack the features into
 // `features` and return the hash.
-std::string UnpackFeaturesAndHash(const ByteSpan &blob, FeatureVec *features);
+std::string UnpackFeaturesAndHash(ByteSpan blob,
+                                  absl::Nonnull<FeatureVec *> features);
 
 // Parses `dictionary_text` representing an AFL/libFuzzer dictionary.
 // https://github.com/google/AFL/blob/master/dictionaries/README.dictionaries

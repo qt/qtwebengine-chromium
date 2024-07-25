@@ -54,6 +54,7 @@
 #include "ui/display/types/native_display_delegate.h"
 #include "ui/display/util/display_util.h"
 #include "ui/events/devices/touchscreen_device.h"
+#include "ui/gfx/color_space.h"
 #include "ui/gfx/font_render_params.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size_conversions.h"
@@ -339,25 +340,88 @@ std::string ToString(DisplayManager::MultiDisplayMode mode) {
   NOTREACHED_NORETURN();
 }
 
+// Uses a piecewise linear function to map a brightness percent to sdr luminance
+// value such that [0%, 80%] maps to [5 nits, 203 nits] and
+// [80%, 100%] maps to [203 nits, `hdr_max_lum`].
+float GetSdrLumForScreenBrightness(float percent, float hdr_max_lum) {
+  DCHECK_LE(percent, 100.f);
+  DCHECK_GE(percent, 0.f);
+
+  float brightness_pivot = 80.f;
+  float sdr_avg = gfx::ColorSpace::kDefaultSDRWhiteLevel;
+  float sdr_min = 5.f;
+
+  float sdr_lum;
+  if (percent < brightness_pivot) {
+    sdr_lum = ((percent / brightness_pivot) * (sdr_avg - sdr_min)) + sdr_min;
+  } else {
+    sdr_lum = ((percent - 100.f) * (hdr_max_lum - sdr_avg)) /
+              (100.f - brightness_pivot);
+    sdr_lum += hdr_max_lum;
+  }
+
+  DCHECK_LE(sdr_lum, hdr_max_lum);
+  DCHECK_GE(sdr_lum, sdr_min);
+  return sdr_lum;
+}
+
+gfx::DisplayColorSpaces UpdateMaxLuminanceValue(
+    const gfx::DisplayColorSpaces display_color_spaces,
+    float brightness) {
+  // Ignore luminance changes for SDR-only color spaces
+  if (!display_color_spaces.SupportsHDR()) {
+    return display_color_spaces;
+  }
+
+  float hdr_max = display_color_spaces.GetHDRMaxLuminanceRelative() *
+                  display_color_spaces.GetSDRMaxLuminanceNits();
+  float sdr_lum = GetSdrLumForScreenBrightness(brightness, hdr_max);
+
+  if (display_color_spaces.GetSDRMaxLuminanceNits() == sdr_lum) {
+    return display_color_spaces;
+  }
+
+  gfx::DisplayColorSpaces updated_display_color_spaces(display_color_spaces);
+  updated_display_color_spaces.SetHDRMaxLuminanceRelative(hdr_max / sdr_lum);
+  updated_display_color_spaces.SetSDRMaxLuminanceNits(sdr_lum);
+  return updated_display_color_spaces;
+}
+
 }  // namespace
 
 DisplayManager::BeginEndNotifier::BeginEndNotifier(
-    DisplayManager* display_manager)
-    : display_manager_(display_manager) {
+    DisplayManager* display_manager,
+    bool notify_on_pending_change_only)
+    : notify_on_pending_change_only_(notify_on_pending_change_only),
+      display_manager_(display_manager) {
   if (display_manager_->notify_depth_++ == 0) {
     CHECK(!display_manager_->pending_display_changes_.has_value());
     display_manager_->pending_display_changes_.emplace();
-    display_manager_->NotifyWillProcessDisplayChanges();
+
+    if (!notify_on_pending_change_only_) {
+      display_manager_->NotifyWillProcessDisplayChanges();
+    }
   }
 }
 
 DisplayManager::BeginEndNotifier::~BeginEndNotifier() {
   if (--display_manager_->notify_depth_ == 0) {
     CHECK(display_manager_->pending_display_changes_.has_value());
-    DisplayManagerObserver::DisplayConfigurationChange config_change =
+    const bool has_pending_changes =
+        !display_manager_->pending_display_changes_->IsEmpty();
+    if (notify_on_pending_change_only_ && has_pending_changes) {
+      // To comply with API expectations we must emit will process notifications
+      // before did process notifications.
+      display_manager_->NotifyWillProcessDisplayChanges();
+    }
+
+    const DisplayManagerObserver::DisplayConfigurationChange config_change =
         CreateConfigChange();
     display_manager_->pending_display_changes_.reset();
-    display_manager_->NotifyDidProcessDisplayChanges(config_change);
+
+    if (!notify_on_pending_change_only_ || has_pending_changes) {
+      display_manager_->NotifyDidProcessDisplayChanges(config_change);
+    }
   }
 }
 
@@ -391,6 +455,11 @@ DisplayManager::BeginEndNotifier::CreateConfigChange() const {
 DisplayManager::PendingDisplayChanges::PendingDisplayChanges() = default;
 
 DisplayManager::PendingDisplayChanges::~PendingDisplayChanges() = default;
+
+bool DisplayManager::PendingDisplayChanges::IsEmpty() const {
+  return added_display_ids.empty() && removed_displays.empty() &&
+         display_metrics_changes.empty();
+}
 
 DisplayManager::DisplayManager(std::unique_ptr<Screen> screen)
     : screen_(std::move(screen)), layout_store_(new DisplayLayoutStore) {
@@ -578,7 +647,13 @@ bool DisplayManager::UpdateWorkAreaOfDisplay(int64_t display_id,
   gfx::Rect old_work_area = display->work_area();
   display->UpdateWorkAreaFromInsets(insets);
   bool workarea_changed = old_work_area != display->work_area();
-  if (workarea_changed) {
+
+  bool in_display_creation = in_creating_display_.has_value() &&
+                             in_creating_display_.value() == display_id;
+
+  // Do not notify observer if this is called during display creation, because
+  // `OnDisplayAdded` is not yet called.
+  if (workarea_changed && !in_display_creation) {
     NotifyMetricsChanged(*display, DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 
     CHECK(pending_display_changes_.has_value());
@@ -641,6 +716,26 @@ void DisplayManager::SetDisplayRotation(int64_t display_id,
     // Inactive displays can reactivate, ensure they have been updated.
     display_info_[display_id].SetRotation(rotation, source);
   }
+}
+
+void DisplayManager::OnScreenBrightnessChanged(float brightness) {
+  DisplayInfoList display_info_list;
+  bool display_property_changed = false;
+  for (const auto& display : active_display_list_) {
+    ManagedDisplayInfo info = GetDisplayInfo(display.id());
+
+    auto updated_display_color_spaces =
+        UpdateMaxLuminanceValue(info.display_color_spaces(), brightness);
+    if (updated_display_color_spaces != info.display_color_spaces()) {
+      display_property_changed = true;
+    }
+
+    info.set_display_color_spaces(updated_display_color_spaces);
+    display_info_list.emplace_back(info);
+  }
+
+  if (display_property_changed)
+    UpdateDisplaysWith(display_info_list);
 }
 
 bool DisplayManager::SetDisplayMode(int64_t display_id,
@@ -728,7 +823,7 @@ void DisplayManager::RegisterDisplayProperty(
     float refresh_rate,
     bool is_interlaced,
     VariableRefreshRateState variable_refresh_rate_state,
-    const absl::optional<float>& vsync_rate_min) {
+    const std::optional<float>& vsync_rate_min) {
   if (display_info_.find(display_id) == display_info_.end()) {
     display_info_[display_id] =
         ManagedDisplayInfo(display_id, std::string(), false);
@@ -1137,6 +1232,12 @@ void DisplayManager::UpdateDisplaysWith(
               new_display_info.vsync_rate_min()) {
         metrics |= DisplayObserver::DISPLAY_METRIC_VRR;
       }
+
+      if (current_display_info.display_color_spaces() !=
+          new_display_info.display_color_spaces()) {
+        metrics |= DisplayObserver::DISPLAY_METRIC_COLOR_SPACE;
+      }
+
       if (current_display_info.detected() != new_display_info.detected()) {
         metrics |= DisplayObserver::DISPLAY_METRIC_DETECTED;
       }
@@ -1236,25 +1337,25 @@ void DisplayManager::UpdateDisplaysWith(
   // being removed are accessed during shutting down the root.
   active_display_list_.insert(active_display_list_.end(),
                               removed_displays.begin(), removed_displays.end());
-
-  for (const auto& display : removed_displays) {
-    NotifyDisplayRemoved(display);
+  if (!removed_displays.empty()) {
+    NotifyWillRemoveDisplays(removed_displays);
   }
 
-  for (size_t index : added_display_indices) {
-    NotifyDisplayAdded(active_display_list_[index]);
+  for (const auto& display : removed_displays) {
+    if (delegate_) {
+      delegate_->RemoveDisplay(display);
+    }
+  }
+
+  if (!removed_displays.empty()) {
+    NotifyDisplaysRemoved(removed_displays);
   }
 
   active_display_list_.resize(active_display_list_size);
   is_updating_display_list_ = false;
 
-  // OnDidRemoveDisplays is called after the displays have been removed,
-  // in comparison to NotifyDisplayRemoved/OnDisplayRemoved which on Ash
-  // is called before.
-  if (!removed_displays.empty()) {
-    for (auto& display_observer : display_observers_) {
-      display_observer.OnDidRemoveDisplays();
-    }
+  for (size_t index : added_display_indices) {
+    NotifyDisplayAdded(active_display_list_[index]);
   }
 
   UpdatePrimaryDisplayIdIfNecessary();
@@ -1438,6 +1539,9 @@ void DisplayManager::ClearMirroringSourceAndDestination() {
 }
 
 void DisplayManager::SetUnifiedDesktopEnabled(bool enable) {
+  if (unified_desktop_enabled_ == enable) {
+    return;
+  }
   DISPLAY_LOG(EVENT) << "Unified Desktop is now " << (enable ? "" : "not ")
                      << "allowed."
                      << (IsInMirrorMode()
@@ -1585,7 +1689,7 @@ bool DisplayManager::ShouldSetMirrorModeOn(
 
 void DisplayManager::SetMirrorMode(
     MirrorMode mode,
-    const absl::optional<MixedMirrorModeParams>& mixed_params) {
+    const std::optional<MixedMirrorModeParams>& mixed_params) {
   if (num_connected_displays() < 2) {
     return;
   }
@@ -1604,10 +1708,10 @@ void DisplayManager::SetMirrorMode(
     // 2. Restore the mixed mirror mode when display configuration changes.
     mixed_mirror_mode_params_ = mixed_params;
   } else {
-    DCHECK(mixed_params == absl::nullopt);
+    DCHECK(mixed_params == std::nullopt);
     // Clear mixed mirror mode parameters here to avoid restoring the mode after
     // display configuration changes.
-    mixed_mirror_mode_params_ = absl::nullopt;
+    mixed_mirror_mode_params_ = std::nullopt;
   }
 
   const bool enabled = mode != MirrorMode::kOff;
@@ -1615,7 +1719,7 @@ void DisplayManager::SetMirrorMode(
     MultipleDisplayState new_state =
         enabled ? MULTIPLE_DISPLAY_STATE_MULTI_MIRROR
                 : MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED;
-    display_configurator_->SetDisplayMode(new_state);
+    display_configurator_->SetMultipleDisplayState(new_state);
     return;
   }
   multi_display_mode_ =
@@ -1644,6 +1748,9 @@ void DisplayManager::AddRemoveDisplay() {
             "%d+%d-%dx%d", host_bounds.x(),
             host_bounds.bottom() + kVerticalOffsetPx,
             host_bounds.height() + kExtraWidth, host_bounds.height())));
+    // Reconnect the same display.
+    new_display_info_list[1].set_display_id(new_display_info_list[0].id() +
+                                            0xFFFF);
   }
   connected_display_id_list_ = CreateDisplayIdList(new_display_info_list);
   ClearMirroringSourceAndDestination();
@@ -1753,7 +1860,7 @@ void DisplayManager::SetTouchCalibrationData(
 
 void DisplayManager::ClearTouchCalibrationData(
     int64_t display_id,
-    absl::optional<ui::TouchscreenDevice> touchdevice) {
+    std::optional<ui::TouchscreenDevice> touchdevice) {
   if (touchdevice) {
     touch_device_manager_->ClearTouchCalibrationData(*touchdevice, display_id);
   } else {
@@ -2276,17 +2383,43 @@ void DisplayManager::AddMirrorDisplayInfoIfAny(
 
 void DisplayManager::InsertAndUpdateDisplayInfo(
     const ManagedDisplayInfo& new_info) {
+  ManagedDisplayInfo* info = nullptr;
   auto it = display_info_.find(new_info.id());
   if (it != display_info_.end()) {
-    ManagedDisplayInfo* info = &(it->second);
+    info = &(it->second);
     info->Copy(new_info);
   } else {
-    display_info_[new_info.id()] = new_info;
+    info = &display_info_[new_info.id()];
+    *info = new_info;
+
     // Set from_native_platform to false so that all information
     // (rotation, zoom factor etc.) is copied.
-    display_info_[new_info.id()].set_from_native_platform(false);
+    info->set_from_native_platform(false);
+
+    // If an external display is plugged in for the first time and doesn't have
+    // any entry in display_info_, such as those from Pref or from previous
+    // config, apply recommended default zoom factor.
+    ApplyDefaultZoomFactorIfNecessary(*info);
   }
-  display_info_[new_info.id()].UpdateDisplaySize();
+
+  CHECK(info);
+  info->UpdateDisplaySize();
+}
+
+void DisplayManager::ApplyDefaultZoomFactorIfNecessary(
+    ManagedDisplayInfo& info) {
+  // Only apply to external display. The internal display has good handle of
+  // default dpi.
+  if (IsInternalDisplayId(info.id())) {
+    return;
+  }
+
+  // Ignore unified display.
+  if (info.id() == kUnifiedDisplayId) {
+    return;
+  }
+
+  info.UpdateZoomFactorToMatchTargetDPI();
 }
 
 Display DisplayManager::CreateDisplayFromDisplayInfoById(int64_t id) {
@@ -2437,20 +2570,35 @@ void DisplayManager::SetTabletState(const TabletState& tablet_state) {
 
 void DisplayManager::NotifyMetricsChanged(const Display& display,
                                           uint32_t metrics) {
+  if (delegate_) {
+    delegate_->UpdateDisplayMetrics(display, metrics);
+  }
+
   for (auto& display_observer : display_observers_) {
     display_observer.OnDisplayMetricsChanged(display, metrics);
   }
 }
 
 void DisplayManager::NotifyDisplayAdded(const Display& display) {
+  if (delegate_) {
+    in_creating_display_.emplace(display.id());
+    delegate_->CreateDisplay(display);
+    in_creating_display_.reset();
+  }
+
   for (auto& display_observer : display_observers_) {
     display_observer.OnDisplayAdded(display);
   }
 }
-
-void DisplayManager::NotifyDisplayRemoved(const Display& display) {
+void DisplayManager::NotifyWillRemoveDisplays(const Displays& displays) {
   for (auto& display_observer : display_observers_) {
-    display_observer.OnDisplayRemoved(display);
+    display_observer.OnWillRemoveDisplays(displays);
+  }
+}
+
+void DisplayManager::NotifyDisplaysRemoved(const Displays& displays) {
+  for (auto& display_observer : display_observers_) {
+    display_observer.OnDisplaysRemoved(displays);
   }
 }
 
@@ -2462,6 +2610,11 @@ void DisplayManager::NotifyWillProcessDisplayChanges() {
 
 void DisplayManager::NotifyDidProcessDisplayChanges(
     const DisplayManagerObserver::DisplayConfigurationChange& config_change) {
+  // Notifying observers may lead to further config changes, create a notifier
+  // to capture these here while preserving notification ordering.
+  CHECK(!pending_display_changes_.has_value());
+  BeginEndNotifier notifier(this, /*notify_on_pending_change_only=*/true);
+
   for (auto& manager_observer : manager_observers_) {
     manager_observer.OnDidProcessDisplayChanges(config_change);
   }

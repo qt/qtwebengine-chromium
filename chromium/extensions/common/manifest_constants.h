@@ -151,7 +151,6 @@ inline constexpr char kTtsVoicesEventTypeSentence[] = "sentence";
 inline constexpr char kTtsVoicesEventTypeStart[] = "start";
 inline constexpr char kTtsVoicesEventTypeWord[] = "word";
 inline constexpr char kTtsVoicesEventTypes[] = "event_types";
-inline constexpr char kTtsVoicesGender[] = "gender";
 inline constexpr char kTtsVoicesLang[] = "lang";
 inline constexpr char kTtsVoicesRemote[] = "remote";
 inline constexpr char kTtsVoicesVoiceName[] = "voice_name";
@@ -277,6 +276,9 @@ inline constexpr char kChromeVersionTooLow[] =
 inline constexpr char kCommandActionIncorrectForManifestActionType[] =
     "The action commands in the manifest do not match the manifest's action "
     "type and were ignored.";
+inline constexpr char kDeclarativeNetRequestPathDuplicates[] =
+    "The same ruleset file appears multiple times with different IDs in the "
+    "manifest 'declarative_net_request.rule_resources' key.";
 inline constexpr char kDeclarativeNetRequestPermissionNeeded[] =
     "The extension requires the 'declarativeNetRequest' or the "
     "'declarativeNetRequestWithHostAccess' permission for the '*' manifest "
@@ -589,10 +591,12 @@ inline constexpr char kInvalidThemeImagesMissing[] =
     "An image specified in the theme is missing.";
 inline constexpr char16_t kInvalidThemeTints[] =
     u"Invalid value for theme images - tints must be decimal numbers.";
-inline constexpr char16_t kInvalidTrialTokensNonEmptyList[] =
-    u"Invalid value for 'trial_tokens'. Must be a non-empty list.";
-inline constexpr char16_t kInvalidTrialTokensValue[] =
-    u"Invalid element in 'trial_tokens'. Must be a non-empty string.";
+inline constexpr char kInvalidTrialTokensNonEmptyList[] =
+    "Invalid value for 'trial_tokens'. Must be a non-empty list.";
+inline constexpr char kInvalidTrialTokensValue[] =
+    "Invalid element in 'trial_tokens'. Must be a non-empty string.";
+inline constexpr char kInvalidTrialTokensValueDuplicate[] =
+    "Duplicate element in 'trial_tokens': '%s'.";
 inline constexpr char kInvalidTrialTokensValueTooLong[] =
     "Invalid element in 'trial_tokens'. Token must not be longer than %zu.";
 inline constexpr char kInvalidTrialTokensTooManyTokens[] =
@@ -616,8 +620,6 @@ inline constexpr char16_t kInvalidTtsVoices[] =
     u"Invalid value for 'tts_engine.voices'.";
 inline constexpr char16_t kInvalidTtsVoicesEventTypes[] =
     u"Invalid value for 'tts_engine.voices[*].event_types'.";
-inline constexpr char kInvalidTtsVoicesGender[] =
-    "Invalid value for 'tts_engine.voices[*].gender'.";
 inline constexpr char16_t kInvalidTtsVoicesLang[] =
     u"Invalid value for 'tts_engine.voices[*].lang'.";
 inline constexpr char16_t kInvalidTtsVoicesRemote[] =
@@ -739,9 +741,6 @@ inline constexpr char16_t
     kTransientBackgroundConflictsWithPersistentBackground[] =
         u"The 'transientBackground' permission cannot be used with a "
         "persistent background page.";
-inline constexpr char kTtsGenderIsDeprecated[] =
-    "Voice gender is deprecated and values will be ignored starting in Chrome "
-    "71";
 inline constexpr char kUnrecognizedManifestKey[] =
     "Unrecognized manifest key '*'.";
 inline constexpr char kUnrecognizedManifestProperty[] =

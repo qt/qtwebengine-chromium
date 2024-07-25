@@ -10,7 +10,6 @@
 #include <string>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -682,7 +681,7 @@ void NativeWindowOcclusionTrackerWin::WindowOcclusionCalculator::
   // but Windows prevented it, and the user clicks on the task bar to bring the
   // window forward. See https://crbug.com/1137982. This is the only event I
   // could find that always gets sent in this scenario, and isn't too common.
-  // TODO(crbug.com/1297684): See if we can make handling this event cheaper,
+  // TODO(crbug.com/40215249): See if we can make handling this event cheaper,
   // since we typically don't need it, e.g., by using a longer timer interval
   // for starting the occlusion calculation for this event, to batch subsequent
   // events.
@@ -942,8 +941,8 @@ bool NativeWindowOcclusionTrackerWin::WindowOcclusionCalculator::
          (IsWindowOnCurrentVirtualDesktop(hwnd) == true);
 }
 
-absl::optional<bool> NativeWindowOcclusionTrackerWin::
-    WindowOcclusionCalculator::IsWindowOnCurrentVirtualDesktop(HWND hwnd) {
+std::optional<bool> NativeWindowOcclusionTrackerWin::WindowOcclusionCalculator::
+    IsWindowOnCurrentVirtualDesktop(HWND hwnd) {
   if (!virtual_desktop_manager_)
     return true;
 

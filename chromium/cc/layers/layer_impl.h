@@ -431,7 +431,7 @@ class CC_EXPORT LayerImpl {
   // GetPreferredRasterScale().
   // GetIdealContentsScaleKey() returns the maximum component, a fallback to
   // uniform scale for callers that don't support 2d scales yet.
-  // TODO(crbug.com/1196414): Remove GetIdealContentsScaleKey() in favor of
+  // TODO(crbug.com/40176440): Remove GetIdealContentsScaleKey() in favor of
   // GetIdealContentsScale().
   gfx::Vector2dF GetIdealContentsScale() const;
   float GetIdealContentsScaleKey() const;
@@ -465,6 +465,8 @@ class CC_EXPORT LayerImpl {
           known_resource_ids) {}
 
   virtual viz::ViewTransitionElementResourceId ViewTransitionResourceId() const;
+
+  virtual void SetInInvisibleLayerTree() {}
 
  protected:
   // When |will_always_push_properties| is true, the layer will not itself set

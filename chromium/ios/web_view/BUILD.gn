@@ -23,7 +23,7 @@ group("all_tests") {
 }
 
 config("config") {
-  # TODO(crbug.com/1055812): This will only guarantee ios/web_view source files
+  # TODO(crbug.com/40120082): This will only guarantee ios/web_view source files
   # are extension safe. We also need to pass this flag to all all dependencies.
   common_flags = [ "-fapplication-extension" ]
   cflags_objc = common_flags
@@ -53,8 +53,8 @@ ios_web_view_public_headers = [
   "public/cwv_credit_card.h",
   "public/cwv_credit_card_saver.h",
   "public/cwv_credit_card_verifier.h",
-  "public/cwv_download_task.h",
   "public/cwv_defines.h",
+  "public/cwv_download_task.h",
   "public/cwv_export.h",
   "public/cwv_favicon.h",
   "public/cwv_find_in_page_controller.h",
@@ -98,6 +98,8 @@ ios_web_view_public_headers = [
 ]
 
 ios_web_view_sources = [
+  "internal/affiliations/web_view_affiliation_service_factory.h",
+  "internal/affiliations/web_view_affiliation_service_factory.mm",
   "internal/app/application_context.h",
   "internal/app/application_context.mm",
   "internal/app/web_view_io_thread.h",
@@ -198,10 +200,6 @@ ios_web_view_sources = [
   "internal/passwords/cwv_weak_check_utils_internal.h",
   "internal/passwords/web_view_account_password_store_factory.h",
   "internal/passwords/web_view_account_password_store_factory.mm",
-  "internal/passwords/web_view_affiliation_service_factory.h",
-  "internal/passwords/web_view_affiliation_service_factory.mm",
-  "internal/passwords/web_view_affiliations_prefetcher_factory.h",
-  "internal/passwords/web_view_affiliations_prefetcher_factory.mm",
   "internal/passwords/web_view_bulk_leak_check_service_factory.h",
   "internal/passwords/web_view_bulk_leak_check_service_factory.mm",
   "internal/passwords/web_view_password_feature_manager.h",
@@ -300,6 +298,7 @@ ios_web_view_sources = [
 ios_web_view_deps = [
   ":web_view_resources",
   "//base",
+  "//components/affiliations/core/browser:affiliations",
   "//components/autofill/core/browser",
   "//components/autofill/core/common",
   "//components/autofill/ios/browser",
@@ -327,7 +326,6 @@ ios_web_view_deps = [
   "//components/metrics:library_support",
   "//components/metrics/demographics",
   "//components/password_manager/core/browser",
-  "//components/password_manager/core/browser/affiliation",
   "//components/password_manager/core/browser/affiliation:affiliation_fetching",
   "//components/password_manager/core/browser/features:password_features",
   "//components/password_manager/core/browser/generation:core",
@@ -335,6 +333,7 @@ ios_web_view_deps = [
   "//components/password_manager/core/browser/sharing",
   "//components/password_manager/core/common",
   "//components/password_manager/ios",
+  "//components/plus_addresses/webdata",
   "//components/pref_registry",
   "//components/prefs",
   "//components/profile_metrics",
@@ -381,7 +380,7 @@ ios_web_view_deps = [
   "//ios/components/security_interstitials/safe_browsing",
   "//ios/components/security_interstitials/safe_browsing:util",
 
-  # TODO(crbug.com/1471650): Remove this once AppStore stops blocking
+  # TODO(crbug.com/40069191): Remove this once AppStore stops blocking
   # __availability_version_check.
   "//ios/components/third_party/compiler-rt:os_version_check",
   "//ios/components/webui:provider",
@@ -524,6 +523,7 @@ test("ios_web_view_unittests") {
     ":web_view_sources",
     "test:test_support",
     "//base/test:test_support",
+    "//components/affiliations/core/browser:test_support",
     "//components/autofill/core/browser:test_support",
     "//components/autofill/ios/browser:test_support",
     "//components/autofill/ios/form_util:test_support",

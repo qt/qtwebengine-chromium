@@ -4,14 +4,19 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfdoc/cpvt_section.h"
 
 #include <algorithm>
 
 #include "core/fpdfdoc/cpvt_variabletext.h"
 #include "core/fpdfdoc/cpvt_wordinfo.h"
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/stl_util.h"
-#include "third_party/base/check.h"
 
 namespace {
 

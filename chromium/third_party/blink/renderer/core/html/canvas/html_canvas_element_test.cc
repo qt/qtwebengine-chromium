@@ -162,7 +162,6 @@ TEST_P(HTMLCanvasElementTest, BrokenCanvasHighRes) {
   EXPECT_EQ(HTMLCanvasElement::BrokenCanvas(1.0).second, 1.0);
 }
 
-#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
 
 class HTMLCanvasElementWithTracingTest : public RenderingTest {
  public:
@@ -299,8 +298,8 @@ TEST_P(HTMLCanvasElementWithTracingAsyncTest,
   ScriptEvaluationResult script_result =
       script->RunScriptOnScriptStateAndReturnValue(script_state);
 
-  ScriptPromise promise =
-      ScriptPromise::Cast(script_state, script_result.GetSuccessValue());
+  auto promise =
+      ToResolvedPromise<IDLAny>(script_state, script_result.GetSuccessValue());
   promise.Then(fn, fn);
 
   // Avoid the NOTREACHED in CanvasPerformanceMonitor::WillProcessTask().
@@ -375,6 +374,5 @@ TEST_P(HTMLCanvasElementWithTracingAsyncTest,
   }
 }
 
-#endif
 
 }  // namespace blink

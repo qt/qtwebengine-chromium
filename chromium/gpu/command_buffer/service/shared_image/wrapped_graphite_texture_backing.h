@@ -40,6 +40,7 @@ class WrappedGraphiteTextureBacking : public ClearTrackingSharedImageBacking {
                                 GrSurfaceOrigin surface_origin,
                                 SkAlphaType alpha_type,
                                 uint32_t usage,
+                                std::string debug_label,
                                 scoped_refptr<SharedContextState> context_state,
                                 const bool thread_safe);
 
@@ -95,6 +96,9 @@ class WrappedGraphiteTextureBacking : public ClearTrackingSharedImageBacking {
 
   scoped_refptr<SharedContextState> context_state_;
   std::vector<skgpu::graphite::BackendTexture> graphite_textures_;
+
+  // Only stored for thread safe backings.
+  scoped_refptr<base::SingleThreadTaskRunner> created_task_runner_;
 };
 
 }  // namespace gpu

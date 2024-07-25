@@ -8,12 +8,12 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include "base/i18n/unicodestring.h"
 #include "base/logging.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
@@ -31,7 +31,7 @@ namespace base {
 namespace {
 
 UDate ToUDate(const Time& time) {
-  // TODO(crbug.com/1392437): Consider using the `...IgnoringNull` variant and
+  // TODO(crbug.com/40247732): Consider using the `...IgnoringNull` variant and
   // adding a `CHECK(!time.is_null())`; trying to format a null Time as a string
   // is almost certainly an indication that the caller has made a mistake.
   return time.InMillisecondsFSinceUnixEpoch();
@@ -63,7 +63,7 @@ std::u16string TimeFormatWithoutAmPm(const icu::DateFormat* formatter,
 }
 
 icu::SimpleDateFormat CreateSimpleDateFormatter(
-    StringPiece pattern,
+    std::string_view pattern,
     bool generate_pattern = true,
     const icu::Locale& locale = icu::Locale::getDefault()) {
   UErrorCode status = U_ZERO_ERROR;
@@ -95,7 +95,7 @@ UMeasureFormatWidth DurationWidthToMeasureWidth(DurationFormatWidth width) {
     case DURATION_WIDTH_NARROW: return UMEASFMT_WIDTH_NARROW;
     case DURATION_WIDTH_NUMERIC: return UMEASFMT_WIDTH_NUMERIC;
   }
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return UMEASFMT_WIDTH_COUNT;
 }
 
@@ -106,7 +106,7 @@ const char* DateFormatToString(DateFormat format) {
     case DATE_FORMAT_MONTH_WEEKDAY_DAY:
       return UDAT_MONTH_WEEKDAY_DAY;
   }
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return UDAT_YEAR_MONTH_DAY;
 }
 
@@ -197,12 +197,12 @@ std::u16string TimeFormatFriendlyDate(const Time& time) {
 }
 
 std::u16string LocalizedTimeFormatWithPattern(const Time& time,
-                                              StringPiece pattern) {
+                                              std::string_view pattern) {
   return TimeFormat(CreateSimpleDateFormatter(std::move(pattern)), time);
 }
 
 std::string UnlocalizedTimeFormatWithPattern(const Time& time,
-                                             StringPiece pattern,
+                                             std::string_view pattern,
                                              const icu::TimeZone* time_zone) {
   icu::SimpleDateFormat formatter =
       CreateSimpleDateFormatter({}, false, icu::Locale("en_US"));
@@ -211,7 +211,8 @@ std::string UnlocalizedTimeFormatWithPattern(const Time& time,
   }
 
   // Formats `time` according to `pattern`.
-  const auto format_time = [&formatter](const Time& time, StringPiece pattern) {
+  const auto format_time = [&formatter](const Time& time,
+                                        std::string_view pattern) {
     formatter.applyPattern(
         icu::UnicodeString(pattern.data(), pattern.length()));
     return base::UTF16ToUTF8(TimeFormat(formatter, time));
@@ -226,7 +227,7 @@ std::string UnlocalizedTimeFormatWithPattern(const Time& time,
           Time::kMicrosecondsPerMillisecond) {
     // Adds digits to `output` for each 'S' at the start of `pattern`.
     const auto format_microseconds = [&output](int64_t mutable_micros,
-                                               StringPiece pattern) {
+                                               std::string_view pattern) {
       size_t i = 0;
       for (; i < pattern.length() && pattern[i] == 'S'; ++i) {
         output += static_cast<char>('0' + mutable_micros / 100);

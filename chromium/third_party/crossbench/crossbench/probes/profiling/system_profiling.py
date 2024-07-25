@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import abc
 import atexit
+import enum
 import json
 import logging
 import multiprocessing
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, cast
 
 from crossbench import helper, plt
 from crossbench.browsers.chromium.chromium import Chromium
+from crossbench.compat import StrEnumWithHelp
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext, ResultLocation
 from crossbench.probes.results import ProbeResult
 from crossbench.probes.v8.log import V8LogProbe
@@ -26,6 +28,22 @@ if TYPE_CHECKING:
   from crossbench.env import HostEnvironment
   from crossbench.runner.run import Run
   from crossbench.runner.groups import BrowsersRunGroup
+
+
+@enum.unique
+class CleanupMode(StrEnumWithHelp):
+
+  @classmethod
+  def _missing_(cls, value) -> Optional[CleanupMode]:
+    if value is True:
+      return CleanupMode.ALWAYS
+    if value is False:
+      return CleanupMode.NEVER
+    return super()._missing_(value)
+
+  ALWAYS = ("always", "Always clean up temp files")
+  AUTO = ("auto", "Best-guess auto-cleanup")
+  NEVER = ("never", "Always clean up temp files")
 
 
 class ProfilingProbe(Probe):
@@ -83,12 +101,20 @@ class ProfilingProbe(Probe):
         type=bool,
         default=True,
         help="linux-only: process collected samples with pprof.")
+    parser.add_argument(
+        "cleanup",
+        type=CleanupMode,
+        default=CleanupMode.AUTO,
+        help="Automatically clean up any temp files "
+        "(perf.data.jitted and temporary .so files on linux "
+        "cleaned up automatically if pprof is set to True)")
     return parser
 
   def __init__(self,
                js: bool = True,
                v8_interpreted_frames: bool = True,
                pprof: bool = True,
+               cleanup: CleanupMode = CleanupMode.AUTO,
                browser_process: bool = False,
                spare_renderer_process: bool = False):
     super().__init__()
@@ -96,6 +122,7 @@ class ProfilingProbe(Probe):
     self._sample_browser_process: bool = browser_process
     self._spare_renderer_process: bool = spare_renderer_process
     self._run_pprof: bool = pprof
+    self._cleanup_mode = cleanup
     self._expose_v8_interpreted_frames: bool = v8_interpreted_frames
     if v8_interpreted_frames:
       assert js, "Cannot expose V8 interpreted frames without js profiling."
@@ -106,6 +133,7 @@ class ProfilingProbe(Probe):
         ("js", self._sample_js),
         ("v8_interpreted_frames", self._expose_v8_interpreted_frames),
         ("pprof", self._run_pprof),
+        ("cleanup", self._cleanup_mode),
         ("browser_process", self._sample_browser_process),
         ("spare_renderer_process", self._spare_renderer_process),
     )
@@ -128,6 +156,10 @@ class ProfilingProbe(Probe):
   @property
   def run_pprof(self) -> bool:
     return self._run_pprof
+
+  @property
+  def cleanup_mode(self) -> CleanupMode:
+    return self._cleanup_mode
 
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
@@ -387,8 +419,14 @@ class LinuxProfilingContext(ProfilingContext):
       return urls
 
   def _clean_up_temp_files(self, run: Run) -> None:
-    if not self.probe.run_pprof:
+    if self.probe.cleanup_mode == CleanupMode.NEVER:
+      logging.debug("%s: skipping cleanup", self.probe)
       return
+    if self.probe.cleanup_mode == CleanupMode.AUTO:
+      if not self.probe.run_pprof:
+        logging.debug("%s: skipping auto cleanup without pprof upload",
+                      self.probe)
+        return
     for pattern in self.TEMP_FILE_PATTERNS:
       for file in run.out_dir.glob(pattern):
         file.unlink()

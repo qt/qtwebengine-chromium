@@ -11,8 +11,9 @@
 #include "src/handles/handles-inl.h"
 #include "src/heap/factory.h"
 #include "src/heap/heap-inl.h"
+#include "src/heap/large-page-inl.h"
 #include "src/heap/local-factory-inl.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/read-only-heap.h"
 #include "src/logging/local-logger.h"
 #include "src/logging/log.h"
@@ -94,24 +95,47 @@ Handle<Code> FactoryBase<Impl>::NewCode(const NewCodeOptions& options) {
   code->set_constant_pool_offset(options.constant_pool_offset);
   code->set_code_comments_offset(options.code_comments_offset);
   code->set_unwinding_info_offset(options.unwinding_info_offset);
+  code->set_parameter_count(options.parameter_count);
 
-  if (options.kind == CodeKind::BASELINE) {
-    code->set_bytecode_or_interpreter_data(
-        *options.bytecode_or_deoptimization_data);
-    code->set_bytecode_offset_table(
-        *options.bytecode_offsets_or_source_position_table);
-  } else {
+  // Set bytecode/interpreter data or deoptimization data.
+  if (CodeKindUsesBytecodeOrInterpreterData(options.kind)) {
+    DCHECK(options.deoptimization_data.is_null());
+    Tagged<TrustedObject> data =
+        *options.bytecode_or_interpreter_data.ToHandleChecked();
+    DCHECK(IsBytecodeArray(data) || IsInterpreterData(data));
+    code->set_bytecode_or_interpreter_data(data);
+  } else if (CodeKindUsesDeoptimizationData(options.kind)) {
+    DCHECK(options.bytecode_or_interpreter_data.is_null());
     code->set_deoptimization_data(
-        FixedArray::cast(*options.bytecode_or_deoptimization_data));
-    code->set_source_position_table(
-        *options.bytecode_offsets_or_source_position_table);
+        *options.deoptimization_data.ToHandleChecked());
+  } else {
+    DCHECK(options.deoptimization_data.is_null());
+    DCHECK(options.bytecode_or_interpreter_data.is_null());
+    code->clear_deoptimization_data_and_interpreter_data();
   }
 
+  // Set bytecode offset table or source position table.
+  if (CodeKindUsesBytecodeOffsetTable(options.kind)) {
+    DCHECK(options.source_position_table.is_null());
+    code->set_bytecode_offset_table(
+        *options.bytecode_offset_table.ToHandleChecked());
+  } else if (CodeKindMayLackSourcePositionTable(options.kind)) {
+    DCHECK(options.bytecode_offset_table.is_null());
+    Handle<TrustedByteArray> table;
+    if (options.source_position_table.ToHandle(&table)) {
+      code->set_source_position_table(*table);
+    } else {
+      code->clear_source_position_table_and_bytecode_offset_table();
+    }
+  } else {
+    DCHECK(options.bytecode_offset_table.is_null());
+    code->set_source_position_table(
+        *options.source_position_table.ToHandleChecked());
+  }
+
+  // Set instruction stream and entrypoint.
   Handle<InstructionStream> istream;
   if (options.instruction_stream.ToHandle(&istream)) {
-    CodePageHeaderModificationScope header_modification_scope(
-        "Setting the instruction_stream can trigger a write to the marking "
-        "bitmap.");
     DCHECK_EQ(options.instruction_start, kNullAddress);
     code->SetInstructionStreamAndInstructionStart(isolate(), *istream);
   } else {
@@ -149,7 +173,17 @@ Handle<FixedArray> FactoryBase<Impl>::NewFixedArray(int length,
 
 template <typename Impl>
 Handle<TrustedFixedArray> FactoryBase<Impl>::NewTrustedFixedArray(int length) {
+  // TODO(saelo): Move this check to TrustedFixedArray::New once we have a RO
+  // trusted space.
+  if (length == 0) return empty_trusted_fixed_array();
   return TrustedFixedArray::New(isolate(), length);
+}
+
+template <typename Impl>
+Handle<ProtectedFixedArray> FactoryBase<Impl>::NewProtectedFixedArray(
+    int length) {
+  if (length == 0) return empty_protected_fixed_array();
+  return ProtectedFixedArray::New(isolate(), length);
 }
 
 template <typename Impl>
@@ -237,6 +271,15 @@ Handle<WeakFixedArray> FactoryBase<Impl>::NewWeakFixedArray(
 }
 
 template <typename Impl>
+Handle<TrustedWeakFixedArray> FactoryBase<Impl>::NewTrustedWeakFixedArray(
+    int length) {
+  // TODO(saelo): Move this check to TrustedWeakFixedArray::New once we have a
+  // RO trusted space.
+  if (length == 0) return empty_trusted_weak_fixed_array();
+  return TrustedWeakFixedArray::New(isolate(), length);
+}
+
+template <typename Impl>
 Handle<ByteArray> FactoryBase<Impl>::NewByteArray(int length,
                                                   AllocationType allocation) {
   return ByteArray::New(isolate(), length, allocation);
@@ -244,6 +287,7 @@ Handle<ByteArray> FactoryBase<Impl>::NewByteArray(int length,
 
 template <typename Impl>
 Handle<TrustedByteArray> FactoryBase<Impl>::NewTrustedByteArray(int length) {
+  if (length == 0) return empty_trusted_byte_array();
   return TrustedByteArray::New(isolate(), length);
 }
 
@@ -275,29 +319,25 @@ template <typename Impl>
 Handle<DeoptimizationLiteralArray>
 FactoryBase<Impl>::NewDeoptimizationLiteralArray(int length) {
   return Handle<DeoptimizationLiteralArray>::cast(
-      NewWeakFixedArray(length, AllocationType::kOld));
+      NewTrustedWeakFixedArray(length));
 }
 
 template <typename Impl>
 Handle<DeoptimizationFrameTranslation>
 FactoryBase<Impl>::NewDeoptimizationFrameTranslation(int length) {
   return Handle<DeoptimizationFrameTranslation>::cast(
-      NewByteArray(length, AllocationType::kOld));
+      NewTrustedByteArray(length));
 }
 
 template <typename Impl>
 Handle<BytecodeArray> FactoryBase<Impl>::NewBytecodeArray(
     int length, const uint8_t* raw_bytecodes, int frame_size,
-    int parameter_count, DirectHandle<FixedArray> constant_pool,
+    uint16_t parameter_count, DirectHandle<TrustedFixedArray> constant_pool,
     DirectHandle<TrustedByteArray> handler_table) {
   if (length < 0 || length > BytecodeArray::kMaxLength) {
     FATAL("Fatal JavaScript invalid size error %d", length);
     UNREACHABLE();
   }
-  // Bytecode array is AllocationType::kOld, so constant pool array should be
-  // too.
-  DCHECK(!Heap::InYoungGeneration(*constant_pool));
-
   Handle<BytecodeWrapper> wrapper = NewBytecodeWrapper();
   int size = BytecodeArray::SizeFor(length);
   Tagged<HeapObject> result = AllocateRawWithImmortalMap(
@@ -312,9 +352,8 @@ Handle<BytecodeArray> FactoryBase<Impl>::NewBytecodeArray(
       interpreter::Register::invalid_value());
   instance->set_constant_pool(*constant_pool);
   instance->set_handler_table(*handler_table);
+  instance->clear_source_position_table(kReleaseStore);
   instance->set_wrapper(*wrapper);
-  instance->set_source_position_table(read_only_roots().undefined_value(),
-                                      kReleaseStore, SKIP_WRITE_BARRIER);
   CopyBytes(reinterpret_cast<uint8_t*>(instance->GetFirstBytecodeAddress()),
             raw_bytecodes, length);
   instance->clear_padding();
@@ -350,6 +389,22 @@ FactoryBase<Impl>::NewWasmTrustedInstanceData() {
   result->clear_padding();
   for (int offset : WasmTrustedInstanceData::kTaggedFieldOffsets) {
     result->RawField(offset).store(read_only_roots().undefined_value());
+  }
+  return handle(result, isolate());
+}
+
+template <typename Impl>
+Handle<WasmDispatchTable> FactoryBase<Impl>::NewWasmDispatchTable(int length) {
+  CHECK_LE(length, WasmDispatchTable::kMaxLength);
+  int bytes = WasmDispatchTable::SizeFor(length);
+  Tagged<WasmDispatchTable> result = WasmDispatchTable::unchecked_cast(
+      AllocateRawWithImmortalMap(bytes, AllocationType::kTrusted,
+                                 read_only_roots().wasm_dispatch_table_map()));
+  result->WriteField<int>(WasmDispatchTable::kLengthOffset, length);
+  result->WriteField<int>(WasmDispatchTable::kCapacityOffset, length);
+  for (int i = 0; i < length; ++i) {
+    result->Clear(i);
+    result->clear_entry_padding(i);
   }
   return handle(result, isolate());
 }
@@ -456,6 +511,19 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::CloneSharedFunctionInfo(
 }
 
 template <typename Impl>
+Handle<SharedFunctionInfoWrapper>
+FactoryBase<Impl>::NewSharedFunctionInfoWrapper(
+    Handle<SharedFunctionInfo> sfi) {
+  Tagged<Map> map = read_only_roots().shared_function_info_wrapper_map();
+  Tagged<SharedFunctionInfoWrapper> wrapper = SharedFunctionInfoWrapper::cast(
+      NewWithImmortalMap(map, AllocationType::kTrusted));
+
+  wrapper->set_shared_info(*sfi);
+
+  return handle(wrapper, isolate());
+}
+
+template <typename Impl>
 Handle<PreparseData> FactoryBase<Impl>::NewPreparseData(int data_length,
                                                         int children_length) {
   int size = PreparseData::SizeFor(data_length, children_length);
@@ -540,8 +608,11 @@ Handle<SharedFunctionInfo> FactoryBase<Impl>::NewSharedFunctionInfo(
     DCHECK(!Builtins::IsBuiltinId(builtin));
     DCHECK(!IsInstructionStream(*function_data));
     DCHECK(!IsCode(*function_data));
-    raw->SetData(*function_data, kReleaseStore,
-                 SharedFunctionInfo::DataType::kRegular);
+    SharedFunctionInfo::DataType type =
+        IsExposedTrustedObject(*function_data)
+            ? SharedFunctionInfo::DataType::kTrusted
+            : SharedFunctionInfo::DataType::kRegular;
+    raw->SetData(*function_data, kReleaseStore, type);
   } else if (Builtins::IsBuiltinId(builtin)) {
     raw->set_builtin_id(builtin);
   } else {
@@ -662,7 +733,8 @@ template <typename Impl>
 template <class StringTableKey>
 Handle<String> FactoryBase<Impl>::InternalizeStringWithKey(
     StringTableKey* key) {
-  return isolate()->string_table()->LookupKey(isolate(), key);
+  return indirect_handle(isolate()->string_table()->LookupKey(isolate(), key),
+                         isolate());
 }
 
 template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
@@ -1184,7 +1256,7 @@ Tagged<HeapObject> FactoryBase<Impl>::AllocateRawArray(
       (size >
        isolate()->heap()->AsHeap()->MaxRegularHeapObjectSize(allocation)) &&
       v8_flags.use_marking_progress_bar) {
-    LargePage::FromHeapObject(result)->ProgressBar().Enable();
+    LargePageMetadata::FromHeapObject(result)->ProgressBar().Enable();
   }
   return result;
 }
@@ -1287,10 +1359,10 @@ FactoryBase<Impl>::NewFunctionTemplateRareData() {
 }
 
 template <typename Impl>
-MaybeHandle<Map> FactoryBase<Impl>::GetInPlaceInternalizedStringMap(
+MaybeDirectHandle<Map> FactoryBase<Impl>::GetInPlaceInternalizedStringMap(
     Tagged<Map> from_string_map) {
   InstanceType instance_type = from_string_map->instance_type();
-  MaybeHandle<Map> map;
+  MaybeDirectHandle<Map> map;
   switch (instance_type) {
     case SEQ_TWO_BYTE_STRING_TYPE:
     case SHARED_SEQ_TWO_BYTE_STRING_TYPE:

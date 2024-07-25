@@ -16,20 +16,33 @@
 #ifndef SRC_TRACE_PROCESSOR_DB_COLUMN_TYPES_H_
 #define SRC_TRACE_PROCESSOR_DB_COLUMN_TYPES_H_
 
+#include <cstdint>
+#include <utility>
 #include <variant>
+#include <vector>
+
+#include "perfetto/base/logging.h"
 #include "perfetto/trace_processor/basic_types.h"
+#include "src/trace_processor/containers/bit_vector.h"
 #include "src/trace_processor/containers/row_map.h"
 
-namespace perfetto {
-namespace trace_processor {
+namespace perfetto::trace_processor {
 
 using Range = RowMap::Range;
 
+// Result of calling Storage::SingleSearch function.
+enum class SingleSearchResult {
+  kMatch,            // The specified row matches the constraint.
+  kNoMatch,          // The specified row does not matches the constraint.
+  kNeedsFullSearch,  // SingleSearch was unable to determine if the row meets
+                     // the crtiteria, a call to *Search is required.
+};
+
 // Result of calling Storage::ValidateSearchResult function.
 enum class SearchValidationResult {
-  kOk = 0,       // It makes sense to run search
-  kAllData = 1,  // Don't run search, all data passes the constraint.
-  kNoData = 2    // Don't run search, no data passes the constraint.
+  kOk,       // It makes sense to run search
+  kAllData,  // Don't run search, all data passes the constraint.
+  kNoData    // Don't run search, no data passes the constraint.
 };
 
 // Used for result of filtering, which is sometimes (for more optimised
@@ -49,7 +62,7 @@ class RangeOrBitVector {
   }
   Range TakeIfRange() && {
     PERFETTO_DCHECK(IsRange());
-    return std::move(*std::get_if<Range>(&val));
+    return *std::get_if<Range>(&val);
   }
 
  private:
@@ -83,6 +96,15 @@ struct Order {
   bool desc;
 };
 
+// Structured data used to determine what Trace Processor will query using
+// CEngine.
+struct Query {
+  // Query constraints.
+  std::vector<Constraint> constraints;
+  // Query order bys.
+  std::vector<Order> orders;
+};
+
 // The enum type of the column.
 // Public only to stop GCC complaining about templates being defined in a
 // non-namespace scope (see ColumnTypeHelper below).
@@ -101,7 +123,6 @@ enum class ColumnType {
   kDummy,
 };
 
-}  // namespace trace_processor
-}  // namespace perfetto
+}  // namespace perfetto::trace_processor
 
 #endif  // SRC_TRACE_PROCESSOR_DB_COLUMN_TYPES_H_

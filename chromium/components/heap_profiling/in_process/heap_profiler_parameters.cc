@@ -5,19 +5,18 @@
 #include "components/heap_profiling/in_process/heap_profiler_parameters.h"
 
 #include <string>
+#include <string_view>
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_value_converter.h"
 #include "base/metrics/field_trial_params.h"
-#include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/metrics/call_stacks/call_stack_profile_params.h"
 #include "components/variations/variations_switches.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace heap_profiling {
 
@@ -137,12 +136,12 @@ void HeapProfilerParameters::RegisterJSONConverter(
       &HeapProfilerParameters::collection_interval, &ConvertCollectionInterval);
 }
 
-bool HeapProfilerParameters::UpdateFromJSON(base::StringPiece json_string) {
+bool HeapProfilerParameters::UpdateFromJSON(std::string_view json_string) {
   if (json_string.empty())
     return true;
 
   base::JSONValueConverter<HeapProfilerParameters> converter;
-  absl::optional<base::Value> value =
+  std::optional<base::Value> value =
       base::JSONReader::Read(json_string, base::JSON_ALLOW_TRAILING_COMMAS |
                                               base::JSON_ALLOW_COMMENTS);
   if (value && converter.Convert(*value, this))

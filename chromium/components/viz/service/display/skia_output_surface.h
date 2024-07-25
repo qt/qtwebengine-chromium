@@ -16,6 +16,8 @@
 #include "components/viz/service/display/output_surface.h"
 #include "components/viz/service/display/overlay_processor_interface.h"
 #include "components/viz/service/display/render_pass_alpha_type.h"
+#include "gpu/vulkan/buildflags.h"
+#include "media/gpu/buildflags.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkYUVAInfo.h"
 #include "ui/gfx/gpu_fence_handle.h"
@@ -182,7 +184,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurface : public OutputSurface,
   virtual void ScheduleGpuTaskForTesting(
       base::OnceClosure callback,
       std::vector<gpu::SyncToken> sync_tokens) = 0;
-  // TODO(crbug.com/1474022): tests should not need to poll for async work
+  // TODO(crbug.com/40279197): tests should not need to poll for async work
   // completion.
   virtual void CheckAsyncWorkCompletionForTesting() = 0;
 
@@ -226,6 +228,19 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurface : public OutputSurface,
                                        bool purgeable) = 0;
 
   virtual bool SupportsBGRA() const = 0;
+
+#if BUILDFLAG(ENABLE_VULKAN) && BUILDFLAG(IS_CHROMEOS) && \
+    BUILDFLAG(USE_V4L2_CODEC)
+  virtual void DetileOverlay(gpu::Mailbox input,
+                             const gfx::Size& input_visible_size,
+                             gpu::SyncToken input_sync_token,
+                             gpu::Mailbox output,
+                             const gfx::RectF& display_rect,
+                             const gfx::RectF& crop_rect,
+                             gfx::OverlayTransform transform) = 0;
+
+  virtual void CleanupImageProcessor() = 0;
+#endif
 };
 
 }  // namespace viz

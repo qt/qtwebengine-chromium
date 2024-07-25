@@ -54,7 +54,7 @@ class MojoURLLoaderClient::DeferredOnReceiveResponse final
   explicit DeferredOnReceiveResponse(
       network::mojom::URLResponseHeadPtr response_head,
       mojo::ScopedDataPipeConsumerHandle body,
-      absl::optional<mojo_base::BigBuffer> cached_metadata,
+      std::optional<mojo_base::BigBuffer> cached_metadata,
       base::TimeTicks response_ipc_arrival_time)
       : response_head_(std::move(response_head)),
         body_(std::move(body)),
@@ -71,7 +71,7 @@ class MojoURLLoaderClient::DeferredOnReceiveResponse final
  private:
   network::mojom::URLResponseHeadPtr response_head_;
   mojo::ScopedDataPipeConsumerHandle body_;
-  absl::optional<mojo_base::BigBuffer> cached_metadata_;
+  std::optional<mojo_base::BigBuffer> cached_metadata_;
   const base::TimeTicks response_ipc_arrival_time_;
 };
 
@@ -158,12 +158,6 @@ class MojoURLLoaderClient::BodyBuffer final
   // mojo::DataPipeDrainer::Client
   void OnDataAvailable(const void* data, size_t num_bytes) override {
     DCHECK(draining_);
-    SCOPED_CRASH_KEY_NUMBER("OnDataAvailable", "buffered_body_size",
-                            buffered_body_.size());
-    SCOPED_CRASH_KEY_NUMBER("OnDataAvailable", "data_bytes", num_bytes);
-    SCOPED_CRASH_KEY_STRING256("OnDataAvailable", "last_loaded_url",
-                               owner_->last_loaded_url().GetString().Utf8());
-
     if (owner_->freeze_mode() == LoaderFreezeMode::kBufferIncoming) {
       owner_->DidBufferLoadWhileInBackForwardCache(num_bytes);
       if (!owner_->CanContinueBufferingWhileInBackForwardCache()) {
@@ -190,8 +184,7 @@ class MojoURLLoaderClient::BodyBuffer final
       // Write the chunk at the front of |buffered_body_|.
       const std::vector<char>& current_chunk = buffered_body_.front();
       DCHECK_LE(offset_in_current_chunk_, current_chunk.size());
-      uint32_t bytes_sent = base::saturated_cast<uint32_t>(
-          current_chunk.size() - offset_in_current_chunk_);
+      size_t bytes_sent = current_chunk.size() - offset_in_current_chunk_;
       MojoResult result =
           writable_->WriteData(current_chunk.data() + offset_in_current_chunk_,
                                &bytes_sent, MOJO_WRITE_DATA_FLAG_NONE);
@@ -238,14 +231,14 @@ class MojoURLLoaderClient::BodyBuffer final
     owner_->FlushDeferredMessages();
   }
 
-  const raw_ptr<MojoURLLoaderClient, ExperimentalRenderer> owner_;
+  const raw_ptr<MojoURLLoaderClient> owner_;
   mojo::ScopedDataPipeProducerHandle writable_;
   mojo::SimpleWatcher writable_watcher_;
   std::unique_ptr<mojo::DataPipeDrainer> pipe_drainer_;
   // We save the received response body as a queue of chunks so that we can free
   // memory as soon as we finish sending a chunk completely.
   base::queue<std::vector<char>> buffered_body_;
-  uint32_t offset_in_current_chunk_ = 0;
+  size_t offset_in_current_chunk_ = 0;
   bool draining_ = true;
 };
 
@@ -305,7 +298,7 @@ void MojoURLLoaderClient::OnReceiveEarlyHints(
 void MojoURLLoaderClient::OnReceiveResponse(
     network::mojom::URLResponseHeadPtr response_head,
     mojo::ScopedDataPipeConsumerHandle body,
-    absl::optional<mojo_base::BigBuffer> cached_metadata) {
+    std::optional<mojo_base::BigBuffer> cached_metadata) {
   TRACE_EVENT1("loading", "MojoURLLoaderClient::OnReceiveResponse", "url",
                last_loaded_url_.GetString().Utf8());
 

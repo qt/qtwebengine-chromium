@@ -8,6 +8,7 @@
 #include "base/containers/enum_set.h"
 #include "base/containers/flat_set.h"
 #include "base/functional/function_ref.h"
+#include "base/observer_list_types.h"
 #include "base/process/process.h"
 #include "base/task/task_traits.h"
 #include "components/performance_manager/public/graph/node.h"
@@ -99,7 +100,7 @@ class ProcessNode : public Node {
 
   // Returns the exit status of this process. This will be empty if the process
   // has not yet exited.
-  virtual absl::optional<int32_t> GetExitStatus() const = 0;
+  virtual std::optional<int32_t> GetExitStatus() const = 0;
 
   // Returns the non-localized name of the process used for metrics reporting
   // metrics as specified in content::ChildProcessData during process creation.
@@ -165,14 +166,14 @@ class ProcessNode : public Node {
 
 // Pure virtual observer interface. Derive from this if you want to be forced to
 // implement the entire interface.
-class ProcessNodeObserver {
+class ProcessNodeObserver : public base::CheckedObserver {
  public:
   ProcessNodeObserver();
 
   ProcessNodeObserver(const ProcessNodeObserver&) = delete;
   ProcessNodeObserver& operator=(const ProcessNodeObserver&) = delete;
 
-  virtual ~ProcessNodeObserver();
+  ~ProcessNodeObserver() override;
 
   // Node lifetime notifications.
 

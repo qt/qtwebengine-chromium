@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "base/functional/callback_helpers.h"
@@ -14,7 +15,6 @@
 #include "build/chromeos_buildflags.h"
 #include "cc/paint/paint_flags.h"
 #include "chromeos/constants/chromeos_features.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -68,7 +68,8 @@ class MenuScrollButton : public View {
   MenuScrollButton(const MenuScrollButton&) = delete;
   MenuScrollButton& operator=(const MenuScrollButton&) = delete;
 
-  gfx::Size CalculatePreferredSize() const override {
+  gfx::Size CalculatePreferredSize(
+      const SizeBounds& /*available_size*/) const override {
     return gfx::Size(MenuConfig::instance().scroll_arrow_height * 2 - 1,
                      pref_height_);
   }
@@ -188,12 +189,12 @@ class MenuScrollViewContainer::MenuScrollView : public View {
     View* child = GetContents();
     int old_y = child->y();
     int y = -std::max(
-        0, std::min(child->GetPreferredSize().height() - this->height(),
+        0, std::min(child->GetPreferredSize({}).height() - this->height(),
                     dy - child->y()));
     child->SetY(y);
 
     const int min_y = 0;
-    const int max_y = -(child->GetPreferredSize().height() - this->height());
+    const int max_y = -(child->GetPreferredSize({}).height() - this->height());
 
     if (old_y == min_y && old_y != y)
       owner_->DidScrollAwayFromTop();
@@ -214,7 +215,7 @@ class MenuScrollViewContainer::MenuScrollView : public View {
   raw_ptr<MenuScrollViewContainer> owner_;
 };
 
-BEGIN_METADATA(MenuScrollViewContainer, MenuScrollView, View)
+BEGIN_METADATA(MenuScrollViewContainer, MenuScrollView)
 END_METADATA
 
 // MenuScrollViewContainer ----------------------------------------------------
@@ -284,7 +285,7 @@ gfx::RoundedCornersF MenuScrollViewContainer::GetRoundedCorners() const {
   if (!menu_controller)
     return gfx::RoundedCornersF(corner_radius_);
 
-  absl::optional<gfx::RoundedCornersF> rounded_corners =
+  std::optional<gfx::RoundedCornersF> rounded_corners =
       menu_controller->rounded_corners();
   if (rounded_corners.has_value())
     return rounded_corners.value();
@@ -311,8 +312,10 @@ void MenuScrollViewContainer::GetAccessibleNodeData(ui::AXNodeData* node_data) {
 #endif
 }
 
-gfx::Size MenuScrollViewContainer::CalculatePreferredSize() const {
-  gfx::Size prefsize = scroll_view_->GetContents()->GetPreferredSize();
+gfx::Size MenuScrollViewContainer::CalculatePreferredSize(
+    const SizeBounds& available_size) const {
+  gfx::Size prefsize =
+      scroll_view_->GetContents()->GetPreferredSize(available_size);
   const gfx::Insets insets = GetInsets();
   prefsize.Enlarge(insets.width(), insets.height());
   return prefsize;
@@ -359,7 +362,7 @@ void MenuScrollViewContainer::OnBoundsChanged(
   // show the scroll-down control if it's going to be useful.
   scroll_up_button_->SetVisible(false);
   scroll_down_button_->SetVisible(
-      scroll_view_->GetContents()->GetPreferredSize().height() > height());
+      scroll_view_->GetContents()->GetPreferredSize({}).height() > height());
 
   const bool any_scroll_button_visible =
       scroll_up_button_->GetVisible() || scroll_down_button_->GetVisible();

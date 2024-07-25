@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 
 #include <utility>
@@ -12,8 +17,8 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/data_vector.h"
-#include "third_party/base/check_op.h"
 
 CPDF_StreamAcc::CPDF_StreamAcc(RetainPtr<const CPDF_Stream> pStream)
     : m_pStream(std::move(pStream)) {}
@@ -94,14 +99,11 @@ DataVector<uint8_t> CPDF_StreamAcc::DetachData() {
   if (is_owned())
     return std::move(absl::get<DataVector<uint8_t>>(m_Data));
 
-  auto span = absl::get<pdfium::span<const uint8_t>>(m_Data);
+  auto span = absl::get<pdfium::raw_span<const uint8_t>>(m_Data);
   return DataVector<uint8_t>(span.begin(), span.end());
 }
 
 void CPDF_StreamAcc::ProcessRawData() {
-  if (m_pStream->IsUninitialized())
-    return;
-
   uint32_t dwSrcSize = m_pStream->GetRawSize();
   if (dwSrcSize == 0)
     return;
@@ -120,14 +122,11 @@ void CPDF_StreamAcc::ProcessRawData() {
 
 void CPDF_StreamAcc::ProcessFilteredData(uint32_t estimated_size,
                                          bool bImageAcc) {
-  if (m_pStream->IsUninitialized())
-    return;
-
   uint32_t dwSrcSize = m_pStream->GetRawSize();
   if (dwSrcSize == 0)
     return;
 
-  absl::variant<pdfium::span<const uint8_t>, DataVector<uint8_t>> src_data;
+  absl::variant<pdfium::raw_span<const uint8_t>, DataVector<uint8_t>> src_data;
   pdfium::span<const uint8_t> src_span;
   if (m_pStream->IsMemoryBased()) {
     src_span = m_pStream->GetInMemoryRawData();
@@ -144,7 +143,7 @@ void CPDF_StreamAcc::ProcessFilteredData(uint32_t estimated_size,
   std::unique_ptr<uint8_t, FxFreeDeleter> pDecodedData;
   uint32_t dwDecodedSize = 0;
 
-  absl::optional<DecoderArray> decoder_array =
+  std::optional<DecoderArray> decoder_array =
       GetDecoderArray(m_pStream->GetDict());
   if (!decoder_array.has_value() || decoder_array.value().empty() ||
       !PDF_DataDecode(src_span, estimated_size, bImageAcc,

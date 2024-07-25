@@ -91,11 +91,6 @@ struct WebXrSharedBuffer {
   WebXrSharedBuffer();
   ~WebXrSharedBuffer();
 
-  gpu::MailboxHolder mailbox_holder() const {
-    return gpu::MailboxHolder(shared_image->mailbox(), sync_token,
-                              texture_target());
-  }
-
   uint32_t texture_target() const { return GL_TEXTURE_2D; }
 
   gfx::Size size = {0, 0};
@@ -269,7 +264,7 @@ class WebXrPresentationState {
   raw_ptr<WebXrFrame> processing_frame_ = nullptr;
   raw_ptr<WebXrFrame> rendering_frame_ = nullptr;
   std::vector<raw_ptr<WebXrFrame, VectorExperimental>> rendering_frames_;
-  base::queue<WebXrFrame*> idle_frames_;
+  base::queue<raw_ptr<WebXrFrame, CtnExperimental>> idle_frames_;
 
   bool mailbox_bridge_ready_ = false;
 };

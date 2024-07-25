@@ -17,7 +17,7 @@ import "extension_install.proto";
 // Almost all the fields should be populated on every upload. (The only
 // exception is some fields in the stability section that are only uploaded
 // once per browsing session, usually shortly after startup.)
-// Next tag: 46
+// Next tag: 47
 message SystemProfileProto {
   // The time when the client was compiled/linked, in seconds since the epoch.
   optional int64 build_timestamp = 1;
@@ -57,7 +57,6 @@ message SystemProfileProto {
   // Windows, Mac, iOS, and CrOS clients may have a brand code.
   optional string brand_code = 12;
 
-  // The possible channels for an installation, from least to most stable.
   enum Channel {
     CHANNEL_UNKNOWN = 0;  // Unknown channel -- perhaps an unofficial build?
     CHANNEL_CANARY = 1;
@@ -722,6 +721,16 @@ message SystemProfileProto {
   // Used to simulate field trial assignments for the client.
   optional string client_uuid = 34;
 
+  // The session's hash. At the beginning of a Chrome session, a random number
+  // will be generated, and all logs from that session will have this field set
+  // to that number. This is kept track of properly even when creating logs from
+  // previous sessions (e.g. independent logs from PMA files and stability
+  // logs), which is not the case for the `session_id` field in
+  // ChromeUserMetricsExtension. A benefit of this is that this can
+  // differentiate sessions between cloned installs that may report the same
+  // `session_id` but are actually different sessions.
+  optional fixed64 session_hash = 46;
+
   // Information about the A/V output device(s) (typically just a TV).
   // However, a configuration may have one or more intermediate A/V devices
   // between the source device and the TV (e.g. an A/V receiver, video
@@ -1095,6 +1104,7 @@ message SystemProfileProto {
     THIRD_PARTY_MODULE_LIST = 61;
     TRUST_TOKEN_KEY_COMMITMENTS = 62;
     THIRD_PARTY_COOKIE_DEPRECATION_METADATA = 63;
+    GROWTH_CAMPAIGNS = 64;
   }
 
   // Information about what Chrome components are registered and at which

@@ -25,6 +25,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "components/policy/core/common/json_schema_constants.h"
@@ -58,6 +59,8 @@ std::string ErrorPathToString(const std::string& policy_name,
   return error_path_string.str();
 }
 
+const char kSensitiveValueMask[] = "********";
+
 namespace {
 
 struct ReferencesAndIDs {
@@ -84,11 +87,6 @@ struct StorageSizes {
   size_t int_enums = 0;
   size_t string_enums = 0;
 };
-
-// |Schema::MaskSensitiveValues| will replace sensitive values with this string.
-// It should be consistent with the mask |NetworkConfigurationPolicyHandler|
-// uses for network credential fields.
-constexpr char kSensitiveValueMask[] = "********";
 
 // An invalid index, indicating that a node is not present; similar to a NULL
 // pointer.
@@ -426,9 +424,9 @@ bool IsValidSchema(const base::Value::Dict& dict,
 
   if (type_string == schema::kInteger) {
     // Validate 'minimum' > 'maximum'.
-    const absl::optional<double> minimum_value =
+    const std::optional<double> minimum_value =
         dict.FindDouble(schema::kMinimum);
-    const absl::optional<double> maximum_value =
+    const std::optional<double> maximum_value =
         dict.FindDouble(schema::kMaximum);
     if (minimum_value && maximum_value) {
       if (minimum_value.value() > maximum_value.value()) {
@@ -860,7 +858,7 @@ bool Schema::InternalStorage::Parse(const base::Value::Dict& schema,
 
   if (schema_nodes_.size() > std::numeric_limits<short>::max()) {
     *error = "Can't have more than " +
-             std::to_string(std::numeric_limits<short>::max()) +
+             base::NumberToString(std::numeric_limits<short>::max()) +
              " schema nodes.";
     return false;
   }
@@ -1456,7 +1454,7 @@ void Schema::MaskSensitiveValues(base::Value* value) const {
 Schema Schema::Parse(const std::string& content, std::string* error) {
   // Validate as a generic JSON schema, and ignore unknown attributes; they
   // may become used in a future version of the schema format.
-  absl::optional<base::Value::Dict> dict = Schema::ParseToDictAndValidate(
+  std::optional<base::Value::Dict> dict = Schema::ParseToDictAndValidate(
       content, kSchemaOptionsIgnoreUnknownAttributes, error);
   if (!dict.has_value())
     return Schema();
@@ -1486,7 +1484,7 @@ Schema Schema::Parse(const std::string& content, std::string* error) {
 }
 
 // static
-absl::optional<base::Value::Dict> Schema::ParseToDictAndValidate(
+std::optional<base::Value::Dict> Schema::ParseToDictAndValidate(
     const std::string& schema,
     int validator_options,
     std::string* error) {
@@ -1496,15 +1494,15 @@ absl::optional<base::Value::Dict> Schema::ParseToDictAndValidate(
 
   if (!value_with_error.has_value()) {
     *error = value_with_error.error().message;
-    return absl::nullopt;
+    return std::nullopt;
   }
   base::Value json = std::move(*value_with_error);
   if (!json.is_dict()) {
     *error = "Schema must be a JSON object";
-    return absl::nullopt;
+    return std::nullopt;
   }
   if (!IsValidSchema(json.GetDict(), validator_options, error)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   return std::move(json).TakeDict();
 }

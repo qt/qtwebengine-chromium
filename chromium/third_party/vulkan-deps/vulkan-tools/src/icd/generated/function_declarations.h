@@ -230,7 +230,9 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_fragment_shading_rate", 2},
     {"VK_AMD_shader_core_properties2", 1},
     {"VK_AMD_device_coherent_memory", 1},
+    {"VK_KHR_dynamic_rendering_local_read", 1},
     {"VK_EXT_shader_image_atomic_int64", 1},
+    {"VK_KHR_shader_quad_control", 1},
     {"VK_KHR_spirv_1_4", 1},
     {"VK_EXT_memory_budget", 1},
     {"VK_EXT_memory_priority", 1},
@@ -257,6 +259,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_KHR_pipeline_executable_properties", 1},
     {"VK_EXT_host_image_copy", 1},
     {"VK_KHR_map_memory2", 1},
+    {"VK_EXT_map_memory_placed", 1},
     {"VK_EXT_shader_atomic_float2", 1},
     {"VK_EXT_swapchain_maintenance1", 1},
     {"VK_EXT_shader_demote_to_helper_invocation", 1},
@@ -281,7 +284,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_QCOM_render_pass_store_ops", 2},
     {"VK_NV_cuda_kernel_launch", 2},
     {"VK_NV_low_latency", 1},
-    {"VK_EXT_metal_objects", 1},
+    {"VK_EXT_metal_objects", 2},
     {"VK_KHR_synchronization2", 1},
     {"VK_EXT_descriptor_buffer", 1},
     {"VK_EXT_graphics_pipeline_library", 1},
@@ -338,6 +341,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_pageable_device_local_memory", 1},
     {"VK_KHR_maintenance4", 2},
     {"VK_ARM_shader_core_properties", 1},
+    {"VK_KHR_shader_subgroup_rotate", 2},
     {"VK_ARM_scheduling_controls", 1},
     {"VK_EXT_image_sliced_view_of_3d", 1},
     {"VK_VALVE_descriptor_set_host_mapping", 1},
@@ -349,6 +353,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_memory_decompression", 1},
     {"VK_NV_device_generated_commands_compute", 2},
     {"VK_NV_linear_color_attachment", 1},
+    {"VK_KHR_shader_maximal_reconvergence", 1},
     {"VK_EXT_image_compression_control_swapchain", 1},
     {"VK_QCOM_image_processing", 1},
     {"VK_EXT_nested_command_buffer", 1},
@@ -358,7 +363,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_shader_module_identifier", 1},
     {"VK_EXT_rasterization_order_attachment_access", 1},
     {"VK_NV_optical_flow", 1},
-    {"VK_EXT_legacy_dithering", 1},
+    {"VK_EXT_legacy_dithering", 2},
     {"VK_EXT_pipeline_protected_access", 1},
     {"VK_ANDROID_external_format_resolve", 1},
     {"VK_KHR_maintenance5", 1},
@@ -370,12 +375,14 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_ray_tracing_invocation_reorder", 1},
     {"VK_NV_extended_sparse_address_space", 1},
     {"VK_EXT_mutable_descriptor_type", 1},
+    {"VK_EXT_legacy_vertex_attributes", 1},
     {"VK_ARM_shader_core_builtins", 2},
     {"VK_EXT_pipeline_library_group_handles", 1},
     {"VK_EXT_dynamic_rendering_unused_attachments", 1},
     {"VK_NV_low_latency2", 2},
     {"VK_KHR_cooperative_matrix", 2},
     {"VK_QCOM_multiview_per_view_render_areas", 1},
+    {"VK_KHR_video_decode_av1", 1},
     {"VK_KHR_video_maintenance1", 1},
     {"VK_NV_per_stage_descriptor_set", 1},
     {"VK_QCOM_image_processing2", 1},
@@ -384,11 +391,19 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_QCOM_filter_cubic_clamp", 1},
     {"VK_EXT_attachment_feedback_loop_dynamic_state", 1},
     {"VK_KHR_vertex_attribute_divisor", 1},
+    {"VK_KHR_load_store_op_none", 1},
+    {"VK_KHR_shader_float_controls2", 1},
     {"VK_QNX_external_memory_screen_buffer", 1},
     {"VK_MSFT_layered_driver", 1},
+    {"VK_KHR_index_type_uint8", 1},
+    {"VK_KHR_line_rasterization", 1},
     {"VK_KHR_calibrated_timestamps", 1},
+    {"VK_KHR_shader_expect_assume", 1},
     {"VK_KHR_maintenance6", 1},
     {"VK_NV_descriptor_pool_overallocation", 1},
+    {"VK_NV_raw_access_chains", 1},
+    {"VK_NV_shader_atomic_float16_vector", 1},
+    {"VK_NV_ray_tracing_validation", 1},
 };
 
 
@@ -2256,6 +2271,16 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetFragmentShadingRateKHR(
     const VkFragmentShadingRateCombinerOpKHR    combinerOps[2]);
 
 
+static VKAPI_ATTR void VKAPI_CALL CmdSetRenderingAttachmentLocationsKHR(
+    VkCommandBuffer                             commandBuffer,
+    const VkRenderingAttachmentLocationInfoKHR* pLocationInfo);
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetRenderingInputAttachmentIndicesKHR(
+    VkCommandBuffer                             commandBuffer,
+    const VkRenderingInputAttachmentIndexInfoKHR* pLocationInfo);
+
+
+
 
 
 
@@ -2451,6 +2476,8 @@ static VKAPI_ATTR void VKAPI_CALL GetDeviceImageSparseMemoryRequirementsKHR(
     VkSparseImageMemoryRequirements2*           pSparseMemoryRequirements);
 
 
+
+
 static VKAPI_ATTR void VKAPI_CALL CmdBindIndexBuffer2KHR(
     VkCommandBuffer                             commandBuffer,
     VkBuffer                                    buffer,
@@ -2484,6 +2511,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixProperti
 
 
 
+
+
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetLineStippleKHR(
+    VkCommandBuffer                             commandBuffer,
+    uint32_t                                    lineStippleFactor,
+    uint16_t                                    lineStipplePattern);
+
+
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCalibrateableTimeDomainsKHR(
     VkPhysicalDevice                            physicalDevice,
     uint32_t*                                   pTimeDomainCount,
@@ -2495,6 +2532,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetCalibratedTimestampsKHR(
     const VkCalibratedTimestampInfoKHR*         pTimestampInfos,
     uint64_t*                                   pTimestamps,
     uint64_t*                                   pMaxDeviation);
+
 
 
 static VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorSets2KHR(
@@ -3460,6 +3498,7 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2EXT(
 
 
 
+
 static VKAPI_ATTR VkResult VKAPI_CALL ReleaseSwapchainImagesEXT(
     VkDevice                                    device,
     const VkReleaseSwapchainImagesInfoEXT*      pReleaseInfo);
@@ -4035,10 +4074,6 @@ static VKAPI_ATTR VkDeviceAddress VKAPI_CALL GetPipelineIndirectDeviceAddressNV(
 
 
 
-static VKAPI_ATTR void VKAPI_CALL CmdSetTessellationDomainOriginEXT(
-    VkCommandBuffer                             commandBuffer,
-    VkTessellationDomainOrigin                  domainOrigin);
-
 static VKAPI_ATTR void VKAPI_CALL CmdSetDepthClampEnableEXT(
     VkCommandBuffer                             commandBuffer,
     VkBool32                                    depthClampEnable);
@@ -4085,6 +4120,10 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetColorWriteMaskEXT(
     uint32_t                                    firstAttachment,
     uint32_t                                    attachmentCount,
     const VkColorComponentFlags*                pColorWriteMasks);
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetTessellationDomainOriginEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkTessellationDomainOrigin                  domainOrigin);
 
 static VKAPI_ATTR void VKAPI_CALL CmdSetRasterizationStreamEXT(
     VkCommandBuffer                             commandBuffer,
@@ -4267,6 +4306,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetDynamicRenderingTilePropertiesQCOM(
 
 
 
+
 static VKAPI_ATTR VkResult VKAPI_CALL SetLatencySleepModeNV(
     VkDevice                                    device,
     VkSwapchainKHR                              swapchain,
@@ -4309,6 +4349,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetScreenBufferPropertiesQNX(
     const struct _screen_buffer*                buffer,
     VkScreenBufferPropertiesQNX*                pProperties);
 #endif /* VK_USE_PLATFORM_SCREEN_QNX */
+
+
+
 
 
 
@@ -4830,6 +4873,8 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkSignalSemaphoreKHR", (void*)SignalSemaphoreKHR},
     {"vkGetPhysicalDeviceFragmentShadingRatesKHR", (void*)GetPhysicalDeviceFragmentShadingRatesKHR},
     {"vkCmdSetFragmentShadingRateKHR", (void*)CmdSetFragmentShadingRateKHR},
+    {"vkCmdSetRenderingAttachmentLocationsKHR", (void*)CmdSetRenderingAttachmentLocationsKHR},
+    {"vkCmdSetRenderingInputAttachmentIndicesKHR", (void*)CmdSetRenderingInputAttachmentIndicesKHR},
     {"vkWaitForPresentKHR", (void*)WaitForPresentKHR},
     {"vkGetBufferDeviceAddressKHR", (void*)GetBufferDeviceAddressKHR},
     {"vkGetBufferOpaqueCaptureAddressKHR", (void*)GetBufferOpaqueCaptureAddressKHR},
@@ -4870,6 +4915,7 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkGetDeviceImageSubresourceLayoutKHR", (void*)GetDeviceImageSubresourceLayoutKHR},
     {"vkGetImageSubresourceLayout2KHR", (void*)GetImageSubresourceLayout2KHR},
     {"vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR", (void*)GetPhysicalDeviceCooperativeMatrixPropertiesKHR},
+    {"vkCmdSetLineStippleKHR", (void*)CmdSetLineStippleKHR},
     {"vkGetPhysicalDeviceCalibrateableTimeDomainsKHR", (void*)GetPhysicalDeviceCalibrateableTimeDomainsKHR},
     {"vkGetCalibratedTimestampsKHR", (void*)GetCalibratedTimestampsKHR},
     {"vkCmdBindDescriptorSets2KHR", (void*)CmdBindDescriptorSets2KHR},
@@ -5184,7 +5230,6 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkGetPipelineIndirectMemoryRequirementsNV", (void*)GetPipelineIndirectMemoryRequirementsNV},
     {"vkCmdUpdatePipelineIndirectBufferNV", (void*)CmdUpdatePipelineIndirectBufferNV},
     {"vkGetPipelineIndirectDeviceAddressNV", (void*)GetPipelineIndirectDeviceAddressNV},
-    {"vkCmdSetTessellationDomainOriginEXT", (void*)CmdSetTessellationDomainOriginEXT},
     {"vkCmdSetDepthClampEnableEXT", (void*)CmdSetDepthClampEnableEXT},
     {"vkCmdSetPolygonModeEXT", (void*)CmdSetPolygonModeEXT},
     {"vkCmdSetRasterizationSamplesEXT", (void*)CmdSetRasterizationSamplesEXT},
@@ -5195,6 +5240,7 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkCmdSetColorBlendEnableEXT", (void*)CmdSetColorBlendEnableEXT},
     {"vkCmdSetColorBlendEquationEXT", (void*)CmdSetColorBlendEquationEXT},
     {"vkCmdSetColorWriteMaskEXT", (void*)CmdSetColorWriteMaskEXT},
+    {"vkCmdSetTessellationDomainOriginEXT", (void*)CmdSetTessellationDomainOriginEXT},
     {"vkCmdSetRasterizationStreamEXT", (void*)CmdSetRasterizationStreamEXT},
     {"vkCmdSetConservativeRasterizationModeEXT", (void*)CmdSetConservativeRasterizationModeEXT},
     {"vkCmdSetExtraPrimitiveOverestimationSizeEXT", (void*)CmdSetExtraPrimitiveOverestimationSizeEXT},

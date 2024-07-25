@@ -164,6 +164,14 @@ class CORE_EXPORT ViewTransitionUtils {
   // exists.
   static ViewTransition* GetTransition(const Document& document);
 
+  // Return the incoming cross-document view transition, if one exists.
+  static ViewTransition* GetIncomingCrossDocumentTransition(
+      const Document& document);
+
+  // Return the outgoing cross-document view transition, if one exists.
+  static ViewTransition* GetOutgoingCrossDocumentTransition(
+      const Document& document);
+
   // If the given document has an in-progress view transition, this will return
   // the script delegate associated with that view transition (which may be
   // null).
@@ -181,10 +189,6 @@ class CORE_EXPORT ViewTransitionUtils {
   // Returns true if the given layout object corresponds to the root
   // ::view-transition pseudo element of a view transition hierarchy.
   static bool IsViewTransitionRoot(const LayoutObject& object);
-
-  // Returns true if this object represents an element that is a view transition
-  // participant.
-  static bool IsViewTransitionParticipant(const LayoutObject& object);
 
   // Returns true if this element is a view transition participant. This is a
   // slow check that walks all of the view transition elements in the

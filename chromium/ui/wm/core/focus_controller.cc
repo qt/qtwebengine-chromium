@@ -4,6 +4,8 @@
 
 #include "ui/wm/core/focus_controller.h"
 
+#include <string_view>
+
 #include "base/auto_reset.h"
 #include "base/observer_list.h"
 #include "ui/aura/client/aura_constants.h"
@@ -152,7 +154,7 @@ void FocusController::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
-base::StringPiece FocusController::GetLogContext() const {
+std::string_view FocusController::GetLogContext() const {
   return "FocusController";
 }
 
@@ -341,8 +343,8 @@ bool FocusController::SetActiveWindow(
   if (window)
     DCHECK_EQ(window, rules_->GetActivatableWindow(window));
 
-  base::AutoReset<absl::optional<aura::Window*>> updating_activation(
-      &pending_activation_, absl::make_optional(window));
+  base::AutoReset<std::optional<aura::Window*>> updating_activation(
+      &pending_activation_, std::make_optional(window));
   aura::Window* lost_activation = active_window_;
   // Allow for the window losing activation to be deleted during dispatch. If
   // it is deleted pass NULL to observers instead of a deleted window.

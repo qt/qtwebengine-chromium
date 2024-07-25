@@ -21,6 +21,7 @@
 #include "components/password_manager/core/browser/password_manager_driver.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_requirements_service.h"
+#include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "url/gurl.h"
 
@@ -107,11 +108,29 @@ bool PasswordGenerationFrameHelper::IsGenerationEnabled(
   if (url.DomainIs("google.com"))
     return false;
 
+  if (!password_manager_util::IsAbleToSavePasswords(client_)) {
+    if (logger) {
+      logger->LogMessage(
+          Logger::STRING_GENERATION_DISABLED_NOT_ABLE_TO_SAVE_PASSWORDS);
+    }
+    return false;
+  }
+
   if (!client_->IsSavingAndFillingEnabled(url)) {
     if (logger)
       logger->LogMessage(Logger::STRING_GENERATION_DISABLED_SAVING_DISABLED);
     return false;
   }
+
+#if BUILDFLAG(IS_ANDROID)
+  if (client_->GetPasswordFeatureManager()->ShouldUpdateGmsCore()) {
+    if (logger) {
+      logger->LogMessage(
+          Logger::STRING_GENERATION_DISABLED_CHROME_DOES_NOT_SYNC_PASSWORDS);
+    }
+    return false;
+  }
+#endif
 
   if (client_->GetPasswordFeatureManager()->IsGenerationEnabled())
     return true;

@@ -84,6 +84,8 @@ class WebContentsViewAndroid : public WebContentsView,
   void OnCapturerCountChanged() override;
   void FullscreenStateChanged(bool is_fullscreen) override;
   void UpdateWindowControlsOverlay(const gfx::Rect& bounding_rect) override;
+  BackForwardTransitionAnimationManager*
+  GetBackForwardTransitionAnimationManager() override;
 
   // Backend implementation of RenderViewHostDelegateView.
   void ShowContextMenu(RenderFrameHost& render_frame_host,
@@ -149,7 +151,7 @@ class WebContentsViewAndroid : public WebContentsView,
   // `true` means the screenshot will be placed right above
   // `parent_for_web_page_widgets_`; `false` means right below it.
   //
-  // TODO(crbug/1488075): The boolean might not be enough if
+  // TODO(crbug.com/40283503): The boolean might not be enough if
   // `parent_for_web_page_widgets_` has more siblings, and we need finer control
   // of the position.
   void AddScreenshotLayerForNavigationTransitions(
@@ -164,10 +166,6 @@ class WebContentsViewAndroid : public WebContentsView,
   }
 
   WebContentsImpl* web_contents() { return web_contents_; }
-
-  // Guaranteed non-null if `features::kBackForwardTransitions` is enabled.
-  BackForwardTransitionAnimationManagerAndroid*
-  back_forward_animation_manager();
 
  private:
   void OnDragEntered(const std::vector<DropData::Metadata>& metadata,
@@ -214,7 +212,7 @@ class WebContentsViewAndroid : public WebContentsView,
   //   |                |- Overscroll
   //   |                |- SelectionHandle
   //   |
-  //   |- `NavigationEntryScreenshot`  // TODO(https://crbug.com/1509888)
+  //   |- `NavigationEntryScreenshot`
   //
   // ViewAndroid hierarchy:
   // `view_`

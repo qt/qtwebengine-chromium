@@ -12,9 +12,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/time/time.h"
-#include "components/subresource_filter/content/common/subresource_filter_utils.h"
 #include "components/subresource_filter/content/renderer/unverified_ruleset_dealer.h"
-#include "components/subresource_filter/content/renderer/web_document_subresource_filter_impl.h"
+#include "components/subresource_filter/content/shared/common/subresource_filter_utils.h"
+#include "components/subresource_filter/content/shared/renderer/web_document_subresource_filter_impl.h"
 #include "components/subresource_filter/core/common/document_subresource_filter.h"
 #include "components/subresource_filter/core/common/memory_mapped_ruleset.h"
 #include "components/subresource_filter/core/common/scoped_timers.h"
@@ -182,7 +182,7 @@ void SubresourceFilterAgent::SetAdEvidence(
   render_frame()->GetWebFrame()->SetAdEvidence(ad_evidence);
 }
 
-const absl::optional<blink::FrameAdEvidence>&
+const std::optional<blink::FrameAdEvidence>&
 SubresourceFilterAgent::AdEvidence() {
   return render_frame()->GetWebFrame()->AdEvidence();
 }
@@ -262,7 +262,7 @@ void SubresourceFilterAgent::OnSubresourceFilterAgentRequest(
 
 void SubresourceFilterAgent::ActivateForNextCommittedLoad(
     mojom::ActivationStatePtr activation_state,
-    const absl::optional<blink::FrameAdEvidence>& ad_evidence) {
+    const std::optional<blink::FrameAdEvidence>& ad_evidence) {
   activation_state_for_next_document_ = *activation_state;
   if (IsSubresourceFilterChild()) {
     DCHECK(ad_evidence.has_value());

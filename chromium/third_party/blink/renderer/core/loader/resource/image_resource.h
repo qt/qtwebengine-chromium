@@ -62,7 +62,7 @@ class CORE_EXPORT ImageResource final
 
   // TODO(hiroshige): Make Create() test-only by refactoring ImageDocument.
   static ImageResource* Create(const ResourceRequest&,
-                               scoped_refptr<const DOMWrapperWorld> world);
+                               const DOMWrapperWorld* world);
   static ImageResource* CreateForTest(const KURL&);
 
   ImageResource(const ResourceRequest&,
@@ -85,7 +85,7 @@ class CORE_EXPORT ImageResource final
   scoped_refptr<const SharedBuffer> ResourceBuffer() const override;
   void NotifyStartLoad() override;
   void ResponseReceived(const ResourceResponse&) override;
-  void AppendData(const char*, size_t) override;
+  void AppendData(base::span<const char>) override;
   void Finish(base::TimeTicks finish_time,
               base::SingleThreadTaskRunner*) override;
   void FinishAsError(const ResourceError&,

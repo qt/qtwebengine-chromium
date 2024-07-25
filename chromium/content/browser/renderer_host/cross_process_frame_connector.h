@@ -45,6 +45,7 @@ namespace content {
 class RenderFrameHostImpl;
 class RenderFrameProxyHost;
 class RenderWidgetHostViewBase;
+class RenderWidgetHostViewInput;
 class RenderWidgetHostViewChildFrame;
 
 // CrossProcessFrameConnector provides the platform view abstraction for
@@ -99,7 +100,7 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
   // above.
   RenderWidgetHostViewChildFrame* get_view_for_testing() { return view_; }
 
-  void SetView(RenderWidgetHostViewChildFrame* view);
+  void SetView(RenderWidgetHostViewChildFrame* view, bool allow_paint_holding);
 
   // Returns the parent RenderWidgetHostView or nullptr if it doesn't have one.
   virtual RenderWidgetHostViewBase* GetParentRenderWidgetHostView();
@@ -124,6 +125,8 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
   void SynchronizeVisualProperties(
       const blink::FrameVisualProperties& visual_properties,
       bool propagate = true);
+
+  double zoom_level() const { return last_received_zoom_level_; }
 
   // Return the size of the CompositorFrame to use in the child renderer.
   const gfx::Size& local_frame_size_in_pixels() const {
@@ -158,9 +161,11 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
   // Transform a point into the coordinate space of the root
   // RenderWidgetHostView, for the current view's coordinate space.
   // Returns false if |target_view| and |view_| do not have the same root
-  // RenderWidgetHostView.
+  // RenderWidgetHostView. RenderWidgetHostViewInput is the abstract class that
+  // defines the interface for handling user input and is one to one with
+  // RenderWidgetHostViewBase in the browser.
   bool TransformPointToCoordSpaceForView(const gfx::PointF& point,
-                                         RenderWidgetHostViewBase* target_view,
+                                         RenderWidgetHostViewInput* target_view,
                                          const viz::SurfaceId& local_surface_id,
                                          gfx::PointF* transformed_point);
 
@@ -186,17 +191,18 @@ class CONTENT_EXPORT CrossProcessFrameConnector {
   // Cause the root RenderWidgetHostView to become focused.
   void FocusRootView();
 
-  // Locks the mouse, if |request_unadjusted_movement_| is true, try setting the
-  // unadjusted movement mode. Returns true if mouse is locked.
-  blink::mojom::PointerLockResult LockMouse(bool request_unadjusted_movement);
+  // Locks the mouse pointer, if |request_unadjusted_movement_| is true, try
+  // setting the unadjusted movement mode. Returns true if mouse pointer is
+  // locked.
+  blink::mojom::PointerLockResult LockPointer(bool request_unadjusted_movement);
 
-  // Change the current mouse lock to match the unadjusted movement option
+  // Change the current pointer lock to match the unadjusted movement option
   // given.
-  blink::mojom::PointerLockResult ChangeMouseLock(
+  blink::mojom::PointerLockResult ChangePointerLock(
       bool request_unadjusted_movement);
 
-  // Unlocks the mouse if the mouse is locked.
-  void UnlockMouse();
+  // Unlocks the mouse pointer if it is locked.
+  void UnlockPointer();
 
   // Returns the state of the frame's intersection with the top-level viewport.
   const blink::mojom::ViewportIntersectionState& intersection_state() const {

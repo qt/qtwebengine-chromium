@@ -30,7 +30,7 @@ TextAtlasManager::TextAtlasManager(Recorder* recorder)
         , fSupportBilerpAtlas{recorder->priv().caps()->supportBilerpFromGlyphAtlas()}
         , fAtlasConfig{recorder->priv().caps()->maxTextureSize(),
                        recorder->priv().caps()->glyphCacheTextureMaximumBytes()} {
-    if (!recorder->priv().caps()->allowMultipleGlyphCacheTextures() ||
+    if (!recorder->priv().caps()->allowMultipleAtlasTextures() ||
         // multitexturing supported only if range can represent the index + texcoords fully
         !(recorder->priv().caps()->shaderCaps()->fFloatIs32Bits ||
           recorder->priv().caps()->shaderCaps()->fIntegerSupport)) {
@@ -240,9 +240,9 @@ DrawAtlas::ErrorCode TextAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
     return errorCode;
 }
 
-bool TextAtlasManager::recordUploads(UploadList* ul) {
+bool TextAtlasManager::recordUploads(DrawContext* dc) {
     for (int i = 0; i < skgpu::kMaskFormatCount; i++) {
-        if (fAtlases[i] && !fAtlases[i]->recordUploads(ul, fRecorder)) {
+        if (fAtlases[i] && !fAtlases[i]->recordUploads(dc, fRecorder)) {
             return false;
         }
     }
@@ -281,15 +281,25 @@ bool TextAtlasManager::initAtlas(MaskFormat format) {
                                           SkColorTypeBytesPerPixel(colorType),
                                           atlasDimensions.width(), atlasDimensions.height(),
                                           plotDimensions.width(), plotDimensions.height(),
-                                          this,
+                                          /*generationCounter=*/this,
                                           fAllowMultitexturing,
-                                          nullptr,
+                                          DrawAtlas::UseStorageTextures::kNo,
+                                          /*evictor=*/nullptr,
                                           /*label=*/"TextAtlas");
         if (!fAtlases[index]) {
             return false;
         }
     }
     return true;
+}
+
+void TextAtlasManager::postFlush() {
+    auto tokenTracker = fRecorder->priv().tokenTracker();
+    for (int i = 0; i < kMaskFormatCount; ++i) {
+        if (fAtlases[i]) {
+            fAtlases[i]->compact(tokenTracker->nextFlushToken());
+        }
+    }
 }
 
 }  // namespace skgpu::graphite

@@ -29,6 +29,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/eval.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "formats.h"
@@ -86,12 +87,12 @@ static const AVOption geq_options[] = {
     { "g",          "set green expression",       OFFSET(expr_str[G]), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
     { "blue_expr",  "set blue expression",        OFFSET(expr_str[B]), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
     { "b",          "set blue expression",        OFFSET(expr_str[B]), AV_OPT_TYPE_STRING, {.str=NULL}, 0, 0, FLAGS },
-    { "interpolation","set interpolation method", OFFSET(interpolation), AV_OPT_TYPE_INT, {.i64=INTERP_BILINEAR}, 0, NB_INTERP-1, FLAGS, "interp" },
-    { "i",          "set interpolation method",   OFFSET(interpolation), AV_OPT_TYPE_INT, {.i64=INTERP_BILINEAR}, 0, NB_INTERP-1, FLAGS, "interp" },
-    { "nearest",    "nearest interpolation",      0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_NEAREST},  0, 0, FLAGS, "interp" },
-    { "n",          "nearest interpolation",      0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_NEAREST},  0, 0, FLAGS, "interp" },
-    { "bilinear",   "bilinear interpolation",     0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_BILINEAR}, 0, 0, FLAGS, "interp" },
-    { "b",          "bilinear interpolation",     0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_BILINEAR}, 0, 0, FLAGS, "interp" },
+    { "interpolation","set interpolation method", OFFSET(interpolation), AV_OPT_TYPE_INT, {.i64=INTERP_BILINEAR}, 0, NB_INTERP-1, FLAGS, .unit = "interp" },
+    { "i",          "set interpolation method",   OFFSET(interpolation), AV_OPT_TYPE_INT, {.i64=INTERP_BILINEAR}, 0, NB_INTERP-1, FLAGS, .unit = "interp" },
+    { "nearest",    "nearest interpolation",      0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_NEAREST},  0, 0, FLAGS, .unit = "interp" },
+    { "n",          "nearest interpolation",      0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_NEAREST},  0, 0, FLAGS, .unit = "interp" },
+    { "bilinear",   "bilinear interpolation",     0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_BILINEAR}, 0, 0, FLAGS, .unit = "interp" },
+    { "b",          "bilinear interpolation",     0,                   AV_OPT_TYPE_CONST, {.i64=INTERP_BILINEAR}, 0, 0, FLAGS, .unit = "interp" },
     {NULL},
 };
 

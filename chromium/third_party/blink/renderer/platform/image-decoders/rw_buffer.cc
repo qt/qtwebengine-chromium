@@ -24,8 +24,7 @@ static const size_t kMinAllocSize = 4096;
 }  // namespace
 
 struct RWBuffer::BufferBlock {
-  raw_ptr<RWBuffer::BufferBlock, ExperimentalRenderer>
-      next_;                     // updated by the writer
+  raw_ptr<RWBuffer::BufferBlock> next_;  // updated by the writer
   size_t used_;                  // updated by the writer
   const size_t capacity_;
 
@@ -197,7 +196,8 @@ ROBuffer::ROBuffer(const RWBuffer::BufferHead* head,
 
 ROBuffer::~ROBuffer() {
   if (head_) {
-    head_->unref();
+    tail_ = nullptr;
+    head_.ExtractAsDangling()->unref();
   }
 }
 
@@ -272,7 +272,8 @@ RWBuffer::RWBuffer(base::OnceCallback<size_t(void*, size_t)> writer,
 RWBuffer::~RWBuffer() {
   Validate();
   if (head_) {
-    head_->unref();
+    tail_ = nullptr;
+    head_.ExtractAsDangling()->unref();
   }
 }
 

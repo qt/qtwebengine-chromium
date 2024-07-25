@@ -7,13 +7,14 @@
 #ifndef CORE_FXCODEC_JPEG_JPEGMODULE_H_
 #define CORE_FXCODEC_JPEG_JPEGMODULE_H_
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/base/containers/span.h"
+#include "core/fxcrt/span.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "core/fxcrt/retain_ptr.h"
@@ -42,7 +43,7 @@ class JpegModule {
       int nComps,
       bool ColorTransform);
 
-  static absl::optional<ImageInfo> LoadInfo(
+  static std::optional<ImageInfo> LoadInfo(
       pdfium::span<const uint8_t> src_span);
 
 #if BUILDFLAG(IS_WIN)

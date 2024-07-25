@@ -15,6 +15,7 @@
 #include "base/observer_list.h"
 #include "components/password_manager/core/browser/form_fetcher.h"
 #include "components/password_manager/core/browser/http_password_store_migrator.h"
+#include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend_error.h"
 #include "components/password_manager/core/browser/password_store/password_store_consumer.h"
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
@@ -60,14 +61,18 @@ class FormFetcherImpl : public FormFetcher,
 
   const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
   GetAllRelevantMatches() const override;
-  const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-  GetBestMatches() const override;
+  base::span<const PasswordForm> GetBestMatches() const override;
   const PasswordForm* GetPreferredMatch() const override;
   std::unique_ptr<FormFetcher> Clone() override;
   std::optional<PasswordStoreBackendError> GetProfileStoreBackendError()
       const override;
   std::optional<PasswordStoreBackendError> GetAccountStoreBackendError()
       const override;
+  bool WereGroupedCredentialsAvailable() const override;
+
+  inline void set_filter_grouped_credentials(bool filter_grouped_credentials) {
+    filter_grouped_credentials_ = filter_grouped_credentials;
+  }
 
  protected:
   // Actually finds best matches and notifies consumers.
@@ -136,12 +141,17 @@ class FormFetcherImpl : public FormFetcher,
 
   // Set of nonblocklisted PasswordForms from the password store that best match
   // the form being managed by |this|.
-  std::vector<raw_ptr<const PasswordForm, VectorExperimental>> best_matches_;
+  std::vector<PasswordForm> best_matches_;
 
   // Whether there were any blocklisted credentials obtained from the profile
   // and account password stores respectively.
   bool is_blocklisted_in_profile_store_ = false;
   bool is_blocklisted_in_account_store_ = false;
+
+  // Defines if the grouped (weakly affiliated) credentials should be filtered
+  // out from the password forms returned by any password store queried by this
+  // form fetcher.
+  bool filter_grouped_credentials_ = true;
 
   int wait_counter_ = 0;
   std::vector<std::unique_ptr<PasswordForm>> partial_results_;
@@ -157,6 +167,10 @@ class FormFetcherImpl : public FormFetcher,
   // PasswordStore.
   std::optional<PasswordStoreBackendError> profile_store_backend_error_;
   std::optional<PasswordStoreBackendError> account_store_backend_error_;
+
+  // Stores information whether grouped credentials were available, but were
+  // filtered out.
+  bool were_grouped_credentials_availible_ = false;
 
   base::WeakPtrFactory<FormFetcherImpl> weak_ptr_factory_{this};
 };

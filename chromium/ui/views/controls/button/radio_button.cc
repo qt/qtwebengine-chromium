@@ -18,6 +18,7 @@
 #include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/focus_ring.h"
 #include "ui/views/resources/grit/views_resources.h"
 #include "ui/views/vector_icons.h"
@@ -57,7 +58,7 @@ View* RadioButton::GetSelectedViewForGroup(int group) {
 
 bool RadioButton::HandleAccessibleAction(const ui::AXActionData& action_data) {
   if (action_data.action == ax::mojom::Action::kFocus) {
-    if (IsAccessibilityFocusable()) {
+    if (GetViewAccessibility().IsAccessibilityFocusable()) {
       base::AutoReset<bool> reset(&select_on_focus_, false);
       RequestFocus();
       return true;
@@ -141,7 +142,8 @@ gfx::ImageSkia RadioButton::GetImage(ButtonState for_state) const {
 
 SkPath RadioButton::GetFocusRingPath() const {
   SkPath path;
-  const gfx::Point center = image()->GetMirroredBounds().CenterPoint();
+  const gfx::Point center =
+      image_container_view()->GetMirroredBounds().CenterPoint();
   path.addCircle(center.x(), center.y(), kFocusRingRadius);
   return path;
 }

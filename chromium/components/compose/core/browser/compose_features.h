@@ -25,8 +25,17 @@ BASE_DECLARE_FEATURE(kComposeAutoSubmit);
 // Force compose off even if enabled by other switches..
 BASE_DECLARE_FEATURE(kComposeEligible);
 
-// Controls whether or not the Nudge UI entrypoint is enabled for Compose.
-BASE_DECLARE_FEATURE(kEnableComposeNudge);
+// Controls whether or not the saved state nudge is enabled.
+BASE_DECLARE_FEATURE(kEnableComposeSavedStateNudge);
+
+// Controls whether or not the proactive nudge is enabled.
+BASE_DECLARE_FEATURE(kEnableComposeProactiveNudge);
+
+// Controls whether or not the saved state notification is shown.
+BASE_DECLARE_FEATURE(kEnableComposeSavedStateNotification);
+
+// Controls whether or not the nudge displays at the cursor.
+BASE_DECLARE_FEATURE(kEnableComposeNudgeAtCursor);
 
 // Controls whether the language check is bypassed for Compose.
 BASE_DECLARE_FEATURE(kEnableComposeLanguageBypass);
@@ -38,11 +47,26 @@ BASE_DECLARE_FEATURE(kEnableComposeWebUIAnimations);
 // used.
 BASE_DECLARE_FEATURE(kEnableComposeOnDeviceDogfoodFooter);
 
-// Controls whether or not the saved state notification is shown.
-BASE_DECLARE_FEATURE(kEnableComposeSavedStateNotification);
-
 // Controls parameters around UI rendering.
 BASE_DECLARE_FEATURE(kComposeUiParams);
+
+// Enables animation of text output. Applies only to on-device evaluation.
+BASE_DECLARE_FEATURE(kComposeTextOutputAnimation);
+
+// Constrols parameters around text selection and insert/replacement heuristics.
+BASE_DECLARE_FEATURE(kComposeTextSelection);
+
+// Enables client-side timeout of a Compose request.
+BASE_DECLARE_FEATURE(kComposeRequestLatencyTimeout);
+
+// Enables enhanced compose dialog UI.
+BASE_DECLARE_FEATURE(kComposeUiRefinement);
+
+// Default nudge allow/deny decision for unspecified hint.
+BASE_DECLARE_FEATURE(kEnableNudgeForUnspecifiedHint);
+
+// A kill switch for additional metrics added to ComposeTextUsageLogger.
+BASE_DECLARE_FEATURE(kEnableAdditionalTextMetrics);
 
 }  // namespace compose::features
 

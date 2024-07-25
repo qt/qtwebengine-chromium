@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
  */
 #pragma once
 
-#include "state_tracker/buffer_state.h"
-#include "state_tracker/cmd_buffer_state.h"
-
 #include "sync/sync_access_context.h"
+#include <vulkan/utility/vk_safe_struct.hpp>
 
 class CommandBufferAccessContext;
 class CommandExecutionContext;
 class RenderPassAccessContext;
 class ReplayState;
+
+namespace vvl {
+class ImageView;
+class RenderPass;
+class CommandBuffer;
+}  // namespace vvl
 
 using SyncMemoryBarrier = SyncBarrier;
 
@@ -54,10 +58,7 @@ struct SyncEventState {
     SyncEventState(const SyncEventState &) = default;
     SyncEventState(SyncEventState &&) = default;
 
-    SyncEventState(const SyncEventState::EventPointer &event_state) : SyncEventState() {
-        event = event_state;
-        destroyed = (event.get() == nullptr) || event_state->Destroyed();
-    }
+    SyncEventState(const SyncEventState::EventPointer &event_state);
 
     void ResetFirstScope();
     const AccessContext::ScopeMap &FirstScope() const { return first_scope->GetAccessStateMap(); }
@@ -301,7 +302,7 @@ class SyncOpSetEvent : public SyncOpBase {
     std::shared_ptr<const AccessContext> recorded_context_;
     SyncExecScope src_exec_scope_;
     // Note that the dep info is *not* dehandled, but retained for comparison with a future WaitEvents2
-    std::shared_ptr<safe_VkDependencyInfo> dep_info_;
+    std::shared_ptr<vku::safe_VkDependencyInfo> dep_info_;
 };
 
 class SyncOpBeginRenderPass : public SyncOpBase {
@@ -317,8 +318,8 @@ class SyncOpBeginRenderPass : public SyncOpBase {
     const RenderPassAccessContext *GetRenderPassAccessContext() const { return rp_context_; }
 
   protected:
-    safe_VkRenderPassBeginInfo renderpass_begin_info_;
-    safe_VkSubpassBeginInfo subpass_begin_info_;
+    vku::safe_VkRenderPassBeginInfo renderpass_begin_info_;
+    vku::safe_VkSubpassBeginInfo subpass_begin_info_;
     std::vector<std::shared_ptr<const vvl::ImageView>> shared_attachments_;
     std::vector<const syncval_state::ImageViewState *> attachments_;
     std::shared_ptr<const vvl::RenderPass> rp_state_;
@@ -337,8 +338,8 @@ class SyncOpNextSubpass : public SyncOpBase {
     void ReplayRecord(CommandExecutionContext &exec_context, ResourceUsageTag exec_tag) const override;
 
   protected:
-    safe_VkSubpassBeginInfo subpass_begin_info_;
-    safe_VkSubpassEndInfo subpass_end_info_;
+    vku::safe_VkSubpassBeginInfo subpass_begin_info_;
+    vku::safe_VkSubpassEndInfo subpass_end_info_;
 };
 
 class SyncOpEndRenderPass : public SyncOpBase {
@@ -352,7 +353,7 @@ class SyncOpEndRenderPass : public SyncOpBase {
     void ReplayRecord(CommandExecutionContext &exec_context, ResourceUsageTag exec_tag) const override;
 
   protected:
-    safe_VkSubpassEndInfo subpass_end_info_;
+    vku::safe_VkSubpassEndInfo subpass_end_info_;
 };
 // The barrier operation for pipeline and subpass dependencies`
 struct PipelineBarrierOp {

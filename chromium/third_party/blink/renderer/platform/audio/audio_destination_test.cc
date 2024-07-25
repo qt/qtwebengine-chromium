@@ -9,6 +9,7 @@
 #include "media/base/audio_glitch_info.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/web_audio_device.h"
 #include "third_party/blink/public/platform/web_audio_latency_hint.h"
 #include "third_party/blink/public/platform/web_audio_sink_descriptor.h"
@@ -38,6 +39,7 @@ class MockWebAudioDevice : public WebAudioDevice {
   double SampleRate() override { return sample_rate_; }
   int FramesPerBuffer() override { return frames_per_buffer_; }
   int MaxChannelCount() override { return 2; }
+  void SetDetectSilence(bool detect_silence) override {}
   media::OutputDeviceStatus CreateSinkAndGetDeviceStatus() override {
     // In this test, we assume the sink creation always succeeds.
     return media::OUTPUT_DEVICE_STATUS_OK;
@@ -90,16 +92,17 @@ class AudioCallback : public AudioIOCallback {
     frames_processed_ += frames_to_process;
   }
 
+  MOCK_METHOD(void, OnRenderError, (), (final));
+
   AudioCallback() = default;
   int frames_processed_ = 0;
 };
 
 class AudioDestinationTest
-    : public ::testing::TestWithParam<absl::optional<float>> {
+    : public ::testing::TestWithParam<std::optional<float>> {
  public:
-  void CountWASamplesProcessedForRate(absl::optional<float> sample_rate) {
+  void CountWASamplesProcessedForRate(std::optional<float> sample_rate) {
     WebAudioLatencyHint latency_hint(WebAudioLatencyHint::kCategoryInteractive);
-    AudioCallback callback;
 
     const int channel_count =
         Platform::Current()->AudioHardwareOutputChannels();
@@ -114,7 +117,7 @@ class AudioDestinationTest
     // AudioContextRenderSizeHintCategory.
     constexpr int render_quantum_frames = 128;
     scoped_refptr<AudioDestination> destination = AudioDestination::Create(
-        callback, sink_descriptor, channel_count, latency_hint, sample_rate,
+        callback_, sink_descriptor, channel_count, latency_hint, sample_rate,
         render_quantum_frames);
     destination->Start();
 
@@ -137,11 +140,19 @@ class AudioDestinationTest
     }
     const int expected_frames_processed =
         std::ceil(exact_frames_required /
-                  static_cast<double>(destination->RenderQuantumFrames())) *
-        destination->RenderQuantumFrames();
+                  static_cast<double>(render_quantum_frames)) *
+        render_quantum_frames;
 
-    EXPECT_EQ(expected_frames_processed, callback.frames_processed_);
+    // TODO(crbug.com/329876634): Replace it so that it tests the path passing
+    // through the bad device_params (`if (!device_params.IsValid())`) in the
+    // constructor of `RendererWebAudioDeviceImpl`.
+    destination->OnRenderError();
+
+    EXPECT_EQ(expected_frames_processed, callback_.frames_processed_);
   }
+
+ protected:
+  AudioCallback callback_;
 };
 
 TEST_P(AudioDestinationTest, ResamplingTest) {
@@ -150,6 +161,10 @@ TEST_P(AudioDestinationTest, ResamplingTest) {
     InSequence s;
 
     EXPECT_CALL(platform->web_audio_device(), Start).Times(1);
+    if (base::FeatureList::IsEnabled(
+            blink::features::kWebAudioHandleOnRenderError)) {
+      EXPECT_CALL(callback_, OnRenderError).Times(1);
+    }
     EXPECT_CALL(platform->web_audio_device(), Stop).Times(1);
   }
 
@@ -158,7 +173,7 @@ TEST_P(AudioDestinationTest, ResamplingTest) {
 
 INSTANTIATE_TEST_SUITE_P(/* no label */,
                          AudioDestinationTest,
-                         ::testing::Values(absl::optional<float>(),
+                         ::testing::Values(std::optional<float>(),
                                            8000,
                                            24000,
                                            44100,

@@ -27,6 +27,12 @@
 #include "third_party/blink/renderer/platform/heap/custom_spaces.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 
+namespace WTF {
+class String;
+}  // namespace WTF
+
+using WTF::String;
+
 namespace blink {
 
 class Document;
@@ -163,11 +169,8 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
   bool IsGridLineNamesValue() const {
     return class_type_ == kGridLineNamesClass;
   }
-  bool IsCustomPropertyDeclaration() const {
-    return class_type_ == kCustomPropertyDeclarationClass;
-  }
-  bool IsVariableReferenceValue() const {
-    return class_type_ == kVariableReferenceClass;
+  bool IsUnparsedDeclaration() const {
+    return class_type_ == kUnparsedDeclarationClass;
   }
   bool IsGridAutoRepeatValue() const {
     return class_type_ == kGridAutoRepeatClass;
@@ -188,6 +191,7 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
   bool IsCyclicVariableValue() const {
     return class_type_ == kCyclicVariableValueClass;
   }
+  bool IsFlipRevertValue() const { return class_type_ == kFlipRevertClass; }
   bool IsAlternateValue() const { return class_type_ == kAlternateClass; }
   bool IsAxisValue() const { return class_type_ == kAxisClass; }
   bool IsShorthandWrapperValue() const {
@@ -198,6 +202,9 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
   }
   bool IsLightDarkValuePair() const {
     return class_type_ == kLightDarkValuePairClass;
+  }
+  bool IsAppearanceAutoBaseSelectValuePair() const {
+    return class_type_ == kAppearanceAutoBaseSelectValuePairClass;
   }
 
   bool IsScrollValue() const { return class_type_ == kScrollClass; }
@@ -247,6 +254,7 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
     kURIClass,
     kValuePairClass,
     kLightDarkValuePairClass,
+    kAppearanceAutoBaseSelectValuePairClass,
     kScrollClass,
     kViewClass,
     kRatioClass,
@@ -300,12 +308,12 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
     kPaletteMixClass,
     kPathClass,
     kRayClass,
-    kVariableReferenceClass,
-    kCustomPropertyDeclarationClass,
+    kUnparsedDeclarationClass,
     kPendingSubstitutionValueClass,
     kPendingSystemFontValueClass,
     kInvalidVariableValueClass,
     kCyclicVariableValueClass,
+    kFlipRevertClass,
     kLayoutFunctionClass,
 
     kCSSContentDistributionClass,
@@ -365,6 +373,11 @@ class CORE_EXPORT CSSValue : public GarbageCollected<CSSValue> {
   // The flag is true if the value contains such references but hasn't been
   // populated with a tree scope.
   uint8_t needs_tree_scope_population_ : 1;  // NOLINT
+
+  // Whether this value originally came from a quirksmode-specific declaration.
+  // Used for use counting of such situations (to see if we can try to remove
+  // the functionality).
+  uint8_t was_quirky_ : 1 = false;
 
  private:
   const uint8_t class_type_;  // ClassType

@@ -69,7 +69,7 @@ export class AudioContextSelector extends Common.ObjectWrapper.ObjectWrapper<Eve
 
   contextDestroyed({data: contextId}: Common.EventTarget.EventTargetEvent<string>): void {
     const contextIndex =
-        this.items.findIndex((context: Protocol.WebAudio.BaseAudioContext): boolean => context.contextId === contextId);
+        this.items.findIndex((context: Protocol.WebAudio.BaseAudioContext) => context.contextId === contextId);
     if (contextIndex > -1) {
       this.items.remove(contextIndex);
     }
@@ -78,7 +78,7 @@ export class AudioContextSelector extends Common.ObjectWrapper.ObjectWrapper<Eve
   contextChanged({data: changedContext}: Common.EventTarget.EventTargetEvent<Protocol.WebAudio.BaseAudioContext>):
       void {
     const contextIndex = this.items.findIndex(
-        (context: Protocol.WebAudio.BaseAudioContext): boolean => context.contextId === changedContext.contextId);
+        (context: Protocol.WebAudio.BaseAudioContext) => context.contextId === changedContext.contextId);
     if (contextIndex > -1) {
       this.items.replace(contextIndex, changedContext);
 
@@ -92,7 +92,7 @@ export class AudioContextSelector extends Common.ObjectWrapper.ObjectWrapper<Eve
 
   createElementForItem(item: Protocol.WebAudio.BaseAudioContext): Element {
     const element = document.createElement('div');
-    const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
+    const shadowRoot = UI.UIUtils.createShadowRootWithCoreStyles(
         element, {cssFile: [audioContextSelectorStyles], delegatesFocus: undefined});
     const title = shadowRoot.createChild('div', 'title');
     UI.UIUtils.createTextChild(title, Platform.StringUtilities.trimEndWithMaxLength(this.titleFor(item), 100));

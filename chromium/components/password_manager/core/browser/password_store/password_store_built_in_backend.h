@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend.h"
 #include "components/password_manager/core/browser/password_store/smart_bubble_stats_store.h"
+#include "components/prefs/pref_service.h"
 #include "components/sync/model/wipe_model_upon_sync_disabled_behavior.h"
 
 namespace base {
@@ -40,6 +41,7 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
       std::unique_ptr<LoginDatabase> login_db,
       syncer::WipeModelUponSyncDisabledBehavior
           wipe_model_upon_sync_disabled_behavior,
+      PrefService* prefs,
       std::unique_ptr<UnsyncedCredentialsDeletionNotifier> notifier = nullptr);
 
   ~PasswordStoreBuiltInBackend() override;
@@ -51,6 +53,7 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
                    base::RepeatingClosure sync_enabled_or_disabled_cb,
                    base::OnceCallback<void(bool)> completion) override;
   void Shutdown(base::OnceClosure shutdown_completed) override;
+  bool IsAbleToSavePasswords() override;
   void GetAllLoginsAsync(LoginsOrErrorReply callback) override;
   void GetAllLoginsWithAffiliationAndBrandingAsync(
       LoginsOrErrorReply callback) override;
@@ -67,13 +70,16 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
                      PasswordChangesOrErrorReply callback) override;
   void UpdateLoginAsync(const PasswordForm& form,
                         PasswordChangesOrErrorReply callback) override;
-  void RemoveLoginAsync(const PasswordForm& form,
+  void RemoveLoginAsync(const base::Location& location,
+                        const PasswordForm& form,
                         PasswordChangesOrErrorReply callback) override;
   void RemoveLoginsCreatedBetweenAsync(
+      const base::Location& location,
       base::Time delete_begin,
       base::Time delete_end,
       PasswordChangesOrErrorReply callback) override;
   void RemoveLoginsByURLAndTimeAsync(
+      const base::Location& location,
       const base::RepeatingCallback<bool(const GURL&)>& url_filter,
       base::Time delete_begin,
       base::Time delete_end,
@@ -83,9 +89,11 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
       const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
       base::OnceClosure completion) override;
   SmartBubbleStatsStore* GetSmartBubbleStatsStore() override;
-  std::unique_ptr<syncer::ProxyModelTypeControllerDelegate>
+  std::unique_ptr<syncer::ModelTypeControllerDelegate>
   CreateSyncControllerDelegate() override;
   void OnSyncServiceInitialized(syncer::SyncService* sync_service) override;
+  void RecordAddLoginAsyncCalledFromTheStore() override;
+  void RecordUpdateLoginAsyncCalledFromTheStore() override;
   base::WeakPtr<PasswordStoreBackend> AsWeakPtr() override;
 
   // SmartBubbleStatsStore:
@@ -108,6 +116,8 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
       LoginsOrErrorReply callback,
       LoginsResultOrError forms_or_error);
 
+  void OnInitComplete(base::OnceCallback<void(bool)> completion, bool result);
+
   // Ensures that all methods are called on the main sequence.
   SEQUENCE_CHECKER(sequence_checker_);
 
@@ -123,6 +133,11 @@ class PasswordStoreBuiltInBackend : public PasswordStoreBackend,
   // TaskRunner for all the background operations.
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_
       GUARDED_BY_CONTEXT(sequence_checker_);
+
+  bool is_database_initialized_successfully_ = false;
+
+  // Used to get information if there are any passwords saved to the login db.
+  raw_ptr<PrefService> pref_service_;
 
   base::WeakPtrFactory<PasswordStoreBuiltInBackend> weak_ptr_factory_{this};
 };

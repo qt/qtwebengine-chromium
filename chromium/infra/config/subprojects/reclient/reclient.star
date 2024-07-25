@@ -2,13 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+load("//console-header.star", "HEADER")
 load("//lib/builder_config.star", "builder_config")
-load("//lib/builders.star", "builders", "cpu", "os", "reclient", "xcode")
+load("//lib/builders.star", "builders", "cpu", "os", "reclient")
 load("//lib/ci.star", "ci")
 load("//lib/consoles.star", "consoles")
 load("//lib/gn_args.star", "gn_args")
 load("//lib/structs.star", "structs")
-load("//console-header.star", "HEADER")
+load("//lib/xcode.star", "xcode")
 
 luci.bucket(
     name = "reclient",
@@ -45,9 +46,23 @@ ci.defaults.set(
     service_account = (
         "chromium-ci-builder@chops-service-accounts.iam.gserviceaccount.com"
     ),
-    siso_configs = ["builder"],
-    siso_enable_cloud_profiler = True,
-    siso_enable_cloud_trace = True,
+    shadow_builderless = True,
+    shadow_free_space = None,
+    shadow_pool = "luci.chromium.try",
+    shadow_service_account = "chromium-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+    siso_enabled = True,
+)
+
+luci.bucket(
+    name = "reclient.shadow",
+    shadows = "reclient",
+    bindings = [
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            groups = ["mdb/foundry-x-team", "mdb/chrome-troopers"],
+        ),
+    ],
+    dynamic = True,
 )
 
 consoles.console_view(
@@ -77,6 +92,8 @@ def fyi_reclient_staging_builder(
         "GOMA_DEPS_CACHE_TABLE_THRESHOLD": "40000",
         "RBE_fast_log_collection": "true",
         "RBE_use_unified_uploads": "true",
+        # TODO(b/297350970): remove once fully rolled out.
+        "RBE_use_round_robin_balancer": "true",
     })
 
     reclient_rewrapper_env = kwargs.pop("reclient_rewrapper_env", {})
@@ -125,6 +142,7 @@ def fyi_reclient_test_builder(
         "RBE_fast_log_collection": "true",
     })
     reclient_rewrapper_env = kwargs.pop("reclient_rewrapper_env", {})
+
     reclient_rewrapper_env.update({
         "RBE_exec_timeout": "15m",
     })
@@ -181,6 +199,9 @@ fyi_reclient_test_builder(
     ),
     os = os.LINUX_DEFAULT,
     console_view_category = "linux",
+    reclient_rewrapper_env = {
+        "RBE_compression_threshold": "0",
+    },
 )
 
 fyi_reclient_test_builder(
@@ -256,7 +277,7 @@ fyi_reclient_staging_builder(
     console_view_category = "mac",
     priority = 35,
     reclient_bootstrap_env = {
-        "GLOG_vmodule": "bridge*=2",
+        "GLOG_vmodule": "depsscannerclient.go=2,main.go=2",
     },
 )
 
@@ -281,12 +302,16 @@ fyi_reclient_test_builder(
     builderless = True,
     cores = None,
     os = os.MAC_DEFAULT,
+    cpu = cpu.ARM64,
     console_view_category = "mac",
     priority = 35,
     reclient_bootstrap_env = {
-        "GLOG_vmodule": "bridge*=2",
+        "GLOG_vmodule": "depsscannerclient.go=2,main.go=2",
     },
     reclient_profiler_service = "reclient-mac",
+    reclient_rewrapper_env = {
+        "RBE_compression_threshold": "0",
+    },
 )
 
 fyi_reclient_staging_builder(
@@ -337,6 +362,9 @@ fyi_reclient_test_builder(
     os = os.WINDOWS_ANY,
     console_view_category = "win",
     execution_timeout = 5 * time.hour,
+    reclient_rewrapper_env = {
+        "RBE_compression_threshold": "0",
+    },
 )
 
 fyi_reclient_staging_builder(
@@ -492,7 +520,6 @@ fyi_reclient_staging_builder(
             "release_builder",
             "reclient",
             "minimal_symbols",
-            "disable_nacl",
         ],
     ),
     builderless = True,
@@ -501,7 +528,7 @@ fyi_reclient_staging_builder(
     console_view_category = "mac",
     priority = 35,
     reclient_bootstrap_env = {
-        "GLOG_vmodule": "bridge*=2",
+        "GLOG_vmodule": "depsscannerclient.go=2,main.go=2",
     },
 )
 
@@ -527,16 +554,16 @@ fyi_reclient_test_builder(
             "release_builder",
             "reclient",
             "minimal_symbols",
-            "disable_nacl",
         ],
     ),
     builderless = True,
-    cores = 12,
+    cores = None,
     os = os.MAC_DEFAULT,
+    cpu = cpu.ARM64,
     console_view_category = "mac",
     priority = 35,
     reclient_bootstrap_env = {
-        "GLOG_vmodule": "bridge*=2",
+        "GLOG_vmodule": "depsscannerclient.go=2,main.go=2",
     },
 )
 
@@ -565,7 +592,7 @@ ci.builder(
     },
     reclient_cache_silo = "Comparison Linux remote links - cache siloed",
     reclient_instance = reclient.instance.TEST_TRUSTED,
-    reclient_jobs = reclient.jobs.DEFAULT,
+    siso_remote_jobs = reclient.jobs.DEFAULT,
 )
 
 # The following 2 builders use the untrusted RBE instance because each instance has its own
@@ -614,6 +641,7 @@ ci.builder(
             apply_configs = ["mb"],
             build_config = builder_config.build_config.RELEASE,
             target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
         ),
     ),
     gn_args = gn_args.config(
@@ -634,13 +662,13 @@ ci.builder(
     reclient_disable_bq_upload = True,
     reclient_ensure_verified = True,
     reclient_instance = reclient.instance.DEFAULT_UNTRUSTED,
-    reclient_jobs = None,
     reclient_rewrapper_env = {
         "RBE_compare": "true",
         "RBE_num_local_reruns": "1",
         "RBE_num_remote_reruns": "1",
     },
     service_account = "chromium-cq-staging-builder@chops-service-accounts.iam.gserviceaccount.com",
+    siso_remote_jobs = None,
 )
 
 # TODO(b/276727069) Remove once developer rollout is done
@@ -674,7 +702,6 @@ ci.builder(
     },
     reclient_ensure_verified = True,
     reclient_instance = reclient.instance.TEST_TRUSTED,
-    reclient_jobs = None,
     reclient_rewrapper_env = {
         "RBE_compare": "true",
         "RBE_num_local_reruns": "1",
@@ -683,6 +710,7 @@ ci.builder(
         "RBE_canonicalize_working_dir": "true",
         "RBE_cache_silo": "Linux Builder (canonical wd) (reclient compare)",
     },
+    siso_remote_jobs = None,
 )
 
 ci.builder(
@@ -704,14 +732,12 @@ ci.builder(
     execution_timeout = 6 * time.hour,
     reclient_bootstrap_env = {
         "RBE_ip_reset_min_delay": "-1s",
-        "RBE_experimental_goma_deps_cache": "true",
-        "RBE_deps_cache_mode": "reproxy",
         "RBE_fast_log_collection": "true",
     },
     reclient_cache_silo = "Comparison Linux - cache siloed",
     reclient_instance = reclient.instance.TEST_TRUSTED,
-    reclient_jobs = reclient.jobs.DEFAULT,
     shadow_reclient_instance = reclient.instance.TEST_UNTRUSTED,
+    siso_remote_jobs = reclient.jobs.DEFAULT,
 )
 
 ci.builder(
@@ -739,14 +765,10 @@ The bot specs should be in sync with <a href="https://ci.chromium.org/p/chromium
     execution_timeout = 6 * time.hour,
     reclient_bootstrap_env = {
         "RBE_ip_reset_min_delay": "-1s",
-        "RBE_experimental_goma_deps_cache": "true",
-        "RBE_deps_cache_mode": "reproxy",
         "RBE_fast_log_collection": "true",
     },
     reclient_cache_silo = "Comparison Linux CQ - cache siloed",
     reclient_instance = reclient.instance.TEST_UNTRUSTED,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
     shadow_reclient_instance = reclient.instance.TEST_UNTRUSTED,
-    siso_enabled = True,
-    siso_project = reclient.instance.TEST_UNTRUSTED,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
 )

@@ -4,28 +4,27 @@
 
 #include "components/attribution_reporting/aggregatable_trigger_data.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "base/check.h"
+#include "base/not_fatal_until.h"
 #include "base/ranges/algorithm.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
 #include "base/values.h"
+#include "components/attribution_reporting/constants.h"
 #include "components/attribution_reporting/filters.h"
 #include "components/attribution_reporting/parsing_utils.h"
 #include "components/attribution_reporting/trigger_registration_error.mojom.h"
 #include "third_party/abseil-cpp/absl/numeric/int128.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace attribution_reporting {
 
 namespace {
 
 using ::attribution_reporting::mojom::TriggerRegistrationError;
-
-constexpr char kKeyPiece[] = "key_piece";
-constexpr char kSourceKeys[] = "source_keys";
 
 bool AreSourceKeysValid(const AggregatableTriggerData::Keys& source_keys) {
   return base::ranges::all_of(source_keys, [](const auto& key) {
@@ -41,17 +40,9 @@ base::expected<absl::uint128, TriggerRegistrationError> ParseKeyPiece(
         TriggerRegistrationError::kAggregatableTriggerDataKeyPieceMissing);
   }
 
-  return ParseAggregationKeyPiece(*v).transform_error(
-      [](AggregationKeyPieceError error) {
-        switch (error) {
-          case AggregationKeyPieceError::kWrongType:
-            return TriggerRegistrationError::
-                kAggregatableTriggerDataKeyPieceWrongType;
-          case AggregationKeyPieceError::kWrongFormat:
-            return TriggerRegistrationError::
-                kAggregatableTriggerDataKeyPieceWrongFormat;
-        }
-      });
+  return ParseAggregationKeyPiece(*v).transform_error([](ParseError error) {
+    return TriggerRegistrationError::kAggregatableTriggerDataKeyPieceInvalid;
+  });
 }
 
 base::expected<AggregatableTriggerData::Keys, TriggerRegistrationError>
@@ -63,7 +54,7 @@ ParseSourceKeys(base::Value::Dict& registration) {
   base::Value::List* l = v->GetIfList();
   if (!l) {
     return base::unexpected(
-        TriggerRegistrationError::kAggregatableTriggerDataSourceKeysWrongType);
+        TriggerRegistrationError::kAggregatableTriggerDataSourceKeysInvalid);
   }
 
   AggregatableTriggerData::Keys source_keys;
@@ -71,14 +62,9 @@ ParseSourceKeys(base::Value::Dict& registration) {
 
   for (auto& maybe_string_value : *l) {
     std::string* s = maybe_string_value.GetIfString();
-    if (!s) {
+    if (!s || !AggregationKeyIdHasValidLength(*s)) {
       return base::unexpected(
-          TriggerRegistrationError::
-              kAggregatableTriggerDataSourceKeysKeyWrongType);
-    }
-    if (!AggregationKeyIdHasValidLength(*s)) {
-      return base::unexpected(TriggerRegistrationError::
-                                  kAggregatableTriggerDataSourceKeysKeyTooLong);
+          TriggerRegistrationError::kAggregatableTriggerDataSourceKeysInvalid);
     }
 
     source_keys.emplace_back(std::move(*s));
@@ -102,12 +88,12 @@ void SerializeSourceKeysIfNotEmpty(base::Value::Dict& dict,
 }  // namespace
 
 // static
-absl::optional<AggregatableTriggerData> AggregatableTriggerData::Create(
+std::optional<AggregatableTriggerData> AggregatableTriggerData::Create(
     absl::uint128 key_piece,
     Keys source_keys,
     FilterPair filters) {
   if (!AreSourceKeysValid(source_keys))
-    return absl::nullopt;
+    return std::nullopt;
 
   return AggregatableTriggerData(key_piece, std::move(source_keys),
                                  std::move(filters));
@@ -137,7 +123,7 @@ AggregatableTriggerData::AggregatableTriggerData(absl::uint128 key_piece,
     : key_piece_(key_piece),
       source_keys_(std::move(source_keys)),
       filters_(std::move(filters)) {
-  DCHECK(AreSourceKeysValid(source_keys_));
+  CHECK(AreSourceKeysValid(source_keys_), base::NotFatalUntil::M128);
 }
 
 AggregatableTriggerData::~AggregatableTriggerData() = default;

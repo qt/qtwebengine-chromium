@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,6 @@
 #include "services/viz/privileged/mojom/compositing/frame_sink_manager.mojom.h"
 #include "services/viz/privileged/mojom/compositing/frame_sink_video_capture.mojom.h"
 #include "services/viz/public/mojom/compositing/video_detector_observer.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace viz {
 
@@ -57,6 +57,7 @@ class GmbVideoFramePoolContextProvider;
 class HintSessionFactory;
 class OutputSurfaceProvider;
 class SharedBitmapManager;
+class SharedImageInterfaceProvider;
 struct VideoCaptureTarget;
 
 // FrameSinkManagerImpl manages BeginFrame hierarchy. This is the implementation
@@ -79,7 +80,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
     InitParams& operator=(InitParams&& other);
 
     raw_ptr<SharedBitmapManager> shared_bitmap_manager = nullptr;
-    absl::optional<uint32_t> activation_deadline_in_frames =
+    std::optional<uint32_t> activation_deadline_in_frames =
         kDefaultActivationDeadlineInFrames;
     raw_ptr<OutputSurfaceProvider> output_surface_provider = nullptr;
     raw_ptr<GmbVideoFramePoolContextProvider> gmb_context_provider = nullptr;
@@ -90,6 +91,8 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
     base::ProcessId host_process_id = base::kNullProcessId;
     raw_ptr<HintSessionFactory> hint_session_factory = nullptr;
     size_t max_uncommitted_frames = 0;
+    raw_ptr<SharedImageInterfaceProvider> shared_image_interface_provider =
+        nullptr;
   };
   explicit FrameSinkManagerImpl(const InitParams& params);
 
@@ -128,7 +131,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
       mojo::PendingRemote<mojom::FrameSinkBundleClient> client) override;
   void CreateCompositorFrameSink(
       const FrameSinkId& frame_sink_id,
-      const absl::optional<FrameSinkBundleId>& bundle_id,
+      const std::optional<FrameSinkBundleId>& bundle_id,
       mojo::PendingReceiver<mojom::CompositorFrameSink> receiver,
       mojo::PendingRemote<mojom::CompositorFrameSinkClient> client) override;
   void DestroyCompositorFrameSink(
@@ -162,6 +165,10 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
                                  base::TimeDelta bucket_size) override;
   void StopFrameCountingForTest(
       StopFrameCountingForTestCallback callback) override;
+  void ClearUnclaimedViewTransitionResources(
+      const blink::ViewTransitionToken& transition_token) override;
+  void HasUnclaimedViewTransitionResourcesForTest(
+      HasUnclaimedViewTransitionResourcesForTestCallback callback) override;
 
   void DestroyFrameSinkBundle(const FrameSinkBundleId& id);
 
@@ -208,7 +215,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   void SubmitHitTestRegionList(
       const SurfaceId& surface_id,
       uint64_t frame_index,
-      absl::optional<HitTestRegionList> hit_test_region_list);
+      std::optional<HitTestRegionList> hit_test_region_list);
 
   // Instantiates |video_detector_| for tests where we simulate the passage of
   // time.
@@ -271,14 +278,36 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   // CompositorFrameSink but animations are executed on a different
   // CompositorFrameSink.
   void CacheSurfaceAnimationManager(
-      NavigationID navigation_id,
+      const blink::ViewTransitionToken& transition_token,
       std::unique_ptr<SurfaceAnimationManager> manager);
   std::unique_ptr<SurfaceAnimationManager> TakeSurfaceAnimationManager(
-      NavigationID navigation_id);
-  void ClearSurfaceAnimationManager(NavigationID navigation_id);
+      const blink::ViewTransitionToken& transition_token);
+  // Returns true if an entry for this token was erased.
+  bool ClearSurfaceAnimationManager(
+      const blink::ViewTransitionToken& transition_token);
 
   FrameCounter* frame_counter() {
     return frame_counter_ ? &frame_counter_.value() : nullptr;
+  }
+
+  // Sends `copy_output_result` tagged by `destination_token` back to
+  // `mojom::FrameSinkManagerClient`.
+  void OnScreenshotCaptured(
+      const blink::SameDocNavigationScreenshotDestinationToken&
+          destination_token,
+      std::unique_ptr<CopyOutputResult> copy_output_result);
+
+  base::WeakPtr<FrameSinkManagerImpl> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
+  // Note that if context is lost, this shared image interface will become
+  // invalid. Next call to this function will create a new interface.
+  // It is up to the client to detect changes in the shared image interface.
+  gpu::SharedImageInterface* GetSharedImageInterface();
+
+  ReservedResourceIdTracker* reserved_resource_id_tracker() {
+    return &reserved_resource_id_tracker_;
   }
 
  private:
@@ -415,8 +444,9 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
                  base::UniquePtrComparator>
       video_capturers_;
 
-  base::flat_map<NavigationID, std::unique_ptr<SurfaceAnimationManager>>
-      navigation_to_animation_manager_;
+  base::flat_map<blink::ViewTransitionToken,
+                 std::unique_ptr<SurfaceAnimationManager>>
+      transition_token_to_animation_manager_;
 
   // The ids of the frame sinks that are currently being captured.
   // These frame sinks should not be throttled.
@@ -433,7 +463,7 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
 
   // If present, the throttling interval which defines the upper bound of how
   // often BeginFrames are sent for all current and future frame sinks.
-  absl::optional<base::TimeDelta> global_throttle_interval_ = absl::nullopt;
+  std::optional<base::TimeDelta> global_throttle_interval_ = std::nullopt;
 
   base::flat_map<uint32_t, base::ScopedClosureRunner> cached_back_buffers_;
 
@@ -464,7 +494,14 @@ class VIZ_SERVICE_EXPORT FrameSinkManagerImpl
   base::ObserverList<FrameSinkObserver>::Unchecked observer_list_;
 
   // Counts frames for test.
-  absl::optional<FrameCounter> frame_counter_;
+  std::optional<FrameCounter> frame_counter_;
+
+  raw_ptr<SharedImageInterfaceProvider> shared_image_interface_provider_ =
+      nullptr;
+
+  ReservedResourceIdTracker reserved_resource_id_tracker_;
+
+  base::WeakPtrFactory<FrameSinkManagerImpl> weak_factory_{this};
 };
 
 }  // namespace viz

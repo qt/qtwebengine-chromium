@@ -22,6 +22,9 @@ namespace policy {
 
 namespace {
 
+// TODO(b:314810831, b:325026413): Update the signatures to match the key used
+// for testing defined by PolicyBuilder, or update them to support the
+// PublicKeyVerificationData type included in new_public_key_verification_data.
 constexpr char kSigningKey1[] =
     "MIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8wggE7AgEAAkEA2c3KzcPqvnJ5HCk3OZkf1"
     "LMO8Ht4dw4FO2U0EmKvpo0zznj4RwUdmKobH1AFWzwZP4CDY2M67MsukE/1Jnbx1QIDAQ"
@@ -210,6 +213,15 @@ void SignatureProvider::SetUniversalSigningKeys() {
   universal_signing_keys.push_back(policy::SignatureProvider::SigningKey(
       policy::PolicyBuilder::CreateTestSigningKey(),
       {{kWildCard, policy::PolicyBuilder::GetTestSigningKeySignature()}}));
+  set_signing_keys(std::move(universal_signing_keys));
+}
+
+void SignatureProvider::SetSigningKeysForChildDomain() {
+  std::vector<policy::SignatureProvider::SigningKey> universal_signing_keys;
+  universal_signing_keys.push_back(policy::SignatureProvider::SigningKey(
+      policy::PolicyBuilder::CreateTestSigningKey(),
+      {{kWildCard,
+        policy::PolicyBuilder::GetTestSigningKeySignatureForChild()}}));
   set_signing_keys(std::move(universal_signing_keys));
 }
 

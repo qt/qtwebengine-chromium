@@ -13,7 +13,6 @@
 
 #include "base/check.h"
 #include "base/check_op.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -42,7 +41,7 @@
 #include "net/websockets/websocket_frame.h"  // for WebSocketFrameHeader::OpCode
 #include "net/websockets/websocket_handshake_request_info.h"
 #include "net/websockets/websocket_handshake_response_info.h"
-#include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/ip_address_space_util.h"
 #include "services/network/throttling/throttling_controller.h"
 #include "services/network/throttling/throttling_network_interceptor.h"
 #include "services/network/websocket_factory.h"
@@ -56,13 +55,10 @@ namespace {
 constexpr uint64_t kSmallMessageThreshhold = 1 << 16;
 
 // The capacity of the data pipe to use for received messages, in bytes. Optimal
-// value depends on the platform.
-#if BUILDFLAG(IS_ANDROID)
-constexpr uint32_t kReceiveDataPipeCapacity = 1 << 16;
-#else
-// |2^n - delta| is better than 2^n on Linux. See crrev.com/c/1792208.
-constexpr uint32_t kReceiveDataPipeCapacity = 131000;
-#endif
+// value depends on the platform. |2^n - delta| is better than 2^n on Linux. See
+// crrev.com/c/1792208.
+constexpr uint32_t kReceiveDataPipeCapacity =
+    BUILDFLAG(IS_ANDROID) ? 1 << 16 : 131000;
 
 // Convert a mojom::WebSocketMessageType to a
 // net::WebSocketFrameHeader::OpCode
@@ -142,6 +138,8 @@ class WebSocket::WebSocketEventHandler final
   // net::WebSocketEventInterface implementation
 
   void OnCreateURLRequest(net::URLRequest* url_request) override;
+  void OnURLRequestConnected(net::URLRequest* request,
+                             const net::TransportInfo& info) override;
   void OnAddChannelResponse(
       std::unique_ptr<net::WebSocketHandshakeResponseInfo> response,
       const std::string& selected_subprotocol,
@@ -157,7 +155,7 @@ class WebSocket::WebSocketEventHandler final
                      const std::string& reason) override;
   void OnFailChannel(const std::string& message,
                      int net_error,
-                     absl::optional<int> response_code) override;
+                     std::optional<int> response_code) override;
   void OnStartOpeningHandshake(
       std::unique_ptr<net::WebSocketHandshakeRequestInfo> request) override;
   void OnSSLCertificateError(
@@ -172,7 +170,7 @@ class WebSocket::WebSocketEventHandler final
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       const net::IPEndPoint& remote_endpoint,
       base::OnceCallback<void(const net::AuthCredentials*)> callback,
-      absl::optional<net::AuthCredentials>* credentials) override;
+      std::optional<net::AuthCredentials>* credentials) override;
 
  private:
   const raw_ptr<WebSocket> impl_;
@@ -196,6 +194,20 @@ void WebSocket::WebSocketEventHandler::OnCreateURLRequest(
   if (impl_->throttling_profile_id_) {
     impl_->frame_interceptor_ = std::make_unique<WebSocketInterceptor>(
         url_request->net_log().source().id, impl_->throttling_profile_id_);
+  }
+}
+
+void WebSocket::WebSocketEventHandler::OnURLRequestConnected(
+    net::URLRequest* request,
+    const net::TransportInfo& info) {
+  if (impl_->url_loader_network_observer_) {
+    mojom::IPAddressSpace ip_address_space =
+        TransportInfoToIPAddressSpace(info);
+    if (ip_address_space == network::mojom::IPAddressSpace::kLocal ||
+        ip_address_space == network::mojom::IPAddressSpace::kPrivate) {
+      impl_->url_loader_network_observer_->OnWebSocketConnectedToPrivateNetwork(
+          ip_address_space);
+    }
   }
 }
 
@@ -306,7 +318,7 @@ void WebSocket::WebSocketEventHandler::OnDropChannel(
 void WebSocket::WebSocketEventHandler::OnFailChannel(
     const std::string& message,
     int net_error,
-    absl::optional<int> response_code) {
+    std::optional<int> response_code) {
   DVLOG(3) << "WebSocketEventHandler::OnFailChannel @"
            << reinterpret_cast<void*>(this) << " message=\"" << message << "\""
            << " error=" << net_error
@@ -382,11 +394,11 @@ int WebSocket::WebSocketEventHandler::OnAuthRequired(
     scoped_refptr<net::HttpResponseHeaders> response_headers,
     const net::IPEndPoint& remote_endpoint,
     base::OnceCallback<void(const net::AuthCredentials*)> callback,
-    absl::optional<net::AuthCredentials>* credentials) {
+    std::optional<net::AuthCredentials>* credentials) {
   DVLOG(3) << "WebSocketEventHandler::OnAuthRequired"
            << reinterpret_cast<void*>(this);
   if (!impl_->auth_handler_) {
-    *credentials = absl::nullopt;
+    *credentials = std::nullopt;
     return net::OK;
   }
 
@@ -423,10 +435,10 @@ WebSocket::WebSocket(
         url_loader_network_observer,
     mojo::PendingRemote<mojom::WebSocketAuthenticationHandler> auth_handler,
     mojo::PendingRemote<mojom::TrustedHeaderClient> header_client,
-    absl::optional<WebSocketThrottler::PendingConnection>
+    std::optional<WebSocketThrottler::PendingConnection>
         pending_connection_tracker,
     base::TimeDelta delay,
-    const absl::optional<base::UnguessableToken>& throttling_profile_id)
+    const std::optional<base::UnguessableToken>& throttling_profile_id)
     : factory_(factory),
       url_loader_network_observer_(std::move(url_loader_network_observer)),
       handshake_client_(std::move(handshake_client)),
@@ -438,6 +450,7 @@ WebSocket::WebSocket(
       traffic_annotation_(traffic_annotation),
       origin_(std::move(origin)),
       site_for_cookies_(site_for_cookies),
+      isolation_info_(isolation_info),
       has_raw_headers_access_(has_raw_headers_access),
       writable_watcher_(FROM_HERE,
                         mojo::SimpleWatcher::ArmingPolicy::MANUAL,
@@ -445,8 +458,6 @@ WebSocket::WebSocket(
       readable_watcher_(FROM_HERE,
                         mojo::SimpleWatcher::ArmingPolicy::MANUAL,
                         base::SingleThreadTaskRunner::GetCurrentDefault()),
-      reassemble_short_messages_(base::FeatureList::IsEnabled(
-          network::features::kWebSocketReassembleShortMessages)),
       throttling_profile_id_(throttling_profile_id) {
   DCHECK(handshake_client_);
   // |delay| should be zero if this connection is not throttled.
@@ -505,8 +516,7 @@ void WebSocket::SendMessage(mojom::WebSocketMessageType type,
   }
   DCHECK(IsKnownEnumValue(type));
 
-  const bool do_not_fragment =
-      reassemble_short_messages_ && data_length <= kSmallMessageThreshhold;
+  const bool do_not_fragment = data_length <= kSmallMessageThreshhold;
 
   pending_send_data_frames_.emplace(type, data_length, do_not_fragment);
 
@@ -554,6 +564,26 @@ bool WebSocket::AllowCookies(const GURL& url) const {
              url, site_for_cookies_) == net::OK;
 }
 
+bool WebSocket::RevokeIfNonceMatches(const base::UnguessableToken& nonce) {
+  if (isolation_info_.nonce() != nonce) {
+    return false;
+  }
+
+  std::string message =
+      "This WebSocket is in a frame whose network access "
+      "is being revoked.";
+  DVLOG(3) << "WebSocketEventHandler::RevokeIfNonceMatches @"
+           << reinterpret_cast<void*>(this) << " " << message;
+  // OnAddChannelResponse may have already reset |impl_->handshake_client_| if
+  // the failure happened after a successful connection.
+  if (handshake_client_.is_bound()) {
+    handshake_client_->OnFailure(message, net::kWebSocketErrorGoingAway, -1);
+  }
+  client_.ResetWithReason(0, message);
+
+  return true;
+}
+
 int WebSocket::OnBeforeStartTransaction(
     const net::HttpRequestHeaders& headers,
     net::NetworkDelegate::OnBeforeStartTransactionCallback callback) {
@@ -571,7 +601,7 @@ int WebSocket::OnHeadersReceived(
     net::CompletionOnceCallback callback,
     const net::HttpResponseHeaders* original_response_headers,
     scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
-    absl::optional<GURL>* preserve_fragment_on_redirect_url) {
+    std::optional<GURL>* preserve_fragment_on_redirect_url) {
   if (header_client_) {
     header_client_->OnHeadersReceived(
         original_response_headers->raw_headers(), net::IPEndPoint(),
@@ -701,13 +731,12 @@ void WebSocket::SendDataFrame(base::span<const char>* payload) {
   DCHECK_GT(payload->size(), 0u);
   MojoResult begin_result;
   void* buffer;
-  uint32_t writable_size;
-  while ((writable_size = static_cast<uint32_t>(payload->size())) > 0 &&
+  size_t writable_size;
+  while ((writable_size = payload->size()) > 0 &&
          (begin_result = writable_->BeginWriteData(
               &buffer, &writable_size, MOJO_WRITE_DATA_FLAG_NONE)) ==
              MOJO_RESULT_OK) {
-    const uint32_t size_to_write =
-        std::min(writable_size, static_cast<uint32_t>(payload->size()));
+    const size_t size_to_write = std::min(writable_size, payload->size());
     DCHECK_GT(size_to_write, 0u);
 
     memcpy(buffer, payload->data(), size_to_write);
@@ -794,7 +823,7 @@ bool WebSocket::ReadAndSendFrameFromDataPipe(DataFrame* data_frame) {
     }
 
     const void* buffer = nullptr;
-    uint32_t readable_size = 0;
+    size_t readable_size = 0;
     const MojoResult begin_result = readable_->BeginReadData(
         &buffer, &readable_size, MOJO_READ_DATA_FLAG_NONE);
     if (begin_result == MOJO_RESULT_SHOULD_WAIT) {
@@ -822,7 +851,7 @@ bool WebSocket::ReadAndSendFrameFromDataPipe(DataFrame* data_frame) {
     if (message_under_reassembly_) {
       CHECK_GT(data_frame->data_length, bytes_reassembled_);
       const size_t bytes_to_copy =
-          std::min(static_cast<uint64_t>(readable_size),
+          std::min(base::strict_cast<uint64_t>(readable_size),
                    data_frame->data_length - bytes_reassembled_);
       memcpy(message_under_reassembly_->data() + bytes_reassembled_, buffer,
              bytes_to_copy);
@@ -894,7 +923,7 @@ void WebSocket::OnSSLCertificateErrorResponse(
 
 void WebSocket::OnAuthRequiredComplete(
     base::OnceCallback<void(const net::AuthCredentials*)> callback,
-    const absl::optional<net::AuthCredentials>& credentials) {
+    const std::optional<net::AuthCredentials>& credentials) {
   DCHECK(!handshake_succeeded_);
   if (!channel_) {
     // Something happened before the authentication response arrives.
@@ -907,7 +936,7 @@ void WebSocket::OnAuthRequiredComplete(
 void WebSocket::OnBeforeSendHeadersComplete(
     net::NetworkDelegate::OnBeforeStartTransactionCallback callback,
     int result,
-    const absl::optional<net::HttpRequestHeaders>& headers) {
+    const std::optional<net::HttpRequestHeaders>& headers) {
   if (!channel_) {
     // Something happened before the OnBeforeSendHeaders response arrives.
     return;
@@ -918,10 +947,10 @@ void WebSocket::OnBeforeSendHeadersComplete(
 void WebSocket::OnHeadersReceivedComplete(
     net::CompletionOnceCallback callback,
     scoped_refptr<net::HttpResponseHeaders>* out_headers,
-    absl::optional<GURL>* out_preserve_fragment_on_redirect_url,
+    std::optional<GURL>* out_preserve_fragment_on_redirect_url,
     int result,
-    const absl::optional<std::string>& headers,
-    const absl::optional<GURL>& preserve_fragment_on_redirect_url) {
+    const std::optional<std::string>& headers,
+    const std::optional<GURL>& preserve_fragment_on_redirect_url) {
   if (!channel_) {
     // Something happened before the OnHeadersReceived response arrives.
     return;

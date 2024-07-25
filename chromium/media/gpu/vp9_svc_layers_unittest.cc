@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "base/containers/contains.h"
@@ -17,7 +18,6 @@
 #include "media/video/video_encode_accelerator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace media {
 
@@ -113,6 +113,7 @@ void VerifykSVCFrame(
   const uint8_t spatial_index = metadata.spatial_idx;
 
   EXPECT_EQ(picture_param.key_frame, frame_num == 0 && spatial_index == 0);
+  EXPECT_EQ(metadata.end_of_picture, spatial_index == num_spatial_layers - 1);
 
   if (picture_param.key_frame) {
     EXPECT_EQ(spatial_index, 0);
@@ -177,6 +178,7 @@ void VerifySmodeFrame(
   const uint8_t temporal_index = metadata.temporal_idx;
   const uint8_t spatial_index = metadata.spatial_idx;
   EXPECT_EQ(picture_param.key_frame, frame_num == 0);
+  EXPECT_EQ(metadata.end_of_picture, spatial_index == num_spatial_layers - 1);
 
   if (picture_param.key_frame) {
     EXPECT_EQ(temporal_index, 0u);
@@ -305,9 +307,9 @@ TEST_P(VP9SVCLayersTest, VerifyMetadataMultipleTimes) {
       svc_layers.Reset();
     }
     for (size_t sid = 0; sid < num_spatial_layers; ++sid) {
-      const bool reaquire = frame_count % kReacquireInterval;
+      const bool reacquire = frame_count % kReacquireInterval;
       frame_count++;
-      const size_t call_get_times = 1 + reaquire;
+      const size_t call_get_times = 1 + reacquire;
       for (size_t j = 0; j < call_get_times; j++) {
         bool key_frame = false;
         size_t frame_num = svc_layers.frame_num();
@@ -361,6 +363,10 @@ INSTANTIATE_TEST_SUITE_P(
     VP9SVCLayersTest,
     ::testing::Values(std::make_tuple(1, 2, SVCInterLayerPredMode::kOff),
                       std::make_tuple(1, 3, SVCInterLayerPredMode::kOff),
+                      std::make_tuple(1, 2, SVCInterLayerPredMode::kOn),
+                      std::make_tuple(1, 3, SVCInterLayerPredMode::kOn),
+                      std::make_tuple(1, 2, SVCInterLayerPredMode::kOnKeyPic),
+                      std::make_tuple(1, 3, SVCInterLayerPredMode::kOnKeyPic),
                       std::make_tuple(2, 1, SVCInterLayerPredMode::kOnKeyPic),
                       std::make_tuple(2, 2, SVCInterLayerPredMode::kOnKeyPic),
                       std::make_tuple(2, 3, SVCInterLayerPredMode::kOnKeyPic),

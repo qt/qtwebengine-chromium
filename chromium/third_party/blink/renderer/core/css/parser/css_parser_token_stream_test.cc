@@ -5,7 +5,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_stream.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
-
+#include "third_party/blink/renderer/core/css/parser/css_parser_save_point.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -556,6 +556,25 @@ TEST(CSSParserTokenStreamTest, BoundaryRestoringBlockGuard) {
   }
 }
 
+TEST(CSSParserTokenStreamTest, SavePointRestoreWithoutLookahead) {
+  CSSTokenizer tokenizer(String("a b c"));
+  CSSParserTokenStream stream(tokenizer);
+  stream.EnsureLookAhead();
+
+  {
+    CSSParserSavePoint savepoint(stream);
+    stream.UncheckedConsume();  // a
+    stream.EnsureLookAhead();
+    stream.UncheckedConsume();  // whitespace
+
+    EXPECT_FALSE(stream.HasLookAhead());
+    // Let `savepoint` go out of scope without being released.
+  }
+
+  // We should have restored to the beginning.
+  EXPECT_EQ("a", stream.Peek().Value());
+}
+
 namespace {
 
 Vector<CSSParserToken, 32> TokenizeAll(String string) {
@@ -577,7 +596,7 @@ void TokenizeInto(CSSParserTokenStream& stream,
                   wtf_size_t restart_target,
                   wtf_size_t restart_offset,
                   Vector<CSSParserToken, 32>& tokens) {
-  absl::optional<CSSParserTokenStream::State> saved_state;
+  std::optional<CSSParserTokenStream::State> saved_state;
 
   while (true) {
     stream.EnsureLookAhead();

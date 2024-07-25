@@ -371,7 +371,8 @@ void DesktopCaptureAccessHandler::HandleRequest(
 
   // If the device id wasn't specified then this is a screen capture request
   // (i.e. chooseDesktopMedia() API wasn't used to generate device id).
-  if (request.requested_video_device_id.empty()) {
+  if (request.requested_video_device_ids.empty() ||
+      request.requested_video_device_ids.front().empty()) {
     if (allowed_capture_level < AllowedScreenCaptureLevel::kDesktop) {
       std::move(pending_request->callback)
           .Run(blink::mojom::StreamDevicesSet(),
@@ -407,9 +408,11 @@ void DesktopCaptureAccessHandler::HandleRequest(
       web_contents_for_stream ? web_contents_for_stream->GetPrimaryMainFrame()
                               : nullptr;
   if (main_frame) {
+    // This function would have already returned if this vector was empty.
+    CHECK(!request.requested_video_device_ids.empty());
     media_id =
         content::DesktopStreamsRegistry::GetInstance()->RequestMediaForStreamId(
-            request.requested_video_device_id,
+            request.requested_video_device_ids.front(),
             main_frame->GetProcess()->GetID(), main_frame->GetRoutingID(),
             url::Origin::Create(request.security_origin),
             content::kRegistryStreamTypeDesktop);
@@ -480,7 +483,8 @@ void DesktopCaptureAccessHandler::ProcessChangeSourceRequest(
   DCHECK_EQ(pending_request->request.video_type,
             blink::mojom::MediaStreamType::GUM_DESKTOP_VIDEO_CAPTURE);
 
-  if (pending_request->request.requested_video_device_id.empty()) {
+  if (pending_request->request.requested_video_device_ids.empty() ||
+      pending_request->request.requested_video_device_ids.front().empty()) {
     // Passing nullptr selects the default picker (DesktopMediaPickerViews).
     pending_request->picker = picker_factory_->CreatePicker(nullptr);
     if (!pending_request->picker) {
@@ -535,10 +539,10 @@ void DesktopCaptureAccessHandler::ProcessQueuedAccessRequest(
   const PendingAccessRequest& pending_request = *queue.front();
 
   if (!pending_request.picker) {
-    DCHECK(!pending_request.request.requested_video_device_id.empty());
+    DCHECK(!pending_request.request.requested_video_device_ids.empty());
     content::WebContentsMediaCaptureId web_contents_id;
     if (content::WebContentsMediaCaptureId::Parse(
-            pending_request.request.requested_video_device_id,
+            pending_request.request.requested_video_device_ids.front(),
             &web_contents_id)) {
       content::DesktopMediaID media_id(
           content::DesktopMediaID::TYPE_WEB_CONTENTS,
@@ -676,7 +680,7 @@ void DesktopCaptureAccessHandler::AcceptRequest(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(web_contents);
 
-  // TODO(crbug.com/1300883): Generalize to multiple streams.
+  // TODO(crbug.com/40216442): Generalize to multiple streams.
   blink::mojom::StreamDevicesSet stream_devices_set;
   stream_devices_set.stream_devices.emplace_back(
       blink::mojom::StreamDevices::New());
@@ -685,12 +689,13 @@ void DesktopCaptureAccessHandler::AcceptRequest(
   std::unique_ptr<content::MediaStreamUI> ui = GetDevicesForDesktopCapture(
       pending_request->request, web_contents, media_id, capture_audio,
       pending_request->request.disable_local_echo,
-      // TODO(crbug.com/1378667): Support suppressLocalAudioPlayback for the
+      // TODO(crbug.com/40244027): Support suppressLocalAudioPlayback for the
       // extension API as well. If this happens as a result of merging
       // DesktopCaptureAccessHandler and DisplayMediaAccessHandler, that's fine.
       /*suppress_local_audio_playback=*/false,
       pending_request->should_display_notification,
-      pending_request->application_title, stream_devices);
+      pending_request->application_title,
+      pending_request->request.captured_surface_control_active, stream_devices);
   DCHECK(stream_devices.audio_device.has_value() ||
          stream_devices.video_device.has_value());
 

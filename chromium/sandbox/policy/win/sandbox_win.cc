@@ -4,18 +4,19 @@
 
 #include "sandbox/policy/win/sandbox_win.h"
 
-#include <stddef.h>
 #include <windows.h>
+
+#include <stddef.h>
 #include <winternl.h>
 
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-#include <optional>
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
@@ -27,6 +28,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/metrics/metrics_hashes.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
@@ -50,7 +52,6 @@
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
-#include "components/services/screen_ai/buildflags/buildflags.h"
 #include "ppapi/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "sandbox/features.h"
@@ -63,6 +64,7 @@
 #include "sandbox/win/src/app_container.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
+#include "services/screen_ai/buildflags/buildflags.h"
 
 namespace sandbox {
 namespace policy {
@@ -170,6 +172,62 @@ const wchar_t* const kTroublesomeDlls[] = {
 BASE_FEATURE(kEnableCsrssLockdownFeature,
              "EnableCsrssLockdown",
              base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(GpuLockdownDefaultDacl,
+             "GpuLockdownDefaultDacl",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Helper to recording timing information during process creation.
+class SandboxLaunchTimer {
+ public:
+  SandboxLaunchTimer() = default;
+  SandboxLaunchTimer(const SandboxLaunchTimer&) = delete;
+  SandboxLaunchTimer& operator=(const SandboxLaunchTimer&) = delete;
+
+  // Call after the policy base object is created.
+  void OnPolicyCreated() { policy_created_ = timer_.Elapsed(); }
+
+  // Call after the delegate has generated policy settings.
+  void OnPolicyGenerated() { policy_generated_ = timer_.Elapsed(); }
+
+  // Call after CreateProcess() has returned a suspended process.
+  void OnProcessSpawned() { process_spawned_ = timer_.Elapsed(); }
+
+  // Call after unsuspending the process.
+  void OnProcessResumed() { process_resumed_ = timer_.Elapsed(); }
+
+  // Call once to record histograms for a successful process launch.
+  void RecordHistograms() {
+    // If these parameters change the histograms should be renamed.
+    // We're interested in the happy fast case so have a low maximum.
+    const auto kLowBound = base::Microseconds(5);
+    const auto kHighBound = base::Microseconds(100000);
+    const int kBuckets = 50;
+
+    base::UmaHistogramCustomMicrosecondsTimes(
+        "Process.Sandbox.StartSandboxedWin.CreatePolicyDuration",
+        policy_created_, kLowBound, kHighBound, kBuckets);
+    base::UmaHistogramCustomMicrosecondsTimes(
+        "Process.Sandbox.StartSandboxedWin.GeneratePolicyDuration",
+        policy_generated_ - policy_created_, kLowBound, kHighBound, kBuckets);
+    base::UmaHistogramCustomMicrosecondsTimes(
+        "Process.Sandbox.StartSandboxedWin.SpawnTargetDuration",
+        process_spawned_ - policy_generated_, kLowBound, kHighBound, kBuckets);
+    base::UmaHistogramCustomMicrosecondsTimes(
+        "Process.Sandbox.StartSandboxedWin.PostSpawnTargetDuration",
+        process_resumed_ - process_spawned_, kLowBound, kHighBound, kBuckets);
+    base::UmaHistogramCustomMicrosecondsTimes(
+        "Process.Sandbox.StartSandboxedWin.TotalDuration", process_resumed_,
+        kLowBound, kHighBound, kBuckets);
+  }
+
+ private:
+  // `timer_` starts when this object is created.
+  const base::ElapsedTimer timer_;
+  base::TimeDelta policy_created_;
+  base::TimeDelta policy_generated_;
+  base::TimeDelta process_spawned_;
+  base::TimeDelta process_resumed_;
+};
 
 // Adds the policy rules to allow read-only access to the windows system fonts
 // directory, and any subdirectories. Used by PDF renderers.
@@ -226,35 +284,25 @@ std::map<std::wstring, std::wstring> GetShortNameModules() {
 // passed as |module_name|. The DLL must be loaded in the current process. A
 // mapping from long names to short names should also be passed in |modules| to
 // attempt to map a long name to the actual loaded name, this can be initialized
-// with a call to GetShortNameModules.
-void BlocklistAddOneDll(const wchar_t* module_name,
+// with a call to GetShortNameModules. Returns true if the DLL is loaded and
+// will be blocked in the child.
+bool BlocklistAddOneDll(const wchar_t* module_name,
                         const std::map<std::wstring, std::wstring>& modules,
                         TargetConfig* config) {
   DCHECK(!config->IsConfigured());
   if (::GetModuleHandleW(module_name) != nullptr) {
     config->AddDllToUnload(module_name);
     DVLOG(1) << "dll to unload found: " << module_name;
+    return true;
   } else {
     auto short_name = modules.find(base::ToLowerASCII(module_name));
     if (short_name != modules.end()) {
       config->AddDllToUnload(short_name->second.c_str());
       config->AddDllToUnload(module_name);
+      return true;
     }
   }
-}
-
-DWORD GetSessionId() {
-  DWORD session_id;
-  CHECK(::ProcessIdToSessionId(::GetCurrentProcessId(), &session_id));
-  return session_id;
-}
-
-// Returns the object path prepended with the current logon session.
-std::wstring PrependWindowsSessionPath(const wchar_t* object) {
-  // Cache this because it can't change after process creation.
-  static DWORD s_session_id = GetSessionId();
-  return base::StrCat(
-      {L"\\Sessions\\", base::NumberToWString(s_session_id), object});
+  return false;
 }
 
 // Adds the generic config rules to a sandbox TargetConfig.
@@ -304,8 +352,14 @@ ResultCode AddGenericConfig(sandbox::TargetConfig* config) {
   // Adds policy rules for unloading the known dlls that cause Chrome to crash.
   // Eviction of injected DLLs is done by the sandbox so that the injected
   // module does not get a chance to execute any code.
-  for (int ix = 0; ix != std::size(kTroublesomeDlls); ++ix)
-    BlocklistAddOneDll(kTroublesomeDlls[ix], modules, config);
+  for (const wchar_t* blocklist_dll : kTroublesomeDlls) {
+    if (BlocklistAddOneDll(blocklist_dll, modules, config)) {
+      // Log the module to help with list cleanup.
+      base::UmaHistogramSparse("Process.Sandbox.DllBlocked",
+                               static_cast<int32_t>(base::HashMetricName(
+                                   base::WideToASCII(blocklist_dll))));
+    }
+  }
 
   return SBOX_ALL_OK;
 }
@@ -323,11 +377,7 @@ ResultCode AddDefaultConfigForSandboxedProcess(TargetConfig* config) {
     return result;
 
   config->SetLockdownDefaultDacl();
-
-  result = config->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
-  if (result != SBOX_ALL_OK)
-    return result;
-
+  config->AddKernelObjectToClose(HandleToClose::kDeviceApi);
   config->SetDesktop(Desktop::kAlternateWinstation);
 
   if (base::FeatureList::IsEnabled(
@@ -460,6 +510,11 @@ std::wstring GetAppContainerProfileName(const std::string& appcontainer_id,
     case Sandbox::kOnDeviceModelExecution:
       sandbox_base_name = std::string("cr.sb.odm");
       break;
+#if BUILDFLAG(ENABLE_PRINTING)
+    case Sandbox::kPrintCompositor:
+      sandbox_base_name = std::string("cr.sb.prnc");
+      break;
+#endif
     case Sandbox::kWindowsSystemProxyResolver:
       sandbox_base_name = std::string("cr.sb.pxy");
       break;
@@ -468,8 +523,8 @@ std::wstring GetAppContainerProfileName(const std::string& appcontainer_id,
   }
 
   auto sha1 = base::SHA1HashString(appcontainer_id);
-  std::string profile_name = base::StrCat(
-      {sandbox_base_name, base::HexEncode(sha1.data(), sha1.size())});
+  std::string profile_name =
+      base::StrCat({sandbox_base_name, base::HexEncode(sha1)});
   // CreateAppContainerProfile requires that the profile name is at most 64
   // characters but 50 on WCOS systems.  The size of sha1 is a constant 40,
   // so validate that the base names are sufficiently short that the total
@@ -494,6 +549,11 @@ ResultCode SetupAppContainerProfile(AppContainer* container,
       sandbox_type != Sandbox::kMediaFoundationCdm &&
       sandbox_type != Sandbox::kNetwork &&
       sandbox_type != Sandbox::kOnDeviceModelExecution &&
+#if BUILDFLAG(ENABLE_PRINTING)
+      !(sandbox_type == Sandbox::kPrintCompositor &&
+        base::FeatureList::IsEnabled(
+            sandbox::policy::features::kPrintCompositorLPAC)) &&
+#endif
       sandbox_type != Sandbox::kWindowsSystemProxyResolver) {
     return SBOX_ERROR_UNSUPPORTED;
   }
@@ -558,6 +618,14 @@ ResultCode SetupAppContainerProfile(AppContainer* container,
     container->SetEnableLowPrivilegeAppContainer(true);
   }
 
+#if BUILDFLAG(ENABLE_PRINTING)
+  if (sandbox_type == Sandbox::kPrintCompositor) {
+    container->AddCapability(kLpacCom);
+    container->AddCapability(L"lpacPrinting");
+    container->SetEnableLowPrivilegeAppContainer(true);
+  }
+#endif
+
   if (sandbox_type == Sandbox::kWindowsSystemProxyResolver) {
     container->AddCapability(base::win::WellKnownCapability::kInternetClient);
     container->AddCapability(kLpacServicesManagement);
@@ -580,16 +648,13 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
       MITIGATION_DEP_NO_ATL_THUNK | MITIGATION_EXTENSION_POINT_DISABLE |
       MITIGATION_SEHOP | MITIGATION_NONSYSTEM_FONT_DISABLE |
       MITIGATION_IMAGE_LOAD_NO_REMOTE | MITIGATION_IMAGE_LOAD_NO_LOW_LABEL |
-      MITIGATION_RESTRICT_INDIRECT_BRANCH_PREDICTION | MITIGATION_KTM_COMPONENT;
+      MITIGATION_RESTRICT_INDIRECT_BRANCH_PREDICTION |
+      MITIGATION_KTM_COMPONENT | MITIGATION_FSCTL_DISABLED;
 
   // CET is enabled with the CETCOMPAT bit on chrome.exe so must be
   // disabled for processes we know are not compatible.
   if (!delegate->CetCompatible())
     mitigations |= MITIGATION_CET_DISABLED;
-
-  if (base::FeatureList::IsEnabled(features::kWinSboxFsctlLockdown)) {
-    mitigations |= MITIGATION_FSCTL_DISABLED;
-  }
 
   ResultCode result = config->SetProcessMitigations(mitigations);
   if (result != SBOX_ALL_OK)
@@ -617,13 +682,9 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
     return result;
 
   if (process_type == switches::kRendererProcess) {
-    if (base::FeatureList::IsEnabled(features::kWinSboxRendererCloseKsecDD)) {
-      // TODO(crbug.com/74242) Remove if we can avoid loading cryptbase.dll.
-      result = config->AddKernelObjectToClose(L"File", L"\\Device\\KsecDD");
-      if (result != SBOX_ALL_OK) {
-        return result;
-      }
-    }
+    // TODO(crbug.com/40088338) Remove if we can reliably not load
+    // cryptbase.dll.
+    config->AddKernelObjectToClose(HandleToClose::kKsecDD);
     result = SandboxWin::AddWin32kLockdownPolicy(config);
     if (result != SBOX_ALL_OK) {
       return result;
@@ -642,8 +703,7 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
     return result;
 
   if (process_type == switches::kGpuProcess &&
-      base::FeatureList::IsEnabled(
-          {"GpuLockdownDefaultDacl", base::FEATURE_ENABLED_BY_DEFAULT})) {
+      base::FeatureList::IsEnabled(GpuLockdownDefaultDacl)) {
     config->SetLockdownDefaultDacl();
     config->AddRestrictingRandomSid();
   }
@@ -666,21 +726,6 @@ ResultCode GenerateConfigForSandboxedProcess(const base::CommandLine& cmd_line,
     DCHECK_EQ(result, SBOX_ALL_OK);
     if (result != SBOX_ALL_OK)
       return result;
-  }
-
-  // Allow the renderer, gpu and utility processes to access the log file.
-  if (process_type == switches::kRendererProcess ||
-      process_type == switches::kGpuProcess ||
-      process_type == switches::kUtilityProcess) {
-    if (logging::IsLoggingToFileEnabled()) {
-      auto log_path = logging::GetLogFileFullPath();
-      DCHECK(base::FilePath(log_path).IsAbsolute());
-      result =
-          config->AllowFileAccess(FileSemantics::kAllowAny, log_path.c_str());
-      if (result != SBOX_ALL_OK) {
-        return result;
-      }
-    }
   }
 
   if (sandbox_type == Sandbox::kMediaFoundationCdm) {
@@ -789,20 +834,15 @@ ResultCode SandboxWin::SetJobLevel(Sandbox sandbox_type,
 }
 
 // static
-ResultCode SandboxWin::AddBaseHandleClosePolicy(TargetConfig* config) {
+void SandboxWin::AddBaseHandleClosePolicy(TargetConfig* config) {
   DCHECK(!config->IsConfigured());
 
   if (base::FeatureList::IsEnabled(kEnableCsrssLockdownFeature)) {
     // Close all ALPC ports.
-    ResultCode ret = config->SetDisconnectCsrss();
-    if (ret != SBOX_ALL_OK)
-      return ret;
+    config->SetDisconnectCsrss();
   }
 
-  // TODO(cpu): Add back the BaseNamedObjects policy.
-  std::wstring object_path = PrependWindowsSessionPath(
-      L"\\BaseNamedObjects\\windows_shell_global_counters");
-  return config->AddKernelObjectToClose(L"Section", object_path.data());
+  config->AddKernelObjectToClose(HandleToClose::kWindowsShellGlobalCounters);
 }
 
 // static
@@ -832,7 +872,11 @@ ResultCode SandboxWin::AddWin32kLockdownPolicy(TargetConfig* config) {
   if (result != SBOX_ALL_OK)
     return result;
 
-  return config->SetFakeGdiInit();
+  if (base::FeatureList::IsEnabled(features::kWinSboxNoFakeGdiInit)) {
+    return SBOX_ALL_OK;
+  } else {
+    return config->SetFakeGdiInit();
+  }
 }
 
 // static
@@ -894,6 +938,13 @@ bool SandboxWin::IsAppContainerEnabledForSandbox(
   if (sandbox_type == Sandbox::kOnDeviceModelExecution) {
     return true;
   }
+
+#if BUILDFLAG(ENABLE_PRINTING)
+  if (sandbox_type == Sandbox::kPrintCompositor) {
+    return base::FeatureList::IsEnabled(
+        sandbox::policy::features::kPrintCompositorLPAC);
+  }
+#endif
 
   if (sandbox_type == Sandbox::kWindowsSystemProxyResolver)
     return true;
@@ -993,7 +1044,7 @@ ResultCode SandboxWin::StartSandboxedProcess(
     const base::HandlesToInheritVector& handles_to_inherit,
     SandboxDelegate* delegate,
     base::Process* process) {
-  const base::ElapsedTimer timer;
+  SandboxLaunchTimer timer;
 
   // Avoid making a policy if we won't use it.
   if (IsUnsandboxedProcess(delegate->GetSandboxType(), cmd_line,
@@ -1003,10 +1054,13 @@ ResultCode SandboxWin::StartSandboxedProcess(
   }
 
   auto policy = g_broker_services->CreatePolicy(delegate->GetSandboxTag());
+  timer.OnPolicyCreated();
+
   ResultCode result = GeneratePolicyForSandboxedProcess(
       cmd_line, process_type, handles_to_inherit, delegate, policy.get());
   if (SBOX_ALL_OK != result)
     return result;
+  timer.OnPolicyGenerated();
 
   TRACE_EVENT_BEGIN0("startup", "StartProcessWithAccess::LAUNCHPROCESS");
 
@@ -1016,6 +1070,7 @@ ResultCode SandboxWin::StartSandboxedProcess(
       cmd_line.GetProgram().value().c_str(),
       cmd_line.GetCommandLineString().c_str(), std::move(policy), &last_error,
       &temp_process_info);
+  timer.OnProcessSpawned();
 
   base::win::ScopedProcessInformation target(temp_process_info);
 
@@ -1032,13 +1087,11 @@ ResultCode SandboxWin::StartSandboxedProcess(
 
   delegate->PostSpawnTarget(target.process_handle());
   CHECK(ResumeThread(target.thread_handle()) != static_cast<DWORD>(-1));
+  timer.OnProcessResumed();
 
   // Record timing histogram on sandboxed & launched success.
-  // We're interested in the happy fast case so have a low maximum.
   if (SBOX_ALL_OK == result) {
-    base::UmaHistogramCustomMicrosecondsTimes(
-        "Process.Sandbox.StartSandboxedWin.TotalDuration", timer.Elapsed(),
-        base::Microseconds(5), base::Microseconds(100000), 50);
+    timer.RecordHistograms();
   }
 
   *process = base::Process(target.TakeProcessHandle());

@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/heap_array.h"
 #include "base/containers/span.h"
 #include "base/memory/free_deleter.h"
 #include "base/memory/raw_ptr.h"
@@ -121,6 +122,9 @@ class NET_EXPORT IOBufferWithSize : public IOBuffer {
 
  protected:
   ~IOBufferWithSize() override;
+
+ private:
+  base::HeapArray<char> storage_;
 };
 
 // This is a read only IOBuffer.  The data is stored in a string and
@@ -207,11 +211,24 @@ class NET_EXPORT GrowableIOBuffer : public IOBuffer {
   int offset() { return offset_; }
 
   int RemainingCapacity();
+
+  // TODO(crbug.com/329476354): Remove this method, use everything() to access
+  // the full buffer.
   char* StartOfBuffer();
+
+  // Returns the entire buffer, including the bytes before the `offset()`.
+  //
+  // The `span()` method in the base class only gives the part of the buffer
+  // after `offset()`.
+  base::span<uint8_t> everything();
+  base::span<const uint8_t> everything() const;
 
  private:
   ~GrowableIOBuffer() override;
 
+  // TODO(329476354): Convert to std::vector, use reserve()+resize() to make
+  // exact reallocs, and remove `capacity_`. Possibly with an allocator the
+  // default-initializes, if it's important to not initialize the new memory?
   std::unique_ptr<char, base::FreeDeleter> real_data_;
   int capacity_ = 0;
   int offset_ = 0;

@@ -4,6 +4,8 @@
 
 #include "components/autofill/core/browser/data_model/iban.h"
 
+#include <string_view>
+
 #include "base/containers/fixed_flat_map.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
@@ -110,7 +112,7 @@ static constexpr int kPrefixLength = 4;
 static constexpr int kSuffixLength = 4;
 
 int GetIbanCountryToLength(std::string_view country_code) {
-  auto* it = kCountryToIbanLength.find(country_code);
+  auto it = kCountryToIbanLength.find(country_code);
   if (it == kCountryToIbanLength.end()) {
     return 0;
   }
@@ -167,7 +169,7 @@ int GetRemainderOfIbanValue(const std::u16string& stripped_value) {
   return remainder;
 }
 
-std::u16string RemoveIbanSeparators(base::StringPiece16 value) {
+std::u16string RemoveIbanSeparators(std::u16string_view value) {
   std::u16string stripped_value;
   base::RemoveChars(value, base::kWhitespaceUTF16, &stripped_value);
   return stripped_value;
@@ -236,7 +238,7 @@ bool Iban::IsValid(const std::u16string& value) {
 
 // static
 bool Iban::IsIbanApplicableInCountry(const std::string& country_code) {
-  auto* it = kCountryToIbanLength.find(country_code);
+  auto it = kCountryToIbanLength.find(country_code);
   return it != kCountryToIbanLength.end();
 }
 
@@ -388,6 +390,11 @@ bool Iban::IsValid() {
   return record_type_ == kServerIban || IsValid(value_);
 }
 
+std::string Iban::GetCountryCode() const {
+  CHECK(prefix_.length() >= 2);
+  return base::UTF16ToUTF8(base::i18n::ToUpper(prefix_.substr(0, 2)));
+}
+
 void Iban::RecordAndLogUse() {
   autofill_metrics::LogDaysSinceLastIbanUse(*this);
   set_use_date(AutofillClock::Now());
@@ -433,10 +440,6 @@ std::u16string Iban::GetIdentifierStringForAutofillDisplay(
   }
 
   return output;
-}
-
-std::u16string Iban::GetStrippedValue() const {
-  return value_;
 }
 
 bool Iban::MatchesPrefixSuffixAndLength(const Iban& iban) const {

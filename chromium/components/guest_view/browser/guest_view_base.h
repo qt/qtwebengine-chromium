@@ -40,10 +40,10 @@ struct SetSizeParams {
   SetSizeParams();
   ~SetSizeParams();
 
-  absl::optional<bool> enable_auto_size;
-  absl::optional<gfx::Size> min_size;
-  absl::optional<gfx::Size> max_size;
-  absl::optional<gfx::Size> normal_size;
+  std::optional<bool> enable_auto_size;
+  std::optional<gfx::Size> min_size;
+  std::optional<gfx::Size> max_size;
+  std::optional<gfx::Size> normal_size;
 };
 
 // A GuestViewBase is the base class browser-side API implementation for a
@@ -212,7 +212,7 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   // for an extension, returns the host of its URL, which is an extension ID. If
   // the owner RenderFrameHost is a non-extension embedder of a Controlled
   // Frame, returns its serialized origin.
-  // TODO(crbug.com/1517391): Expose this information as a url::Origin.
+  // TODO(crbug.com/41490369): Expose this information as a url::Origin.
   std::string owner_host() const { return owner_host_; }
 
   // Whether the guest view is inside a plugin document.
@@ -258,7 +258,7 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
 
   void SetOpener(GuestViewBase* opener);
 
-  const absl::optional<
+  const std::optional<
       std::pair<base::Value::Dict, content::WebContents::CreateParams>>&
   GetCreateParams() const;
 
@@ -331,6 +331,10 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   // only ever fire if IsPreferredSizeSupported returns true.
   virtual void OnPreferredSizeChanged(const gfx::Size& pref_size) {}
 
+  // This method is invoked when the owner contents audio muted state changes to
+  // give the container an opportunity to adjust their muted state.
+  virtual void OnOwnerAudioMutedStateUpdated(bool muted);
+
   // Signals that the guest view is ready.  The default implementation signals
   // immediately, but derived class can override this if they need to do
   // asynchronous setup.
@@ -363,7 +367,7 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   class OwnerContentsObserver;
   class OpenerLifetimeObserver;
 
-  // TODO(533069): Remove since BrowserPlugin has been removed.
+  // TODO(crbug.com/40436245): Remove since BrowserPlugin has been removed.
   void DidAttach();
 
   // BrowserPluginGuestDelegate implementation.
@@ -376,8 +380,7 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   // WebContentsDelegate implementation.
   void ActivateContents(content::WebContents* contents) final;
   void ContentsMouseEvent(content::WebContents* source,
-                          bool motion,
-                          bool exited) final;
+                          const ui::Event& event) final;
   void ContentsZoomChange(bool zoom_in) final;
   void LoadingStateChanged(content::WebContents* source,
                            bool should_show_loading_ui) final;
@@ -492,7 +495,7 @@ class GuestViewBase : public content::BrowserPluginGuestDelegate,
   // The params used when creating the guest contents. These are saved here in
   // case we need to recreate the guest contents. Not all guest types need to
   // store these.
-  absl::optional<
+  std::optional<
       std::pair<base::Value::Dict, content::WebContents::CreateParams>>
       create_params_;
 

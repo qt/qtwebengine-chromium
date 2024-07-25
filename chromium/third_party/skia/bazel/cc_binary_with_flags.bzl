@@ -20,14 +20,12 @@ _bool_flags = [
     "//src/lazy:enable_discardable_memory",
     "//src/lazy:use_default_global_memory_pool",
     "//src/pdf:enable_pdf_backend",
-    "//src/sksl:enable_sksl_tracing",
     "//src/sksl:enable_skslc",
     "//src/svg:enable_svg_canvas",
 ]
 
 _string_flags = [
     "//src/gpu:with_gl_standard",
-    "//tools/testrunners/gm/vias:via",
 ]
 
 _string_list_flags = [

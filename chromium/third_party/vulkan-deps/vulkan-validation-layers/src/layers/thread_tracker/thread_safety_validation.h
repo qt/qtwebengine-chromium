@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (c) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (c) 2015-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,8 @@ static_assert(std::is_same<uint64_t, DISTINCT_NONDISPATCHABLE_PHONY_HANDLE>::val
 // Use alignment of 64 bytes (instead of 128) to prioritize using less memory and decrease
 // cache pressure.
 inline constexpr size_t kObjectUserDataAlignment = 64;
-static_assert(get_hardware_destructive_interference_size() % kObjectUserDataAlignment == 0);  // sanity check on the build machine
+static_assert(vku::concurrent::get_hardware_destructive_interference_size() % kObjectUserDataAlignment ==
+              0);  // sanity check on the build machine
 
 class alignas(kObjectUserDataAlignment) ObjectUseData {
   public:
@@ -101,7 +102,7 @@ class counter {
     VulkanObjectType object_type;
     ValidationObject *object_data;
 
-    vl_concurrent_unordered_map<T, std::shared_ptr<ObjectUseData>, 6> object_table;
+    vvl::concurrent_unordered_map<T, std::shared_ptr<ObjectUseData>, 6> object_table;
 
     void CreateObject(T object) { object_table.insert(object, std::make_shared<ObjectUseData>()); }
 
@@ -120,7 +121,7 @@ class counter {
             object_data->LogError("UNASSIGNED-Threading-Info", object, loc,
                                   "Couldn't find %s Object 0x%" PRIxLEAST64
                                   ". This should not happen and may indicate a bug in the application.",
-                                  object_string[object_type], (uint64_t)(object));
+                                  string_VulkanObjectType(object_type), (uint64_t)(object));
             return nullptr;
         }
     }
@@ -217,7 +218,7 @@ class counter {
   private:
     std::string GetErrorMessage(std::thread::id tid, std::thread::id other_tid) const {
         std::stringstream err_str;
-        err_str << "THREADING ERROR : object of type " << object_string[object_type]
+        err_str << "THREADING ERROR : object of type " << string_VulkanObjectType(object_type)
                 << " is simultaneously used in current thread " << tid << " and thread " << other_tid;
         return err_str.str();
     }
@@ -261,7 +262,7 @@ class ThreadSafety : public ValidationObject {
     ReadLockGuard ReadLock() const override;
     WriteLockGuard WriteLock() override;
 
-    vl_concurrent_unordered_map<VkCommandBuffer, VkCommandPool, 6> command_pool_map;
+    vvl::concurrent_unordered_map<VkCommandBuffer, VkCommandPool, 6> command_pool_map;
     vvl::unordered_map<VkCommandPool, vvl::unordered_set<VkCommandBuffer>> pool_command_buffers_map;
     vvl::unordered_map<VkDevice, vvl::unordered_set<VkQueue>> device_queues_map;
 
@@ -277,8 +278,8 @@ class ThreadSafety : public ValidationObject {
     //     layout, and tracking of which bindings are accessed by a VkDescriptorUpdateTemplate.
     // Descriptor sets using VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_EXT can also
     // be used simultaneously in multiple threads
-    vl_concurrent_unordered_map<VkDescriptorSetLayout, bool, 4> dsl_read_only_map;
-    vl_concurrent_unordered_map<VkDescriptorSet, bool, 6> ds_read_only_map;
+    vvl::concurrent_unordered_map<VkDescriptorSetLayout, bool, 4> dsl_read_only_map;
+    vvl::concurrent_unordered_map<VkDescriptorSet, bool, 6> ds_read_only_map;
     bool DsReadOnly(VkDescriptorSet) const;
 
     counter<VkCommandBuffer> c_VkCommandBuffer;

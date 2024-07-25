@@ -13,11 +13,12 @@ Supported OS: macOS, Android, linux and windows.
 
 ## Basic usage:
 ### Chromium Devs (with a full chromium checkout)
-Use the `./cb.py` script to run benchmarks (requires chrome's
+Use the `./cb.py` script directly to run benchmarks (requires chrome's
 [vpython3](https://chromium.googlesource.com/infra/infra/+/main/doc/users/vpython.md))
 
 ### Standalone installation
-Use the "poetry" package manager, see the [development section](#development).
+- Use `pip install crossbench`,
+- or use the "poetry" package manager, see the [development section](#development).
 
 Run the latest [speedometer benchmark](https://browserbench.org/Speedometer/)
 20 times with the system default browser (chrome-stable):
@@ -25,7 +26,7 @@ Run the latest [speedometer benchmark](https://browserbench.org/Speedometer/)
 # Run chrome-stable by default:
 ./cb.py speedometer --repeat=20
 
-# Compare browsers on jetstream:
+# Compare chrome browser versions and a local chrome build on jetstream:
 ./cb.py jetstream --browser=chrome-stable --browser=chrome-m90 --browser=$PATH
 ```
 
@@ -36,7 +37,7 @@ Profile individual line items (with pprof on linux):
 
 Use a custom chrome build and only run a subset of the stories:
 ```bash
-./cb.py speedometer --browser=$PATH --probe='profiling' --story='Ember.*'
+./cb.py speedometer --browser=$PATH --probe='profiling' --story='jQuery.*'
 ```
 
 Profile a website for 17 seconds on Chrome M100 (auto-downloading on macOS and linux):
@@ -116,10 +117,10 @@ Use the `describe` command to list all benchmark details:
 ./cb.py describe benchmarks
 
 # List an individual benchmark info:
-./cb.py describe benchmark speedometer_2.1
+./cb.py describe benchmark speedometer_3.0
 
 # List a benchmark's command line options:
-./cb.py speedometer_2.1 --help
+./cb.py speedometer_3.0 --help
 ```
 
 ### Stories
@@ -137,7 +138,7 @@ Use `--stories` to list individual story names, or use regular expression
 as filter.
 
 ```bash
-./cb.py speedometer --browser=$BROWSER --stories='VanillaJS.*'
+./cb.py speedometer --browser=$BROWSER --stories='.*Angular.*'
 ```
 
 

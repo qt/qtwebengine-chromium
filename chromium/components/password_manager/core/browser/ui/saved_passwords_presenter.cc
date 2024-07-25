@@ -16,9 +16,9 @@
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/containers/fixed_flat_set.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/notreached.h"
 #include "base/observer_list.h"
 #include "base/ranges/algorithm.h"
@@ -31,8 +31,6 @@
 #include "components/password_manager/core/browser/ui/credential_utils.h"
 #include "components/password_manager/core/browser/ui/password_undo_helper.h"
 #include "components/password_manager/core/browser/ui/passwords_grouper.h"
-#include "components/password_manager/core/common/password_manager_features.h"
-#include "components/sync/base/features.h"
 #include "components/webauthn/core/browser/passkey_model.h"
 #include "components/webauthn/core/browser/passkey_model_change.h"
 #include "url/gurl.h"
@@ -103,7 +101,7 @@ password_manager::PasswordStoreChangeList GetChangesForAddedForms(
 namespace password_manager {
 
 SavedPasswordsPresenter::SavedPasswordsPresenter(
-    AffiliationService* affiliation_service,
+    affiliations::AffiliationService* affiliation_service,
     scoped_refptr<PasswordStoreInterface> profile_store,
     scoped_refptr<PasswordStoreInterface> account_store,
     webauthn::PasskeyModel* passkey_store)
@@ -113,9 +111,7 @@ SavedPasswordsPresenter::SavedPasswordsPresenter(
       undo_helper_(std::make_unique<PasswordUndoHelper>(profile_store_.get(),
                                                         account_store_.get())),
       passwords_grouper_(
-          std::make_unique<PasswordsGrouper>(affiliation_service)) {
-  DCHECK(profile_store_);
-}
+          std::make_unique<PasswordsGrouper>(affiliation_service)) {}
 
 SavedPasswordsPresenter::~SavedPasswordsPresenter() = default;
 
@@ -123,6 +119,11 @@ void SavedPasswordsPresenter::Init() {
   // Clear old cache.
   sort_key_to_password_forms_.clear();
   passwords_grouper_->ClearCache();
+
+  // Password store is not supported in some configurations.
+  if (profile_store_ == nullptr) {
+    return;
+  }
 
   profile_store_observation_.Observe(profile_store_.get());
   if (account_store_) {
@@ -151,7 +152,7 @@ bool SavedPasswordsPresenter::RemoveCredential(
     CHECK(passkey_store_);
     std::string credential_id(credential.passkey_credential_id.begin(),
                               credential.passkey_credential_id.end());
-    if (!passkey_store_->DeletePasskey(std::move(credential_id))) {
+    if (!passkey_store_->DeletePasskey(std::move(credential_id), FROM_HERE)) {
       return false;
     }
     return true;
@@ -165,7 +166,7 @@ bool SavedPasswordsPresenter::RemoveCredential(
       // |current_form| is unchanged result obtained from
       // 'OnGetPasswordStoreResultsFrom'. So it can be present only in one
       // store at a time.
-      GetStoreFor(current_form).RemoveLogin(current_form);
+      GetStoreFor(current_form).RemoveLogin(FROM_HERE, current_form);
       undo_helper_->PasswordRemoved(current_form);
     }
   }
@@ -332,7 +333,7 @@ void SavedPasswordsPresenter::MoveCredentialsToAccount(
       if (!account_credentials_signon_realms.contains(form.signon_realm)) {
         account_store_->AddLogin(form);
       }
-      profile_store_->RemoveLogin(form);
+      profile_store_->RemoveLogin(FROM_HERE, form);
     }
   }
 
@@ -441,7 +442,7 @@ void SavedPasswordsPresenter::OnLoginsChanged(
   }
 
   RemoveForms(forms_to_remove);
-  // TODO(crbug.com/1381203): Inject branding info for these credentials.
+  // TODO(crbug.com/40876661): Inject branding info for these credentials.
   AddForms(forms_to_add,
            base::BindOnce(&SavedPasswordsPresenter::NotifySavedPasswordsChanged,
                           weak_ptr_factory_.GetWeakPtr(), changes));
@@ -460,7 +461,7 @@ void SavedPasswordsPresenter::OnLoginsRetained(
                          is_using_account_store;
                 });
 
-  // TODO(crbug.com/1381203): Inject branding info for these credentials.
+  // TODO(crbug.com/40876661): Inject branding info for these credentials.
   AddForms(retained_passwords,
            base::BindOnce(&SavedPasswordsPresenter::NotifySavedPasswordsChanged,
                           weak_ptr_factory_.GetWeakPtr(),
@@ -527,8 +528,8 @@ void SavedPasswordsPresenter::RemoveForms(
 void SavedPasswordsPresenter::AddForms(const std::vector<PasswordForm>& forms,
                                        base::OnceClosure completion) {
   for (const auto& form : forms) {
-    // TODO(crbug.com/1359392): Consider replacing |sort_key_to_password_forms_|
-    // when grouping is launched.
+    // TODO(crbug.com/40862365): Consider replacing
+    // |sort_key_to_password_forms_| when grouping is launched.
     sort_key_to_password_forms_.insert(
         std::make_pair(CreateSortKey(CredentialUIEntry(form)), form));
   }
@@ -547,7 +548,7 @@ void SavedPasswordsPresenter::MaybeGroupCredentials(
   if (pending_store_updates_ > 0) {
     return;
   }
-  // TODO(crbug.com/1354196): Pass only added forms to |passwords_grouper_|.
+  // TODO(crbug.com/40858918): Pass only added forms to |passwords_grouper_|.
   std::vector<PasswordForm> all_forms;
   all_forms.reserve(sort_key_to_password_forms_.size());
   for (auto const& [key, form] : sort_key_to_password_forms_) {
@@ -556,12 +557,12 @@ void SavedPasswordsPresenter::MaybeGroupCredentials(
 
   // Passkeys are collected synchronously.
   std::vector<PasskeyCredential> passkeys;
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID)
   if (passkey_store_) {
     passkeys = PasskeyCredential::FromCredentialSpecifics(
         passkey_store_->GetAllPasskeys());
   }
-#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#endif  // !BUILDFLAG(IS_ANDROID)
 
   // Notify observers after grouping is complete.
   passwords_grouper_->GroupCredentials(
@@ -659,8 +660,7 @@ SavedPasswordsPresenter::EditResult SavedPasswordsPresenter::EditPassword(
       new_form.password_issues.clear();
     }
 
-    if (base::FeatureList::IsEnabled(syncer::kPasswordNotesWithBackup) &&
-        note_changed) {
+    if (note_changed) {
       new_form.SetNoteWithEmptyUniqueDisplayName(updated_credential.note);
     }
 

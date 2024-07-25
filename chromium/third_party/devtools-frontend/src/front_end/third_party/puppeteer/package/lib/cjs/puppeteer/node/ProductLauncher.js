@@ -33,6 +33,7 @@ const fs_1 = require("fs");
 const os_1 = require("os");
 const path_1 = require("path");
 const browsers_1 = require("@puppeteer/browsers");
+const rxjs_js_1 = require("../../third_party/rxjs/rxjs.js");
 const Browser_js_1 = require("../cdp/Browser.js");
 const Connection_js_1 = require("../cdp/Connection.js");
 const Errors_js_1 = require("../common/Errors.js");
@@ -67,12 +68,22 @@ class ProductLauncher {
     async launch(options = {}) {
         const { dumpio = false, env = process.env, handleSIGINT = true, handleSIGTERM = true, handleSIGHUP = true, ignoreHTTPSErrors = false, defaultViewport = util_js_1.DEFAULT_VIEWPORT, slowMo = 0, timeout = 30000, waitForInitialPage = true, protocolTimeout, protocol, } = options;
         const launchArgs = await this.computeLaunchArguments(options);
+        if (!(0, fs_1.existsSync)(launchArgs.executablePath)) {
+            throw new Error(`Browser was not found at the configured executablePath (${launchArgs.executablePath})`);
+        }
         const usePipe = launchArgs.args.includes('--remote-debugging-pipe');
         const onProcessExit = async () => {
             await this.cleanUserDataDir(launchArgs.userDataDir, {
                 isTemp: launchArgs.isTempUserDataDir,
             });
         };
+        if (this.#product === 'firefox' &&
+            protocol !== 'webDriverBiDi' &&
+            this.puppeteer.configuration.logLevel === 'warn') {
+            console.warn(`Chrome DevTools Protocol (CDP) support for Firefox is deprecated in Puppeteer ` +
+                `and it will be eventually removed. ` +
+                `Use WebDriver BiDi instead (see https://pptr.dev/webdriver-bidi#get-started).`);
+        }
         const browserProcess = (0, browsers_1.launch)({
             executablePath: launchArgs.executablePath,
             args: launchArgs.args,
@@ -169,7 +180,10 @@ class ProductLauncher {
             }
         }
         else {
-            await browserProcess.close();
+            // Wait for a possible graceful shutdown.
+            await (0, rxjs_js_1.firstValueFrom)((0, rxjs_js_1.race)((0, rxjs_js_1.from)(browserProcess.hasClosed()), (0, rxjs_js_1.timer)(5000).pipe((0, rxjs_js_1.map)(() => {
+                return (0, rxjs_js_1.from)(browserProcess.close());
+            }))));
         }
     }
     /**
@@ -247,7 +261,7 @@ class ProductLauncher {
     /**
      * @internal
      */
-    resolveExecutablePath() {
+    resolveExecutablePath(headless) {
         let executablePath = this.puppeteer.configuration.executablePath;
         if (executablePath) {
             if (!(0, fs_1.existsSync)(executablePath)) {
@@ -255,9 +269,12 @@ class ProductLauncher {
             }
             return executablePath;
         }
-        function productToBrowser(product) {
+        function productToBrowser(product, headless) {
             switch (product) {
                 case 'chrome':
+                    if (headless === 'shell') {
+                        return browsers_1.Browser.CHROMEHEADLESSSHELL;
+                    }
                     return browsers_1.Browser.CHROME;
                 case 'firefox':
                     return browsers_1.Browser.FIREFOX;
@@ -266,7 +283,7 @@ class ProductLauncher {
         }
         executablePath = (0, browsers_1.computeExecutablePath)({
             cacheDir: this.puppeteer.defaultDownloadPath,
-            browser: productToBrowser(this.product),
+            browser: productToBrowser(this.product, headless),
             buildId: this.puppeteer.browserRevision,
         });
         if (!(0, fs_1.existsSync)(executablePath)) {

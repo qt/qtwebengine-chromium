@@ -14,12 +14,10 @@ import type {
   WaitTimeoutOptions,
 } from '../api/Page.js';
 import type {DeviceRequestPrompt} from '../cdp/DeviceRequestPrompt.js';
-import type {IsolatedWorldChart} from '../cdp/IsolatedWorld.js';
 import type {PuppeteerLifeCycleEvent} from '../cdp/LifecycleWatcher.js';
 import {EventEmitter, type EventType} from '../common/EventEmitter.js';
 import {getQueryHandlerAndSelector} from '../common/GetQueryHandler.js';
 import {transposeIterableHandle} from '../common/HandleIterator.js';
-import {LazyArg} from '../common/LazyArg.js';
 import type {
   Awaitable,
   EvaluateFunc,
@@ -28,7 +26,6 @@ import type {
   NodeFor,
 } from '../common/types.js';
 import {
-  getPageContent,
   importFSPromises,
   withSourcePuppeteerURLIfNone,
 } from '../common/util.js';
@@ -39,8 +36,8 @@ import type {CDPSession} from './CDPSession.js';
 import type {KeyboardTypeOptions} from './Input.js';
 import {
   FunctionLocator,
-  type Locator,
   NodeLocator,
+  type Locator,
 } from './locators/locators.js';
 import type {Realm} from './Realm.js';
 
@@ -65,6 +62,10 @@ export interface WaitForOptions {
    * @defaultValue `'load'`
    */
   waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
+  /**
+   * @internal
+   */
+  ignoreSameDocumentNavigation?: boolean;
 }
 
 /**
@@ -274,11 +275,6 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   /**
    * @internal
    */
-  worlds!: IsolatedWorldChart;
-
-  /**
-   * @internal
-   */
   _name?: string;
 
   /**
@@ -340,12 +336,7 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    */
   abstract goto(
     url: string,
-    options?: {
-      referer?: string;
-      referrerPolicy?: string;
-      timeout?: number;
-      waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
-    }
+    options?: GoToOptions
   ): Promise<HTTPResponse | null>;
 
   /**
@@ -417,7 +408,7 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   }
 
   /**
-   * @internal
+   * @returns The frame element associated with this frame (if any).
    */
   @throwIfDetached
   async frameElement(): Promise<HandleFor<HTMLIFrameElement> | null> {
@@ -426,12 +417,12 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
       return null;
     }
     using list = await parentFrame.isolatedRealm().evaluateHandle(() => {
-      return document.querySelectorAll('iframe');
+      return document.querySelectorAll('iframe,frame');
     });
     for await (using iframe of transposeIterableHandle(list)) {
       const frame = await iframe.contentFrame();
-      if (frame._id === this._id) {
-        return iframe.move();
+      if (frame?._id === this._id) {
+        return (iframe as HandleFor<HTMLIFrameElement>).move();
       }
     }
     return null;
@@ -459,7 +450,7 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   }
 
   /**
-   * Behaves identically to {@link Page.evaluate} except it's run within the
+   * Behaves identically to {@link Page.evaluate} except it's run within
    * the context of this frame.
    *
    * @see {@link Page.evaluate} for details.
@@ -625,23 +616,6 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
   }
 
   /**
-   * @deprecated Use {@link Frame.$$} with the `xpath` prefix.
-   *
-   * Example: `await frame.$$('xpath/' + xpathExpression)`
-   *
-   * This method evaluates the given XPath expression and returns the results.
-   * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-   * automatically.
-   * @param expression - the XPath expression to evaluate.
-   */
-  @throwIfDetached
-  async $x(expression: string): Promise<Array<ElementHandle<Node>>> {
-    // eslint-disable-next-line rulesdir/use-using -- This is cached.
-    const document = await this.#document();
-    return await document.$x(expression);
-  }
-
-  /**
    * Waits for an element matching the given selector to appear in the frame.
    *
    * This method works across navigations.
@@ -688,39 +662,6 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
       updatedSelector,
       options
     )) as ElementHandle<NodeFor<Selector>> | null;
-  }
-
-  /**
-   * @deprecated Use {@link Frame.waitForSelector} with the `xpath` prefix.
-   *
-   * Example: `await frame.waitForSelector('xpath/' + xpathExpression)`
-   *
-   * The method evaluates the XPath expression relative to the Frame.
-   * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-   * automatically.
-   *
-   * Wait for the `xpath` to appear in page. If at the moment of calling the
-   * method the `xpath` already exists, the method will return immediately. If
-   * the xpath doesn't appear after the `timeout` milliseconds of waiting, the
-   * function will throw.
-   *
-   * For a code example, see the example for {@link Frame.waitForSelector}. That
-   * function behaves identically other than taking a CSS selector rather than
-   * an XPath.
-   *
-   * @param xpath - the XPath expression to wait for.
-   * @param options - options to configure the visibility of the element and how
-   * long to wait before timing out.
-   */
-  @throwIfDetached
-  async waitForXPath(
-    xpath: string,
-    options: WaitForSelectorOptions = {}
-  ): Promise<ElementHandle<Node> | null> {
-    if (xpath.startsWith('//')) {
-      xpath = `.${xpath}`;
-    }
-    return await this.waitForSelector(`xpath/${xpath}`, options);
   }
 
   /**
@@ -776,7 +717,21 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    */
   @throwIfDetached
   async content(): Promise<string> {
-    return await this.evaluate(getPageContent);
+    return await this.evaluate(() => {
+      let content = '';
+      for (const node of document.childNodes) {
+        switch (node) {
+          case document.documentElement:
+            content += document.documentElement.outerHTML;
+            break;
+          default:
+            content += new XMLSerializer().serializeToString(node);
+            break;
+        }
+      }
+
+      return content;
+    });
   }
 
   /**
@@ -786,13 +741,7 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    * @param options - Options to configure how long before timing out and at
    * what point to consider the content setting successful.
    */
-  abstract setContent(
-    html: string,
-    options?: {
-      timeout?: number;
-      waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
-    }
-  ): Promise<void>;
+  abstract setContent(html: string, options?: WaitForOptions): Promise<void>;
 
   /**
    * @internal
@@ -814,6 +763,13 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
    * @remarks
    * This value is calculated once when the frame is created, and will not
    * update if the attribute is changed later.
+   *
+   * @deprecated Use
+   *
+   * ```ts
+   * const element = await frame.frameElement();
+   * const nameOrId = await element.evaluate(frame => frame.name ?? frame.id);
+   * ```
    */
   name(): string {
     return this._name || '';
@@ -884,42 +840,37 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
 
     return await this.mainRealm().transferHandle(
       await this.isolatedRealm().evaluateHandle(
-        async ({Deferred}, {url, id, type, content}) => {
-          const deferred = Deferred.create<void>();
-          const script = document.createElement('script');
-          script.type = type;
-          script.text = content;
-          if (url) {
-            script.src = url;
-            script.addEventListener(
-              'load',
-              () => {
-                return deferred.resolve();
-              },
-              {once: true}
-            );
+        async ({url, id, type, content}) => {
+          return await new Promise<HTMLScriptElement>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.type = type;
+            script.text = content;
             script.addEventListener(
               'error',
               event => {
-                deferred.reject(
-                  new Error(event.message ?? 'Could not load script')
-                );
+                reject(new Error(event.message ?? 'Could not load script'));
               },
               {once: true}
             );
-          } else {
-            deferred.resolve();
-          }
-          if (id) {
-            script.id = id;
-          }
-          document.head.appendChild(script);
-          await deferred.valueOrThrow();
-          return script;
+            if (id) {
+              script.id = id;
+            }
+            if (url) {
+              script.src = url;
+              script.addEventListener(
+                'load',
+                () => {
+                  resolve(script);
+                },
+                {once: true}
+              );
+              document.head.appendChild(script);
+            } else {
+              document.head.appendChild(script);
+              resolve(script);
+            }
+          });
         },
-        LazyArg.create(context => {
-          return context.puppeteerUtil;
-        }),
         {...options, type, content}
       )
     );
@@ -969,46 +920,42 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
     }
 
     return await this.mainRealm().transferHandle(
-      await this.isolatedRealm().evaluateHandle(
-        async ({Deferred}, {url, content}) => {
-          const deferred = Deferred.create<void>();
-          let element: HTMLStyleElement | HTMLLinkElement;
-          if (!url) {
-            element = document.createElement('style');
-            element.appendChild(document.createTextNode(content!));
-          } else {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = url;
-            element = link;
+      await this.isolatedRealm().evaluateHandle(async ({url, content}) => {
+        return await new Promise<HTMLStyleElement | HTMLLinkElement>(
+          (resolve, reject) => {
+            let element: HTMLStyleElement | HTMLLinkElement;
+            if (!url) {
+              element = document.createElement('style');
+              element.appendChild(document.createTextNode(content!));
+            } else {
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = url;
+              element = link;
+            }
+            element.addEventListener(
+              'load',
+              () => {
+                resolve(element);
+              },
+              {once: true}
+            );
+            element.addEventListener(
+              'error',
+              event => {
+                reject(
+                  new Error(
+                    (event as ErrorEvent).message ?? 'Could not load style'
+                  )
+                );
+              },
+              {once: true}
+            );
+            document.head.appendChild(element);
+            return element;
           }
-          element.addEventListener(
-            'load',
-            () => {
-              deferred.resolve();
-            },
-            {once: true}
-          );
-          element.addEventListener(
-            'error',
-            event => {
-              deferred.reject(
-                new Error(
-                  (event as ErrorEvent).message ?? 'Could not load style'
-                )
-              );
-            },
-            {once: true}
-          );
-          document.head.appendChild(element);
-          await deferred.valueOrThrow();
-          return element;
-        },
-        LazyArg.create(context => {
-          return context.puppeteerUtil;
-        }),
-        options
-      )
+        );
+      }, options)
     );
   }
 
@@ -1136,32 +1083,6 @@ export abstract class Frame extends EventEmitter<FrameEvents> {
     using handle = await this.$(selector);
     assert(handle, `No element found for selector: ${selector}`);
     await handle.type(text, options);
-  }
-
-  /**
-   * @deprecated Replace with `new Promise(r => setTimeout(r, milliseconds));`.
-   *
-   * Causes your script to wait for the given number of milliseconds.
-   *
-   * @remarks
-   * It's generally recommended to not wait for a number of seconds, but instead
-   * use {@link Frame.waitForSelector}, {@link Frame.waitForXPath} or
-   * {@link Frame.waitForFunction} to wait for exactly the conditions you want.
-   *
-   * @example
-   *
-   * Wait for 1 second:
-   *
-   * ```ts
-   * await frame.waitForTimeout(1000);
-   * ```
-   *
-   * @param milliseconds - the number of milliseconds to wait.
-   */
-  async waitForTimeout(milliseconds: number): Promise<void> {
-    return await new Promise(resolve => {
-      setTimeout(resolve, milliseconds);
-    });
   }
 
   /**

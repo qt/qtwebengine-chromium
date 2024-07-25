@@ -8,6 +8,7 @@
 #include "base/component_export.h"
 #include "build/chromeos_buildflags.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-shared.h"
+#include "ui/platform_window/platform_window_delegate.h"
 
 namespace gfx {
 class RoundedCornersF;
@@ -71,6 +72,24 @@ class COMPONENT_EXPORT(PLATFORM_WINDOW) WaylandExtension {
   virtual void SetShadowCornersRadii(const gfx::RoundedCornersF& radii) = 0;
 
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
+  // Waits for a Wayland roundtrip to ensure all side effects have been
+  // processed.
+  virtual void RoundTripQueue() = 0;
+
+  // Returns true if there are any in flight requests for state updates.
+  virtual bool HasInFlightRequestsForState() const = 0;
+
+  // Returns the latest viz sequence ID for the currently applied state.
+  virtual int64_t GetVizSequenceIdForAppliedState() const = 0;
+
+  // Returns the latest viz sequence ID for the currently latched state.
+  virtual int64_t GetVizSequenceIdForLatchedState() const = 0;
+
+  // Sets whether we should latch state requests immediately, or wait for the
+  // server to respond. See the comments on `latch_immediately_for_testing_` in
+  // `WaylandWindow` for more details.
+  virtual void SetLatchImmediately(bool latch_immediately) = 0;
 
   // Signals the underneath platform to shows a preview for the given window
   // snap direction. `allow_haptic_feedback` indicates if it should send haptic

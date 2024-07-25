@@ -74,8 +74,8 @@ v8::Local<v8::Value> WindowProperties::AnonymousNamedGetter(
     if (frame->GetSecurityContext()->GetSecurityOrigin()->CanAccess(
             child->GetSecurityContext()->GetSecurityOrigin()) ||
         name == child->Owner()->BrowsingContextContainerName()) {
-      return ToV8Traits<DOMWindow>::ToV8(
-          ScriptState::From(isolate->GetCurrentContext()), child->DomWindow());
+      return ToV8Traits<DOMWindow>::ToV8(ScriptState::ForCurrentRealm(isolate),
+                                         child->DomWindow());
     }
 
     UseCounter::Count(
@@ -116,13 +116,13 @@ v8::Local<v8::Value> WindowProperties::AnonymousNamedGetter(
                                             DOMWrapperWorld::Current(isolate));
   if (!has_named_item && has_id_item &&
       !doc->ContainsMultipleElementsWithId(name)) {
-    UseCounter::Count(doc, WebFeature::kDOMClobberedVariableAccessed);
+    UseCounter::Count(doc, WebFeature::kDOMClobberedWindowPropertyAccessed);
     return ToV8Traits<Element>::ToV8(script_state, doc->getElementById(name));
   }
 
   HTMLCollection* items = doc->WindowNamedItems(name);
   if (!items->IsEmpty()) {
-    UseCounter::Count(doc, WebFeature::kDOMClobberedVariableAccessed);
+    UseCounter::Count(doc, WebFeature::kDOMClobberedWindowPropertyAccessed);
 
     // TODO(esprehn): Firefox doesn't return an HTMLCollection here if there's
     // multiple with the same name, but Chrome and Safari does. What's the

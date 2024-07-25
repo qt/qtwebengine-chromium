@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_
-#define BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_
+#ifndef PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_
+#define PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_
 
 #include "partition_alloc/partition_alloc_buildflags.h"
 
-#if BUILDFLAG(USE_ALLOCATOR_SHIM)
+#if PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
 #include "partition_alloc/partition_alloc.h"
 #include "partition_alloc/partition_alloc_base/component_export.h"
 #include "partition_alloc/shim/allocator_shim.h"
@@ -78,7 +78,7 @@ size_t PartitionGetSizeEstimate(const AllocatorDispatch*,
 
 }  // namespace internal
 
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 // Provide a ConfigurePartitions() helper, to mimic what Chromium uses. This way
 // we're making it more resilient to ConfigurePartitions() interface changes, so
 // that we don't have to modify multiple callers. This is particularly important
@@ -95,19 +95,19 @@ PA_ALWAYS_INLINE void ConfigurePartitionsForTesting() {
   auto distribution = BucketDistribution::kNeutral;
   auto scheduler_loop_quarantine = SchedulerLoopQuarantine(false);
   size_t scheduler_loop_quarantine_capacity_in_bytes = 0;
-  size_t scheduler_loop_quarantine_capacity_count = 0;
   auto zapping_by_free_flags = ZappingByFreeFlags(false);
+  auto use_pool_offset_freelists = UsePoolOffsetFreelists(true);
 
-  ConfigurePartitions(
-      enable_brp, enable_memory_tagging, memory_tagging_reporting_mode,
-      distribution, scheduler_loop_quarantine,
-      scheduler_loop_quarantine_capacity_in_bytes,
-      scheduler_loop_quarantine_capacity_count, zapping_by_free_flags);
+  ConfigurePartitions(enable_brp, enable_memory_tagging,
+                      memory_tagging_reporting_mode, distribution,
+                      scheduler_loop_quarantine,
+                      scheduler_loop_quarantine_capacity_in_bytes,
+                      zapping_by_free_flags, use_pool_offset_freelists);
 }
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
 }  // namespace allocator_shim
 
-#endif  // BUILDFLAG(USE_ALLOCATOR_SHIM)
+#endif  // PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
 
-#endif  // BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_
+#endif  // PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_DEFAULT_DISPATCH_TO_PARTITION_ALLOC_H_

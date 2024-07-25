@@ -6,11 +6,11 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/json/json_writer.h"
 #include "base/run_loop.h"
-#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -34,7 +34,7 @@ class ChangedValueWaiter : public PrefStore::Observer {
 
  private:
   void QuitRunLoopIfNewValueIsPresent() {
-    absl::optional<base::Value> new_value;
+    std::optional<base::Value> new_value;
     {
       const base::Value* value = nullptr;
       if (store_->GetValue(key_, &value)) {
@@ -59,7 +59,7 @@ class ChangedValueWaiter : public PrefStore::Observer {
 
   scoped_refptr<PrefStore> store_;
   std::string key_;
-  absl::optional<base::Value> old_value_;
+  std::optional<base::Value> old_value_;
   base::RunLoop run_loop_;
 };
 
@@ -74,7 +74,7 @@ TestingPrefStore::TestingPrefStore()
       init_complete_(false),
       committed_(true) {}
 
-bool TestingPrefStore::GetValue(base::StringPiece key,
+bool TestingPrefStore::GetValue(std::string_view key,
                                 const base::Value** value) const {
   return prefs_.GetValue(key, value);
 }

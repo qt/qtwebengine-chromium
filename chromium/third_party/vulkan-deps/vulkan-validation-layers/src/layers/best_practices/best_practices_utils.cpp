@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,6 +19,7 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
+#include "best_practices/bp_state.h"
 
 struct VendorSpecificInfo {
     EnableFlags vendor_id;
@@ -46,15 +47,16 @@ WriteLockGuard BestPractices::WriteLock() {
     }
 }
 
-std::shared_ptr<vvl::CommandBuffer> BestPractices::CreateCmdBufferState(VkCommandBuffer cb,
+std::shared_ptr<vvl::CommandBuffer> BestPractices::CreateCmdBufferState(VkCommandBuffer handle,
                                                                         const VkCommandBufferAllocateInfo* pCreateInfo,
                                                                         const vvl::CommandPool* pool) {
-    return std::static_pointer_cast<vvl::CommandBuffer>(std::make_shared<bp_state::CommandBuffer>(this, cb, pCreateInfo, pool));
+    return std::static_pointer_cast<vvl::CommandBuffer>(
+        std::make_shared<bp_state::CommandBuffer>(*this, handle, pCreateInfo, pool));
 }
 
-bp_state::CommandBuffer::CommandBuffer(BestPractices* bp, VkCommandBuffer cb, const VkCommandBufferAllocateInfo* pCreateInfo,
+bp_state::CommandBuffer::CommandBuffer(BestPractices& bp, VkCommandBuffer handle, const VkCommandBufferAllocateInfo* pCreateInfo,
                                        const vvl::CommandPool* pool)
-    : vvl::CommandBuffer(bp, cb, pCreateInfo, pool) {}
+    : vvl::CommandBuffer(bp, handle, pCreateInfo, pool) {}
 
 bool BestPractices::VendorCheckEnabled(BPVendorFlags vendors) const {
     for (const auto& vendor : kVendorInfo) {

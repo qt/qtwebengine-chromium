@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <memory>
+#include <string_view>
 #include <unordered_set>
 
 #include "base/pickle.h"
@@ -1920,7 +1921,7 @@ TEST(HttpResponseHeadersTest, TryToCreateWithNul) {
       "HTTP/1.1 200 OK\0"
       "Content-Type: application/octet-stream\0"};
   // The size must be specified explicitly to include the nul characters.
-  static constexpr base::StringPiece kHeadersWithNulsAsStringPiece(
+  static constexpr std::string_view kHeadersWithNulsAsStringPiece(
       kHeadersWithNuls, sizeof(kHeadersWithNuls));
   scoped_refptr<HttpResponseHeaders> headers =
       HttpResponseHeaders::TryToCreate(kHeadersWithNulsAsStringPiece);
@@ -2342,7 +2343,7 @@ TEST_F(HttpResponseHeadersCacheControlTest, MaxAgeOverflow) {
 
 struct MaxAgeTestData {
   const char* max_age_string;
-  const absl::optional<int64_t> expected_seconds;
+  const std::optional<int64_t> expected_seconds;
 };
 
 class MaxAgeEdgeCasesTest
@@ -2366,15 +2367,15 @@ TEST_P(MaxAgeEdgeCasesTest, MaxAgeEdgeCases) {
 
 const MaxAgeTestData max_age_tests[] = {
     {" 1 ", 1},  // Spaces are ignored.
-    {"-1", absl::nullopt},
-    {"--1", absl::nullopt},
-    {"2s", absl::nullopt},
-    {"3 days", absl::nullopt},
-    {"'4'", absl::nullopt},
-    {"\"5\"", absl::nullopt},
-    {"0x6", absl::nullopt},  // Hex not parsed as hex.
-    {"7F", absl::nullopt},   // Hex without 0x still not parsed as hex.
-    {"010", 10},             // Octal not parsed as octal.
+    {"-1", std::nullopt},
+    {"--1", std::nullopt},
+    {"2s", std::nullopt},
+    {"3 days", std::nullopt},
+    {"'4'", std::nullopt},
+    {"\"5\"", std::nullopt},
+    {"0x6", std::nullopt},  // Hex not parsed as hex.
+    {"7F", std::nullopt},   // Hex without 0x still not parsed as hex.
+    {"010", 10},            // Octal not parsed as octal.
     {"9223372036853", 9223372036853},
     {"9223372036854", 9223372036854},
     {"9223372036855", 9223372036854},
@@ -2492,10 +2493,10 @@ TEST(HttpResponseHeadersBuilderTest, Version) {
 }
 
 struct BuilderStatusLineTestData {
-  const base::StringPiece status;
-  const base::StringPiece expected_status_line;
+  const std::string_view status;
+  const std::string_view expected_status_line;
   const int expected_response_code;
-  const base::StringPiece expected_status_text;
+  const std::string_view expected_status_text;
 };
 
 // Provide GTest with a method to print the BuilderStatusLineTestData, for ease
@@ -2574,8 +2575,8 @@ INSTANTIATE_TEST_SUITE_P(HttpResponseHeaders,
                          testing::ValuesIn(kBuilderStatusLineTests));
 
 struct BuilderHeadersTestData {
-  const std::vector<std::pair<base::StringPiece, base::StringPiece>> headers;
-  const base::StringPiece expected_headers;
+  const std::vector<std::pair<std::string_view, std::string_view>> headers;
+  const std::string_view expected_headers;
 };
 
 // Provide GTest with a method to print the BuilderHeadersTestData, for ease of

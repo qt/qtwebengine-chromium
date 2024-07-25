@@ -56,8 +56,8 @@ void RegisterProbesSettingBackupPref(PrefRegistrySimple* registry) {
 }
 
 void MigrateProbesSettingToOrFromBackup(PrefService* prefs) {
-// TODO(crbug.com/1177778): remove this code around M97 to make sure the vast
-// majority of the clients are migrated.
+  // TODO(crbug.com/40748688): remove this code around M97 to make sure the vast
+  // majority of the clients are migrated.
   if (!prefs->HasPrefPath(kAlternateErrorPagesBackup)) {
     // If the user never changed the value of the preference and still uses
     // the hardcoded default value, we'll consider it to be the user value for
@@ -107,7 +107,7 @@ void UpdateProbeHistogram(bool success) {
 
 std::unique_ptr<DnsProbeRunner> MakeProbeRunner(
     net::DnsOverHttpsConfig doh_config,
-    const DnsProbeRunner::NetworkContextGetter& network_context_getter) {
+    const network::NetworkContextGetter& network_context_getter) {
   net::DnsConfigOverrides overrides;
   overrides.search = std::vector<std::string>();
   overrides.attempts = 1;

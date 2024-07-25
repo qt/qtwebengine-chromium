@@ -23,7 +23,8 @@ NavigationHandleProxy::NavigationHandleProxy(
     : cpp_navigation_handle_(cpp_navigation_handle) {
   JNIEnv* env = AttachCurrentThread();
 
-  java_navigation_handle_ = Java_NavigationHandle_Constructor(env);
+  java_navigation_handle_ = Java_NavigationHandle_Constructor(
+      env, reinterpret_cast<jlong>(cpp_navigation_handle));
 }
 
 void NavigationHandleProxy::DidStart() {
@@ -50,7 +51,9 @@ void NavigationHandleProxy::DidStart() {
       cpp_navigation_handle_->IsExternalProtocol(),
       cpp_navigation_handle_->GetNavigationId(),
       cpp_navigation_handle_->IsPageActivation(),
-      cpp_navigation_handle_->GetReloadType() != content::ReloadType::NONE);
+      cpp_navigation_handle_->GetReloadType() != content::ReloadType::NONE,
+      cpp_navigation_handle_->IsPdf(),
+      base::android::ConvertUTF8ToJavaString(env, GetMimeType()));
 }
 
 void NavigationHandleProxy::DidRedirect() {
@@ -100,12 +103,22 @@ void NavigationHandleProxy::DidFinish() {
       cpp_navigation_handle_->GetResponseHeaders()
           ? cpp_navigation_handle_->GetResponseHeaders()->response_code()
           : 200,
-      cpp_navigation_handle_->IsExternalProtocol());
+      cpp_navigation_handle_->IsExternalProtocol(),
+      cpp_navigation_handle_->IsPdf(),
+      base::android::ConvertUTF8ToJavaString(env, GetMimeType()));
 }
 
 NavigationHandleProxy::~NavigationHandleProxy() {
   JNIEnv* env = AttachCurrentThread();
   Java_NavigationHandle_release(env, java_navigation_handle_);
+}
+
+std::string NavigationHandleProxy::GetMimeType() const {
+  std::string mime_type;
+  if (cpp_navigation_handle_->GetResponseHeaders()) {
+    cpp_navigation_handle_->GetResponseHeaders()->GetMimeType(&mime_type);
+  }
+  return mime_type;
 }
 
 }  // namespace content

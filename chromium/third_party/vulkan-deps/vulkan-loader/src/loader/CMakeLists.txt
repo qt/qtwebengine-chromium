@@ -129,7 +129,7 @@ set(ASM_FAILURE_MSG "${ASM_FAILURE_MSG} extensions will suffer from a corrupted 
 
 if (APPLE_UNIVERSAL_BINARY)
     set(USE_ASSEMBLY_FALLBACK ON)
-elseif(WIN32)
+elseif(WIN32 AND NOT USE_GAS)
     option(USE_MASM "Use MASM" ON)
     if(USE_MASM AND MINGW)
         find_program(JWASM_FOUND NAMES jwasm uasm)
@@ -215,7 +215,7 @@ end
         set(USE_ASSEMBLY_FALLBACK ON)
         message(WARNING "Could not find working MASM assembler\n${ASM_FAILURE_MSG}")
     endif()
-elseif(UNIX) # i.e.: Linux & Apple
+elseif(UNIX OR MINGW OR (WIN32 AND USE_GAS)) # i.e.: Linux & Apple & MinGW & Windows using Clang-CL
 
     option(USE_GAS "Use GAS" ON)
     if(USE_GAS)
@@ -228,8 +228,21 @@ elseif(UNIX) # i.e.: Linux & Apple
         set(CMAKE_ASM_FLAGS "${CMAKE_C_FLAGS}")
         set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-        if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64|arm64")
-            try_compile(ASSEMBLER_WORKS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/asm_test_aarch64.S)
+        if(WIN32 AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "ARM64")
+            # In this particular case, we are using the same approach as for NASM
+            # This specifically avoids CMake issue #18889
+            execute_process(COMMAND ${CMAKE_ASM_COMPILER} ${CMAKE_ASM_FLAGS} -c -o ${CMAKE_CURRENT_BINARY_DIR}/asm_test_aarch64.obj ${CMAKE_CURRENT_SOURCE_DIR}/asm_test_aarch64.S
+                RESULT_VARIABLE WIN_ARM64_ASSEMBLER_WORKS
+                OUTPUT_QUIET ERROR_QUIET)
+            if(WIN_ARM64_ASSEMBLER_WORKS EQUAL 0)
+                set(ASSEMBLER_WORKS true)
+            endif()
+
+            if(ASSEMBLER_WORKS)
+                set(OPT_LOADER_SRCS ${OPT_LOADER_SRCS} unknown_ext_chain_gas_aarch64.S)
+            endif()
+        elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64|arm64")
+            try_compile(ASSEMBLER_WORKS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/asm_test_aarch64.S OUTPUT_VARIABLE TRY_COMPILE_OUTPUT)
             if(ASSEMBLER_WORKS)
                 set(OPT_LOADER_SRCS ${OPT_LOADER_SRCS} unknown_ext_chain_gas_aarch64.S)
             endif()
@@ -264,7 +277,14 @@ elseif(UNIX) # i.e.: Linux & Apple
             add_custom_command(OUTPUT gen_defines.asm DEPENDS asm_offset COMMAND asm_offset GAS)
         else()
             # Forces compiler to write the intermediate asm file, needed so that we can get sizeof/offset of info out of it.
-            target_compile_options(asm_offset PRIVATE -save-temps=obj)
+            # If with lto, compiler will output IR instead of asm, so we need to explicitly disable lto here.
+            if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+                target_compile_options(asm_offset PRIVATE -save-temps=obj -fno-lto)
+            elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang" OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
+                target_compile_options(asm_offset PRIVATE -save-temps=obj -fno-lto -fno-whole-program-vtables -fno-virtual-function-elimination)
+            else()
+                target_compile_options(asm_offset PRIVATE -save-temps=obj)
+            endif()
             if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
                 set(ASM_OFFSET_EXECUTABLE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/gen_defines.asm")
                 set(ASM_OFFSET_INTERMEDIATE_LOCATION "$<TARGET_FILE_DIR:asm_offset>/CMakeFiles/asm_offset.dir/asm_offset.c.s")
@@ -435,6 +455,8 @@ else()
             FRAMEWORK TRUE
             FRAMEWORK_VERSION A
             VERSION "${VULKAN_LOADER_VERSION}"
+            MACOSX_FRAMEWORK_BUNDLE_VERSION "${VULKAN_LOADER_VERSION}"
+            MACOSX_FRAMEWORK_SHORT_VERSION_STRING "${VULKAN_LOADER_VERSION}"
             SOVERSION "1.0.0"
             MACOSX_FRAMEWORK_IDENTIFIER com.lunarg.vulkanFramework
             PUBLIC_HEADER "${FRAMEWORK_HEADERS}"
@@ -510,4 +532,8 @@ if (PKG_CONFIG_FOUND)
     endif()
     configure_file("vulkan.pc.in" "vulkan.pc" @ONLY)
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/vulkan.pc" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig" RENAME "${API_TYPE}.pc")
+endif()
+
+if (CODE_COVERAGE)
+    target_code_coverage(vulkan AUTO ALL)
 endif()

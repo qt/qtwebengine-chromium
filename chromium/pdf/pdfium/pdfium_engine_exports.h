@@ -9,7 +9,15 @@
 #include <stdint.h>
 
 #include "build/build_config.h"
+#include "pdf/document_metadata.h"
 #include "pdf/pdf_engine.h"
+#include "services/screen_ai/buildflags/buildflags.h"
+
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+#include "base/functional/callback_forward.h"
+#include "services/screen_ai/public/mojom/screen_ai_service.mojom.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#endif
 
 namespace chrome_pdf {
 
@@ -49,6 +57,8 @@ class PDFiumEngineExports : public PDFEngineExports {
   bool GetPDFDocInfo(base::span<const uint8_t> pdf_buffer,
                      int* page_count,
                      float* max_page_width) override;
+  std::optional<DocumentMetadata> GetPDFDocMetadata(
+      base::span<const uint8_t> pdf_buffer) override;
   std::optional<bool> IsPDFDocTagged(
       base::span<const uint8_t> pdf_buffer) override;
   base::Value GetPDFStructTreeForPage(base::span<const uint8_t> pdf_buffer,
@@ -58,6 +68,12 @@ class PDFiumEngineExports : public PDFEngineExports {
   std::optional<gfx::SizeF> GetPDFPageSizeByIndex(
       base::span<const uint8_t> pdf_buffer,
       int page_index) override;
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+  std::vector<uint8_t> Searchify(
+      base::span<const uint8_t> pdf_buffer,
+      base::RepeatingCallback<screen_ai::mojom::VisualAnnotationPtr(
+          const SkBitmap& bitmap)> perform_ocr_callback) override;
+#endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 };
 
 }  // namespace chrome_pdf

@@ -41,7 +41,7 @@
 #define MAYBE(x) x
 #endif
 
-// TODO(https://crbug.com/1367886): Flaky on asan builder on multiple platforms.
+// TODO(crbug.com/40868032): Flaky on asan builder on multiple platforms.
 #if defined(ADDRESS_SANITIZER)
 #define MAYBE_ASAN(x) DISABLED_##x
 #else
@@ -103,10 +103,6 @@ void DumpAccessibilityTreeTest::SetUpCommandLine(
   // AccessibilitySelectListOpen.
   base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kEnableBlinkFeatures, "HTMLSelectListElement");
-  // kDisableAXMenuList is true on Chrome OS by default. Make it consistent
-  // for these cross-platform tests.
-  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kDisableAXMenuList, "false");
 }
 
 std::vector<std::string> DumpAccessibilityTreeTest::Dump(ui::AXMode mode) {
@@ -122,22 +118,12 @@ void DumpAccessibilityTreeTest::ChooseFeatures(
   // http://crbug.com/1063155 - temporary until this is enabled
   // everywhere.
   enabled_features->emplace_back(
-      features::kEnableAccessibilityExposeHTMLElement);
-  enabled_features->emplace_back(
       features::kEnableAccessibilityAriaVirtualContent);
-  enabled_features->emplace_back(features::kAugmentExistingImageLabels);
+  // crbug.com/330686628 - temporary until enabled everywhere
+  enabled_features->emplace_back(blink::features::kPasswordStrongLabel);
+  // crbug.com/339418716 - temporary until enabled by default
+  enabled_features->emplace_back(blink::features::kPermissionElement);
   DumpAccessibilityTestBase::ChooseFeatures(enabled_features,
-                                            disabled_features);
-}
-
-void DumpAccessibilityTreeTestWithIgnoredNodes::ChooseFeatures(
-    std::vector<base::test::FeatureRef>* enabled_features,
-    std::vector<base::test::FeatureRef>* disabled_features) {
-  // http://crbug.com/1063155 - temporary until this is enabled
-  // everywhere.
-  enabled_features->emplace_back(
-      features::kEnableAccessibilityExposeIgnoredNodes);
-  DumpAccessibilityTreeTest::ChooseFeatures(enabled_features,
                                             disabled_features);
 }
 
@@ -171,7 +157,7 @@ class YieldingParserDumpAccessibilityTreeTest
   base::test::ScopedFeatureList feature_list_;
 };
 
-// TODO(https://crbug.com/1470120): We need to create a way to incrementally
+// TODO(crbug.com/40925629): We need to create a way to incrementally
 // enable and create UIA tests.
 INSTANTIATE_TEST_SUITE_P(
     All,
@@ -183,12 +169,6 @@ INSTANTIATE_TEST_SUITE_P(
     All,
     DumpAccessibilityTreeTestExceptUIA,
     ::testing::ValuesIn(DumpAccessibilityTestBase::TreeTestPassesExceptUIA()),
-    DumpAccessibilityTreeTestPassToString());
-
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    DumpAccessibilityTreeTestWithIgnoredNodes,
-    ::testing::ValuesIn(DumpAccessibilityTestBase::TreeTestPasses()),
     DumpAccessibilityTreeTestPassToString());
 
 INSTANTIATE_TEST_SUITE_P(
@@ -418,7 +398,9 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunCSSTest(FILE_PATH_LITERAL("table-custom-row-element.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityCSSTransform) {
+// TODO(crbug.com/334802046): Enable the test after the issue is fixed.
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityCSSTransform) {
   RunCSSTest(FILE_PATH_LITERAL("transform.html"));
 }
 
@@ -517,7 +499,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAOnclick) {
   RunHtmlTest(FILE_PATH_LITERAL("a-onclick.html"));
 }
 
-// TODO(https://crbug.com/1309941): This test is failing on Fuchsia.
+// TODO(crbug.com/40830092): This test is failing on Fuchsia.
 #if BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_AccessibilityANestedStructure \
   DISABLED_AccessibilityANestedStructure
@@ -752,7 +734,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunAriaTest(FILE_PATH_LITERAL("aria-describedby.html"));
 }
 
-// TODO(crbug.com/1344894): disabled on UIA
+// TODO(crbug.com/40853220): disabled on UIA
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTestExceptUIA,
                        AccessibilityAriaDescribedByUpdates) {
   RunAriaTest(FILE_PATH_LITERAL("aria-describedby-updates.html"));
@@ -772,7 +754,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunAriaTest(FILE_PATH_LITERAL("aria-details-multiple.html"));
 }
 
-// TODO(crbug.com/1329847): disabled on UIA
+// TODO(crbug.com/40842838): disabled on UIA
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTestExceptUIA,
                        AccessibilityAriaDetailsRoles) {
   RunAriaTest(FILE_PATH_LITERAL("aria-details-roles.html"));
@@ -848,8 +830,18 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityAriaHiddenChangedOnButtons) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-hidden-changed-on-buttons.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityAriaHiddenDescendants) {
   RunAriaTest(FILE_PATH_LITERAL("aria-hidden-descendants.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityAriaHiddenLineBreakingObjects) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-hidden-line-breaking-objects.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
@@ -1233,11 +1225,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunAriaTest(FILE_PATH_LITERAL("aria-owns-from-display-none.html"));
 }
 
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityAriaOwnsIllegalMultipleOwner) {
+  RunAriaTest(FILE_PATH_LITERAL("aria-owns-illegal-multiple-owner.html"));
+}
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityAriaOwnsList) {
   RunAriaTest(FILE_PATH_LITERAL("aria-owns-list.html"));
 }
 
-// TODO(crbug.com/1338211): test timeout on Fuchsia
+// TODO(crbug.com/40848920): test timeout on Fuchsia
 #if BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_AccessibilityAriaOwnsWithRoleChange \
   DISABLED_AccessibilityAriaOwnsWithRoleChange
@@ -1620,7 +1617,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("aside-inside-section-role-generic.html"));
 }
 
-// TODO(crbug.com/1502854): Fix failure on android
+// TODO(crbug.com/40943250): Fix failure on android
 #if BUILDFLAG(IS_ANDROID)
 #define MAYBE_AccessibilityAudio DISABLED_AccessibilityAudio
 #else
@@ -1736,7 +1733,7 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("canvas-fallback.html"));
 }
 
-// TODO(crbug.com/1193963): fails on Windows.
+// TODO(crbug.com/40758178): fails on Windows.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityCaption DISABLED_AccessibilityCaption
 #else
@@ -1804,6 +1801,11 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityDisabled) {
   RunHtmlTest(FILE_PATH_LITERAL("disabled.html"));
 }
 
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityDisabledWithSubtree) {
+  RunHtmlTest(FILE_PATH_LITERAL("disabled-with-subtree.html"));
+}
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityDiv) {
   RunHtmlTest(FILE_PATH_LITERAL("div.html"));
 }
@@ -1854,8 +1856,9 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("contenteditable-docs-li.html"));
 }
 
+// TODO(b/324376803): Re-enable flaky test.
 IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
-                       AccessibilityContenteditableDocsLi) {
+                       DISABLED_AccessibilityContenteditableDocsLi) {
   RunHtmlTest(FILE_PATH_LITERAL("contenteditable-docs-li.html"));
 }
 
@@ -2238,13 +2241,13 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("iframe-transform-scrolled.html"));
 }
 
-// TODO(crbug.com/1265293): test is flaky on all platforms
+// TODO(crbug.com/40801320): test is flaky on all platforms
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        DISABLED_AccessibilityIframeWithInvalidChildren) {
   RunHtmlTest(FILE_PATH_LITERAL("iframe-with-invalid-children.html"));
 }
 
-// TODO(crbug.com/1265293): test is flaky on all platforms
+// TODO(crbug.com/40801320): test is flaky on all platforms
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        DISABLED_AccessibilityIframeWithInvalidChildrenAdded) {
   RunHtmlTest(FILE_PATH_LITERAL("iframe-with-invalid-children-added.html"));
@@ -2263,7 +2266,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("iframe-with-region-role.html"));
 }
 
-// TODO(crbug.com/1475950): Fix and reenable the test.
+// TODO(crbug.com/40070579): Fix and reenable the test.
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, DISABLED_AccessibilityImg) {
   RunHtmlTest(FILE_PATH_LITERAL("img.html"));
 }
@@ -2294,18 +2297,17 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInPageLinks) {
   RunHtmlTest(FILE_PATH_LITERAL("in-page-links.html"));
 }
 
-// TODO(crbug.com/1459354): Flaky on CrOS MSan.
+// TODO(crbug.com/40919402): Flaky on CrOS MSan.
 #if BUILDFLAG(IS_CHROMEOS) && defined(MEMORY_SANITIZER)
 #define MAYBE_InertAttribute DISABLED_InertAttribute
 #else
 #define MAYBE_InertAttribute InertAttribute
 #endif
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTestWithIgnoredNodes,
-                       MAYBE_InertAttribute) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, MAYBE_InertAttribute) {
   RunHtmlTest(FILE_PATH_LITERAL("inert-attribute.html"));
 }
 
-// TODO(crbug.com/1193963): fails on Windows.
+// TODO(crbug.com/40758178): fails on Windows.
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInputButton) {
   RunHtmlTest(FILE_PATH_LITERAL("input-button.html"));
 }
@@ -2356,7 +2358,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 
 // TODO: date and time controls drop their children, including the popup button,
 // on Android.
-// TODO(https://crbug.com/1378498): Flaky on every platform.
+// TODO(crbug.com/40875029): Flaky on every platform.
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        DISABLED_AccessibilityInputDateWithPopupOpen) {
   RunHtmlTest(FILE_PATH_LITERAL("input-date-with-popup-open.html"));
@@ -2372,7 +2374,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   FILE_PATH_LITERAL("input-date-with-popup-open-multiple.html")
 #endif
 
-// TODO(crbug.com/1506091): Test times out on android.
+// TODO(crbug.com/40946735): Test times out on android.
 #if BUILDFLAG(IS_ANDROID)
 #define MAYBE_AccessibilityInputDateWithPopupOpenMultiple \
   DISABLED_AccessibilityInputDateWithPopupOpenMultiple
@@ -2457,12 +2459,27 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInputNumber) {
   RunHtmlTest(FILE_PATH_LITERAL("input-number.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInputPassword) {
+// Test flakes on Android P - b/329275097.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_AccessibilityInputPassword DISABLED_AccessibilityInputPassword
+#else
+#define MAYBE_AccessibilityInputPassword AccessibilityInputPassword
+#endif
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       MAYBE_AccessibilityInputPassword) {
   RunHtmlTest(FILE_PATH_LITERAL("input-password.html"));
 }
 
+// Test flakes on Android P - b/329271598.
+#if BUILDFLAG(IS_ANDROID)
+#define MAYBE_AccessibilityInputPasswordObscured \
+  DISABLED_AccessibilityInputPasswordObscured
+#else
+#define MAYBE_AccessibilityInputPasswordObscured \
+  AccessibilityInputPasswordObscured
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       AccessibilityInputPasswordObscured) {
+                       MAYBE_AccessibilityInputPasswordObscured) {
   RunHtmlTest(FILE_PATH_LITERAL("input-password-obscured.html"));
 }
 
@@ -2470,7 +2487,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityInputRadio) {
   RunHtmlTest(FILE_PATH_LITERAL("input-radio.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTestWithIgnoredNodes,
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityInputRadioCheckboxLabel) {
   RunHtmlTest(FILE_PATH_LITERAL("input-radio-checkbox-label.html"));
 }
@@ -2495,7 +2512,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("input-radio-wrapped-label.html"));
 }
 
-// TODO(crbug.com/1407673): failing on Fuchsia
+// TODO(crbug.com/40887968): failing on Fuchsia
 #if BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_AccessibilityInputRange DISABLED_AccessibilityInputRange
 #else
@@ -2598,8 +2615,8 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
 }
 
 #if BUILDFLAG(IS_MAC)
-// TODO(1038813): The /blink test pass is different on Windows and Mac, versus
-// Linux. Also, see https://crbug.com/1314896.
+// TODO(crbug.com/40666501): The /blink test pass is different on Windows and
+// Mac, versus Linux. Also, see https://crbug.com/1314896.
 #define MAYBE_AccessibilityInputTime DISABLED_AccessibilityInputTime
 #else
 #define MAYBE_AccessibilityInputTime AccessibilityInputTime
@@ -2850,12 +2867,6 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-opened.html"));
 }
 
-// http://crbug.com/738497
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       DISABLED_AccessibilityModalDialogInIframeClosed) {
-  RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-closed.html"));
-}
-
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityModalDialogInIframeOpened) {
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-opened.html"));
@@ -2866,7 +2877,7 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-in-iframe-opened.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTestWithIgnoredNodes,
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        AccessibilityModalDialogAndIframes) {
   RunHtmlTest(FILE_PATH_LITERAL("modal-dialog-and-iframes.html"));
 }
@@ -2941,7 +2952,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityOptgroup) {
   RunHtmlTest(FILE_PATH_LITERAL("optgroup.html"));
 }
 
-// TODO(crbug.com/1338211): test timeouts on Fuchsia
+// TODO(crbug.com/40848920): test timeouts on Fuchsia
 #if BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_AccessibilityOpenModal DISABLED_AccessibilityOpenModal
 #else
@@ -2978,6 +2989,10 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityP) {
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityParam) {
   RunHtmlTest(FILE_PATH_LITERAL("param.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityPermission) {
+  RunHtmlTest(FILE_PATH_LITERAL("permission.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityPopoverApi) {
@@ -3190,7 +3205,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilitySub) {
   RunHtmlTest(FILE_PATH_LITERAL("sub.html"));
 }
 
-// TODO(crbug.com/1480429): Flaky
+// TODO(crbug.com/40930250): Flaky
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_AccessibilitySub DISABLED_AccessibilitySub
 #else
@@ -3205,7 +3220,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilitySup) {
   RunHtmlTest(FILE_PATH_LITERAL("sup.html"));
 }
 
-// TODO(crbug.com/1193963): fails on Windows.
+// TODO(crbug.com/40758178): fails on Windows.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilitySummary DISABLED_AccessibilitySummary
 #else
@@ -3372,6 +3387,11 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("table-multiple-row-and-column-headers.html"));
 }
 
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       AccessibilityTabPanel) {
+  RunHtmlTest(FILE_PATH_LITERAL("tab-panel.html"));
+}
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityTextAlign) {
   RunHtmlTest(FILE_PATH_LITERAL("text-align.html"));
 }
@@ -3472,7 +3492,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, AccessibilityVideoTextOnly) {
   RunHtmlTest(FILE_PATH_LITERAL("video-text-only.html"));
 }
 
-// TODO(https://crbug.com/1377779): This test is failing on Android.
+// TODO(crbug.com/40874552): This test is failing on Android.
 #if BUILDFLAG(IS_ANDROID)
 #define MAYBE_AccessibilityNodeChangedCrashInEditableText \
   DISABLED_AccessibilityNodeChangedCrashInEditableText
@@ -3485,7 +3505,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
   RunHtmlTest(FILE_PATH_LITERAL("node-changed-crash-in-editable-text.html"));
 }
 
-// TODO(https://crbug.com/1366446): This test is failing on Android.
+// TODO(crbug.com/40866942): This test is failing on Android.
 #if BUILDFLAG(IS_ANDROID)
 #define MAYBE_AccessibilityNoSourceVideo DISABLED_AccessibilityNoSourceVideo
 #else
@@ -3676,6 +3696,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, DisplayContentsSelectCrash) {
   RunRegressionTest(FILE_PATH_LITERAL("display-contents-select-crash.html"));
 }
 
+// TODO(crbug.com/341125461) Times out on macOS as showing the select popup
+// involves a nested runloop, but nothing in the test closes the popup/leaves
+// that nested runloop.
+#if !BUILDFLAG(IS_MAC)
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
+                       SelectExpandManyOptionsCrash) {
+  RunRegressionTest(FILE_PATH_LITERAL("select-expand-many-options-crash.html"));
+}
+#endif
+
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, XmlInIframeCrash) {
   RunRegressionTest(FILE_PATH_LITERAL("xml-in-iframe-crash.html"));
 }
@@ -3736,7 +3766,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, MissingParent) {
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
                        NullObjectOnHypertextOffsetComputation) {
   if (!base::FeatureList::IsEnabled(blink::features::kMutationEvents)) {
-    // TODO(crbug.com/1446498) Remove this test (and the .html file) when
+    // TODO(crbug.com/40268638) Remove this test (and the .html file) when
     // MutationEvents are disabled for good. This is just a crash test related
     // to `DOMNodeInserted`.
     return;
@@ -3801,38 +3831,72 @@ IN_PROC_BROWSER_TEST_P(YieldingParserDumpAccessibilityTreeTest,
   RunRegressionTest(FILE_PATH_LITERAL("reused-map-change-map-name.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangAttribute) {
+// Enable language detection for both static and dynamic content.
+class DumpAccessibilityTreeWithLanguageDetectionTest
+    : public DumpAccessibilityTreeTest {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    DumpAccessibilityTreeTest::SetUpCommandLine(command_line);
+
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        ::switches::kEnableExperimentalAccessibilityLanguageDetection);
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
+        ::switches::kEnableExperimentalAccessibilityLanguageDetectionDynamic);
+  }
+
+  void RunLanguageDetectionTest(const base::FilePath::CharType* file_path) {
+    base::FilePath test_path =
+        GetTestFilePath("accessibility", "language-detection");
+    {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      ASSERT_TRUE(base::PathExists(test_path)) << test_path.LossyDisplayName();
+    }
+    base::FilePath language_detection_file =
+        test_path.Append(base::FilePath(file_path));
+
+    RunTest(ui::kAXModeComplete, language_detection_file,
+            "accessibility/language-detection");
+  }
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    DumpAccessibilityTreeWithLanguageDetectionTest,
+    ::testing::ValuesIn(DumpAccessibilityTestBase::TreeTestPasses()),
+    DumpAccessibilityTreeTestPassToString());
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangAttribute) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("lang-attribute.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangAttributeNested) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangAttributeNested) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("lang-attribute-nested.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangAttributeSwitching) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangAttributeSwitching) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("lang-attribute-switching.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangDetectionStaticBasic) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangDetectionStaticBasic) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("static-basic.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangDetectionDynamicBasic) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangDetectionDynamicBasic) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("dynamic-basic.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangDetectionDynamicMultipleInserts) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangDetectionDynamicMultipleInserts) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("dynamic-multiple-inserts.html"));
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest,
-                       LanguageDetectionLangDetectionDynamicReparenting) {
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeWithLanguageDetectionTest,
+                       LangDetectionDynamicReparenting) {
   RunLanguageDetectionTest(FILE_PATH_LITERAL("dynamic-reparenting.html"));
 }
 
@@ -3870,6 +3934,10 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, WhitespaceDynamic) {
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, TableWithPseudoElements) {
   RunHtmlTest(FILE_PATH_LITERAL("table-with-pseudo-elements.html"));
+}
+
+IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, SvgImageNameFromTitle) {
+  RunHtmlTest(FILE_PATH_LITERAL("svg-image-name-from-title.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityTreeTest, IgnoreDuplicateRelationIds) {

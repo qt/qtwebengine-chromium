@@ -71,7 +71,7 @@ TEST_F(DisplayLockUtilitiesTest, DISABLED_ActivatableLockedInclusiveAncestors) {
   Element& inner_b = *GetDocument().getElementById(AtomicString("innerB"));
   Element& innermost = *GetDocument().getElementById(AtomicString("innermost"));
   ShadowRoot& shadow_root =
-      inner_b.AttachShadowRootInternal(ShadowRootType::kOpen);
+      inner_b.AttachShadowRootForTesting(ShadowRootMode::kOpen);
   shadow_root.setInnerHTML("<div id='shadowDiv'>shadow!</div>");
   Element& shadow_div = *shadow_root.getElementById(AtomicString("shadowDiv"));
 
@@ -288,8 +288,9 @@ TEST_F(DisplayLockUtilitiesTest, InteractionWithIntersectionObserver) {
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   TestIntersectionObserverDelegate* observer_delegate =
       MakeGarbageCollected<TestIntersectionObserverDelegate>(ChildDocument());
-  IntersectionObserver* observer =
-      IntersectionObserver::Create(observer_init, *observer_delegate);
+  IntersectionObserver* observer = IntersectionObserver::Create(
+      observer_init, *observer_delegate,
+      LocalFrameUkmAggregator::kDisplayLockIntersectionObserver);
   observer->observe(target);
   UpdateAllLifecyclePhasesForTest();
   test::RunPendingTasks();

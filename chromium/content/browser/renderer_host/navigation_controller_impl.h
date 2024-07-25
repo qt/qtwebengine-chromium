@@ -98,7 +98,6 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   ~NavigationControllerImpl() override;
 
   // NavigationController implementation:
-  WebContents* DeprecatedGetWebContents() override;
   BrowserContext* GetBrowserContext() override;
   void Restore(int selected_navigation,
                RestoreType type,
@@ -459,7 +458,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
 
   // Whether the current call stack includes NavigateToPendingEntry, to avoid
   // re-entrant calls to NavigateToPendingEntry.
-  // TODO(https://crbug.com/1327907): Don't expose this once we figure out the
+  // TODO(crbug.com/40841494): Don't expose this once we figure out the
   // root cause for the navigation re-entrancy case in the linked bug.
   bool in_navigate_to_pending_entry() const {
     return in_navigate_to_pending_entry_;
@@ -473,7 +472,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   // Explainer:
   // https://github.com/jeremyroman/alternate-loading-modes/blob/main/browsing-context.md#session-history)
   //
-  // TODO(crbug.com/914108): Consider portals here as well.
+  // TODO(crbug.com/40606075): Consider portals here as well.
   bool ShouldMaintainTrivialSessionHistory(
       const FrameTreeNode* frame_tree_node) const;
 
@@ -907,7 +906,7 @@ class CONTENT_EXPORT NavigationControllerImpl : public NavigationController {
   //
   // This is meant to avoid a class of URL spoofs where the navigation is
   // canceled, but the stale pending NavigationEntry is left in place.
-  std::set<PendingEntryRef*> pending_entry_refs_;
+  std::set<raw_ptr<PendingEntryRef, SetExperimental>> pending_entry_refs_;
 
   // If a new entry fails loading, details about it are temporarily held here
   // until the error page is shown (or 0 otherwise).

@@ -137,6 +137,11 @@ double CSSNumericLiteralValue::ComputeNumber() const {
   return ClampTo<double>(num_);
 }
 
+double CSSNumericLiteralValue::ComputePercentage() const {
+  DCHECK(IsPercentage());
+  return ClampTo<double>(num_);
+}
+
 bool CSSNumericLiteralValue::AccumulateLengthArray(CSSLengthArray& length_array,
                                                    double multiplier) const {
   LengthUnitType length_type;
@@ -210,7 +215,7 @@ String CSSNumericLiteralValue::CustomCSSText() const {
       // FIXME
       break;
     case UnitType::kInteger:
-      text = String::Number(GetIntValue());
+      text = String::Number(ComputeInteger());
       break;
     case UnitType::kNumber:
     case UnitType::kPercentage:
@@ -282,7 +287,7 @@ String CSSNumericLiteralValue::CustomCSSText() const {
       // be represented in non-exponential format with 6 digit precision.
       constexpr int kMinInteger = -999999;
       constexpr int kMaxInteger = 999999;
-      double value = To<CSSNumericLiteralValue>(this)->DoubleValue();
+      double value = DoubleValue();
       // If the value is small integer, go the fast path.
       if (value < kMinInteger || value > kMaxInteger ||
           std::trunc(value) != value) {

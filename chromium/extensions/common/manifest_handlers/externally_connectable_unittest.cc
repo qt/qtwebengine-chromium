@@ -193,11 +193,11 @@ TEST_F(ExternallyConnectableTest, AllIDs) {
 
 TEST_F(ExternallyConnectableTest, IdCanConnect) {
   // Not in order to test that ExternallyConnectableInfo sorts it.
-  std::string matches_ids_array[] = {"g", "h", "c", "i", "a", "z", "b"};
-  std::vector<std::string> matches_ids(
+  ExtensionId matches_ids_array[] = {"g", "h", "c", "i", "a", "z", "b"};
+  std::vector<ExtensionId> matches_ids(
       matches_ids_array, matches_ids_array + std::size(matches_ids_array));
 
-  std::string nomatches_ids_array[] = {"2", "3", "1"};
+  ExtensionId nomatches_ids_array[] = {"2", "3", "1"};
 
   // all_ids = false.
   {
@@ -288,7 +288,7 @@ TEST_F(ExternallyConnectableTest, WarningUnusedAcceptsTlsChannelId) {
 
 // Tests that the deprecated externally_connectable.all_urls permission doesn't
 // trigger a warning for an extension that requests it.
-// TODO(https://crbug.com/1363485): Remove this test when we remove the
+// TODO(crbug.com/40864987): Remove this test when we remove the
 // externally_connectable.all_urls permission.
 TEST_F(ExternallyConnectableTest, DeprecatedAllUrlsPermission) {
   scoped_refptr<const Extension> extension =

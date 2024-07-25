@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <limits>
 
 #include "core/fpdfapi/parser/cpdf_object.h"
@@ -133,9 +138,9 @@ TEST(SyntaxParserTest, ReadHexString) {
 
   {
     // Just ending character.
-    static const uint8_t data[] = ">";
+    const char gt = '>';
     CPDF_SyntaxParser parser(pdfium::MakeRetain<CFX_ReadOnlySpanStream>(
-        pdfium::make_span(data, 1u)));
+        pdfium::byte_span_from_ref(gt)));
     EXPECT_EQ("", parser.ReadHexString());
     EXPECT_EQ(1, parser.GetPos());
   }

@@ -927,7 +927,7 @@ Unknown properties are collapsed to zero. -->
   <int value="13" label="UNSELECT_TEXT"/>
   <int value="14" label="LIST_COMMANDS"/>
   <int value="15" label="NEW_LINE"/>
-  <int value="16" label="STOP_LISTENING"/>
+  <int value="16" label="TOGGLE_DICTATION"/>
   <int value="17" label="DELETE_PREV_WORD"/>
   <int value="18" label="DELETE_PREV_SENT"/>
   <int value="19" label="NAV_NEXT_WORD"/>
@@ -954,6 +954,18 @@ Unknown properties are collapsed to zero. -->
   <int value="2" label="Select the button in the SwitchAccess context menu"/>
   <int value="3" label="ChromeVox gesture"/>
   <int value="4" label="AccessibilityCommon extension"/>
+</enum>
+
+<enum name="CrosSelectToSpeakAction">
+  <int value="0" label="None"/>
+  <int value="1" label="Previous paragraph"/>
+  <int value="2" label="Previous sentence"/>
+  <int value="3" label="Pause"/>
+  <int value="4" label="Resume"/>
+  <int value="5" label="Next sentence"/>
+  <int value="6" label="Next paragraph"/>
+  <int value="7" label="Exit"/>
+  <int value="8" label="Change speed"/>
 </enum>
 
 <enum name="CrosSelectToSpeakActivationMethod">
@@ -1361,6 +1373,19 @@ Unknown properties are collapsed to zero. -->
   <int value="2" label="Theme change"/>
   <int value="3" label="Line height change"/>
   <int value="4" label="Letter spacing change"/>
+  <int value="5" label="Links enabled change"/>
+</enum>
+
+<enum name="ReadAnythingSpeechError">
+  <int value="0" label="Text too long"/>
+  <int value="1" label="Language unavailable"/>
+  <int value="2" label="Voice unavailable"/>
+  <int value="3" label="Invalid argument"/>
+  <int value="4" label="Synthesis failed"/>
+  <int value="5" label="Synthesis unavailable"/>
+  <int value="6" label="Audio busy"/>
+  <int value="7" label="Audio hardware"/>
+  <int value="8" label="Network"/>
 </enum>
 
 <enum name="ReaderModeEntryPoint">

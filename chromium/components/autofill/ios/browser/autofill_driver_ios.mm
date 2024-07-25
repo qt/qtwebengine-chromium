@@ -5,13 +5,16 @@
 #import "components/autofill/ios/browser/autofill_driver_ios.h"
 
 #import "base/memory/ptr_util.h"
+#import "base/metrics/histogram_functions.h"
 #import "components/autofill/core/browser/form_structure.h"
 #import "components/autofill/core/common/autofill_features.h"
+#import "components/autofill/core/common/field_data_manager.h"
 #import "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
 #import "components/autofill/ios/browser/autofill_driver_ios_bridge.h"
 #import "components/autofill/ios/browser/autofill_driver_ios_factory.h"
 #import "components/autofill/ios/browser/autofill_java_script_feature.h"
 #import "components/autofill/ios/browser/autofill_util.h"
+#import "components/autofill/ios/common/field_data_manager_factory_ios.h"
 #import "components/autofill/ios/form_util/child_frame_registrar.h"
 #import "ios/web/public/browser_state.h"
 #import "ios/web/public/js_messaging/web_frame.h"
@@ -47,11 +50,11 @@ AutofillDriverIOS::AutofillDriverIOS(web::WebState* web_state,
                                      id<AutofillDriverIOSBridge> bridge,
                                      const std::string& app_locale)
     : web_state_(web_state),
+      web_frame_id_(web_frame ? web_frame->GetFrameId() : ""),
       bridge_(bridge),
-      client_(client),
-      browser_autofill_manager_(
-          std::make_unique<BrowserAutofillManager>(this, client, app_locale)) {
-  web_frame_id_ = web_frame ? web_frame->GetFrameId() : "";
+      client_(*client),
+      manager_(std::make_unique<BrowserAutofillManager>(this, app_locale)) {
+  manager_observation_.Observe(manager_.get());
 
   if (base::FeatureList::IsEnabled(
           autofill::features::kAutofillAcrossIframesIos)) {
@@ -88,8 +91,12 @@ AutofillDriverIOS* AutofillDriverIOS::GetParent() {
   return parent_.get();
 }
 
+AutofillClient& AutofillDriverIOS::GetAutofillClient() {
+  return *client_;
+}
+
 BrowserAutofillManager& AutofillDriverIOS::GetAutofillManager() {
-  return *browser_autofill_manager_;
+  return *manager_;
 }
 
 // Return true as iOS has no MPArch.
@@ -115,31 +122,33 @@ bool AutofillDriverIOS::CanShowAutofillUi() const {
 }
 
 base::flat_set<FieldGlobalId> AutofillDriverIOS::ApplyFormAction(
-    mojom::ActionType action_type,
+    mojom::FormActionType action_type,
     mojom::ActionPersistence action_persistence,
     const FormData& data,
     const url::Origin& triggered_origin,
     const base::flat_map<FieldGlobalId, FieldType>& field_type_map) {
   switch (action_type) {
-    case mojom::ActionType::kUndo:
-      // TODO(crbug.com/1441410) Add Undo support on iOS.
+    case mojom::FormActionType::kUndo:
+      // TODO(crbug.com/40266549) Add Undo support on iOS.
       return {};
-    case mojom::ActionType::kFill:
+    case mojom::FormActionType::kFill:
       web::WebFrame* frame = web_frame();
+      std::vector<FieldGlobalId> safe_field_ids;
       if (frame) {
-        [bridge_ fillFormData:data inFrame:frame];
+        std::vector<FormFieldData::FillData> fields;
+        for (const FormFieldData& field : data.fields) {
+          safe_field_ids.push_back(field.global_id());
+          fields.push_back(FormFieldData::FillData(field));
+        }
+        [bridge_ fillData:fields inFrame:frame];
       }
-      std::vector<FieldGlobalId> safe_fields;
-      for (const auto& field : data.fields) {
-        safe_fields.push_back(field.global_id());
-      }
-      return safe_fields;
+      return safe_field_ids;
   }
 }
 
 void AutofillDriverIOS::ApplyFieldAction(
+    mojom::FieldActionType action_type,
     mojom::ActionPersistence action_persistence,
-    mojom::TextReplacement text_replacement,
     const FieldGlobalId& field,
     const std::u16string& value) {
   // For now, only support filling.
@@ -162,27 +171,8 @@ void AutofillDriverIOS::ExtractForm(
     FormGlobalId form,
     base::OnceCallback<void(AutofillDriver*, const std::optional<FormData>&)>
         response_callback) {
-  // TODO(crbug.com/1490670): Implement ExtractForm().
+  // TODO(crbug.com/40284824): Implement ExtractForm().
   NOTIMPLEMENTED();
-}
-
-void AutofillDriverIOS::HandleParsedForms(const std::vector<FormData>& forms) {
-  const std::map<FormGlobalId, std::unique_ptr<FormStructure>>& map =
-      browser_autofill_manager_->form_structures();
-  std::vector<raw_ptr<FormStructure, VectorExperimental>> form_structures;
-  form_structures.reserve(forms.size());
-
-  for (const FormData& form : forms) {
-    auto it = map.find(form.global_id());
-    if (it != map.end())
-      form_structures.push_back(it->second.get());
-  }
-
-  web::WebFrame* frame = web_frame();
-  if (!frame) {
-    return;
-  }
-  [bridge_ handleParsedForms:form_structures inFrame:frame];
 }
 
 void AutofillDriverIOS::SendAutofillTypePredictionsToRenderer(
@@ -214,11 +204,9 @@ void AutofillDriverIOS::TriggerFormExtractionInAllFrames(
 void AutofillDriverIOS::GetFourDigitCombinationsFromDOM(
     base::OnceCallback<void(const std::vector<std::string>&)>
         potential_matches) {
-  // TODO(crbug.com/1423605): Implement GetFourDigitCombinationsFromDOM in iOS.
+  // TODO(crbug.com/40260122): Implement GetFourDigitCombinationsFromDOM in iOS.
   NOTIMPLEMENTED();
 }
-
-void AutofillDriverIOS::RendererShouldClearFilledSection() {}
 
 void AutofillDriverIOS::RendererShouldClearPreviewedForm() {
 }
@@ -234,9 +222,6 @@ void AutofillDriverIOS::RendererShouldTriggerSuggestions(
 void AutofillDriverIOS::RendererShouldSetSuggestionAvailability(
     const FieldGlobalId& field,
     mojom::AutofillSuggestionAvailability suggestion_availability) {}
-
-void AutofillDriverIOS::PopupHidden() {
-}
 
 net::IsolationInfo AutofillDriverIOS::IsolationInfo() {
   web::WebFramesManager* frames_manager =
@@ -262,13 +247,81 @@ web::WebFrame* AutofillDriverIOS::web_frame() const {
   return frames_manager->GetFrameWithId(web_frame_id_);
 }
 
-void AutofillDriverIOS::NotifyOfChildFrame(RemoteFrameToken token) {
-  auto* registrar = ChildFrameRegistrar::GetOrCreateForWebState(web_state_);
-  if (registrar && known_child_frames_.insert(token).second) {
-    registrar->DeclareNewRemoteToken(
-        token, base::BindOnce(&AutofillDriverIOS::SetSelfAsParent,
-                              weak_ptr_factory_.GetWeakPtr()));
+void AutofillDriverIOS::AskForValuesToFill(const FormData& form,
+                                           const FormFieldData& field) {
+  // TODO(crbug.com/40266699): Route this using AutofillDriverRouter.
+  // TODO(crbug.com/40269303): Distinguish between different trigger sources.
+  // The caret position is currently not extracted on iOS .
+  gfx::Rect caret_bounds;
+  GetAutofillManager().OnAskForValuesToFill(
+      form, field, caret_bounds,
+      autofill::AutofillSuggestionTriggerSource::kiOS);
+}
+
+void AutofillDriverIOS::DidFillAutofillFormData(const FormData& form,
+                                                base::TimeTicks timestamp) {
+  UpdateLastInteractedForm(/*form_data=*/form);
+  // TODO(crbug.com/40266699): Route this using AutofillDriverRouter.
+  GetAutofillManager().OnDidFillAutofillFormData(form, timestamp);
+}
+
+void AutofillDriverIOS::FormsSeen(const std::vector<FormData>& updated_forms) {
+  // Any RemoteFrameTokens encountered for the first time should be posted to
+  // the registrar, which allows this driver to be established as the parent of
+  // the child frame.
+  if (base::FeatureList::IsEnabled(
+          autofill::features::kAutofillAcrossIframesIos)) {
+    for (const autofill::FormData& form : updated_forms) {
+      for (const autofill::FrameTokenWithPredecessor& child_frame :
+           form.child_frames) {
+        // This absl::get is safe because on iOS, FormData::child_frames is
+        // only ever populated with RemoteFrameTokens. absl::get will fail a
+        // CHECK if this assumption is ever wrong.
+        auto token = absl::get<autofill::RemoteFrameToken>(child_frame.token);
+        auto* registrar =
+            ChildFrameRegistrar::GetOrCreateForWebState(web_state_);
+        if (registrar && known_child_frames_.insert(token).second) {
+          registrar->DeclareNewRemoteToken(
+              token, base::BindOnce(&AutofillDriverIOS::SetSelfAsParent,
+                                    weak_ptr_factory_.GetWeakPtr()));
+        }
+      }
+    }
   }
+
+  // TODO(crbug.com/40266699): Route this using AutofillDriverRouter.
+  GetAutofillManager().OnFormsSeen(updated_forms, {});
+}
+
+void AutofillDriverIOS::FormSubmitted(
+    const FormData& form,
+    bool known_success,
+    mojom::SubmissionSource submission_source) {
+  base::UmaHistogramEnumeration(kAutofillSubmissionDetectionSourceHistogram,
+                                submission_source);
+  // TODO(crbug.com/40266699): Route this using AutofillDriverRouter.
+  GetAutofillManager().OnFormSubmitted(form, known_success, submission_source);
+  ClearLastInteractedForm();
+}
+
+void AutofillDriverIOS::CaretMovedInFormField(const FormData& form,
+                                              const FormFieldData& field,
+                                              const gfx::Rect& caret_bounds) {
+  GetAutofillManager().OnCaretMovedInFormField(form, field, caret_bounds);
+}
+
+void AutofillDriverIOS::TextFieldDidChange(const FormData& form,
+                                           const FormFieldData& field,
+                                           base::TimeTicks timestamp) {
+  UpdateLastInteractedForm(/*form_data=*/form,
+                           /*formless_field=*/form.renderer_id
+                               ? FieldRendererId()
+                               : field.renderer_id());
+
+  // TODO(crbug.com/40266699): Route this using AutofillDriverRouter.
+  GetAutofillManager().OnTextFieldDidChange(
+      form, field,
+      timestamp);
 }
 
 void AutofillDriverIOS::SetParent(base::WeakPtr<AutofillDriverIOS> parent) {
@@ -280,6 +333,135 @@ void AutofillDriverIOS::SetSelfAsParent(LocalFrameToken token) {
       FromWebStateAndLocalFrameToken(web_state_, token);
   if (child_driver) {
     child_driver->SetParent(weak_ptr_factory_.GetWeakPtr());
+  }
+}
+
+void AutofillDriverIOS::UpdateLastInteractedForm(
+    const FormData& form_data,
+    const FieldRendererId& formless_field) {
+  // No-op when XHR submission detection disabled.
+  if (!base::FeatureList::IsEnabled(
+          autofill::features::kAutofillEnableXHRSubmissionDetectionIOS)) {
+    return;
+  }
+
+  last_interacted_form_.emplace(form_data, formless_field);
+}
+
+void AutofillDriverIOS::ClearLastInteractedForm() {
+  last_interacted_form_.reset();
+}
+
+void AutofillDriverIOS::OnAutofillManagerDestroyed(AutofillManager& manager) {
+  manager_observation_.Reset();
+}
+
+void AutofillDriverIOS::OnAfterFormsSeen(AutofillManager& manager,
+                                         base::span<const FormGlobalId> forms) {
+  DCHECK_EQ(&manager, manager_.get());
+  if (forms.empty()) {
+    return;
+  }
+  std::vector<raw_ptr<FormStructure, VectorExperimental>> form_structures;
+  form_structures.reserve(forms.size());
+  for (const FormGlobalId& form : forms) {
+    if (FormStructure* form_structure = manager.FindCachedFormById(form)) {
+      form_structures.push_back(form_structure);
+    }
+  }
+  if (web::WebFrame* frame = web_frame()) {
+    [bridge_ handleParsedForms:form_structures inFrame:frame];
+  }
+}
+
+void AutofillDriverIOS::FormsRemoved(
+    const std::set<FormRendererId>& removed_forms,
+    const std::set<FieldRendererId>& removed_unowned_fields) {
+  CHECK(base::FeatureList::IsEnabled(
+      autofill::features::kAutofillEnableXHRSubmissionDetectionIOS));
+
+  const bool submission_detected = DetectFormSubmissionAfterFormRemoval(
+      removed_forms, removed_unowned_fields);
+  RecordFormRemoval(
+      submission_detected, /*removed_forms_count=*/removed_forms.size(),
+      /*removed_unowned_fields_count=*/removed_unowned_fields.size());
+
+  if (submission_detected) {
+    UpdateLastInteractedFormFromFieldDataManager();
+
+    FormSubmitted(last_interacted_form_->form_data,
+                  /*known_success=*/true,
+                  mojom::SubmissionSource::XHR_SUCCEEDED);
+  }
+
+  // TODO(crbug.com/40184363): Call FormsSeen with deleted forms and formless
+  // form.
+}
+
+bool AutofillDriverIOS::DetectFormSubmissionAfterFormRemoval(
+    const std::set<FormRendererId>& removed_forms,
+    const std::set<FieldRendererId>& removed_unowned_fields) const {
+  // Detect a form submission only if the last interacted form or formless field
+  // was removed.
+  if (!last_interacted_form_) {
+    return false;
+  }
+
+  const auto& last_interacted_form_id =
+      last_interacted_form_->form_data.renderer_id;
+  // Check if the last interacted form was removed.
+  if (last_interacted_form_id &&
+      removed_forms.find(last_interacted_form_id) != removed_forms.end()) {
+    return true;
+  }
+
+  const auto& last_formless_field_id = last_interacted_form_->formless_field;
+
+  // Check if the last interacted formless field was removed.
+  return removed_unowned_fields.find(last_formless_field_id) !=
+         removed_unowned_fields.end();
+}
+
+void AutofillDriverIOS::UpdateLastInteractedFormFromFieldDataManager() {
+  CHECK(last_interacted_form_);
+
+  auto* frame = web_frame();
+  if (!frame) {
+    return;
+  }
+
+  FieldDataManager* field_data_manager =
+      FieldDataManagerFactoryIOS::FromWebFrame(frame);
+
+  // Update the snapshot of the last interacted form with the data in
+  // FieldDataManager.
+  for (auto& field : last_interacted_form_->form_data.fields) {
+    const auto& field_id = field.renderer_id();
+    if (!field_data_manager->HasFieldData(field_id)) {
+      continue;
+    }
+    field.set_value(field_data_manager->GetUserInput(field_id));
+    field.set_properties_mask(
+        field_data_manager->GetFieldPropertiesMask(field_id));
+  }
+}
+
+void AutofillDriverIOS::RecordFormRemoval(bool submission_detected,
+                                          int removed_forms_count,
+                                          int removed_unowned_fields_count) {
+  base::UmaHistogramBoolean(/*name=*/kFormSubmissionAfterFormRemovalHistogram,
+                            /*sample=*/submission_detected);
+  base::UmaHistogramCounts100(/*name=*/kFormRemovalRemovedFormsHistogram,
+                              /*sample=*/removed_forms_count);
+  base::UmaHistogramCounts100(
+      /*name=*/kFormRemovalRemovedUnownedFieldsHistogram,
+      /*sample=*/removed_unowned_fields_count);
+
+  if (submission_detected) {
+    CHECK(last_interacted_form_);
+    base::UmaHistogramBoolean(
+        /*name=*/kFormlessSubmissionAfterFormRemovalHistogram,
+        /*sample=*/!last_interacted_form_->form_data.renderer_id);
   }
 }
 

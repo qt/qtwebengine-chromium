@@ -163,14 +163,20 @@ class BrowserProbeResult(ProbeResult):
     browser_platform = run.browser_platform
     remote_tmp_dir = run.browser_tmp_dir
     out_dir = run.out_dir
-    result_paths: List[pathlib.Path] = []
+    local_result_paths: List[pathlib.Path] = []
     for remote_path in paths:
-      relative_path = remote_path.relative_to(remote_tmp_dir)
-      result_path = out_dir / relative_path
-      browser_platform.rsync(remote_path, result_path)
-      assert result_path.exists(), "Failed to copy result file."
-      result_paths.append(result_path)
-    return result_paths
+      try:
+        relative_path = remote_path.relative_to(remote_tmp_dir)
+      except ValueError:
+        logging.debug(
+            "Browser result is not in browser tmp dir: "
+            "only using the name of '%s'", remote_path)
+        relative_path = pathlib.Path(remote_path.name)
+      local_result_path = out_dir / relative_path
+      browser_platform.rsync(remote_path, local_result_path)
+      assert local_result_path.exists(), "Failed to copy result file."
+      local_result_paths.append(local_result_path)
+    return local_result_paths
 
 
 class ProbeResultDict:

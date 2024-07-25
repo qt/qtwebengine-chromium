@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/check.h"
@@ -23,7 +24,7 @@ namespace autofill {
 
 namespace {
 
-base::span<const MatchPatternRef> GetMatchPatterns(base::StringPiece name,
+base::span<const MatchPatternRef> GetMatchPatterns(std::string_view name,
                                                    ParsingContext& context) {
   return GetMatchPatterns(name, context.page_language, context.pattern_source);
 }
@@ -40,42 +41,16 @@ bool SetFieldAndAdvanceCursor(AutofillScanner* scanner,
   return true;
 }
 
-// Removes a MatchAttribute from a MatchingPattern.
-// TODO(crbug/1142936): This is necessary for
-// AddressFieldParser::ParseNameAndLabelSeparately().
-MatchingPattern WithoutAttribute(MatchingPattern p, MatchAttribute attribute) {
-  DenseSet<MatchAttribute> match_field_attributes = p.match_field_attributes;
-  match_field_attributes.erase(attribute);
-  return {
-      .positive_pattern = p.positive_pattern,
-      .negative_pattern = p.negative_pattern,
-      .positive_score = p.positive_score,
-      .match_field_attributes = match_field_attributes,
-      .form_control_types = p.form_control_types,
-  };
+// Removes a MatchAttribute from MatchParams.
+MatchParams WithoutAttribute(MatchParams p, MatchAttribute attribute) {
+  p.attributes.erase(attribute);
+  return p;
 }
 
-// Removes a MatchAttribute from a MatchParams.
-// TODO(crbug/1142936): This is necessary for
-// AddressFieldParser::ParseNameAndLabelSeparately().
-MatchParams WithoutAttribute(MatchParams match_type, MatchAttribute attribute) {
-  match_type.attributes.erase(attribute);
-  return match_type;
-}
-
-// Adds a FormControlType to a MatchingPattern.
-// TODO(crbug/1142936): This is necessary for
-// AddressFieldParser::ParseAddressLines() and AddressFieldParser::Parse().
-MatchingPattern WithFieldType(MatchingPattern p, FormControlType field_type) {
-  DenseSet<FormControlType> form_control_types = p.form_control_types;
-  form_control_types.insert(field_type);
-  return {
-      .positive_pattern = p.positive_pattern,
-      .negative_pattern = p.negative_pattern,
-      .positive_score = p.positive_score,
-      .match_field_attributes = p.match_field_attributes,
-      .form_control_types = form_control_types,
-  };
+// Adds a FormControlType to MatchParams.
+MatchParams WithFieldType(MatchParams p, FormControlType field_type) {
+  p.field_types.insert(field_type);
+  return p;
 }
 
 // Some sites use type="tel" for zip fields (to get a numerical input).
@@ -127,6 +102,9 @@ constexpr MatchParams kOverflowMatchType =
 constexpr MatchParams kOverflowAndLandmarkMatchType =
     kDefaultMatchParamsWith<FormControlType::kTextArea,
                             FormControlType::kInputSearch>;
+constexpr MatchParams kHouseNumberAndAptMatchType =
+    kDefaultMatchParamsWith<FormControlType::kTextArea,
+                            FormControlType::kInputSearch>;
 
 }  // namespace
 
@@ -176,7 +154,7 @@ std::unique_ptr<FormFieldParser> AddressFieldParser::Parse(
                    kDefaultMatchParamsWith<FormControlType::kInputEmail,
                                            FormControlType::kTextArea>,
                    email_patterns, nullptr, "kEmailRe",
-                   [](const MatchingPattern& p) {
+                   [](const MatchParams& p) {
                      return WithFieldType(p, FormControlType::kTextArea);
                    })) {
       continue;
@@ -230,7 +208,7 @@ std::unique_ptr<FormFieldParser> AddressFieldParser::Parse(
       address_field->between_streets_line_2_ || address_field->admin_level2_ ||
       address_field->between_streets_or_landmark_ ||
       address_field->overflow_and_landmark_ || address_field->overflow_ ||
-      address_field->street_location_) {
+      address_field->street_location_ || address_field->house_number_and_apt_) {
     // Don't slurp non-labeled fields at the end into the address.
     if (has_trailing_non_labeled_fields)
       scanner->RewindTo(begin_trailing_non_labeled_fields);
@@ -252,11 +230,6 @@ bool AddressFieldParser::IsStandaloneZipSupported(
 std::unique_ptr<FormFieldParser> AddressFieldParser::ParseStandaloneZip(
     ParsingContext& context,
     AutofillScanner* scanner) {
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillEnableZipOnlyAddressForms)) {
-    return nullptr;
-  }
-
   if (scanner->IsEnd()) {
     return nullptr;
   }
@@ -329,6 +302,8 @@ void AddressFieldParser::AddClassifications(
                     kBaseAddressParserScore, field_candidates);
   AddClassification(overflow_, ADDRESS_HOME_OVERFLOW, kBaseAddressParserScore,
                     field_candidates);
+  AddClassification(house_number_and_apt_, ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
+                    kBaseAddressParserScore, field_candidates);
 }
 
 bool AddressFieldParser::ParseCompany(ParsingContext& context,
@@ -408,6 +383,7 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
   AutofillField* old_zip = zip_;
   AutofillField* old_zip4 = zip4_;
   AutofillField* old_apartment_number = apartment_number_;
+  AutofillField* old_house_number_and_apt_ = house_number_and_apt_;
 
   AddressCountryCode country_code(context.client_country.value());
 
@@ -416,7 +392,7 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
     // a street location typically contains strings that match the regular
     // expressions for a street name as well.
     if (!street_location_ &&
-        // TODO(crbug.com/1474308) Find a better way to gate street location
+        // TODO(crbug.com/40279279) Find a better way to gate street location
         // support. This is easy to confuse with with an address line 1 field.
         // This is currently allowlisted for MX which prefers pairs of
         // street location and address overflow fields.
@@ -429,7 +405,7 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
       continue;
     }
 
-    // TODO(crbug.com/1474308) Factor out these ParseFieldSpecifics into
+    // TODO(crbug.com/40279279) Factor out these ParseFieldSpecifics into
     // ParseStreetName and similar functions.
     if (!street_name_ && !street_location_ &&
         ParseFieldSpecifics(
@@ -481,6 +457,10 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
       continue;
     }
 
+    if (ParseFieldSpecificsForHouseNumberAndApt(context, scanner)) {
+      continue;
+    }
+
     if (!house_number_ && !street_location_ &&
         ParseFieldSpecifics(
             context, scanner, kHouseNumberRe,
@@ -490,7 +470,7 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
       continue;
     }
 
-    // TODO(crbug.com/1153715): Remove finch guard once launched.
+    // TODO(crbug.com/40734406): Remove finch guard once launched.
     if (base::FeatureList::IsEnabled(
             features::kAutofillEnableSupportForApartmentNumbers) &&
         !apartment_number_ &&
@@ -562,6 +542,7 @@ bool AddressFieldParser::ParseAddressFieldSequence(ParsingContext& context,
   zip_ = old_zip;
   zip4_ = old_zip4;
   apartment_number_ = old_apartment_number;
+  house_number_and_apt_ = old_house_number_and_apt_;
 
   scanner->RewindTo(saved_cursor_position);
   return false;
@@ -609,7 +590,7 @@ bool AddressFieldParser::ParseAddressLines(ParsingContext& context,
   base::span<const MatchPatternRef> address_line1_patterns =
       GetMatchPatterns("ADDRESS_LINE_1", context);
 
-  // TODO(crbug.com/1121990): Remove duplicate calls when launching
+  // TODO(crbug.com/40146444): Remove duplicate calls when launching
   // AutofillParsingPatternProvider. The old code calls ParseFieldSpecifics()
   // for two different patterns, |pattern| and |label_pattern|. The new code
   // handles both patterns at once in the |address_line1_patterns|.
@@ -630,7 +611,7 @@ bool AddressFieldParser::ParseAddressLines(ParsingContext& context,
           kDefaultMatchParamsWith<FormControlType::kInputSearch,
                                   FormControlType::kTextArea>,
           address_line1_patterns, &street_address_, "kAddressLine1Re",
-          [](const MatchingPattern& p) {
+          [](const MatchParams& p) {
             return WithFieldType(p, FormControlType::kTextArea);
           }) &&
       !ParseFieldSpecifics(
@@ -638,7 +619,7 @@ bool AddressFieldParser::ParseAddressLines(ParsingContext& context,
           MatchParams({MatchAttribute::kLabel}, {FormControlType::kInputSearch,
                                                  FormControlType::kTextArea}),
           address_line1_patterns, &street_address_, "kAddressLine1LabelRe",
-          [](const MatchingPattern& p) {
+          [](const MatchParams& p) {
             return WithFieldType(p, FormControlType::kTextArea);
           })) {
     return false;
@@ -757,14 +738,14 @@ AddressFieldParser::ParseNameAndLabelSeparately(
   bool parsed_name = ParseFieldSpecifics(
       context, scanner, pattern,
       WithoutAttribute(match_type, MatchAttribute::kLabel), patterns,
-      &cur_match, regex_name, [](const MatchingPattern& p) {
+      &cur_match, regex_name, [](const MatchParams& p) {
         return WithoutAttribute(p, MatchAttribute::kLabel);
       });
   scanner->RewindTo(saved_cursor);
   bool parsed_label = ParseFieldSpecifics(
       context, scanner, pattern,
       WithoutAttribute(match_type, MatchAttribute::kName), patterns, &cur_match,
-      regex_name, [](const MatchingPattern& p) {
+      regex_name, [](const MatchParams& p) {
         return WithoutAttribute(p, MatchAttribute::kName);
       });
   if (parsed_name && parsed_label) {
@@ -1017,7 +998,7 @@ AddressFieldParser::ParseNameAndLabelForDependentLocality(
   const bool is_enabled_dependent_locality_parsing =
       base::FeatureList::IsEnabled(
           features::kAutofillEnableDependentLocalityParsing);
-  // TODO(crbug.com/1157405) Remove feature check when launched.
+  // TODO(crbug.com/40160818) Remove feature check when launched.
   if (dependent_locality_ || !is_enabled_dependent_locality_parsing)
     return RESULT_MATCH_NONE;
 
@@ -1115,7 +1096,7 @@ AddressFieldParser::ParseNameAndLabelForOverflowAndLandmark(
     ParsingContext& context,
     AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  //  TODO(crbug.com/1441904) Remove feature check when launched.
+  //  TODO(crbug.com/40266693) Remove feature check when launched.
   if (overflow_and_landmark_ || overflow_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForAddressOverflowAndLandmark) ||
@@ -1137,7 +1118,7 @@ AddressFieldParser::ParseNameLabelResult
 AddressFieldParser::ParseNameAndLabelForOverflow(ParsingContext& context,
                                                  AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  // TODO(crbug.com/1441904) Remove feature check when launched.
+  // TODO(crbug.com/40266693) Remove feature check when launched.
   if (overflow_and_landmark_ || overflow_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForAddressOverflow) ||
@@ -1157,7 +1138,7 @@ AddressFieldParser::ParseNameLabelResult
 AddressFieldParser::ParseNameAndLabelForLandmark(ParsingContext& context,
                                                  AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  // TODO(crbug.com/1441904) Remove feature check when launched.
+  // TODO(crbug.com/40266693) Remove feature check when launched.
   if (landmark_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForLandmark) ||
@@ -1178,7 +1159,7 @@ AddressFieldParser::ParseNameAndLabelForBetweenStreets(
     ParsingContext& context,
     AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  // TODO(crbug.com/1441904) Remove feature check when launched.
+  // TODO(crbug.com/40266693) Remove feature check when launched.
   if (between_streets_ || between_streets_line_1_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForBetweenStreets) ||
@@ -1199,7 +1180,7 @@ AddressFieldParser::ParseNameAndLabelForBetweenStreetsLines12(
     ParsingContext& context,
     AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  // TODO(crbug.com/1441904) Remove feature check when launched.
+  // TODO(crbug.com/40266693) Remove feature check when launched.
   if (between_streets_line_2_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForBetweenStreets) ||
@@ -1233,7 +1214,7 @@ AddressFieldParser::ParseNameLabelResult
 AddressFieldParser::ParseNameAndLabelForAdminLevel2(ParsingContext& context,
                                                     AutofillScanner* scanner) {
   AddressCountryCode country_code(context.client_country.value());
-  // TODO(crbug.com/1441904) Remove feature check when launched.
+  // TODO(crbug.com/40266693) Remove feature check when launched.
   if (admin_level2_ ||
       !base::FeatureList::IsEnabled(
           features::kAutofillEnableSupportForAdminLevel2) ||
@@ -1249,6 +1230,25 @@ AddressFieldParser::ParseNameAndLabelForAdminLevel2(ParsingContext& context,
       admin_level2_patterns, &admin_level2_, "kAdminLevel2Re");
 }
 
+bool AddressFieldParser::ParseFieldSpecificsForHouseNumberAndApt(
+    ParsingContext& context,
+    AutofillScanner* scanner) {
+  AddressCountryCode country_code(context.client_country.value());
+  if (house_number_and_apt_ || house_number_ || apartment_number_ ||
+      !i18n_model_definition::IsTypeEnabledForCountry(
+          ADDRESS_HOME_HOUSE_NUMBER_AND_APT, country_code)) {
+    return RESULT_MATCH_NONE;
+  }
+
+  base::span<const MatchPatternRef> house_number_and_apt_patterns =
+      GetMatchPatterns("ADDRESS_HOME_HOUSE_NUMBER_AND_APT", context);
+  auto result = ParseFieldSpecifics(
+      context, scanner, kHouseNumberAndAptRe, kHouseNumberAndAptMatchType,
+      house_number_and_apt_patterns, &house_number_and_apt_,
+      "kHouseNumberAndAptRe");
+  return result;
+}
+
 bool AddressFieldParser::PossiblyAStructuredAddressForm() const {
   // Record success if the house number and at least one of the other
   // fields were found because that indicates a structured address form.
@@ -1256,6 +1256,10 @@ bool AddressFieldParser::PossiblyAStructuredAddressForm() const {
       (street_name_ || zip_ || overflow_ || overflow_and_landmark_ ||
        between_streets_or_landmark_ || apartment_number_ || between_streets_ ||
        between_streets_line_1_ || between_streets_line_2_)) {
+    return true;
+  }
+
+  if (street_name_ && house_number_and_apt_) {
     return true;
   }
 

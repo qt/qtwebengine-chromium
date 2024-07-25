@@ -57,7 +57,19 @@ MTLPixelFormat MtlDepthStencilFlagsToFormat(SkEnumBitMask<DepthStencilFlags> mas
     return MTLPixelFormatInvalid;
 }
 
+SkEnumBitMask<DepthStencilFlags> MtlFormatToDepthStencilFlags(MTLPixelFormat format) {
+    switch (format) {
+        case MTLPixelFormatDepth32Float:          return DepthStencilFlags::kDepth;
+        case MTLPixelFormatStencil8:              return DepthStencilFlags::kStencil;
+        case MTLPixelFormatDepth32Float_Stencil8: return DepthStencilFlags::kDepthStencil;
+        default:                                  return DepthStencilFlags::kNone;
+    }
+
+    SkUNREACHABLE;
+}
+
 sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedContext,
+                                               std::string_view label,
                                                std::string_view msl,
                                                ShaderErrorHandler* errorHandler) {
     TRACE_EVENT0("skia.shaders", "driver_compile_shader");
@@ -97,11 +109,20 @@ sk_cfp<id<MTLLibrary>> MtlCompileShaderLibrary(const MtlSharedContext* sharedCon
         return nil;
     }
 
+    NSString* nsLabel = [[NSString alloc] initWithBytesNoCopy:const_cast<char*>(label.data())
+                                                       length:label.size()
+                                                     encoding:NSUTF8StringEncoding
+                                                 freeWhenDone:NO];
+    compiledLibrary.get().label = nsLabel;
     return compiledLibrary;
 }
 
 size_t MtlFormatBytesPerBlock(MtlPixelFormat format) {
     return skgpu::MtlFormatBytesPerBlock((MTLPixelFormat) format);
+}
+
+SkTextureCompressionType MtlFormatToCompressionType(MtlPixelFormat format) {
+    return skgpu::MtlFormatToCompressionType((MTLPixelFormat) format);
 }
 
 } // namespace skgpu::graphite

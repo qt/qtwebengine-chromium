@@ -5,6 +5,7 @@
 #include "content/browser/bluetooth/advertisement_client.h"
 
 #include <utility>
+#include <vector>
 
 #include "content/browser/bluetooth/bluetooth_blocklist.h"
 #include "content/browser/bluetooth/bluetooth_metrics.h"
@@ -62,7 +63,7 @@ void WebBluetoothServiceImpl::WatchAdvertisementsClient::SendEvent(
   }
 
   auto filtered_event = event.Clone();
-  base::EraseIf(filtered_event->uuids, [this](const BluetoothUUID& uuid) {
+  std::erase_if(filtered_event->uuids, [this](const BluetoothUUID& uuid) {
     return !service_->IsAllowedToAccessService(device_id_, uuid);
   });
   base::EraseIf(
@@ -97,7 +98,7 @@ WebBluetoothServiceImpl::ScanningClient::~ScanningClient() = default;
 
 void WebBluetoothServiceImpl::ScanningClient::SendEvent(
     const blink::mojom::WebBluetoothAdvertisingEvent& event) {
-  // TODO(https://crbug.com/1108958): Filter out advertisement data if not
+  // TODO(crbug.com/40707749): Filter out advertisement data if not
   // included in the filters, optionalServices, or optionalManufacturerData.
   auto filtered_event = event.Clone();
   if (options_->accept_all_advertisements) {
@@ -152,7 +153,7 @@ void WebBluetoothServiceImpl::ScanningClient::SendEvent(
       }
     }
 
-    // TODO(crbug.com/707635): Support manufacturerData and serviceData
+    // TODO(crbug.com/41310835): Support manufacturerData and serviceData
     // filters.
 
     if (prompt_controller_) {

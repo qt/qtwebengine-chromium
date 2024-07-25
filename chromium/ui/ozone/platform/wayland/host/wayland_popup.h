@@ -27,7 +27,7 @@ class WaylandPopup : public WaylandWindow {
 
   ~WaylandPopup() override;
 
-  ShellPopupWrapper* shell_popup() const { return shell_popup_.get(); }
+  ShellPopupWrapper* shell_popup() { return shell_popup_.get(); }
 
   // WaylandWindow overrides:
   void TooltipShown(const char* text,
@@ -48,7 +48,7 @@ class WaylandPopup : public WaylandWindow {
   bool OnInitialize(PlatformWindowInitProperties properties,
                     PlatformWindowDelegate::State* state) override;
   WaylandPopup* AsWaylandPopup() override;
-  void SetWindowGeometry(gfx::Size size_dip) override;
+  void SetWindowGeometry(const PlatformWindowDelegate::State& state) override;
   void UpdateWindowMask() override;
   void PropagateBufferScale(float new_scale) override;
   void ShowTooltip(const std::u16string& text,
@@ -91,7 +91,7 @@ class WaylandPopup : public WaylandWindow {
   bool schedule_redraw_ = false;
 
   // The last buffer scale sent to the wayland server.
-  absl::optional<float> last_sent_buffer_scale_;
+  std::optional<float> last_sent_buffer_scale_;
 };
 
 }  // namespace ui

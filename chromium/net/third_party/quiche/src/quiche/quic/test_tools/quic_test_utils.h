@@ -20,6 +20,7 @@
 #include "quiche/quic/core/congestion_control/loss_detection_interface.h"
 #include "quiche/quic/core/congestion_control/send_algorithm_interface.h"
 #include "quiche/quic/core/crypto/transport_parameters.h"
+#include "quiche/quic/core/frames/quic_reset_stream_at_frame.h"
 #include "quiche/quic/core/http/http_decoder.h"
 #include "quiche/quic/core/http/quic_server_session_base.h"
 #include "quiche/quic/core/http/quic_spdy_client_session_base.h"
@@ -29,6 +30,7 @@
 #include "quiche/quic/core/quic_error_codes.h"
 #include "quiche/quic/core/quic_framer.h"
 #include "quiche/quic/core/quic_packet_writer.h"
+#include "quiche/quic/core/quic_packet_writer_wrapper.h"
 #include "quiche/quic/core/quic_packets.h"
 #include "quiche/quic/core/quic_path_validator.h"
 #include "quiche/quic/core/quic_sent_packet_manager.h"
@@ -36,6 +38,7 @@
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_utils.h"
+#include "quiche/quic/platform/api/quic_mutex.h"
 #include "quiche/quic/platform/api/quic_socket_address.h"
 #include "quiche/quic/test_tools/mock_clock.h"
 #include "quiche/quic/test_tools/mock_connection_id_generator.h"
@@ -353,6 +356,8 @@ class MockFramerVisitor : public QuicFramerVisitorInterface {
               (override));
   MOCK_METHOD(bool, OnAckFrequencyFrame, (const QuicAckFrequencyFrame& frame),
               (override));
+  MOCK_METHOD(bool, OnResetStreamAtFrame, (const QuicResetStreamAtFrame& frame),
+              (override));
   MOCK_METHOD(void, OnPacketComplete, (), (override));
   MOCK_METHOD(bool, IsValidStatelessResetToken, (const StatelessResetToken&),
               (const, override));
@@ -420,6 +425,7 @@ class NoOpFramerVisitor : public QuicFramerVisitorInterface {
   bool OnMessageFrame(const QuicMessageFrame& frame) override;
   bool OnHandshakeDoneFrame(const QuicHandshakeDoneFrame& frame) override;
   bool OnAckFrequencyFrame(const QuicAckFrequencyFrame& frame) override;
+  bool OnResetStreamAtFrame(const QuicResetStreamAtFrame& frame) override;
   void OnPacketComplete() override {}
   bool IsValidStatelessResetToken(
       const StatelessResetToken& token) const override;
@@ -1411,7 +1417,8 @@ class MockPacketCreatorDelegate : public QuicPacketCreator::DelegateInterface {
   MOCK_METHOD(bool, ShouldGeneratePacket,
               (HasRetransmittableData retransmittable, IsHandshake handshake),
               (override));
-  MOCK_METHOD(void, MaybeBundleOpportunistically, (), (override));
+  MOCK_METHOD(void, MaybeBundleOpportunistically,
+              (TransmissionType transmission_type), (override));
   MOCK_METHOD(QuicByteCount, GetFlowControlSendWindowSize, (QuicStreamId),
               (override));
   MOCK_METHOD(SerializedPacketFate, GetSerializedPacketFate,
@@ -1500,6 +1507,12 @@ class MockHttpDecoderVisitor : public HttpDecoder::Visitor {
               (QuicByteCount header_length, WebTransportSessionId session_id),
               (override));
 
+  MOCK_METHOD(bool, OnMetadataFrameStart,
+              (QuicByteCount header_length, QuicByteCount payload_length),
+              (override));
+  MOCK_METHOD(bool, OnMetadataFramePayload, (absl::string_view payload),
+              (override));
+  MOCK_METHOD(bool, OnMetadataFrameEnd, (), (override));
   MOCK_METHOD(bool, OnUnknownFrameStart,
               (uint64_t frame_type, QuicByteCount header_length,
                QuicByteCount payload_length),
@@ -2051,6 +2064,39 @@ class TestPacketWriter : public QuicPacketWriter {
   QuicSocketAddress last_write_peer_address_;
   int write_error_code_{0};
   QuicEcnCodepoint last_ecn_sent_ = ECN_NOT_ECT;
+};
+
+class DroppingPacketsWithSpecificDestinationWriter
+    : public QuicPacketWriterWrapper {
+ public:
+  WriteResult WritePacket(const char* buffer, size_t buf_len,
+                          const QuicIpAddress& self_address,
+                          const QuicSocketAddress& peer_address,
+                          PerPacketOptions* options,
+                          const QuicPacketWriterParams& params) override {
+    QuicReaderMutexLock lock(&mutex_);
+    QUIC_LOG(ERROR) << "DroppingPacketsWithSpecificDestinationWriter::"
+                       "WritePacket with peer address "
+                    << peer_address.ToString() << " and peer_address_to_drop_ "
+                    << peer_address_to_drop_.ToString();
+    if (peer_address_to_drop_.IsInitialized() &&
+        peer_address_to_drop_ == peer_address) {
+      QUIC_DLOG(INFO) << "Dropping packet to destination address "
+                      << peer_address.ToString();
+      return WriteResult(WRITE_STATUS_OK, buf_len);
+    }
+    return QuicPacketWriterWrapper::WritePacket(buffer, buf_len, self_address,
+                                                peer_address, options, params);
+  }
+
+  void set_peer_address_to_drop(const QuicSocketAddress& peer_address) {
+    QuicWriterMutexLock lock(&mutex_);
+    peer_address_to_drop_ = peer_address;
+  }
+
+ private:
+  QuicMutex mutex_;
+  QuicSocketAddress peer_address_to_drop_ ABSL_GUARDED_BY(mutex_);
 };
 
 // Parses a packet generated by

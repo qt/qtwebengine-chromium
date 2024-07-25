@@ -55,14 +55,25 @@ Client* ObjectBase::GetClient() const {
     return mClient;
 }
 
-void ObjectBase::Reference() {
+void ObjectBase::AddRef() {
     mRefcount++;
 }
 
-bool ObjectBase::Release() {
+uint32_t ObjectBase::Release() {
     DAWN_ASSERT(mRefcount != 0);
-    mRefcount--;
-    return mRefcount == 0;
+
+    uint32_t refCount = --mRefcount;
+    if (refCount == 0) {
+        DestroyObjectCmd cmd;
+        cmd.objectType = GetObjectType();
+        cmd.objectId = GetWireId();
+
+        Client* client = GetClient();
+        client->SerializeCommand(cmd);
+        client->Free(this, GetObjectType());
+    }
+
+    return refCount;
 }
 
 ObjectWithEventsBase::ObjectWithEventsBase(const ObjectBaseParams& params,

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdftext/cpdf_linkextract.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -56,7 +61,7 @@ TEST(CPDF_LinkExtractTest, CheckMailLink) {
     WideString expected_str(L"mailto:");
     expected_str += it[1];
     EXPECT_TRUE(extractor.CheckMailLink(&text_str)) << input;
-    EXPECT_STREQ(expected_str.c_str(), text_str.c_str());
+    EXPECT_EQ(expected_str.c_str(), text_str);
   }
 }
 
@@ -170,7 +175,7 @@ TEST(CPDF_LinkExtractTest, CheckWebLink) {
   for (const auto& it : kValidCases) {
     auto maybe_link = extractor.CheckWebLink(it.input_string);
     ASSERT_TRUE(maybe_link.has_value()) << it.input_string;
-    EXPECT_STREQ(it.url_extracted, maybe_link.value().m_strUrl.c_str());
+    EXPECT_EQ(it.url_extracted, maybe_link.value().m_strUrl);
     EXPECT_EQ(it.start_offset, maybe_link.value().m_Start) << it.input_string;
     EXPECT_EQ(it.count, maybe_link.value().m_Count) << it.input_string;
   }

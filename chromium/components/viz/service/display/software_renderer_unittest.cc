@@ -98,8 +98,9 @@ class SoftwareRendererTest : public testing::Test {
 
     // Makes a resource id that refers to the registered SharedBitmapId.
     return child_resource_provider_->ImportResource(
-        TransferableResource::MakeSoftware(shared_bitmap_id, gpu::SyncToken(),
-                                           size, SinglePlaneFormat::kRGBA_8888),
+        TransferableResource::MakeSoftwareSharedBitmap(
+            shared_bitmap_id, gpu::SyncToken(), size,
+            SinglePlaneFormat::kRGBA_8888),
         base::DoNothing());
   }
 
@@ -166,7 +167,7 @@ TEST_F(SoftwareRendererTest, SolidColorQuad) {
   SharedQuadState* shared_quad_state =
       root_render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(), outer_rect, outer_rect,
-                            gfx::MaskFilterInfo(), /*clip=*/absl::nullopt,
+                            gfx::MaskFilterInfo(), /*clip=*/std::nullopt,
                             /*contents_opaque=*/true, /*opacity_f=*/1.0,
                             SkBlendMode::kSrcOver, /*sorting_context=*/0,
                             /*layer_id=*/0u, /*fast_rounded_corner=*/false);
@@ -216,7 +217,7 @@ TEST_F(SoftwareRendererTest, DebugBorderDrawQuad) {
   SharedQuadState* shared_quad_state =
       root_render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(), screen_rect, screen_rect,
-                            gfx::MaskFilterInfo(), /*clip=*/absl::nullopt,
+                            gfx::MaskFilterInfo(), /*clip=*/std::nullopt,
                             /*contents_opaque=*/true, /*opacity_f=*/1.0,
                             SkBlendMode::kSrcOver, /*sorting_context=*/0,
                             /*layer_id=*/0u, /*fast_rounded_corner=*/false);
@@ -233,7 +234,7 @@ TEST_F(SoftwareRendererTest, DebugBorderDrawQuad) {
   quad_3->SetNew(shared_quad_state, rect_3, rect_3, SkColors::kYellow, false);
 
   // Test one non-opaque color.
-  // TODO(crbug.com/1308932): Colors clearly get transformed into ints at some
+  // TODO(crbug.com/40219248): Colors clearly get transformed into ints at some
   // point in the pipeline, so we need to use values n/255 for now.
   SkColor4f semi_transparent_white =
       SkColor4f{1.0f, 1.0f, 1.0f, 128.0 / 255.0f};
@@ -312,7 +313,7 @@ TEST_F(SoftwareRendererTest, TileQuad) {
   SharedQuadState* shared_quad_state =
       root_render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(), outer_rect, outer_rect,
-                            gfx::MaskFilterInfo(), /*clip=*/absl::nullopt,
+                            gfx::MaskFilterInfo(), /*clip=*/std::nullopt,
                             /*contents_opaque=*/true, /*opacity_f=*/1.0,
                             SkBlendMode::kSrcOver, /*sorting_context=*/0,
                             /*layer_id=*/0u, /*fast_rounded_corner=*/false);
@@ -376,7 +377,7 @@ TEST_F(SoftwareRendererTest, TileQuadVisibleRect) {
   SharedQuadState* shared_quad_state =
       root_render_pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(gfx::Transform(), tile_rect, tile_rect,
-                            gfx::MaskFilterInfo(), /*clip=*/absl::nullopt,
+                            gfx::MaskFilterInfo(), /*clip=*/std::nullopt,
                             /*contents_opaque=*/true, /*opacity_f=*/1.0,
                             SkBlendMode::kSrcOver, /*sorting_context=*/0,
                             /*layer_id=*/0u, /*fast_rounded_corner=*/false);
@@ -552,7 +553,7 @@ TEST_F(SoftwareRendererTest, ClipRoundRect) {
     shared_quad_state->SetAll(
         gfx::Transform(), inner_rect, inner_rect,
         gfx::MaskFilterInfo(gfx::RRectF(gfx::RectF(5, 5, 10, 10), 2)),
-        /*clip=*/absl::nullopt, /*contents_opaque=*/true, /*opacity_f=*/1.0,
+        /*clip=*/std::nullopt, /*contents_opaque=*/true, /*opacity_f=*/1.0,
         SkBlendMode::kSrcOver, /*sorting_context=*/0,
         /*layer_id=*/0u, /*fast_rounded_corner=*/false);
     auto* inner_quad = root_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();

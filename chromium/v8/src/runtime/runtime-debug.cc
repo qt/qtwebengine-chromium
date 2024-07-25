@@ -719,22 +719,6 @@ RUNTIME_FUNCTION(Runtime_DebugPrepareStepInSuspendedGenerator) {
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-RUNTIME_FUNCTION(Runtime_DebugPushPromise) {
-  DCHECK_EQ(1, args.length());
-  HandleScope scope(isolate);
-  Handle<JSObject> promise = args.at<JSObject>(0);
-  isolate->PushPromise(promise);
-  return ReadOnlyRoots(isolate).undefined_value();
-}
-
-
-RUNTIME_FUNCTION(Runtime_DebugPopPromise) {
-  DCHECK_EQ(0, args.length());
-  SealHandleScope shs(isolate);
-  isolate->PopPromise();
-  return ReadOnlyRoots(isolate).undefined_value();
-}
-
 namespace {
 Handle<JSObject> MakeRangeObject(Isolate* isolate, const CoverageBlock& range) {
   Factory* factory = isolate->factory();
@@ -825,13 +809,12 @@ RUNTIME_FUNCTION(Runtime_IncBlockCounter) {
 }
 
 RUNTIME_FUNCTION(Runtime_DebugAsyncFunctionSuspended) {
-  DCHECK_EQ(5, args.length());
+  DCHECK_EQ(4, args.length());
   HandleScope scope(isolate);
   Handle<JSPromise> promise = args.at<JSPromise>(0);
   Handle<JSPromise> outer_promise = args.at<JSPromise>(1);
   Handle<JSFunction> reject_handler = args.at<JSFunction>(2);
   Handle<JSGeneratorObject> generator = args.at<JSGeneratorObject>(3);
-  bool is_predicted_as_caught = Boolean::cast(args[4])->ToBool(isolate);
 
   // Allocate the throwaway promise and fire the appropriate init
   // hook for the throwaway promise (passing the {promise} as its
@@ -851,7 +834,6 @@ RUNTIME_FUNCTION(Runtime_DebugAsyncFunctionSuspended) {
                         StoreOrigin::kMaybeKeyed,
                         Just(ShouldThrow::kThrowOnError))
         .Check();
-    promise->set_handled_hint(is_predicted_as_caught);
 
     // Mark the dependency to {outer_promise} in case the {throwaway}
     // Promise is found on the Promise stack
@@ -863,8 +845,7 @@ RUNTIME_FUNCTION(Runtime_DebugAsyncFunctionSuspended) {
 
     Handle<WeakFixedArray> awaited_by_holder(
         isolate->factory()->NewWeakFixedArray(1));
-    awaited_by_holder->set(
-        0, MaybeObject::MakeWeak(MaybeObject::FromObject(*generator)));
+    awaited_by_holder->set(0, MakeWeak(*generator));
     Object::SetProperty(isolate, promise,
                         isolate->factory()->promise_awaited_by_symbol(),
                         awaited_by_holder, StoreOrigin::kMaybeKeyed,
@@ -927,15 +908,13 @@ RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {
   DisableEmbeddedBlobRefcounting();
 
   static constexpr char* kNoEmbeddedSource = nullptr;
-  // Have the SnapshotCreator create a new Isolate from scratch.
-  static constexpr Isolate* kNoIsolate = nullptr;
   // We use this flag to tell the serializer not to finalize/seal RO space -
   // this already happened after deserializing the main Isolate.
   static constexpr Snapshot::SerializerFlags kSerializerFlags =
       Snapshot::SerializerFlag::kAllowActiveIsolateForTesting;
   v8::StartupData blob = CreateSnapshotDataBlobInternal(
       v8::SnapshotCreator::FunctionCodeHandling::kClear, kNoEmbeddedSource,
-      kNoIsolate, kSerializerFlags);
+      kSerializerFlags);
   delete[] blob.data;
 
   // Track the embedded blob size as well.

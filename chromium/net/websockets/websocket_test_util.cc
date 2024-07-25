@@ -203,7 +203,7 @@ MockClientSocketFactory* WebSocketMockClientSocketFactoryMaker::factory() {
 void WebSocketMockClientSocketFactoryMaker::SetExpectations(
     const std::string& expect_written,
     const std::string& return_to_read) {
-  const size_t kHttpStreamParserBufferSize = 4096;
+  constexpr size_t kHttpStreamParserBufferSize = 4096;
   // We need to extend the lifetime of these strings.
   detail_->expect_written = expect_written;
   detail_->return_to_read = return_to_read;
@@ -274,12 +274,15 @@ void WebSocketTestURLRequestContextHost::SetProxyConfig(
       std::move(proxy_resolution_service));
 }
 
+void DummyConnectDelegate::OnURLRequestConnected(URLRequest* request,
+                                                 const TransportInfo& info) {}
+
 int DummyConnectDelegate::OnAuthRequired(
     const AuthChallengeInfo& auth_info,
     scoped_refptr<HttpResponseHeaders> response_headers,
     const IPEndPoint& host_port_pair,
     base::OnceCallback<void(const AuthCredentials*)> callback,
-    absl::optional<AuthCredentials>* credentials) {
+    std::optional<AuthCredentials>* credentials) {
   return OK;
 }
 

@@ -333,6 +333,7 @@ class GtestTestInstance(test_instance.TestInstance):
     # TODO(jbudorick): Support multiple test suites.
     if len(args.suite_name) > 1:
       raise ValueError('Platform mode currently supports only 1 gtest suite')
+    self._additional_apks = []
     self._coverage_dir = args.coverage_dir
     self._exe_dist_dir = None
     self._external_shard_index = args.test_launcher_shard_index
@@ -383,6 +384,9 @@ class GtestTestInstance(test_instance.TestInstance):
       self._extras = {
           _EXTRA_NATIVE_TEST_ACTIVITY: self._apk_helper.GetActivityName(),
       }
+      if args.timeout_scale and args.timeout_scale != 1:
+        self._extras[_EXTRA_RUN_IN_SUB_THREAD] = 1
+
       if self._suite in RUN_IN_SUB_THREAD_TEST_SUITES:
         self._extras[_EXTRA_RUN_IN_SUB_THREAD] = 1
       if self._suite in BROWSER_TEST_SUITES:
@@ -395,9 +399,17 @@ class GtestTestInstance(test_instance.TestInstance):
     if not self._apk_helper and not self._exe_dist_dir:
       error_func('Could not find apk or executable for %s' % self._suite)
 
+    for x in args.additional_apks:
+      if not os.path.exists(x):
+        error_func('Could not find additional APK: %s' % x)
+
+      apk = apk_helper.ToHelper(x)
+      self._additional_apks.append(apk)
+
     self._data_deps = []
     self._gtest_filters = test_filter.InitializeFiltersFromArgs(args)
     self._run_disabled = args.run_disabled
+    self._run_pre_tests = args.run_pre_tests
 
     self._data_deps_delegate = data_deps_delegate
     self._runtime_deps_path = args.runtime_deps_path
@@ -435,6 +447,10 @@ class GtestTestInstance(test_instance.TestInstance):
   @property
   def activity(self):
     return self._apk_helper and self._apk_helper.GetActivityName()
+
+  @property
+  def additional_apks(self):
+    return self._additional_apks
 
   @property
   def apk(self):
@@ -548,6 +564,10 @@ class GtestTestInstance(test_instance.TestInstance):
   def use_existing_test_data(self):
     return self._use_existing_test_data
 
+  @property
+  def run_pre_tests(self):
+    return self._run_pre_tests
+
   #override
   def TestType(self):
     return 'gtest'
@@ -614,11 +634,13 @@ class GtestTestInstance(test_instance.TestInstance):
     disabled_filter_items = []
 
     if disabled_prefixes is None:
-      disabled_prefixes = ['FAILS_', 'PRE_']
+      disabled_prefixes = ['FAILS_']
       if '--run-manual' not in self._flags:
         disabled_prefixes += ['MANUAL_']
       if not self._run_disabled:
         disabled_prefixes += ['DISABLED_', 'FLAKY_']
+      if not self._run_pre_tests:
+        disabled_prefixes += ['PRE_']
 
     disabled_filter_items += ['%s*' % dp for dp in disabled_prefixes]
     disabled_filter_items += ['*.%s*' % dp for dp in disabled_prefixes]

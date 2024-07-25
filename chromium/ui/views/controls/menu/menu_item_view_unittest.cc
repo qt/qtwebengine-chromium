@@ -63,7 +63,11 @@ class SquareView : public views::View {
   ~SquareView() override = default;
 
  private:
-  gfx::Size CalculatePreferredSize() const override { return gfx::Size(1, 1); }
+  gfx::Size CalculatePreferredSize(
+      const SizeBounds& available_size) const override {
+    int width = available_size.width().value_or(1);
+    return gfx::Size(width, width);
+  }
   int GetHeightForWidth(int width) const override { return width; }
 };
 
@@ -88,11 +92,11 @@ TEST_F(MenuItemViewUnitTest, TestMenuItemViewWithFlexibleWidthChild) {
 
   // The first item should be the label view.
   ASSERT_EQ(label_view, submenu->GetMenuItemAt(0));
-  gfx::Size label_size = label_view->GetPreferredSize();
+  gfx::Size label_size = label_view->GetPreferredSize({});
 
   // The second item should be the flexible view.
   ASSERT_EQ(flexible_view, submenu->GetMenuItemAt(1));
-  gfx::Size flexible_size = flexible_view->GetPreferredSize();
+  gfx::Size flexible_size = flexible_view->GetPreferredSize({});
 
   EXPECT_EQ(1, flexible_size.width());
 
@@ -103,7 +107,7 @@ TEST_F(MenuItemViewUnitTest, TestMenuItemViewWithFlexibleWidthChild) {
   // The submenu should be tall enough to allow for both menu items at the
   // given width. (It may be taller if there is padding between/around the
   // items.)
-  EXPECT_GE(submenu->GetPreferredSize().height(),
+  EXPECT_GE(submenu->GetPreferredSize({}).height(),
             label_size.height() + flex_height);
 }
 
@@ -203,7 +207,7 @@ class TouchableMenuItemViewTest : public ViewsTestBase {
   }
 
   gfx::Size AppendItemAndGetSize(int i, const std::u16string& title) {
-    return menu_item_view_->AppendMenuItem(i, title)->GetPreferredSize();
+    return menu_item_view_->AppendMenuItem(i, title)->GetPreferredSize({});
   }
 
  private:
@@ -256,7 +260,7 @@ class MenuItemViewLayoutTest : public ViewsTestBase {
     submenu_parent_ = std::make_unique<View>();
     submenu_parent_->AddChildView(submenu);
     submenu_parent_->SetPosition(gfx::Point(0, 0));
-    submenu_parent_->SetSize(submenu->GetPreferredSize());
+    submenu_parent_->SetSize(submenu->GetPreferredSize({}));
   }
 
   void SetUp() override {
@@ -455,19 +459,19 @@ TEST_F(MenuItemViewPaintUnitTest, CustomColorAssertionCoverage) {
   ui::ColorId background_color = ui::kColorComboboxBackground;
   ui::ColorId foreground_color = ui::kColorDropdownForeground;
   ui::ColorId selected_color = ui::kColorMenuItemForegroundHighlighted;
-  AddItem(u"No custom colors", absl::nullopt, absl::nullopt, absl::nullopt);
+  AddItem(u"No custom colors", std::nullopt, std::nullopt, std::nullopt);
   AddItem(u"No selected color", background_color, foreground_color,
-          absl::nullopt);
-  AddItem(u"No foreground color", background_color, absl::nullopt,
+          std::nullopt);
+  AddItem(u"No foreground color", background_color, std::nullopt,
           selected_color);
-  AddItem(u"No background color", absl::nullopt, foreground_color,
+  AddItem(u"No background color", std::nullopt, foreground_color,
           selected_color);
-  AddItem(u"No background or foreground", absl::nullopt, absl::nullopt,
+  AddItem(u"No background or foreground", std::nullopt, std::nullopt,
           selected_color);
-  AddItem(u"No background or selected", absl::nullopt, foreground_color,
-          absl::nullopt);
-  AddItem(u"No foreground or selected", background_color, absl::nullopt,
-          absl::nullopt);
+  AddItem(u"No background or selected", std::nullopt, foreground_color,
+          std::nullopt);
+  AddItem(u"No foreground or selected", background_color, std::nullopt,
+          std::nullopt);
   AddItem(u"All colors", background_color, foreground_color, selected_color);
 
   menu_runner()->RunMenuAt(widget(), nullptr, gfx::Rect(),
@@ -634,9 +638,9 @@ class MenuItemViewAccessTest : public MenuItemViewPaintUnitTest {
  private:
   class DisallowMenuDelegate : public test::TestMenuDelegate {
    public:
-    absl::optional<SkColor> GetLabelColor(int command_id) const override {
+    std::optional<SkColor> GetLabelColor(int command_id) const override {
       EXPECT_NE(1, command_id);
-      return absl::nullopt;
+      return std::nullopt;
     }
   };
 };

@@ -55,11 +55,12 @@ const char kContentPackDefaultFilteringBehavior[] =
 const char kContentPackManualBehaviorHosts[] = "ContentPackManualBehaviorHosts";
 const char kContentPackManualBehaviorURLs[] = "ContentPackManualBehaviorURLs";
 const char kCookiesAlwaysAllowed[] = "CookiesAlwaysAllowed";
-const char kForceSafeSearch[] = "ForceSafeSearch";
 const char kGeolocationDisabled[] = "GeolocationDisabled";
 const char kSafeSitesEnabled[] = "SafeSites";
 const char kSigninAllowed[] = "SigninAllowed";
 const char kSigninAllowedOnNextStartup[] = "kSigninAllowedOnNextStartup";
+const char kSkipParentApprovalToInstallExtensions[] =
+    "SkipParentApprovalToInstallExtensions";
 
 const char kChildAccountSUID[] = "ChildAccountSUID";
 
@@ -106,10 +107,22 @@ GURL KidsManagementClassifyURLRequestURL() {
 const char kFamilyLinkUserLogSegmentHistogramName[] =
     "FamilyLinkUser.LogSegment";
 
+const char kFamilyLinkUserLogSegmentWebFilterHistogramName[] =
+    "FamilyUser.WebFilterType.PerRecord";
+
+const char kSkipParentApprovalToInstallExtensionsHistogramName[] =
+    "SupervisedUsers.SkipParentApprovalToInstallExtensions.PerRecord";
+
 const char kSupervisedUserURLFilteringResultHistogramName[] =
     "ManagedUsers.FilteringResult";
 
 const char kSupervisedUserTopLevelURLFilteringResultHistogramName[] =
     "ManagedUsers.TopLevelFilteringResult";
 
+const char kManagedByParentUiMoreInfoUrl[] =
+    "https://familylink.google.com/setting/resource/94";
+
+// LINT.IfChange
+const char kFamilyMemberRoleFeedbackTag[] = "Family_Member_Role";
+// LINT.ThenChange(//chrome/browser/feedback/android/java/src/org/chromium/chrome/browser/feedback/FamilyInfoFeedbackSource.java)
 }  // namespace supervised_user

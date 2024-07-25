@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,13 +19,15 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
+#include "best_practices/bp_state.h"
+#include "state_tracker/render_pass_state.h"
 
-bool BestPractices::ValidateAttachments(const VkRenderPassCreateInfo2* rpci, uint32_t attachmentCount,
-                                        const VkImageView* image_views, const Location& loc) const {
+bool BestPractices::ValidateAttachments(const VkRenderPassCreateInfo2* rpci, uint32_t attachment_count,
+                                        const VkImageView* attachments, const Location& loc) const {
     bool skip = false;
 
     // Check for non-transient attachments that should be transient and vice versa
-    for (uint32_t i = 0; i < attachmentCount; ++i) {
+    for (uint32_t i = 0; i < attachment_count; ++i) {
         const auto& attachment = rpci->pAttachments[i];
         bool attachment_should_be_transient =
             (attachment.loadOp != VK_ATTACHMENT_LOAD_OP_LOAD && attachment.storeOp != VK_ATTACHMENT_STORE_OP_STORE);
@@ -35,9 +37,9 @@ bool BestPractices::ValidateAttachments(const VkRenderPassCreateInfo2* rpci, uin
                                                attachment.stencilStoreOp != VK_ATTACHMENT_STORE_OP_STORE);
         }
 
-        auto view_state = Get<vvl::ImageView>(image_views[i]);
+        auto view_state = Get<vvl::ImageView>(attachments[i]);
         if (view_state) {
-            const auto& ici = view_state->image_state->createInfo;
+            const auto& ici = view_state->image_state->create_info;
 
             const bool image_is_transient = (ici.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) != 0;
 
@@ -80,8 +82,8 @@ bool BestPractices::PreCallValidateCreateFramebuffer(VkDevice device, const VkFr
 
     auto rp_state = Get<vvl::RenderPass>(pCreateInfo->renderPass);
     if (rp_state && !(pCreateInfo->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)) {
-        skip = ValidateAttachments(rp_state->createInfo.ptr(), pCreateInfo->attachmentCount, pCreateInfo->pAttachments,
-                                   error_obj.location);
+        skip |= ValidateAttachments(rp_state->create_info.ptr(), pCreateInfo->attachmentCount, pCreateInfo->pAttachments,
+                                    error_obj.location);
     }
 
     return skip;

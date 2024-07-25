@@ -5,6 +5,7 @@
 #ifndef MEDIA_FILTERS_DEMUXER_MANAGER_H_
 #define MEDIA_FILTERS_DEMUXER_MANAGER_H_
 
+#include <optional>
 #include <vector>
 
 #include "base/functional/callback.h"
@@ -20,7 +21,6 @@
 #include "media/base/pipeline.h"
 #include "media/base/pipeline_status.h"
 #include "media/filters/chunk_demuxer.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/origin.h"
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
@@ -136,9 +136,9 @@ class MEDIA_EXPORT DemuxerManager {
   void DisallowFallback();
 
   // Methods that help manage demuxers
-  absl::optional<double> GetDemuxerDuration();
-  absl::optional<DemuxerType> GetDemuxerType() const;
-  absl::optional<container_names::MediaContainerName> GetContainerForMetrics();
+  std::optional<double> GetDemuxerDuration();
+  std::optional<DemuxerType> GetDemuxerType() const;
+  std::optional<container_names::MediaContainerName> GetContainerForMetrics();
   void RespondToDemuxerMemoryUsageReport(base::OnceCallback<void(int64_t)> cb);
   void DisableDemuxerCanChangeType();
 
@@ -169,7 +169,7 @@ class MEDIA_EXPORT DemuxerManager {
   bool HasDataSource() const;
   bool HasDemuxer() const;
   bool HasDemuxerOverride() const;
-  absl::optional<GURL> GetDataSourceUrlAfterRedirects() const;
+  std::optional<GURL> GetDataSourceUrlAfterRedirects() const;
   bool DataSourceFullyBuffered() const;
   bool IsStreaming() const;
   bool PassedDataSourceTimingAllowOriginCheck() const;
@@ -184,7 +184,8 @@ class MEDIA_EXPORT DemuxerManager {
 #endif  // BUILDFLAG(ENABLE_FFMPEG)
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
-  std::unique_ptr<Demuxer> CreateHlsDemuxer();
+  std::tuple<raw_ptr<DataSourceInfo>, std::unique_ptr<Demuxer>>
+  CreateHlsDemuxer();
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
@@ -245,6 +246,13 @@ class MEDIA_EXPORT DemuxerManager {
 
   // Holds whichever demuxer implementation is being used.
   std::unique_ptr<Demuxer> demuxer_;
+
+  // Refers to the owned object that can query information about a data source.
+  // For most playbacks, this is a raw ptr to `data_source_`, and so it is safe,
+  // since this class also owns that object. For HLS playback, this object is
+  // the HlsManifestDemuxerEngine, owned by `demuxer_`, so again, it is safe to
+  // keep a raw ptr here.
+  raw_ptr<DataSourceInfo> data_source_info_ = nullptr;
 
   // Holds an optional demuxer that can be passed in at time of creation,
   // which becomes the default demuxer to use.

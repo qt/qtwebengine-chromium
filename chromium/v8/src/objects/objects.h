@@ -42,6 +42,7 @@ class LookupIterator;
 class PropertyDescriptorObject;
 class ReadOnlyRoots;
 class RootVisitor;
+class PropertyKey;
 
 // UNSAFE_SKIP_WRITE_BARRIER skips the write barrier.
 // SKIP_WRITE_BARRIER skips the write barrier and asserts that this is safe in
@@ -64,12 +65,14 @@ enum PropertyNormalizationMode {
 // Indicates whether transitions can be added to a source map or not.
 enum TransitionFlag { INSERT_TRANSITION, OMIT_TRANSITION };
 
-// Indicates whether the transition is simple: the target map of the transition
+// Indicates the kind of transition: the target map of the transition
 // either extends the current map with a new property, or it modifies the
-// property that was added last to the current map.
-enum SimpleTransitionFlag {
+// property that was added last to the current map. Otherwise, it can
+// be a prototype transition, or anything else.
+enum TransitionKindFlag {
   SIMPLE_PROPERTY_TRANSITION,
   PROPERTY_TRANSITION,
+  PROTOTYPE_TRANSITION,
   SPECIAL_TRANSITION
 };
 
@@ -124,7 +127,10 @@ ShouldThrow GetShouldThrow(Isolate* isolate, Maybe<ShouldThrow> should_throw);
 // For a design overview, see https://goo.gl/Ph4CGz.
 class Object : public AllStatic {
  public:
-  enum class Conversion { kToNumber, kToNumeric };
+  enum class Conversion {
+    kToNumber,  // Number = Smi or HeapNumber
+    kToNumeric  // Numeric = Smi or HeapNumber or BigInt
+  };
 
   // ES6, #sec-isarray.  NOT to be confused with %_IsArray.
   V8_INLINE
@@ -194,7 +200,7 @@ class Object : public AllStatic {
       Isolate* isolate, Handle<Object> object,
       const char* method_name = nullptr);
   V8_WARN_UNUSED_RESULT static MaybeHandle<JSReceiver> ToObjectImpl(
-      Isolate* isolate, Handle<Object> object,
+      Isolate* isolate, DirectHandle<Object> object,
       const char* method_name = nullptr);
 
   // ES6 section 9.2.1.2, OrdinaryCallBindThis for sloppy callee.
@@ -230,14 +236,30 @@ class Object : public AllStatic {
       Isolate* isolate, Handle<Object> input);
 
   // ES6 section 7.1.12 ToString
+  // TODO(b/42203211): ToString is templatized so that passing a Handle<T>
+  // is not ambiguous when T is a subtype of Object (it could be implicitly
+  // converted both to Handle<Object> and to DirectHandle<Object>). Here, T
+  // should be a subtype of Object, which is enforced by the second template
+  // argument and the similar restriction on Handle's constructor. When the
+  // migration to DirectHandle is complete, this function can accept simply
+  // a DirectHandle<Object>.
+  template <typename T, typename = std::enable_if_t<
+                            std::is_convertible_v<Handle<T>, Handle<Object>>>>
   V8_WARN_UNUSED_RESULT static inline MaybeHandle<String> ToString(
-      Isolate* isolate, Handle<Object> input);
+      Isolate* isolate, Handle<T> input);
 
-  V8_EXPORT_PRIVATE static MaybeHandle<String> NoSideEffectsToMaybeString(
-      Isolate* isolate, Handle<Object> input);
+#ifdef V8_ENABLE_DIRECT_HANDLE
+  template <typename T, typename = std::enable_if_t<std::is_convertible_v<
+                            DirectHandle<T>, DirectHandle<Object>>>>
+  V8_WARN_UNUSED_RESULT static inline MaybeDirectHandle<String> ToString(
+      Isolate* isolate, DirectHandle<T> input);
+#endif
 
-  V8_EXPORT_PRIVATE static Handle<String> NoSideEffectsToString(
-      Isolate* isolate, Handle<Object> input);
+  V8_EXPORT_PRIVATE static MaybeDirectHandle<String> NoSideEffectsToMaybeString(
+      Isolate* isolate, DirectHandle<Object> input);
+
+  V8_EXPORT_PRIVATE static DirectHandle<String> NoSideEffectsToString(
+      Isolate* isolate, DirectHandle<Object> input);
 
   // ES6 section 7.1.14 ToPropertyKey
   V8_WARN_UNUSED_RESULT static inline MaybeHandle<Object> ToPropertyKey(
@@ -433,6 +455,11 @@ class Object : public AllStatic {
   // When V8_EXTERNAL_CODE_SPACE is enabled InstructionStream objects are
   // not allowed.
   static void VerifyPointer(Isolate* isolate, Tagged<Object> p);
+  // Verify a pointer is a valid (non-InstructionStream) object pointer,
+  // potentially a weak one.
+  // When V8_EXTERNAL_CODE_SPACE is enabled InstructionStream objects are
+  // not allowed.
+  static void VerifyMaybeObjectPointer(Isolate* isolate, Tagged<MaybeObject> p);
   // Verify a pointer is a valid object pointer.
   // InstructionStream objects are allowed regardless of the
   // V8_EXTERNAL_CODE_SPACE mode.
@@ -456,8 +483,9 @@ class Object : public AllStatic {
     }
   };
 
-  // For use with std::unordered_set/unordered_map when using both
-  // InstructionStream and non-InstructionStream objects as keys.
+  // For use with std::unordered_set/unordered_map when one of the objects may
+  // be located outside the main pointer compression cage, for example in
+  // trusted space. In this case, we must use full pointer comparison.
   struct KeyEqualSafe {
     bool operator()(const Tagged<Object> a, const Tagged<Object> b) const {
       return a.SafeEquals(b);
@@ -473,7 +501,7 @@ class Object : public AllStatic {
 
   // Same as above, but can be used when one of the objects may be located
   // outside of the main pointer compression cage, for example in trusted
-  // space. In this case, we must not compare just the lower 32 bits.
+  // space. In this case, we must use full pointer comparison.
   struct FullPtrComparer {
     bool operator()(const Tagged<Object> a, const Tagged<Object> b) const {
       return a.ptr() < b.ptr();
@@ -550,6 +578,8 @@ class Object : public AllStatic {
 
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                            Tagged<Object> obj);
+V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                           Object::Conversion kind);
 
 struct Brief {
   template <HeapObjectReferenceType kRefType>
@@ -585,6 +615,11 @@ template <HeapObjectReferenceType kRefType, typename StorageType>
 V8_INLINE constexpr bool IsHeapObject(TaggedImpl<kRefType, StorageType> obj) {
   return obj.IsHeapObject();
 }
+template <typename StorageType>
+V8_INLINE constexpr bool IsWeak(
+    TaggedImpl<HeapObjectReferenceType::WEAK, StorageType> obj) {
+  return obj.IsWeak();
+}
 
 // TODO(leszeks): These exist both as free functions and members of Tagged. They
 // probably want to be cleaned up at some point.
@@ -605,6 +640,7 @@ OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
 HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DECL)
 IS_TYPE_FUNCTION_DECL(HashTableBase)
 IS_TYPE_FUNCTION_DECL(SmallOrderedHashTable)
+IS_TYPE_FUNCTION_DECL(PropertyDictionary)
 #undef IS_TYPE_FUNCTION_DECL
 V8_INLINE bool IsNumber(Tagged<Object> obj, ReadOnlyRoots roots);
 
@@ -639,6 +675,9 @@ V8_INLINE bool IsWasmObject(T obj, Isolate* = nullptr) {
 
 V8_INLINE bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<Object> obj);
 V8_INLINE bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<HeapObject> obj);
+
+V8_INLINE bool IsJSApiWrapperObject(Tagged<HeapObject> obj);
+V8_INLINE bool IsJSApiWrapperObject(Tagged<Map> map);
 
 #define DECL_STRUCT_PREDICATE(NAME, Name, name) \
   V8_INLINE bool Is##Name(Tagged<Object> obj);  \

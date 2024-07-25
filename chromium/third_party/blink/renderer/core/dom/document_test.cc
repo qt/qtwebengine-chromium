@@ -29,6 +29,7 @@
  */
 
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/page/page_animator.h"
 
 #include <algorithm>
@@ -70,6 +71,7 @@
 #include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_test_helpers.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/html/html_head_element.h"
@@ -100,6 +102,7 @@ namespace blink {
 using network::mojom::ContentSecurityPolicySource;
 using network::mojom::ContentSecurityPolicyType;
 using ::testing::ElementsAre;
+using ::testing::IsEmpty;
 
 class DocumentTest : public PageTestBase {
  public:
@@ -115,6 +118,60 @@ class DocumentTest : public PageTestBase {
   }
 
   void SetHtmlInnerHTML(const char*);
+
+  // Note: callers must mock any urls that are referred to in `html_content`,
+  // with the exception of foo.html, which can be assumed to be defined by this
+  // function.
+  // Note: callers must not use double-quotes in the `html_content` string,
+  // since that will conflict with the srcdoc attribute assignment in the
+  // javascript below.
+  enum SandboxState { kIsSandboxed, kIsNotSandboxed };
+  enum UseCountedExpectation { kIsUseCounted, kIsNotUseCounted };
+  void NavigateSrcdocMaybeSandboxed(
+      const String& base_url,
+      const std::string& html_content,
+      const SandboxState sandbox_state,
+      const UseCountedExpectation use_counted_expectation) {
+    WebURL mocked_mainframe_url =
+        url_test_helpers::RegisterMockedURLLoadFromBase(
+            base_url, test::CoreTestDataPath(),
+            WebString::FromUTF8("foo.html"));
+
+    frame_test_helpers::WebViewHelper web_view_helper;
+    // Load a non-about:blank simple mainframe page.
+    web_view_helper.InitializeAndLoad(mocked_mainframe_url.GetString().Utf8());
+
+    WebLocalFrame* main_frame = web_view_helper.LocalMainFrame();
+    const char js_template[] =
+        R"( javascript:
+            var frm = document.createElement('iframe');
+            %s
+            frm.srcdoc = "%s";
+            document.body.appendChild(frm);
+        )";
+    frame_test_helpers::LoadFrame(
+        main_frame,
+        base::StringPrintf(
+            js_template,
+            sandbox_state == kIsSandboxed ? "frm.sandbox = '';" : "",
+            html_content.c_str()));
+    EXPECT_NE(nullptr, main_frame->FirstChild());
+    WebLocalFrame* iframe = main_frame->FirstChild()->ToWebLocalFrame();
+
+    Document* srcdoc_document = iframe->GetDocument();
+    KURL url("about:srcdoc");
+    EXPECT_EQ(url, srcdoc_document->Url());
+    switch (use_counted_expectation) {
+      case kIsUseCounted:
+        EXPECT_TRUE(srcdoc_document->IsUseCounted(
+            WebFeature::kSandboxedSrcdocFrameResolvesRelativeURL));
+        break;
+      case kIsNotUseCounted:
+        EXPECT_FALSE(srcdoc_document->IsUseCounted(
+            WebFeature::kSandboxedSrcdocFrameResolvesRelativeURL));
+    }
+    url_test_helpers::RegisterMockedURLUnregister(mocked_mainframe_url);
+  }
 
   void NavigateWithSandbox(const KURL& url) {
     auto params = WebNavigationParams::CreateWithHTMLStringForTesting(
@@ -888,6 +945,80 @@ TEST_F(DocumentTest, ViewportPropagationNoRecalc) {
   EXPECT_EQ(1, new_element_count - old_element_count);
 }
 
+// A relative url in a sandboxed, srcdoc frame should trigger a usecount.
+TEST_F(DocumentTest, SandboxedSrcdocUserCounts_BasicRelativeUrl) {
+  String base_url("https://example.com/");
+  WebURL mocked_url = url_test_helpers::RegisterMockedURLLoadFromBase(
+      base_url, test::CoreTestDataPath(), "white-1x1.png", "image/png");
+  std::string content =
+      R"(<html><body><img src='white-1x1.png'></body></html>)";
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsSandboxed, kIsUseCounted);
+  url_test_helpers::RegisterMockedURLUnregister(mocked_url);
+}
+
+// A relative url in a sandboxed, srcdoc frame should not trigger a usecount
+// if the srcdoc document has defined a base element.
+TEST_F(DocumentTest,
+       SandboxedSrcdocUserCounts_BasicRelativeUrlWithBaseElement) {
+  String base_url("https://example.com/");
+  WebURL mocked_url = url_test_helpers::RegisterMockedURLLoadFromBase(
+      base_url, test::CoreTestDataPath(), "white-1x1.png", "image/png");
+  static constexpr char kSrcdocTemplate[] =
+      R"(<html><head><base href='%s' /></head>
+               <body><img src='white-1x1.png'></body></html>)";
+  std::string content =
+      base::StringPrintf(kSrcdocTemplate, base_url.Utf8().c_str());
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsSandboxed,
+                               kIsNotUseCounted);
+  url_test_helpers::RegisterMockedURLUnregister(mocked_url);
+}
+
+// An absolute url in a sandboxed, srcdoc frame should not trigger a usecount.
+TEST_F(DocumentTest, SandboxedSrcdocUserCounts_BasicAbsoluteUrl) {
+  String base_url("https://example.com/");
+  WebURL mocked_url = url_test_helpers::RegisterMockedURLLoadFromBase(
+      base_url, test::CoreTestDataPath(), "white-1x1.png", "image/png");
+  std::string content =
+      R"(<html>
+           <body>
+             <img src='https://example.com/white-1x1.png'>
+          </body>
+        </html>)";
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsSandboxed,
+                               kIsNotUseCounted);
+  url_test_helpers::RegisterMockedURLUnregister(mocked_url);
+}
+
+// As in BasicRelativeUrl, but this time the url is for an iframe.
+TEST_F(DocumentTest, SandboxedSrcdocUserCounts_BasicRelativeUrlInIframe) {
+  String base_url("https://example.com/");
+  std::string content = R"(<html><body><iframe src='foo.html'></body></html>)";
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsSandboxed, kIsUseCounted);
+}
+
+// Non-sandboxed srcdoc frames with relative urls shouldn't trigger the use
+// count.
+TEST_F(DocumentTest,
+       SandboxedSrcdocUserCounts_BasicRelativeUrlInNonSandboxedIframe) {
+  String base_url("https://example.com/");
+  std::string content = R"(<html><body><iframe src='foo.html'></body></html>)";
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsNotSandboxed,
+                               kIsNotUseCounted);
+}
+
+// As in BasicAbsoluteUrl, but this time the url is for an iframe.
+TEST_F(DocumentTest, SandboxedSrcdocUserCounts_BasicAbsoluteUrlInIframe) {
+  String base_url("https://example.com/");
+  std::string content =
+      R"(<html>
+           <body>
+             <iframe src='https://example.com/foo.html'>
+           </body>
+         </html>)";
+  NavigateSrcdocMaybeSandboxed(base_url, content, kIsSandboxed,
+                               kIsNotUseCounted);
+}
+
 TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
   NavigateWithSandbox(KURL("https://www.example.com/"));
 
@@ -897,7 +1028,7 @@ TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
   v8::Isolate* isolate = main_world_script_state->GetIsolate();
 
   constexpr int kIsolatedWorldWithoutCSPId = 1;
-  scoped_refptr<DOMWrapperWorld> world_without_csp =
+  DOMWrapperWorld* world_without_csp =
       DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithoutCSPId);
   ScriptState* isolated_world_without_csp_script_state =
       ToScriptState(frame, *world_without_csp);
@@ -906,7 +1037,7 @@ TEST_F(DocumentTest, CanExecuteScriptsWithSandboxAndIsolatedWorld) {
       kIsolatedWorldWithoutCSPId));
 
   constexpr int kIsolatedWorldWithCSPId = 2;
-  scoped_refptr<DOMWrapperWorld> world_with_csp =
+  DOMWrapperWorld* world_with_csp =
       DOMWrapperWorld::EnsureIsolatedWorld(isolate, kIsolatedWorldWithCSPId);
   IsolatedWorldCSP::Get().SetContentSecurityPolicy(
       kIsolatedWorldWithCSPId, String::FromUTF8("script-src *"),
@@ -1120,8 +1251,7 @@ TEST_F(DocumentTest, AtPageMarginWithDeviceScaleFactor) {
   GetDocument().GetFrame()->StartPrinting(initial_page_size);
   GetDocument().View()->UpdateLifecyclePhasesForPrinting();
 
-  WebPrintPageDescription description;
-  GetDocument().GetPageDescription(0, &description);
+  WebPrintPageDescription description = GetDocument().GetPageDescription(0);
 
   EXPECT_EQ(50, description.margin_top);
   EXPECT_EQ(50, description.margin_right);
@@ -1142,9 +1272,6 @@ TEST_F(DocumentTest, HandlesDisconnectDuringHasPrivateToken) {
       document.hasPrivateToken(scope.GetScriptState(), "https://issuer.example",
                                scope.GetExceptionState());
   DocumentTest::SimulateTrustTokenQueryAnswererConnectionError(&document);
-
-  ASSERT_TRUE(promise.IsAssociatedWith(scope.GetScriptState()));
-
   ScriptPromiseTester promise_tester(scope.GetScriptState(), promise);
   promise_tester.WaitUntilSettled();
   EXPECT_TRUE(promise_tester.IsRejected());
@@ -1165,12 +1292,10 @@ TEST_F(DocumentTest, RejectsHasPrivateTokenCallFromNonHttpNonHttpsDocument) {
 
   auto promise = document.hasPrivateToken(
       script_state, "https://issuer.example", exception_state);
-
-  ScriptPromiseTester promise_tester(script_state, promise);
-  promise_tester.WaitUntilSettled();
-  EXPECT_TRUE(promise_tester.IsRejected());
-  EXPECT_TRUE(IsDOMException(script_state, promise_tester.Value(),
-                             DOMExceptionCode::kNotAllowedError));
+  EXPECT_TRUE(promise.IsEmpty());
+  EXPECT_TRUE(exception_state.HadException());
+  EXPECT_EQ(exception_state.CodeAs<DOMExceptionCode>(),
+            DOMExceptionCode::kNotAllowedError);
 }
 
 namespace {
@@ -1534,9 +1659,6 @@ TEST_F(DocumentTest, HandlesDisconnectDuringHasRedemptionRecord) {
                                               "https://issuer.example",
                                               scope.GetExceptionState());
   DocumentTest::SimulateTrustTokenQueryAnswererConnectionError(&document);
-
-  ASSERT_TRUE(promise.IsAssociatedWith(scope.GetScriptState()));
-
   ScriptPromiseTester promise_tester(scope.GetScriptState(), promise);
   promise_tester.WaitUntilSettled();
   EXPECT_TRUE(promise_tester.IsRejected());
@@ -1790,17 +1912,28 @@ TEST_F(UnassociatedListedElementTest, GetUnassociatedListedElements) {
                          expected_elements.begin(), expected_elements.end()));
 }
 
-// We don't extract unassociated listed element in a shadow DOM.
+// We extract unassociated listed element in a shadow DOM iff
+// `kAutofillIncludeShadowDomInUnassociatedListedElements` is enabled.
 TEST_F(UnassociatedListedElementTest,
        GetUnassociatedListedElementsFromShadowTree) {
   ShadowRoot& shadow_root =
-      GetDocument().body()->AttachShadowRootInternal(ShadowRootType::kOpen);
+      GetDocument().body()->AttachShadowRootForTesting(ShadowRootMode::kOpen);
   HTMLInputElement* input =
       MakeGarbageCollected<HTMLInputElement>(GetDocument());
+  input->SetIdAttribute(AtomicString("unassociated_input"));
   shadow_root.AppendChild(input);
   ListedElement::List listed_elements =
       GetDocument().UnassociatedListedElements();
-  EXPECT_EQ(0u, listed_elements.size());
+
+  if (base::FeatureList::IsEnabled(
+          blink::features::
+              kAutofillIncludeShadowDomInUnassociatedListedElements)) {
+    EXPECT_THAT(listed_elements,
+                ElementsAre(ListedElement::From(*shadow_root.getElementById(
+                    AtomicString("unassociated_input")))));
+  } else {
+    EXPECT_THAT(listed_elements, IsEmpty());
+  }
 }
 
 // Check if the dynamically added unassociated listed element is properly
@@ -1954,6 +2087,115 @@ TEST_F(UnassociatedListedElementTest,
   div->remove();
   listed_elements = GetDocument().UnassociatedListedElements();
   EXPECT_EQ(0u, listed_elements.size());
+}
+
+class TopLevelFormsListTest : public DocumentTest {
+ public:
+  HTMLFormElement* GetFormElement(const char* id) {
+    return DynamicTo<HTMLFormElement>(GetElementById(id));
+  }
+  HTMLFormElement* GetFormElement(const char* id, ShadowRoot& shadow_root) {
+    return DynamicTo<HTMLFormElement>(
+        shadow_root.getElementById(AtomicString(id)));
+  }
+};
+
+// Tests that `GetTopLevelForms` correctly lists forms in the light DOM.
+TEST_F(TopLevelFormsListTest, FormsInLightDom) {
+  SetHtmlInnerHTML(R"HTML(
+    <form id="f1">
+      <input type="text">
+    </form>
+    <div>
+      <form id="f2">
+        <input type="text">
+      </form>
+    </div>
+  )HTML");
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f2")));
+  // A second call has the same result.
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f2")));
+}
+
+// Tests that `GetTopLevelForms` functions correctly after dynamic form element
+// insertion and removal.
+TEST_F(TopLevelFormsListTest, FormsInLightDomInsertionAndRemoval) {
+  SetHtmlInnerHTML(R"HTML(
+    <form id="f1">
+      <input type="text">
+    </form>
+    <div>
+      <form id="f2">
+        <input type="text">
+      </form>
+    </div>
+  )HTML");
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f2")));
+
+  // Adding a new form element invalidates the cache.
+  Element* new_form = CreateElement(AtomicString("form"));
+  new_form->SetIdAttribute(AtomicString("f3"));
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f2")));
+  GetDocument().body()->AppendChild(new_form);
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f3"),
+                          GetFormElement("f2")));
+
+  // Removing a form element invalidates the cache.
+  GetFormElement("f2")->remove();
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), GetFormElement("f3")));
+}
+
+// Tests that top level forms inside shadow DOM are listed correctly and
+// insertion and removal updates the cache.
+TEST_F(TopLevelFormsListTest, FormsInShadowDomInsertionAndRemoval) {
+  GetDocument().body()->setHTMLUnsafe(R"HTML(
+    <form id="f1">
+      <input type="text">
+    </form>
+    <div id="d">
+      <template shadowrootmode=open>
+        <form id="f2">
+          <input type="text">
+        </form>
+      </template>
+    </div>
+  )HTML");
+  HTMLFormElement* f2 =
+      GetFormElement("f2", *GetElementById("d")->GetShadowRoot());
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1"), f2));
+
+  // Removing f1 updates the cache.
+  GetFormElement("f1")->remove();
+  EXPECT_THAT(GetDocument().GetTopLevelForms(), ElementsAre(f2));
+
+  // Removing f2 also updates the cache.
+  f2->remove();
+  EXPECT_THAT(GetDocument().GetTopLevelForms(), IsEmpty());
+}
+
+// Tests that nested forms across shadow DOM are ignored by `GetTopLevelForms`.
+TEST_F(TopLevelFormsListTest, GetTopLevelFormsIgnoresNestedChildren) {
+  GetDocument().body()->setHTMLUnsafe(R"HTML(
+    <form id="f1">
+      <input type="text">
+      <div id="d">
+        <template shadowrootmode=open>
+          <form id="f2">
+            <input type="text">
+          </form>
+        </template>
+      </div>
+    </form>
+  )HTML");
+  EXPECT_THAT(GetDocument().GetTopLevelForms(),
+              ElementsAre(GetFormElement("f1")));
 }
 
 TEST_F(DocumentTest, DocumentDefiningElementWithMultipleBodies) {

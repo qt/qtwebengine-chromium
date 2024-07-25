@@ -62,13 +62,13 @@ enum DCLayerResult {
   DC_LAYER_FAILED_YUV_VIDEO_QUAD_NO_HDR_METADATA = 18,
   DC_LAYER_FAILED_YUV_VIDEO_QUAD_HLG = 19,
   DC_LAYER_FAILED_YUV_VIDEO_QUAD_NO_P010_VIDEO_PROCESSOR_SUPPORT = 20,
-  DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_FULLSCREEN = 21,
+  DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_FULLSCREEN [[deprecated]] = 21,
   DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_P010 = 22,
   kMaxValue = DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_P010,
 };
 
 bool IsCompatibleHDRMetadata(
-    const absl::optional<gfx::HDRMetadata>& hdr_metadata) {
+    const std::optional<gfx::HDRMetadata>& hdr_metadata) {
   return hdr_metadata &&
          ((hdr_metadata->smpte_st_2086 &&
            hdr_metadata->smpte_st_2086->IsValid()) ||
@@ -79,8 +79,7 @@ DCLayerResult ValidateYUVOverlay(
     const gfx::ProtectedVideoType& protected_video_type,
     const gfx::ColorSpace& video_color_space,
     const gfx::BufferFormat& buffer_format,
-    const absl::optional<gfx::HDRMetadata>& hdr_metadata,
-    bool is_page_fullscreen_mode,
+    const std::optional<gfx::HDRMetadata>& hdr_metadata,
     bool has_overlay_support,
     bool has_p010_video_processor_support,
     int allowed_yuv_overlay_count,
@@ -118,12 +117,6 @@ DCLayerResult ValidateYUVOverlay(
       return DC_LAYER_FAILED_YUV_VIDEO_QUAD_NO_HDR_METADATA;
     }
 
-    // Do not promote hdr overlay when not in fullscreen mode, as this may cause
-    // inconsistent tone mapping result and may cause low fps page scrolling.
-    if (!is_page_fullscreen_mode) {
-      return DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_FULLSCREEN;
-    }
-
     // Do not promote hdr overlay if buffer is not in 10bit P010 format. as this
     // may cause blue output result if content is NV12 8bit HDR10.
     if (buffer_format != gfx::BufferFormat::P010) {
@@ -144,12 +137,11 @@ DCLayerResult ValidateYUVOverlay(
 DCLayerResult ValidateYUVQuad(
     const YUVVideoDrawQuad* quad,
     const std::vector<gfx::Rect>& backdrop_filter_rects,
-    bool is_page_fullscreen_mode,
     bool has_overlay_support,
     bool has_p010_video_processor_support,
     int allowed_yuv_overlay_count,
     int processed_yuv_overlay_count,
-    DisplayResourceProvider* resource_provider) {
+    const DisplayResourceProvider* resource_provider) {
   // Note: Do not override this value based on base::Feature values. It is the
   // result after the GPU blocklist has been consulted.
   if (!has_overlay_support)
@@ -202,15 +194,9 @@ DCLayerResult ValidateYUVQuad(
       return DC_LAYER_FAILED_YUV_VIDEO_QUAD_NO_HDR_METADATA;
     }
 
-    // Do not promote hdr overlay when not in fullscreen mode, as this may cause
-    // inconsistent tone mapping result and may cause low fps page scrolling.
-    if (!is_page_fullscreen_mode) {
-      return DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_FULLSCREEN;
-    }
-
     // Do not promote hdr overlay if buffer is not in 10bit P010 format. as this
     // may cause blue output result if content is NV12 8bit HDR10.
-    if (quad->bits_per_channel != 10) {
+    if (quad->bits_per_channel < 10) {
       return DC_LAYER_FAILED_YUV_VIDEO_QUAD_HDR_NON_P010;
     }
   }
@@ -264,12 +250,11 @@ void FromYUVQuad(const YUVVideoDrawQuad* quad,
 DCLayerResult ValidateTextureQuad(
     const TextureDrawQuad* quad,
     const std::vector<gfx::Rect>& backdrop_filter_rects,
-    bool is_page_fullscreen_mode,
     bool has_overlay_support,
     bool has_p010_video_processor_support,
     int allowed_yuv_overlay_count,
     int processed_yuv_overlay_count,
-    DisplayResourceProvider* resource_provider) {
+    const DisplayResourceProvider* resource_provider) {
   // Check that resources are overlay compatible first so that subsequent
   // assumptions are valid.
   for (const auto& resource : quad->resources) {
@@ -292,14 +277,16 @@ DCLayerResult ValidateTextureQuad(
   }
 
   if (quad->is_video_frame) {
-    auto color_space = resource_provider->GetColorSpace(quad->resource_id());
+    const auto& color_space =
+        resource_provider->GetColorSpace(quad->resource_id());
+    const auto& hdr_metadata =
+        resource_provider->GetHDRMetadata(quad->resource_id());
     auto buffer_format =
         resource_provider->GetBufferFormat(quad->resource_id());
     auto result = ValidateYUVOverlay(
-        quad->protected_video_type, color_space, buffer_format,
-        quad->hdr_metadata, is_page_fullscreen_mode, has_overlay_support,
-        has_p010_video_processor_support, allowed_yuv_overlay_count,
-        processed_yuv_overlay_count);
+        quad->protected_video_type, color_space, buffer_format, hdr_metadata,
+        has_overlay_support, has_p010_video_processor_support,
+        allowed_yuv_overlay_count, processed_yuv_overlay_count);
     return result;
   }
 
@@ -308,7 +295,7 @@ DCLayerResult ValidateTextureQuad(
 
 void FromTextureQuad(const TextureDrawQuad* quad,
                      const gfx::Transform& transform_to_root_target,
-                     DisplayResourceProvider* resource_provider,
+                     const DisplayResourceProvider* resource_provider,
                      OverlayCandidate* dc_layer) {
   dc_layer->resource_id = quad->resource_id();
   dc_layer->plane_z_order = 1;
@@ -340,9 +327,12 @@ void FromTextureQuad(const TextureDrawQuad* quad,
   }
 
   dc_layer->color_space = resource_provider->GetColorSpace(quad->resource_id());
-  dc_layer->hdr_metadata = quad->hdr_metadata;
+  dc_layer->hdr_metadata =
+      resource_provider->GetHDRMetadata(quad->resource_id());
+
+  dc_layer->protected_video_type = quad->protected_video_type;
   // Both color space and protected_video_type are hard-coded for stream video.
-  // TODO(crbug.com/1384544): Consider using quad->protected_video_type.
+  // TODO(crbug.com/40878556): Consider using quad->protected_video_type.
   if (quad->is_stream_video) {
     dc_layer->color_space = gfx::ColorSpace(gfx::ColorSpace::PrimaryID::BT709,
                                             gfx::ColorSpace::TransferID::BT709);
@@ -434,7 +424,7 @@ bool HasOccludingDamageRect(
   return !occluding_damage_rect.IsEmpty();
 }
 
-bool IsPossibleFullScreenLetterboxing(const QuadList::Iterator& it,
+bool IsPossibleFullScreenLetterboxing(const QuadList::ConstIterator& it,
                                       QuadList::ConstIterator quad_list_end,
                                       const gfx::Rect& display_rect) {
   // Two cases are considered as possible fullscreen letterboxing:
@@ -600,22 +590,24 @@ bool IsClearVideoQuad(const QuadList::ConstIterator& it) {
 }
 
 bool AllowRemoveClearVideoQuadCandidatesWhenMoving(
-    DisplayResourceProvider* resource_provider,
-    const QuadList::ConstIterator& it) {
+    const DisplayResourceProvider* resource_provider,
+    const QuadList::ConstIterator& it,
+    bool force_overlay_for_auto_hdr) {
   if (!IsClearVideoQuad(it)) {
     return false;
   }
-  // Do not allow remove clear video quad candidates for HDR videos, since there
-  // will always be a huge visual difference between compositor tone-mapping (by
-  // Chrome) and MPO tone-mapping (by Driver).
+  // Do not allow remove clear video quad candidates for HDR videos or SDR to
+  // HDR videos, since there will always be a huge visual difference between
+  // compositor tone-mapping (by Chrome) and MPO tone-mapping (by Driver).
   switch (it->material) {
     case DrawQuad::Material::kYuvVideoContent: {
       const YUVVideoDrawQuad* quad = YUVVideoDrawQuad::MaterialCast(*it);
-      return !quad->video_color_space.IsHDR();
+      return !(quad->video_color_space.IsHDR() || force_overlay_for_auto_hdr);
     }
     case DrawQuad::Material::kTextureContent: {
       const TextureDrawQuad* quad = TextureDrawQuad::MaterialCast(*it);
-      return !resource_provider->GetColorSpace(quad->resource_id()).IsHDR();
+      return !(resource_provider->GetColorSpace(quad->resource_id()).IsHDR() ||
+               force_overlay_for_auto_hdr);
     }
     default:
       NOTREACHED_NORETURN();
@@ -654,19 +646,165 @@ bool IsPreviousFrameUnderlayRect(
   }
 }
 
+// Return value of |ValidateDrawQuad|.
+struct ValidateDrawQuadResult {
+  DCLayerResult code = DC_LAYER_FAILED_UNSUPPORTED_QUAD;
+  bool is_yuv_overlay = false;
+  gpu::Mailbox promotion_hint_mailbox;
+};
+
+ValidateDrawQuadResult ValidateDrawQuad(
+    const DisplayResourceProvider* resource_provider,
+    const QuadList::ConstIterator& it,
+    const std::vector<gfx::Rect>& backdrop_filter_rects,
+    const bool has_overlay_support,
+    const bool has_p010_video_processor_support,
+    const int allowed_yuv_overlay_count,
+    const int processed_yuv_overlay_count,
+    const bool allow_promotion_hinting) {
+  ValidateDrawQuadResult result;
+  switch (it->material) {
+    case DrawQuad::Material::kYuvVideoContent:
+      result.code = ValidateYUVQuad(
+          YUVVideoDrawQuad::MaterialCast(*it), backdrop_filter_rects,
+          has_overlay_support, has_p010_video_processor_support,
+          allowed_yuv_overlay_count, processed_yuv_overlay_count,
+          resource_provider);
+      result.is_yuv_overlay = true;
+      break;
+
+    case DrawQuad::Material::kTextureContent: {
+      const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(*it);
+
+      if (tex_quad->is_stream_video) {
+        // Stream video quads contain Media Foundation dcomp surface which is
+        // always presented as overlay.
+        result.code = DC_LAYER_SUCCESS;
+      } else {
+        result.code = ValidateTextureQuad(
+            tex_quad, backdrop_filter_rects, has_overlay_support,
+            has_p010_video_processor_support, allowed_yuv_overlay_count,
+            processed_yuv_overlay_count, resource_provider);
+      }
+
+      result.is_yuv_overlay = tex_quad->is_video_frame;
+
+      if (allow_promotion_hinting) {
+        // If this quad has marked itself as wanting promotion hints then get
+        // the associated mailbox.
+        ResourceId id = tex_quad->resource_id();
+        if (resource_provider->DoesResourceWantPromotionHint(id)) {
+          result.promotion_hint_mailbox = resource_provider->GetMailbox(id);
+        }
+      }
+    } break;
+
+    default:
+      result.code = DC_LAYER_FAILED_UNSUPPORTED_QUAD;
+      break;
+  }
+
+  return result;
+}
+
+void FromDrawQuad(const DisplayResourceProvider* resource_provider,
+                  const AggregatedRenderPass* render_pass,
+                  bool is_page_fullscreen_mode,
+                  const QuadList::ConstIterator& it,
+                  int& processed_yuv_overlay_count,
+                  OverlayCandidate& dc_layer) {
+  dc_layer.possible_video_fullscreen_letterboxing =
+      is_page_fullscreen_mode
+          ? IsPossibleFullScreenLetterboxing(it, render_pass->quad_list.end(),
+                                             render_pass->output_rect)
+          : false;
+  switch (it->material) {
+    case DrawQuad::Material::kYuvVideoContent:
+      FromYUVQuad(YUVVideoDrawQuad::MaterialCast(*it),
+                  render_pass->transform_to_root_target, &dc_layer);
+      processed_yuv_overlay_count++;
+      break;
+    case DrawQuad::Material::kTextureContent: {
+      const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(*it);
+      FromTextureQuad(tex_quad, render_pass->transform_to_root_target,
+                      resource_provider, &dc_layer);
+      if (tex_quad->is_video_frame) {
+        processed_yuv_overlay_count++;
+      }
+    } break;
+    default:
+      NOTREACHED();
+  }
+}
+
 }  // namespace
+
+std::optional<OverlayCandidate> DCLayerOverlayProcessor::FromTextureOrYuvQuad(
+    const DisplayResourceProvider* resource_provider,
+    const AggregatedRenderPass* render_pass,
+    const QuadList::ConstIterator& it,
+    bool is_page_fullscreen_mode) const {
+  // Backdrop filter occlusion is checked in |OverlayProcessorWin| via
+  // |OverlayCandidate::IsOccludedByFilteredQuad|, so we don't need to populate
+  // this vector.
+  const std::vector<gfx::Rect> backdrop_filter_rects;
+
+  ValidateDrawQuadResult result = ValidateDrawQuad(
+      resource_provider, it, backdrop_filter_rects, true,
+      has_p010_video_processor_support_, INT_MAX, INT_MIN, false);
+
+  if (result.code != DC_LAYER_SUCCESS) {
+    RecordDCLayerResult(result.code, it);
+    return std::nullopt;
+  }
+
+  OverlayCandidate candidate;
+  int ignore_processed_yuv_overlay_count = 0;
+  FromDrawQuad(resource_provider, render_pass, is_page_fullscreen_mode, it,
+               ignore_processed_yuv_overlay_count, candidate);
+
+  // Once we've promoted the video as normal, add extra properties required for
+  // delegated compositing.
+
+  if (it->shared_quad_state->mask_filter_info.HasRoundedCorners()) {
+    gfx::MaskFilterInfo mask_filter_info =
+        it->shared_quad_state->mask_filter_info;
+    mask_filter_info.ApplyTransform(render_pass->transform_to_root_target);
+    candidate.rounded_corners = mask_filter_info.rounded_corner_bounds();
+  }
+
+  candidate.opacity = it->shared_quad_state->opacity;
+
+  // We don't expect quads promoted by |DCLayerOverlayProcessor| to have a
+  // differing |visible_rect|, but we handle it here just in case.
+  if (it->visible_rect != it->rect) {
+    // |OverlayCandidate| does not support clipping a candidate via
+    // |visible_rect|, but we can get the same effect by clipping its buffer via
+    // |uv_rect| and resizing its |display_rect|. This is similar to how
+    // |OverlayCandidateFactory| handles |visible_rect|.
+    candidate.uv_rect = gfx::MapRect(gfx::RectF(it->visible_rect),
+                                     gfx::RectF(it->rect), candidate.uv_rect);
+    candidate.display_rect = gfx::RectF(it->visible_rect);
+  }
+
+  return candidate;
+}
 
 DCLayerOverlayProcessor::DCLayerOverlayProcessor(
     int allowed_yuv_overlay_count,
     bool skip_initialization_for_testing)
     : has_overlay_support_(skip_initialization_for_testing),
       allowed_yuv_overlay_count_(allowed_yuv_overlay_count),
+      is_on_battery_power_(
+          base::PowerMonitor::AddPowerStateObserverAndReturnOnBatteryState(
+              this)),
       no_undamaged_overlay_promotion_(base::FeatureList::IsEnabled(
           features::kNoUndamagedOverlayPromotion)) {
   if (!skip_initialization_for_testing) {
     UpdateHasHwOverlaySupport();
     UpdateSystemHDRStatus();
     UpdateP010VideoProcessorSupport();
+    UpdateAutoHDRVideoProcessorSupport();
     gl::DirectCompositionOverlayCapsMonitor::GetInstance()->AddObserver(this);
   }
   allow_promotion_hinting_ = media::SupportMediaFoundationClearPlayback();
@@ -674,6 +812,7 @@ DCLayerOverlayProcessor::DCLayerOverlayProcessor(
 
 DCLayerOverlayProcessor::~DCLayerOverlayProcessor() {
   gl::DirectCompositionOverlayCapsMonitor::GetInstance()->RemoveObserver(this);
+  base::PowerMonitor::RemovePowerStateObserver(this);
 }
 
 void DCLayerOverlayProcessor::UpdateHasHwOverlaySupport() {
@@ -681,16 +820,30 @@ void DCLayerOverlayProcessor::UpdateHasHwOverlaySupport() {
 }
 
 void DCLayerOverlayProcessor::UpdateSystemHDRStatus() {
-  bool hdr_enabled = false;
+  bool hdr_enabled_on_any_display = false;
+  bool hdr_disabled_on_any_display = false;
   auto dxgi_info = gl::GetDirectCompositionHDRMonitorDXGIInfo();
-  for (const auto& output_desc : dxgi_info->output_descs)
-    hdr_enabled |= output_desc->hdr_enabled;
-  system_hdr_enabled_ = hdr_enabled;
+  for (const auto& output_desc : dxgi_info->output_descs) {
+    hdr_enabled_on_any_display |= output_desc->hdr_enabled;
+    hdr_disabled_on_any_display |= !output_desc->hdr_enabled;
+  }
+  system_hdr_enabled_on_any_display_ = hdr_enabled_on_any_display;
+  // If there is no monitor connected, treat it as if there is one SDR monitor.
+  system_hdr_disabled_on_any_display_ =
+      dxgi_info->output_descs.size() > 0 ? hdr_disabled_on_any_display : true;
 }
 
 void DCLayerOverlayProcessor::UpdateP010VideoProcessorSupport() {
   has_p010_video_processor_support_ =
       gl::CheckVideoProcessorFormatSupport(DXGI_FORMAT_P010);
+}
+
+void DCLayerOverlayProcessor::UpdateAutoHDRVideoProcessorSupport() {
+  has_auto_hdr_video_processor_support_ = gl::VideoProcessorAutoHDRSupported();
+}
+
+void DCLayerOverlayProcessor::OnPowerStateChange(bool on_battery_power) {
+  is_on_battery_power_ = on_battery_power;
 }
 
 // Called on the Viz Compositor thread.
@@ -699,6 +852,7 @@ void DCLayerOverlayProcessor::OnOverlayCapsChanged() {
   UpdateHasHwOverlaySupport();
   UpdateSystemHDRStatus();
   UpdateP010VideoProcessorSupport();
+  UpdateAutoHDRVideoProcessorSupport();
 }
 
 void DCLayerOverlayProcessor::RemoveOverlayDamageRect(
@@ -788,7 +942,7 @@ void DCLayerOverlayProcessor::UpdateDamageRect(
 }
 
 void DCLayerOverlayProcessor::RemoveClearVideoQuadCandidatesIfMoving(
-    DisplayResourceProvider* resource_provider,
+    const DisplayResourceProvider* resource_provider,
     RenderPassOverlayDataMap& render_pass_overlay_data_map,
     RenderPassCurrentFrameStateMap& render_pass_state_map) {
   // The number of frames all overlay candidates need to be stable before we
@@ -803,8 +957,8 @@ void DCLayerOverlayProcessor::RemoveClearVideoQuadCandidatesIfMoving(
     current_overlay_candidate_rects.reserve(
         current_overlay_candidate_rects.size() + candidates.size());
     for (auto candidate_it : candidates) {
-      if (AllowRemoveClearVideoQuadCandidatesWhenMoving(resource_provider,
-                                                        candidate_it)) {
+      if (AllowRemoveClearVideoQuadCandidatesWhenMoving(
+              resource_provider, candidate_it, force_overlay_for_auto_hdr())) {
         gfx::Rect quad_rect_in_target_space =
             ClippedQuadRectangle(*candidate_it);
         gfx::Rect quad_rect_in_root_space =
@@ -834,8 +988,9 @@ void DCLayerOverlayProcessor::RemoveClearVideoQuadCandidatesIfMoving(
 
       auto candidate_it = candidates.begin();
       while (candidate_it != candidates.end()) {
-        if (AllowRemoveClearVideoQuadCandidatesWhenMoving(resource_provider,
-                                                          *candidate_it)) {
+        if (AllowRemoveClearVideoQuadCandidatesWhenMoving(
+                resource_provider, *candidate_it,
+                force_overlay_for_auto_hdr())) {
           RecordDCLayerResult(DC_LAYER_FAILED_YUV_VIDEO_QUAD_MOVED,
                               *candidate_it);
           candidate_it = candidates.erase(candidate_it);
@@ -848,13 +1003,12 @@ void DCLayerOverlayProcessor::RemoveClearVideoQuadCandidatesIfMoving(
 }
 
 void DCLayerOverlayProcessor::CollectCandidates(
-    DisplayResourceProvider* resource_provider,
+    const DisplayResourceProvider* resource_provider,
     AggregatedRenderPass* render_pass,
     const FilterOperationsMap& render_pass_backdrop_filters,
     RenderPassOverlayData& overlay_data,
     RenderPassCurrentFrameState& render_pass_state,
-    GlobalOverlayState& global_overlay_state,
-    bool is_page_fullscreen_mode) {
+    GlobalOverlayState& global_overlay_state) {
   // Output rects of child render passes that have backdrop filters in target
   // space. These rects are used to determine if the overlay rect could be read
   // by backdrop filters.
@@ -887,51 +1041,13 @@ void DCLayerOverlayProcessor::CollectCandidates(
       continue;
     }
 
-    gpu::Mailbox promotion_hint_mailbox;
-    DCLayerResult result;
-    bool is_yuv_overlay = false;
-    switch (it->material) {
-      case DrawQuad::Material::kYuvVideoContent:
-        result = ValidateYUVQuad(
-            YUVVideoDrawQuad::MaterialCast(*it), backdrop_filter_rects,
-            is_page_fullscreen_mode, has_overlay_support_,
-            has_p010_video_processor_support_, allowed_yuv_overlay_count_,
-            global_overlay_state.processed_yuv_overlay_count,
-            resource_provider);
-        is_yuv_overlay = true;
-        break;
-      case DrawQuad::Material::kTextureContent: {
-        const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(*it);
+    ValidateDrawQuadResult result = ValidateDrawQuad(
+        resource_provider, it, backdrop_filter_rects, has_overlay_support_,
+        has_p010_video_processor_support_, allowed_yuv_overlay_count_,
+        global_overlay_state.processed_yuv_overlay_count,
+        allow_promotion_hinting_);
 
-        if (tex_quad->is_stream_video) {
-          // Stream video quads contain Media Foundation dcomp surface which is
-          // always presented as overlay.
-          result = DC_LAYER_SUCCESS;
-        } else {
-          result = ValidateTextureQuad(
-              tex_quad, backdrop_filter_rects, is_page_fullscreen_mode,
-              has_overlay_support_, has_p010_video_processor_support_,
-              allowed_yuv_overlay_count_,
-              global_overlay_state.processed_yuv_overlay_count,
-              resource_provider);
-        }
-
-        is_yuv_overlay = tex_quad->is_video_frame;
-
-        if (allow_promotion_hinting_) {
-          // If this quad has marked itself as wanting promotion hints then get
-          // the associated mailbox.
-          ResourceId id = tex_quad->resource_id();
-          if (resource_provider->DoesResourceWantPromotionHint(id)) {
-            promotion_hint_mailbox = resource_provider->GetMailbox(id);
-          }
-        }
-      } break;
-      default:
-        result = DC_LAYER_FAILED_UNSUPPORTED_QUAD;
-    }
-
-    if (is_yuv_overlay) {
+    if (result.is_yuv_overlay) {
       global_overlay_state.yuv_quads++;
       if (no_undamaged_overlay_promotion_) {
         if (it->shared_quad_state->overlay_damage_index.has_value() &&
@@ -940,30 +1056,31 @@ void DCLayerOverlayProcessor::CollectCandidates(
                                                ->overlay_damage_index.value()]
                  .IsEmpty()) {
           global_overlay_state.damaged_yuv_quads++;
-          if (result == DC_LAYER_SUCCESS) {
+          if (result.code == DC_LAYER_SUCCESS) {
             global_overlay_state.processed_yuv_overlay_count++;
           }
         }
       } else {
-        if (result == DC_LAYER_SUCCESS) {
+        if (result.code == DC_LAYER_SUCCESS) {
           global_overlay_state.processed_yuv_overlay_count++;
         }
       }
     }
 
-    if (!promotion_hint_mailbox.IsZero()) {
+    if (!result.promotion_hint_mailbox.IsZero()) {
       DCHECK(allow_promotion_hinting_);
-      bool promoted = result == DC_LAYER_SUCCESS;
+      bool promoted = result.code == DC_LAYER_SUCCESS;
       auto* overlay_state_service = OverlayStateService::GetInstance();
       // The OverlayStateService should always be initialized by GpuServiceImpl
       // at creation - DCHECK here just to assert there aren't any corner cases
       // where this isn't true.
       DCHECK(overlay_state_service->IsInitialized());
-      overlay_state_service->SetPromotionHint(promotion_hint_mailbox, promoted);
+      overlay_state_service->SetPromotionHint(result.promotion_hint_mailbox,
+                                              promoted);
     }
 
-    if (result != DC_LAYER_SUCCESS) {
-      RecordDCLayerResult(result, it);
+    if (result.code != DC_LAYER_SUCCESS) {
+      RecordDCLayerResult(result.code, it);
       continue;
     }
 
@@ -976,7 +1093,7 @@ void DCLayerOverlayProcessor::CollectCandidates(
 }
 
 void DCLayerOverlayProcessor::PromoteCandidates(
-    DisplayResourceProvider* resource_provider,
+    const DisplayResourceProvider* resource_provider,
     AggregatedRenderPass* render_pass,
     const FilterOperationsMap& render_pass_filters,
     const RenderPassPreviousFrameState& previous_frame_state,
@@ -1066,7 +1183,7 @@ void DCLayerOverlayProcessor::PromoteCandidates(
 }
 
 void DCLayerOverlayProcessor::Process(
-    DisplayResourceProvider* resource_provider,
+    const DisplayResourceProvider* resource_provider,
     const FilterOperationsMap& render_pass_filters,
     const FilterOperationsMap& render_pass_backdrop_filters,
     const SurfaceDamageRectList& surface_damage_rect_list_in_root_space,
@@ -1098,8 +1215,7 @@ void DCLayerOverlayProcessor::Process(
 
     CollectCandidates(resource_provider, render_pass,
                       render_pass_backdrop_filters, overlay_data,
-                      current_frame_state, global_overlay_state,
-                      is_page_fullscreen_mode);
+                      current_frame_state, global_overlay_state);
   }
 
   // We might not save power if there are more than one videos and only part of
@@ -1211,11 +1327,16 @@ bool DCLayerOverlayProcessor::ShouldSkipOverlay(
         RecordDCLayerResult(DC_LAYER_FAILED_OUTPUT_HDR, it);
         return true;
       }
-      // Skip overlay processing if output colorspace is HDR and system HDR is
-      // not enabled. Since we always want to use Viz do HDR tone mapping, to
-      // avoid a visual difference between Viz and video processor, do not allow
-      // overlay.
-      if (!system_hdr_enabled_) {
+      // Skip overlay processing if output colorspace is HDR and any
+      // non-HDR-enabled display exists. Technically we should use HWND detect
+      // if HDR is enabled on the current display or not, if it is enabled
+      // then promote overlay, otherwise not, but since currently we can't
+      // retrieve HWND in DCLayerOverlayProcessor, in case of very bad
+      // tone-mapping result by video processor on non-HDR-enabled display, we
+      // tend to be strict about the overlay promotion and always let Viz do HDR
+      // tone mapping to avoid a visual difference between Viz and video
+      // processor.
+      if (system_hdr_disabled_on_any_display_) {
         RecordDCLayerResult(DC_LAYER_FAILED_HDR_TONE_MAPPING, it);
         return true;
       }
@@ -1226,7 +1347,7 @@ bool DCLayerOverlayProcessor::ShouldSkipOverlay(
 }
 
 void DCLayerOverlayProcessor::UpdateDCLayerOverlays(
-    DisplayResourceProvider* resource_provider,
+    const DisplayResourceProvider* resource_provider,
     AggregatedRenderPass* render_pass,
     const QuadList::Iterator& it,
     const gfx::Rect& quad_rect_in_target_space,
@@ -1240,28 +1361,8 @@ void DCLayerOverlayProcessor::UpdateDCLayerOverlays(
   RecordDCLayerResult(DC_LAYER_SUCCESS, it);
 
   OverlayCandidate dc_layer;
-  dc_layer.possible_video_fullscreen_letterboxing =
-      is_page_fullscreen_mode
-          ? IsPossibleFullScreenLetterboxing(it, render_pass->quad_list.end(),
-                                             render_pass->output_rect)
-          : false;
-  switch (it->material) {
-    case DrawQuad::Material::kYuvVideoContent:
-      FromYUVQuad(YUVVideoDrawQuad::MaterialCast(*it),
-                  render_pass->transform_to_root_target, &dc_layer);
-      global_overlay_state.processed_yuv_overlay_count++;
-      break;
-    case DrawQuad::Material::kTextureContent: {
-      const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(*it);
-      FromTextureQuad(tex_quad, render_pass->transform_to_root_target,
-                      resource_provider, &dc_layer);
-      if (tex_quad->is_video_frame) {
-        global_overlay_state.processed_yuv_overlay_count++;
-      }
-    } break;
-    default:
-      NOTREACHED();
-  }
+  FromDrawQuad(resource_provider, render_pass, is_page_fullscreen_mode, it,
+               global_overlay_state.processed_yuv_overlay_count, dc_layer);
 
   // Underlays are less efficient, so attempt regular overlays first. We can
   // only check for occlusion within a render pass.

@@ -4,6 +4,10 @@
 
 #import "components/remote_cocoa/app_shim/native_widget_ns_window_bridge.h"
 
+#import <AppKit/AppKit.h>
+#include <Foundation/Foundation.h>
+#include <Security/Security.h>
+#import <SecurityInterface/SecurityInterface.h>
 #import <objc/runtime.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -11,7 +15,9 @@
 #include <cmath>
 #include <memory>
 
+#include "base/apple/bridging.h"
 #import "base/apple/foundation_util.h"
+#include "base/apple/scoped_cftyperef.h"
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -22,9 +28,10 @@
 #include "base/ranges/algorithm.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
+#import "components/remote_cocoa/app_shim/NSToolbar+Private.h"
 #import "components/remote_cocoa/app_shim/bridged_content_view.h"
 #import "components/remote_cocoa/app_shim/browser_native_widget_window_mac.h"
-#import "components/remote_cocoa/app_shim/certificate_viewer.h"
+#import "components/remote_cocoa/app_shim/context_menu_runner.h"
 #import "components/remote_cocoa/app_shim/mouse_capture.h"
 #import "components/remote_cocoa/app_shim/native_widget_mac_frameless_nswindow.h"
 #import "components/remote_cocoa/app_shim/native_widget_mac_nswindow.h"
@@ -34,6 +41,7 @@
 #import "components/remote_cocoa/app_shim/window_move_loop.h"
 #include "components/remote_cocoa/common/native_widget_ns_window_host.mojom.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "net/cert/x509_util_apple.h"
 #include "ui/accelerated_widget_mac/window_resize_helper_mac.h"
 #import "ui/base/cocoa/constrained_window/constrained_window_animation.h"
 #include "ui/base/cocoa/cursor_utils.h"
@@ -412,13 +420,32 @@ void NativeWidgetNSWindowBridge::CreateSelectFileDialog(
 
 void NativeWidgetNSWindowBridge::ShowCertificateViewer(
     const scoped_refptr<net::X509Certificate>& certificate) {
-  ShowCertificateViewerForWindow(window_, certificate.get());
+  NSArray* cert_chain = base::apple::CFToNSOwnershipCast(
+      net::x509_util::CreateSecCertificateArrayForX509Certificate(
+          certificate.get())
+          .release());
+  if (!cert_chain) {
+    return;
+  }
+
+  [[[SFCertificatePanel alloc] init] beginSheetForWindow:window_
+                                           modalDelegate:nil
+                                          didEndSelector:nil
+                                             contextInfo:nil
+                                            certificates:cert_chain
+                                               showGroup:YES];
 }
 
 void NativeWidgetNSWindowBridge::StackAbove(uint64_t sibling_id) {
   NativeWidgetNSWindowBridge* sibling_bridge =
       NativeWidgetNSWindowBridge::GetFromId(sibling_id);
-  DCHECK(sibling_bridge);
+  if (!sibling_bridge) {
+    // When the OS tells us a window is closing it is removed from the id map.
+    // Since nothing is stopping the browser process from still trying to use
+    // that id until the browser process has been informed that the window is
+    // gone, it is totally possible to be passed no longer valid ids here.
+    return;
+  }
 
   NSInteger sibling = sibling_bridge->ns_window().windowNumber;
   [window_ orderWindowByShuffling:NSWindowAbove relativeTo:sibling];
@@ -444,7 +471,7 @@ void NativeWidgetNSWindowBridge::InitWindow(
   pending_restoration_data_ = params->state_restoration_data;
 
   if (params->is_headless_mode_window)
-    headless_mode_window_ = absl::make_optional<HeadlessModeWindow>();
+    headless_mode_window_ = std::make_optional<HeadlessModeWindow>();
 
   [window_ setIsHeadless:params->is_headless_mode_window];
 
@@ -506,13 +533,13 @@ void NativeWidgetNSWindowBridge::SetInitialBounds(
     adjusted_bounds = gfx::Rect(
         gfx::Point(), gfx::Size(NSWidth(frame_rect), NSHeight(frame_rect)));
   }
-  SetBounds(adjusted_bounds, minimum_content_size, absl::nullopt);
+  SetBounds(adjusted_bounds, minimum_content_size, std::nullopt);
 }
 
 void NativeWidgetNSWindowBridge::SetBounds(
     const gfx::Rect& new_bounds,
     const gfx::Size& minimum_content_size,
-    const absl::optional<gfx::Size>& maximum_content_size) {
+    const std::optional<gfx::Size>& maximum_content_size) {
   // -[NSWindow contentMinSize] and [NSWindow contentMaxSize] are only checked
   // by Cocoa for user-initiated resizes. This is not what toolkit-views
   // expects, so clamp.
@@ -562,7 +589,7 @@ void NativeWidgetNSWindowBridge::SetSize(
   // which -[NSWindow setContentSize:] would do).
   gfx::Rect new_window_bounds = gfx::ScreenRectFromNSRect([window_ frame]);
   new_window_bounds.set_size(new_size);
-  SetBounds(new_window_bounds, minimum_content_size, absl::nullopt);
+  SetBounds(new_window_bounds, minimum_content_size, std::nullopt);
 }
 
 void NativeWidgetNSWindowBridge::SetSizeAndCenter(
@@ -570,7 +597,7 @@ void NativeWidgetNSWindowBridge::SetSizeAndCenter(
     const gfx::Size& minimum_content_size) {
   gfx::Rect new_window_bounds = gfx::ScreenRectFromNSRect([window_ frame]);
   new_window_bounds.set_size(GetWindowSizeForClientSize(window_, content_size));
-  SetBounds(new_window_bounds, minimum_content_size, absl::nullopt);
+  SetBounds(new_window_bounds, minimum_content_size, std::nullopt);
 
   // Note that this is not the precise center of screen, but it is the standard
   // location for windows like dialogs to appear on screen for Mac.
@@ -1051,6 +1078,15 @@ void NativeWidgetNSWindowBridge::SetCanGoForward(bool can_go_forward) {
   can_go_forward_ = can_go_forward;
 }
 
+void NativeWidgetNSWindowBridge::DisplayContextMenu(
+    mojom::ContextMenuPtr menu,
+    mojo::PendingRemote<mojom::MenuHost> host,
+    mojo::PendingReceiver<mojom::Menu> receiver) {
+  ContextMenuRunner runner(std::move(host), std::move(receiver));
+  NSView* target_view = GetNSViewFromId(menu->target_view_id);
+  runner.ShowMenu(std::move(menu), GetWindow(), target_view);
+}
+
 void NativeWidgetNSWindowBridge::OnWindowWillClose() {
   fullscreen_controller_.OnWindowWillClose();
   // Immersive full screen needs to be disabled synchronously when the window
@@ -1279,8 +1315,8 @@ void NativeWidgetNSWindowBridge::OnDisplayAdded(
   UpdateWindowDisplay();
 }
 
-void NativeWidgetNSWindowBridge::OnDisplayRemoved(
-    const display::Display& display) {
+void NativeWidgetNSWindowBridge::OnDisplaysRemoved(
+    const display::Displays& removed_displays) {
   UpdateWindowDisplay();
 }
 
@@ -1405,6 +1441,8 @@ bool NativeWidgetNSWindowBridge::ShouldWaitInPreCommit() {
   if (ca_transaction_sync_suppressed_)
     return false;
   if (!bridged_view_)
+    return false;
+  if (content_dip_size_.IsEmpty())
     return false;
   // Suppress synchronous CA transactions during AppKit fullscreen transition
   // since there is no need for updates during such transition.
@@ -1759,8 +1797,19 @@ void NativeWidgetNSWindowBridge::ShowAsModalSheet() {
   host_->OnVisibilityChanged(window_visible_);
 
   NSWindow* parent_window = parent_->ns_window();
+  if (NativeWidgetMacNSWindow* parent_widget_window =
+          base::apple::ObjCCast<NativeWidgetMacNSWindow>(parent_window)) {
+    parent_window = [parent_widget_window preferredSheetParent];
+  }
   DCHECK(parent_window);
   NSWindow* __weak weak_window = window_;
+
+  // Don't show a sheet twice. If a sheet is shown twice but endSheet: only
+  // once it will leave a dangling blank sheet. This happened when the browser
+  // is restored from minimization.
+  if (parent_window.attachedSheet == window_) {
+    return;
+  }
 
   auto begin_sheet_closure = base::BindOnce(^{
     [parent_window beginSheet:window_
@@ -1774,7 +1823,10 @@ void NativeWidgetNSWindowBridge::ShowAsModalSheet() {
               if (!window.delegate) {
                 return;
               }
-
+              // Make sure to mark ourselves as not wanting to be visible.
+              // Otherwise if during the orderOut call our parent becomes the
+              // key window, it would try to show us as a new modal sheet.
+              wants_to_be_visible_ = false;
               [window orderOut:nil];
               OnWindowWillClose();
             }];

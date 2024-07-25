@@ -14,6 +14,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "ui/display/manager/util/display_manager_util.h"
 #include "ui/display/types/display_configuration_params.h"
 #include "ui/display/types/display_constants.h"
@@ -224,6 +225,17 @@ void UpdateFinalStatusUma(
   }
 }
 
+// After a successful configuration, the DisplaySnapshot associated with a
+// request needs to have its state updated to reflect the new configuration.
+void UpdateSnapshotAfterConfiguration(const DisplayConfigureRequest& request) {
+  request.display->set_current_mode(request.mode);
+  request.display->set_origin(request.origin);
+  if (request.display->IsVrrCapable()) {
+    request.display->set_variable_refresh_rate_state(
+        request.enable_vrr ? display::kVrrEnabled : display::kVrrDisabled);
+  }
+}
+
 }  // namespace
 
 DisplayConfigureRequest::DisplayConfigureRequest(DisplaySnapshot* display,
@@ -235,7 +247,10 @@ DisplayConfigureRequest::DisplayConfigureRequest(DisplaySnapshot* display,
 DisplayConfigureRequest::DisplayConfigureRequest(DisplaySnapshot* display,
                                                  const DisplayMode* mode,
                                                  const gfx::Point& origin)
-    : DisplayConfigureRequest(display, mode, origin, /*enable_vrr=*/false) {}
+    : DisplayConfigureRequest(display,
+                              mode,
+                              origin,
+                              /*enable_vrr=*/false) {}
 
 ConfigureDisplaysTask::ConfigureDisplaysTask(
     NativeDisplayDelegate* delegate,
@@ -281,9 +296,9 @@ void ConfigureDisplaysTask::Run() {
       is_first_attempt ? &ConfigureDisplaysTask::OnFirstAttemptConfigured
                        : &ConfigureDisplaysTask::OnRetryConfigured;
 
-  uint32_t modeset_flags = display::kTestModeset;
+  display::ModesetFlags modeset_flags{display::ModesetFlag::kTestModeset};
   if (configuration_type_ == kConfigurationTypeSeamless)
-    modeset_flags |= display::kSeamlessModeset;
+    modeset_flags.Put(display::ModesetFlag::kSeamlessModeset);
   delegate_->Configure(
       config_requests,
       base::BindOnce(on_configured, weak_ptr_factory_.GetWeakPtr()),
@@ -327,9 +342,9 @@ void ConfigureDisplaysTask::OnFirstAttemptConfigured(bool config_success) {
                                  request.mode, request.enable_vrr);
   }
 
-  uint32_t modeset_flags = display::kCommitModeset;
+  display::ModesetFlags modeset_flags{display::ModesetFlag::kCommitModeset};
   if (configuration_type_ == kConfigurationTypeSeamless)
-    modeset_flags |= display::kSeamlessModeset;
+    modeset_flags.Put(display::ModesetFlag::kSeamlessModeset);
   delegate_->Configure(config_requests,
                        base::BindOnce(&ConfigureDisplaysTask::OnConfigured,
                                       weak_ptr_factory_.GetWeakPtr()),
@@ -398,9 +413,9 @@ void ConfigureDisplaysTask::OnRetryConfigured(bool config_success) {
 
   // Configure the displays using the last successful configuration parameter
   // list.
-  uint32_t modeset_flags = display::kCommitModeset;
+  display::ModesetFlags modeset_flags{display::ModesetFlag::kCommitModeset};
   if (configuration_type_ == kConfigurationTypeSeamless)
-    modeset_flags |= display::kSeamlessModeset;
+    modeset_flags.Put(display::ModesetFlag::kSeamlessModeset);
   delegate_->Configure(last_successful_config_parameters_,
                        base::BindOnce(&ConfigureDisplaysTask::OnConfigured,
                                       weak_ptr_factory_.GetWeakPtr()),
@@ -410,12 +425,7 @@ void ConfigureDisplaysTask::OnRetryConfigured(bool config_success) {
 void ConfigureDisplaysTask::OnConfigured(bool config_success) {
   if (config_success) {
     for (const DisplayConfigureRequest& request : requests_) {
-      request.display->set_current_mode(request.mode);
-      request.display->set_origin(request.origin);
-      if (request.display->IsVrrCapable()) {
-        request.display->set_variable_refresh_rate_state(
-            request.enable_vrr ? display::kVrrEnabled : display::kVrrDisabled);
-      }
+      UpdateSnapshotAfterConfiguration(request);
     }
   }
 

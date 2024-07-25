@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/webui/app_management/app_management_page_handler_base.h"
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -37,10 +35,11 @@
 #include "chrome/browser/ash/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ash/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ash/apps/apk_web_app_service.h"
+#include "chrome/browser/ui/webui/app_management/app_management_page_handler_chromeos.h"
 #include "components/arc/test/fake_intent_helper_instance.h"
 #include "components/services/app_service/public/cpp/intent_filter_util.h"
 #else
-#include "base/test/scoped_feature_list.h"
+#include "chrome/browser/ui/webui/app_management/web_app_settings_page_handler.h"
 #include "chrome/common/chrome_features.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -78,10 +77,14 @@ class AppManagementPageHandlerTestBase
 
     mojo::PendingReceiver<app_management::mojom::Page> page;
     mojo::Remote<app_management::mojom::PageHandler> handler;
-    handler_ = std::make_unique<AppManagementPageHandlerBase>(
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    handler_ = std::make_unique<AppManagementPageHandlerChromeOs>(
         handler.BindNewPipeAndPassReceiver(),
         page.InitWithNewPipeAndPassRemote(), profile(), *delegate_);
-#if !BUILDFLAG(IS_CHROMEOS)
+#else
+    handler_ = std::make_unique<WebAppSettingsPageHandler>(
+        handler.BindNewPipeAndPassReceiver(),
+        page.InitWithNewPipeAndPassRemote(), profile(), *delegate_);
     auto features_and_params = apps::test::GetFeaturesToEnableLinkCapturingUX(
         /*override_captures_by_default=*/GetParam());
     features_and_params.push_back(
@@ -270,7 +273,7 @@ TEST_P(AppManagementPageHandlerTestBase, PreferredAppOverlappingScopePort) {
 // On Windows, Mac and Linux, nested scopes are not considered overlapping,
 // so 2 apps having nested scopes can be set as preferred at the same time,
 // while on CrOS, this cannot happen.
-// TODO(crbug.com/1476011): If CrOS decides to treat overlapping apps
+// TODO(crbug.com/40279851): If CrOS decides to treat overlapping apps
 // as non-nested ones, then this will need to be modified.
 #if BUILDFLAG(IS_CHROMEOS)
   EXPECT_FALSE(IsAppPreferred(app_id1));
@@ -435,7 +438,7 @@ TEST_P(AppManagementPageHandlerTestBase,
   std::vector<std::string> overlapping_apps =
       GetOverlappingPreferredApps(app_id2);
 
-// TODO(crbug.com/1476011): Modify if nested scope behavior changes on CrOS.
+// TODO(crbug.com/40279851): Modify if nested scope behavior changes on CrOS.
 // On Windows, Mac and Linux, apps with nested scopes are not considered
 // overlapping, but on CrOS they are.
 #if BUILDFLAG(IS_CHROMEOS)
@@ -655,7 +658,7 @@ TEST_P(AppManagementPageHandlerTestBase, GetScopeExtensions) {
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 
-// TODO(crbug.com/1476011): The overlapping nested scope based behavior is only
+// TODO(crbug.com/40279851): The overlapping nested scope based behavior is only
 // on ChromeOS, and will need to be modified if the behavior changes.
 #if BUILDFLAG(IS_CHROMEOS)
 TEST_P(AppManagementPageHandlerTestBase, UseCase_ADisabledBDisabled) {

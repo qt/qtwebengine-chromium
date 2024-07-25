@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/parser/cpdf_parser.h"
 
 #include <limits>
@@ -128,7 +133,7 @@ class CPDF_TestParser final : public CPDF_Parser {
   }
 
   // Expose protected CPDF_Parser methods for testing.
-  using CPDF_Parser::LoadCrossRefV4;
+  using CPDF_Parser::LoadCrossRefTable;
   using CPDF_Parser::ParseLinearizedHeader;
   using CPDF_Parser::ParseStartXRef;
   using CPDF_Parser::RebuildCrossRef;
@@ -170,7 +175,7 @@ TEST(ParserTest, RebuildCrossRefFailed) {
   ASSERT_FALSE(parser.RebuildCrossRef());
 }
 
-TEST(ParserTest, LoadCrossRefV4) {
+TEST(ParserTest, LoadCrossRefTable) {
   {
     static const unsigned char kXrefTable[] =
         "xref \n"
@@ -185,7 +190,7 @@ TEST(ParserTest, LoadCrossRefV4) {
     CPDF_TestParser parser;
     ASSERT_TRUE(parser.InitTestFromBuffer(kXrefTable));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
+    ASSERT_TRUE(parser.LoadCrossRefTable(/*pos=*/0, /*skip=*/false));
     static const FX_FILESIZE kOffsets[] = {0, 17, 81, 0, 331, 409};
     static const CPDF_CrossRefTable::ObjectType kTypes[] = {
         CPDF_CrossRefTable::ObjectType::kFree,
@@ -217,7 +222,7 @@ TEST(ParserTest, LoadCrossRefV4) {
     CPDF_TestParser parser;
     ASSERT_TRUE(parser.InitTestFromBuffer(kXrefTable));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
+    ASSERT_TRUE(parser.LoadCrossRefTable(/*pos=*/0, /*skip=*/false));
     static const FX_FILESIZE kOffsets[] = {0, 0,     0,     25325, 0, 0,    0,
                                            0, 25518, 25635, 0,     0, 25777};
     static const CPDF_CrossRefTable::ObjectType kTypes[] = {
@@ -257,7 +262,7 @@ TEST(ParserTest, LoadCrossRefV4) {
     CPDF_TestParser parser;
     ASSERT_TRUE(parser.InitTestFromBuffer(kXrefTable));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
+    ASSERT_TRUE(parser.LoadCrossRefTable(/*pos=*/0, /*skip=*/false));
     static const FX_FILESIZE kOffsets[] = {0, 0, 0,     25325, 0, 0,    0,
                                            0, 0, 25635, 0,     0, 25777};
     static const CPDF_CrossRefTable::ObjectType kTypes[] = {
@@ -296,7 +301,7 @@ TEST(ParserTest, LoadCrossRefV4) {
     CPDF_TestParser parser;
     ASSERT_TRUE(parser.InitTestFromBuffer(kXrefTable));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
+    ASSERT_TRUE(parser.LoadCrossRefTable(/*pos=*/0, /*skip=*/false));
     static const FX_FILESIZE kOffsets[] = {0, 23, 0, 0, 0, 45, 179};
     static const CPDF_CrossRefTable::ObjectType kTypes[] = {
         CPDF_CrossRefTable::ObjectType::kFree,
@@ -330,7 +335,7 @@ TEST(ParserTest, LoadCrossRefV4) {
         pdfium::make_span(reinterpret_cast<const uint8_t*>(xref_table.c_str()),
                           xref_table.size())));
 
-    ASSERT_TRUE(parser.LoadCrossRefV4(0, false));
+    ASSERT_TRUE(parser.LoadCrossRefTable(/*pos=*/0, /*skip=*/false));
     for (size_t i = 0; i < 2048; ++i) {
       EXPECT_EQ(static_cast<int>(i) + 1, GetObjInfo(parser, i).pos);
       EXPECT_EQ(CPDF_CrossRefTable::ObjectType::kNormal,
@@ -347,10 +352,10 @@ TEST(ParserTest, ParseStartXRef) {
   ASSERT_TRUE(parser.InitTestFromFile(test_file.c_str())) << test_file;
 
   EXPECT_EQ(100940, parser.ParseStartXRef());
-  RetainPtr<CPDF_Object> cross_ref_v5_obj =
+  RetainPtr<CPDF_Object> cross_ref_stream_obj =
       parser.ParseIndirectObjectAt(100940, 0);
-  ASSERT_TRUE(cross_ref_v5_obj);
-  EXPECT_EQ(75u, cross_ref_v5_obj->GetObjNum());
+  ASSERT_TRUE(cross_ref_stream_obj);
+  EXPECT_EQ(75u, cross_ref_stream_obj->GetObjNum());
 }
 
 TEST(ParserTest, ParseStartXRefWithHeaderOffset) {
@@ -369,10 +374,10 @@ TEST(ParserTest, ParseStartXRefWithHeaderOffset) {
   parser.InitTestFromBufferWithOffset(data, kTestHeaderOffset);
 
   EXPECT_EQ(100940, parser.ParseStartXRef());
-  RetainPtr<CPDF_Object> cross_ref_v5_obj =
+  RetainPtr<CPDF_Object> cross_ref_stream_obj =
       parser.ParseIndirectObjectAt(100940, 0);
-  ASSERT_TRUE(cross_ref_v5_obj);
-  EXPECT_EQ(75u, cross_ref_v5_obj->GetObjNum());
+  ASSERT_TRUE(cross_ref_stream_obj);
+  EXPECT_EQ(75u, cross_ref_stream_obj->GetObjNum());
 }
 
 TEST(ParserTest, ParseLinearizedWithHeaderOffset) {
@@ -725,7 +730,7 @@ TEST_F(ParserXRefTest, XrefIndexWithRepeatedObject) {
       {.type = CPDF_CrossRefTable::ObjectType::kNormal, .pos = 0},
       // Since the /Index does not follow the spec, this is one of the 2
       // possible values that a parser can come up with.
-      {.type = CPDF_CrossRefTable::ObjectType::kNormal, .pos = 15}};
+      {.type = CPDF_CrossRefTable::ObjectType::kNormal, .pos = 18}};
 
   EXPECT_THAT(objects_info, ElementsAre(Pair(2, expected_result[0]),
                                         Pair(3, expected_result[1])));

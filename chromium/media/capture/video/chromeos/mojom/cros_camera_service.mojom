@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Next min version: 14
+// Next min version: 15
 
 module cros.mojom;
 
@@ -62,6 +62,42 @@ enum CameraAutoFramingState {
   ON_MULTI = 2,
 };
 
+// Interface called by CrosCameraService to notify Ash of Kiosk Vision events.
+// The data being transferred and the processes involved are trusted.
+//
+// Next method ID: 2
+interface KioskVisionObserver {
+  // Notifies the observer that a new detection has happened.
+  OnDetection@0(KioskVisionDetection detection);
+
+  // Notifies the observer that an error has happened.
+  OnError@1(KioskVisionError error);
+};
+
+// An appearance represents one person in a detection set.
+struct KioskVisionAppearance {
+  // TODO(b/336760251): This struct is not finalized, add remaining fields.
+  // The tracking ID of this person.
+  int32 person_id;
+};
+
+// Output detection of the Kiosk Vision graph.
+struct KioskVisionDetection {
+  // TODO(b/336760251): This struct is not finalized, add remaining fields.
+  // The persons detected.
+  array<KioskVisionAppearance> appearances;
+};
+
+// Describes errors that may happen when running the Kiosk Vision feature.
+[Extensible]
+enum KioskVisionError {
+  [Default] UNKNOWN = 0,
+  // E.g. failed to open the shared library from the DLC path.
+  DLC_ERROR = 1,
+  // E.g. failed to start or run the ML model.
+  MODEL_ERROR = 2,
+};
+
 // The CrOS camera HAL v3 Mojo dispatcher.  The dispatcher acts as a proxy and
 // waits for the server and the clients to register.  There can only be one
 // server registered, with multiple clients requesting connections to the
@@ -85,7 +121,7 @@ interface CameraHalDispatcher {
 // observers for any changes on the server side, for example when a
 // CameraHalClient opens or closes a camera device.
 //
-// Next method ID: 3
+// Next method ID: 4
 interface CrosCameraServiceObserver {
   // Fired when a CameraHalClient opens or closes a camera device. When a
   // CameraHalClient loses mojo connection to CameraHalServer, CameraHalServer
@@ -101,12 +137,15 @@ interface CrosCameraServiceObserver {
 
   // Fired when the camera software privacy switch status is changed.
   CameraSWPrivacySwitchStateChange@2(CameraPrivacySwitchState state);
+
+  // Fired when the camera effect is changed.
+  [MinVersion=14] CameraEffectChange@3(EffectsConfig config);
 };
 
 // A client can request the CrosCameraService service from Mojo Service Manager
 // and get the camera module or set/get the camera states.
 //
-// Next method ID: 8
+// Next method ID: 9
 interface CrosCameraService {
   // A caller calls GetCameraModule to create a new Mojo channel to the camera
   // HAL v3 adapter.
@@ -134,4 +173,10 @@ interface CrosCameraService {
   // Add an obersever which observes the event of the camera service.
   AddCrosCameraServiceObserver@7(
       pending_remote<CrosCameraServiceObserver> observer);
+
+  // Start and observe Kiosk Vision detections. There is no separate "stop"
+  // method. The feature should remain active for the lifetime of the
+  // connection to the observer remote.
+  StartKioskVisionDetection@8(
+      string dlc_path, pending_remote<KioskVisionObserver> observer);
 };

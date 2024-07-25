@@ -24,6 +24,7 @@
 #include "third_party/blink/renderer/core/fragment_directive/text_fragment_selector_generator.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/loader/document_loader.h"
 
 namespace blink {
@@ -108,7 +109,7 @@ void TextFragmentHandler::RemoveFragments() {
 }
 
 // static
-bool TextFragmentHandler::IsOverTextFragment(HitTestResult result) {
+bool TextFragmentHandler::IsOverTextFragment(const HitTestResult& result) {
   if (!result.InnerNode() || !result.InnerNodeFrame()) {
     return false;
   }
@@ -218,8 +219,11 @@ void TextFragmentHandler::Trace(Visitor* visitor) const {
 void TextFragmentHandler::DidDetachDocumentOrFrame() {
   // Clear out any state in the generator and cancel pending tasks so they
   // don't run after frame detachment.
-  if (GetTextFragmentSelectorGenerator())
+  if (GetTextFragmentSelectorGenerator()) {
     GetTextFragmentSelectorGenerator()->Reset();
+    // The generator is preserved since that's used in RequestSelector to
+    // determine whether to respond with kNotGenerated.
+  }
 
   annotation_agents_.clear();
 }

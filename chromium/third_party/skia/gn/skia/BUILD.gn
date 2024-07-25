@@ -163,6 +163,12 @@ config("default") {
       "-mfpmath=sse",
     ]
     ldflags += [ "-m32" ]
+  } else if (current_cpu == "loong64") {
+    cflags += [
+      "-mlsx",
+      "-mlasx",
+      "-Wno-switch-default",
+    ]
   }
 
   if (malloc != "" && !is_win) {
@@ -432,6 +438,10 @@ config("warnings") {
       "/wd4275",  # non dll-interface class 'base' used as base for
                   # dll-interface class 'derived'
 
+      # This triggers incorrectly in SkColor.h. See also:
+      # https://developercommunity.visualstudio.com/t/incorrect-divide-by-0-warning-c4723/1703482
+      "/wd4723",  # potential divide by 0
+
       # It'd be nice to fix these and turn this on:
       "/wd5041",  # out-of-line definition for constexpr static data member is
                   # not needed and is deprecated in C++17
@@ -439,6 +449,7 @@ config("warnings") {
     if (is_clang) {
       cflags += [
         "-Wno-unused-parameter",  # Re-enabled for header sources
+        "-Wno-switch-default",  # Warns even when all enum values are covered
       ]
     }
   } else {
@@ -453,6 +464,7 @@ config("warnings") {
       "-Wno-deprecated-declarations",
       "-Wno-maybe-uninitialized",
       "-Wno-psabi",
+      "-Wno-switch-default",  # Warns even when all enum values are covered
       "-Wno-unused-parameter",  # Re-enabled for header sources
     ]
     cflags_cc += [
@@ -478,7 +490,7 @@ config("warnings") {
     #   - clang-cl doesn't recognize the flag
     #   - The (old) Mac/iOS SDK used on the bots breaks this rule in various headers
     #     TODO: Re-enable on Apple when we update XCode
-    if (!is_win && !is_apple) {
+    if (!is_win && !is_apple && current_cpu != "loong64") {
       cflags += [ "-fno-lax-vector-conversions" ]
     }
 
@@ -602,7 +614,7 @@ config("warnings") {
       "-Wdeprecated-this-capture",
       "-Wdeprecated-volatile",
       "-Wdeprecated-writable-str",
-      "-Wc++98-compat-extra-semi",
+      "-Wextra-semi",
     ]
   }
 
@@ -611,6 +623,11 @@ config("warnings") {
     cflags += [
       "-Wno-unreachable-code",  # Causes false positives in old GCC; removed
                                 # from modern GCC entirely
+    ]
+    cflags_cc += [
+      "-Wno-dangling-reference",  # Attempt at borrow checker in C++.
+                                  # Warns on temporary views, like Span.
+                                  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532
     ]
   }
 

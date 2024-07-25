@@ -4,6 +4,8 @@
 
 #include "components/device_signals/core/browser/user_permission_service_impl.h"
 
+#include <optional>
+
 #include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
@@ -19,7 +21,6 @@
 #include "components/prefs/testing_pref_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using policy::EnterpriseManagementAuthority;
 using policy::ScopedManagementServiceOverrideForTesting;
@@ -79,6 +80,11 @@ class UserPermissionServiceImplTest : public testing::Test,
     test_prefs_.SetBoolean(prefs::kDeviceSignalsConsentReceived, true);
   }
 
+  void SetPermanentUserConsentGiven() {
+    // Fake as if user has given permanent consent.
+    test_prefs_.SetBoolean(prefs::kDeviceSignalsPermanentConsentReceived, true);
+  }
+
   void SetPolicyScopesNeedingSignals(bool machine_scope, bool user_scope) {
     std::set<policy::PolicyScope> scopes;
     if (machine_scope) {
@@ -104,7 +110,7 @@ class UserPermissionServiceImplTest : public testing::Test,
 
   base::test::ScopedFeatureList scoped_feature_list_;
   TestManagementService management_service_;
-  absl::optional<ScopedManagementServiceOverrideForTesting> scoped_override_;
+  std::optional<ScopedManagementServiceOverrideForTesting> scoped_override_;
   raw_ptr<testing::StrictMock<MockUserDelegate>> mock_user_delegate_;
   TestingPrefServiceSimple test_prefs_;
 
@@ -114,6 +120,11 @@ class UserPermissionServiceImplTest : public testing::Test,
 // Tests that consent does not need to be collected if it was already given.
 TEST_P(UserPermissionServiceImplTest, ShouldCollectConsent_ConsentGiven) {
   SetUserConsentGiven();
+  EXPECT_FALSE(permission_service_->ShouldCollectConsent());
+}
+TEST_P(UserPermissionServiceImplTest,
+       ShouldCollectConsent_PermanentConsentGiven) {
+  SetPermanentUserConsentGiven();
   EXPECT_FALSE(permission_service_->ShouldCollectConsent());
 }
 
@@ -397,6 +408,10 @@ TEST_P(UserPermissionServiceImplTest, CanCollectSignals_AlreadyConsented) {
   SetUserConsentGiven();
   EXPECT_EQ(permission_service_->CanCollectSignals(), UserPermission::kGranted);
 }
+TEST_P(UserPermissionServiceImplTest, CanCollectSignals_PermanentConsent) {
+  SetPermanentUserConsentGiven();
+  EXPECT_EQ(permission_service_->CanCollectSignals(), UserPermission::kGranted);
+}
 
 // Tests that consent is required before allowing to collect signals from an
 // unmanaged browser.
@@ -484,6 +499,28 @@ TEST_P(UserPermissionServiceImplTest, ResetConsentIfNeeded_PolicyPrefObserver) {
   EXPECT_FALSE(test_prefs_.GetBoolean(prefs::kDeviceSignalsConsentReceived));
 }
 
+// Tests that the consent flow policy is being observed but permanent consent
+// can not be reset.
+TEST_P(UserPermissionServiceImplTest,
+       PermanentConsentNotReset_PolicyPrefObserver) {
+  SetPermanentUserConsentGiven();
+
+  // Enabling the policy should not clear consent.
+  SetPolicyScopesNeedingSignals(/*machine_scope=*/false, /*user_scope=*/false);
+  EnableConsentFlowPolicy();
+
+  EXPECT_TRUE(
+      test_prefs_.GetBoolean(prefs::kDeviceSignalsPermanentConsentReceived));
+
+  // Disabling the policy should clear consent.
+  SetPolicyScopesNeedingSignals(/*machine_scope=*/false, /*user_scope=*/false);
+  test_prefs_.SetBoolean(prefs::kUnmanagedDeviceSignalsConsentFlowEnabled,
+                         false);
+
+  EXPECT_TRUE(
+      test_prefs_.GetBoolean(prefs::kDeviceSignalsPermanentConsentReceived));
+}
+
 struct ResetDependentPolicyTestCase {
   bool machine_scope = false;
   bool user_scope = false;
@@ -515,6 +552,34 @@ TEST_P(UserPermissionServiceImplTest,
 
     EXPECT_EQ(test_prefs_.GetBoolean(prefs::kDeviceSignalsConsentReceived),
               !test_case.expect_consent_reset);
+  }
+}
+
+// Tests that the permanent consent received preference can be reset based on
+// changes in dependent user-level policies.
+TEST_P(UserPermissionServiceImplTest,
+       PermanentConsentNotReset_DependentPolicyChanged) {
+  std::array<ResetDependentPolicyTestCase, 4> test_cases = {
+      ResetDependentPolicyTestCase{/*machine_scope=*/true, /*user_scope=*/true},
+      ResetDependentPolicyTestCase{/*machine_scope=*/false,
+                                   /*user_scope=*/true},
+      ResetDependentPolicyTestCase{/*machine_scope=*/true,
+                                   /*user_scope=*/false},
+      ResetDependentPolicyTestCase{/*machine_scope=*/false,
+                                   /*user_scope=*/false},
+  };
+
+  for (const auto& test_case : test_cases) {
+    SetPermanentUserConsentGiven();
+
+    SetPolicyScopesNeedingSignals(test_case.machine_scope,
+                                  test_case.user_scope);
+
+    permission_service_->ResetUserConsentIfNeeded();
+
+    EXPECT_EQ(
+        test_prefs_.GetBoolean(prefs::kDeviceSignalsPermanentConsentReceived),
+        true);
   }
 }
 

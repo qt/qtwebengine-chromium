@@ -19,9 +19,11 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/uuid.h"
+#include "components/saved_tab_groups/features.h"
 #include "components/saved_tab_groups/saved_tab_group.h"
 #include "components/saved_tab_groups/saved_tab_group_model.h"
 #include "components/saved_tab_groups/saved_tab_group_tab.h"
+#include "components/sync/base/deletion_origin.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/model/entity_change.h"
 #include "components/sync/model/metadata_batch.h"
@@ -33,6 +35,7 @@
 #include "components/sync/protocol/entity_data.h"
 #include "components/sync/protocol/saved_tab_group_specifics.pb.h"
 
+namespace tab_groups {
 namespace {
 
 // Discard orphaned tabs after 30 days if the associated group cannot be found.
@@ -68,7 +71,7 @@ SavedTabGroupSyncBridge::CreateMetadataChangeList() {
   return syncer::ModelTypeStore::WriteBatch::CreateMetadataChangeList();
 }
 
-absl::optional<syncer::ModelError> SavedTabGroupSyncBridge::MergeFullSyncData(
+std::optional<syncer::ModelError> SavedTabGroupSyncBridge::MergeFullSyncData(
     std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_changes) {
   std::unique_ptr<syncer::ModelTypeStore::WriteBatch> write_batch =
@@ -106,19 +109,18 @@ absl::optional<syncer::ModelError> SavedTabGroupSyncBridge::MergeFullSyncData(
   return {};
 }
 
-absl::optional<syncer::ModelError>
+std::optional<syncer::ModelError>
 SavedTabGroupSyncBridge::ApplyIncrementalSyncChanges(
     std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
     syncer::EntityChangeList entity_changes) {
   std::unique_ptr<syncer::ModelTypeStore::WriteBatch> write_batch =
       store_->CreateWriteBatch();
 
+  std::vector<std::string> deleted_entities;
   for (const std::unique_ptr<syncer::EntityChange>& change : entity_changes) {
     switch (change->type()) {
       case syncer::EntityChange::ACTION_DELETE: {
-        DeleteDataFromLocalStorage(
-            base::Uuid::ParseLowercase(change->storage_key()),
-            write_batch.get());
+        deleted_entities.push_back(change->storage_key());
         break;
       }
       case syncer::EntityChange::ACTION_ADD:
@@ -132,6 +134,17 @@ SavedTabGroupSyncBridge::ApplyIncrementalSyncChanges(
     }
   }
 
+  // Process deleted entities last. This is done for consistency. Since
+  // `entity_changes` is not guaranteed to be in order, it is possible that a
+  // user could add or remove tabs in a way that puts the group in an empty
+  // state. This will unintentionally delete the group and drop any additional
+  // add / update messages. By processing deletes last, we can give the groups
+  // an opportunity to resolve themselves before they become empty.
+  for (const std::string& entity : deleted_entities) {
+    DeleteDataFromLocalStorage(base::Uuid::ParseLowercase(entity),
+                               write_batch.get());
+  }
+
   ResolveTabsMissingGroups(write_batch.get());
 
   write_batch->TakeMetadataChangesFrom(std::move(metadata_change_list));
@@ -140,6 +153,22 @@ SavedTabGroupSyncBridge::ApplyIncrementalSyncChanges(
       base::BindOnce(&SavedTabGroupSyncBridge::OnDatabaseSave,
                      weak_ptr_factory_.GetWeakPtr()));
   return {};
+}
+
+void SavedTabGroupSyncBridge::ApplyDisableSyncChanges(
+    std::unique_ptr<syncer::MetadataChangeList> delete_metadata_change_list) {
+  if (!ShouldCloseAllTabGroupsOnSignOut()) {
+    return;
+  }
+
+  // Close all the groups locally. They should still exist in sync server.
+  std::vector<base::Uuid> group_ids;
+  for (const SavedTabGroup& group : model_->saved_tab_groups()) {
+    model_->RemovedFromSync(group.saved_guid());
+  }
+
+  // Wipe out all the local data.
+  store_->DeleteAllDataAndMetadata(base::DoNothing());
 }
 
 std::string SavedTabGroupSyncBridge::GetStorageKey(
@@ -245,7 +274,7 @@ void SavedTabGroupSyncBridge::SavedTabGroupRemovedLocally(
 
 void SavedTabGroupSyncBridge::SavedTabGroupUpdatedLocally(
     const base::Uuid& group_guid,
-    const absl::optional<base::Uuid>& tab_guid) {
+    const std::optional<base::Uuid>& tab_guid) {
   std::unique_ptr<syncer::ModelTypeStore::WriteBatch> write_batch =
       store_->CreateWriteBatch();
 
@@ -312,6 +341,7 @@ void SavedTabGroupSyncBridge::RemoveEntitySpecific(
     return;
 
   change_processor()->Delete(guid.AsLowercaseString(),
+                             syncer::DeletionOrigin::Unspecified(),
                              write_batch->GetMetadataChangeList());
 }
 
@@ -395,6 +425,7 @@ void SavedTabGroupSyncBridge::DeleteDataFromLocalStorage(
   write_batch->DeleteData(guid.AsLowercaseString());
   // Check if the model contains the group guid. If so, remove that group and
   // all of its tabs.
+  // TODO(b/336586617): Close tabs on desktop on receiving this event.
   if (model_->Contains(guid)) {
     model_->RemovedFromSync(guid);
     return;
@@ -466,7 +497,7 @@ void SavedTabGroupSyncBridge::SendToSync(
 }
 
 void SavedTabGroupSyncBridge::OnStoreCreated(
-    const absl::optional<syncer::ModelError>& error,
+    const std::optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::ModelTypeStore> store) {
   if (error) {
     change_processor()->ReportError(*error);
@@ -479,7 +510,7 @@ void SavedTabGroupSyncBridge::OnStoreCreated(
 }
 
 void SavedTabGroupSyncBridge::OnDatabaseLoad(
-    const absl::optional<syncer::ModelError>& error,
+    const std::optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::ModelTypeStore::RecordList> entries) {
   if (error) {
     change_processor()->ReportError(*error);
@@ -493,7 +524,7 @@ void SavedTabGroupSyncBridge::OnDatabaseLoad(
 
 void SavedTabGroupSyncBridge::OnReadAllMetadata(
     std::unique_ptr<syncer::ModelTypeStore::RecordList> entries,
-    const absl::optional<syncer::ModelError>& error,
+    const std::optional<syncer::ModelError>& error,
     std::unique_ptr<syncer::MetadataBatch> metadata_batch) {
   TRACE_EVENT0("ui", "SavedTabGroupSyncBridge::OnReadAllMetadata");
   if (error) {
@@ -521,7 +552,7 @@ void SavedTabGroupSyncBridge::OnReadAllMetadata(
 }
 
 void SavedTabGroupSyncBridge::OnDatabaseSave(
-    const absl::optional<syncer::ModelError>& error) {
+    const std::optional<syncer::ModelError>& error) {
   if (error) {
     change_processor()->ReportError({FROM_HERE, "Failed to save metadata."});
     return;
@@ -529,3 +560,5 @@ void SavedTabGroupSyncBridge::OnDatabaseSave(
 
   // TODO(dljames): React to store failures when a save is not successful.
 }
+
+}  // namespace tab_groups

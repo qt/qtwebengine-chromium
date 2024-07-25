@@ -85,7 +85,7 @@ class SessionMessengerTest : public ::testing::Test {
  public:
   SessionMessengerTest()
       : clock_{Clock::now()},
-        task_runner_(&clock_),
+        task_runner_(clock_),
         message_store_(),
         pipe_(kSenderId, kReceiverId),
         receiver_messenger_(std::make_unique<ReceiverSessionMessenger>(
@@ -112,9 +112,9 @@ class SessionMessengerTest : public ::testing::Test {
                                     message_store_.GetRequestCallback());
   }
 
-  MessagePipeEnd& sender_pipe_end() { return *pipe_.left(); }
+  MessagePipeEnd& sender_pipe_end() { return pipe_.left(); }
 
-  MessagePipeEnd& receiver_pipe_end() { return *pipe_.right(); }
+  MessagePipeEnd& receiver_pipe_end() { return pipe_.right(); }
 
  protected:
   FakeClock clock_;
@@ -404,7 +404,7 @@ TEST_F(SessionMessengerTest, ErrorMessageLoggedIfTimeout) {
 
 // Make sure that we don't SEGFAULT if we cause the messenger to get deleted or
 // its replies cleared as part of executing an error callback on timeout.
-// See https://issuetracker.google.com/250957657 for more context.
+// See issuetracker.google.com/250957657 for more context.
 TEST_F(SessionMessengerTest, SenderHandlesTimeoutThatCausesDelete) {
   auto reply_callback = [this, message_cb = message_store_.GetReplyCallback()](
                             ErrorOr<ReceiverMessage> reply_result) mutable {
@@ -524,7 +524,7 @@ TEST_F(SessionMessengerTest, SenderRejectsMessageFromWrongReceiver) {
 
 TEST_F(SessionMessengerTest, ReceiverRejectsMessagesWithoutHandler) {
   SimpleMessagePort port(kReceiverId);
-  ReceiverSessionMessenger messenger(&port, kReceiverId,
+  ReceiverSessionMessenger messenger(port, kReceiverId,
                                      message_store_.GetErrorCallback());
   messenger.SetHandler(SenderMessage::Type::kGetCapabilities,
                        message_store_.GetRequestCallback());
@@ -559,7 +559,7 @@ TEST_F(SessionMessengerTest, ReceiverRejectsMessagesWithoutHandler) {
 
 TEST_F(SessionMessengerTest, SenderRejectsMessagesWithoutHandler) {
   SimpleMessagePort port(kReceiverId);
-  SenderSessionMessenger messenger(&port, kSenderId, kReceiverId,
+  SenderSessionMessenger messenger(port, kSenderId, kReceiverId,
                                    message_store_.GetErrorCallback(),
                                    task_runner_);
 

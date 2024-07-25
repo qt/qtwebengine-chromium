@@ -22,14 +22,13 @@
 namespace openscreen::osp {
 
 template <typename T>
-using MessageDecodingFunction = ssize_t (*)(const uint8_t*, size_t, T*);
+using MessageDecodingFunction = ssize_t (*)(const uint8_t*, size_t, T&);
 
 // Provides a uniform way of accessing import properties of a request/response
 // message pair from a template: request encode function, response decode
 // function, request serializable data member.
 template <typename T>
 struct DefaultRequestCoderTraits {
- public:
   using RequestMsgType = typename T::RequestMsgType;
   static constexpr MessageEncodingFunction<RequestMsgType> kEncoder =
       T::kEncoder;
@@ -62,23 +61,23 @@ class RequestResponseHandler : public MessageDemuxer::MessageCallback {
     virtual void OnMatchedResponse(RequestT* request,
                                    typename RequestT::ResponseMsgType* response,
                                    uint64_t endpoint_id) = 0;
-    virtual void OnError(RequestT* request, Error error) = 0;
+    virtual void OnError(RequestT* request, const Error& error) = 0;
 
    protected:
     virtual ~Delegate() = default;
   };
 
-  explicit RequestResponseHandler(Delegate* delegate) : delegate_(delegate) {}
+  explicit RequestResponseHandler(Delegate& delegate) : delegate_(delegate) {}
   ~RequestResponseHandler() { Reset(); }
 
   void Reset() {
     connection_ = nullptr;
     for (auto& message : to_send_) {
-      delegate_->OnError(&message.request, Error::Code::kRequestCancelled);
+      delegate_.OnError(&message.request, Error::Code::kRequestCancelled);
     }
     to_send_.clear();
     for (auto& message : sent_) {
-      delegate_->OnError(&message.request, Error::Code::kRequestCancelled);
+      delegate_.OnError(&message.request, Error::Code::kRequestCancelled);
     }
     sent_.clear();
     response_watch_ = MessageDemuxer::MessageWatch();
@@ -148,7 +147,7 @@ class RequestResponseHandler : public MessageDemuxer::MessageCallback {
       if (result.ok()) {
         sent_.emplace_back(std::move(message));
       } else {
-        delegate_->OnError(&message.request, result);
+        delegate_.OnError(&message.request, result);
       }
     }
     if (!to_send_.empty()) {
@@ -169,7 +168,7 @@ class RequestResponseHandler : public MessageDemuxer::MessageCallback {
     }
     typename RequestT::ResponseMsgType response;
     ssize_t result =
-        RequestCoderTraits::kDecoder(buffer, buffer_size, &response);
+        RequestCoderTraits::kDecoder(buffer, buffer_size, response);
     if (result < 0) {
       return 0;
     }
@@ -179,8 +178,8 @@ class RequestResponseHandler : public MessageDemuxer::MessageCallback {
                  response.request_id;
         });
     if (it != sent_.end()) {
-      delegate_->OnMatchedResponse(&it->request, &response,
-                                   connection_->endpoint_id());
+      delegate_.OnMatchedResponse(&it->request, &response,
+                                  connection_->endpoint_id());
       sent_.erase(it);
       if (sent_.empty()) {
         response_watch_ = MessageDemuxer::MessageWatch();
@@ -216,7 +215,7 @@ class RequestResponseHandler : public MessageDemuxer::MessageCallback {
   }
 
   ProtocolConnection* connection_ = nullptr;
-  Delegate* const delegate_;
+  Delegate& delegate_;
   std::vector<RequestWithId> to_send_;
   std::vector<RequestWithId> sent_;
   MessageDemuxer::MessageWatch response_watch_;

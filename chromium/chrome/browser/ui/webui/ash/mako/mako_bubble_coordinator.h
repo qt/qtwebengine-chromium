@@ -10,7 +10,7 @@
 
 #include "ui/gfx/geometry/rect.h"
 
-class BubbleContentsWrapper;
+class WebUIContentsWrapper;
 class Profile;
 
 namespace ash {
@@ -43,6 +43,10 @@ class MakoBubbleCoordinator {
   // context for the mako UI is focused.
   void CacheContextCaretBounds();
 
+  gfx::Rect context_caret_bounds_for_testing() const {
+    return context_caret_bounds_;
+  }
+
  private:
   // Cached context caret bounds at which to anchor the mako UI. This might not
   // correspond to the most recent active text input client's caret bounds, e.g.
@@ -55,7 +59,7 @@ class MakoBubbleCoordinator {
   // contents wrapper and probably won't handle the bubble widget lifetimes
   // correctly. Figure out how WebUI bubbles work, then implement this properly
   // (maybe using a WebUIBubbleManager).
-  std::unique_ptr<BubbleContentsWrapper> contents_wrapper_;
+  std::unique_ptr<WebUIContentsWrapper> contents_wrapper_;
 };
 
 }  // namespace ash

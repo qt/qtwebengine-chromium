@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_features.h"
+#include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/badge_painter.h"
 #include "ui/views/controls/label.h"
@@ -29,6 +29,8 @@ namespace user_education {
 //  * Calling SetBorder() from external code, as the border is used to create
 //    space to render the badge.
 class NewBadgeLabel : public views::Label {
+  METADATA_HEADER(NewBadgeLabel, views::Label)
+
  public:
   // Determines how the badge is placed relative to the label text if the label
   // is wider than its preferred size (has no effect otherwise).
@@ -39,8 +41,6 @@ class NewBadgeLabel : public views::Label {
     // which is the right edge for LTR and the left edge for RTL.
     kTrailingEdge
   };
-
-  METADATA_HEADER(NewBadgeLabel);
 
   // Constructs a new badge label. Designed to be argument-compatible with the
   // views::Label constructor so they can be substituted.
@@ -102,9 +102,8 @@ class NewBadgeLabel : public views::Label {
   // kInternalPaddingKey will be set so that layouts know this space is empty.
   bool pad_after_new_badge_ = true;
 
-  const std::u16string new_badge_text_ = l10n_util::GetStringUTF16(
-      features::IsChromeRefresh2023() ? IDS_NEW_BADGE_UPPERCASE
-                                      : IDS_NEW_BADGE);
+  const std::u16string new_badge_text_ =
+      l10n_util::GetStringUTF16(IDS_NEW_BADGE);
 };
 
 }  // namespace user_education

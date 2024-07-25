@@ -518,7 +518,6 @@ bool BytecodeHasNoSideEffect(interpreter::Bytecode bytecode) {
     case Bytecode::kIncBlockCounter:  // Coverage counters.
     case Bytecode::kForInEnumerate:
     case Bytecode::kForInPrepare:
-    case Bytecode::kForInContinue:
     case Bytecode::kForInNext:
     case Bytecode::kForInStep:
     case Bytecode::kJumpLoop:
@@ -648,6 +647,7 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kDataViewPrototypeGetUint16:
     case Builtin::kDataViewPrototypeGetInt32:
     case Builtin::kDataViewPrototypeGetUint32:
+    case Builtin::kDataViewPrototypeGetFloat16:
     case Builtin::kDataViewPrototypeGetFloat32:
     case Builtin::kDataViewPrototypeGetFloat64:
     case Builtin::kDataViewPrototypeGetBigInt64:
@@ -692,6 +692,8 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kDatePrototypeToJson:
     case Builtin::kDatePrototypeToPrimitive:
     case Builtin::kDatePrototypeValueOf:
+    // DisposableStack builtins.
+    case Builtin::kDisposableStackConstructor:
     // Map builtins.
     case Builtin::kMapConstructor:
     case Builtin::kMapGroupBy:
@@ -723,6 +725,7 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kMathCosh:
     case Builtin::kMathExp:
     case Builtin::kMathFloor:
+    case Builtin::kMathF16round:
     case Builtin::kMathFround:
     case Builtin::kMathHypot:
     case Builtin::kMathImul:
@@ -983,6 +986,9 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kDatePrototypeSetUTCMonth:
     case Builtin::kDatePrototypeSetUTCSeconds:
     case Builtin::kDatePrototypeSetYear:
+    // DisposableStack builtins.
+    case Builtin::kDisposableStackPrototypeUse:
+    case Builtin::kDisposableStackPrototypeDispose:
     // RegExp builtins.
     case Builtin::kRegExpPrototypeTest:
     case Builtin::kRegExpPrototypeExec:

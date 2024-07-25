@@ -4,6 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -11,10 +12,15 @@
 
 #include <xnnpack.h>
 #include <xnnpack/allocator.h>
+#include <xnnpack/common.h>
+#include <xnnpack/compute.h>
 #include <xnnpack/config.h>
-#include <xnnpack/operator.h>
 #include <xnnpack/log.h>
+#include <xnnpack/operator-type.h>
+#include <xnnpack/operator.h>
+#include <xnnpack/params.h>
 
+#include "pthreadpool.h"
 
 static bool is_continugous(xnn_operator_t lut_elementwise_op)
 {
@@ -66,9 +72,9 @@ static enum xnn_status create_lut_elementwise_nc(
     goto error;
   }
 
-  if (output_min >= output_max) {
+  if (output_min > output_max) {
     xnn_log_error(
-      "failed to create %s operator with [%ld, %ld] output range: range min must be below range max",
+      "failed to create %s operator with [%ld, %ld] output range: range min must be less than or equal to range max",
       xnn_operator_type_to_string(operator_type), output_min, output_max);
     goto error;
   }

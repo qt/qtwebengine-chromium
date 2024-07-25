@@ -94,9 +94,9 @@ component("platform") {
     "//ui/display",
   ]
 
-  if (enable_extensions) {
+  if (enable_extensions || is_fuchsia) {
     sources += [
-      # Use by the Automation API.
+      # Use by the Automation API and the Accessibility service.
       # TODO(crbug.com/1357889): Rename to atp/ or javascript/?
       "automation/automation_api_util.cc",
       "automation/automation_api_util.h",
@@ -253,6 +253,21 @@ component("platform") {
       ]
       weak_frameworks = [
         "Accessibility.framework",  # macOS 11
+      ]
+    }
+
+    if (is_ios) {
+      sources += [
+        "ax_platform_node_ios.h",
+        "ax_platform_node_ios.mm",
+        "ax_platform_node_ui_kit_element.h",
+        "ax_platform_node_ui_kit_element.mm",
+      ]
+
+      frameworks = [
+        "Accessibility.framework",
+        "UIKit.framework",
+        "Foundation.framework",
       ]
     }
 

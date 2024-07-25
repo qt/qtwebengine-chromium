@@ -312,19 +312,38 @@ TNode<JSRegExpResult> RegExpBuiltinsAssembler::ConstructNewResultFromMatchInfo(
       // implementation of CreateDataProperty instead.
 
       // At this point the spec says to call CreateDataProperty. However, we can
-      // skip most of the steps and go straight to adding a dictionary entry
-      // because we know a bunch of useful facts:
+      // skip most of the steps and go straight to adding/updating a dictionary
+      // entry because we know a bunch of useful facts:
       // - All keys are non-numeric internalized strings
-      // - No keys repeat
       // - Receiver has no prototype
       // - Receiver isn't used as a prototype
       // - Receiver isn't any special object like a Promise intrinsic object
       // - Receiver is extensible
       // - Receiver has no interceptors
       Label add_dictionary_property_slow(this, Label::kDeferred);
-      AddToDictionary<PropertyDictionary>(CAST(properties), name, capture,
-                                          &add_dictionary_property_slow);
+      TVARIABLE(IntPtrT, var_name_index);
+      Label add_name_entry(this, &var_name_index),
+          duplicate_name(this, &var_name_index), next(this);
+      NameDictionaryLookup<PropertyDictionary>(
+          CAST(properties), name, &duplicate_name, &var_name_index,
+          &add_name_entry, kFindExistingOrInsertionIndex);
+      BIND(&duplicate_name);
+      GotoIf(IsUndefined(capture), &next);
+      CSA_DCHECK(this,
+                 TaggedEqual(LoadValueByKeyIndex<PropertyDictionary>(
+                                 CAST(properties), var_name_index.value()),
+                             UndefinedConstant()));
+      StoreValueByKeyIndex<PropertyDictionary>(CAST(properties),
+                                               var_name_index.value(), capture);
+      Goto(&next);
 
+      BIND(&add_name_entry);
+      AddToDictionary<PropertyDictionary>(CAST(properties), name, capture,
+                                          &add_dictionary_property_slow,
+                                          var_name_index.value());
+      Goto(&next);
+
+      BIND(&next);
       var_i = i_plus_2;
       Branch(IntPtrGreaterThanOrEqual(var_i.value(), names_length),
              &maybe_build_indices, &inner_loop);
@@ -578,7 +597,8 @@ TNode<HeapObject> RegExpBuiltinsAssembler::RegExpExecInternal(
     // instead of referencing the CodeWrapper object, we could directly load
     // the entrypoint from that via LoadCodeEntrypointViaCodePointerField. This
     // will save an indirection when the sandbox is enabled.
-    TNode<RawPtrT> code_entry = LoadCodeInstructionStart(code);
+    TNode<RawPtrT> code_entry =
+        LoadCodeInstructionStart(code, kRegExpEntrypointTag);
 
     // AIX uses function descriptors on CFunction calls. code_entry in this case
     // may also point to a Regex interpreter entry trampoline which does not
@@ -1022,6 +1042,7 @@ TNode<String> RegExpBuiltinsAssembler::FlagsGetter(TNode<Context> context,
     CASE_FOR_FLAG("dotAll", JSRegExp::kDotAll);
     CASE_FOR_FLAG("unicode", JSRegExp::kUnicode);
     CASE_FOR_FLAG("sticky", JSRegExp::kSticky);
+    CASE_FOR_FLAG("unicodeSets", JSRegExp::kUnicodeSets);
 #undef CASE_FOR_FLAG
 
 #define CASE_FOR_FLAG(NAME, V8_FLAG_EXTERN_REF, FLAG)                      \
@@ -1047,10 +1068,6 @@ TNode<String> RegExpBuiltinsAssembler::FlagsGetter(TNode<Context> context,
         "linear",
         ExternalReference::address_of_enable_experimental_regexp_engine(),
         JSRegExp::kLinear);
-    CASE_FOR_FLAG(
-        "unicodeSets",
-        ExternalReference::address_of_FLAG_harmony_regexp_unicode_sets(),
-        JSRegExp::kUnicodeSets);
 #undef CASE_FOR_FLAG
   }
 

@@ -269,6 +269,13 @@ message DeviceRegisterRequest {
     // Attestation re-enrollment just failed, attempt manual enrollment as
     // fallback.
     FLAVOR_ENROLLMENT_ATTESTATION_ROLLBACK_MANUAL_FALLBACK = 17;
+    // Device state downloaded from the server indicated that initial enrollment
+    // is mandatory and should be token-based.
+    FLAVOR_ENROLLMENT_TOKEN_INITIAL_SERVER_FORCED = 18;
+    // Device state downloaded from the server indicated that initial
+    // token-based enrollment is mandatory, but it failed and we are doing
+    // fallback to manual enrollment.
+    FLAVOR_ENROLLMENT_TOKEN_INITIAL_MANUAL_FALLBACK = 19;
   }
 
   // Indicates the registration flavor. This is passed to the server FYI when
@@ -338,6 +345,10 @@ message DeviceRegisterRequest {
 
     // PSM terminated due to an error.
     PSM_RESULT_ERROR = 3;
+
+    // PSM check was skipped, as the device is going through Flex Auto
+    // Enrollment after legacy state determination.
+    PSM_SKIPPED_FOR_FLEX_AUTO_ENROLLMENT = 4;
   }
   optional PsmExecutionResult psm_execution_result = 19;
 
@@ -438,6 +449,29 @@ message DeviceRegisterResponse {
   // registering for policy is affiliated on the device.
   // Only sent if DeviceRegisterRequest.Type == USER
   repeated string user_affiliation_ids = 5;
+
+  // The display name Chrome should use when setting up the profile, used for
+  // OIDC managed profile only.
+  optional string user_display_name = 7;
+
+  // The email of the user who logged into this profile, used for OIDC managed
+  // profile only.
+  optional string user_email = 8;
+
+  // Enum listing the possible types of the third party identity used for OIDC
+  // managed profiles.
+  enum ThirdPartyIdentityType {
+    // The profile does not have third party identity.
+    NONE = 0;
+    // The third party identity is synced to Google (Dasher) and there is an
+    // associated GAIA ID for it.
+    DASHER_BASED = 1;
+    // The third party identity is not synced to Google and there is no
+    // associated GAIA ID for it.
+    DASHERLESS = 2;
+  }
+  optional ThirdPartyIdentityType third_party_identity_type = 9
+      [default = NONE];
 }
 
 // Request from device to server to unregister device.
@@ -526,16 +560,26 @@ message PolicyFetchRequest {
   //
   // Possible values for Chrome OS are:
   //   google/chromeos/device => ChromeDeviceSettingsProto
-  //   google/chromeos/user => ChromeSettingsProto
   //   google/chromeos/publicaccount => ChromeSettingsProto
+  //   google/chromeos/signinextension => ExternalPolicyData
+  //   google/chromeos/remotecommand => RemoteCommand (*)
+  //
+  // For users signed in to Chrome,
+  //   google/chromeos/user => ChromeSettingsProto
+  //   google/android/user => ChromeSettingsProto
+  //   google/chrome/user => ChromeSettingsProto
+  //   google/ios/user => ChromeSettingsProto
+  //   google/chrome/extension => ExternalPolicyData
+  //
+  // For Chrome Browser Cloud Management,
   //   google/chrome/machine-level-user => ChromeSettingsProto
   //   google/chrome/machine-level-user-android => ChromeSettingsProto
   //   google/chrome/machine-level-user-ios => ChromeSettingsProto
-  //   google/chrome/extension => ExternalPolicyData
   //   google/chrome/machine-level-extension => ExternalPolicyData
-  //   google/chromeos/signinextension => ExternalPolicyData
-  //   google/android/user => ChromeSettingsProto
-  //   google/chromeos/remotecommand => RemoteCommand (*)
+  //   google/machine-level-apps =>
+  //       Omaha policy fetch is translated into two policy types
+  //       google/chrome/machine-level-user => ChromeSettingsProto
+  //       google/machine-level-omaha => OmahaSettingsClientProto
   //
   // Types marked with an (*) are not policies, but data signed with the policy
   // key. It is illegal to try to fetch policies with those types.
@@ -889,6 +933,13 @@ message PolicyFetchResponse {
   // to new_public_key_verification_data_signature, but is computed over
   // DEPRECATEDPolicyPublicKeyAndDomain (which is equivalent to
   // PublicKeyVerificationData proto with version field unset).
+  //
+  // Do not remove this unless you know for sure that this is not required by
+  // managed devices any more, including devices that might be pinned to
+  // milestones older than current Stable.
+  // Note: As of February 2024, this is still strictly required by
+  // CloudPolicyValidator, see
+  // https://source.chromium.org/chromium/chromium/src/+/main:components/policy/core/common/cloud/cloud_policy_validator.cc;drc=08b91b49531894cbe9061a1148fd535155c2554b;l=407
   optional bytes new_public_key_verification_signature_deprecated = 7
       [deprecated = true];
 
@@ -2156,6 +2207,8 @@ message ExtensionPolicy {
 // Cloud policy last fetch time.
 message PolicyFetchTimestamp {
   // The type of cloud policy.
+  // TODO(b/327655459): This field is deprecated, delete once server
+  // side references are all removed.
   optional string type = 1;
   // The last time the policies where fetched for the policy type.
   // [timestamp] is milliseconds since Epoch in UTC timezone (Java time).
@@ -2293,7 +2346,7 @@ message ChromeDesktopReportRequest {
   // A string contains OS user name.
   optional string os_user_name = 8;
   // Device identifier for helping identify non-Chrome OS devices.
-  // TODO(crbug.com/1105938): This will also replace the computer_name and
+  // TODO(crbug.com/40706071): This will also replace the computer_name and
   // serial_number fields.
   optional BrowserDeviceIdentifier browser_device_identifier = 9;
   // Public key that can be used for attesting the machine.
@@ -2670,6 +2723,11 @@ message DeviceAutoEnrollmentResponse {
 // and secondary state enrollment. In this case, this request can also be sent
 // by brand new devices and the server would not know their serial number and
 // brand code, hence the values are supplied as part of the request.
+//
+// Another device state retrieval scenario is Flex Auto Enrollment initial
+// state determination, in which case the Flex enrollment token is included
+// (along with brand code and serial number) to retrieve token-keyed state
+// from the server.
 message DeviceStateRetrievalRequest {
   // Opaque, client-determined, unpredictable, stable and unique device
   // identifier to retrieve state for. This field contains 32 bytes of data that
@@ -2683,6 +2741,9 @@ message DeviceStateRetrievalRequest {
 
   // The 4-character brand code of the device.
   optional string brand_code = 3;
+
+  // The enrollment token for Flex Auto Enrollment.
+  optional string enrollment_token = 4;
 }
 
 // Sent by the client to the server when in registered state to update the
@@ -2745,6 +2806,9 @@ message DeviceInitialEnrollmentStateRequest {
 
   // The 4-character brand code of the device.
   optional string brand_code = 2;
+
+  // The enrollment token for Flex Auto Enrollment.
+  optional string enrollment_token = 3;
 }
 
 // Response from server DeviceInitialEnrollmentStateRequest.
@@ -2761,6 +2825,8 @@ message DeviceInitialEnrollmentStateResponse {
     // The device has been disabled by its owner. The device will show a warning
     // screen and prevent the user from proceeding further.
     INITIAL_ENROLLMENT_MODE_DISABLED = 3;
+    // Token-based enrollment is enforced and cannot be skipped.
+    INITIAL_ENROLLMENT_MODE_TOKEN_ENROLLMENT_ENFORCED = 4;
   }
 
   // The server-indicated initial enrollment mode.
@@ -3131,6 +3197,18 @@ message CertificateBasedDeviceRegisterRequest {
   optional SignedData signed_request = 1;
 }
 
+// Request from device to server to register a device (authenticated with an
+// enrollment token).
+message TokenBasedDeviceRegisterRequest {
+  optional DeviceRegisterRequest device_register_request = 1;
+}
+
+// Response to a token-based device registration request
+// (@code `TokenBasedDeviceRegisterRequest`).
+message TokenBasedDeviceRegisterResponse {
+  optional DeviceRegisterResponse device_register_response = 1;
+}
+
 // Requested configuration to be passed along a registration request.
 message DeviceRegisterConfiguration {
   // The device owner's email address.
@@ -3168,7 +3246,7 @@ message RegisterBrowserRequest {
   // Platform specific version number, e.g., 6.1.7601.0 or 10.12.6
   optional string os_version = 3;
   // Device identifier for helping identify non-Chrome OS devices.
-  // TODO(crbug.com/1105938): This will also replace the machine_name field.
+  // TODO(crbug.com/40706071): This will also replace the machine_name field.
   optional BrowserDeviceIdentifier browser_device_identifier = 4;
   // The device model, e.g., iPad6,11
   optional string device_model = 5;
@@ -4334,6 +4412,9 @@ message CertProvBackendError {
     // The Adapter uploaded a certificate that cannot be parsed or was issued
     // for a wrong public key.
     BAD_ADAPTER_CERTIFICATE_RECEIVED = 14;
+    // The requested certificate provisioning process cannot be found on
+    // Spanner.
+    CERTIFICATE_PROVISIONING_PROCESS_NOT_FOUND = 15;
   }
 
   // The specific error type.
@@ -4421,13 +4502,20 @@ message BrowserPublicKeyUploadRequest {
 
   // Public key in EC_NID_X9_62_PRIME256V1_PUBLIC_DER format.
   optional bytes public_key = 1;
+
   // Signature of the new public key signed using the existing key, empty for
   // initial upload.
   optional bytes signature = 2;
+
   // Trust Level of the key.
   optional KeyTrustLevel key_trust_level = 3;
+
   // Type of the key.
   optional KeyType key_type = 4;
+
+  // Whether the server should create a client certificate for that public key
+  // and return it as part of the response or not.
+  optional bool provision_certificate = 5;
 }
 
 // Response from server to device for cert upload request.
@@ -4440,6 +4528,10 @@ message BrowserPublicKeyUploadResponse {
     INVALID_SIGNATURE = 2;
   }
   optional ResponseCode response_code = 1;
+
+  // If the request had `provision_certificate` as true, this property will
+  // contain the X.509 client certificate in PEM format.
+  optional string pem_encoded_certificate = 2;
 }
 
 // Additional detail about the error which can be used to clarify user messaging
@@ -4500,7 +4592,7 @@ enum DeviceManagementErrorDetail {
 //   * deviceid: MUST BE no more than 64-char in [\x21-\x7E].
 //   * agent: MUST BE no more than 64-char long.
 // * HTTP Authorization header MUST be in the following formats:
-//   * For register for Chrome browsers
+//   * For register for Chrome browsers and token_based_register requests.
 //     Authorization: GoogleEnrollmentToken token=<enrollment token>
 //
 //   * For unregister, policy, status, cert_upload, remote_commands,
@@ -4644,7 +4736,7 @@ message DeviceManagementRequest {
   optional RefreshAccountRequest refresh_account_request = 29;
 
   // Request from device to upload RSU lookup key.
-  // TODO(crbug/1284656): seems unused
+  // TODO(crbug.com/40210185): seems unused
   optional RsuLookupKeyUploadRequest rsu_lookup_key_upload_request = 31;
 
   // Request from device for SAML IdP URL address.
@@ -4661,7 +4753,7 @@ message DeviceManagementRequest {
       client_certificate_provisioning_request = 34;
 
   // A report on the status of extension install process.
-  // TODO(crbug/1284656): seems unused.
+  // TODO(crbug.com/40210185): seems unused.
   optional ExtensionInstallReportRequest extension_install_report_request = 35;
 
   // Request to check user account for smart enrollment.
@@ -4685,7 +4777,12 @@ message DeviceManagementRequest {
   // HTTP query parameter 'request': 'chrome_profile_report'
   optional ChromeProfileReportRequest chrome_profile_report_request = 40;
 
-  // Next id: 41.
+  // Request to register a device with an enrollment token.
+  // HTTP query parameter 'request': 'token_based_register'
+  optional TokenBasedDeviceRegisterRequest token_based_device_register_request =
+      41;
+
+  // Next id: 42.
 }
 
 // Response from server to device.
@@ -4698,7 +4795,8 @@ message DeviceManagementRequest {
 // Possible HTTP status codes:
 // 200 OK: valid response is returned to client.
 // 400 Bad Request: invalid argument or payload.
-// 401 Unauthorized: invalid auth cookie/OAuth token or DMToken.
+// 401 Unauthorized: invalid auth cookie/OAuth token, DMToken or enrollment
+//     token.
 // 402 Missing license.
 // 403 Forbidden: device management is not allowed (e.g. user may not enroll).
 // 404 Not Found: the request URL is invalid.
@@ -4840,7 +4938,11 @@ message DeviceManagementResponse {
   // Response to a Chrome Profile report request.
   optional ChromeProfileReportResponse chrome_profile_report_response = 38;
 
-  // Next id: 40.
+  // Response to a token-based register request.
+  optional TokenBasedDeviceRegisterResponse
+      token_based_device_register_response = 40;
+
+  // Next id: 41.
 }
 
 // Device State Information stored in the server is retrieval at

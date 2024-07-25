@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/files/file_util.h"
 
 #include "base/task/sequenced_task_runner.h"
@@ -20,12 +25,14 @@
 
 #include "base/bit_cast.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/containers/span.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/functional/function_ref.h"
 #include "base/notreached.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -209,7 +216,7 @@ bool CopyFileContents(File& infile, File& outfile) {
     } while (bytes_written_per_read < bytes_read);
   }
 
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return false;
 }
 
@@ -322,14 +329,14 @@ bool ReadStreamToStringWithMaxSize(FILE* stream,
   return read_successs;
 }
 
-absl::optional<std::vector<uint8_t>> ReadFileToBytes(const FilePath& path) {
+std::optional<std::vector<uint8_t>> ReadFileToBytes(const FilePath& path) {
   if (path.ReferencesParent()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   ScopedFILE file_stream(OpenFile(path, "rb"));
   if (!file_stream) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   std::vector<uint8_t> bytes;
@@ -339,7 +346,7 @@ absl::optional<std::vector<uint8_t>> ReadFileToBytes(const FilePath& path) {
                                      bytes.resize(size);
                                      return make_span(bytes);
                                    })) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   return bytes;
 }
@@ -406,7 +413,7 @@ bool TouchFile(const FilePath& path,
     flags |= File::FLAG_WIN_BACKUP_SEMANTICS;
 #elif BUILDFLAG(IS_FUCHSIA)
   // On Fuchsia, we need O_RDONLY for directories, or O_WRONLY for files.
-  // TODO(https://crbug.com/947802): Find a cleaner workaround for this.
+  // TODO(crbug.com/40620916): Find a cleaner workaround for this.
   flags |= (DirectoryExists(path) ? File::FLAG_READ : File::FLAG_WRITE);
 #endif
 
@@ -441,6 +448,11 @@ bool TruncateFile(FILE* file) {
   return true;
 }
 
+std::optional<uint64_t> ReadFile(const FilePath& filename,
+                                 span<uint8_t> buffer) {
+  return ReadFile(filename, base::as_writable_chars(buffer));
+}
+
 int ReadFile(const FilePath& filename, char* data, int max_size) {
   if (max_size < 0) {
     return -1;
@@ -464,66 +476,29 @@ bool WriteFile(const FilePath& filename, StringPiece data) {
   return WriteFile(filename, data.data(), size) == size;
 }
 
-int GetUniquePathNumber(const FilePath& path) {
-  DCHECK(!path.empty());
-  if (!PathExists(path))
-    return 0;
+FilePath GetUniquePath(const FilePath& path) {
+  return GetUniquePathWithSuffixFormat(path, " (%d)");
+}
 
+FilePath GetUniquePathWithSuffixFormat(const FilePath& path,
+                                       cstring_view suffix_format) {
+  DCHECK(!path.empty());
+  DCHECK_EQ(base::ranges::count(suffix_format, '%'), 1);
+  DCHECK(base::Contains(suffix_format, "%d"));
+
+  if (!PathExists(path)) {
+    return path;
+  }
   std::string number;
   for (int count = 1; count <= kMaxUniqueFiles; ++count) {
-    StringAppendF(&number, " (%d)", count);
-    if (!PathExists(path.InsertBeforeExtensionASCII(number)))
-      return count;
+    StringAppendF(&number, suffix_format.c_str(), count);
+    FilePath candidate_path = path.InsertBeforeExtensionASCII(number);
+    if (!PathExists(candidate_path)) {
+      return candidate_path;
+    }
     number.clear();
   }
-
-  return -1;
+  return FilePath();
 }
-
-FilePath GetUniquePath(const FilePath& path) {
-  DCHECK(!path.empty());
-  const int uniquifier = GetUniquePathNumber(path);
-  if (uniquifier > 0)
-    return path.InsertBeforeExtensionASCII(StringPrintf(" (%d)", uniquifier));
-  return uniquifier == 0 ? path : FilePath();
-}
-
-namespace internal {
-
-bool PreReadFileSlow(const FilePath& file_path, int64_t max_bytes) {
-  DCHECK_GE(max_bytes, 0);
-
-  File file(file_path, File::FLAG_OPEN | File::FLAG_READ |
-                           File::FLAG_WIN_SEQUENTIAL_SCAN |
-                           File::FLAG_WIN_SHARE_DELETE);
-  if (!file.IsValid())
-    return false;
-
-  constexpr int kBufferSize = 1024 * 1024;
-  // Ensures the buffer is deallocated at function exit.
-  std::unique_ptr<char[]> buffer_deleter(new char[kBufferSize]);
-  char* const buffer = buffer_deleter.get();
-
-  while (max_bytes > 0) {
-    // The static_cast<int> is safe because kBufferSize is int, and both values
-    // are non-negative. So, the minimum is guaranteed to fit in int.
-    const int read_size =
-        static_cast<int>(std::min<int64_t>(max_bytes, kBufferSize));
-    DCHECK_GE(read_size, 0);
-    DCHECK_LE(read_size, kBufferSize);
-
-    const int read_bytes = file.ReadAtCurrentPos(buffer, read_size);
-    if (read_bytes < 0)
-      return false;
-    if (read_bytes == 0)
-      break;
-
-    max_bytes -= read_bytes;
-  }
-
-  return true;
-}
-
-}  // namespace internal
 
 }  // namespace base

@@ -197,7 +197,6 @@ class GlobalVariable final : public Castable<GlobalVariable, Variable> {
     const GlobalVariableAttributes& Attributes() const { return attributes_; }
 
   private:
-    std::optional<tint::BindingPoint> binding_point_;
     tint::OverrideId override_id_;
     UniqueVector<const GlobalVariable*, 4> transitively_referenced_overrides_;
     GlobalVariableAttributes attributes_;
@@ -291,6 +290,9 @@ class VariableUser final : public Castable<VariableUser, ValueExpression> {
                  const core::constant::Value* constant,
                  sem::Variable* variable);
     ~VariableUser() override;
+
+    /// @returns the AST node
+    const ast::IdentifierExpression* Declaration() const;
 
     /// @returns the variable that this expression refers to
     const sem::Variable* Variable() const { return variable_; }

@@ -194,8 +194,8 @@ static bool BlockHeightConstrained(const LayoutBlock* block) {
     if (style.OverflowY() != EOverflow::kVisible
         && style.OverflowY() != EOverflow::kHidden)
       return false;
-    if (style.UsedHeight().IsSpecified() ||
-        style.UsedMaxHeight().IsSpecified() || block->IsOutOfFlowPositioned()) {
+    if (style.Height().IsSpecified() || style.MaxHeight().IsSpecified() ||
+        block->IsOutOfFlowPositioned()) {
       // Some sites (e.g. wikipedia) set their html and/or body elements to
       // height:100%, without intending to constrain the height of the content
       // within them.
@@ -244,7 +244,7 @@ static bool BlockSuppressesAutosizing(const LayoutBlock* block) {
 static bool HasExplicitWidth(const LayoutBlock* block) {
   // FIXME: This heuristic may need to be expanded to other ways a block can be
   // wider or narrower than its parent containing block.
-  return block->Style() && block->StyleRef().UsedWidth().IsSpecified();
+  return block->Style() && block->StyleRef().Width().IsSpecified();
 }
 
 static LayoutObject* GetParent(const LayoutObject* object) {
@@ -660,13 +660,11 @@ void TextAutosizer::UpdatePageInfo() {
       }
     }
     // TODO(pdr): Accessibility should be moved out of the text autosizer.
-    // See: crbug.com/645717.
-    // On Android, rely on the accessibility font scale factor when the
-    // AccessibilityPageZoom feature is not enabled.
-    if (!RuntimeEnabledFeatures::AccessibilityPageZoomEnabled()) {
-      page_info_.accessibility_font_scale_factor_ =
-          document_->GetSettings()->GetAccessibilityFontScaleFactor();
-    }
+    // See: crbug.com/645717. We keep the font scale factor available even
+    // when the AccessibilityPageZoom feature is enabled so sites that rely on
+    // text-size-adjust can still determine the user's desired text scaling.
+    page_info_.accessibility_font_scale_factor_ =
+        document_->GetSettings()->GetAccessibilityFontScaleFactor();
 
     // TODO(pdr): pageNeedsAutosizing should take into account whether
     // text-size-adjust is used anywhere on the page because that also needs to
@@ -858,7 +856,7 @@ TextAutosizer::Fingerprint TextAutosizer::ComputeFingerprint(
         (static_cast<unsigned>(style->UnresolvedFloating()) << 4);
     data.packed_style_properties_ |=
         (static_cast<unsigned>(style->Display()) << 7);
-    const Length& width = style->UsedWidth();
+    const Length& width = style->Width();
     data.packed_style_properties_ |= (width.GetType() << 12);
     // packedStyleProperties effectively using 16 bits now.
 
@@ -1042,7 +1040,7 @@ float TextAutosizer::WidthFromBlock(const LayoutBlock* block) const {
       if ((width = specified_width.Value()) > 0)
         return width;
     }
-    if (specified_width.IsPercentOrCalc()) {
+    if (specified_width.HasPercent()) {
       if (float container_width = ContentInlineSize(block->ContainingBlock())) {
         if ((width = FloatValueForLength(specified_width, container_width)) > 0)
           return width;

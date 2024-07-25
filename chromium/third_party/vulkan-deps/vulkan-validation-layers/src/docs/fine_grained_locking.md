@@ -1,4 +1,4 @@
-<!-- Copyright 2021-2023 LunarG, Inc. -->
+<!-- Copyright 2021-2024 LunarG, Inc. -->
 [![Khronos Vulkan][1]][2]
 
 [1]: https://vulkan.lunarg.com/img/Vulkan_100px_Dec16.png "https://www.khronos.org/vulkan/"
@@ -110,7 +110,7 @@ State objects are stored in type specific maps within ValidationStateTracker.  T
     VALSTATETRACK_MAP_AND_TRAITS(VkImage, vvl::Image, imageMap);
 ```
 
-Each map is implemented using `vl_concurrent_unordered_map`, which provides a locked map implementation and is already used elsewhere in the validation code. It is important to note that `vl_concurrent_unordered_map` doesn’t allow thread safe iteration across the map without making a copy of it. There are a few places in the code where this is currently required but they are not in performance critical paths.
+Each map is implemented using `vvl::concurrent_unordered_map`, which provides a locked map implementation and is already used elsewhere in the validation code. It is important to note that `vvl::concurrent_unordered_map` doesn’t allow thread safe iteration across the map without making a copy of it. There are a few places in the code where this is currently required but they are not in performance critical paths.
 
 The macros set up metadata required for the use of templated accessor methods, `Get<>()` which returns a `std::shared_ptr` to the state object.  Since only the map lookups will be guarded by a lock, Validate and Record entry points MUST hold the `shared_ptr` reference to ensure the state object isn’t deleted by another thread.   Other functions that use state objects SHOULD use raw pointers or references unless there is an ownership transfer. (The [Google C++ standard](https://google.github.io/styleguide/cppguide.html#Ownership_and_Smart_Pointers) and the [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines#f7-for-general-use-take-t-or-t-arguments-rather-than-smart-pointers) have more thorough explanations of this recommendation).
 
@@ -275,7 +275,7 @@ Since VkDevice’s state is a ValidationStateTracker, we don’t have a real C++
 
 State tracker Per-Device state that is changed:
 
-* ahb_ext_formats_map - map of android external format to VkFormatFeatureFlags. Thread safe because it uses `vl_concurrent_unordered_map`.
+* ahb_ext_formats_map - map of android external format to VkFormatFeatureFlags. Thread safe because it uses `vvl::concurrent_unordered_map`.
 * custom_border_color_sampler_count - simple counter
 * performance_lock_acquired - boolean flag
 * fake_memory - fake address generator for synchronization validation, basically a uint64_t counter of the next free address
@@ -441,7 +441,7 @@ bool CoreChecks::PreCallValidateCmdSetScissorWithCount(VkCommandBuffer commandBu
     auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
     bool skip = false;
     // BUG: This helper method also called GetRead<>(), which will deadlock
-    skip = ValidateExtendedDynamicState(commandBuffer, CMD_SETSCISSORWITHCOUNT, ...);
+    skip |= ValidateExtendedDynamicState(commandBuffer, CMD_SETSCISSORWITHCOUNT, ...);
     skip |= ForbidInheritedViewportScissor(cb_state.get(), "VUID-vkCmdSetScissorWithCount-commandBuffer-04820", error_obj.location);
 
     return skip;
@@ -452,7 +452,7 @@ This code will deadlock if the code is compiled using C++11, which uses std::mut
 The recommended fix for this case is to not make helper methods that call GetRead<>, instead pass in a reference to the state object:
 
 ```
-      skip = ValidateExtendedDynamicState(*cb_state, CMD_SETSCISSORWITHCOUNT, ...);
+      skip |= ValidateExtendedDynamicState(*cb_state, CMD_SETSCISSORWITHCOUNT, ...);
 ```
 
 Note that not all legacy code, such as `ForbidInheritedViewportScissor()` has been completely cleaned up yet. That method takes both the vulkan handle and a state object pointer as arguments, which is safe but redundant.
@@ -488,7 +488,7 @@ GlobalQFOTransferBarrierMap<QFOImageTransferBarrier> qfo_release_image_barrier_m
 GlobalQFOTransferBarrierMap<QFOBufferTransferBarrier> qfo_release_buffer_barrier_map;
 ```
 
-These maps are updated from per-CB maps during queue submission. Because QFO inherently involves multiple queues, access from multiple threads is likely. These data structures have been converted to use `vl_concurrent_unordered_map`, which is thread safe.
+These maps are updated from per-CB maps during queue submission. Because QFO inherently involves multiple queues, access from multiple threads is likely. These data structures have been converted to use `vvl::concurrent_unordered_map`, which is thread safe.
 
 ###### PRs:
 
@@ -661,7 +661,7 @@ And `vvl::Buffer::deviceAddress` field is used for lookups in a separate map use
 
 
 ```
-    vl_concurrent_unordered_map<VkDeviceAddress, vvl::Buffer*> buffer_address_map_;
+    vvl::concurrent_unordered_map<VkDeviceAddress, vvl::Buffer*> buffer_address_map_;
 ```
 
 

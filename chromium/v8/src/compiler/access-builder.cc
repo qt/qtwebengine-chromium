@@ -11,6 +11,7 @@
 #include "src/objects/heap-number.h"
 #include "src/objects/js-collection.h"
 #include "src/objects/js-generator.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/ordered-hash-table.h"
 #include "src/objects/source-text-module.h"
@@ -613,6 +614,15 @@ FieldAccess AccessBuilder::ForJSIteratorResultValue() {
 }
 
 // static
+FieldAccess AccessBuilder::ForJSPrimitiveWrapperValue() {
+  FieldAccess access = {kTaggedBase,         JSPrimitiveWrapper::kValueOffset,
+                        MaybeHandle<Name>(), OptionalMapRef(),
+                        Type::NonInternal(), MachineType::AnyTagged(),
+                        kFullWriteBarrier,   "JSPrimitiveWrapperValue"};
+  return access;
+}
+
+// static
 FieldAccess AccessBuilder::ForJSRegExpData() {
   FieldAccess access = {kTaggedBase,         JSRegExp::kDataOffset,
                         MaybeHandle<Name>(), OptionalMapRef(),
@@ -1142,16 +1152,6 @@ ElementAccess AccessBuilder::ForFixedArrayElement(ElementsKind kind) {
 }
 
 // static
-ElementAccess AccessBuilder::ForStackArgument() {
-  ElementAccess access = {
-      kUntaggedBase,
-      CommonFrameConstants::kFixedFrameSizeAboveFp - kSystemPointerSize,
-      Type::NonInternal(), MachineType::Pointer(),
-      WriteBarrierKind::kNoWriteBarrier};
-  return access;
-}
-
-// static
 ElementAccess AccessBuilder::ForFixedDoubleArrayElement() {
   ElementAccess access = {kTaggedBase, FixedDoubleArray::kHeaderSize,
                           TypeCache::Get()->kFloat64, MachineType::Float64(),
@@ -1213,6 +1213,10 @@ ElementAccess AccessBuilder::ForTypedArrayElement(ExternalArrayType type,
       ElementAccess access = {taggedness, header_size, Type::Unsigned32(),
                               MachineType::Uint32(), kNoWriteBarrier};
       return access;
+    }
+    case kExternalFloat16Array: {
+      // TODO(v8:14012): support machine logic
+      UNIMPLEMENTED();
     }
     case kExternalFloat32Array: {
       ElementAccess access = {taggedness, header_size, Type::Number(),
@@ -1463,6 +1467,18 @@ FieldAccess AccessBuilder::ForWasmArrayLength() {
           MachineType::Uint32(),
           compiler::kNoWriteBarrier,
           "WasmArrayLength"};
+}
+
+// static
+FieldAccess AccessBuilder::ForWasmDispatchTableLength() {
+  return {compiler::kTaggedBase,
+          WasmDispatchTable::kLengthOffset,
+          MaybeHandle<Name>{},
+          compiler::OptionalMapRef{},
+          compiler::Type::OtherInternal(),
+          MachineType::Uint32(),
+          compiler::kNoWriteBarrier,
+          "WasmDispatchTableLength"};
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 

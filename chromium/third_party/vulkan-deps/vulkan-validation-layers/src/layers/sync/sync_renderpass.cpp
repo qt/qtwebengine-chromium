@@ -1,6 +1,6 @@
-/* Copyright (c) 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+/* Copyright (c) 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
 #include "sync/sync_renderpass.h"
 #include "sync/sync_validation.h"
 #include "sync/sync_op.h"
+#include "sync/sync_image.h"
+#include "state_tracker/render_pass_state.h"
 
 // Action for validating resolve operations
 class ValidateResolveAction {
@@ -68,7 +70,7 @@ class UpdateStateResolveAction {
 
 void InitSubpassContexts(VkQueueFlags queue_flags, const vvl::RenderPass &rp_state, const AccessContext *external_context,
                          std::vector<AccessContext> &subpass_contexts) {
-    const auto &create_info = rp_state.createInfo;
+    const auto &create_info = rp_state.create_info;
     // Add this for all subpasses here so that they exsist during next subpass validation
     subpass_contexts.clear();
     subpass_contexts.reserve(create_info.subpassCount);
@@ -79,7 +81,7 @@ void InitSubpassContexts(VkQueueFlags queue_flags, const vvl::RenderPass &rp_sta
 
 static SyncStageAccessIndex GetLoadOpUsageIndex(VkAttachmentLoadOp load_op, syncval_state::AttachmentType type) {
     SyncStageAccessIndex usage_index;
-    if (load_op == VK_ATTACHMENT_LOAD_OP_NONE_EXT) {
+    if (load_op == VK_ATTACHMENT_LOAD_OP_NONE_KHR) {
         usage_index = SYNC_ACCESS_INDEX_NONE;
     } else if (type == syncval_state::AttachmentType::kColor) {
         usage_index = (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ? SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_READ
@@ -93,7 +95,7 @@ static SyncStageAccessIndex GetLoadOpUsageIndex(VkAttachmentLoadOp load_op, sync
 
 static SyncStageAccessIndex GetStoreOpUsageIndex(VkAttachmentStoreOp store_op, syncval_state::AttachmentType type) {
     SyncStageAccessIndex usage_index;
-    if (store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT) {
+    if (store_op == VK_ATTACHMENT_STORE_OP_NONE_KHR) {
         usage_index = SYNC_ACCESS_INDEX_NONE;
     } else if (type == syncval_state::AttachmentType::kColor) {
         usage_index = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE;
@@ -154,14 +156,14 @@ bool RenderPassAccessContext::ValidateLayoutTransitions(const SyncValidationInfo
             const Location loc(command);
             if (hazard.Tag() == kInvalidTag) {
                 skip |= val_info.GetSyncState().LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), rp_state.renderPass(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), rp_state.Handle(), loc,
                     "Hazard %s in subpass %" PRIu32 " for attachment %" PRIu32
                     " image layout transition (old_layout: %s, new_layout: %s) after store/resolve operation in subpass %" PRIu32,
                     string_SyncHazard(hazard.Hazard()), subpass, transition.attachment, string_VkImageLayout(transition.old_layout),
                     string_VkImageLayout(transition.new_layout), transition.prev_pass);
             } else {
                 skip |= val_info.GetSyncState().LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), rp_state.renderPass(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), rp_state.Handle(), loc,
                     "Hazard %s in subpass %" PRIu32 " for attachment %" PRIu32
                     " image layout transition (old_layout: %s, new_layout: %s). Access info %s.",
                     string_SyncHazard(hazard.Hazard()), subpass, transition.attachment, string_VkImageLayout(transition.old_layout),
@@ -176,9 +178,9 @@ bool RenderPassAccessContext::ValidateLoadOperation(const SyncValidationInfo &va
                                                     const vvl::RenderPass &rp_state, const VkRect2D &render_area, uint32_t subpass,
                                                     const AttachmentViewGenVector &attachment_views, vvl::Func command) {
     bool skip = false;
-    const auto *attachment_ci = rp_state.createInfo.pAttachments;
+    const auto *attachment_ci = rp_state.create_info.pAttachments;
 
-    for (uint32_t i = 0; i < rp_state.createInfo.attachmentCount; i++) {
+    for (uint32_t i = 0; i < rp_state.create_info.attachmentCount; i++) {
         if (subpass == rp_state.attachment_first_subpass[i]) {
             const auto &view_gen = attachment_views[i];
             if (!view_gen.IsValid()) continue;
@@ -225,12 +227,12 @@ bool RenderPassAccessContext::ValidateLoadOperation(const SyncValidationInfo &va
                 const Location loc(command);
                 if (hazard.Tag() == kInvalidTag) {
                     // Hazard vs. ILT
-                    skip |= sync_state.LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state.renderPass(), loc,
+                    skip |= sync_state.LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state.Handle(), loc,
                                                 "Hazard %s vs. layout transition in subpass %" PRIu32 " for attachment %" PRIu32
                                                 " aspect %s during load with loadOp %s.",
                                                 string_SyncHazard(hazard.Hazard()), subpass, i, aspect, load_op_string);
                 } else {
-                    skip |= sync_state.LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state.renderPass(), loc,
+                    skip |= sync_state.LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state.Handle(), loc,
                                                 "Hazard %s in subpass %" PRIu32 " for attachment %" PRIu32
                                                 " aspect %s during load with loadOp %s. Access info %s.",
                                                 string_SyncHazard(hazard.Hazard()), subpass, i, aspect, load_op_string,
@@ -248,9 +250,9 @@ bool RenderPassAccessContext::ValidateLoadOperation(const SyncValidationInfo &va
 // The latter is handled in layout transistion validation directly
 bool RenderPassAccessContext::ValidateStoreOperation(const SyncValidationInfo &val_info, vvl::Func command) const {
     bool skip = false;
-    const auto *attachment_ci = rp_state_->createInfo.pAttachments;
+    const auto *attachment_ci = rp_state_->create_info.pAttachments;
 
-    for (uint32_t i = 0; i < rp_state_->createInfo.attachmentCount; i++) {
+    for (uint32_t i = 0; i < rp_state_->create_info.attachmentCount; i++) {
         if (current_subpass_ == rp_state_->attachment_last_subpass[i]) {
             const AttachmentViewGen &view_gen = attachment_views_[i];
             if (!view_gen.IsValid()) continue;
@@ -262,7 +264,7 @@ bool RenderPassAccessContext::ValidateStoreOperation(const SyncValidationInfo &v
             const bool has_depth = vkuFormatHasDepth(ci.format);
             const bool has_stencil = vkuFormatHasStencil(ci.format);
             const bool is_color = !(has_depth || has_stencil);
-            const bool store_op_stores = ci.storeOp != VK_ATTACHMENT_STORE_OP_NONE_EXT;
+            const bool store_op_stores = ci.storeOp != VK_ATTACHMENT_STORE_OP_NONE_KHR;
             if (!has_stencil && !store_op_stores) continue;
 
             HazardResult hazard;
@@ -273,7 +275,7 @@ bool RenderPassAccessContext::ValidateStoreOperation(const SyncValidationInfo &v
                                                        SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kRaster);
                 aspect = "color";
             } else {
-                const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE_EXT;
+                const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE_KHR;
                 if (has_depth && store_op_stores) {
                     hazard = CurrentContext().DetectHazard(view_gen, AttachmentViewGen::Gen::kDepthOnlyRenderArea,
                                                            SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE,
@@ -293,7 +295,7 @@ bool RenderPassAccessContext::ValidateStoreOperation(const SyncValidationInfo &v
                 const char *const op_type_string = checked_stencil ? "stencilStoreOp" : "storeOp";
                 const char *const store_op_string = string_VkAttachmentStoreOp(checked_stencil ? ci.stencilStoreOp : ci.storeOp);
                 const Location loc(command);
-                skip |= val_info.GetSyncState().LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state_->renderPass(), loc,
+                skip |= val_info.GetSyncState().LogError(string_SyncHazardVUID(hazard.Hazard()), rp_state_->Handle(), loc,
                                                          "Hazard %s in subpass %" PRIu32 " for attachment %" PRIu32
                                                          " %s aspect during store with %s %s. Access info %s",
                                                          string_SyncHazard(hazard.Hazard()), current_subpass_, i, aspect,
@@ -338,7 +340,7 @@ bool IsStencilAttachmentWriteable(const LastBound &last_bound_state, const VkFor
 template <typename Action>
 void ResolveOperation(Action &action, const vvl::RenderPass &rp_state, const AttachmentViewGenVector &attachment_views,
                       uint32_t subpass) {
-    const auto &rp_ci = rp_state.createInfo;
+    const auto &rp_ci = rp_state.create_info;
     const auto *attachment_ci = rp_ci.pAttachments;
     const auto &subpass_ci = rp_ci.pSubpasses[subpass];
 
@@ -397,7 +399,7 @@ void ResolveOperation(Action &action, const vvl::RenderPass &rp_state, const Att
 }
 
 bool RenderPassAccessContext::ValidateResolveOperations(const SyncValidationInfo &val_info, vvl::Func command) const {
-    ValidateResolveAction validate_action(rp_state_->renderPass(), current_subpass_, CurrentContext(), val_info, command);
+    ValidateResolveAction validate_action(rp_state_->VkHandle(), current_subpass_, CurrentContext(), val_info, command);
     ResolveOperation(validate_action, *rp_state_, attachment_views_, current_subpass_);
     return validate_action.GetSkip();
 }
@@ -412,9 +414,9 @@ void RenderPassAccessContext::UpdateAttachmentResolveAccess(const vvl::RenderPas
 void RenderPassAccessContext::UpdateAttachmentStoreAccess(const vvl::RenderPass &rp_state,
                                                           const AttachmentViewGenVector &attachment_views, uint32_t subpass,
                                                           const ResourceUsageTag tag, AccessContext &access_context) {
-    const auto *attachment_ci = rp_state.createInfo.pAttachments;
+    const auto *attachment_ci = rp_state.create_info.pAttachments;
 
-    for (uint32_t i = 0; i < rp_state.createInfo.attachmentCount; i++) {
+    for (uint32_t i = 0; i < rp_state.create_info.attachmentCount; i++) {
         if (rp_state.attachment_last_subpass[i] == subpass) {
             const auto &view_gen = attachment_views[i];
             if (!view_gen.IsValid()) continue;  // UNUSED
@@ -423,7 +425,7 @@ void RenderPassAccessContext::UpdateAttachmentStoreAccess(const vvl::RenderPass 
             const bool has_depth = vkuFormatHasDepth(ci.format);
             const bool has_stencil = vkuFormatHasStencil(ci.format);
             const bool is_color = !(has_depth || has_stencil);
-            const bool store_op_stores = ci.storeOp != VK_ATTACHMENT_STORE_OP_NONE_EXT;
+            const bool store_op_stores = ci.storeOp != VK_ATTACHMENT_STORE_OP_NONE_KHR;
 
             if (is_color && store_op_stores) {
                 access_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kRenderArea,
@@ -434,7 +436,7 @@ void RenderPassAccessContext::UpdateAttachmentStoreAccess(const vvl::RenderPass 
                                                      SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, SyncOrdering::kRaster,
                                                      tag);
                 }
-                const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE_EXT;
+                const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE_KHR;
                 if (has_stencil && stencil_op_stores) {
                     access_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kStencilOnlyRenderArea,
                                                      SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, SyncOrdering::kRaster,
@@ -493,7 +495,7 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandExecuti
         return skip;
     }
     const auto &list = pipe->fragmentShader_writable_output_location_list;
-    const auto &subpass = rp_state_->createInfo.pSubpasses[current_subpass_];
+    const auto &subpass = rp_state_->create_info.pSubpasses[current_subpass_];
 
     const auto &current_context = CurrentContext();
     // Subpass's inputAttachment has been done in ValidateDispatchDrawDescriptorSet
@@ -509,7 +511,7 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandExecuti
                 current_context.DetectHazard(view_gen, AttachmentViewGen::Gen::kRenderArea,
                                              SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kColorAttachment);
             if (hazard.IsHazard()) {
-                const VkImageView view_handle = view_gen.GetViewState()->image_view();
+                const VkImageView view_handle = view_gen.GetViewState()->VkHandle();
                 const Location loc(command);
                 skip |= sync_state.LogError(string_SyncHazardVUID(hazard.Hazard()), view_handle, loc,
                                             "Hazard %s for %s in %s, Subpass #%d, and pColorAttachments #%d. Access info %s.",
@@ -545,7 +547,7 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandExecuti
             if (hazard.IsHazard()) {
                 const Location loc(command);
                 skip |= sync_state.LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), view_state.image_view(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), view_state.Handle(), loc,
                     "Hazard %s for %s in %s, Subpass #%d, and depth part of pDepthStencilAttachment. Access info %s.",
                     string_SyncHazard(hazard.Hazard()), sync_state.FormatHandle(view_state).c_str(),
                     sync_state.FormatHandle(cmd_buffer).c_str(), cmd_buffer.GetActiveSubpass(),
@@ -559,7 +561,7 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandExecuti
             if (hazard.IsHazard()) {
                 const Location loc(command);
                 skip |= sync_state.LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), view_state.image_view(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), view_state.Handle(), loc,
                     "Hazard %s for %s in %s, Subpass #%d, and stencil part of pDepthStencilAttachment. Access info %s.",
                     string_SyncHazard(hazard.Hazard()), sync_state.FormatHandle(view_state).c_str(),
                     sync_state.FormatHandle(cmd_buffer).c_str(), cmd_buffer.GetActiveSubpass(),
@@ -583,7 +585,7 @@ void RenderPassAccessContext::RecordDrawSubpassAttachment(const vvl::CommandBuff
         return;
     }
     const auto &list = pipe->fragmentShader_writable_output_location_list;
-    const auto &subpass = rp_state_->createInfo.pSubpasses[current_subpass_];
+    const auto &subpass = rp_state_->create_info.pSubpasses[current_subpass_];
 
     auto &current_context = CurrentContext();
     // Subpass's inputAttachment has been done in RecordDispatchDrawDescriptorSet
@@ -638,7 +640,7 @@ void RenderPassAccessContext::RecordDrawSubpassAttachment(const vvl::CommandBuff
 }
 
 uint32_t RenderPassAccessContext::GetAttachmentIndex(const VkClearAttachment &clear_attachment) const {
-    const auto &rpci = rp_state_->createInfo;
+    const auto &rpci = rp_state_->create_info;
     const auto &subpass = rpci.pSubpasses[GetCurrentSubpass()];
     uint32_t attachment_index = VK_ATTACHMENT_UNUSED;
 
@@ -808,14 +810,14 @@ bool RenderPassAccessContext::ValidateFinalSubpassLayoutTransitions(const Comman
             if (hazard.Tag() == kInvalidTag) {
                 // Hazard vs. ILT
                 skip |= exec_context.GetSyncState().LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), rp_state_->renderPass(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), rp_state_->Handle(), loc,
                     "Hazard %s vs. store/resolve operations in subpass %" PRIu32 " for attachment %" PRIu32
                     " final image layout transition (old_layout: %s, new_layout: %s).",
                     string_SyncHazard(hazard.Hazard()), transition.prev_pass, transition.attachment,
                     string_VkImageLayout(transition.old_layout), string_VkImageLayout(transition.new_layout));
             } else {
                 skip |= exec_context.GetSyncState().LogError(
-                    string_SyncHazardVUID(hazard.Hazard()), rp_state_->renderPass(), loc,
+                    string_SyncHazardVUID(hazard.Hazard()), rp_state_->Handle(), loc,
                     "Hazard %s with last use subpass %" PRIu32 " for attachment %" PRIu32
                     " final image layout transition (old_layout: %s, new_layout: %s). Access info %s.",
                     string_SyncHazard(hazard.Hazard()), transition.prev_pass, transition.attachment,
@@ -833,10 +835,10 @@ void RenderPassAccessContext::RecordLayoutTransitions(const ResourceUsageTag tag
 }
 
 void RenderPassAccessContext::RecordLoadOperations(const ResourceUsageTag tag) {
-    const auto *attachment_ci = rp_state_->createInfo.pAttachments;
+    const auto *attachment_ci = rp_state_->create_info.pAttachments;
     auto &subpass_context = subpass_contexts_[current_subpass_];
 
-    for (uint32_t i = 0; i < rp_state_->createInfo.attachmentCount; i++) {
+    for (uint32_t i = 0; i < rp_state_->create_info.attachmentCount; i++) {
         if (rp_state_->attachment_first_subpass[i] == current_subpass_) {
             const AttachmentViewGen &view_gen = attachment_views_[i];
             if (!view_gen.IsValid()) continue;  // UNUSED
@@ -998,7 +1000,7 @@ ClearAttachmentInfo syncval_state::DynamicRenderingInfo::GetClearAttachmentInfo(
 }
 
 syncval_state::DynamicRenderingInfo::Attachment::Attachment(const SyncValidator &state,
-                                                            const safe_VkRenderingAttachmentInfo &attachment_info,
+                                                            const vku::safe_VkRenderingAttachmentInfo &attachment_info,
                                                             AttachmentType type_, const VkOffset3D &offset,
                                                             const VkExtent3D &extent)
     : info(attachment_info), view(state.Get<ImageViewState>(attachment_info.imageView)), view_gen(), type(type_) {

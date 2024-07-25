@@ -93,38 +93,39 @@ HeapVector<Member<MLTensorInfo>> MLModel::outputs(ScriptState* script_state) {
 
 MLModel::~MLModel() = default;
 
-ScriptPromise MLModel::compute(
+ScriptPromise<IDLRecord<IDLString, MLTensor>> MLModel::compute(
     ScriptState* script_state,
     const HeapVector<std::pair<String, Member<MLTensor>>>& inputs,
     ExceptionState& exception_state) {
   if (!script_state->ContextIsValid()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Invalid script state");
-    return ScriptPromise();
+    return ScriptPromise<IDLRecord<IDLString, MLTensor>>();
   }
 
-  auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(
+  auto* resolver = MakeGarbageCollected<
+      ScriptPromiseResolver<IDLRecord<IDLString, MLTensor>>>(
       script_state, exception_state.GetContext());
-  ScriptPromise promise = resolver->Promise();
+  auto promise = resolver->Promise();
 
   // First verifies the sizes of inputs.
   if (input_tensor_name_to_info_.size() != inputs.size()) {
-    resolver->Reject(MakeGarbageCollected<DOMException>(
+    resolver->RejectWithDOMException(
         DOMExceptionCode::kDataError,
-        "The number of inputs doesn't match model's expectation."));
+        "The number of inputs doesn't match model's expectation.");
     return promise;
   }
   for (const auto& name_tensor : inputs) {
     auto iter = input_tensor_name_to_info_.find(name_tensor.first);
     if (iter == input_tensor_name_to_info_.end()) {
-      resolver->Reject(MakeGarbageCollected<DOMException>(
+      resolver->RejectWithDOMException(
           DOMExceptionCode::kDataError,
-          "There is unknown input: " + name_tensor.first));
+          "There is unknown input: " + name_tensor.first);
       return promise;
     }
     if (iter->value->byte_size != name_tensor.second->data()->byteLength()) {
-      resolver->Reject(MakeGarbageCollected<DOMException>(
-          DOMExceptionCode::kUnknownError, "Wrong input size."));
+      resolver->RejectWithDOMException(DOMExceptionCode::kUnknownError,
+                                       "Wrong input size.");
       return promise;
     }
   }
@@ -156,38 +157,38 @@ void MLModel::Trace(Visitor* visitor) const {
 
 void MLModel::OnComputeResult(
     ScriptState* script_state,
-    ScriptPromiseResolver* resolver,
+    ScriptPromiseResolver<IDLRecord<IDLString, MLTensor>>* resolver,
     ComputeResult result,
-    const absl::optional<HashMap<String, Vector<uint8_t>>>& outputs) {
+    const std::optional<HashMap<String, Vector<uint8_t>>>& outputs) {
   if (result != ComputeResult::kOk || !outputs.has_value()) {
-    resolver->Reject(MakeGarbageCollected<DOMException>(
+    resolver->RejectWithDOMException(
         DOMExceptionCode::kOperationError,
-        "Failed to obtain the computation result."));
+        "Failed to obtain the computation result.");
     return;
   }
 
   if (outputs.value().size() != output_tensor_name_to_info_.size()) {
-    resolver->Reject(MakeGarbageCollected<DOMException>(
+    resolver->RejectWithDOMException(
         DOMExceptionCode::kUnknownError,
         "The number of output tensors of computation does't match the model's "
-        "expectation."));
+        "expectation.");
     return;
   }
 
   for (const auto& name_tensor : outputs.value()) {
     auto iter = output_tensor_name_to_info_.find(name_tensor.key);
     if (iter == output_tensor_name_to_info_.end()) {
-      resolver->Reject(MakeGarbageCollected<DOMException>(
+      resolver->RejectWithDOMException(
           DOMExceptionCode::kUnknownError,
           "There is an unknown output tensor in the computation result: " +
-              name_tensor.key));
+              name_tensor.key);
       return;
     }
     if (name_tensor.value.size() != iter->value->byte_size) {
-      resolver->Reject(MakeGarbageCollected<DOMException>(
+      resolver->RejectWithDOMException(
           DOMExceptionCode::kUnknownError,
           "The output tensor size does not match model's expectation: " +
-              name_tensor.key));
+              name_tensor.key);
       return;
     }
   }
@@ -261,7 +262,7 @@ void MLModel::OnComputeResult(
 #undef WEBML_SET_TYPED_OUTPUTS_BLINK
   }
 
-  resolver->Resolve<IDLRecord<IDLString, MLTensor>>(std::move(outputs_blink));
+  resolver->Resolve(std::move(outputs_blink));
 }
 
 }  // namespace blink

@@ -440,6 +440,11 @@ void InputDeviceFactoryEvdev::ApplyInputDeviceSettings() {
           input_device_settings_.internal_keyboard_allowed_keys);
     }
 
+    // Block modifiers on the current converter if the device id exists in
+    // `input_device_settings_.blocked_modifiers_devices`
+    converter->SetBlockModifiers(base::Contains(
+        input_device_settings_.blocked_modifiers_devices, converter->id()));
+
     converter->ApplyDeviceSettings(input_device_settings_);
 
     converter->SetTouchEventLoggingEnabled(
@@ -612,7 +617,8 @@ void InputDeviceFactoryEvdev::NotifyKeyboardsUpdated() {
   for (auto& converter : converters_) {
     if (converter.second->HasKeyboard()) {
       keyboards.emplace_back(converter.second->input_device(),
-                             converter.second->HasAssistantKey());
+                             converter.second->HasAssistantKey(),
+                             converter.second->HasFunctionKey());
       key_bits_mapping[converter.second->id()] =
           converter.second->GetKeyboardKeyBits();
     }

@@ -29,8 +29,8 @@
 #include <netinet/in_var.h>
 #endif  // BUILDFLAG(IS_IOS)
 #endif
+#include <vector>
 
-#include "base/containers/cxx20_erase_vector.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/logging.h"
 #include "net/base/ip_endpoint.h"
@@ -326,7 +326,7 @@ class AddressSorterPosix::SortContext {
                      info.src.prefix_length);
       }
     }
-    base::EraseIf(sort_list_, [](auto& element) { return element.failed; });
+    std::erase_if(sort_list_, [](auto& element) { return element.failed; });
     std::stable_sort(sort_list_.begin(), sort_list_.end(), CompareDestinations);
 
     std::vector<IPEndPoint> sorted_result;
@@ -402,7 +402,7 @@ void AddressSorterPosix::OnIPAddressChanged() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   source_map_.clear();
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-  // TODO(crbug.com/1431364): This always returns nullptr on ChromeOS.
+  // TODO(crbug.com/40263501): This always returns nullptr on ChromeOS.
   const AddressMapOwnerLinux* address_map_owner =
       NetworkChangeNotifier::GetAddressMapOwner();
   if (!address_map_owner) {

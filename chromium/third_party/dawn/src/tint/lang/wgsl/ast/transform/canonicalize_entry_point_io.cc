@@ -103,13 +103,12 @@ uint32_t BuiltinOrder(core::BuiltinValue builtin) {
             break;
     }
     TINT_UNREACHABLE();
-    return 0;
 }
 
 // Returns true if `attr` is a shader IO attribute.
 bool IsShaderIOAttribute(const Attribute* attr) {
     return attr->IsAnyOf<BuiltinAttribute, InterpolateAttribute, InvariantAttribute,
-                         LocationAttribute, ColorAttribute, IndexAttribute>();
+                         LocationAttribute, ColorAttribute, BlendSrcAttribute>();
 }
 
 }  // namespace
@@ -128,8 +127,8 @@ struct CanonicalizeEntryPointIO::State {
         const Expression* value;
         /// The output location.
         std::optional<uint32_t> location;
-        /// The output index.
-        std::optional<uint32_t> index;
+        /// The output blend_src.
+        std::optional<uint32_t> blend_src;
     };
 
     /// The clone context.
@@ -224,7 +223,6 @@ struct CanonicalizeEntryPointIO::State {
             return ctx.src->Sem().Get(attr)->Value();
         }
         TINT_ICE() << "could not obtain builtin value from attribute";
-        return core::BuiltinValue::kUndefined;
     }
 
     /// @param attrs the input attribute list
@@ -265,7 +263,7 @@ struct CanonicalizeEntryPointIO::State {
 
         // Get or create the intrinsic function.
         auto builtin = BuiltinOf(attrs);
-        auto intrinsic = wave_intrinsics.GetOrCreate(builtin, [&] {
+        auto intrinsic = wave_intrinsics.GetOrAdd(builtin, [&] {
             if (builtin == core::BuiltinValue::kSubgroupInvocationId) {
                 return make_intrinsic("__WaveGetLaneIndex",
                                       HLSLWaveIntrinsic::Op::kWaveGetLaneIndex);
@@ -339,6 +337,17 @@ struct CanonicalizeEntryPointIO::State {
                     value = b.IndexAccessor(value, 0_i);
                 }
             }
+
+            // Replace f16 types with f32 types if necessary.
+            if (cfg.polyfill_f16_io && type->DeepestElement()->Is<core::type::F16>()) {
+                value = b.Call(ast_type, value);
+
+                ast_type = b.ty.f32();
+                if (auto* vec = type->As<core::type::Vector>()) {
+                    ast_type = b.ty.vec(ast_type, vec->Width());
+                }
+            }
+
             b.GlobalVar(symbol, ast_type, core::AddressSpace::kIn, std::move(attrs));
             return value;
         } else if (cfg.shader_style == ShaderStyle::kMsl &&
@@ -374,13 +383,13 @@ struct CanonicalizeEntryPointIO::State {
     /// @param name the name of the shader output
     /// @param type the type of the shader output
     /// @param location the location if provided
-    /// @param index the index if provided
+    /// @param blend_src the blend_src if provided
     /// @param attrs the attributes to apply to the shader output
     /// @param value the value of the shader output
     void AddOutput(std::string name,
                    const core::type::Type* type,
                    std::optional<uint32_t> location,
-                   std::optional<uint32_t> index,
+                   std::optional<uint32_t> blend_src,
                    tint::Vector<const Attribute*, 8> attrs,
                    const Expression* value) {
         auto builtin_attr = BuiltinOf(attrs);
@@ -406,13 +415,31 @@ struct CanonicalizeEntryPointIO::State {
             }
         }
 
+        ast::Type ast_type;
+
+        // Replace f16 types with f32 types if necessary.
+        if (cfg.shader_style == ShaderStyle::kSpirv && cfg.polyfill_f16_io &&
+            type->DeepestElement()->Is<core::type::F16>()) {
+            auto make_ast_type = [&] {
+                auto ty = b.ty.f32();
+                if (auto* vec = type->As<core::type::Vector>()) {
+                    ty = b.ty.vec(ty, vec->Width());
+                }
+                return ty;
+            };
+            ast_type = make_ast_type();
+            value = b.Call(make_ast_type(), value);
+        } else {
+            ast_type = CreateASTTypeFor(ctx, type);
+        }
+
         OutputValue output;
         output.name = name;
-        output.type = CreateASTTypeFor(ctx, type);
+        output.type = ast_type;
         output.attributes = std::move(attrs);
         output.value = value;
         output.location = location;
-        output.index = index;
+        output.blend_src = blend_src;
         wrapper_output_values.Push(output);
     }
 
@@ -467,7 +494,6 @@ struct CanonicalizeEntryPointIO::State {
         for (auto* member : str->Members()) {
             if (TINT_UNLIKELY(member->Type()->Is<core::type::Struct>())) {
                 TINT_ICE() << "nested IO struct";
-                continue;
             }
 
             if (auto* wave_intrinsic_call = CallWaveIntrinsic(member->Declaration()->attributes)) {
@@ -501,7 +527,6 @@ struct CanonicalizeEntryPointIO::State {
             for (auto* member : str->Members()) {
                 if (TINT_UNLIKELY(member->Type()->Is<core::type::Struct>())) {
                     TINT_ICE() << "nested IO struct";
-                    continue;
                 }
 
                 auto name = member->Name().Name();
@@ -510,7 +535,7 @@ struct CanonicalizeEntryPointIO::State {
 
                 // Extract the original structure member.
                 AddOutput(name, member->Type(), member->Attributes().location,
-                          member->Attributes().index, std::move(attributes),
+                          member->Attributes().blend_src, std::move(attributes),
                           b.MemberAccessor(original_result, name));
             }
         } else if (!inner_ret_type->Is<core::type::Void>()) {
@@ -658,7 +683,7 @@ struct CanonicalizeEntryPointIO::State {
             wrapper_struct_output_members.Push({
                 /* member */ b.Member(name, outval.type, std::move(outval.attributes)),
                 /* location */ outval.location,
-                /* index */ outval.index,
+                /* blend_src */ outval.blend_src,
                 /* color */ std::nullopt,
             });
             assignments.Push(b.Assign(b.MemberAccessor(wrapper_result, name), outval.value));
@@ -950,8 +975,7 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
 
     auto* cfg = inputs.Get<Config>();
     if (cfg == nullptr) {
-        b.Diagnostics().add_error(diag::System::Transform,
-                                  "missing transform data for " + std::string(TypeInfo().name));
+        b.Diagnostics().AddError(Source{}) << "missing transform data for " << TypeInfo().name;
         return resolver::Resolve(b);
     }
 
@@ -982,12 +1006,16 @@ Transform::ApplyResult CanonicalizeEntryPointIO::Apply(const Program& src,
     return resolver::Resolve(b);
 }
 
+CanonicalizeEntryPointIO::Config::Config() = default;
+
 CanonicalizeEntryPointIO::Config::Config(ShaderStyle style,
                                          uint32_t sample_mask,
-                                         bool emit_point_size)
+                                         bool emit_point_size,
+                                         bool polyfill_f16)
     : shader_style(style),
       fixed_sample_mask(sample_mask),
-      emit_vertex_point_size(emit_point_size) {}
+      emit_vertex_point_size(emit_point_size),
+      polyfill_f16_io(polyfill_f16) {}
 
 CanonicalizeEntryPointIO::Config::Config(const Config&) = default;
 CanonicalizeEntryPointIO::Config::~Config() = default;

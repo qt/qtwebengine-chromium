@@ -9,16 +9,18 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-#include <optional>
 #include "base/allocator/partition_allocator/src/partition_alloc/page_allocator.h"
 #include "base/allocator/partition_allocator/src/partition_alloc/partition_address_space.h"
 #include "base/bits.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
@@ -31,7 +33,6 @@
 #include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/rand_util.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
@@ -64,7 +65,12 @@ std::optional<gin::V8SnapshotFileType> g_snapshot_file_type;
 #endif
 
 bool GenerateEntropy(unsigned char* buffer, size_t amount) {
-  base::RandBytes(buffer, amount);
+  base::RandBytes(
+      // SAFETY: This depends on callers providing a valid pointer/size pair.
+      //
+      // TODO(crbug.com/338574383): The signature is fixed as it's a callback
+      // from v8, but maybe v8 can use a span.
+      UNSAFE_BUFFERS(base::span(buffer, amount)));
   return true;
 }
 
@@ -253,8 +259,11 @@ void SetFlags(IsolateHolder::ScriptMode mode,
                          "--stress-per-context-marking-worklist",
                          "--no-stress-per-context-marking-worklist");
   SetV8FlagsIfOverridden(
-      features::kV8ProfileGuidedOptimization, "--profile-guided-optimization",
-      "--profile-guided-optimization-for-empty-feedback-vector");
+      features::kV8ProfileGuidedOptimization,
+      "--profile-guided-optimization "
+      "--profile-guided-optimization-for-empty-feedback-vector",
+      "--noprofile-guided-optimization "
+      "--noprofile-guided-optimization-for-empty-feedback-vector");
   SetV8FlagsIfOverridden(features::kV8FlushEmbeddedBlobICache,
                          "--experimental-flush-embedded-blob-icache",
                          "--no-experimental-flush-embedded-blob-icache");
@@ -273,10 +282,19 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   SetV8FlagsIfOverridden(features::kV8MegaDomIC, "--mega-dom-ic",
                          "--no-mega-dom-ic");
   SetV8FlagsIfOverridden(features::kV8Maglev, "--maglev", "--no-maglev");
+  SetV8FlagsIfOverridden(features::kV8ConcurrentMaglevHighPriorityThreads,
+                         "--concurrent-maglev-high-priority-threads",
+                         "--no-concurrent-maglev-high-priority-threads");
   if (base::FeatureList::IsEnabled(features::kV8MemoryReducer)) {
     SetV8FlagsFormatted("--memory-reducer-gc-count=%i",
                         features::kV8MemoryReducerGCCount.Get());
   }
+  SetV8FlagsIfOverridden(features::kV8IdleGcOnContextDisposal,
+                         "--idle-gc-on-context-disposal",
+                         "--no-idle-gc-on-context-disposal");
+  SetV8FlagsIfOverridden(features::kV8GCOptimizeSweepForMutator,
+                         "--cppheap-optimize-sweep-for-mutator",
+                         "--no-cppheap-optimize-sweep-for-mutator");
   SetV8FlagsIfOverridden(features::kV8MinorMS, "--minor-ms", "--no-minor-ms");
   SetV8FlagsIfOverridden(features::kV8Sparkplug, "--sparkplug",
                          "--no-sparkplug");
@@ -291,6 +309,9 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   SetV8FlagsIfOverridden(features::kV8SparkplugNeedsShortBuiltinCalls,
                          "--sparkplug-needs-short-builtins",
                          "--no-sparkplug-needs-short-builtins");
+  SetV8FlagsIfOverridden(features::kV8BaselineBatchCompilation,
+                         "--baseline-batch-compilation",
+                         "--no-baseline-batch-compilation");
   SetV8FlagsIfOverridden(features::kV8ShortBuiltinCalls,
                          "--short-builtin-calls", "--no-short-builtin-calls");
   SetV8FlagsIfOverridden(features::kV8CodeMemoryWriteProtection,
@@ -336,6 +357,8 @@ void SetFlags(IsolateHolder::ScriptMode mode,
           "--efficiency-mode-delay-turbofan=%i",
           delay);
     }
+  } else {
+    SetV8FlagsFormatted("--no-efficiency-mode-for-tiering-heuristics");
   }
 
   if (base::FeatureList::IsEnabled(
@@ -353,6 +376,8 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   bool any_slow_histograms_alias =
       base::FeatureList::IsEnabled(
           features::kV8SlowHistogramsCodeMemoryWriteProtection) ||
+      base::FeatureList::IsEnabled(
+          features::kV8SlowHistogramsIntelJCCErratumMitigation) ||
       base::FeatureList::IsEnabled(features::kV8SlowHistogramsSparkplug) ||
       base::FeatureList::IsEnabled(
           features::kV8SlowHistogramsSparkplugAndroid) ||
@@ -368,24 +393,11 @@ void SetFlags(IsolateHolder::ScriptMode mode,
                          "--ignition-elide-redundant-tdz-checks",
                          "--no-ignition-elide-redundant-tdz-checks");
 
+  SetV8FlagsIfOverridden(features::kV8IntelJCCErratumMitigation,
+                         "--intel-jcc-erratum-mitigation",
+                         "--no-intel-jcc-erratum-mitigation");
+
   // JavaScript language features.
-  SetV8FlagsIfOverridden(features::kJavaScriptSymbolAsWeakMapKey,
-                         "--harmony-symbol-as-weakmap-key",
-                         "--no-harmony-symbol-as-weakmap-key");
-  if (base::FeatureList::IsEnabled(features::kJavaScriptRabGsab)) {
-    SetV8Flags("--harmony-rab-gsab");
-  } else {
-    SetV8Flags("--no-harmony-rab-gsab");
-  }
-  SetV8FlagsIfOverridden(features::kJavaScriptRegExpUnicodeSets,
-                         "--harmony-regexp-unicode-sets",
-                         "--no-harmony-regexp-unicode-sets");
-  SetV8FlagsIfOverridden(features::kJavaScriptJsonParseWithSource,
-                         "--harmony-json-parse-with-source",
-                         "--no-harmony-json-parse-with-source");
-  SetV8FlagsIfOverridden(features::kJavaScriptArrayBufferTransfer,
-                         "--harmony-rab-gsab-transfer",
-                         "--no-harmony-rab-gsab-transfer");
   SetV8FlagsIfOverridden(features::kJavaScriptIteratorHelpers,
                          "--harmony-iterator-helpers",
                          "--no-harmony-iterator-helpers");
@@ -402,6 +414,9 @@ void SetFlags(IsolateHolder::ScriptMode mode,
                          "--no-harmony-import-attributes");
   SetV8FlagsIfOverridden(features::kJavaScriptSetMethods,
                          "--harmony-set-methods", "--no-harmony-set-methods");
+  SetV8FlagsIfOverridden(features::kJavaScriptRegExpDuplicateNamedGroups,
+                         "--js-regexp-duplicate-named-groups",
+                         "--no-js-duplicate-named-groups");
 
   if (IsolateHolder::kStrictMode == mode) {
     SetV8Flags("--use_strict");
@@ -410,6 +425,10 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   SetV8FlagsIfOverridden(features::kV8UseLibmTrigFunctions,
                          "--use-libm-trig-functions",
                          "--no-use-libm-trig-functions");
+
+  SetV8FlagsIfOverridden(features::kV8UseOriginalMessageForStackTrace,
+                         "--use-original-message-for-stack-trace",
+                         "--no-use-original-message-for-stack-trace");
 
   SetV8FlagsIfOverridden(features::kJavaScriptCompileHintsMagic,
                          "--compile-hints-magic", "--no-compile-hints-magic");
@@ -422,6 +441,8 @@ void SetFlags(IsolateHolder::ScriptMode mode,
   SetV8FlagsIfOverridden(features::kWebAssemblyInlining,
                          "--experimental-wasm-inlining",
                          "--no-experimental-wasm-inlining");
+  SetV8FlagsIfOverridden(features::kWebAssemblyLiftoffCodeFlushing,
+                         "--flush-liftoff-code", "--no-flush-liftoff-code");
   SetV8FlagsIfOverridden(features::kWebAssemblyGenericWrapper,
                          "--wasm-to-js-generic-wrapper",
                          "--no-wasm-to-js-generic-wrapper");
@@ -438,7 +459,7 @@ void SetFlags(IsolateHolder::ScriptMode mode,
     return;
 
   // Allow the --js-flags switch to override existing flags:
-  std::vector<base::StringPiece> flag_list =
+  std::vector<std::string_view> flag_list =
       base::SplitStringPiece(js_command_line_flags, ",", base::TRIM_WHITESPACE,
                              base::SPLIT_WANT_NONEMPTY);
   for (const auto& flag : flag_list) {
@@ -564,7 +585,7 @@ void V8Initializer::GetV8ExternalSnapshotData(const char** snapshot_data_out,
 // static
 void V8Initializer::LoadV8Snapshot(V8SnapshotFileType snapshot_file_type) {
   if (g_mapped_snapshot) {
-    // TODO(crbug.com/802962): Confirm not loading different type of snapshot
+    // TODO(crbug.com/40558459): Confirm not loading different type of snapshot
     // files in a process.
     return;
   }

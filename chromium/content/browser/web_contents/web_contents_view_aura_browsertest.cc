@@ -473,8 +473,9 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 
 // Disabled because the test always fails the first time it runs on the Win Aura
 // bots, and usually but not always passes second-try (See crbug.com/179532).
-// Flaky on CrOS and Linux as well: https://crbug.com/856079
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_LINUX)
+// Flaky on CrOS, Linux, and Fuchsia as well: https://crbug.com/856079
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_QuickOverscrollDirectionChange \
   DISABLED_QuickOverscrollDirectionChange
 #else
@@ -507,7 +508,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
   // this test to fail. This observer will let us know if this is happening.
   SpuriousMouseMoveEventObserver mouse_observer(GetRenderWidgetHost());
 
-  // TODO(crbug.com/1322921): Use a mock timer to generate timestamps for
+  // TODO(crbug.com/40838320): Use a mock timer to generate timestamps for
   // events. This would need injecting the mock timer into
   // `cc::CompositorFrameReportingController`.
   ui::TouchEvent press(
@@ -887,7 +888,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
 // tests. http://crbug.com/305722
 // TODO(tdresser): Re-enable this once eager GR is back on. See
 // crbug.com/410280.
-// TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+// TODO(crbug.com/40118868): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
 #if BUILDFLAG(IS_WIN) || (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
 #define MAYBE_OverscrollNavigationTouchThrottling \

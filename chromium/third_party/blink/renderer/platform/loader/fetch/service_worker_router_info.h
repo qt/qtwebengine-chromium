@@ -7,6 +7,8 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "services/network/public/mojom/service_worker_router_info.mojom-blink-forward.h"
+#include "services/network/public/mojom/service_worker_router_info.mojom-shared.h"
+#include "third_party/blink/public/common/service_worker/service_worker_router_rule.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
 
@@ -19,16 +21,31 @@ class PLATFORM_EXPORT ServiceWorkerRouterInfo
 
   network::mojom::blink::ServiceWorkerRouterInfoPtr ToMojo() const;
 
-  void SetRuleIdMatched(std::uint32_t rule_id_matched) {
+  void SetRuleIdMatched(std::optional<std::uint32_t> rule_id_matched) {
     rule_id_matched_ = rule_id_matched;
   }
 
-  const std::uint32_t& RuleIdMatched() const { return rule_id_matched_; }
+  const std::optional<std::uint32_t>& RuleIdMatched() const {
+    return rule_id_matched_;
+  }
+
+  void SetMatchedSourceType(
+      const std::optional<network::mojom::ServiceWorkerRouterSourceType>&
+          type) {
+    matched_source_type_ = type;
+  }
+
+  const std::optional<network::mojom::ServiceWorkerRouterSourceType>&
+  MatchedSourceType() const {
+    return matched_source_type_;
+  }
 
  private:
   ServiceWorkerRouterInfo();
 
-  std::uint32_t rule_id_matched_;
+  std::optional<uint32_t> rule_id_matched_;
+  std::optional<network::mojom::ServiceWorkerRouterSourceType>
+      matched_source_type_;
 };
 }  // namespace blink
 

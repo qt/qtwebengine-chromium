@@ -25,7 +25,6 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "gtest/gtest-spi.h"
 #include "src/tint/lang/wgsl/ast/helper_test.h"
 #include "src/tint/lang/wgsl/ast/return_statement.h"
 
@@ -66,7 +65,7 @@ TEST_F(ProgramTest, Assert_GlobalVariable) {
 }
 
 TEST_F(ProgramTest, Assert_NullGlobalVariable) {
-    EXPECT_FATAL_FAILURE(
+    EXPECT_DEATH_IF_SUPPORTED(
         {
             ProgramBuilder b;
             b.AST().AddGlobalVariable(nullptr);
@@ -75,7 +74,7 @@ TEST_F(ProgramTest, Assert_NullGlobalVariable) {
 }
 
 TEST_F(ProgramTest, Assert_NullTypeDecl) {
-    EXPECT_FATAL_FAILURE(
+    EXPECT_DEATH_IF_SUPPORTED(
         {
             ProgramBuilder b;
             b.AST().AddTypeDecl(nullptr);
@@ -84,7 +83,7 @@ TEST_F(ProgramTest, Assert_NullTypeDecl) {
 }
 
 TEST_F(ProgramTest, Assert_Null_Function) {
-    EXPECT_FATAL_FAILURE(
+    EXPECT_DEATH_IF_SUPPORTED(
         {
             ProgramBuilder b;
             b.AST().AddFunction(nullptr);
@@ -93,19 +92,19 @@ TEST_F(ProgramTest, Assert_Null_Function) {
 }
 
 TEST_F(ProgramTest, DiagnosticsMove) {
-    Diagnostics().add_error(diag::System::Program, "an error message");
+    Diagnostics().AddError(Source{}) << "an error message";
 
     Program program_a(std::move(*this));
     EXPECT_FALSE(program_a.IsValid());
-    EXPECT_EQ(program_a.Diagnostics().count(), 1u);
-    EXPECT_EQ(program_a.Diagnostics().error_count(), 1u);
-    EXPECT_EQ(program_a.Diagnostics().begin()->message, "an error message");
+    EXPECT_EQ(program_a.Diagnostics().Count(), 1u);
+    EXPECT_EQ(program_a.Diagnostics().NumErrors(), 1u);
+    EXPECT_EQ(program_a.Diagnostics().begin()->message.Plain(), "an error message");
 
     Program program_b(std::move(program_a));
     EXPECT_FALSE(program_b.IsValid());
-    EXPECT_EQ(program_b.Diagnostics().count(), 1u);
-    EXPECT_EQ(program_b.Diagnostics().error_count(), 1u);
-    EXPECT_EQ(program_b.Diagnostics().begin()->message, "an error message");
+    EXPECT_EQ(program_b.Diagnostics().Count(), 1u);
+    EXPECT_EQ(program_b.Diagnostics().NumErrors(), 1u);
+    EXPECT_EQ(program_b.Diagnostics().begin()->message.Plain(), "an error message");
 }
 
 TEST_F(ProgramTest, ReuseMovedFromVariable) {

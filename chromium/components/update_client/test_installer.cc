@@ -25,6 +25,7 @@ namespace update_client {
 TestInstaller::TestInstaller()
     : error_(0),
       install_count_(0),
+      install_error_(InstallError::NONE),
       task_runner_(base::SequencedTaskRunner::GetCurrentDefault()) {}
 
 TestInstaller::~TestInstaller() {
@@ -50,7 +51,7 @@ void TestInstaller::Install(const base::FilePath& unpack_path,
   install_params_ = std::move(install_params);
 
   InstallComplete(std::move(callback), progress_callback,
-                  Result(InstallError::NONE));
+                  Result(install_error_));
 }
 
 void TestInstaller::InstallComplete(Callback callback,
@@ -97,7 +98,7 @@ void VersionedTestInstaller::Install(
     std::unique_ptr<InstallParams> /*install_params*/,
     ProgressCallback progress_callback,
     Callback callback) {
-  absl::optional<base::Value::Dict> manifest =
+  std::optional<base::Value::Dict> manifest =
       update_client::ReadManifest(unpack_path);
   if (!manifest) {
     return;

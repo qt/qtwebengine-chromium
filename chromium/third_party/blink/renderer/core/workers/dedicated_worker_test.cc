@@ -82,6 +82,13 @@ class DedicatedWorkerThreadForTest final : public DedicatedWorkerThread {
     PostCrossThreadTask(*GetParentTaskRunnerForTesting(), FROM_HERE,
                         CrossThreadBindOnce(std::move(quit_closure)));
   }
+  void CountWebDXFeature(WebDXFeature feature,
+                         CrossThreadOnceClosure quit_closure) {
+    EXPECT_TRUE(IsCurrentThread());
+    GlobalScope()->CountWebDXFeature(feature);
+    PostCrossThreadTask(*GetParentTaskRunnerForTesting(), FROM_HERE,
+                        CrossThreadBindOnce(std::move(quit_closure)));
+  }
 
   // Emulates deprecated API use on DedicatedWorkerGlobalScope.
   void CountDeprecation(WebFeature feature,
@@ -127,9 +134,18 @@ class DedicatedWorkerObjectProxyForTest final
     DedicatedWorkerObjectProxy::CountFeature(feature);
   }
 
+  void CountWebDXFeature(WebDXFeature feature) override {
+    // Any feature should be reported only one time.
+    EXPECT_FALSE(reported_webdx_features_[static_cast<size_t>(feature)]);
+    reported_webdx_features_.set(static_cast<size_t>(feature));
+    DedicatedWorkerObjectProxy::CountWebDXFeature(feature);
+  }
+
  private:
   std::bitset<static_cast<size_t>(WebFeature::kNumberOfFeatures)>
       reported_features_;
+  std::bitset<static_cast<size_t>(WebDXFeature::kNumberOfFeatures)>
+      reported_webdx_features_;
 };
 
 class DedicatedWorkerMessagingProxyForTest
@@ -231,7 +247,8 @@ class FakeWebDedicatedWorkerHostFactoryClient
       network::mojom::CredentialsMode credentials_mode,
       const WebFetchClientSettingsObject& fetch_client_settings_object,
       CrossVariantMojoRemote<blink::mojom::BlobURLTokenInterfaceBase>
-          blob_url_token) override {}
+          blob_url_token,
+      bool has_storage_access) override {}
   scoped_refptr<blink::WebWorkerFetchContext> CloneWorkerFetchContext(
       WebWorkerFetchContext* web_worker_fetch_context,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner) override {
@@ -328,6 +345,7 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
 
   // This feature is randomly selected.
   const WebFeature kFeature1 = WebFeature::kRequestFileSystem;
+  const WebDXFeature kWebDXFeature1 = WebDXFeature::kCompressionStreams;
 
   // API use on the DedicatedWorkerGlobalScope should be recorded in UseCounter
   // on the Document.
@@ -342,6 +360,19 @@ TEST_F(DedicatedWorkerTest, UseCounter) {
     loop.Run();
   }
   EXPECT_TRUE(GetDocument().IsUseCounted(kFeature1));
+
+  EXPECT_FALSE(GetDocument().IsWebDXFeatureCounted(kWebDXFeature1));
+  {
+    base::RunLoop loop;
+    PostCrossThreadTask(
+        *GetWorkerThread()->GetTaskRunner(TaskType::kInternalTest), FROM_HERE,
+        CrossThreadBindOnce(&DedicatedWorkerThreadForTest::CountWebDXFeature,
+                            CrossThreadUnretained(GetWorkerThread()),
+                            kWebDXFeature1,
+                            CrossThreadBindOnce(loop.QuitClosure())));
+    loop.Run();
+  }
+  EXPECT_TRUE(GetDocument().IsWebDXFeatureCounted(kWebDXFeature1));
 
   // API use should be reported to the Document only one time. See comments in
   // DedicatedWorkerObjectProxyForTest::CountFeature.

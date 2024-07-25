@@ -59,7 +59,6 @@ class MockRTCPeerConnectionHandlerPlatform : public RTCPeerConnectionHandler {
 
   bool Initialize(ExecutionContext* context,
                   const webrtc::PeerConnectionInterface::RTCConfiguration&,
-                  GoogMediaConstraints* media_constraints,
                   WebLocalFrame*,
                   ExceptionState&) override;
   void Close() override;
@@ -95,9 +94,6 @@ class MockRTCPeerConnectionHandlerPlatform : public RTCPeerConnectionHandler {
       const String& label,
       const webrtc::DataChannelInit&) override;
   webrtc::PeerConnectionInterface* NativePeerConnection() override;
-  void RunSynchronousOnceClosureOnSignalingThread(
-      CrossThreadOnceClosure closure,
-      const char* trace_event_name) override;
   void RunSynchronousOnceClosureOnSignalingThread(
       base::OnceClosure closure,
       const char* trace_event_name) override;

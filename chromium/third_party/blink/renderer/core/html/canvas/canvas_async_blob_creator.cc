@@ -147,7 +147,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
     base::TimeTicks start_time,
     ExecutionContext* context,
     const IdentifiableToken& input_digest,
-    ScriptPromiseResolver* resolver)
+    ScriptPromiseResolver<Blob>* resolver)
     : CanvasAsyncBlobCreator(image,
                              options,
                              function_type,
@@ -165,7 +165,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
     base::TimeTicks start_time,
     ExecutionContext* context,
     const IdentifiableToken& input_digest,
-    ScriptPromiseResolver* resolver)
+    ScriptPromiseResolver<Blob>* resolver)
     : fail_encoder_initialization_for_test_(false),
       enforce_idle_encoding_for_test_(false),
       context_(context),
@@ -455,7 +455,7 @@ void CanvasAsyncBlobCreator::CreateBlobAndReturnResult(
   } else {
     context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
         ->PostTask(FROM_HERE,
-                   WTF::BindOnce(&ScriptPromiseResolver::Resolve<Blob, Blob*>,
+                   WTF::BindOnce(&ScriptPromiseResolver<Blob>::Resolve<Blob*>,
                                  WrapPersistent(script_promise_resolver_.Get()),
                                  WrapPersistent(result_blob)));
   }
@@ -535,7 +535,7 @@ void CanvasAsyncBlobCreator::CreateNullAndReturnResult() {
         ->PostTask(
             FROM_HERE,
             WTF::BindOnce(
-                &ScriptPromiseResolver::Reject<DOMException, DOMException*>,
+                &ScriptPromiseResolverBase::Reject<DOMException, DOMException*>,
                 WrapPersistent(script_promise_resolver_.Get()),
                 WrapPersistent(MakeGarbageCollected<DOMException>(
                     DOMExceptionCode::kEncodingError,

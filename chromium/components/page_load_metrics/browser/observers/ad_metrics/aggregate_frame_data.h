@@ -7,6 +7,9 @@
 
 #include <stdint.h>
 
+#include <optional>
+
+#include "base/time/time.h"
 #include "components/page_load_metrics/browser/observers/ad_metrics/frame_data_utils.h"
 #include "components/page_load_metrics/common/page_load_metrics.mojom-forward.h"
 
@@ -34,6 +37,14 @@ class AggregateFrameData {
                       base::TimeDelta update,
                       bool is_ad);
 
+  // Called for each new ad frame FCP calculation, this method keeps track of
+  // the earliest FCP after main frame nav start.
+  void UpdateFirstAdFCPSinceNavStart(base::TimeDelta time_since_nav_start);
+
+  std::optional<base::TimeDelta> first_ad_fcp_after_main_nav_start() const {
+    return first_ad_fcp_after_main_nav_start_;
+  }
+
   int peak_windowed_non_ad_cpu_percent() const {
     return non_ad_peak_cpu_.peak_windowed_percent();
   }
@@ -42,7 +53,7 @@ class AggregateFrameData {
     return total_peak_cpu_.peak_windowed_percent();
   }
 
-  // TODO(crbug.com/1136068): The size_t members should probably be int64_t.
+  // TODO(crbug.com/40152120): The size_t members should probably be int64_t.
   struct AdDataByVisibility {
     // The following are aggregated when metrics are recorded on navigation.
     size_t bytes = 0;
@@ -118,6 +129,9 @@ class AggregateFrameData {
   // The peak cpu usages for this page.
   PeakCpuAggregator total_peak_cpu_;
   PeakCpuAggregator non_ad_peak_cpu_;
+
+  // The first FCP of any ad frame on the page.
+  std::optional<base::TimeDelta> first_ad_fcp_after_main_nav_start_;
 };
 
 }  // namespace page_load_metrics

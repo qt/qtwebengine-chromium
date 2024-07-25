@@ -18,7 +18,7 @@
 
 namespace mojo {
 
-// TODO(crbug.com/611224): Stop using TypeConverters.
+// TODO(crbug.com/40468949): Stop using TypeConverters.
 
 // static
 media::mojom::DecryptConfigPtr
@@ -48,8 +48,8 @@ TypeConverter<std::unique_ptr<media::DecryptConfig>,
 // static
 media::mojom::DecoderBufferSideDataPtr
 TypeConverter<media::mojom::DecoderBufferSideDataPtr,
-              absl::optional<media::DecoderBufferSideData>>::
-    Convert(const absl::optional<media::DecoderBufferSideData>& input) {
+              std::optional<media::DecoderBufferSideData>>::
+    Convert(const std::optional<media::DecoderBufferSideData>& input) {
   if (!input.has_value()) {
     return nullptr;
   }
@@ -63,14 +63,14 @@ TypeConverter<media::mojom::DecoderBufferSideDataPtr,
 }
 
 // static
-absl::optional<media::DecoderBufferSideData>
-TypeConverter<absl::optional<media::DecoderBufferSideData>,
+std::optional<media::DecoderBufferSideData>
+TypeConverter<std::optional<media::DecoderBufferSideData>,
               media::mojom::DecoderBufferSideDataPtr>::
     Convert(const media::mojom::DecoderBufferSideDataPtr& input) {
   if (!input) {
-    return absl::nullopt;
+    return std::nullopt;
   }
-  auto side_data = absl::make_optional<media::DecoderBufferSideData>(
+  auto side_data = std::make_optional<media::DecoderBufferSideData>(
       media::DecoderBufferSideData());
   side_data->alpha_data = input->alpha_data;
   side_data->spatial_layers = input->spatial_layers;
@@ -93,7 +93,7 @@ TypeConverter<media::mojom::DecoderBufferPtr, media::DecoderBuffer>::Convert(
   mojo_buffer->timestamp = input.timestamp();
   mojo_buffer->duration = input.duration();
   mojo_buffer->is_key_frame = input.is_key_frame();
-  mojo_buffer->data_size = base::checked_cast<uint32_t>(input.data_size());
+  mojo_buffer->data_size = base::checked_cast<uint32_t>(input.size());
   mojo_buffer->front_discard = input.discard_padding().first;
   mojo_buffer->back_discard = input.discard_padding().second;
 
@@ -125,7 +125,7 @@ TypeConverter<scoped_refptr<media::DecoderBuffer>,
 
   if (input->side_data) {
     buffer->set_side_data(
-        input->side_data.To<absl::optional<media::DecoderBufferSideData>>());
+        input->side_data.To<std::optional<media::DecoderBufferSideData>>());
   }
 
   buffer->set_timestamp(input->timestamp);

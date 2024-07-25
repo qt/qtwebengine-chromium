@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/task/thread_pool/pooled_single_thread_task_runner_manager.h"
 
 #include <memory>
@@ -823,7 +828,7 @@ void PooledSingleThreadTaskRunnerManager::UnregisterWorkerThread(
       return;
 
     auto worker_iter = ranges::find(workers_, worker);
-    DCHECK(worker_iter != workers_.end());
+    CHECK(worker_iter != workers_.end(), base::NotFatalUntil::M125);
     worker_to_destroy = std::move(*worker_iter);
     workers_.erase(worker_iter);
   }

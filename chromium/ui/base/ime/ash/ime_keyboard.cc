@@ -5,6 +5,7 @@
 #include "ui/base/ime/ash/ime_keyboard.h"
 
 #include "base/containers/contains.h"
+#include "base/functional/callback.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 
@@ -35,7 +36,7 @@ constexpr const char* kAltGrLayoutIds[] = {
     "us(intl)",
 };
 
-} // namespace
+}  // namespace
 
 ImeKeyboard::ImeKeyboard() = default;
 ImeKeyboard::~ImeKeyboard() = default;
@@ -48,14 +49,21 @@ void ImeKeyboard::RemoveObserver(Observer* observer) {
   observers_.RemoveObserver(observer);
 }
 
-bool ImeKeyboard::SetCurrentKeyboardLayoutByName(
+void ImeKeyboard::SetCurrentKeyboardLayoutByName(
+    const std::string& layout_name,
+    base::OnceCallback<void(bool)> callback) {
+  std::move(callback).Run(SetCurrentKeyboardLayoutByNameImpl(layout_name));
+}
+
+bool ImeKeyboard::SetCurrentKeyboardLayoutByNameImpl(
     const std::string& layout_name) {
   // Only notify on keyboard layout change.
   if (last_layout_ == layout_name) {
     return false;
   }
-  for (ImeKeyboard::Observer& observer : observers_)
+  for (ImeKeyboard::Observer& observer : observers_) {
     observer.OnLayoutChanging(layout_name);
+  }
   last_layout_ = layout_name;
   return true;
 }
@@ -65,8 +73,9 @@ void ImeKeyboard::SetCapsLockEnabled(bool enable_caps_lock) {
   caps_lock_is_enabled_ = enable_caps_lock;
   if (old_state != enable_caps_lock) {
     base::RecordAction(base::UserMetricsAction("CapsLock_Toggled"));
-    for (ImeKeyboard::Observer& observer : observers_)
+    for (ImeKeyboard::Observer& observer : observers_) {
       observer.OnCapsLockChanged(enable_caps_lock);
+    }
   }
 }
 

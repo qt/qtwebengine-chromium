@@ -13,6 +13,7 @@
 #include "src/wasm/baseline/liftoff-assembler-defs.h"
 #include "src/wasm/baseline/liftoff-compiler.h"
 #include "src/wasm/baseline/liftoff-register.h"
+#include "src/wasm/baseline/liftoff-varstate.h"
 #include "src/wasm/function-body-decoder.h"
 #include "src/wasm/wasm-module.h"
 #include "src/wasm/wasm-opcodes.h"
@@ -105,106 +106,7 @@ class LiftoffAssembler : public MacroAssembler {
 
   using ValueKindSig = Signature<ValueKind>;
 
-  class VarState {
-   public:
-    enum Location : uint8_t { kStack, kRegister, kIntConst };
-
-    VarState(ValueKind kind, int offset)
-        : loc_(kStack), kind_(kind), spill_offset_(offset) {
-      DCHECK_LE(0, offset);
-    }
-    VarState(ValueKind kind, LiftoffRegister r, int offset)
-        : loc_(kRegister), kind_(kind), reg_(r), spill_offset_(offset) {
-      DCHECK_EQ(r.reg_class(), reg_class_for(kind));
-      DCHECK_LE(0, offset);
-    }
-    VarState(ValueKind kind, int32_t i32_const, int offset)
-        : loc_(kIntConst),
-          kind_(kind),
-          i32_const_(i32_const),
-          spill_offset_(offset) {
-      DCHECK(kind_ == kI32 || kind_ == kI64);
-      DCHECK_LE(0, offset);
-    }
-
-    bool is_stack() const { return loc_ == kStack; }
-    bool is_gp_reg() const { return loc_ == kRegister && reg_.is_gp(); }
-    bool is_fp_reg() const { return loc_ == kRegister && reg_.is_fp(); }
-    bool is_reg() const { return loc_ == kRegister; }
-    bool is_const() const { return loc_ == kIntConst; }
-
-    ValueKind kind() const { return kind_; }
-
-    Location loc() const { return loc_; }
-
-    // The constant as 32-bit value, to be sign-extended if {kind() == kI64}.
-    int32_t i32_const() const {
-      DCHECK_EQ(loc_, kIntConst);
-      return i32_const_;
-    }
-    WasmValue constant() const {
-      DCHECK(kind_ == kI32 || kind_ == kI64);
-      DCHECK_EQ(loc_, kIntConst);
-      return kind_ == kI32 ? WasmValue(i32_const_)
-                           : WasmValue(int64_t{i32_const_});
-    }
-
-    int offset() const {
-      V8_ASSUME(spill_offset_ >= 0);
-      return spill_offset_;
-    }
-    void set_offset(int offset) {
-      DCHECK_LE(0, spill_offset_);
-      spill_offset_ = offset;
-    }
-
-    Register gp_reg() const { return reg().gp(); }
-    DoubleRegister fp_reg() const { return reg().fp(); }
-    LiftoffRegister reg() const {
-      DCHECK_EQ(loc_, kRegister);
-      return reg_;
-    }
-    RegClass reg_class() const { return reg().reg_class(); }
-
-    void MakeStack() { loc_ = kStack; }
-
-    void MakeRegister(LiftoffRegister r) {
-      loc_ = kRegister;
-      reg_ = r;
-    }
-
-    void MakeConstant(int32_t i32_const) {
-      DCHECK(kind_ == kI32 || kind_ == kI64);
-      loc_ = kIntConst;
-      i32_const_ = i32_const;
-    }
-
-    // Copy src to this, except for offset, since src and this could have been
-    // from different stack states.
-    void Copy(VarState src) {
-      loc_ = src.loc();
-      kind_ = src.kind();
-      if (loc_ == kRegister) {
-        reg_ = src.reg();
-      } else if (loc_ == kIntConst) {
-        i32_const_ = src.i32_const();
-      }
-    }
-
-   private:
-    Location loc_;
-    // TODO(wasm): This is redundant, the decoder already knows the type of each
-    // stack value. Try to collapse.
-    ValueKind kind_;
-
-    union {
-      LiftoffRegister reg_;  // used if loc_ == kRegister
-      int32_t i32_const_;    // used if loc_ == kIntConst
-    };
-    int spill_offset_;
-  };
-
-  ASSERT_TRIVIALLY_COPYABLE(VarState);
+  using VarState = LiftoffVarState;
 
   struct CacheState {
     explicit CacheState(Zone* zone) : stack_state(zone) {}
@@ -495,6 +397,22 @@ class LiftoffAssembler : public MacroAssembler {
   // Load a non-register cache slot to a given (fixed) register.
   inline void LoadToFixedRegister(VarState slot, LiftoffRegister reg);
 
+  // Load a cache slot to a register that has no other uses, so it can be
+  // modified.
+  LiftoffRegister LoadToModifiableRegister(VarState slot,
+                                           LiftoffRegList pinned) {
+    LiftoffRegister reg = LoadToRegister(slot, pinned);
+    // TODO(jkummerow): The following line is overly optimistic, as long as
+    // we don't pop the VarState, the register will never be considered free.
+    if (cache_state()->is_free(reg) && !pinned.has(reg)) return reg;
+
+    LiftoffRegister new_reg = GetUnusedRegister(reg.reg_class(), pinned);
+    // {new_reg} could be equal to {reg}, but it's unused by the stack now.
+    // Also, {reg} still holds the previous value, even if it was spilled.
+    if (new_reg != reg) Move(new_reg, reg, slot.kind());
+    return new_reg;
+  }
+
   // Pop a VarState from the stack, updating the register use count accordingly.
   V8_INLINE VarState PopVarState() {
     DCHECK(!cache_state_.stack_state.empty());
@@ -751,23 +669,20 @@ class LiftoffAssembler : public MacroAssembler {
                           Label* ool_label, const FreezeCacheState& frozen);
   inline void LoadConstant(LiftoffRegister, WasmValue);
   inline void LoadInstanceDataFromFrame(Register dst);
-  inline void LoadTrustedDataFromInstanceObject(Register dst,
-                                                Register instance_object);
+  inline void LoadTrustedPointer(Register dst, Register src_addr, int offset,
+                                 IndirectPointerTag tag);
   inline void LoadFromInstance(Register dst, Register instance, int offset,
                                int size);
   inline void LoadTaggedPointerFromInstance(Register dst, Register instance,
                                             int offset);
-  inline void LoadExternalPointer(Register dst, Register src_addr, int offset,
-                                  ExternalPointerTag tag, Register scratch);
-  inline void LoadExternalPointer(Register dst, Register src_addr, int offset,
-                                  Register index, ExternalPointerTag tag,
-                                  Register scratch);
   inline void SpillInstanceData(Register instance);
   inline void ResetOSRTarget();
   inline void LoadTaggedPointer(Register dst, Register src_addr,
                                 Register offset_reg, int32_t offset_imm,
                                 uint32_t* protected_load_pc = nullptr,
                                 bool offset_reg_needs_shift = false);
+  inline void LoadProtectedPointer(Register dst, Register src_addr,
+                                   int32_t offset);
   inline void LoadFullPointer(Register dst, Register src_addr,
                               int32_t offset_imm);
 #ifdef V8_ENABLE_SANDBOX
@@ -868,6 +783,7 @@ class LiftoffAssembler : public MacroAssembler {
   inline void emit_i32_sub(Register dst, Register lhs, Register rhs);
   inline void emit_i32_subi(Register dst, Register lhs, int32_t imm);
   inline void emit_i32_mul(Register dst, Register lhs, Register rhs);
+  inline void emit_i32_muli(Register dst, Register lhs, int32_t imm);
   inline void emit_i32_divs(Register dst, Register lhs, Register rhs,
                             Label* trap_div_by_zero,
                             Label* trap_div_unrepresentable);
@@ -896,6 +812,10 @@ class LiftoffAssembler : public MacroAssembler {
   inline bool emit_i32_popcnt(Register dst, Register src);
 
   // i64 binops.
+  // Most variants taking an immediate as second input only need to support
+  // 32-bit immediates, because that't the only type of constant we track.
+  // Some (like addition) are also called in other situation where we can have
+  // bigger immediates. In that case we type the immediate as int64_t.
   inline void emit_i64_add(LiftoffRegister dst, LiftoffRegister lhs,
                            LiftoffRegister rhs);
   inline void emit_i64_addi(LiftoffRegister dst, LiftoffRegister lhs,
@@ -904,6 +824,8 @@ class LiftoffAssembler : public MacroAssembler {
                            LiftoffRegister rhs);
   inline void emit_i64_mul(LiftoffRegister dst, LiftoffRegister lhs,
                            LiftoffRegister rhs);
+  inline void emit_i64_muli(LiftoffRegister dst, LiftoffRegister lhs,
+                            int32_t imm);
   inline bool emit_i64_divs(LiftoffRegister dst, LiftoffRegister lhs,
                             LiftoffRegister rhs, Label* trap_div_by_zero,
                             Label* trap_div_unrepresentable);
@@ -944,12 +866,15 @@ class LiftoffAssembler : public MacroAssembler {
   inline bool emit_i64_popcnt(LiftoffRegister dst, LiftoffRegister src);
 
   inline void emit_u32_to_uintptr(Register dst, Register src);
+  // For security hardening: unconditionally clear {dst}'s high word.
+  inline void clear_i32_upper_half(Register dst);
 
   inline void emit_ptrsize_add(Register dst, Register lhs, Register rhs);
   inline void emit_ptrsize_sub(Register dst, Register lhs, Register rhs);
   inline void emit_ptrsize_and(Register dst, Register lhs, Register rhs);
   inline void emit_ptrsize_shri(Register dst, Register src, int amount);
   inline void emit_ptrsize_addi(Register dst, Register lhs, intptr_t imm);
+  inline void emit_ptrsize_muli(Register dst, Register lhs, int32_t imm);
   inline void emit_ptrsize_set_cond(Condition condition, Register dst,
                                     LiftoffRegister lhs, LiftoffRegister rhs);
 
@@ -1071,7 +996,8 @@ class LiftoffAssembler : public MacroAssembler {
   inline void emit_s128_relaxed_laneselect(LiftoffRegister dst,
                                            LiftoffRegister src1,
                                            LiftoffRegister src2,
-                                           LiftoffRegister mask);
+                                           LiftoffRegister mask,
+                                           int lane_width);
   inline void emit_i8x16_popcnt(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_i8x16_splat(LiftoffRegister dst, LiftoffRegister src);
   inline void emit_i16x8_splat(LiftoffRegister dst, LiftoffRegister src);
@@ -1500,8 +1426,8 @@ class LiftoffAssembler : public MacroAssembler {
   inline void emit_f64x2_qfms(LiftoffRegister dst, LiftoffRegister src1,
                               LiftoffRegister src2, LiftoffRegister src3);
 
-  inline void set_trap_on_oob_mem64(Register index, int oob_shift,
-                                    MemOperand oob_offset);
+  inline void set_trap_on_oob_mem64(Register index, uint64_t oob_size,
+                                    uint64_t oob_index);
 
   inline void StackCheck(Label* ool_code);
 
@@ -1564,6 +1490,7 @@ class LiftoffAssembler : public MacroAssembler {
   void set_num_locals(uint32_t num_locals);
 
   int GetTotalFrameSlotCountForGC() const;
+  int OolSpillCount() const;
 
   int GetTotalFrameSize() const { return max_used_spill_offset_; }
 

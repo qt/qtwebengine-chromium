@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/compiler_specific.h"
@@ -402,7 +403,7 @@ size_t Histogram::bucket_count() const {
 }
 
 // static
-bool Histogram::InspectConstructionArguments(StringPiece name,
+bool Histogram::InspectConstructionArguments(std::string_view name,
                                              Sample* minimum,
                                              Sample* maximum,
                                              size_t* bucket_count) {
@@ -417,7 +418,7 @@ bool Histogram::InspectConstructionArguments(StringPiece name,
 
   // Defensive code for backward compatibility.
   if (*minimum < 1) {
-    // TODO(crbug.com/1288842): Temporarily disabled during cleanup.
+    // TODO(crbug.com/40211696): Temporarily disabled during cleanup.
     // DLOG(ERROR) << "Histogram: " << name << " has bad minimum: " << *minimum;
     *minimum = 1;
     if (*maximum < 1)
@@ -499,7 +500,7 @@ void Histogram::AddCount(int value, int count) {
   if (value < 0)
     value = 0;
   if (count <= 0) {
-    NOTREACHED();
+    NOTREACHED_IN_MIGRATION();
     return;
   }
   unlogged_samples_->Accumulate(value, count);
@@ -990,7 +991,7 @@ void ScaledLinearHistogram::AddScaledCount(Sample value, int64_t count) {
   if (count == 0)
     return;
   if (count < 0) {
-    NOTREACHED();
+    DUMP_WILL_BE_NOTREACHED_NORETURN();
     return;
   }
 

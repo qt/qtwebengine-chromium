@@ -5,8 +5,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_INLINE_LINE_BREAKER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_INLINE_LINE_BREAKER_H_
 
+#include <optional>
+
 #include "base/check_op.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/exclusions/line_layout_opportunity.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_item_result.h"
@@ -29,6 +30,7 @@ class LineBreakCandidateContext;
 class LineInfo;
 class ResolvedTextLayoutAttributesIterator;
 class ShapingLineBreaker;
+struct AnnotationBreakTokenData;
 
 // The line breaker needs to know which mode its in to properly handle floats.
 enum class LineBreakerMode { kContent, kMinContent, kMaxContent };
@@ -51,7 +53,7 @@ class CORE_EXPORT LineBreaker {
               ExclusionSpace*);
   ~LineBreaker();
 
-  const InlineItemsData& ItemsData() const { return items_data_; }
+  const InlineItemsData& ItemsData() const { return *items_data_; }
 
   // True if the last line has `box-decoration-break: clone`, which affected the
   // size.
@@ -118,11 +120,17 @@ class CORE_EXPORT LineBreaker {
   bool CanBreakInside(const LineInfo& line_info);
   bool CanBreakInside(const InlineItemResult& item_result);
 
+  // This LineBreaker handles only [start, end_item_index) of `Items()`.
+  void SetInputRange(InlineItemTextIndex start,
+                     wtf_size_t end_item_index,
+                     WhitespaceState initial_whitespace_state,
+                     const LineBreaker* parent);
+
  private:
   Document& GetDocument() const { return node_.GetDocument(); }
 
   const String& Text() const { return text_content_; }
-  const HeapVector<InlineItem>& Items() const { return items_data_.items; }
+  const HeapVector<InlineItem>& Items() const { return items_data_->items; }
 
   String TextContentForLineBreak() const;
 
@@ -181,20 +189,25 @@ class CORE_EXPORT LineBreaker {
                                    const InlineItem&,
                                    const ShapeResult&,
                                    LineInfo*);
+  bool HandleTextForFastMinContentOld(InlineItemResult*,
+                                      const InlineItem&,
+                                      const ShapeResult&,
+                                      LineInfo*);
   void HandleEmptyText(const InlineItem& item, LineInfo*);
 
   const ShapeResultView* TruncateLineEndResult(const LineInfo&,
                                                const InlineItemResult&,
                                                unsigned end_offset);
   void UpdateShapeResult(const LineInfo&, InlineItemResult*);
-  scoped_refptr<ShapeResult> ShapeText(const InlineItem&,
-                                       unsigned start,
-                                       unsigned end,
-                                       ShapeOptions = ShapeOptions());
+  const ShapeResult* ShapeText(const InlineItem&,
+                               unsigned start,
+                               unsigned end,
+                               ShapeOptions = ShapeOptions());
 
   void HandleTrailingSpaces(const InlineItem&, LineInfo*);
   void HandleTrailingSpaces(const InlineItem&, const ShapeResult*, LineInfo*);
   void RemoveTrailingCollapsibleSpace(LineInfo*);
+  void SplitTrailingBidiPreservedSpace(LineInfo*);
   LayoutUnit TrailingCollapsibleSpaceWidth(LineInfo*);
   void ComputeTrailingCollapsibleSpace(LineInfo*);
   void RewindTrailingOpenTags(LineInfo*);
@@ -208,6 +221,23 @@ class CORE_EXPORT LineBreaker {
                            LineInfo*);
   void ComputeMinMaxContentSizeForBlockChild(const InlineItem&,
                                              InlineItemResult*);
+  // Returns false if we can't handle the current InlineItem as a ruby.
+  bool HandleRuby(LineInfo* line_info);
+  // `mode`: Must be kMaxContent or kContent.
+  // `limit`: Must be non-negative or kIndefiniteSize, which means no auto-wrap.
+  LineInfo CreateSubLineInfo(InlineItemTextIndex start,
+                             wtf_size_t end_item_index,
+                             LineBreakerMode mode,
+                             LayoutUnit limit,
+                             WhitespaceState initial_whitespace_state);
+  InlineItemResult* AddRubyColumnResult(
+      const InlineItem& item,
+      const LineInfo& base_line_info,
+      const HeapVector<LineInfo, 1>& annotation_line_list,
+      const Vector<AnnotationBreakTokenData, 1>& annotation_data_list,
+      LayoutUnit ruby_size,
+      LineInfo& line_info);
+  bool CanBreakAfterRubyColumn(const InlineItemResult& column_result) const;
 
   bool CanBreakAfterAtomicInline(const InlineItem& item) const;
   bool CanBreakAfter(const InlineItem& item) const;
@@ -216,13 +246,14 @@ class CORE_EXPORT LineBreaker {
   //    kNoBreakSpaceCharacter (U+00A0) if |sticky_images_quirk_|.
   bool MayBeAtomicInline(wtf_size_t offset) const;
   const InlineItem* TryGetAtomicInlineItemAfter(const InlineItem& item) const;
+  unsigned IgnorableBidiControlLength(const InlineItem& item) const;
 
   bool ShouldPushFloatAfterLine(UnpositionedFloat*, LineInfo*);
   void HandleFloat(const InlineItem&,
                    const BlockBreakToken* float_break_token,
                    LineInfo*);
   void UpdateLineOpportunity();
-  void RewindFloats(unsigned new_end, InlineItemResults& item_results);
+  void RewindFloats(unsigned new_end, LineInfo&, InlineItemResults&);
 
   void HandleInitialLetter(const InlineItem&, LineInfo*);
   void HandleOutOfFlowPositioned(const InlineItem&, LineInfo*);
@@ -245,6 +276,7 @@ class CORE_EXPORT LineBreaker {
   bool IsPreviousItemOfType(InlineItem::InlineItemType);
   void MoveToNextOf(const InlineItem&);
   void MoveToNextOf(const InlineItemResult&);
+  bool IsAtEnd() const { return current_.item_index >= end_item_index_; }
 
   void ComputeBaseDirection();
   void RecalcClonedBoxDecorations();
@@ -284,6 +316,9 @@ class CORE_EXPORT LineBreaker {
   // |WhitespaceState| of the current end. When a line is broken, this indicates
   // the state of trailing whitespaces.
   WhitespaceState trailing_whitespace_ = WhitespaceState::kUnknown;
+  // The state just after starting BreakLine(). This can be overridden by
+  // SetInputRange().
+  WhitespaceState initial_whitespace_ = WhitespaceState::kLeading;
 
   // The current position from inline_start. Unlike InlineLayoutAlgorithm
   // that computes position in visual order, this position in logical order.
@@ -312,6 +347,9 @@ class CORE_EXPORT LineBreaker {
 
   // True when current box allows line wrapping.
   bool auto_wrap_ = false;
+
+  // Disallow line wrapping even if the ComputedStyle allows it.
+  bool disallow_auto_wrap_ = false;
 
   // True when current box should fallback to break anywhere if it overflows.
   bool break_anywhere_if_overflow_ = false;
@@ -348,11 +386,18 @@ class CORE_EXPORT LineBreaker {
   // same flow.
   bool resume_block_in_inline_in_same_flow_ = false;
 
+  // TODO(crbug.com/333630754): Remove when `FasterMinContent` is stabilized.
+  bool use_faster_min_content_ = false;
+
 #if DCHECK_IS_ON()
   bool has_considered_creating_break_token_ = false;
 #endif
 
-  const InlineItemsData& items_data_;
+  const InlineItemsData* items_data_;
+
+  // `end_item_index_` is usually `Items().size()`.
+  // SetInputRange() updates it.
+  wtf_size_t end_item_index_;
 
   // The text content of this node. This is same as |items_data_.text_content|
   // except when sticky images quirk is needed. See
@@ -371,7 +416,7 @@ class CORE_EXPORT LineBreaker {
   bool previous_line_had_forced_break_ = false;
   const Hyphenation* hyphenation_ = nullptr;
 
-  absl::optional<wtf_size_t> hyphen_index_;
+  std::optional<wtf_size_t> hyphen_index_;
   bool has_any_hyphens_ = false;
 
   // Cache the result of |ComputeTrailingCollapsibleSpace| to avoid shaping
@@ -383,7 +428,7 @@ class CORE_EXPORT LineBreaker {
     InlineItemResult* item_result;
     const ShapeResultView* collapsed_shape_result;
   };
-  absl::optional<TrailingCollapsibleSpace> trailing_collapsible_space_;
+  std::optional<TrailingCollapsibleSpace> trailing_collapsible_space_;
 
   LayoutUnit override_available_width_;
 
@@ -398,6 +443,7 @@ class CORE_EXPORT LineBreaker {
 
   // Keep the last item |HandleTextForFastMinContent()| has handled. This is
   // used to fallback the last word to |HandleText()|.
+  // TODO(crbug.com/333630754): Remove when `FasterMinContent` is stabilized.
   const InlineItem* fast_min_content_item_ = nullptr;
 
   // The current base direction for the bidi algorithm.
@@ -416,10 +462,13 @@ class CORE_EXPORT LineBreaker {
     wtf_size_t from_item_index;
     wtf_size_t to_index;
   };
-  absl::optional<RewindIndex> last_rewind_;
+  std::optional<RewindIndex> last_rewind_;
 
   // This has a valid object if is_svg_text_.
   std::unique_ptr<ResolvedTextLayoutAttributesIterator> svg_resolved_iterator_;
+
+  // This member is available after calling SetInputRange().
+  const LineBreaker* parent_breaker_ = nullptr;
 };
 
 }  // namespace blink

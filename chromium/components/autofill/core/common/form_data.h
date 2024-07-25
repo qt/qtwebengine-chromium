@@ -7,6 +7,7 @@
 
 #include <limits>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -117,8 +118,8 @@ struct FrameTokenWithPredecessor {
 // The input B is an unassociated and unowned field.
 // The input C is an unassociated but an owned field.
 //
-// TODO(crbug.com/1243730): Currently, Autofill ignores unowned fields in shadow
-// DOMs.
+// TODO(crbug.com/40195555): Currently, Autofill ignores unowned fields in
+// shadow DOMs.
 //
 // The unowned fields of the frame constitute that frame's *unowned form*.
 //
@@ -132,6 +133,7 @@ struct FrameTokenWithPredecessor {
 // [4] https://html.spec.whatwg.org/multipage/input.html#attr-input-type
 // clang-format on
 struct FormData {
+  struct FillData;
   // Returns true if many members of forms |a| and |b| are identical.
   //
   // "Many" is intended to be "all", but currently the following members are not
@@ -163,12 +165,11 @@ struct FormData {
   // of identifier because FormData is a value type).
   //
   // Must not be leaked to renderer process. See FormGlobalId for details.
-  FormGlobalId global_id() const { return {host_frame, unique_renderer_id}; }
+  FormGlobalId global_id() const { return {host_frame, renderer_id}; }
 
-  // TODO(crbug/1211834): This function is deprecated. Use FormData::DeepEqual()
-  // instead.
-  // Returns true if two forms are the same, not counting the values of the form
-  // elements.
+  // TODO(crbug.com/40183094): This function is deprecated. Use
+  // FormData::DeepEqual() instead. Returns true if two forms are the same, not
+  // counting the values of the form elements.
   bool SameFormAs(const FormData& other) const;
 
   // Returns a pointer to the field if found, otherwise returns nullptr.
@@ -179,7 +180,7 @@ struct FormData {
 
   // Finds a field in the FormData by its name or id.
   // Returns a pointer to the field if found, otherwise returns nullptr.
-  FormFieldData* FindFieldByName(const base::StringPiece16 name_or_id);
+  FormFieldData* FindFieldByName(std::u16string_view name_or_id);
 
   // The id attribute of the form.
   std::u16string id_attribute;
@@ -194,7 +195,7 @@ struct FormData {
   // name attribute or the id_attribute value, which-ever is non-empty with
   // priority given to the name_attribute. This value is used when computing
   // form signatures.
-  // TODO(crbug/896689): remove this and use attributes/unique_id instead.
+  // TODO(crbug.com/40598703): remove this and use attributes/unique_id instead.
   std::u16string name;
 
   // Titles of form's buttons.
@@ -225,9 +226,6 @@ struct FormData {
   // trees. For details, see RenderFrameHost::GetMainFrame().
   url::Origin main_frame_origin;
 
-  // True if this form is a form tag.
-  bool is_form_tag = true;
-
   // A unique identifier of the containing frame. This value is not serialized
   // because LocalFrameTokens must not be leaked to other renderer processes.
   // See LocalFrameToken for details.
@@ -237,7 +235,7 @@ struct FormData {
   // form DOM elements in the same frame.
   // In the browser process, use global_id() instead.
   // See global_id() for details.
-  FormRendererId unique_renderer_id;
+  FormRendererId renderer_id;
 
   // A monotonically increasing counter that indicates the generation of the
   // form: if `f.version < g.version`, then `f` has been received from the
@@ -245,7 +243,7 @@ struct FormData {
   //
   // This is intended only for AutofillManager's form cache as a workaround for
   // the cache-downdating problem.
-  // TODO(crbug.com/1117028): Remove once FormData objects aren't stored
+  // TODO(crbug.com/40144964): Remove once FormData objects aren't stored
   // globally anymore.
   FormVersion version;
 

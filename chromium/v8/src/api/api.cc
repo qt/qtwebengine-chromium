@@ -24,6 +24,7 @@
 #include "include/v8-primitive-object.h"
 #include "include/v8-profiler.h"
 #include "include/v8-source-location.h"
+#include "include/v8-template.h"
 #include "include/v8-unwinder-state.h"
 #include "include/v8-util.h"
 #include "include/v8-wasm.h"
@@ -86,6 +87,7 @@
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
+#include "src/objects/js-objects.h"
 #include "src/objects/js-promise-inl.h"
 #include "src/objects/js-regexp-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
@@ -101,6 +103,7 @@
 #include "src/objects/shared-function-info.h"
 #include "src/objects/slots.h"
 #include "src/objects/smi.h"
+#include "src/objects/string.h"
 #include "src/objects/synthetic-module-inl.h"
 #include "src/objects/templates.h"
 #include "src/objects/value-serializer.h"
@@ -537,7 +540,7 @@ SnapshotCreator::SnapshotCreator(Isolate* v8_isolate,
                                  const intptr_t* external_references,
                                  const StartupData* existing_snapshot,
                                  bool owns_isolate)
-    : data_(new i::SnapshotCreatorImpl(
+    : impl_(new i::SnapshotCreatorImpl(
           reinterpret_cast<i::Isolate*>(v8_isolate), external_references,
           existing_snapshot, owns_isolate)) {}
 
@@ -546,50 +549,57 @@ SnapshotCreator::SnapshotCreator(const intptr_t* external_references,
     : SnapshotCreator(nullptr, external_references, existing_snapshot) {}
 
 SnapshotCreator::SnapshotCreator(const v8::Isolate::CreateParams& params)
-    : data_(new i::SnapshotCreatorImpl(params)) {}
+    : impl_(new i::SnapshotCreatorImpl(params)) {}
 
 SnapshotCreator::SnapshotCreator(v8::Isolate* isolate,
                                  const v8::Isolate::CreateParams& params)
-    : data_(new i::SnapshotCreatorImpl(reinterpret_cast<i::Isolate*>(isolate),
+    : impl_(new i::SnapshotCreatorImpl(reinterpret_cast<i::Isolate*>(isolate),
                                        params)) {}
 
 SnapshotCreator::~SnapshotCreator() {
-  DCHECK_NOT_NULL(data_);
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  delete impl;
+  DCHECK_NOT_NULL(impl_);
+  delete impl_;
 }
 
 Isolate* SnapshotCreator::GetIsolate() {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  return reinterpret_cast<v8::Isolate*>(impl->isolate());
+  return reinterpret_cast<v8::Isolate*>(impl_->isolate());
 }
 
 void SnapshotCreator::SetDefaultContext(
-    Local<Context> context, SerializeInternalFieldsCallback callback) {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  impl->SetDefaultContext(Utils::OpenHandle(*context), callback);
+    Local<Context> context,
+    SerializeInternalFieldsCallback internal_fields_serializer,
+    SerializeContextDataCallback context_data_serializer,
+    SerializeAPIWrapperCallback api_wrapper_serializer) {
+  impl_->SetDefaultContext(
+      Utils::OpenHandle(*context),
+      i::SerializeEmbedderFieldsCallback(internal_fields_serializer,
+                                         context_data_serializer,
+                                         api_wrapper_serializer));
 }
 
-size_t SnapshotCreator::AddContext(Local<Context> context,
-                                   SerializeInternalFieldsCallback callback) {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  return impl->AddContext(Utils::OpenHandle(*context), callback);
+size_t SnapshotCreator::AddContext(
+    Local<Context> context,
+    SerializeInternalFieldsCallback internal_fields_serializer,
+    SerializeContextDataCallback context_data_serializer,
+    SerializeAPIWrapperCallback api_wrapper_serializer) {
+  return impl_->AddContext(
+      Utils::OpenHandle(*context),
+      i::SerializeEmbedderFieldsCallback(internal_fields_serializer,
+                                         context_data_serializer,
+                                         api_wrapper_serializer));
 }
 
 size_t SnapshotCreator::AddData(i::Address object) {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  return impl->AddData(object);
+  return impl_->AddData(object);
 }
 
 size_t SnapshotCreator::AddData(Local<Context> context, i::Address object) {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  return impl->AddData(Utils::OpenHandle(*context), object);
+  return impl_->AddData(Utils::OpenHandle(*context), object);
 }
 
 StartupData SnapshotCreator::CreateBlob(
     SnapshotCreator::FunctionCodeHandling function_code_handling) {
-  auto impl = static_cast<i::SnapshotCreatorImpl*>(data_);
-  return impl->CreateBlob(function_code_handling);
+  return impl_->CreateBlob(function_code_handling);
 }
 
 bool StartupData::CanBeRehashed() const {
@@ -720,7 +730,7 @@ void ResourceConstraints::ConfigureDefaults(uint64_t physical_memory,
 namespace api_internal {
 void StackAllocated<true>::VerifyOnStack() const {
   if (internal::StackAllocatedCheck::Get()) {
-    internal::HandleHelper::VerifyOnStack(this);
+    DCHECK(::heap::base::Stack::IsOnStack(this));
   }
 }
 }  // namespace api_internal
@@ -754,51 +764,38 @@ void DisposeTracedReference(internal::Address* location) {
   TracedHandles::Destroy(location);
 }
 
-// static
-bool HandleHelper::IsOnStack(const void* ptr) {
-  return v8::base::Stack::GetCurrentStackPosition() <= ptr &&
-         ptr <= v8::base::Stack::GetStackStartUnchecked();
-}
-
-// static
-void HandleHelper::VerifyOnStack(const void* ptr) { DCHECK(IsOnStack(ptr)); }
-
-// static
-void HandleHelper::VerifyOnMainThread() {
-  // The following verifies that we are on the main thread, as
-  // LocalHeap::Current is not set in that case.
-  DCHECK_NULL(LocalHeap::Current());
-}
-
 #if V8_STATIC_ROOTS_BOOL
 
-// Initialize static root constants exposed in v8-internal.h.
+// Check static root constants exposed in v8-internal.h.
 
 namespace {
 constexpr InstanceTypeChecker::TaggedAddressRange kStringMapRange =
     *InstanceTypeChecker::UniqueMapRangeOfInstanceTypeRange(FIRST_STRING_TYPE,
                                                             LAST_STRING_TYPE);
-constexpr Tagged_t kFirstStringMapPtr = kStringMapRange.first;
-constexpr Tagged_t kLastStringMapPtr = kStringMapRange.second;
 }  // namespace
 
-#define EXPORTED_STATIC_ROOTS_MAPPING(V)                    \
+#define EXPORTED_STATIC_ROOTS_PTR_MAPPING(V)                \
   V(UndefinedValue, i::StaticReadOnlyRoot::kUndefinedValue) \
   V(NullValue, i::StaticReadOnlyRoot::kNullValue)           \
   V(TrueValue, i::StaticReadOnlyRoot::kTrueValue)           \
   V(FalseValue, i::StaticReadOnlyRoot::kFalseValue)         \
   V(EmptyString, i::StaticReadOnlyRoot::kempty_string)      \
   V(TheHoleValue, i::StaticReadOnlyRoot::kTheHoleValue)     \
-  V(FirstStringMap, kFirstStringMapPtr)                     \
-  V(LastStringMap, kLastStringMapPtr)
+  V(FirstStringMap, kStringMapRange.first)                  \
+  V(LastStringMap, kStringMapRange.second)
 
 static_assert(std::is_same<Internals::Tagged_t, Tagged_t>::value);
-#define DEF_STATIC_ROOT(name, internal_value)                        \
-  const Internals::Tagged_t Internals::StaticReadOnlyRoot::k##name = \
-      internal_value;
-EXPORTED_STATIC_ROOTS_MAPPING(DEF_STATIC_ROOT)
-#undef DEF_STATIC_ROOT
-#undef EXPORTED_STATIC_ROOTS_MAPPING
+// Ensure they have the correct value.
+#define CHECK_STATIC_ROOT(name, value) \
+  static_assert(Internals::StaticReadOnlyRoot::k##name == value);
+EXPORTED_STATIC_ROOTS_PTR_MAPPING(CHECK_STATIC_ROOT)
+#undef CHECK_STATIC_ROOT
+#define PLUS_ONE(...) +1
+static constexpr int kNumberOfCheckedStaticRoots =
+    0 EXPORTED_STATIC_ROOTS_PTR_MAPPING(PLUS_ONE);
+#undef EXPORTED_STATIC_ROOTS_PTR_MAPPING
+static_assert(Internals::StaticReadOnlyRoot::kNumberOfExportedStaticRoots ==
+              kNumberOfCheckedStaticRoots);
 
 #endif  // V8_STATIC_ROOTS_BOOL
 
@@ -1126,22 +1123,13 @@ void Context::SetAlignedPointerInEmbedderData(int index, void* value) {
   i::Isolate* i_isolate = Utils::OpenDirectHandle(this)->GetIsolate();
   i::Handle<i::EmbedderDataArray> data =
       EmbedderDataFor(this, index, true, location);
-  bool ok =
-      i::EmbedderDataSlot(*data, index).store_aligned_pointer(i_isolate, value);
+  bool ok = i::EmbedderDataSlot(*data, index)
+                .store_aligned_pointer(i_isolate, *data, value);
   Utils::ApiCheck(ok, location, "Pointer is not aligned");
   DCHECK_EQ(value, GetAlignedPointerFromEmbedderData(index));
 }
 
 // --- T e m p l a t e ---
-
-static void InitializeTemplate(i::Tagged<i::TemplateInfo> that, int type,
-                               bool do_not_cache) {
-  that->set_number_of_properties(0);
-  that->set_tag(type);
-  int serial_number =
-      do_not_cache ? i::TemplateInfo::kDoNotCache : i::TemplateInfo::kUncached;
-  that->set_serial_number(serial_number);
-}
 
 void Template::Set(v8::Local<Name> name, v8::Local<Data> value,
                    v8::PropertyAttribute attribute) {
@@ -1176,58 +1164,32 @@ void Template::SetAccessorProperty(v8::Local<v8::Name> name,
                                    v8::Local<FunctionTemplate> getter,
                                    v8::Local<FunctionTemplate> setter,
                                    v8::PropertyAttribute attribute) {
-  Utils::ApiCheck(
-      getter.IsEmpty() ||
-          !IsUndefined(
-              Utils::OpenDirectHandle(*getter)->call_code(kAcquireLoad)),
-      "v8::Template::SetAccessorProperty", "Getter must have a call handler");
-  Utils::ApiCheck(
-      setter.IsEmpty() ||
-          !IsUndefined(
-              Utils::OpenDirectHandle(*setter)->call_code(kAcquireLoad)),
-      "v8::Template::SetAccessorProperty", "Setter must have a call handler");
-
   auto templ = Utils::OpenHandle(this);
   auto i_isolate = templ->GetIsolateChecked();
+  i::Handle<i::FunctionTemplateInfo> i_getter;
+  if (!getter.IsEmpty()) {
+    i_getter = Utils::OpenHandle(*getter);
+    Utils::ApiCheck(i_getter->has_callback(i_isolate),
+                    "v8::Template::SetAccessorProperty",
+                    "Getter must have a call handler");
+  }
+  i::Handle<i::FunctionTemplateInfo> i_setter;
+  if (!setter.IsEmpty()) {
+    i_setter = Utils::OpenHandle(*setter);
+    Utils::ApiCheck(i_setter->has_callback(i_isolate),
+                    "v8::Template::SetAccessorProperty",
+                    "Setter must have a call handler");
+  }
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   DCHECK(!name.IsEmpty());
   DCHECK(!getter.IsEmpty() || !setter.IsEmpty());
   i::HandleScope scope(i_isolate);
   i::ApiNatives::AddAccessorProperty(
-      i_isolate, templ, Utils::OpenHandle(*name),
-      Utils::OpenHandle(*getter, true), Utils::OpenHandle(*setter, true),
+      i_isolate, templ, Utils::OpenHandle(*name), i_getter, i_setter,
       static_cast<i::PropertyAttributes>(attribute));
 }
 
 // --- F u n c t i o n   T e m p l a t e ---
-static void InitializeFunctionTemplate(i::Tagged<i::FunctionTemplateInfo> info,
-                                       bool do_not_cache) {
-  InitializeTemplate(info, Consts::FUNCTION_TEMPLATE, do_not_cache);
-  info->set_flag(0, kRelaxedStore);
-}
-
-namespace {
-Local<ObjectTemplate> ObjectTemplateNew(i::Isolate* i_isolate,
-                                        v8::Local<FunctionTemplate> constructor,
-                                        bool do_not_cache) {
-  API_RCS_SCOPE(i_isolate, ObjectTemplate, New);
-  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  i::Handle<i::Struct> struct_obj = i_isolate->factory()->NewStruct(
-      i::OBJECT_TEMPLATE_INFO_TYPE, i::AllocationType::kOld);
-  auto obj = i::Handle<i::ObjectTemplateInfo>::cast(struct_obj);
-  {
-    // Disallow GC until all fields of obj have acceptable types.
-    i::DisallowGarbageCollection no_gc;
-    i::Tagged<i::ObjectTemplateInfo> raw = *obj;
-    InitializeTemplate(raw, Consts::OBJECT_TEMPLATE, do_not_cache);
-    raw->set_data(0);
-    if (!constructor.IsEmpty()) {
-      raw->set_constructor(*Utils::OpenDirectHandle(*constructor));
-    }
-  }
-  return Utils::ToLocal(obj);
-}
-}  // namespace
 
 Local<ObjectTemplate> FunctionTemplate::PrototypeTemplate() {
   auto self = Utils::OpenHandle(this);
@@ -1237,11 +1199,13 @@ Local<ObjectTemplate> FunctionTemplate::PrototypeTemplate() {
                                           i_isolate);
   if (i::IsUndefined(*heap_obj, i_isolate)) {
     // Do not cache prototype objects.
-    Local<ObjectTemplate> result =
-        ObjectTemplateNew(i_isolate, Local<FunctionTemplate>(), true);
+    constexpr bool do_not_cache = true;
+    i::Handle<i::ObjectTemplateInfo> proto_template =
+        i_isolate->factory()->NewObjectTemplateInfo(
+            i::Handle<i::FunctionTemplateInfo>(), do_not_cache);
     i::FunctionTemplateInfo::SetPrototypeTemplate(i_isolate, self,
-                                                  Utils::OpenHandle(*result));
-    return result;
+                                                  proto_template);
+    return Utils::ToLocal(proto_template);
   }
   return ToApiHandle<ObjectTemplate>(heap_obj, i_isolate);
 }
@@ -1271,48 +1235,35 @@ static void EnsureNotPublished(i::DirectHandle<i::FunctionTemplateInfo> info,
                   "FunctionTemplate already instantiated");
 }
 
-Local<FunctionTemplate> FunctionTemplateNew(
+i::Handle<i::FunctionTemplateInfo> FunctionTemplateNew(
     i::Isolate* i_isolate, FunctionCallback callback, v8::Local<Value> data,
     v8::Local<Signature> signature, int length, ConstructorBehavior behavior,
     bool do_not_cache,
     v8::Local<Private> cached_property_name = v8::Local<Private>(),
     SideEffectType side_effect_type = SideEffectType::kHasSideEffect,
-    const MemorySpan<const CFunction>& c_function_overloads = {},
-    uint8_t instance_type = 0,
-    uint8_t allowed_receiver_instance_type_range_start = 0,
-    uint8_t allowed_receiver_instance_type_range_end = 0) {
-  i::Handle<i::Struct> struct_obj = i_isolate->factory()->NewStruct(
-      i::FUNCTION_TEMPLATE_INFO_TYPE, i::AllocationType::kOld);
-  auto obj = i::Handle<i::FunctionTemplateInfo>::cast(struct_obj);
+    const MemorySpan<const CFunction>& c_function_overloads = {}) {
+  i::Handle<i::FunctionTemplateInfo> obj =
+      i_isolate->factory()->NewFunctionTemplateInfo(length, do_not_cache);
   {
     // Disallow GC until all fields of obj have acceptable types.
     i::DisallowGarbageCollection no_gc;
     i::Tagged<i::FunctionTemplateInfo> raw = *obj;
-    InitializeFunctionTemplate(raw, do_not_cache);
-    raw->set_length(length);
-    raw->set_undetectable(false);
-    raw->set_needs_access_check(false);
-    raw->set_accept_any_receiver(true);
     if (!signature.IsEmpty()) {
       raw->set_signature(*Utils::OpenDirectHandle(*signature));
     }
-    raw->set_cached_property_name(
-        cached_property_name.IsEmpty()
-            ? i::ReadOnlyRoots(i_isolate).the_hole_value()
-            : *Utils::OpenDirectHandle(*cached_property_name));
-    if (behavior == ConstructorBehavior::kThrow)
+    if (!cached_property_name.IsEmpty()) {
+      raw->set_cached_property_name(
+          *Utils::OpenDirectHandle(*cached_property_name));
+    }
+    if (behavior == ConstructorBehavior::kThrow) {
       raw->set_remove_prototype(true);
-    raw->SetInstanceType(instance_type);
-    raw->set_allowed_receiver_instance_type_range_start(
-        allowed_receiver_instance_type_range_start);
-    raw->set_allowed_receiver_instance_type_range_end(
-        allowed_receiver_instance_type_range_end);
+    }
   }
   if (callback != nullptr) {
     Utils::ToLocal(obj)->SetCallHandler(callback, data, side_effect_type,
                                         c_function_overloads);
   }
-  return Utils::ToLocal(obj);
+  return obj;
 }
 }  // namespace
 
@@ -1346,24 +1297,43 @@ Local<FunctionTemplate> FunctionTemplate::New(
     return Local<FunctionTemplate>();
   }
 
-  if (instance_type != 0) {
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  i::Handle<i::FunctionTemplateInfo> templ = FunctionTemplateNew(
+      i_isolate, callback, data, signature, length, behavior, false,
+      Local<Private>(), side_effect_type,
+      c_function ? MemorySpan<const CFunction>{c_function, 1}
+                 : MemorySpan<const CFunction>{});
+
+  if (instance_type) {
     if (!Utils::ApiCheck(
-            instance_type >= i::Internals::kFirstJSApiObjectType &&
-                instance_type <= i::Internals::kLastJSApiObjectType,
+            base::IsInRange(static_cast<int>(instance_type),
+                            i::Internals::kFirstEmbedderJSApiObjectType,
+                            i::Internals::kLastEmbedderJSApiObjectType),
             "FunctionTemplate::New",
             "instance_type is outside the range of valid JSApiObject types")) {
       return Local<FunctionTemplate>();
     }
+    templ->SetInstanceType(instance_type);
   }
 
-  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  return FunctionTemplateNew(
-      i_isolate, callback, data, signature, length, behavior, false,
-      Local<Private>(), side_effect_type,
-      c_function ? MemorySpan<const CFunction>{c_function, 1}
-                 : MemorySpan<const CFunction>{},
-      instance_type, allowed_receiver_instance_type_range_start,
-      allowed_receiver_instance_type_range_end);
+  if (allowed_receiver_instance_type_range_start ||
+      allowed_receiver_instance_type_range_end) {
+    if (!Utils::ApiCheck(i::Internals::kFirstEmbedderJSApiObjectType <=
+                                 allowed_receiver_instance_type_range_start &&
+                             allowed_receiver_instance_type_range_start <=
+                                 allowed_receiver_instance_type_range_end &&
+                             allowed_receiver_instance_type_range_end <=
+                                 i::Internals::kLastEmbedderJSApiObjectType,
+                         "FunctionTemplate::New",
+                         "allowed receiver instance type range is outside the "
+                         "range of valid JSApiObject types")) {
+      return Local<FunctionTemplate>();
+    }
+    templ->SetAllowedReceiverInstanceTypeRange(
+        allowed_receiver_instance_type_range_start,
+        allowed_receiver_instance_type_range_end);
+  }
+  return Utils::ToLocal(templ);
 }
 
 Local<FunctionTemplate> FunctionTemplate::NewWithCFunctionOverloads(
@@ -1383,9 +1353,10 @@ Local<FunctionTemplate> FunctionTemplate::NewWithCFunctionOverloads(
   }
 
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  return FunctionTemplateNew(i_isolate, callback, data, signature, length,
-                             behavior, false, Local<Private>(),
-                             side_effect_type, c_function_overloads);
+  i::Handle<i::FunctionTemplateInfo> templ = FunctionTemplateNew(
+      i_isolate, callback, data, signature, length, behavior, false,
+      Local<Private>(), side_effect_type, c_function_overloads);
+  return Utils::ToLocal(templ);
 }
 
 Local<FunctionTemplate> FunctionTemplate::NewWithCache(
@@ -1395,9 +1366,10 @@ Local<FunctionTemplate> FunctionTemplate::NewWithCache(
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
   API_RCS_SCOPE(i_isolate, FunctionTemplate, NewWithCache);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  return FunctionTemplateNew(i_isolate, callback, data, signature, length,
-                             ConstructorBehavior::kAllow, false, cache_property,
-                             side_effect_type);
+  i::Handle<i::FunctionTemplateInfo> templ = FunctionTemplateNew(
+      i_isolate, callback, data, signature, length, ConstructorBehavior::kAllow,
+      false, cache_property, side_effect_type);
+  return Utils::ToLocal(templ);
 }
 
 Local<Signature> Signature::New(Isolate* v8_isolate,
@@ -1420,14 +1392,15 @@ void FunctionTemplate::SetCallHandler(
   i::Isolate* i_isolate = info->GetIsolateChecked();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   i::HandleScope scope(i_isolate);
-  i::Handle<i::CallHandlerInfo> obj = i_isolate->factory()->NewCallHandlerInfo(
-      side_effect_type == SideEffectType::kHasNoSideEffect);
-  obj->set_owner_template(*info);
-  obj->set_callback(i_isolate, reinterpret_cast<i::Address>(callback));
+  info->set_has_side_effects(side_effect_type !=
+                             SideEffectType::kHasNoSideEffect);
+  info->set_callback(i_isolate, reinterpret_cast<i::Address>(callback));
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
   }
-  obj->set_data(*Utils::OpenDirectHandle(*data));
+  // "Release" callback and callback data fields.
+  info->set_callback_data(*Utils::OpenDirectHandle(*data), kReleaseStore);
+
   if (!c_function_overloads.empty()) {
     // Stores the data for a sequence of CFunction overloads into a single
     // FixedArray, as [address_0, signature_0, ... address_n-1, signature_n-1].
@@ -1451,7 +1424,6 @@ void FunctionTemplate::SetCallHandler(
     i::FunctionTemplateInfo::SetCFunctionOverloads(i_isolate, info,
                                                    function_overloads);
   }
-  info->set_call_code(*obj, kReleaseStore);
 }
 
 namespace {
@@ -1494,24 +1466,25 @@ i::Handle<i::AccessorInfo> MakeAccessorInfo(i::Isolate* i_isolate,
 }  // namespace
 
 Local<ObjectTemplate> FunctionTemplate::InstanceTemplate() {
-  auto handle = Utils::OpenHandle(this, true);
-  if (!Utils::ApiCheck(!handle.is_null(),
+  auto constructor = Utils::OpenHandle(this, true);
+  if (!Utils::ApiCheck(!constructor.is_null(),
                        "v8::FunctionTemplate::InstanceTemplate()",
                        "Reading from empty handle")) {
     return Local<ObjectTemplate>();
   }
-  i::Isolate* i_isolate = handle->GetIsolateChecked();
+  i::Isolate* i_isolate = constructor->GetIsolateChecked();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  if (i::IsUndefined(handle->GetInstanceTemplate(), i_isolate)) {
-    Local<ObjectTemplate> templ =
-        ObjectTemplate::New(i_isolate, ToApiHandle<FunctionTemplate>(handle));
-    i::FunctionTemplateInfo::SetInstanceTemplate(i_isolate, handle,
-                                                 Utils::OpenHandle(*templ));
+  auto maybe_templ = constructor->GetInstanceTemplate();
+  if (!i::IsUndefined(maybe_templ, i_isolate)) {
+    return Utils::ToLocal(
+        i::direct_handle(i::ObjectTemplateInfo::cast(maybe_templ), i_isolate),
+        i_isolate);
   }
-  return Utils::ToLocal(i::direct_handle(i::ObjectTemplateInfo::cast(
-                                             handle->GetInstanceTemplate()),
-                                         i_isolate),
-                        i_isolate);
+  constexpr bool do_not_cache = false;
+  i::Handle<i::ObjectTemplateInfo> templ =
+      i_isolate->factory()->NewObjectTemplateInfo(constructor, do_not_cache);
+  i::FunctionTemplateInfo::SetInstanceTemplate(i_isolate, constructor, templ);
+  return Utils::ToLocal(templ);
 }
 
 void FunctionTemplate::SetLength(int length) {
@@ -1558,12 +1531,14 @@ void FunctionTemplate::RemovePrototype() {
 
 Local<ObjectTemplate> ObjectTemplate::New(
     Isolate* v8_isolate, v8::Local<FunctionTemplate> constructor) {
-  return New(reinterpret_cast<i::Isolate*>(v8_isolate), constructor);
-}
-
-Local<ObjectTemplate> ObjectTemplate::New(
-    i::Isolate* i_isolate, v8::Local<FunctionTemplate> constructor) {
-  return ObjectTemplateNew(i_isolate, constructor, false);
+  auto i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
+  API_RCS_SCOPE(i_isolate, ObjectTemplate, New);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  constexpr bool do_not_cache = false;
+  i::Handle<i::ObjectTemplateInfo> obj =
+      i_isolate->factory()->NewObjectTemplateInfo(
+          Utils::OpenDirectHandle(*constructor, true), do_not_cache);
+  return Utils::ToLocal(obj);
 }
 
 namespace {
@@ -1613,41 +1588,6 @@ void TemplateSetAccessor(Template* template_obj, v8::Local<Name> name,
 }
 }  // namespace
 
-void Template::SetNativeDataProperty(v8::Local<String> name,
-                                     AccessorGetterCallback getter,
-                                     AccessorSetterCallback setter,
-                                     v8::Local<Value> data,
-                                     PropertyAttribute attribute,
-                                     v8::AccessControl settings,
-                                     SideEffectType getter_side_effect_type,
-                                     SideEffectType setter_side_effect_type) {
-  TemplateSetAccessor(this, name, getter, setter, data, attribute, true, false,
-                      getter_side_effect_type, setter_side_effect_type);
-}
-
-void Template::SetNativeDataProperty(v8::Local<Name> name,
-                                     AccessorNameGetterCallback getter,
-                                     AccessorNameSetterCallback setter,
-                                     v8::Local<Value> data,
-                                     PropertyAttribute attribute,
-                                     v8::AccessControl settings,
-                                     SideEffectType getter_side_effect_type,
-                                     SideEffectType setter_side_effect_type) {
-  TemplateSetAccessor(this, name, getter, setter, data, attribute, true, false,
-                      getter_side_effect_type, setter_side_effect_type);
-}
-
-void Template::SetNativeDataProperty(v8::Local<String> name,
-                                     AccessorGetterCallback getter,
-                                     AccessorSetterCallback setter,
-                                     v8::Local<Value> data,
-                                     PropertyAttribute attribute,
-                                     SideEffectType getter_side_effect_type,
-                                     SideEffectType setter_side_effect_type) {
-  TemplateSetAccessor(this, name, getter, setter, data, attribute, true, false,
-                      getter_side_effect_type, setter_side_effect_type);
-}
-
 void Template::SetNativeDataProperty(v8::Local<Name> name,
                                      AccessorNameGetterCallback getter,
                                      AccessorNameSetterCallback setter,
@@ -1682,18 +1622,6 @@ void Template::SetIntrinsicDataProperty(Local<Name> name, Intrinsic intrinsic,
                                  static_cast<i::PropertyAttributes>(attribute));
 }
 
-void ObjectTemplate::SetAccessor(v8::Local<String> name,
-                                 AccessorGetterCallback getter,
-                                 AccessorSetterCallback setter,
-                                 v8::Local<Value> data,
-                                 PropertyAttribute attribute,
-                                 SideEffectType getter_side_effect_type,
-                                 SideEffectType setter_side_effect_type) {
-  TemplateSetAccessor(this, name, getter, setter, data, attribute,
-                      i::v8_flags.disable_old_api_accessors, false,
-                      getter_side_effect_type, setter_side_effect_type);
-}
-
 void ObjectTemplate::SetAccessor(v8::Local<Name> name,
                                  AccessorNameGetterCallback getter,
                                  AccessorNameSetterCallback setter,
@@ -1712,7 +1640,8 @@ template <typename Getter, typename Setter, typename Query, typename Descriptor,
 i::Handle<i::InterceptorInfo> CreateInterceptorInfo(
     i::Isolate* i_isolate, Getter getter, Setter setter, Query query,
     Descriptor descriptor, Deleter remover, Enumerator enumerator,
-    Definer definer, Local<Value> data, PropertyHandlerFlags flags) {
+    Definer definer, Local<Value> data,
+    base::Flags<PropertyHandlerFlags> flags) {
   auto obj =
       i::Handle<i::InterceptorInfo>::cast(i_isolate->factory()->NewStruct(
           i::INTERCEPTOR_INFO_TYPE, i::AllocationType::kOld));
@@ -1734,13 +1663,12 @@ i::Handle<i::InterceptorInfo> CreateInterceptorInfo(
     SET_FIELD_WRAPPED(i_isolate, obj, set_definer, definer);
   }
   obj->set_can_intercept_symbols(
-      !(static_cast<int>(flags) &
-        static_cast<int>(PropertyHandlerFlags::kOnlyInterceptStrings)));
-  obj->set_non_masking(static_cast<int>(flags) &
-                       static_cast<int>(PropertyHandlerFlags::kNonMasking));
-  obj->set_has_no_side_effect(
-      static_cast<int>(flags) &
-      static_cast<int>(PropertyHandlerFlags::kHasNoSideEffect));
+      !(flags & PropertyHandlerFlags::kOnlyInterceptStrings));
+  obj->set_non_masking(flags & PropertyHandlerFlags::kNonMasking);
+  obj->set_has_no_side_effect(flags & PropertyHandlerFlags::kHasNoSideEffect);
+
+  obj->set_has_new_callbacks_signature(
+      flags & PropertyHandlerFlags::kInternalNewCallbacksSignatures);
 
   if (data.IsEmpty()) {
     data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
@@ -1754,7 +1682,8 @@ template <typename Getter, typename Setter, typename Query, typename Descriptor,
 i::Handle<i::InterceptorInfo> CreateNamedInterceptorInfo(
     i::Isolate* i_isolate, Getter getter, Setter setter, Query query,
     Descriptor descriptor, Deleter remover, Enumerator enumerator,
-    Definer definer, Local<Value> data, PropertyHandlerFlags flags) {
+    Definer definer, Local<Value> data,
+    base::Flags<PropertyHandlerFlags> flags) {
   auto interceptor =
       CreateInterceptorInfo(i_isolate, getter, setter, query, descriptor,
                             remover, enumerator, definer, data, flags);
@@ -1767,7 +1696,8 @@ template <typename Getter, typename Setter, typename Query, typename Descriptor,
 i::Handle<i::InterceptorInfo> CreateIndexedInterceptorInfo(
     i::Isolate* i_isolate, Getter getter, Setter setter, Query query,
     Descriptor descriptor, Deleter remover, Enumerator enumerator,
-    Definer definer, Local<Value> data, PropertyHandlerFlags flags) {
+    Definer definer, Local<Value> data,
+    base::Flags<PropertyHandlerFlags> flags) {
   auto interceptor =
       CreateInterceptorInfo(i_isolate, getter, setter, query, descriptor,
                             remover, enumerator, definer, data, flags);
@@ -1895,15 +1825,17 @@ void ObjectTemplate::SetCallAsFunctionHandler(FunctionCallback callback,
   i::HandleScope scope(i_isolate);
   auto cons = EnsureConstructor(i_isolate, this);
   EnsureNotPublished(cons, "v8::ObjectTemplate::SetCallAsFunctionHandler");
-  i::Handle<i::CallHandlerInfo> obj =
-      i_isolate->factory()->NewCallHandlerInfo();
-  obj->set_owner_template(*Utils::OpenDirectHandle(this));
-  obj->set_callback(i_isolate, reinterpret_cast<i::Address>(callback));
-  if (data.IsEmpty()) {
-    data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
-  }
-  obj->set_data(*Utils::OpenDirectHandle(*data));
-  i::FunctionTemplateInfo::SetInstanceCallHandler(i_isolate, cons, obj);
+  DCHECK_NOT_NULL(callback);
+
+  // This template is just a container for callback and data values and thus
+  // it's not supposed to be instantiated. Don't cache it.
+  constexpr bool do_not_cache = true;
+  constexpr int length = 0;
+  i::Handle<i::FunctionTemplateInfo> templ =
+      i_isolate->factory()->NewFunctionTemplateInfo(length, do_not_cache);
+  templ->set_is_object_template_call_handler(true);
+  Utils::ToLocal(templ)->SetCallHandler(callback, data);
+  i::FunctionTemplateInfo::SetInstanceCallHandler(i_isolate, cons, templ);
 }
 
 int ObjectTemplate::InternalFieldCount() const {
@@ -1947,6 +1879,24 @@ void ObjectTemplate::SetCodeLike() {
   i::Isolate* i_isolate = self->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   self->set_code_like(true);
+}
+
+Local<DictionaryTemplate> DictionaryTemplate::New(
+    Isolate* isolate, MemorySpan<const std::string_view> names) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  API_RCS_SCOPE(i_isolate, DictionaryTemplate, New);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  return Utils::ToLocal(i::DictionaryTemplateInfo::Create(i_isolate, names));
+}
+
+Local<Object> DictionaryTemplate::NewInstance(
+    Local<Context> context, MemorySpan<MaybeLocal<Value>> property_values) {
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
+  API_RCS_SCOPE(i_isolate, DictionaryTemplate, NewInstance);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  auto self = Utils::OpenDirectHandle(this);
+  return ToApiHandle<Object>(i::DictionaryTemplateInfo::NewInstance(
+      Utils::OpenHandle(*context), self, property_values));
 }
 
 // --- S c r i p t s ---
@@ -2217,10 +2167,36 @@ std::vector<int> Script::GetProducedCompileHints() const {
       CHECK(IsSmi(item));
       result.push_back(i::Smi::ToInt(item));
     }
-    // Clear the data; the embedder can still request more data later, but it'll
-    // have to keep track of the original data itself.
-    script->set_compiled_lazy_function_positions(
-        i::ReadOnlyRoots(i_isolate).undefined_value());
+  }
+  return result;
+}
+
+Local<CompileHintsCollector> Script::GetCompileHintsCollector() const {
+  i::DisallowGarbageCollection no_gc;
+  auto func = Utils::OpenDirectHandle(this);
+  i::Isolate* i_isolate = func->GetIsolate();
+  i::Tagged<i::SharedFunctionInfo> sfi = func->shared();
+  CHECK(IsScript(sfi->script()));
+  i::Handle<i::Script> script(i::Script::cast(sfi->script()), i_isolate);
+  return ToApiHandle<CompileHintsCollector>(script);
+}
+
+std::vector<int> CompileHintsCollector::GetCompileHints(
+    Isolate* v8_isolate) const {
+  i::DisallowGarbageCollection no_gc;
+  auto script = Utils::OpenDirectHandle(this);
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
+  i::Tagged<i::Object> maybe_array_list =
+      script->compiled_lazy_function_positions();
+  std::vector<int> result;
+  if (!IsUndefined(maybe_array_list, i_isolate)) {
+    i::Tagged<i::ArrayList> array_list = i::ArrayList::cast(maybe_array_list);
+    result.reserve(array_list->length());
+    for (int i = 0; i < array_list->length(); ++i) {
+      i::Tagged<i::Object> item = array_list->get(i);
+      CHECK(IsSmi(item));
+      result.push_back(i::Smi::ToInt(item));
+    }
   }
   return result;
 }
@@ -2294,11 +2270,11 @@ int ModuleRequest::GetSourceOffset() const {
   return Utils::OpenDirectHandle(this)->position();
 }
 
-Local<FixedArray> ModuleRequest::GetImportAssertions() const {
+Local<FixedArray> ModuleRequest::GetImportAttributes() const {
   auto self = Utils::OpenDirectHandle(this);
   i::Isolate* i_isolate = self->GetIsolate();
   return ToApiHandle<FixedArray>(
-      i::direct_handle(self->import_assertions(), i_isolate), i_isolate);
+      i::direct_handle(self->import_attributes(), i_isolate), i_isolate);
 }
 
 Module::Status Module::GetStatus() const {
@@ -2460,16 +2436,6 @@ MaybeLocal<Value> Module::Evaluate(Local<Context> context) {
 
 Local<Module> Module::CreateSyntheticModule(
     Isolate* v8_isolate, Local<String> module_name,
-    const std::vector<Local<String>>& export_names,
-    v8::Module::SyntheticModuleEvaluationSteps evaluation_steps) {
-  return CreateSyntheticModule(
-      v8_isolate, module_name,
-      MemorySpan<const Local<String>>(export_names.begin(), export_names.end()),
-      evaluation_steps);
-}
-
-Local<Module> Module::CreateSyntheticModule(
-    Isolate* v8_isolate, Local<String> module_name,
     const MemorySpan<const Local<String>>& export_names,
     v8::Module::SyntheticModuleEvaluationSteps evaluation_steps) {
   auto i_isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
@@ -2506,33 +2472,6 @@ Maybe<bool> Module::SetSyntheticModuleExport(Isolate* v8_isolate,
                       .IsNothing();
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return Just(true);
-}
-
-std::vector<std::tuple<Local<Module>, Local<Message>>>
-Module::GetStalledTopLevelAwaitMessage(Isolate* isolate) {
-  auto i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  auto self = Utils::OpenDirectHandle(this);
-  Utils::ApiCheck(i::IsSourceTextModule(*self),
-                  "v8::Module::GetStalledTopLevelAwaitMessage",
-                  "v8::Module::GetStalledTopLevelAwaitMessage must only be "
-                  "called on a SourceTextModule");
-  std::vector<
-      std::tuple<i::Handle<i::SourceTextModule>, i::Handle<i::JSMessageObject>>>
-      stalled_awaits = i::DirectHandle<i::SourceTextModule>::cast(self)
-                           ->GetStalledTopLevelAwaitMessages(i_isolate);
-
-  std::vector<std::tuple<Local<Module>, Local<Message>>> result;
-  size_t stalled_awaits_count = stalled_awaits.size();
-  if (stalled_awaits_count == 0) {
-    return result;
-  }
-  result.reserve(stalled_awaits_count);
-  for (size_t i = 0; i < stalled_awaits_count; ++i) {
-    auto [module, message] = stalled_awaits[i];
-    result.push_back(std::make_tuple(ToApiHandle<Module>(module),
-                                     ToApiHandle<Message>(message)));
-  }
-  return result;
 }
 
 std::pair<LocalVector<Module>, LocalVector<Message>>
@@ -2695,119 +2634,68 @@ MaybeLocal<Module> ScriptCompiler::CompileModule(
 
 // static
 V8_WARN_UNUSED_RESULT MaybeLocal<Function> ScriptCompiler::CompileFunction(
-    Local<Context> context, Source* source, size_t arguments_count,
-    Local<String> arguments[], size_t context_extension_count,
-    Local<Object> context_extensions[], CompileOptions options,
-    NoCacheReason no_cache_reason) {
-  return CompileFunctionInternal(context, source, arguments_count, arguments,
-                                 context_extension_count, context_extensions,
-                                 options, no_cache_reason, nullptr);
-}
-
-#ifdef V8_SCRIPTORMODULE_LEGACY_LIFETIME
-// static
-MaybeLocal<Function> ScriptCompiler::CompileFunctionInContext(
-    Local<Context> context, Source* source, size_t arguments_count,
-    Local<String> arguments[], size_t context_extension_count,
-    Local<Object> context_extensions[], CompileOptions options,
-    NoCacheReason no_cache_reason,
-    Local<ScriptOrModule>* script_or_module_out) {
-  return CompileFunctionInternal(
-      context, source, arguments_count, arguments, context_extension_count,
-      context_extensions, options, no_cache_reason, script_or_module_out);
-}
-#endif  // V8_SCRIPTORMODULE_LEGACY_LIFETIME
-
-MaybeLocal<Function> ScriptCompiler::CompileFunctionInternal(
     Local<Context> v8_context, Source* source, size_t arguments_count,
     Local<String> arguments[], size_t context_extension_count,
     Local<Object> context_extensions[], CompileOptions options,
-    NoCacheReason no_cache_reason,
-    Local<ScriptOrModule>* script_or_module_out) {
-  Local<Function> result;
+    NoCacheReason no_cache_reason) {
+  PREPARE_FOR_EXECUTION(v8_context, ScriptCompiler, CompileFunction);
+  TRACE_EVENT_CALL_STATS_SCOPED(i_isolate, "v8", "V8.ScriptCompiler");
 
-  {
-    PREPARE_FOR_EXECUTION(v8_context, ScriptCompiler, CompileFunction);
-    TRACE_EVENT_CALL_STATS_SCOPED(i_isolate, "v8", "V8.ScriptCompiler");
+  DCHECK(options == CompileOptions::kConsumeCodeCache ||
+         options == CompileOptions::kEagerCompile ||
+         options == CompileOptions::kNoCompileOptions);
 
-    DCHECK(options == CompileOptions::kConsumeCodeCache ||
-           options == CompileOptions::kEagerCompile ||
-           options == CompileOptions::kNoCompileOptions);
+  i::Handle<i::Context> context = Utils::OpenHandle(*v8_context);
 
-    i::Handle<i::Context> context = Utils::OpenHandle(*v8_context);
+  DCHECK(IsNativeContext(*context));
 
-    DCHECK(IsNativeContext(*context));
-
-    i::Handle<i::FixedArray> arguments_list =
-        i_isolate->factory()->NewFixedArray(static_cast<int>(arguments_count));
-    for (int i = 0; i < static_cast<int>(arguments_count); i++) {
-      auto argument = Utils::OpenHandle(*arguments[i]);
-      if (!i::String::IsIdentifier(i_isolate, argument))
-        return Local<Function>();
-      arguments_list->set(i, *argument);
-    }
-
-    for (size_t i = 0; i < context_extension_count; ++i) {
-      i::Handle<i::JSReceiver> extension =
-          Utils::OpenHandle(*context_extensions[i]);
-      if (!IsJSObject(*extension)) return Local<Function>();
-      context = i_isolate->factory()->NewWithContext(
-          context,
-          i::ScopeInfo::CreateForWithScope(
-              i_isolate,
-              IsNativeContext(*context)
-                  ? i::Handle<i::ScopeInfo>::null()
-                  : i::Handle<i::ScopeInfo>(context->scope_info(), i_isolate)),
-          extension);
-    }
-
-    i::ScriptDetails script_details = GetScriptDetails(
-        i_isolate, source->resource_name, source->resource_line_offset,
-        source->resource_column_offset, source->source_map_url,
-        source->host_defined_options, source->resource_options);
-    script_details.wrapped_arguments = arguments_list;
-
-    std::unique_ptr<i::AlignedCachedData> cached_data;
-    if (options == kConsumeCodeCache) {
-      DCHECK(source->cached_data);
-      // ScriptData takes care of pointer-aligning the data.
-      cached_data.reset(new i::AlignedCachedData(source->cached_data->data,
-                                                 source->cached_data->length));
-    }
-
-    i::Handle<i::JSFunction> scoped_result;
-    has_exception =
-        !i::Compiler::GetWrappedFunction(
-             Utils::OpenHandle(*source->source_string), context, script_details,
-             cached_data.get(), options, no_cache_reason)
-             .ToHandle(&scoped_result);
-    if (options == kConsumeCodeCache) {
-      source->cached_data->rejected = cached_data->rejected();
-    }
-    RETURN_ON_FAILED_EXECUTION(Function);
-    result = handle_scope.Escape(Utils::CallableToLocal(scoped_result));
+  i::Handle<i::FixedArray> arguments_list =
+      i_isolate->factory()->NewFixedArray(static_cast<int>(arguments_count));
+  for (int i = 0; i < static_cast<int>(arguments_count); i++) {
+    auto argument = Utils::OpenHandle(*arguments[i]);
+    if (!i::String::IsIdentifier(i_isolate, argument)) return Local<Function>();
+    arguments_list->set(i, *argument);
   }
-  // TODO(cbruni): remove script_or_module_out paramater
-  if (script_or_module_out != nullptr) {
-    auto function =
-        i::DirectHandle<i::JSFunction>::cast(Utils::OpenDirectHandle(*result));
-    i::Isolate* i_isolate = function->GetIsolate();
-    i::Handle<i::SharedFunctionInfo> shared(function->shared(), i_isolate);
-    i::Handle<i::Script> script(i::Script::cast(shared->script()), i_isolate);
-    // TODO(cbruni, v8:12302): Avoid creating tempory ScriptOrModule objects.
-    auto script_or_module = i::Handle<i::ScriptOrModule>::cast(
-        i_isolate->factory()->NewStruct(i::SCRIPT_OR_MODULE_TYPE));
-    script_or_module->set_resource_name(script->name());
-    script_or_module->set_host_defined_options(script->host_defined_options());
-#ifdef V8_SCRIPTORMODULE_LEGACY_LIFETIME
-    i::Handle<i::ArrayList> list =
-        i::handle(script->script_or_modules(), i_isolate);
-    list = i::ArrayList::Add(i_isolate, list, script_or_module);
-    script->set_script_or_modules(*list);
-#endif  // V8_SCRIPTORMODULE_LEGACY_LIFETIME
-    *script_or_module_out = v8::Utils::ToLocal(script_or_module);
+
+  for (size_t i = 0; i < context_extension_count; ++i) {
+    i::Handle<i::JSReceiver> extension =
+        Utils::OpenHandle(*context_extensions[i]);
+    if (!IsJSObject(*extension)) return Local<Function>();
+    context = i_isolate->factory()->NewWithContext(
+        context,
+        i::ScopeInfo::CreateForWithScope(
+            i_isolate,
+            IsNativeContext(*context)
+                ? i::Handle<i::ScopeInfo>::null()
+                : i::Handle<i::ScopeInfo>(context->scope_info(), i_isolate)),
+        extension);
   }
-  return result;
+
+  i::ScriptDetails script_details = GetScriptDetails(
+      i_isolate, source->resource_name, source->resource_line_offset,
+      source->resource_column_offset, source->source_map_url,
+      source->host_defined_options, source->resource_options);
+  script_details.wrapped_arguments = arguments_list;
+
+  std::unique_ptr<i::AlignedCachedData> cached_data;
+  if (options == kConsumeCodeCache) {
+    DCHECK(source->cached_data);
+    // ScriptData takes care of pointer-aligning the data.
+    cached_data.reset(new i::AlignedCachedData(source->cached_data->data,
+                                               source->cached_data->length));
+  }
+
+  i::Handle<i::JSFunction> result;
+  has_exception =
+      !i::Compiler::GetWrappedFunction(
+           Utils::OpenHandle(*source->source_string), context, script_details,
+           cached_data.get(), options, no_cache_reason)
+           .ToHandle(&result);
+  if (options == kConsumeCodeCache) {
+    source->cached_data->rejected = cached_data->rejected();
+  }
+  RETURN_ON_FAILED_EXECUTION(Function);
+  return handle_scope.Escape(Utils::CallableToLocal(result));
 }
 
 void ScriptCompiler::ScriptStreamingTask::Run() { data_->task->Run(); }
@@ -3787,9 +3675,16 @@ bool Value::IsTypedArray() const {
            i::JSTypedArray::cast(obj)->type() == i::kExternal##Type##Array; \
   }
 
-TYPED_ARRAYS(VALUE_IS_TYPED_ARRAY)
-
+TYPED_ARRAYS_BASE(VALUE_IS_TYPED_ARRAY)
 #undef VALUE_IS_TYPED_ARRAY
+
+bool Value::IsFloat16Array() const {
+  Utils::ApiCheck(i::v8_flags.js_float16array, "Value::IsFloat16Array",
+                  "Float16Array is not supported");
+  auto obj = *Utils::OpenDirectHandle(this);
+  return i::IsJSTypedArray(obj) &&
+         i::JSTypedArray::cast(obj)->type() == i::kExternalFloat16Array;
+}
 
 bool Value::IsDataView() const {
   auto obj = *Utils::OpenDirectHandle(this);
@@ -3866,7 +3761,7 @@ bool Value::IsInt32() const {
 }
 
 bool Value::IsUint32() const {
-  auto obj = *Utils::OpenHandle(this);
+  auto obj = *Utils::OpenDirectHandle(this);
   if (i::IsSmi(obj)) return i::Smi::ToInt(obj) >= 0;
   if (i::IsNumber(obj)) {
     double value = i::Object::Number(obj);
@@ -3941,7 +3836,8 @@ MaybeLocal<String> Value::ToDetailString(Local<Context> context) const {
   }
   if (i::IsString(*obj)) return ToApiHandle<String>(obj);
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-  return Utils::ToLocal(i::Object::NoSideEffectsToString(i_isolate, obj));
+  return Utils::ToLocal(i::Object::NoSideEffectsToString(i_isolate, obj),
+                        i_isolate);
 }
 
 MaybeLocal<Object> Value::ToObject(Local<Context> context) const {
@@ -4271,6 +4167,10 @@ void* v8::ArrayBuffer::Data() const {
   return Utils::OpenDirectHandle(this)->backing_store();
 }
 
+bool v8::ArrayBuffer::IsResizableByUserJavaScript() const {
+  return Utils::OpenDirectHandle(this)->is_resizable_by_js();
+}
+
 std::shared_ptr<v8::BackingStore> v8::SharedArrayBuffer::GetBackingStore() {
   auto self = Utils::OpenDirectHandle(this);
   std::shared_ptr<i::BackingStore> backing_store = self->GetBackingStore();
@@ -4306,16 +4206,25 @@ void v8::TypedArray::CheckCast(Value* that) {
 
 #define CHECK_TYPED_ARRAY_CAST(Type, typeName, TYPE, ctype)                  \
   void v8::Type##Array::CheckCast(Value* that) {                             \
-    auto obj = *Utils::OpenHandle(that);                                     \
+    auto obj = *Utils::OpenDirectHandle(that);                               \
     Utils::ApiCheck(                                                         \
         i::IsJSTypedArray(obj) &&                                            \
             i::JSTypedArray::cast(obj)->type() == i::kExternal##Type##Array, \
         "v8::" #Type "Array::Cast()", "Value is not a " #Type "Array");      \
   }
 
-TYPED_ARRAYS(CHECK_TYPED_ARRAY_CAST)
-
+TYPED_ARRAYS_BASE(CHECK_TYPED_ARRAY_CAST)
 #undef CHECK_TYPED_ARRAY_CAST
+
+void v8::Float16Array::CheckCast(Value* that) {
+  Utils::ApiCheck(i::v8_flags.js_float16array, "v8::Float16Array::Cast",
+                  "Float16Array is not supported");
+  auto obj = *Utils::OpenHandle(that);
+  Utils::ApiCheck(
+      i::IsJSTypedArray(obj) &&
+          i::JSTypedArray::cast(obj)->type() == i::kExternalFloat16Array,
+      "v8::Float16Array::Cast()", "Value is not a Float16Array");
+}
 
 void v8::DataView::CheckCast(Value* that) {
   auto obj = *Utils::OpenDirectHandle(that);
@@ -4524,23 +4433,23 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   auto value_obj = Utils::OpenHandle(*value);
 
   i::PropertyKey lookup_key(i_isolate, key_obj);
-  i::LookupIterator it(i_isolate, self, lookup_key, i::LookupIterator::OWN);
-  if (i::IsJSProxy(*self)) {
-    ENTER_V8(i_isolate, context, Object, CreateDataProperty, i::HandleScope);
-    Maybe<bool> result =
-        i::JSReceiver::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
-    has_exception = result.IsNothing();
-    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-    return result;
-  } else {
+  if (i::IsJSObject(*self)) {
     ENTER_V8_NO_SCRIPT(i_isolate, context, Object, CreateDataProperty,
                        i::HandleScope);
-    Maybe<bool> result =
-        i::JSObject::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    Maybe<bool> result = i::JSObject::CreateDataProperty(
+        i_isolate, i::Handle<i::JSObject>::cast(self), lookup_key, value_obj,
+        Just(i::kDontThrow));
     has_exception = result.IsNothing();
     RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
     return result;
   }
+  // JSProxy or WasmObject or other non-JSObject.
+  ENTER_V8(i_isolate, context, Object, CreateDataProperty, i::HandleScope);
+  Maybe<bool> result = i::JSReceiver::CreateDataProperty(
+      i_isolate, self, lookup_key, value_obj, Just(i::kDontThrow));
+  has_exception = result.IsNothing();
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return result;
 }
 
 Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
@@ -4550,23 +4459,24 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   auto self = Utils::OpenHandle(this);
   auto value_obj = Utils::OpenHandle(*value);
 
-  i::LookupIterator it(i_isolate, self, index, self, i::LookupIterator::OWN);
-  if (i::IsJSProxy(*self)) {
-    ENTER_V8(i_isolate, context, Object, CreateDataProperty, i::HandleScope);
-    Maybe<bool> result =
-        i::JSReceiver::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
-    has_exception = result.IsNothing();
-    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-    return result;
-  } else {
+  i::PropertyKey lookup_key(i_isolate, index);
+  if (i::IsJSObject(*self)) {
     ENTER_V8_NO_SCRIPT(i_isolate, context, Object, CreateDataProperty,
                        i::HandleScope);
-    Maybe<bool> result =
-        i::JSObject::CreateDataProperty(&it, value_obj, Just(i::kDontThrow));
+    Maybe<bool> result = i::JSObject::CreateDataProperty(
+        i_isolate, i::Handle<i::JSObject>::cast(self), lookup_key, value_obj,
+        Just(i::kDontThrow));
     has_exception = result.IsNothing();
     RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
     return result;
   }
+  // JSProxy or WasmObject or other non-JSObject.
+  ENTER_V8(i_isolate, context, Object, CreateDataProperty, i::HandleScope);
+  Maybe<bool> result = i::JSReceiver::CreateDataProperty(
+      i_isolate, self, lookup_key, value_obj, Just(i::kDontThrow));
+  has_exception = result.IsNothing();
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return result;
 }
 
 struct v8::PropertyDescriptor::PrivateData {
@@ -4677,15 +4587,7 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
   desc.set_configurable(!(attributes & v8::DontDelete));
   desc.set_value(value_obj);
 
-  if (i::IsJSProxy(*self)) {
-    ENTER_V8(i_isolate, context, Object, DefineOwnProperty, i::HandleScope);
-    Maybe<bool> success = i::JSReceiver::DefineOwnProperty(
-        i_isolate, self, key_obj, &desc, Just(i::kDontThrow));
-    // Even though we said kDontThrow, there might be accessors that do throw.
-    has_exception = success.IsNothing();
-    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-    return success;
-  } else {
+  if (i::IsJSObject(*self)) {
     // If it's not a JSProxy, i::JSReceiver::DefineOwnProperty should never run
     // a script.
     ENTER_V8_NO_SCRIPT(i_isolate, context, Object, DefineOwnProperty,
@@ -4696,6 +4598,14 @@ Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
     RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
     return success;
   }
+  // JSProxy or WasmObject or other non-JSObject.
+  ENTER_V8(i_isolate, context, Object, DefineOwnProperty, i::HandleScope);
+  Maybe<bool> success = i::JSReceiver::DefineOwnProperty(
+      i_isolate, self, key_obj, &desc, Just(i::kDontThrow));
+  // Even though we said kDontThrow, there might be accessors that do throw.
+  has_exception = success.IsNothing();
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return success;
 }
 
 Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
@@ -4721,6 +4631,15 @@ Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,
   auto self = Utils::OpenHandle(this);
   auto key_obj = Utils::OpenHandle(reinterpret_cast<Name*>(*key));
   auto value_obj = Utils::OpenHandle(*value);
+  if (i::IsJSObject(*self)) {
+    auto js_object = i::Handle<i::JSObject>::cast(self);
+    i::LookupIterator it(i_isolate, js_object, key_obj, js_object);
+    has_exception = i::JSObject::DefineOwnPropertyIgnoreAttributes(
+                        &it, value_obj, i::DONT_ENUM)
+                        .is_null();
+    RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+    return Just(true);
+  }
   if (i::IsJSProxy(*self)) {
     i::PropertyDescriptor desc;
     desc.set_writable(true);
@@ -4731,13 +4650,8 @@ Maybe<bool> v8::Object::SetPrivate(Local<Context> context, Local<Private> key,
         i_isolate, i::Handle<i::JSProxy>::cast(self),
         i::Handle<i::Symbol>::cast(key_obj), &desc, Just(i::kDontThrow));
   }
-  auto js_object = i::Handle<i::JSObject>::cast(self);
-  i::LookupIterator it(i_isolate, js_object, key_obj, js_object);
-  has_exception = i::JSObject::DefineOwnPropertyIgnoreAttributes(&it, value_obj,
-                                                                 i::DONT_ENUM)
-                      .is_null();
-  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  return Just(true);
+  // Wasm object, or other kind of special object not supported here.
+  return Just(false);
 }
 
 MaybeLocal<Value> v8::Object::Get(Local<v8::Context> context,
@@ -4811,11 +4725,39 @@ Local<Value> v8::Object::GetPrototype() {
   return Utils::ToLocal(i::PrototypeIterator::GetCurrent(iter));
 }
 
-Maybe<bool> v8::Object::SetPrototype(Local<Context> context,
-                                     Local<Value> value) {
-  auto i_isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
+Local<Value> v8::Object::GetPrototypeV2() {
   auto self = Utils::OpenHandle(this);
+  auto i_isolate = self->GetIsolate();
+  i::PrototypeIterator iter(i_isolate, self);
+  if (i::IsJSGlobalProxy(*self)) {
+    // Skip hidden prototype (i.e. JSGlobalObject).
+    iter.Advance();
+  }
+  DCHECK(!i::IsJSGlobalObject(*i::PrototypeIterator::GetCurrent(iter)));
+  return Utils::ToLocal(i::PrototypeIterator::GetCurrent(iter));
+}
+
+namespace {
+
+Maybe<bool> SetPrototypeImpl(v8::Object* this_, Local<Context> context,
+                             Local<Value> value, bool from_javascript) {
+  auto i_isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
+  auto self = Utils::OpenHandle(this_);
   auto value_obj = Utils::OpenHandle(*value);
+  // TODO(333672197): turn this to DCHECK once it's no longer possible
+  // to get JSGlobalObject via API.
+  CHECK_IMPLIES(from_javascript, !i::IsJSGlobalObject(*value_obj));
+  if (i::IsJSObject(*self)) {
+    ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+    // TODO(333672197): turn this to DCHECK once it's no longer possible
+    // to get JSGlobalObject via API.
+    CHECK_IMPLIES(from_javascript, !i::IsJSGlobalObject(*self));
+    auto result =
+        i::JSObject::SetPrototype(i_isolate, i::Handle<i::JSObject>::cast(self),
+                                  value_obj, from_javascript, i::kDontThrow);
+    if (!result.FromJust()) return Nothing<bool>();
+    return Just(true);
+  }
   if (i::IsJSProxy(*self)) {
     ENTER_V8(i_isolate, context, Object, SetPrototype, i::HandleScope);
     // We do not allow exceptions thrown while setting the prototype
@@ -4823,17 +4765,27 @@ Maybe<bool> v8::Object::SetPrototype(Local<Context> context,
     TryCatch try_catch(reinterpret_cast<v8::Isolate*>(i_isolate));
     auto result =
         i::JSProxy::SetPrototype(i_isolate, i::Handle<i::JSProxy>::cast(self),
-                                 value_obj, false, i::kThrowOnError);
+                                 value_obj, from_javascript, i::kThrowOnError);
     has_exception = result.IsNothing();
     RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
-  } else {
-    ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
-    auto result =
-        i::JSObject::SetPrototype(i_isolate, i::Handle<i::JSObject>::cast(self),
-                                  value_obj, false, i::kDontThrow);
-    if (!result.FromJust()) return Nothing<bool>();
+    return Just(true);
   }
-  return Just(true);
+  // Wasm object or other kind of special object not supported here.
+  return Nothing<bool>();
+}
+
+}  // namespace
+
+Maybe<bool> v8::Object::SetPrototype(Local<Context> context,
+                                     Local<Value> value) {
+  static constexpr bool from_javascript = false;
+  return SetPrototypeImpl(this, context, value, from_javascript);
+}
+
+Maybe<bool> v8::Object::SetPrototypeV2(Local<Context> context,
+                                       Local<Value> value) {
+  static constexpr bool from_javascript = true;
+  return SetPrototypeImpl(this, context, value, from_javascript);
 }
 
 Local<Object> v8::Object::FindInstanceInPrototypeChain(
@@ -4843,6 +4795,7 @@ Local<Object> v8::Object::FindInstanceInPrototypeChain(
   i::PrototypeIterator iter(i_isolate, *self, i::kStartAtReceiver);
   i::Tagged<i::FunctionTemplateInfo> tmpl_info =
       *Utils::OpenDirectHandle(*tmpl);
+  if (!IsJSObject(iter.GetCurrent())) return Local<Object>();
   while (!tmpl_info->IsTemplateFor(iter.GetCurrent<i::JSObject>())) {
     iter.Advance();
     if (iter.IsAtEnd()) return Local<Object>();
@@ -4948,6 +4901,7 @@ Maybe<bool> v8::Object::Delete(Local<Context> context, Local<Value> key) {
   } else {
     // If it's not a JSProxy, i::Runtime::DeleteObjectProperty should never run
     // a script.
+    DCHECK(i::IsJSObject(*self) || i::IsWasmObject(*self));
     ENTER_V8_NO_SCRIPT(i_isolate, context, Object, Delete, i::HandleScope);
     Maybe<bool> result = i::Runtime::DeleteObjectProperty(
         i_isolate, self, key_obj, i::LanguageMode::kSloppy);
@@ -5281,39 +5235,77 @@ Local<v8::Object> v8::Object::Clone() {
   return Utils::ToLocal(result);
 }
 
-MaybeLocal<v8::Context> v8::Object::GetCreationContext() {
-  auto self = Utils::OpenDirectHandle(this);
-  auto i_isolate = self->GetIsolate();
+namespace {
+V8_INLINE MaybeLocal<v8::Context> GetCreationContextImpl(
+    i::DirectHandle<i::JSReceiver> object, i::Isolate* i_isolate) {
   i::Handle<i::NativeContext> context;
-  if (self->GetCreationContext(i_isolate).ToHandle(&context)) {
+  if (object->GetCreationContext(i_isolate).ToHandle(&context)) {
     return Utils::ToLocal(context);
   }
   return MaybeLocal<v8::Context>();
 }
+}  // namespace
 
-void* v8::Object::GetAlignedPointerFromEmbedderDataInCreationContext(
+MaybeLocal<v8::Context> v8::Object::GetCreationContext(v8::Isolate* isolate) {
+  auto self = Utils::OpenDirectHandle(this);
+  auto i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return GetCreationContextImpl(self, i_isolate);
+}
+
+MaybeLocal<v8::Context> v8::Object::GetCreationContext() {
+  auto self = Utils::OpenDirectHandle(this);
+  return GetCreationContextImpl(self, self->GetIsolate());
+}
+
+namespace {
+V8_INLINE Local<v8::Context> GetCreationContextCheckedImpl(
+    i::DirectHandle<i::JSReceiver> object, i::Isolate* i_isolate) {
+  i::Handle<i::NativeContext> context;
+  Utils::ApiCheck(object->GetCreationContext(i_isolate).ToHandle(&context),
+                  "v8::Object::GetCreationContextChecked",
+                  "No creation context available");
+  return Utils::ToLocal(context);
+}
+}  // namespace
+
+Local<v8::Context> v8::Object::GetCreationContextChecked(v8::Isolate* isolate) {
+  auto self = Utils::OpenDirectHandle(this);
+  auto i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return GetCreationContextCheckedImpl(self, i_isolate);
+}
+
+Local<v8::Context> v8::Object::GetCreationContextChecked() {
+  auto self = Utils::OpenDirectHandle(this);
+  return GetCreationContextCheckedImpl(self, self->GetIsolate());
+}
+
+namespace {
+V8_INLINE void* GetAlignedPointerFromEmbedderDataInCreationContextImpl(
+    i::DirectHandle<i::JSReceiver> object, i::Isolate* i_isolate_for_sandbox,
     int index) {
   const char* location =
       "v8::Object::GetAlignedPointerFromEmbedderDataInCreationContext()";
-  auto maybe_context = Utils::OpenDirectHandle(this)->GetCreationContext();
+  auto maybe_context = object->GetCreationContext();
   if (!maybe_context.has_value()) return nullptr;
 
   // The code below mostly mimics Context::GetAlignedPointerFromEmbedderData()
   // but it doesn't try to expand the EmbedderDataArray instance.
   i::DisallowGarbageCollection no_gc;
   i::Tagged<i::NativeContext> native_context = maybe_context.value();
-  i::Isolate* i_isolate = native_context->GetIsolate();
 
-  DCHECK_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  // This macro requires a real Isolate while |i_isolate_for_sandbox| might be
+  // nullptr if the V8 sandbox is not enabled.
+  DCHECK_NO_SCRIPT_NO_EXCEPTION(native_context->GetIsolate());
+
   // TODO(ishell): remove cast once embedder_data slot has a proper type.
   i::Tagged<i::EmbedderDataArray> data =
       i::EmbedderDataArray::cast(native_context->embedder_data());
   if (V8_LIKELY(static_cast<unsigned>(index) <
                 static_cast<unsigned>(data->length()))) {
     void* result;
-    Utils::ApiCheck(
-        i::EmbedderDataSlot(data, index).ToAlignedPointer(i_isolate, &result),
-        location, "Pointer is not aligned");
+    Utils::ApiCheck(i::EmbedderDataSlot(data, index)
+                        .ToAlignedPointer(i_isolate_for_sandbox, &result),
+                    location, "Pointer is not aligned");
     return result;
   }
   // Bad index, report an API error.
@@ -5322,13 +5314,23 @@ void* v8::Object::GetAlignedPointerFromEmbedderDataInCreationContext(
                   "Index too large");
   return nullptr;
 }
+}  // namespace
 
-Local<v8::Context> v8::Object::GetCreationContextChecked() {
-  Local<Context> context;
-  Utils::ApiCheck(GetCreationContext().ToLocal(&context),
-                  "v8::Object::GetCreationContextChecked",
-                  "No creation context available");
-  return context;
+void* v8::Object::GetAlignedPointerFromEmbedderDataInCreationContext(
+    v8::Isolate* isolate, int index) {
+  auto self = Utils::OpenDirectHandle(this);
+  auto i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  return GetAlignedPointerFromEmbedderDataInCreationContextImpl(self, i_isolate,
+                                                                index);
+}
+
+void* v8::Object::GetAlignedPointerFromEmbedderDataInCreationContext(
+    int index) {
+  auto self = Utils::OpenDirectHandle(this);
+  auto i_isolate_for_sandbox =
+      reinterpret_cast<i::Isolate*>(GetIsolateForSandbox(*self));
+  return GetAlignedPointerFromEmbedderDataInCreationContextImpl(
+      self, i_isolate_for_sandbox, index);
 }
 
 int v8::Object::GetIdentityHash() {
@@ -5349,15 +5351,41 @@ bool v8::Object::IsConstructor() const {
 }
 
 bool v8::Object::IsApiWrapper() const {
-  auto self = i::DirectHandle<i::JSObject>::cast(Utils::OpenDirectHandle(this));
-  // Objects with embedder fields can wrap API objects.
-  return self->MayHaveEmbedderFields();
+  auto self = Utils::OpenDirectHandle(this);
+  // This checks whether an object of a given instance type can serve as API
+  // object. It does not check whether the JS object is wrapped via embedder
+  // fields or Wrap()/Unwrap() API.
+  return IsJSApiWrapperObject(*self);
 }
 
 bool v8::Object::IsUndetectable() const {
-  auto self = i::DirectHandle<i::JSObject>::cast(Utils::OpenDirectHandle(this));
+  auto self = Utils::OpenDirectHandle(this);
   return i::IsUndetectable(*self);
 }
+
+namespace {
+#ifdef V8_ENABLE_DIRECT_LOCAL
+// A newly allocated vector is required to convert from an array of direct
+// locals to an array of indirect handles.
+std::vector<i::Handle<i::Object>> PrepareArguments(int argc,
+                                                   Local<Value> argv[]) {
+  std::vector<i::Handle<i::Object>> args(argc);
+  for (int i = 0; i < argc; ++i) {
+    args[i] = Utils::OpenHandle(*argv[i]);
+  }
+  return args;
+}
+#else   // !V8_ENABLE_DIRECT_LOCAL
+// A simple cast is used to convert from an array of indirect locals to an
+// array of indirect handles. A MemorySpan object is returned, as no
+// deallocation is necessary.
+v8::MemorySpan<i::Handle<i::Object>> PrepareArguments(int argc,
+                                                      Local<Value> argv[]) {
+  return {reinterpret_cast<i::Handle<i::Object>*>(argv),
+          static_cast<size_t>(argc)};
+}
+#endif  // V8_ENABLE_DIRECT_LOCAL
+}  // namespace
 
 MaybeLocal<Value> Object::CallAsFunction(Local<Context> context,
                                          Local<Value> recv, int argc,
@@ -5371,10 +5399,11 @@ MaybeLocal<Value> Object::CallAsFunction(Local<Context> context,
   auto self = Utils::OpenHandle(this);
   auto recv_obj = Utils::OpenHandle(*recv);
   static_assert(sizeof(v8::Local<v8::Value>) == sizeof(i::Handle<i::Object>));
-  i::Handle<i::Object>* args = reinterpret_cast<i::Handle<i::Object>*>(argv);
+  auto args = PrepareArguments(argc, argv);
   Local<Value> result;
   has_exception = !ToLocal<Value>(
-      i::Execution::Call(i_isolate, self, recv_obj, argc, args), &result);
+      i::Execution::Call(i_isolate, self, recv_obj, argc, args.data()),
+      &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
 }
@@ -5390,10 +5419,10 @@ MaybeLocal<Value> Object::CallAsConstructor(Local<Context> context, int argc,
                                              i_isolate);
   auto self = Utils::OpenHandle(this);
   static_assert(sizeof(v8::Local<v8::Value>) == sizeof(i::Handle<i::Object>));
-  i::Handle<i::Object>* args = reinterpret_cast<i::Handle<i::Object>*>(argv);
+  auto args = PrepareArguments(argc, argv);
   Local<Value> result;
   has_exception = !ToLocal<Value>(
-      i::Execution::New(i_isolate, self, self, argc, args), &result);
+      i::Execution::New(i_isolate, self, self, argc, args.data()), &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
 }
@@ -5408,7 +5437,7 @@ MaybeLocal<Function> Function::New(Local<Context> context,
   auto templ =
       FunctionTemplateNew(i_isolate, callback, data, Local<Signature>(), length,
                           behavior, true, Local<Private>(), side_effect_type);
-  return templ->GetFunction(context);
+  return Utils::ToLocal(templ)->GetFunction(context);
 }
 
 MaybeLocal<Object> Function::NewInstance(Local<Context> context, int argc,
@@ -5434,22 +5463,19 @@ MaybeLocal<Object> Function::NewInstanceWithSideEffectType(
   if (should_set_has_no_side_effect) {
     CHECK(IsJSFunction(*self) &&
           i::JSFunction::cast(*self)->shared()->IsApiFunction());
-    i::Tagged<i::Object> obj =
-        i::JSFunction::cast(*self)->shared()->api_func_data()->call_code(
-            kAcquireLoad);
-    if (i::IsCallHandlerInfo(obj)) {
-      i::Tagged<i::CallHandlerInfo> handler_info =
-          i::CallHandlerInfo::cast(obj);
-      if (handler_info->IsSideEffectCallHandlerInfo()) {
+    i::Tagged<i::FunctionTemplateInfo> func_data =
+        i::JSFunction::cast(*self)->shared()->api_func_data();
+    if (func_data->has_callback(i_isolate)) {
+      if (func_data->has_side_effects()) {
         i_isolate->debug()->IgnoreSideEffectsOnNextCallTo(
-            handle(handler_info, i_isolate));
+            handle(func_data, i_isolate));
       }
     }
   }
-  i::Handle<i::Object>* args = reinterpret_cast<i::Handle<i::Object>*>(argv);
+  auto args = PrepareArguments(argc, argv);
   Local<Object> result;
   has_exception = !ToLocal<Object>(
-      i::Execution::New(i_isolate, self, self, argc, args), &result);
+      i::Execution::New(i_isolate, self, self, argc, args.data()), &result);
   RETURN_ON_FAILED_EXECUTION(Object);
   RETURN_ESCAPED(result);
 }
@@ -5468,19 +5494,11 @@ MaybeLocal<v8::Value> Function::Call(Local<Context> context,
                   "Function to be called is a null pointer");
   auto recv_obj = Utils::OpenHandle(*recv);
   static_assert(sizeof(v8::Local<v8::Value>) == sizeof(i::Handle<i::Object>));
-
-#ifdef V8_ENABLE_DIRECT_LOCAL
-  i::Handle<i::Object>* args = new i::Handle<i::Object>[argc];
-  for (int i = 0; i < argc; ++i) {
-    args[i] = Utils::OpenHandle(*argv[i]);
-  }
-#else   // !V8_ENABLE_DIRECT_LOCAL
-  i::Handle<i::Object>* args = reinterpret_cast<i::Handle<i::Object>*>(argv);
-#endif  // V8_ENABLE_DIRECT_LOCAL
-
+  auto args = PrepareArguments(argc, argv);
   Local<Value> result;
   has_exception = !ToLocal<Value>(
-      i::Execution::Call(i_isolate, self, recv_obj, argc, args), &result);
+      i::Execution::Call(i_isolate, self, recv_obj, argc, args.data()),
+      &result);
   RETURN_ON_FAILED_EXECUTION(Value);
   RETURN_ESCAPED(result);
 }
@@ -5586,14 +5604,6 @@ int Function::GetScriptStartPosition() const {
     return func->shared()->StartPosition();
   }
   return kLineOffsetNotFound;
-}
-
-MaybeLocal<UnboundScript> Function::GetUnboundScript() const {
-  auto self = *Utils::OpenDirectHandle(this);
-  if (!IsJSFunction(self)) return MaybeLocal<UnboundScript>();
-  auto sfi = i::JSFunction::cast(self)->shared();
-  i::Isolate* isolate = self->GetIsolate();
-  return ToApiHandle<UnboundScript>(i::direct_handle(sfi, isolate), isolate);
 }
 
 int Function::ScriptId() const {
@@ -6322,7 +6332,7 @@ void v8::Object::SetAlignedPointerInInternalField(int index, void* value) {
 
   i::DisallowGarbageCollection no_gc;
   Utils::ApiCheck(i::EmbedderDataSlot(i::JSObject::cast(*obj), index)
-                      .store_aligned_pointer(obj->GetIsolate(), value),
+                      .store_aligned_pointer(obj->GetIsolate(), *obj, value),
                   location, "Unaligned pointer");
   DCHECK_EQ(value, GetAlignedPointerFromInternalField(index));
   internal::WriteBarrier::CombinedBarrierFromInternalFields(
@@ -6332,7 +6342,7 @@ void v8::Object::SetAlignedPointerInInternalField(int index, void* value) {
 void v8::Object::SetAlignedPointerInInternalFields(int argc, int indices[],
                                                    void* values[]) {
   auto obj = Utils::OpenDirectHandle(this);
-
+  if (!IsJSObject(*obj)) return;
   i::DisallowGarbageCollection no_gc;
   const char* location = "v8::Object::SetAlignedPointerInInternalFields()";
   auto js_obj = i::JSObject::cast(*obj);
@@ -6345,12 +6355,28 @@ void v8::Object::SetAlignedPointerInInternalFields(int argc, int indices[],
     }
     void* value = values[i];
     Utils::ApiCheck(i::EmbedderDataSlot(js_obj, index)
-                        .store_aligned_pointer(obj->GetIsolate(), value),
+                        .store_aligned_pointer(obj->GetIsolate(), *obj, value),
                     location, "Unaligned pointer");
     DCHECK_EQ(value, GetAlignedPointerFromInternalField(index));
   }
   internal::WriteBarrier::CombinedBarrierFromInternalFields(js_obj, argc,
                                                             values);
+}
+
+// static
+void* v8::Object::Unwrap(v8::Isolate* isolate, i::Address wrapper_obj,
+                         CppHeapPointerTag tag) {
+  return i::JSApiWrapper(i::JSObject::cast(i::Tagged<i::Object>(wrapper_obj)))
+      .GetCppHeapWrappable(reinterpret_cast<i::Isolate*>(isolate),
+                           static_cast<i::ExternalPointerTag>(tag));
+}
+
+// static
+void v8::Object::Wrap(v8::Isolate* isolate, i::Address wrapper_obj,
+                      CppHeapPointerTag tag, void* wrappable) {
+  return i::JSApiWrapper(i::JSObject::cast(i::Tagged<i::Object>(wrapper_obj)))
+      .SetCppHeapWrappable(reinterpret_cast<i::Isolate*>(isolate), wrappable,
+                           static_cast<i::ExternalPointerTag>(tag));
 }
 
 // --- E n v i r o n m e n t ---
@@ -6387,6 +6413,21 @@ bool v8::V8::Initialize(const int build_config) {
         "sandbox is %s while on V8 side it's %s.",
         kEmbedderSandbox ? "ENABLED" : "DISABLED",
         V8_ENABLE_SANDBOX_BOOL ? "ENABLED" : "DISABLED");
+  }
+
+  const bool kEmbedderTargetOsIsAndroid =
+      (build_config & kTargetOsIsAndroid) != 0;
+#ifdef V8_TARGET_OS_ANDROID
+  const bool kV8TargetOsIsAndroid = true;
+#else
+  const bool kV8TargetOsIsAndroid = false;
+#endif
+  if (kEmbedderTargetOsIsAndroid != kV8TargetOsIsAndroid) {
+    FATAL(
+        "Embedder-vs-V8 build configuration mismatch. On embedder side "
+        "target OS is %s while on V8 side it's %s.",
+        kEmbedderTargetOsIsAndroid ? "Android" : "not Android",
+        kV8TargetOsIsAndroid ? "Android" : "not Android");
   }
 
   i::V8::Initialize();
@@ -6558,7 +6599,7 @@ struct InvokeBootstrapper<i::NativeContext> {
       i::MaybeHandle<i::JSGlobalProxy> maybe_global_proxy,
       v8::Local<v8::ObjectTemplate> global_proxy_template,
       v8::ExtensionConfiguration* extensions, size_t context_snapshot_index,
-      v8::DeserializeInternalFieldsCallback embedder_fields_deserializer,
+      i::DeserializeEmbedderFieldsCallback embedder_fields_deserializer,
       v8::MicrotaskQueue* microtask_queue) {
     return i_isolate->bootstrapper()->CreateEnvironment(
         maybe_global_proxy, global_proxy_template, extensions,
@@ -6573,7 +6614,7 @@ struct InvokeBootstrapper<i::JSGlobalProxy> {
       i::MaybeHandle<i::JSGlobalProxy> maybe_global_proxy,
       v8::Local<v8::ObjectTemplate> global_proxy_template,
       v8::ExtensionConfiguration* extensions, size_t context_snapshot_index,
-      v8::DeserializeInternalFieldsCallback embedder_fields_deserializer,
+      i::DeserializeEmbedderFieldsCallback embedder_fields_deserializer,
       v8::MicrotaskQueue* microtask_queue) {
     USE(extensions);
     USE(context_snapshot_index);
@@ -6587,7 +6628,7 @@ static i::Handle<ObjectType> CreateEnvironment(
     i::Isolate* i_isolate, v8::ExtensionConfiguration* extensions,
     v8::MaybeLocal<ObjectTemplate> maybe_global_template,
     v8::MaybeLocal<Value> maybe_global_proxy, size_t context_snapshot_index,
-    v8::DeserializeInternalFieldsCallback embedder_fields_deserializer,
+    i::DeserializeEmbedderFieldsCallback embedder_fields_deserializer,
     v8::MicrotaskQueue* microtask_queue) {
   i::Handle<ObjectType> result;
 
@@ -6692,7 +6733,7 @@ Local<Context> NewContext(
     v8::Isolate* external_isolate, v8::ExtensionConfiguration* extensions,
     v8::MaybeLocal<ObjectTemplate> global_template,
     v8::MaybeLocal<Value> global_object, size_t context_snapshot_index,
-    v8::DeserializeInternalFieldsCallback embedder_fields_deserializer,
+    i::DeserializeEmbedderFieldsCallback embedder_fields_deserializer,
     v8::MicrotaskQueue* microtask_queue) {
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(external_isolate);
   // TODO(jkummerow): This is for crbug.com/713699. Remove it if it doesn't
@@ -6716,27 +6757,38 @@ Local<Context> v8::Context::New(
     v8::Isolate* external_isolate, v8::ExtensionConfiguration* extensions,
     v8::MaybeLocal<ObjectTemplate> global_template,
     v8::MaybeLocal<Value> global_object,
-    DeserializeInternalFieldsCallback internal_fields_deserializer,
-    v8::MicrotaskQueue* microtask_queue) {
-  return NewContext(external_isolate, extensions, global_template,
-                    global_object, 0, internal_fields_deserializer,
-                    microtask_queue);
+    v8::DeserializeInternalFieldsCallback internal_fields_deserializer,
+    v8::MicrotaskQueue* microtask_queue,
+    v8::DeserializeContextDataCallback context_callback_deserializer,
+    v8::DeserializeAPIWrapperCallback api_wrapper_deserializer) {
+  return NewContext(
+      external_isolate, extensions, global_template, global_object, 0,
+      i::DeserializeEmbedderFieldsCallback(internal_fields_deserializer,
+                                           context_callback_deserializer,
+                                           api_wrapper_deserializer),
+      microtask_queue);
 }
 
 MaybeLocal<Context> v8::Context::FromSnapshot(
     v8::Isolate* external_isolate, size_t context_snapshot_index,
-    v8::DeserializeInternalFieldsCallback embedder_fields_deserializer,
+    v8::DeserializeInternalFieldsCallback internal_fields_deserializer,
     v8::ExtensionConfiguration* extensions, MaybeLocal<Value> global_object,
-    v8::MicrotaskQueue* microtask_queue) {
+    v8::MicrotaskQueue* microtask_queue,
+    v8::DeserializeContextDataCallback context_callback_deserializer,
+    v8::DeserializeAPIWrapperCallback api_wrapper_deserializer) {
   size_t index_including_default_context = context_snapshot_index + 1;
   if (!i::Snapshot::HasContextSnapshot(
           reinterpret_cast<i::Isolate*>(external_isolate),
           index_including_default_context)) {
     return MaybeLocal<Context>();
   }
-  return NewContext(external_isolate, extensions, MaybeLocal<ObjectTemplate>(),
-                    global_object, index_including_default_context,
-                    embedder_fields_deserializer, microtask_queue);
+  return NewContext(
+      external_isolate, extensions, MaybeLocal<ObjectTemplate>(), global_object,
+      index_including_default_context,
+      i::DeserializeEmbedderFieldsCallback(internal_fields_deserializer,
+                                           context_callback_deserializer,
+                                           api_wrapper_deserializer),
+      microtask_queue);
 }
 
 MaybeLocal<Object> v8::Context::NewRemoteContext(
@@ -6759,7 +6811,7 @@ MaybeLocal<Object> v8::Context::NewRemoteContext(
       "Global template needs to have access check handlers");
   i::Handle<i::JSObject> global_proxy = CreateEnvironment<i::JSGlobalProxy>(
       i_isolate, nullptr, global_template, global_object, 0,
-      DeserializeInternalFieldsCallback(), nullptr);
+      i::DeserializeEmbedderFieldsCallback(), nullptr);
   if (global_proxy.is_null()) {
     if (i_isolate->has_exception()) i_isolate->clear_exception();
     return MaybeLocal<Object>();
@@ -6800,7 +6852,7 @@ bool RequiresEmbedderSupportToFreeze(i::InstanceType obj_type) {
 
   return (i::InstanceTypeChecker::IsJSApiObject(obj_type) ||
           i::InstanceTypeChecker::IsJSExternalObject(obj_type) ||
-          i::InstanceTypeChecker::IsJSObjectWithEmbedderSlots(obj_type));
+          i::InstanceTypeChecker::IsJSAPIObjectWithEmbedderSlots(obj_type));
 }
 
 bool IsJSReceiverSafeToFreeze(i::InstanceType obj_type) {
@@ -6815,6 +6867,7 @@ bool IsJSReceiverSafeToFreeze(i::InstanceType obj_type) {
     /* Function types */
     case i::BIGINT64_TYPED_ARRAY_CONSTRUCTOR_TYPE:
     case i::BIGUINT64_TYPED_ARRAY_CONSTRUCTOR_TYPE:
+    case i::FLOAT16_TYPED_ARRAY_CONSTRUCTOR_TYPE:
     case i::FLOAT32_TYPED_ARRAY_CONSTRUCTOR_TYPE:
     case i::FLOAT64_TYPED_ARRAY_CONSTRUCTOR_TYPE:
     case i::INT16_TYPED_ARRAY_CONSTRUCTOR_TYPE:
@@ -6980,8 +7033,8 @@ class ObjectVisitorDeepFreezer : i::ObjectVisitor {
       // If not they could be replaced to bypass freezing.
       i::Tagged<i::ScopeInfo> scope_info = i::Context::cast(obj)->scope_info();
       for (auto it : i::ScopeInfo::IterateLocalNames(scope_info, no_gc)) {
-        if (scope_info->ContextLocalMode(it->index()) !=
-            i::VariableMode::kConst) {
+        if (!IsImmutableLexicalVariableMode(
+                scope_info->ContextLocalMode(it->index()))) {
           DCHECK(!error_.has_value());
           error_ = ErrorInfo{i::MessageTemplate::kCannotDeepFreezeValue,
                              i::handle(it->name(), isolate_)};
@@ -7184,32 +7237,6 @@ void Context::SetAbortScriptExecution(
   }
 }
 
-Local<Value> Context::GetContinuationPreservedEmbedderData() const {
-  auto context = Utils::OpenDirectHandle(this);
-  i::Isolate* i_isolate = context->GetIsolate();
-
-#ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
-  return ToApiHandle<Object>(
-      i::direct_handle(
-          context->native_context()->continuation_preserved_embedder_data(),
-          i_isolate),
-      i_isolate);
-#else   // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
-  return v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
-#endif  // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
-}
-
-void Context::SetContinuationPreservedEmbedderData(Local<Value> data) {
-#ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
-  auto context = Utils::OpenDirectHandle(this);
-  i::Isolate* i_isolate = context->GetIsolate();
-  if (data.IsEmpty())
-    data = v8::Undefined(reinterpret_cast<v8::Isolate*>(i_isolate));
-  context->native_context()->set_continuation_preserved_embedder_data(
-      i::HeapObject::cast(*Utils::OpenDirectHandle(*data)));
-#endif  // V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
-}
-
 void v8::Context::SetPromiseHooks(Local<Function> init_hook,
                                   Local<Function> before_hook,
                                   Local<Function> after_hook,
@@ -7326,6 +7353,13 @@ void v8::ObjectTemplate::CheckCast(Data* that) {
   auto obj = Utils::OpenDirectHandle(that);
   Utils::ApiCheck(i::IsObjectTemplateInfo(*obj), "v8::ObjectTemplate::Cast",
                   "Value is not an ObjectTemplate");
+}
+
+void v8::DictionaryTemplate::CheckCast(Data* that) {
+  auto obj = Utils::OpenDirectHandle(that);
+  Utils::ApiCheck(i::IsDictionaryTemplateInfo(*obj),
+                  "v8::DictionaryTemplate::Cast",
+                  "Value is not an DictionaryTemplate");
 }
 
 void v8::FunctionTemplate::CheckCast(Data* that) {
@@ -7909,6 +7943,22 @@ MaybeLocal<v8::Value> v8::Date::New(Local<Context> context, double time) {
   RETURN_ESCAPED(result);
 }
 
+MaybeLocal<Value> v8::Date::Parse(Local<Context> context,
+                                  Local<String> value) {
+  PREPARE_FOR_EXECUTION(context, Date, Parse);
+  auto string = Utils::OpenHandle(*value);
+  double time = ParseDateTimeString(i_isolate, string);
+
+  Local<Value> result;
+  has_exception =
+      !ToLocal<Value>(i::JSDate::New(i_isolate->date_function(),
+                                     i_isolate->date_function(), time),
+                      &result);
+
+  RETURN_ON_FAILED_EXECUTION(Value)
+  RETURN_ESCAPED(result);
+}
+
 double v8::Date::ValueOf() const {
   auto obj = Utils::OpenDirectHandle(this);
   auto jsdate = i::DirectHandle<i::JSDate>::cast(obj);
@@ -7924,6 +7974,20 @@ v8::Local<v8::String> v8::Date::ToISOString() const {
   i::DateBuffer buffer = i::ToDateString(i::Object::Number(jsdate->value()),
                                          i_isolate->date_cache(),
                                          i::ToDateStringMode::kISODateAndTime);
+  i::Handle<i::String> str = i_isolate->factory()
+                                 ->NewStringFromUtf8(base::VectorOf(buffer))
+                                 .ToHandleChecked();
+  return Utils::ToLocal(str);
+}
+
+v8::Local<v8::String> v8::Date::ToUTCString() const {
+  auto obj = Utils::OpenDirectHandle(this);
+  auto jsdate = i::DirectHandle<i::JSDate>::cast(obj);
+  i::Isolate* i_isolate = jsdate->GetIsolate();
+  API_RCS_SCOPE(i_isolate, Date, NumberValue);
+  i::DateBuffer buffer = i::ToDateString(i::Object::Number(jsdate->value()),
+                                         i_isolate->date_cache(),
+                                         i::ToDateStringMode::kUTCDateAndTime);
   i::Handle<i::String> str = i_isolate->factory()
                                  ->NewStringFromUtf8(base::VectorOf(buffer))
                                  .ToHandleChecked();
@@ -8087,7 +8151,7 @@ uint32_t GetLength(Tagged<JSArray> array) {
 }  // namespace internal
 
 uint32_t v8::Array::Length() const {
-  return i::GetLength(*Utils::OpenHandle(this));
+  return i::GetLength(*Utils::OpenDirectHandle(this));
 }
 
 namespace internal {
@@ -8259,13 +8323,27 @@ Maybe<void> v8::Array::Iterate(Local<Context> context,
 }
 
 v8::TypecheckWitness::TypecheckWitness(Isolate* isolate)
+#ifdef V8_ENABLE_DIRECT_LOCAL
+    // An empty local suffices.
+    : cached_map_()
+#else
     // We need to reserve a handle that we can patch later.
-    // TODO(13270): When we switch to CSS, we can use a direct pointer
-    // instead of a handle.
-    : cached_map_(v8::Number::New(isolate, 1)) {}
+    // We initialize it with something that cannot compare equal to any map.
+    : cached_map_(v8::Number::New(isolate, 1))
+#endif
+{
+}
 
 void v8::TypecheckWitness::Update(Local<Value> baseline) {
   i::Tagged<i::Object> obj = *Utils::OpenDirectHandle(*baseline);
+#ifdef V8_ENABLE_DIRECT_LOCAL
+  if (IsSmi(obj)) {
+    cached_map_ = Local<Data>();
+  } else {
+    i::Tagged<i::HeapObject> map = i::HeapObject::cast(obj)->map();
+    cached_map_ = Local<Data>::FromAddress(map->ptr());
+  }
+#else
   i::Tagged<i::Object> map = i::Smi::zero();
   if (!IsSmi(obj)) map = i::HeapObject::cast(obj)->map();
   // Design overview: in the {TypecheckWitness} constructor, we create
@@ -8274,12 +8352,12 @@ void v8::TypecheckWitness::Update(Local<Value> baseline) {
   // to allow having short-lived HandleScopes (e.g. in {FastIterateArray}
   // above) while a {TypecheckWitness} is alive: it therefore cannot hold
   // on to one of the short-lived handles.
-  // Calling {OpenHandle} on the {cached_map_} only serves to "reinterpret_cast"
-  // it to an {i::Handle} on which we can call {PatchValue}.
-  // TODO(13270): When we switch to CSS, this can become simpler: we can
-  // then simply overwrite the direct pointer.
+  // Calling {OpenIndirectHandle} on the {cached_map_} only serves to
+  // "reinterpret_cast" it to an {i::IndirectHandle} on which we can call
+  // {PatchValue}.
   auto cache = Utils::OpenIndirectHandle(*cached_map_);
   cache.PatchValue(map);
+#endif
 }
 
 Local<v8::Map> v8::Map::New(Isolate* v8_isolate) {
@@ -8748,8 +8826,7 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::FromCompiledModule(
       i::wasm::GetWasmEngine()->ImportNativeModule(
           i_isolate, compiled_module.native_module_,
           base::VectorOf(compiled_module.source_url()));
-  return Local<WasmModuleObject>::Cast(
-      Utils::ToLocal(i::Handle<i::JSObject>::cast(module_object)));
+  return Utils::ToLocal(module_object);
 #else
   UNREACHABLE();
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -8764,7 +8841,7 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
   if (!i::wasm::IsWasmCodegenAllowed(i_isolate, i_isolate->native_context())) {
     return MaybeLocal<WasmModuleObject>();
   }
-  i::MaybeHandle<i::JSObject> maybe_compiled;
+  i::MaybeHandle<i::WasmModuleObject> maybe_compiled;
   {
     i::wasm::ErrorThrower thrower(i_isolate, "WasmModuleObject::Compile()");
     auto enabled_features = i::wasm::WasmFeatures::FromIsolate(i_isolate);
@@ -8777,8 +8854,7 @@ MaybeLocal<WasmModuleObject> WasmModuleObject::Compile(
   if (maybe_compiled.is_null()) {
     return MaybeLocal<WasmModuleObject>();
   }
-  return Local<WasmModuleObject>::Cast(
-      Utils::ToLocal(maybe_compiled.ToHandleChecked()));
+  return Utils::ToLocal(maybe_compiled.ToHandleChecked());
 #else
   Utils::ApiCheck(false, "WasmModuleObject::Compile",
                   "WebAssembly support is not enabled");
@@ -9105,8 +9181,47 @@ static_assert(v8::TypedArray::kMaxByteLength == i::JSTypedArray::kMaxByteLength,
     return Utils::ToLocal##Type##Array(obj);                                \
   }
 
-TYPED_ARRAYS(TYPED_ARRAY_NEW)
+TYPED_ARRAYS_BASE(TYPED_ARRAY_NEW)
 #undef TYPED_ARRAY_NEW
+
+Local<Float16Array> Float16Array::New(Local<ArrayBuffer> array_buffer,
+                                      size_t byte_offset, size_t length) {
+  Utils::ApiCheck(i::v8_flags.js_float16array, "v8::Float16Array::New",
+                  "Float16Array is not supported");
+  i::Isolate* i_isolate = Utils::OpenDirectHandle(*array_buffer)->GetIsolate();
+  API_RCS_SCOPE(i_isolate, Float16Array, New);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  if (!Utils::ApiCheck(
+          length <= kMaxLength,
+          "v8::Float16Array::New(Local<ArrayBuffer>, size_t, size_t)",
+          "length exceeds max allowed value")) {
+    return Local<Float16Array>();
+  }
+  auto buffer = Utils::OpenHandle(*array_buffer);
+  i::Handle<i::JSTypedArray> obj = i_isolate->factory()->NewJSTypedArray(
+      i::kExternalFloat16Array, buffer, byte_offset, length);
+  return Utils::ToLocalFloat16Array(obj);
+}
+Local<Float16Array> Float16Array::New(
+    Local<SharedArrayBuffer> shared_array_buffer, size_t byte_offset,
+    size_t length) {
+  Utils::ApiCheck(i::v8_flags.js_float16array, "v8::Float16Array::New",
+                  "Float16Array is not supported");
+  i::Isolate* i_isolate =
+      Utils::OpenDirectHandle(*shared_array_buffer)->GetIsolate();
+  API_RCS_SCOPE(i_isolate, Float16Array, New);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
+  if (!Utils::ApiCheck(
+          length <= kMaxLength,
+          "v8::Float16Array::New(Local<SharedArrayBuffer>, size_t, size_t)",
+          "length exceeds max allowed value")) {
+    return Local<Float16Array>();
+  }
+  auto buffer = Utils::OpenHandle(*shared_array_buffer);
+  i::Handle<i::JSTypedArray> obj = i_isolate->factory()->NewJSTypedArray(
+      i::kExternalFloat16Array, buffer, byte_offset, length);
+  return Utils::ToLocalFloat16Array(obj);
+}
 
 // TODO(v8:11111): Support creating length tracking DataViews via the API.
 Local<DataView> DataView::New(Local<ArrayBuffer> array_buffer,
@@ -9563,7 +9678,7 @@ void Isolate::RequestGarbageCollectionForTesting(GarbageCollectionType type,
   base::Optional<i::EmbedderStackStateScope> stack_scope;
   if (type == kFullGarbageCollection) {
     stack_scope.emplace(reinterpret_cast<i::Isolate*>(this)->heap(),
-                        i::EmbedderStackStateScope::kExplicitInvocation,
+                        i::EmbedderStackStateOrigin::kExplicitInvocation,
                         stack_state);
   }
   RequestGarbageCollectionForTesting(type);
@@ -10231,6 +10346,7 @@ int Isolate::ContextDisposedNotification(bool dependant_context) {
     }
   }
 #endif  // V8_ENABLE_WEBASSEMBLY
+  i_isolate->AbortConcurrentOptimization(i::BlockingBehavior::kDontBlock);
   // TODO(ahaas): move other non-heap activity out of the heap call.
   return i_isolate->heap()->NotifyContextDisposed(dependant_context);
 }
@@ -10384,12 +10500,12 @@ CALLBACK_SETTER(WasmAsyncResolvePromiseCallback,
 CALLBACK_SETTER(WasmLoadSourceMapCallback, WasmLoadSourceMapCallback,
                 wasm_load_source_map_callback)
 
-CALLBACK_SETTER(WasmGCEnabledCallback, WasmGCEnabledCallback,
-                wasm_gc_enabled_callback)
-
 CALLBACK_SETTER(WasmImportedStringsEnabledCallback,
                 WasmImportedStringsEnabledCallback,
                 wasm_imported_strings_enabled_callback)
+
+CALLBACK_SETTER(WasmJSPIEnabledCallback, WasmJSPIEnabledCallback,
+                wasm_jspi_enabled_callback)
 
 CALLBACK_SETTER(SharedArrayBufferConstructorEnabledCallback,
                 SharedArrayBufferConstructorEnabledCallback,
@@ -10410,6 +10526,7 @@ void Isolate::InstallConditionalFeatures(Local<Context> context) {
     i::WasmJs::InstallConditionalFeatures(i_isolate,
                                           Utils::OpenHandle(*context));
   }
+
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
@@ -10450,7 +10567,8 @@ bool Isolate::AddMessageListenerWithErrorLevel(MessageCallback that,
   i::Handle<i::ArrayList> list = i_isolate->factory()->message_listeners();
   i::Handle<i::FixedArray> listener = i_isolate->factory()->NewFixedArray(3);
   i::Handle<i::Foreign> foreign =
-      i_isolate->factory()->NewForeign(FUNCTION_ADDR(that));
+      i_isolate->factory()->NewForeign<internal::kGenericForeignTag>(
+          FUNCTION_ADDR(that));
   listener->set(0, *foreign);
   listener->set(1, data.IsEmpty()
                        ? i::ReadOnlyRoots(i_isolate).undefined_value()
@@ -10473,7 +10591,8 @@ void Isolate::RemoveMessageListeners(MessageCallback that) {
     }
     i::Tagged<i::FixedArray> listener = i::FixedArray::cast(listeners->get(i));
     i::Tagged<i::Foreign> callback_obj = i::Foreign::cast(listener->get(0));
-    if (callback_obj->foreign_address() == FUNCTION_ADDR(that)) {
+    if (callback_obj->foreign_address<internal::kGenericForeignTag>() ==
+        FUNCTION_ADDR(that)) {
       listeners->set(i, i::ReadOnlyRoots(i_isolate).undefined_value());
     }
   }
@@ -10702,6 +10821,27 @@ Local<StackTrace> Exception::GetStackTrace(Local<Value> exception) {
   i::Isolate* i_isolate = js_obj->GetIsolate();
   ENTER_V8_NO_SCRIPT_NO_EXCEPTION(i_isolate);
   return Utils::StackTraceToLocal(i_isolate->GetDetailedStackTrace(js_obj));
+}
+
+Maybe<bool> Exception::CaptureStackTrace(Local<Context> context,
+                                         Local<Object> object) {
+  auto i_isolate = reinterpret_cast<i::Isolate*>(context->GetIsolate());
+  ENTER_V8_NO_SCRIPT(i_isolate, context, Exception, CaptureStackTrace,
+                     i::HandleScope);
+  auto obj = Utils::OpenHandle(*object);
+  if (!IsJSObject(*obj)) return Just(false);
+
+  auto js_obj = i::Handle<i::JSObject>::cast(obj);
+
+  i::FrameSkipMode mode = i::FrameSkipMode::SKIP_FIRST;
+
+  auto result = i::ErrorUtils::CaptureStackTrace(i_isolate, js_obj, mode,
+      i::Handle<i::Object>());
+
+  i::Handle<i::Object> handle;
+  has_exception = !result.ToHandle(&handle);
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return Just(true);
 }
 
 v8::MaybeLocal<v8::Array> v8::Object::PreviewEntries(bool* is_key_value) {
@@ -11312,6 +11452,12 @@ void HeapProfiler::DeleteAllHeapSnapshots() {
   reinterpret_cast<i::HeapProfiler*>(this)->DeleteAllSnapshots();
 }
 
+v8::EmbedderGraph::Node* v8::EmbedderGraph::V8Node(
+    const v8::Local<v8::Data>& data) {
+  CHECK(data->IsValue());
+  return V8Node(data.As<v8::Value>());
+}
+
 void HeapProfiler::AddBuildEmbedderGraphCallback(
     BuildEmbedderGraphCallback callback, void* data) {
   reinterpret_cast<i::HeapProfiler*>(this)->AddBuildEmbedderGraphCallback(
@@ -11621,10 +11767,8 @@ inline void InvokeFunctionCallback(
         ApiCallbackExitFrame* frame = ApiCallbackExitFrame::cast(it.frame());
         Tagged<FunctionTemplateInfo> fti =
             FunctionTemplateInfo::cast(frame->target());
-        Tagged<CallHandlerInfo> call_handler_info =
-            CallHandlerInfo::cast(fti->call_code(kAcquireLoad));
         if (!i_isolate->debug()->PerformSideEffectCheckForCallback(
-                handle(call_handler_info, i_isolate))) {
+                handle(fti, i_isolate))) {
           // Failed side effect check.
           return;
         }
@@ -11745,7 +11889,7 @@ bool ValidateFunctionCallbackInfo(const FunctionCallbackInfo<T>& info) {
   CHECK_EQ(i_isolate, Isolate::Current());
   CHECK(!i_isolate->GetIncumbentContext().is_null());
   CHECK(info.This()->IsValue());
-  CHECK(info.Holder()->IsObject());
+  CHECK(info.HolderSoonToBeDeprecated()->IsObject());
   CHECK(!info.Data().IsEmpty());
   CHECK(info.GetReturnValue().Get()->IsValue());
   return true;

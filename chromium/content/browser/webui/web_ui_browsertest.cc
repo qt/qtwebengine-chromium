@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <memory>
 #include <utility>
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
-#include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/weak_ptr.h"
@@ -63,7 +63,7 @@ namespace {
 
 using WebUIImplBrowserTest = ContentBrowserTest;
 
-// TODO(crbug.com/154571): Shared workers are not available on Android.
+// TODO(crbug.com/40290702): Shared workers are not available on Android.
 #if !BUILDFLAG(IS_ANDROID)
 const char kLoadSharedWorkerScript[] = R"(
     new Promise((resolve) => {
@@ -99,7 +99,7 @@ class TestWebUIMessageHandler : public WebUIMessageHandler {
                             base::Unretained(this)));
     web_ui()->RegisterMessageCallback(
         "sendMessage",
-        base::BindRepeating(&TestWebUIMessageHandler::OnSendMessase,
+        base::BindRepeating(&TestWebUIMessageHandler::OnSendMessage,
                             base::Unretained(this)));
   }
 
@@ -125,7 +125,7 @@ class TestWebUIMessageHandler : public WebUIMessageHandler {
       finish_closure_.Run();
   }
 
-  void OnSendMessase(const base::Value::List& args) {
+  void OnSendMessage(const base::Value::List& args) {
     // This message will be invoked when WebContents changes the main RFH
     // and the old main RFH is still alive during navigating from WebUI page
     // to cross-site. WebUI message should be handled with old main RFH.
@@ -161,9 +161,9 @@ class WebUIRequiringGestureBrowserTest : public ContentBrowserTest {
 
   void SetUpOnMainThread() override {
     ASSERT_TRUE(NavigateToURL(web_contents(), GetWebUIURL(kChromeUIGpuHost)));
-    test_handler_ = new TestWebUIMessageHandler();
-    web_contents()->GetWebUI()->AddMessageHandler(
-        base::WrapUnique(test_handler_.get()));
+    auto test_handler = std::make_unique<TestWebUIMessageHandler>();
+    test_handler_ = test_handler.get();
+    web_contents()->GetWebUI()->AddMessageHandler(std::move(test_handler));
   }
   void TearDownOnMainThread() override { test_handler_ = nullptr; }
 
@@ -547,7 +547,7 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ReuseProcessInClonedTab) {
   // The cloned WebContents will use the old tab's current SiteInstance for its
   // initial RFH.  That means its initial SiteInstance should already have a
   // site, and it should keep the same process (from the old tab).
-  // TODO(crbug.com/1468601): these expectations may change in the future if
+  // TODO(crbug.com/40277187): these expectations may change in the future if
   // duplicating tabs stops inheriting the old tab's SiteInstance.
   EXPECT_EQ(shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance(),
             cloned_tab->GetPrimaryMainFrame()->GetSiteInstance());
@@ -559,7 +559,7 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ReuseProcessInClonedTab) {
       cloned_tab_impl->GetPrimaryMainFrame()->GetProcess()->IsUnused());
 
   // Load the cloned tab.  This should reuse the old tab's WebUI process.
-  // TODO(crbug.com/1468601): this expectation may change in the future if
+  // TODO(crbug.com/40277187): this expectation may change in the future if
   // duplicating tabs stops inheriting the old tab's SiteInstance.
   {
     TestNavigationObserver clone_observer(cloned_tab_impl);
@@ -596,8 +596,8 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, ReuseInitialRFHInRestoredTab) {
   // Create a new shell for session restore. At this point, since we haven't
   // loaded anything yet, the restored shell's initial RFH should still be in an
   // unassigned SiteInstance and an unused process.
-  Shell* restore_shell = Shell::CreateNewWindow(
-      controller.GetBrowserContext(), GURL::EmptyGURL(), nullptr, gfx::Size());
+  Shell* restore_shell = Shell::CreateNewWindow(controller.GetBrowserContext(),
+                                                GURL(), nullptr, gfx::Size());
   WebContentsImpl* restore_contents =
       static_cast<WebContentsImpl*>(restore_shell->web_contents());
   RenderFrameHostWrapper restore_rfh(restore_contents->GetPrimaryMainFrame());
@@ -710,8 +710,9 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, SameDocumentNavigationsAndReload) {
   auto* web_contents = shell()->web_contents();
   ASSERT_TRUE(NavigateToURL(web_contents, GetWebUIURL(kChromeUIHistogramHost)));
 
-  WebUIMessageHandler* test_handler = new TestWebUIMessageHandler;
-  web_contents->GetWebUI()->AddMessageHandler(base::WrapUnique(test_handler));
+  auto owned_test_handler = std::make_unique<TestWebUIMessageHandler>();
+  auto* test_handler = owned_test_handler.get();
+  web_contents->GetWebUI()->AddMessageHandler(std::move(owned_test_handler));
   test_handler->AllowJavascriptForTesting();
 
   // Push onto window.history. Back should now be an in-page navigation.
@@ -735,9 +736,9 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, SameDocumentNavigationsAndReload) {
     // `TestWebUIMessageHandler` will point to a stale WebUI and we can't check
     // the `IsJavascriptAllowed()` value there. So use a new handler here and
     // check the value on the new handler instead.
-    WebUIMessageHandler* test_handler2 = new TestWebUIMessageHandler;
-    web_contents->GetWebUI()->AddMessageHandler(
-        base::WrapUnique(test_handler2));
+    auto owned_test_handler2 = std::make_unique<TestWebUIMessageHandler>();
+    auto* test_handler2 = owned_test_handler2.get();
+    web_contents->GetWebUI()->AddMessageHandler(std::move(owned_test_handler2));
     EXPECT_FALSE(test_handler2->IsJavascriptAllowed());
   }
 }
@@ -788,7 +789,7 @@ IN_PROC_BROWSER_TEST_F(WebUIRequiringGestureBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(
     WebUIRequiringGestureBrowserTest,
-    // TODO(crbug.com/1342300): Re-enable this test
+    // TODO(crbug.com/40851657): Re-enable this test
     DISABLED_MessageRequiringGestureAllowedWithInteractiveEvent) {
   // Simulate a click at Now.
   content::SimulateMouseClick(web_contents(), 0,
@@ -822,15 +823,16 @@ IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, UntrustedSchemeLoads) {
 
 // Verify that we can successfully navigate to a chrome-untrusted:// URL
 // without a crash while WebUI::Send is being performed.
-// TODO(crbug.com/1221528): Enable this test once a root cause is identified.
+// TODO(crbug.com/40773523): Enable this test once a root cause is identified.
 IN_PROC_BROWSER_TEST_F(WebUIImplBrowserTest, DISABLED_NavigateWhileWebUISend) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   auto* web_contents = shell()->web_contents();
   ASSERT_TRUE(NavigateToURL(web_contents, GetWebUIURL(kChromeUIGpuHost)));
 
-  auto* test_handler = new TestWebUIMessageHandler;
-  web_contents->GetWebUI()->AddMessageHandler(base::WrapUnique(test_handler));
+  auto owned_test_handler = std::make_unique<TestWebUIMessageHandler>();
+  auto* test_handler = owned_test_handler.get();
+  web_contents->GetWebUI()->AddMessageHandler(std::move(owned_test_handler));
 
   auto* webui = static_cast<WebUIImpl*>(web_contents->GetWebUI());
   EXPECT_EQ(web_contents->GetPrimaryMainFrame(), webui->GetRenderFrameHost());
@@ -1092,7 +1094,7 @@ class WebUIDedicatedWorkerTest : public WebUIWorkerTest,
 
 INSTANTIATE_TEST_SUITE_P(All, WebUIDedicatedWorkerTest, testing::Bool());
 
-// TODO(crbug.com/154571): Shared workers are not available on Android.
+// TODO(crbug.com/40290702): Shared workers are not available on Android.
 #if !BUILDFLAG(IS_ANDROID)
 // Verify that we can create SharedWorker with scheme "chrome://" under
 // WebUI page.

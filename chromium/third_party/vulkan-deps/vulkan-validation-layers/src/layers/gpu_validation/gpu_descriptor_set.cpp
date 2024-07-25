@@ -1,6 +1,6 @@
-/* Copyright (c) 2023 The Khronos Group Inc.
- * Copyright (c) 2023 Valve Corporation
- * Copyright (c) 2023 LunarG, Inc.
+/* Copyright (c) 2023-2024 The Khronos Group Inc.
+ * Copyright (c) 2023-2024 Valve Corporation
+ * Copyright (c) 2023-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 
 #include "gpu_validation/gpu_descriptor_set.h"
 #include "gpu_validation/gpu_validation.h"
+#include "gpu_validation/gpu_subclasses.h"
 #include "gpu_shaders/gpu_shaders_constants.h"
 
 using vvl::DescriptorClass;
@@ -60,26 +61,25 @@ struct DescriptorState {
 };
 
 }  // namespace glsl
-}  // namespace gpuav
 
 // Returns the number of bytes to hold 32 bit aligned array of bits.
 static uint32_t BitBufferSize(uint32_t num_bits) {
     static constexpr uint32_t kBitsPerWord = 32;
-    return (((num_bits + (kBitsPerWord - 1)) & ~(kBitsPerWord - 1))/kBitsPerWord) * sizeof(uint32_t);
+    return (((num_bits + (kBitsPerWord - 1)) & ~(kBitsPerWord - 1)) / kBitsPerWord) * sizeof(uint32_t);
 }
 
-gpuav::DescriptorSet::DescriptorSet(const VkDescriptorSet set, vvl::DescriptorPool *pool,
-                                    const std::shared_ptr<vvl::DescriptorSetLayout const> &layout, uint32_t variable_count,
-                                    ValidationStateTracker *state_data)
-    : vvl::DescriptorSet(set, pool, layout, variable_count, state_data) {}
+DescriptorSet::DescriptorSet(const VkDescriptorSet handle, vvl::DescriptorPool *pool,
+                             const std::shared_ptr<vvl::DescriptorSetLayout const> &layout, uint32_t variable_count,
+                             ValidationStateTracker *state_data)
+    : vvl::DescriptorSet(handle, pool, layout, variable_count, state_data) {}
 
-gpuav::DescriptorSet::~DescriptorSet() {
+DescriptorSet::~DescriptorSet() {
     Destroy();
     Validator *gv_dev = static_cast<Validator *>(state_data_);
     vmaDestroyBuffer(gv_dev->vmaAllocator, layout_.buffer, layout_.allocation);
 }
 
-VkDeviceAddress gpuav::DescriptorSet::GetLayoutState() {
+VkDeviceAddress DescriptorSet::GetLayoutState() {
     auto guard = Lock();
     if (layout_.device_addr != 0) {
         return layout_.device_addr;
@@ -156,14 +156,13 @@ VkDeviceAddress gpuav::DescriptorSet::GetLayoutState() {
     return layout_.device_addr;
 }
 
-namespace gpuav {
 static glsl::DescriptorState GetInData(const vvl::BufferDescriptor &desc) {
     auto buffer_state = static_cast<const Buffer *>(desc.GetBufferState());
     if (!buffer_state) {
         return glsl::DescriptorState(DescriptorClass::GeneralBuffer, glsl::kDebugInputBindlessSkipId, vvl::kU32Max);
     }
     return glsl::DescriptorState(DescriptorClass::GeneralBuffer, buffer_state->id,
-                                 static_cast<uint32_t>(buffer_state->createInfo.size));
+                                 static_cast<uint32_t>(buffer_state->create_info.size));
 }
 
 static glsl::DescriptorState GetInData(const vvl::TexelDescriptor &desc) {
@@ -213,7 +212,7 @@ static glsl::DescriptorState GetInData(const vvl::MutableDescriptor &desc) {
             if (!buffer_state) {
                 return glsl::DescriptorState(desc_class, glsl::kDebugInputBindlessSkipId, vvl::kU32Max);
             }
-            return glsl::DescriptorState(desc_class, buffer_state->id, static_cast<uint32_t>(buffer_state->createInfo.size));
+            return glsl::DescriptorState(desc_class, buffer_state->id, static_cast<uint32_t>(buffer_state->create_info.size));
         }
         case DescriptorClass::TexelBuffer: {
             auto buffer_view_state = std::static_pointer_cast<const BufferView>(desc.GetSharedBufferViewState());
@@ -273,9 +272,8 @@ template <>
 void FillBindingInData(const vvl::InlineUniformBinding &binding, glsl::DescriptorState *data, uint32_t &index) {
     data[index++] = glsl::DescriptorState(DescriptorClass::InlineUniform, glsl::kDebugInputBindlessSkipId, vvl::kU32Max);
 }
-}  // namespace gpuav
 
-std::shared_ptr<gpuav::DescriptorSet::State> gpuav::DescriptorSet::GetCurrentState() {
+std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
     auto guard = Lock();
     Validator *gv_dev = static_cast<Validator *>(state_data_);
     uint32_t cur_version = current_version_.load();
@@ -375,7 +373,7 @@ std::shared_ptr<gpuav::DescriptorSet::State> gpuav::DescriptorSet::GetCurrentSta
     return next_state;
 }
 
-std::shared_ptr<gpuav::DescriptorSet::State> gpuav::DescriptorSet::GetOutputState() {
+std::shared_ptr<DescriptorSet::State> DescriptorSet::GetOutputState() {
     auto guard = Lock();
     Validator *gv_dev = static_cast<Validator *>(state_data_);
     uint32_t cur_version = current_version_.load();
@@ -443,7 +441,8 @@ std::shared_ptr<gpuav::DescriptorSet::State> gpuav::DescriptorSet::GetOutputStat
     return next_state;
 }
 
-std::map<uint32_t, std::vector<uint32_t>> gpuav::DescriptorSet::State::UsedDescriptors(const gpuav::DescriptorSet &set) const {
+std::map<uint32_t, std::vector<uint32_t>> DescriptorSet::State::UsedDescriptors(const DescriptorSet &set,
+                                                                                uint32_t shader_set) const {
     std::map<uint32_t, std::vector<uint32_t>> used_descs;
     if (!allocation) {
         return used_descs;
@@ -462,7 +461,7 @@ std::map<uint32_t, std::vector<uint32_t>> gpuav::DescriptorSet::State::UsedDescr
         uint32_t start = layout_data[binding + 1].state_start;
         for (uint32_t i = 0; i < count; i++) {
             uint32_t pos = start + i;
-            if (data[pos]) {
+            if (data[pos] == shader_set) {
                 auto map_result = used_descs.emplace(binding, std::vector<uint32_t>());
                 map_result.first->second.emplace_back(i);
             }
@@ -474,24 +473,24 @@ std::map<uint32_t, std::vector<uint32_t>> gpuav::DescriptorSet::State::UsedDescr
     return used_descs;
 }
 
-gpuav::DescriptorSet::State::~State() { vmaDestroyBuffer(allocator, buffer, allocation); }
+DescriptorSet::State::~State() { vmaDestroyBuffer(allocator, buffer, allocation); }
 
-void gpuav::DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet *write_descs) {
+void DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet *write_descs) {
     vvl::DescriptorSet::PerformPushDescriptorsUpdate(write_count, write_descs);
     current_version_++;
 }
 
-void gpuav::DescriptorSet::PerformWriteUpdate(const VkWriteDescriptorSet &write_desc) {
+void DescriptorSet::PerformWriteUpdate(const VkWriteDescriptorSet &write_desc) {
     vvl::DescriptorSet::PerformWriteUpdate(write_desc);
     current_version_++;
 }
 
-void gpuav::DescriptorSet::PerformCopyUpdate(const VkCopyDescriptorSet &copy_desc, const vvl::DescriptorSet &src_set) {
+void DescriptorSet::PerformCopyUpdate(const VkCopyDescriptorSet &copy_desc, const vvl::DescriptorSet &src_set) {
     vvl::DescriptorSet::PerformCopyUpdate(copy_desc, src_set);
     current_version_++;
 }
 
-gpuav::DescriptorHeap::DescriptorHeap(gpuav::Validator &gpu_dev, uint32_t max_descriptors)
+DescriptorHeap::DescriptorHeap(Validator &gpu_dev, uint32_t max_descriptors)
     : max_descriptors_(max_descriptors), allocator_(gpu_dev.vmaAllocator) {
     // If max_descriptors_ is 0, GPU-AV aborted during vkCreateDevice(). We still need to
     // support calls into this class as no-ops if this happens.
@@ -500,7 +499,7 @@ gpuav::DescriptorHeap::DescriptorHeap(gpuav::Validator &gpu_dev, uint32_t max_de
     }
 
     VkBufferCreateInfo buffer_info = vku::InitStruct<VkBufferCreateInfo>();
-    buffer_info.size = BitBufferSize(max_descriptors_ + 1); // add extra entry since 0 is the invalid id.
+    buffer_info.size = BitBufferSize(max_descriptors_ + 1);  // add extra entry since 0 is the invalid id.
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_KHR;
 
     VmaAllocationCreateInfo alloc_info{};
@@ -525,7 +524,7 @@ gpuav::DescriptorHeap::DescriptorHeap(gpuav::Validator &gpu_dev, uint32_t max_de
     assert(device_address_ != 0);
 }
 
-gpuav::DescriptorHeap::~DescriptorHeap() {
+DescriptorHeap::~DescriptorHeap() {
     if (max_descriptors_ > 0) {
         vmaUnmapMemory(allocator_, allocation_);
         gpu_heap_state_ = nullptr;
@@ -533,7 +532,7 @@ gpuav::DescriptorHeap::~DescriptorHeap() {
     }
 }
 
-gpuav::DescriptorId gpuav::DescriptorHeap::NextId(const VulkanTypedHandle &handle) {
+DescriptorId DescriptorHeap::NextId(const VulkanTypedHandle &handle) {
     if (max_descriptors_ == 0) {
         return 0;
     }
@@ -552,15 +551,17 @@ gpuav::DescriptorId gpuav::DescriptorHeap::NextId(const VulkanTypedHandle &handl
         }
     } while (alloc_map_.count(result) > 0);
     alloc_map_[result] = handle;
-    gpu_heap_state_[result/32] |= 1u << (result & 31);
+    gpu_heap_state_[result / 32] |= 1u << (result & 31);
     return result;
 }
 
-void gpuav::DescriptorHeap::DeleteId(gpuav::DescriptorId id) {
+void DescriptorHeap::DeleteId(DescriptorId id) {
     if (max_descriptors_ > 0) {
         auto guard = Lock();
         // Note: We don't mess with next_id_ here because ids should be signed in LRU order.
-        gpu_heap_state_[id/32] &= ~(1u << (id & 31));
+        gpu_heap_state_[id / 32] &= ~(1u << (id & 31));
         alloc_map_.erase(id);
     }
 }
+
+}  // namespace gpuav

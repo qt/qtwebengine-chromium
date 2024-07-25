@@ -58,6 +58,10 @@ class CSSTokenizerInputStream {
 
   double GetDouble(unsigned start, unsigned end) const;
 
+  // Like GetDouble(), but only for the case where the number matches
+  // [0-9]+ (no decimal point, no exponent, no sign), and is faster.
+  double GetNaturalNumberAsDouble(unsigned start, unsigned end) const;
+
   template <bool characterPredicate(UChar)>
   unsigned SkipWhilePredicate(unsigned offset) {
     if (string_.Is8Bit()) {
@@ -80,6 +84,10 @@ class CSSTokenizerInputStream {
 
   unsigned length() const { return string_length_; }
   unsigned Offset() const { return std::min(offset_, string_length_); }
+
+  StringView RangeFrom(unsigned start) const {
+    return StringView(string_, start, string_length_ - start);
+  }
 
   StringView RangeAt(unsigned start, unsigned length) const {
     DCHECK(start + length <= string_length_);

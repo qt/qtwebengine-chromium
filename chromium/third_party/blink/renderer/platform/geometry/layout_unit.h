@@ -47,6 +47,10 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/vector_traits.h"
 
+namespace WTF {
+class String;
+}  // namespace WTF
+
 namespace blink {
 
 #if DCHECK_IS_ON()
@@ -279,7 +283,7 @@ class LayoutUnit {
   }
 
   // Versions of max/min that are slightly smaller/larger than max/min() to
-  // allow for roinding without overflowing.
+  // allow for rounding without overflowing.
   static constexpr LayoutUnit NearlyMax() {
     LayoutUnit m;
     m.value_ = std::numeric_limits<int>::max() - kFixedPointDenominator / 2;
@@ -298,7 +302,7 @@ class LayoutUnit {
   // regular operations (i.e the result of the divide is rounded towards zero).
   LayoutUnit MulDiv(LayoutUnit m, LayoutUnit d) const;
 
-  String ToString() const;
+  WTF::String ToString() const;
 
  private:
   static bool IsInBounds(int value) {

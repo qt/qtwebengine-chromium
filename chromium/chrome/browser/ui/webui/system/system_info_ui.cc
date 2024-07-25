@@ -29,6 +29,8 @@
 #include "chrome/grit/about_sys_resources.h"
 #include "chrome/grit/about_sys_resources_map.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/grit/key_value_pair_viewer_shared_resources.h"
+#include "chrome/grit/key_value_pair_viewer_shared_resources_map.h"
 #include "components/feedback/system_logs/system_logs_fetcher.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -57,7 +59,6 @@ void CreateAndAddSystemInfoUIDataSource(Profile* profile) {
   content::WebUIDataSource* html_source =
       content::WebUIDataSource::CreateAndAdd(profile,
                                              chrome::kChromeUISystemInfoHost);
-
   static constexpr webui::LocalizedString kStrings[] = {
       {"title", IDS_ABOUT_SYS_TITLE},
       {"description", IDS_ABOUT_SYS_DESC},
@@ -86,6 +87,9 @@ void CreateAndAddSystemInfoUIDataSource(Profile* profile) {
   webui::SetupWebUIDataSource(
       html_source, base::make_span(kAboutSysResources, kAboutSysResourcesSize),
       IDR_ABOUT_SYS_ABOUT_SYS_HTML);
+  html_source->AddResourcePaths(
+      base::make_span(kKeyValuePairViewerSharedResources,
+                      kKeyValuePairViewerSharedResourcesSize));
 }
 
 }  // namespace
@@ -104,7 +108,7 @@ class SystemInfoUIHandler : public WebUIMessageHandler {
   void RegisterMessages() override;
   void OnJavascriptDisallowed() override;
 
-  // Callback for the "requestSystemInfo" message. This asynchronously requests
+  // Callbacks for SystemInfo request messages. This asynchronously requests
   // system info and eventually returns it to the front end.
   void HandleRequestSystemInfo(const base::Value::List& args);
 

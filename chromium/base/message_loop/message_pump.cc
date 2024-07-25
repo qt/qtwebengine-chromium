@@ -48,6 +48,11 @@ MessagePump::MessagePump() = default;
 
 MessagePump::~MessagePump() = default;
 
+bool MessagePump::HandleNestedNativeLoopWithApplicationTasks(
+    bool application_tasks_desired) {
+  return false;
+}
+
 // static
 void MessagePump::OverrideMessagePumpForUIFactory(MessagePumpFactory* factory) {
   DCHECK(!message_pump_for_ui_factory_);
@@ -70,8 +75,14 @@ std::unique_ptr<MessagePump> MessagePump::Create(MessagePumpType type) {
 #elif BUILDFLAG(IS_NACL) || BUILDFLAG(IS_AIX)
       // Currently NaCl and AIX don't have a UI MessagePump.
       // TODO(abarth): Figure out if we need this.
-      NOTREACHED();
+      NOTREACHED_IN_MIGRATION();
       return nullptr;
+#elif BUILDFLAG(IS_ANDROID)
+      {
+        auto message_pump = std::make_unique<MessagePumpAndroid>();
+        message_pump->set_is_type_ui(true);
+        return message_pump;
+      }
 #else
       return std::make_unique<MessagePumpForUI>();
 #endif
@@ -81,7 +92,7 @@ std::unique_ptr<MessagePump> MessagePump::Create(MessagePumpType type) {
 
 #if BUILDFLAG(IS_ANDROID)
     case MessagePumpType::JAVA:
-      return std::make_unique<MessagePumpForUI>();
+      return std::make_unique<MessagePumpAndroid>();
 #endif
 
 #if BUILDFLAG(IS_APPLE)
@@ -90,7 +101,7 @@ std::unique_ptr<MessagePump> MessagePump::Create(MessagePumpType type) {
 #endif
 
     case MessagePumpType::CUSTOM:
-      NOTREACHED();
+      NOTREACHED_IN_MIGRATION();
       return nullptr;
 
     case MessagePumpType::DEFAULT:
@@ -109,6 +120,7 @@ void MessagePump::InitializeFeatures() {
 #if BUILDFLAG(IS_WIN)
   g_explicit_high_resolution_timer_win =
       FeatureList::IsEnabled(kExplicitHighResolutionTimerWin);
+  MessagePumpWin::InitializeFeatures();
 #endif
 }
 

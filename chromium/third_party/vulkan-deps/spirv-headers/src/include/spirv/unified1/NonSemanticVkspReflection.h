@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Khronos Group Inc.
+// Copyright (c) 2020-2024 The Khronos Group Inc.
 // 
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and/or associated documentation files (the
@@ -33,7 +33,7 @@ extern "C" {
 #endif
 
 enum {
-    NonSemanticVkspReflectionRevision = 1,
+    NonSemanticVkspReflectionRevision = 2,
     NonSemanticVkspReflectionRevision_BitWidthPadding = 0x7fffffff
 };
 

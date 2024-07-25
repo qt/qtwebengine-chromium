@@ -28,8 +28,9 @@ specific_include_rules = {
     "+content/app_shim_remote_cocoa",
     "+components/remote_cocoa",
   ],
-  "blocked_scheme_navigation_browsertest\.cc": [
-    "+pdf/buildflags.h",
+  "back_forward_cache_metrics.cc": [
+    # For using DisabledReasonId.
+    "+components/back_forward_cache/disabled_reason_id.h",
   ],
   "embedded_frame_sink_provider_impl_unittest\.cc": [
     "+components/viz/service",
@@ -37,7 +38,7 @@ specific_include_rules = {
   "render_process_host_impl\.cc": [
     "+google_apis/gaia/gaia_config.h",
     "+google_apis/gaia/gaia_switches.h",
-    # TODO(crbug.com/734668): Dependencies on ozone should be removed, as content
+    # TODO(crbug.com/41326135): Dependencies on ozone should be removed, as content
     # embedded in mus won't be able to talk to the native ozone.
     "+ui/ozone/public/ozone_switches.h",
   ],

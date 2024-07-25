@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_QUALITY_MODEL_QUALITY_LOG_ENTRY_H_
 #define COMPONENTS_OPTIMIZATION_GUIDE_CORE_MODEL_QUALITY_MODEL_QUALITY_LOG_ENTRY_H_
 
+#include "base/memory/weak_ptr.h"
+#include "components/optimization_guide/core/model_quality/model_quality_logs_uploader_service.h"
 #include "components/optimization_guide/proto/model_quality_service.pb.h"
 
 namespace optimization_guide {
@@ -16,7 +18,9 @@ namespace optimization_guide {
 class ModelQualityLogEntry {
  public:
   explicit ModelQualityLogEntry(
-      std::unique_ptr<proto::LogAiDataRequest> log_ai_data_request);
+      std::unique_ptr<proto::LogAiDataRequest> log_ai_data_request,
+      base::WeakPtr<ModelQualityLogsUploaderService>
+          model_quality_uploader_service);
 
   virtual ~ModelQualityLogEntry();
 
@@ -38,6 +42,9 @@ class ModelQualityLogEntry {
     log_ai_data_request_->mutable_model_execution_info()->set_execution_id(
         execution_id);
   }
+  std::string model_execution_id() const {
+    return log_ai_data_request_->model_execution_info().execution_id();
+  }
 
   void set_error_response(const proto::ErrorResponse& error_response) {
     *(log_ai_data_request_->mutable_model_execution_info()
@@ -53,6 +60,11 @@ class ModelQualityLogEntry {
 
   // Holds feature's model execution and quality data.
   std::unique_ptr<proto::LogAiDataRequest> log_ai_data_request_;
+
+  // Reference to ModelQualityLogsUploaderService to upload logs during
+  // destruction if not uploaded.
+  base::WeakPtr<ModelQualityLogsUploaderService>
+      model_quality_uploader_service_;
 };
 
 }  // namespace optimization_guide

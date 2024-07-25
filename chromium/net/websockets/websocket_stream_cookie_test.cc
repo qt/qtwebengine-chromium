@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,7 +40,6 @@
 #include "net/websockets/websocket_test_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -49,7 +49,7 @@ namespace {
 using ::testing::TestWithParam;
 using ::testing::ValuesIn;
 
-const WebSocketExtraHeaders kNoCookieHeader = {};
+constexpr WebSocketExtraHeaders kNoCookieHeader = {};
 
 class TestBase : public WebSocketStreamCreateTestBase {
  public:
@@ -161,10 +161,8 @@ TEST_P(WebSocketStreamClientUseCookieTest, ClientUseCookie) {
   base::WeakPtrFactory<bool> weak_set_cookie_result(&set_cookie_result);
 
   base::RunLoop run_loop;
-  auto cookie =
-      CanonicalCookie::Create(cookie_url, cookie_line, base::Time::Now(),
-                              absl::nullopt /* server_time */,
-                              absl::nullopt /* cookie_partition_key */);
+  auto cookie = CanonicalCookie::CreateForTesting(cookie_url, cookie_line,
+                                                  base::Time::Now());
   store->SetCanonicalCookieAsync(
       std::move(cookie), cookie_url, net::CookieOptions::MakeAllInclusive(),
       base::BindOnce(&SetCookieHelperFunction, run_loop.QuitClosure(),
@@ -230,6 +228,8 @@ TEST_P(WebSocketStreamServerSetCookieTest, ServerSetCookie) {
 
 // Test parameters definitions follow...
 
+// The WebSocketExtraHeaders field can't be initialized at compile time, so this
+// array is constructed at startup, but that's okay in a test.
 const ClientUseCookieParameter kClientUseCookieParameters[] = {
     // Non-secure cookies for ws
     {"ws://www.example.com",
@@ -382,6 +382,7 @@ INSTANTIATE_TEST_SUITE_P(WebSocketStreamClientUseCookieTest,
                          WebSocketStreamClientUseCookieTest,
                          ValuesIn(kClientUseCookieParameters));
 
+// As with `kClientUseCookieParameters`, this is initialised at runtime.
 const ServerSetCookieParameter kServerSetCookieParameters[] = {
     // Cookies coming from ws
     {"ws://www.example.com",

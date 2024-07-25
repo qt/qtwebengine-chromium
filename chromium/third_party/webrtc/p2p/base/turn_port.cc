@@ -22,6 +22,7 @@
 #include "absl/types/optional.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/stun.h"
+#include "api/turn_customizer.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/p2p_constants.h"
 #include "rtc_base/async_packet_socket.h"
@@ -36,6 +37,7 @@
 
 namespace cricket {
 
+using ::webrtc::IceCandidateType;
 using ::webrtc::SafeTask;
 using ::webrtc::TaskQueueBase;
 using ::webrtc::TimeDelta;
@@ -221,7 +223,7 @@ TurnPort::TurnPort(TaskQueueBase* thread,
                    rtc::SSLCertificateVerifier* tls_cert_verifier,
                    const webrtc::FieldTrialsView* field_trials)
     : Port(thread,
-           RELAY_PORT_TYPE,
+           IceCandidateType::kRelay,
            factory,
            network,
            username,
@@ -263,7 +265,7 @@ TurnPort::TurnPort(TaskQueueBase* thread,
                    rtc::SSLCertificateVerifier* tls_cert_verifier,
                    const webrtc::FieldTrialsView* field_trials)
     : Port(thread,
-           RELAY_PORT_TYPE,
+           IceCandidateType::kRelay,
            factory,
            network,
            min_port,
@@ -307,6 +309,20 @@ TurnPort::~TurnPort() {
 
   if (!SharedSocket()) {
     delete socket_;
+  }
+}
+
+void TurnPort::set_realm(absl::string_view realm) {
+  if (realm.empty()) {
+    // Fail silently since this reduces the entropy going into the hash but log
+    // a warning.
+    RTC_LOG(LS_WARNING) << "Setting realm to the empty string, "
+                        << "this is not supported.";
+    return;
+  }
+  if (realm != realm_) {
+    realm_ = std::string(realm);
+    UpdateHash();
   }
 }
 
@@ -423,7 +439,7 @@ bool TurnPort::CreateTurnClientSocket() {
     tcp_options.tls_cert_verifier = tls_cert_verifier_;
     socket_ = socket_factory()->CreateClientTcpSocket(
         rtc::SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
-        proxy(), user_agent(), tcp_options);
+        tcp_options);
   }
 
   if (!socket_) {
@@ -886,8 +902,9 @@ void TurnPort::OnAllocateSuccess(const rtc::SocketAddress& address,
              UDP_PROTOCOL_NAME,
              ProtoToString(server_address_.proto),  // The first hop protocol.
              "",  // TCP candidate type, empty for turn candidates.
-             RELAY_PORT_TYPE, GetRelayPreference(server_address_.proto),
-             server_priority_, server_url_, true);
+             IceCandidateType::kRelay,
+             GetRelayPreference(server_address_.proto), server_priority_,
+             server_url_, true);
 }
 
 void TurnPort::OnAllocateError(int error_code, absl::string_view reason) {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -210,6 +211,9 @@ const enum Punctuation {
 
 const resolveDebuggerScope = async(scope: SDK.DebuggerModel.ScopeChainEntry):
     Promise<{variableMapping: Map<string, string>, thisMapping: string | null}> => {
+      if (!Common.Settings.Settings.instance().moduleSetting('js-source-maps-enabled').get()) {
+        return {variableMapping: new Map(), thisMapping: null};
+      }
       const script = scope.callFrame().script;
       const scopeChain = await findScopeChainForDebuggerScope(scope);
       return resolveScope(script, scopeChain);
@@ -226,7 +230,7 @@ const resolveScope = async(script: SDK.Script.Script, scopeChain: Formatter.Form
 
       if (!cachedScopeMap || cachedScopeMap.sourceMap !== sourceMap) {
         const identifiersPromise =
-            (async(): Promise<{variableMapping: Map<string, string>, thisMapping: string | null}> => {
+            (async () => {
               const variableMapping = new Map<string, string>();
               let thisMapping = null;
 
@@ -398,6 +402,9 @@ export const resolveScopeChain =
  */
 export const allVariablesInCallFrame =
     async(callFrame: SDK.DebuggerModel.CallFrame): Promise<Map<string, string|null>> => {
+  if (!Common.Settings.Settings.instance().moduleSetting('js-source-maps-enabled').get()) {
+    return new Map<string, string|null>();
+  }
   const cachedMap = cachedMapByCallFrame.get(callFrame);
   if (cachedMap) {
     return cachedMap;
@@ -431,6 +438,9 @@ export const allVariablesInCallFrame =
 export const allVariablesAtPosition =
     async(location: SDK.DebuggerModel.Location): Promise<Map<string, string|null>> => {
   const reverseMapping = new Map<string, string|null>();
+  if (!Common.Settings.Settings.instance().moduleSetting('js-source-maps-enabled').get()) {
+    return reverseMapping;
+  }
   const script = location.script();
   if (!script) {
     return reverseMapping;
@@ -606,9 +616,7 @@ export class RemoteObject extends SDK.RemoteObject.RemoteObject {
     return this.object.subtype;
   }
 
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  override get value(): any {
+  override get value(): typeof this.object.value {
     return this.object.value;
   }
 
@@ -777,14 +785,12 @@ export async function resolveProfileFrameFunctionName(
   return await getFunctionNameFromScopeStart(script, lineNumber, columnNumber);
 }
 
-// TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-// eslint-disable-next-line @typescript-eslint/naming-convention
-let _scopeResolvedForTest: (...arg0: unknown[]) => void = function(): void {};
+let scopeResolvedForTest: (...arg0: unknown[]) => void = function(): void {};
 
 export const getScopeResolvedForTest = (): (...arg0: unknown[]) => void => {
-  return _scopeResolvedForTest;
+  return scopeResolvedForTest;
 };
 
 export const setScopeResolvedForTest = (scope: (...arg0: unknown[]) => void): void => {
-  _scopeResolvedForTest = scope;
+  scopeResolvedForTest = scope;
 };

@@ -3,11 +3,10 @@
 // found in the LICENSE file.
 
 #include <optional>
+
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/functional/callback_helpers.h"
 #include "sql/database.h"
-#include "sql/sqlite_result_code.h"
 #include "sql/statement.h"
 #include "sql/test/scoped_error_expecter.h"
 #include "sql/test/test_helpers.h"

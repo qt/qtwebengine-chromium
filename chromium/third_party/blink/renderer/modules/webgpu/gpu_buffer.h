@@ -5,8 +5,10 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_GPU_BUFFER_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_GPU_BUFFER_H_
 
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include <optional>
+
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
+#include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer_view_helpers.h"
 #include "third_party/blink/renderer/core/typed_arrays/flexible_array_buffer_view.h"
 #include "third_party/blink/renderer/modules/webgpu/dawn_object.h"
@@ -18,17 +20,19 @@ class DOMArrayBuffer;
 class GPUBufferDescriptor;
 class GPUMappedDOMArrayBuffer;
 struct BoxedMappableWGPUBufferHandles;
-class ScriptPromiseResolver;
 class ScriptState;
 
-class GPUBuffer : public DawnObject<WGPUBuffer> {
+class GPUBuffer : public DawnObject<wgpu::Buffer> {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
   static GPUBuffer* Create(GPUDevice* device,
                            const GPUBufferDescriptor* webgpu_desc,
                            ExceptionState& exception_state);
-  GPUBuffer(GPUDevice* device, uint64_t size, WGPUBuffer buffer);
+  GPUBuffer(GPUDevice* device,
+            uint64_t size,
+            wgpu::Buffer buffer,
+            const String& label);
   ~GPUBuffer() override;
 
   GPUBuffer(const GPUBuffer&) = delete;
@@ -37,15 +41,15 @@ class GPUBuffer : public DawnObject<WGPUBuffer> {
   void Trace(Visitor* visitor) const override;
 
   // gpu_buffer.idl
-  ScriptPromise mapAsync(ScriptState* script_state,
-                         uint32_t mode,
-                         uint64_t offset,
-                         ExceptionState& exception_state);
-  ScriptPromise mapAsync(ScriptState* script_state,
-                         uint32_t mode,
-                         uint64_t offset,
-                         uint64_t size,
-                         ExceptionState& exception_state);
+  ScriptPromise<IDLUndefined> mapAsync(ScriptState* script_state,
+                                       uint32_t mode,
+                                       uint64_t offset,
+                                       ExceptionState& exception_state);
+  ScriptPromise<IDLUndefined> mapAsync(ScriptState* script_state,
+                                       uint32_t mode,
+                                       uint64_t offset,
+                                       uint64_t size,
+                                       ExceptionState& exception_state);
   DOMArrayBuffer* getMappedRange(ScriptState* script_state,
                                  uint64_t offset,
                                  ExceptionState& exception_state);
@@ -62,17 +66,17 @@ class GPUBuffer : public DawnObject<WGPUBuffer> {
   void DetachMappedArrayBuffers(v8::Isolate* isolate);
 
  private:
-  ScriptPromise MapAsyncImpl(ScriptState* script_state,
-                             uint32_t mode,
-                             uint64_t offset,
-                             absl::optional<uint64_t> size,
-                             ExceptionState& exception_state);
+  ScriptPromise<IDLUndefined> MapAsyncImpl(ScriptState* script_state,
+                                           uint32_t mode,
+                                           uint64_t offset,
+                                           std::optional<uint64_t> size,
+                                           ExceptionState& exception_state);
   DOMArrayBuffer* GetMappedRangeImpl(ScriptState* script_state,
                                      uint64_t offset,
-                                     absl::optional<uint64_t> size,
+                                     std::optional<uint64_t> size,
                                      ExceptionState& exception_state);
 
-  void OnMapAsyncCallback(ScriptPromiseResolver* resolver,
+  void OnMapAsyncCallback(ScriptPromiseResolver<IDLUndefined>* resolver,
                           WGPUBufferMapAsyncStatus status);
 
   DOMArrayBuffer* CreateArrayBufferForMappedData(v8::Isolate* isolate,
@@ -82,7 +86,7 @@ class GPUBuffer : public DawnObject<WGPUBuffer> {
 
   void setLabelImpl(const String& value) override {
     std::string utf8_label = value.Utf8();
-    GetProcs().bufferSetLabel(GetHandle(), utf8_label.c_str());
+    GetHandle().SetLabel(utf8_label.c_str());
   }
 
   uint64_t size_;

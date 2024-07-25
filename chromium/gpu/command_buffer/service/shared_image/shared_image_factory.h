@@ -27,10 +27,6 @@
 #include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gl/gl_bindings.h"
 
-namespace viz {
-class VulkanContextProvider;
-}  // namespace viz
-
 namespace gpu {
 class MemoryTracker;
 class SharedContextState;
@@ -130,15 +126,15 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   bool AddSecondaryReference(const gpu::Mailbox& mailbox);
 
   // Returns the usage for the shared image backing. If no backing is registered
-  // for `mailbox` this will return 0.
+  // for `mailbox` this will return 0. This can only get usages for mailboxes
+  // registered on this factory. If you need to query all mailboxes use
+  // |SharedImageManager::GetUsageForMailbox|.
   uint32_t GetUsageForMailbox(const Mailbox& mailbox);
-
-  SharedContextState* GetSharedContextState() const {
-    return shared_context_state_;
-  }
 
 #if BUILDFLAG(IS_WIN)
   bool CopyToGpuMemoryBuffer(const Mailbox& mailbox);
+  bool CopyToGpuMemoryBufferAsync(const Mailbox& mailbox,
+                                  base::OnceCallback<void(bool)> callback);
 #endif
 
   void SetGpuExtraInfo(const gfx::GpuExtraInfo& gpu_info);
@@ -172,16 +168,15 @@ class GPU_GLES2_EXPORT SharedImageFactory {
                                gfx::BufferUsage usage);
 
   raw_ptr<SharedImageManager> shared_image_manager_;
-  raw_ptr<SharedContextState> shared_context_state_;
+  const scoped_refptr<SharedContextState> context_state_;
   std::unique_ptr<MemoryTypeTracker> memory_tracker_;
 
   // This is used if the factory is created on display compositor to check for
   // sharing between threads.
   const bool is_for_display_compositor_;
 
-  // This is |shared_context_state_|'s context type. Some tests leave
-  // |shared_context_state_| as nullptr, in which case this is set to a default
-  /// of kGL.
+  // This is |context_state_|'s GrContextType or GrContextType::kNone if there
+  // is no shared context.
   const GrContextType gr_context_type_;
 
   // The set of SharedImages which have been created (and are being kept alive)
@@ -198,14 +193,13 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   raw_ptr<D3DImageBackingFactory> d3d_backing_factory_ = nullptr;
 #endif
 
-#if BUILDFLAG(IS_FUCHSIA)
-  viz::VulkanContextProvider* vulkan_context_provider_;
-#endif  // BUILDFLAG(IS_FUCHSIA)
-
   gfx::GpuExtraInfo gpu_extra_info_;
   gpu::GpuMemoryBufferConfigurationSet supported_gmb_configurations_;
   bool supported_gmb_configurations_inited_ = false;
   gpu::GpuPreferences gpu_preferences_;
+#if BUILDFLAG(IS_MAC)
+  uint32_t macos_specific_texture_target_;
+#endif
   gpu::GpuDriverBugWorkarounds workarounds_;
 
   raw_ptr<SharedImageBackingFactory> backing_factory_for_testing_ = nullptr;
@@ -246,6 +240,13 @@ class GPU_GLES2_EXPORT SharedImageRepresentationFactory {
 #if BUILDFLAG(IS_ANDROID)
   std::unique_ptr<LegacyOverlayImageRepresentation> ProduceLegacyOverlay(
       const Mailbox& mailbox);
+#endif
+
+#if BUILDFLAG(ENABLE_VULKAN) && BUILDFLAG(IS_OZONE)
+  std::unique_ptr<VulkanImageRepresentation> ProduceVulkan(
+      const Mailbox& mailbox,
+      gpu::VulkanDeviceQueue* vulkan_device_queue,
+      gpu::VulkanImplementation& vulkan_impl);
 #endif
 
  private:

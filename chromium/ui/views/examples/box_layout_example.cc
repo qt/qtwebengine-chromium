@@ -29,7 +29,12 @@ namespace views::examples {
 
 BoxLayoutExample::BoxLayoutExample() : LayoutExampleBase("Box Layout") {}
 
-BoxLayoutExample::~BoxLayoutExample() = default;
+BoxLayoutExample::~BoxLayoutExample() {
+  between_child_spacing_->set_controller(nullptr);
+  default_flex_->set_controller(nullptr);
+  min_cross_axis_size_->set_controller(nullptr);
+  border_insets_.ResetControllers();
+}
 
 void BoxLayoutExample::ContentsChanged(Textfield* textfield,
                                        const std::u16string& new_contents) {
@@ -65,12 +70,14 @@ void BoxLayoutExample::CreateAdditionalControls() {
       base::BindRepeating(&BoxLayoutExample::MainAxisAlignmentChanged,
                           base::Unretained(this)));
 
-  constexpr const char* kCrossAxisValues[4] = {"Stretch", "Start", "Center",
-                                               "End"};
+  constexpr const char* kCrossAxisValues[4] = {"Start", "Center", "End",
+                                               "Stretch"};
   cross_axis_alignment_ = CreateAndAddCombobox(
       u"Cross axis", kCrossAxisValues, std::size(kCrossAxisValues),
       base::BindRepeating(&BoxLayoutExample::CrossAxisAlignmentChanged,
                           base::Unretained(this)));
+  // Select Stretch as the default.
+  cross_axis_alignment_->SetSelectedIndex(3);
 
   between_child_spacing_ = CreateAndAddTextfield(u"Child spacing");
   default_flex_ = CreateAndAddTextfield(u"Default flex");

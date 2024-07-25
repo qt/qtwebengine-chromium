@@ -23,25 +23,20 @@
 
 namespace cc {
 
-PlaybackParams::PlaybackParams(ImageProvider* image_provider)
-    : PlaybackParams(image_provider, SkM44()) {}
+PlaybackCallbacks::PlaybackCallbacks() = default;
+PlaybackCallbacks::~PlaybackCallbacks() = default;
+PlaybackCallbacks::PlaybackCallbacks(const PlaybackCallbacks&) = default;
+PlaybackCallbacks& PlaybackCallbacks::operator=(const PlaybackCallbacks&) =
+    default;
 
 PlaybackParams::PlaybackParams(ImageProvider* image_provider,
                                const SkM44& original_ctm,
-                               CustomDataRasterCallback custom_callback,
-                               DidDrawOpCallback did_draw_op_callback,
-                               ConvertOpCallback convert_op_callback)
+                               const PlaybackCallbacks& callbacks)
     : image_provider(image_provider),
       original_ctm(original_ctm),
-      custom_callback(custom_callback),
-      did_draw_op_callback(std::move(did_draw_op_callback)),
-      convert_op_callback(std::move(convert_op_callback)) {}
+      callbacks(callbacks) {}
 
 PlaybackParams::~PlaybackParams() = default;
-
-PlaybackParams::PlaybackParams(const PlaybackParams& other) = default;
-PlaybackParams& PlaybackParams::operator=(const PlaybackParams& other) =
-    default;
 
 PaintOpBuffer::SerializeOptions::SerializeOptions(
     ImageProvider* image_provider,
@@ -70,22 +65,6 @@ PaintOpBuffer::SerializeOptions::SerializeOptions(const SerializeOptions&) =
 PaintOpBuffer::SerializeOptions& PaintOpBuffer::SerializeOptions::operator=(
     const SerializeOptions&) = default;
 PaintOpBuffer::SerializeOptions::~SerializeOptions() = default;
-
-PaintOpBuffer::DeserializeOptions::DeserializeOptions(
-    TransferCacheDeserializeHelper* transfer_cache,
-    ServicePaintCache* paint_cache,
-    SkStrikeClient* strike_client,
-    std::vector<uint8_t>* scratch_buffer,
-    bool is_privileged,
-    SharedImageProvider* shared_image_provider)
-    : transfer_cache(transfer_cache),
-      paint_cache(paint_cache),
-      strike_client(strike_client),
-      scratch_buffer(scratch_buffer),
-      is_privileged(is_privileged),
-      shared_image_provider(shared_image_provider) {
-  DCHECK(scratch_buffer);
-}
 
 PaintOpBuffer::PaintOpBuffer() = default;
 
@@ -125,7 +104,7 @@ void PaintOpBuffer::DestroyOps() {
   if (data_) {
     for (size_t offset = 0; offset < used_;) {
       auto* op = reinterpret_cast<PaintOp*>(data_.get() + offset);
-      offset += op->aligned_size;
+      offset += op->AlignedSize();
       op->DestroyThis();
     }
   }
@@ -156,12 +135,14 @@ void PaintOpBuffer::ResetRetainingBuffer() {
 }
 
 void PaintOpBuffer::Playback(SkCanvas* canvas) const {
-  Playback(canvas, PlaybackParams(nullptr), nullptr);
+  Playback(canvas, PlaybackParams(nullptr), /*local_ctm=*/true,
+           /*offsets=*/nullptr);
 }
 
 void PaintOpBuffer::Playback(SkCanvas* canvas,
-                             const PlaybackParams& params) const {
-  Playback(canvas, params, nullptr);
+                             const PlaybackParams& params,
+                             bool local_ctm) const {
+  Playback(canvas, params, local_ctm, /*offsets=*/nullptr);
 }
 
 PaintRecord PaintOpBuffer::ReleaseAsRecord() {
@@ -178,13 +159,16 @@ PaintRecord PaintOpBuffer::ReleaseAsRecord() {
 
 void PaintOpBuffer::Playback(SkCanvas* canvas,
                              const PlaybackParams& params,
+                             bool local_ctm,
                              const std::vector<size_t>* offsets) const {
   if (!op_count_)
     return;
   if (offsets && offsets->empty())
     return;
-  // Prevent PaintOpBuffers from having side effects back into the canvas.
-  SkAutoCanvasRestore save_restore(canvas, true);
+  // Make sure the there are no pending saves after we are done. Add a save if
+  // this `PaintOpBuffer` isn't meant to impact the global CTM (to prevent
+  // PaintOps from having side effects back into the canvas)
+  SkAutoCanvasRestore save_restore(canvas, /*doSave=*/local_ctm);
 
   bool save_layer_alpha_should_preserve_lcd_text =
       (!params.save_layer_alpha_should_preserve_lcd_text.has_value() ||
@@ -204,16 +188,17 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
   // translate(x, y), then draw a paint record with a SetMatrix(identity),
   // the translation should be preserved instead of clobbering the top level
   // transform.  This could probably be done more efficiently.
-  PlaybackParams new_params(params.image_provider, canvas->getLocalToDevice(),
-                            params.custom_callback, params.did_draw_op_callback,
-                            params.convert_op_callback);
+  PlaybackParams new_params(
+      params.image_provider,
+      local_ctm ? canvas->getLocalToDevice() : params.original_ctm,
+      params.callbacks);
   new_params.save_layer_alpha_should_preserve_lcd_text =
       save_layer_alpha_should_preserve_lcd_text;
   new_params.is_analyzing = params.is_analyzing;
   for (PlaybackFoldingIterator iter(*this, offsets); iter; ++iter) {
     const PaintOp* op = iter.get();
-    if (params.convert_op_callback) {
-      op = params.convert_op_callback.Run(*op);
+    if (params.callbacks.convert_op_callback) {
+      op = params.callbacks.convert_op_callback.Run(*op);
       if (!op)
         continue;
     }
@@ -242,8 +227,9 @@ void PaintOpBuffer::Playback(SkCanvas* canvas,
       op->Raster(canvas, new_params);
     }
 
-    if (!new_params.did_draw_op_callback.is_null())
-      new_params.did_draw_op_callback.Run();
+    if (!new_params.callbacks.did_draw_op_callback.is_null()) {
+      new_params.callbacks.did_draw_op_callback.Run();
+    }
   }
 }
 

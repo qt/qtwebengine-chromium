@@ -158,12 +158,13 @@ class Browser(abc.ABC):
 
   def _resolve_binary(self, path: pathlib.Path) -> pathlib.Path:
     path = path.absolute()
-    assert path.exists(), f"Binary at path={path} does not exist."
+    assert self.platform.exists(path), f"Binary at path={path} does not exist."
     self.app_path = path
     self.app_name = self.app_path.stem
     if self.platform.is_macos:
       path = self._resolve_macos_binary(path)
-    assert path.is_file(), (f"Binary at path={path} is not a file.")
+    assert self.platform.is_file(path), (
+        f"Binary at path={path} is not a file.")
     return path
 
   def _resolve_macos_binary(self, path: pathlib.Path) -> pathlib.Path:

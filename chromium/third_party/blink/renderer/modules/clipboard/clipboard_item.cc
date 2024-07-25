@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/modules/clipboard/clipboard_item.h"
 
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/clipboard/clipboard.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
@@ -18,11 +19,11 @@ namespace blink {
 
 // static
 ClipboardItem* ClipboardItem::Create(
-    const HeapVector<std::pair<String, ScriptPromise>>& representations,
+    const HeapVector<std::pair<String, ScriptPromiseUntyped>>& representations,
     ExceptionState& exception_state) {
   // Check that incoming dictionary isn't empty. If it is, it's possible that
-  // Javascript bindings implicitly converted an Object (like a ScriptPromise)
-  // into {}, an empty dictionary.
+  // Javascript bindings implicitly converted an Object (like a
+  // ScriptPromiseUntyped) into {}, an empty dictionary.
   if (!representations.size()) {
     exception_state.ThrowTypeError("Empty dictionary argument");
     return nullptr;
@@ -31,7 +32,8 @@ ClipboardItem* ClipboardItem::Create(
 }
 
 ClipboardItem::ClipboardItem(
-    const HeapVector<std::pair<String, ScriptPromise>>& representations) {
+    const HeapVector<std::pair<String, ScriptPromiseUntyped>>&
+        representations) {
   DCHECK(representations.size() ||
          RuntimeEnabledFeatures::EmptyClipboardReadEnabled());
   for (const auto& representation : representations) {
@@ -68,9 +70,10 @@ Vector<String> ClipboardItem::types() const {
   return types;
 }
 
-ScriptPromise ClipboardItem::getType(ScriptState* script_state,
-                                     const String& type,
-                                     ExceptionState& exception_state) const {
+ScriptPromiseUntyped ClipboardItem::getType(
+    ScriptState* script_state,
+    const String& type,
+    ExceptionState& exception_state) const {
   for (const auto& item : representations_) {
     if (type == item.first)
       return item.second;
@@ -78,16 +81,26 @@ ScriptPromise ClipboardItem::getType(ScriptState* script_state,
 
   exception_state.ThrowDOMException(DOMExceptionCode::kNotFoundError,
                                     "The type was not found");
-  return ScriptPromise();
+  return ScriptPromiseUntyped();
 }
 
 // static
 bool ClipboardItem::supports(const String& type) {
-  if (type == kMimeTypeImagePng || type == kMimeTypeTextPlain ||
-      type == kMimeTypeTextHTML) {
+  if (type.length() >= mojom::blink::ClipboardHost::kMaxFormatSize) {
+    return false;
+  }
+
+  if (!Clipboard::ParseWebCustomFormat(type).empty()) {
     return true;
   }
-  return !Clipboard::ParseWebCustomFormat(type).empty();
+
+  if (type == kMimeTypeImageSvg) {
+    return RuntimeEnabledFeatures::ClipboardSvgEnabled();
+  }
+
+  // TODO(https://crbug.com/1029857): Add support for other types.
+  return type == kMimeTypeImagePng || type == kMimeTypeTextPlain ||
+         type == kMimeTypeTextHTML;
 }
 
 void ClipboardItem::Trace(Visitor* visitor) const {

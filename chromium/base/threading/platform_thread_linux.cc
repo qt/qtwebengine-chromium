@@ -4,14 +4,21 @@
 // Description: Linux specific functionality. Other Linux-derivatives layer on
 // top of this translation unit.
 
-#include "base/no_destructor.h"
 #include "base/threading/platform_thread.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <sched.h>
 #include <stddef.h>
-#include <cstdint>
+#include <sys/prctl.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <atomic>
+#include <cstdint>
+#include <optional>
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
@@ -21,6 +28,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/no_destructor.h"
 #include "base/notreached.h"
 #include "base/process/internal_linux.h"
 #include "base/strings/string_number_conversions.h"
@@ -29,14 +37,6 @@
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_type_delegate.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-
-#include <pthread.h>
-#include <sys/prctl.h>
-#include <sys/resource.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 namespace base {
 
@@ -61,7 +61,7 @@ FilePath ThreadTypeToCgroupDirectory(const FilePath& cgroup_filepath,
       // On ChromeOS, kCompositing is also considered urgent.
       return cgroup_filepath.Append(FILE_PATH_LITERAL("urgent"));
 #else
-      // TODO(1329208): Experiment with bringing IS_LINUX inline with
+      // TODO(crbug.com/40226692): Experiment with bringing IS_LINUX inline with
       // IS_CHROMEOS.
       return cgroup_filepath;
 #endif
@@ -69,7 +69,7 @@ FilePath ThreadTypeToCgroupDirectory(const FilePath& cgroup_filepath,
     case ThreadType::kRealtimeAudio:
       return cgroup_filepath.Append(FILE_PATH_LITERAL("urgent"));
   }
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return FilePath();
 }
 
@@ -77,7 +77,7 @@ void SetThreadCgroup(PlatformThreadId thread_id,
                      const FilePath& cgroup_directory) {
   FilePath tasks_filepath = cgroup_directory.Append(FILE_PATH_LITERAL("tasks"));
   std::string tid = NumberToString(thread_id);
-  // TODO(crbug.com/1333521): Remove cast.
+  // TODO(crbug.com/40227936): Remove cast.
   const int size = static_cast<int>(tid.size());
   int bytes_written = WriteFile(tasks_filepath, tid.data(), size);
   if (bytes_written != size) {
@@ -110,8 +110,8 @@ const ThreadPriorityToNiceValuePairForTest
 #if BUILDFLAG(IS_CHROMEOS)
         {ThreadPriorityForTest::kCompositing, -8},
 #else
-        // TODO(1329208): Experiment with bringing IS_LINUX inline with
-        // IS_CHROMEOS.
+        // TODO(crbug.com/40226692): Experiment with bringing IS_LINUX inline
+        // with IS_CHROMEOS.
         {ThreadPriorityForTest::kCompositing, -1},
 #endif
         {ThreadPriorityForTest::kNormal, 0},
@@ -133,7 +133,8 @@ const ThreadTypeToNiceValuePair kThreadTypeToNiceValueMap[7] = {
 #if BUILDFLAG(IS_CHROMEOS)
     {ThreadType::kCompositing, -8},
 #else
-    // TODO(1329208): Experiment with bringing IS_LINUX inline with IS_CHROMEOS.
+    // TODO(crbug.com/40226692): Experiment with bringing IS_LINUX inline with
+    // IS_CHROMEOS.
     {ThreadType::kCompositing, -1},
 #endif
     {ThreadType::kDisplayCritical, -8},  {ThreadType::kRealtimeAudio, -10},
@@ -153,18 +154,19 @@ bool CanSetThreadTypeToRealtimeAudio() {
 
 bool SetCurrentThreadTypeForPlatform(ThreadType thread_type,
                                      MessagePumpType pump_type_hint) {
-  const PlatformThreadId tid = PlatformThread::CurrentId();
+  const PlatformThreadId thread_id = PlatformThread::CurrentId();
 
   if (g_thread_type_delegate &&
-      g_thread_type_delegate->HandleThreadTypeChange(tid, thread_type)) {
+      g_thread_type_delegate->HandleThreadTypeChange(thread_id, thread_type)) {
     return true;
   }
 
-  PlatformThread::SetThreadType(getpid(), tid, thread_type, IsViaIPC(false));
+  internal::SetThreadType(getpid(), thread_id, thread_type, IsViaIPC(false));
+
   return true;
 }
 
-absl::optional<ThreadPriorityForTest>
+std::optional<ThreadPriorityForTest>
 GetCurrentThreadPriorityForPlatformForTest() {
   int maybe_sched_rr = 0;
   struct sched_param maybe_realtime_prio = {0};
@@ -173,9 +175,9 @@ GetCurrentThreadPriorityForPlatformForTest() {
       maybe_sched_rr == SCHED_RR &&
       maybe_realtime_prio.sched_priority ==
           PlatformThreadLinux::kRealTimeAudioPrio.sched_priority) {
-    return absl::make_optional(ThreadPriorityForTest::kRealtimeAudio);
+    return std::make_optional(ThreadPriorityForTest::kRealtimeAudio);
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 }  // namespace internal
@@ -276,13 +278,21 @@ void PlatformThreadLinux::SetThreadType(ProcessId process_id,
                                         PlatformThreadId thread_id,
                                         ThreadType thread_type,
                                         IsViaIPC via_ipc) {
-  SetThreadCgroupsForThreadType(thread_id, thread_type);
+  internal::SetThreadType(process_id, thread_id, thread_type, via_ipc);
+}
+
+namespace internal {
+void SetThreadTypeLinux(ProcessId process_id,
+                        PlatformThreadId thread_id,
+                        ThreadType thread_type,
+                        IsViaIPC via_ipc) {
+  PlatformThreadLinux::SetThreadCgroupsForThreadType(thread_id, thread_type);
 
   // Some scheduler syscalls require thread ID of 0 for current thread.
   // This prevents us from requiring to translate the NS TID to
   // global TID.
   PlatformThreadId syscall_tid = thread_id;
-  if (thread_id == PlatformThread::CurrentId()) {
+  if (thread_id == PlatformThreadLinux::CurrentId()) {
     syscall_tid = 0;
   }
 
@@ -295,11 +305,13 @@ void PlatformThreadLinux::SetThreadType(ProcessId process_id,
     DPLOG(ERROR) << "Failed to set realtime priority for thread " << thread_id;
   }
 
-  const int nice_setting = internal::ThreadTypeToNiceValue(thread_type);
+  const int nice_setting = ThreadTypeToNiceValue(thread_type);
   if (setpriority(PRIO_PROCESS, static_cast<id_t>(syscall_tid), nice_setting)) {
     DVPLOG(1) << "Failed to set nice value of thread (" << thread_id << ") to "
               << nice_setting;
   }
 }
+
+}  // namespace internal
 
 }  // namespace base

@@ -116,7 +116,7 @@ ast::transform::Transform::ApplyResult CalculateArrayLength::Apply(const Program
     // [RW]ByteAddressBuffer.GetDimensions().
     std::unordered_map<const core::type::Reference*, Symbol> buffer_size_intrinsics;
     auto get_buffer_size_intrinsic = [&](const core::type::Reference* buffer_type) {
-        return tint::GetOrCreate(buffer_size_intrinsics, buffer_type, [&] {
+        return tint::GetOrAdd(buffer_size_intrinsics, buffer_type, [&] {
             auto name = b.Sym();
             auto type = CreateASTTypeFor(ctx, buffer_type);
             auto* disable_validation = b.Disable(ast::DisabledValidation::kFunctionParameter);
@@ -176,13 +176,11 @@ ast::transform::Transform::ApplyResult CalculateArrayLength::Apply(const Program
                     if (TINT_UNLIKELY(!storage_buffer_sem)) {
                         TINT_ICE() << "expected form of arrayLength argument to be &array_var or "
                                       "&struct_var.array_member";
-                        break;
                     }
                     if (TINT_UNLIKELY(storage_buffer_sem->Type()->Is<core::type::Pointer>())) {
                         TINT_ICE()
                             << "storage buffer variable should not be a pointer. These should have "
                                "been removed by the SimplifyPointers transform";
-                        break;
                     }
                     auto* storage_buffer_var = storage_buffer_sem->Variable();
                     auto* storage_buffer_type =
@@ -195,7 +193,7 @@ ast::transform::Transform::ApplyResult CalculateArrayLength::Apply(const Program
                     auto* block = call->Stmt()->Block()->Declaration();
 
                     auto array_length =
-                        tint::GetOrCreate(array_length_by_usage, {block, storage_buffer_var}, [&] {
+                        tint::GetOrAdd(array_length_by_usage, {block, storage_buffer_var}, [&] {
                             // First time this array length is used for this block.
                             // Let's calculate it.
 
@@ -234,7 +232,6 @@ ast::transform::Transform::ApplyResult CalculateArrayLength::Apply(const Program
                             if (TINT_UNLIKELY(!array_type)) {
                                 TINT_ICE() << "expected form of arrayLength argument to be "
                                               "&array_var or &struct_var.array_member";
-                                return name;
                             }
 
                             uint32_t array_stride = array_type->Size();

@@ -221,6 +221,10 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
   QuicRstStreamErrorCode stream_error() const {
     return stream_error_.internal_code();
   }
+  // Application error code of RESET_STREAM.
+  uint64_t ietf_application_error() const {
+    return stream_error_.ietf_application_code();
+  }
   QuicErrorCode connection_error() const { return connection_error_; }
 
   bool reading_stopped() const {
@@ -258,6 +262,9 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
   bool IsFlowControlBlocked() const;
   QuicStreamOffset highest_received_byte_offset() const;
   void UpdateReceiveWindowSize(QuicStreamOffset size);
+  QuicStreamOffset NumBytesConsumed() const {
+    return sequencer()->NumBytesConsumed();
+  }
 
   // Called when endpoint receives a frame which could increase the highest
   // offset.
@@ -353,9 +360,10 @@ class QUICHE_EXPORT QuicStream : public QuicStreamSequencer::StreamInterface {
   // Commits data into the stream write buffer, and potentially sends it over
   // the wire.  This method has all-or-nothing semantics: if the write buffer is
   // not full, all of the memslices in |span| are moved into it; otherwise,
-  // nothing happens.
+  // nothing happens. If `buffer_unconditionally` is set to true, behaves
+  // similar to `WriteOrBufferData()` in terms of buffering.
   QuicConsumedData WriteMemSlices(absl::Span<quiche::QuicheMemSlice> span,
-                                  bool fin);
+                                  bool fin, bool buffer_uncondtionally = false);
   QuicConsumedData WriteMemSlice(quiche::QuicheMemSlice span, bool fin);
 
   // Returns true if any stream data is lost (including fin) and needs to be

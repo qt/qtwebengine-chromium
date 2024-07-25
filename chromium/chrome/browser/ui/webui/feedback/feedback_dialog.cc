@@ -75,8 +75,8 @@ void FeedbackDialog::CreateOrShow(
   // ShowDialogAsync is being called.
   if (info.flow == extensions::api::feedback_private::FeedbackFlow::kLogin) {
     UMA_HISTOGRAM_ENUMERATION("Feedback.RequestSource",
-                              chrome::kFeedbackSourceLogin,
-                              chrome::kFeedbackSourceCount);
+                              feedback::kFeedbackSourceLogin,
+                              feedback::kFeedbackSourceCount);
   }
 
   current_instance_ = new FeedbackDialog(profile, info);
@@ -100,7 +100,7 @@ FeedbackDialog::FeedbackDialog(
       // Trying to acquire a keepalive on the OTR Profile would trigger a
       // DCHECK.
       //
-      // TODO(crbug.com/1153922): Once OTR Profiles use refcounting, remove the
+      // TODO(crbug.com/40159237): Once OTR Profiles use refcounting, remove the
       // call to GetOriginalProfile(). The OTR Profile will hold a keepalive on
       // the regular Profile, so the ownership model will be more
       // straightforward.
@@ -125,7 +125,8 @@ FeedbackDialog::FeedbackDialog(
           : IDS_FEEDBACK_REPORT_PAGE_TITLE));
   set_show_dialog_title(true);
 
-  AddWebUIMessageHandler(std::make_unique<FeedbackHandler>(this));
+  AddWebUIMessageHandler(
+      std::make_unique<FeedbackHandler>(weak_ptr_factory_.GetWeakPtr()));
 }
 
 FeedbackDialog::~FeedbackDialog() {

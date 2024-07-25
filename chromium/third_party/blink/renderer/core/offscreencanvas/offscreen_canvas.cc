@@ -35,7 +35,6 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/dedicated_worker_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
-#include "third_party/blink/renderer/platform/bindings/no_alloc_direct_call_host.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_dispatcher.h"
 #include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
 #include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
@@ -182,19 +181,13 @@ void OffscreenCanvas::SetSize(gfx::Size size) {
   if (context_) {
     if (context_->IsWebGL() || IsWebGPU()) {
       context_->Reshape(Size().width(), Size().height());
-    } else if (context_->IsRenderingContext2D()) {
+    } else if (context_->IsRenderingContext2D() ||
+               context_->IsImageBitmapRenderingContext()) {
       context_->Reset();
       origin_clean_ = true;
     }
     context_->DidDraw(CanvasPerformanceMonitor::DrawType::kOther);
   }
-}
-
-ScriptPromise OffscreenCanvas::convertToBlob(ScriptState* script_state,
-                                             const ImageEncodeOptions* options,
-                                             ExceptionState& exception_state) {
-  return CanvasRenderingContextHost::convertToBlob(script_state, options,
-                                                   exception_state, context_);
 }
 
 void OffscreenCanvas::RecordTransfer() {
@@ -221,6 +214,12 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
                                       "Cannot transfer an ImageBitmap from an "
                                       "OffscreenCanvas with no context");
+    return nullptr;
+  }
+  if (ContextHasOpenLayers(context_)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "`transferToImageBitmap()` cannot be called with open layers.");
     return nullptr;
   }
 
@@ -262,6 +261,10 @@ scoped_refptr<Image> OffscreenCanvas::GetSourceImageForCanvas(
                          surface->makeImageSnapshot())
                    : nullptr;
   }
+  if (ContextHasOpenLayers(context_)) {
+    *status = kLayersOpenInCanvasSource;
+    return nullptr;
+  }
   if (!size.width() || !size.height()) {
     *status = kZeroSizeCanvasSourceImageStatus;
     return nullptr;
@@ -282,11 +285,17 @@ gfx::Size OffscreenCanvas::BitmapSourceSize() const {
   return Size();
 }
 
-ScriptPromise OffscreenCanvas::CreateImageBitmap(
+ScriptPromise<ImageBitmap> OffscreenCanvas::CreateImageBitmap(
     ScriptState* script_state,
-    absl::optional<gfx::Rect> crop_rect,
+    std::optional<gfx::Rect> crop_rect,
     const ImageBitmapOptions* options,
     ExceptionState& exception_state) {
+  if (ContextHasOpenLayers(context_)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "`createImageBitmap()` cannot be called with open layers.");
+    return ScriptPromise<ImageBitmap>();
+  }
   if (context_) {
     context_->FinalizeFrame(FlushReason::kCreateImageBitmap);
   }
@@ -296,6 +305,78 @@ ScriptPromise OffscreenCanvas::CreateImageBitmap(
           ? MakeGarbageCollected<ImageBitmap>(this, crop_rect, options)
           : nullptr,
       options, exception_state);
+}
+
+ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+    ScriptState* script_state,
+    const ImageEncodeOptions* options,
+    ExceptionState& exception_state) {
+  DCHECK(IsOffscreenCanvas());
+  WTF::String object_name = "OffscreenCanvas";
+  std::stringstream error_msg;
+
+  if (is_neutered_) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "OffscreenCanvas object is detached.");
+    return ScriptPromise<Blob>();
+  }
+
+  if (ContextHasOpenLayers(context_)) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "`convertToBlob()` cannot be called while layers are opened.");
+    return ScriptPromise<Blob>();
+  }
+
+  if (!OriginClean()) {
+    error_msg << "Tainted " << object_name << " may not be exported.";
+    exception_state.ThrowSecurityError(error_msg.str().c_str());
+    return ScriptPromise<Blob>();
+  }
+
+  // It's possible that there are recorded commands that have not been resolved
+  // Finalize frame will be called in GetImage, but if there's no
+  // resourceProvider yet then the IsPaintable check will fail
+  if (context_) {
+    context_->FinalizeFrame(FlushReason::kToBlob);
+  }
+
+  if (!IsPaintable() || Size().IsEmpty()) {
+    error_msg << "The size of " << object_name << " is zero.";
+    exception_state.ThrowDOMException(DOMExceptionCode::kIndexSizeError,
+                                      error_msg.str().c_str());
+    return ScriptPromise<Blob>();
+  }
+
+  if (!context_) {
+    error_msg << object_name << " has no rendering context.";
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      error_msg.str().c_str());
+    return ScriptPromise<Blob>();
+  }
+
+  base::TimeTicks start_time = base::TimeTicks::Now();
+  scoped_refptr<StaticBitmapImage> image_bitmap =
+      context_->GetImage(FlushReason::kToBlob);
+  if (image_bitmap) {
+    auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+        script_state, exception_state.GetContext());
+    CanvasAsyncBlobCreator::ToBlobFunctionType function_type =
+        CanvasAsyncBlobCreator::kOffscreenCanvasConvertToBlobPromise;
+    auto* execution_context = ExecutionContext::From(script_state);
+    auto* async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
+        image_bitmap, options, function_type, start_time, execution_context,
+        IdentifiabilityStudySettings::Get()->ShouldSampleType(
+            IdentifiableSurface::Type::kCanvasReadback)
+            ? IdentifiabilityInputDigest(context_)
+            : 0,
+        resolver);
+    async_creator->ScheduleAsyncBlobCreation(options->quality());
+    return resolver->Promise();
+  }
+  exception_state.ThrowDOMException(DOMExceptionCode::kNotReadableError,
+                                    "Readback of the source image has failed.");
+  return ScriptPromise<Blob>();
 }
 
 bool OffscreenCanvas::IsOpaque() const {
@@ -446,6 +527,7 @@ CanvasResourceProvider* OffscreenCanvas::GetOrCreateResourceProvider() {
       (HasPlaceholderCanvas() && SharedGpuContext::IsGpuCompositingEnabled());
   const bool use_scanout =
       use_shared_image && HasPlaceholderCanvas() &&
+      SharedGpuContext::MaySupportImageChromium() &&
       (IsWebGPU() ||
        (IsWebGL() && RuntimeEnabledFeatures::WebGLImageChromiumEnabled()) ||
        (IsRenderingContext2D() &&
@@ -529,6 +611,9 @@ void OffscreenCanvas::SetFilterQualityInResource(
   SetFilterQuality(filter_quality);
   if (ResourceProvider())
     GetOrCreateResourceProvider()->SetFilterQuality(filter_quality);
+  if (context_ && (IsWebGL() || IsWebGPU())) {
+    context_->SetFilterQuality(filter_quality);
+  }
 }
 
 bool OffscreenCanvas::PushFrameIfNeeded() {
@@ -586,10 +671,10 @@ void OffscreenCanvas::NotifyGpuContextLost() {
 void OffscreenCanvas::CheckForGpuContextLost() {
   // If the GPU has crashed, it is necessary to notify the OffscreenCanvas so
   // the context can be recovered.
-  if (ResourceProvider() && ResourceProvider()->IsAccelerated() &&
+  if (!context_lost() && ResourceProvider() &&
+      ResourceProvider()->IsAccelerated() &&
       ResourceProvider()->IsGpuContextLost()) {
     set_context_lost(true);
-    ReplaceResourceProvider(nullptr);
     NotifyGpuContextLost();
   }
 }
@@ -613,37 +698,23 @@ void OffscreenCanvas::UpdateMemoryUsage() {
   int32_t new_memory_usage =
       memory_usage_checked.ValueOrDefault(std::numeric_limits<int32_t>::max());
 
-  // If the the rendering context supports NoAllocDirectCall, we must use a
-  // deferrable action to update v8's externally allocated memory to avoid
-  // triggering garbage collection while inside a FastAPICall scope.
   // TODO(junov): We assume that it is impossible to be inside a FastAPICall
   // from a host interface other than the rendering context.  This assumption
   // may need to be revisited in the future depending on how the usage of
   // [NoAllocDirectCall] evolves.
   intptr_t delta_bytes = new_memory_usage - memory_usage_;
   if (delta_bytes) {
-    NoAllocDirectCallHost* nadc_host =
-        context_ ? context_->AsNoAllocDirectCallHost() : nullptr;
-    if (nadc_host) {
-      nadc_host->PostDeferrableAction(WTF::BindOnce(
-          [](intptr_t delta_bytes) {
-            v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
-                delta_bytes);
-          },
-          delta_bytes));
-    } else {
-      // Here we check "IsAllocationAllowed", but it is actually garbage
-      // collection that is not allowed, and allocations can trigger GC.
-      // AdjustAmountOfExternalAllocatedMemory is not an allocation but it
-      // can trigger GC, So we use "IsAllocationAllowed" as a proxy for
-      // "is GC allowed". When garbage collection is already in progress,
-      // allocations are not allowed, but calling
-      // AdjustAmountOfExternalAllocatedMemory is safe, hence the
-      // 'diposing_' condition in the DCHECK below.
-      DCHECK(ThreadState::Current()->IsAllocationAllowed() || disposing_);
-      v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
-          delta_bytes);
-    }
+    // Here we check "IsAllocationAllowed", but it is actually garbage
+    // collection that is not allowed, and allocations can trigger GC.
+    // AdjustAmountOfExternalAllocatedMemory is not an allocation but it
+    // can trigger GC, So we use "IsAllocationAllowed" as a proxy for
+    // "is GC allowed". When garbage collection is already in progress,
+    // allocations are not allowed, but calling
+    // AdjustAmountOfExternalAllocatedMemory is safe, hence the
+    // 'diposing_' condition in the DCHECK below.
+    DCHECK(ThreadState::Current()->IsAllocationAllowed() || disposing_);
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(
+        delta_bytes);
     memory_usage_ = new_memory_usage;
   }
 }

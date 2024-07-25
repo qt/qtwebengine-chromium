@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,6 +19,7 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/best_practices_error_enums.h"
+#include "best_practices/bp_state.h"
 
 bool BestPractices::PreCallValidateCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo,
                                                      const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool,
@@ -64,7 +65,10 @@ void BestPractices::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffe
     auto cb_state = GetWrite<bp_state::CommandBuffer>(commandBuffer);
     if (!cb_state) return;
 
+    // reset
     cb_state->num_submits = 0;
+    cb_state->uses_vertex_buffer = false;
+    cb_state->small_indexed_draw_call_count = 0;
 }
 
 bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo,
@@ -109,7 +113,8 @@ bool BestPractices::PreCallValidateCmdWriteTimestamp(VkCommandBuffer commandBuff
                                                      VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
     bool skip = false;
 
-    skip |= CheckPipelineStageFlags(error_obj.location.dot(Field::pipelineStage), static_cast<VkPipelineStageFlags>(pipelineStage));
+    skip |= CheckPipelineStageFlags(commandBuffer, error_obj.location.dot(Field::pipelineStage),
+                                    static_cast<VkPipelineStageFlags>(pipelineStage));
 
     return skip;
 }
@@ -124,7 +129,7 @@ bool BestPractices::PreCallValidateCmdWriteTimestamp2(VkCommandBuffer commandBuf
                                                       VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
     bool skip = false;
 
-    skip |= CheckPipelineStageFlags(error_obj.location.dot(Field::pipelineStage), pipelineStage);
+    skip |= CheckPipelineStageFlags(commandBuffer, error_obj.location.dot(Field::pipelineStage), pipelineStage);
 
     return skip;
 }
@@ -141,7 +146,7 @@ bool BestPractices::PreCallValidateGetQueryPoolResults(VkDevice device, VkQueryP
             const LogObjectList objlist(queryPool);
             skip |= LogWarning(kVUID_BestPractices_QueryPool_Unavailable, objlist, error_obj.location,
                                "QueryPool %s and query %" PRIu32 ": vkCmdBeginQuery() was never called.",
-                               FormatHandle(query_pool_state.pool()).c_str(), i);
+                               FormatHandle(query_pool_state.Handle()).c_str(), i);
             break;
         }
     }
@@ -218,7 +223,7 @@ bool BestPractices::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuf
     if (VendorCheckEnabled(kBPVendorAMD)) {
         if (commandBufferCount > 0) {
             skip |=
-                LogPerformanceWarning(kVUID_BestPractices_CmdBuffer_AvoidSecondaryCmdBuffers, device, error_obj.location,
+                LogPerformanceWarning(kVUID_BestPractices_CmdBuffer_AvoidSecondaryCmdBuffers, commandBuffer, error_obj.location,
                                       "%s Use of secondary command buffers is not recommended.", VendorSpecificTag(kBPVendorAMD));
         }
     }

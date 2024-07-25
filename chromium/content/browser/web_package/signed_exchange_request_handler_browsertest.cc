@@ -79,6 +79,7 @@
 #include "net/test/url_request/url_request_mock_http_job.h"
 #include "services/network/public/cpp/constants.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "third_party/blink/public/common/features.h"
@@ -174,7 +175,7 @@ class SignedExchangeRequestHandlerBrowserTestBase
     // Enable BackForwardCache for now as some tests are flaky when the previous
     // RenderFrameHost doesn't change on navigation (the histograms are not
     // recoded correctly).
-    // TODO(https://crbug.com/1373767): Figure out why and fix.
+    // TODO(crbug.com/40242189): Figure out why and fix.
     feature_list_.InitWithFeatures(
         {features::kSignedHTTPExchange, features::kBackForwardCache}, {});
   }
@@ -261,7 +262,13 @@ class SignedExchangeRequestHandlerBrowserTest
     : public testing::WithParamInterface<bool>,
       public SignedExchangeRequestHandlerBrowserTestBase {
  public:
-  SignedExchangeRequestHandlerBrowserTest() { use_prefetch_ = GetParam(); }
+  SignedExchangeRequestHandlerBrowserTest() {
+    // TODO(crbug.com/334954143) Fix the AcceptLanguage tests when turning on
+    // the ReduceAcceptLanguage feature.
+    scoped_feature_list_.InitWithFeatures(
+        {}, {network::features::kReduceAcceptLanguage});
+    use_prefetch_ = GetParam();
+  }
 
   SignedExchangeRequestHandlerBrowserTest(
       const SignedExchangeRequestHandlerBrowserTest&) = delete;
@@ -328,6 +335,7 @@ class SignedExchangeRequestHandlerBrowserTest
   }
 
   bool use_prefetch_ = false;
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest, Simple) {
@@ -579,9 +587,9 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
       UsePrefetch() ? 2 : 1);
 }
 
-// TODO(crbug.com/966820): Fails pretty often on Android.
-// TODO(crbug.com/1258886): Fails flakily on all platforms with Synchronous HTML
-// Parsing enabled.
+// TODO(crbug.com/41460883): Fails pretty often on Android.
+// TODO(crbug.com/40201215): Fails flakily on all platforms with Synchronous
+// HTML Parsing enabled.
 IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
                        DISABLED_BadMICE) {
   InstallMockCertChainInterceptor();
@@ -924,7 +932,7 @@ IN_PROC_BROWSER_TEST_F(SignedExchangeRequestHandlerRealCertVerifierBrowserTest,
   // This signed exchange should pass CertVerifier::Verify() and then fail at
   // SignedExchangeHandler::CheckOCSPStatus() because of the dummy OCSP
   // response.
-  // TODO(https://crbug.com/815024): Make this test pass the OCSP check. We'll
+  // TODO(crbug.com/40564303): Make this test pass the OCSP check. We'll
   // need to either generate an OCSP response on the fly, or override the OCSP
   // verification time.
   std::u16string title = u"Fallback URL response";
@@ -973,7 +981,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeRequestHandlerBrowserTest,
   EXPECT_EQ(title, title_watcher.WaitAndGetTitle());
 }
 
-// TODO(crbug.com/1412461): Re-enable this test when de-flaked.
+// TODO(crbug.com/40890897): Re-enable this test when de-flaked.
 #if BUILDFLAG(IS_FUCHSIA)
 #define MAYBE_NotControlledByDistributorsSW \
   DISABLED_NotControlledByDistributorsSW
@@ -1631,7 +1639,7 @@ class SignedExchangePKPBrowserTest
           network_service_test.BindNewPipeAndPassReceiver());
       network_service_test->SetTransportSecurityStateSource(reporting_port);
     } else {
-      // TODO(https://crbug.com/1008175):  This code is not threadsafe, as the
+      // TODO(crbug.com/40649862):  This code is not threadsafe, as the
       // network stack does not run on the IO thread. Ideally, the
       // NetworkServiceTest object would be set up in-process on the network
       // service's thread, and this path would be removed.

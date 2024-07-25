@@ -67,6 +67,7 @@ class CSSDefaultStyleSheets final
   RuleSet* DefaultHtmlQuirksStyle() { return default_html_quirks_style_.Get(); }
   RuleSet* DefaultPrintStyle() { return default_print_style_.Get(); }
   RuleSet* DefaultViewSourceStyle();
+  RuleSet* DefaultJSONDocumentStyle();
   RuleSet* DefaultForcedColorStyle() {
     return default_forced_color_style_.Get();
   }
@@ -83,6 +84,12 @@ class CSSDefaultStyleSheets final
   StyleSheetContents* SelectListStyleSheet() {
     return selectlist_style_sheet_.Get();
   }
+  StyleSheetContents* StylableSelectStyleSheet() {
+    return stylable_select_style_sheet_.Get();
+  }
+  StyleSheetContents* StylableSelectForcedColorsStyleSheet() {
+    return stylable_select_forced_colors_style_sheet_.Get();
+  }
   StyleSheetContents* SvgStyleSheet() { return svg_style_sheet_.Get(); }
   StyleSheetContents* MathmlStyleSheet() { return mathml_style_sheet_.Get(); }
   StyleSheetContents* MediaControlsStyleSheet() {
@@ -95,11 +102,8 @@ class CSSDefaultStyleSheets final
   StyleSheetContents* ForcedColorsStyleSheet() {
     return forced_colors_style_sheet_.Get();
   }
-  StyleSheetContents* FormControlsNotVerticalSheet() {
-    return form_controls_not_vertical_style_sheet_.Get();
-  }
-  StyleSheetContents* FormControlsNotVerticalTextSheet() {
-    return form_controls_not_vertical_style_text_sheet_.Get();
+  StyleSheetContents* AutoSizesStyleSheet() {
+    return auto_sizes_style_sheet_.Get();
   }
 
   CORE_EXPORT void PrepareForLeakDetection();
@@ -147,6 +151,7 @@ class CSSDefaultStyleSheets final
   Member<RuleSet> default_pseudo_element_style_;
   Member<RuleSet> default_media_controls_style_;
   Member<RuleSet> default_fullscreen_style_;
+  Member<RuleSet> default_json_document_style_;
   // If new RuleSets are added, make sure to add a new check in
   // VerifyUniversalRuleCount() as universal rule buckets are performance
   // sensitive. At least if the added UA styles are matched against all elements
@@ -161,10 +166,11 @@ class CSSDefaultStyleSheets final
   Member<StyleSheetContents> text_track_style_sheet_;
   Member<StyleSheetContents> fullscreen_style_sheet_;
   Member<StyleSheetContents> selectlist_style_sheet_;
+  Member<StyleSheetContents> stylable_select_style_sheet_;
+  Member<StyleSheetContents> stylable_select_forced_colors_style_sheet_;
   Member<StyleSheetContents> marker_style_sheet_;
   Member<StyleSheetContents> forced_colors_style_sheet_;
-  Member<StyleSheetContents> form_controls_not_vertical_style_sheet_;
-  Member<StyleSheetContents> form_controls_not_vertical_style_text_sheet_;
+  Member<StyleSheetContents> auto_sizes_style_sheet_;
 
   std::unique_ptr<UAStyleSheetLoader> media_controls_style_sheet_loader_;
 };

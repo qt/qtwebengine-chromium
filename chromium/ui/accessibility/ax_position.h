@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -26,7 +27,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/accessibility/ax_common.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -181,7 +181,7 @@ enum class AXEmbeddedObjectBehavior {
 // through it, otherwise the text field would be missed by the user.
 //
 // Tests should use ScopedAXEmbeddedObjectBehaviorSetter to change this.
-// TODO(crbug.com/1204592) Don't export this so tests can't change it.
+// TODO(crbug.com/40764129) Don't export this so tests can't change it.
 extern AX_EXPORT AXEmbeddedObjectBehavior g_ax_embedded_object_behavior;
 
 class AX_EXPORT ScopedAXEmbeddedObjectBehaviorSetter {
@@ -838,8 +838,14 @@ class AXPosition {
           return true;
         }
 
+        // If the anchor is ignored, then by default it will not have a
+        // PreviousOnLineID set since we only set this on unignored nodes.
+        // However, it could still have something previous to it on the same
+        // line, like for example if we have some text on the same line, and a
+        // text node in the middle is set to aria-hidden.
         return text_position->GetPreviousOnLineID() == kInvalidAXNodeID &&
-               text_position->AtStartOfAnchor();
+               text_position->AtStartOfAnchor() &&
+               !text_position->GetAnchor()->IsIgnored();
     }
   }
 
@@ -2578,7 +2584,7 @@ class AXPosition {
 
         const int max_text_offset = MaxTextOffset();
 
-        // TODO(crbug.com/1404289): temporary disabled until ax position
+        // TODO(crbug.com/40885940): temporary disabled until ax position
         // autocorrection issue is fixed.
         // DCHECK_LE(text_offset_, max_text_offset);
 
@@ -3799,11 +3805,11 @@ class AXPosition {
   //    0: if this position is logically equivalent to the other position
   //   <0: if this position is logically less than the other position
   //   >0: if this position is logically greater than the other position
-  absl::optional<int> CompareTo(const AXPosition& other) const {
+  std::optional<int> CompareTo(const AXPosition& other) const {
     if (IsNullPosition() || other.IsNullPosition()) {
       if (IsNullPosition() && other.IsNullPosition())
         return 0;
-      return absl::nullopt;
+      return std::nullopt;
     }
     // Valid positions are required for comparison. Use `AsValidPosition`
     // or `SnapToMaxTextOffsetIfBeyond` before calling `CompareTo` or making
@@ -3883,7 +3889,7 @@ class AXPosition {
     }
 
     if (!common_anchor)
-      return absl::nullopt;
+      return std::nullopt;
 
     // If each position has an uncommon ancestor node, we can compare those
     // instead of needing to compute ancestor positions. Otherwise we need to
@@ -3984,17 +3990,17 @@ class AXPosition {
   // A less optimized, but much slower version of "CompareTo". Should only be
   // used when optimizations cannot be applied, e.g. when comparing ignored
   // positions. See "CompareTo" for an explanation of the return values.
-  absl::optional<int> SlowCompareTo(const AXPosition& other) const {
+  std::optional<int> SlowCompareTo(const AXPosition& other) const {
     if (IsNullPosition() && other.IsNullPosition())
       return 0;
     if (IsNullPosition() || other.IsNullPosition())
-      return absl::nullopt;
+      return std::nullopt;
 
     // If both positions share an anchor and either one is a text position, or
     // both are tree positions, we can do a straight comparison of text offsets
     // or child indices.
     if (GetAnchor() == other.GetAnchor()) {
-      absl::optional<int> optional_result;
+      std::optional<int> optional_result;
       ax::mojom::TextAffinity this_affinity;
       ax::mojom::TextAffinity other_affinity;
 
@@ -4055,14 +4061,14 @@ class AXPosition {
 
     const AXNode* common_anchor = this->LowestCommonAnchor(other);
     if (!common_anchor)
-      return absl::nullopt;
+      return std::nullopt;
 
     // If either of the two positions is a text position, and if one position is
     // an ancestor of the other, we need to compare using text positions,
     // because converting to tree positions will potentially lose information if
     // the text offset is anything other than 0 or `MaxTextOffset()`.
     if (IsTextPosition() || other.IsTextPosition()) {
-      absl::optional<int> optional_result;
+      std::optional<int> optional_result;
       ax::mojom::TextAffinity this_affinity;
       ax::mojom::TextAffinity other_affinity;
 
@@ -4357,15 +4363,12 @@ class AXPosition {
   // text representation. Some platforms use an embedded object replacement
   // character that replaces the text coming from most child nodes and empty
   // objects.
-  const std::u16string GetText(
+  std::u16string GetText(
       const AXEmbeddedObjectBehavior embedded_object_behavior =
           g_ax_embedded_object_behavior) const {
-    // Note that the use of `base::EmptyString16()` is a special case here. For
-    // performance reasons `base::EmptyString16()` should only be used when
-    // returning a const reference to a string and there is an error condition,
-    // not in any other case when an empty string16 is required.
-    if (IsNullPosition())
-      return base::EmptyString16();
+    if (IsNullPosition()) {
+      return std::u16string();
+    }
 
     static const base::NoDestructor<std::u16string> embedded_character_str(
         AXNode::kEmbeddedObjectCharacterUTF16);
@@ -4573,12 +4576,10 @@ class AXPosition {
 
  protected:
   AXPosition()
-      : kind_(AXPositionKind::NULL_POSITION),
-        tree_id_(AXTreeIDUnknown()),
+      : tree_id_(AXTreeIDUnknown()),
         anchor_id_(kInvalidAXNodeID),
         child_index_(INVALID_INDEX),
-        text_offset_(INVALID_OFFSET),
-        affinity_(ax::mojom::TextAffinity::kDownstream) {}
+        text_offset_(INVALID_OFFSET) {}
 
   // We explicitly don't copy any cached members.
   AXPosition(const AXPosition& other)
@@ -4587,8 +4588,7 @@ class AXPosition {
         anchor_id_(other.anchor_id_),
         child_index_(other.child_index_),
         text_offset_(other.text_offset_),
-        affinity_(other.affinity_),
-        name_() {}
+        affinity_(other.affinity_) {}
 
   // Returns the character offset inside our anchor's parent at which our text
   // starts.
@@ -4660,6 +4660,12 @@ class AXPosition {
     text_offset_ = text_offset;
     affinity_ = affinity;
 
+    DCHECK(kind == AXPositionKind::NULL_POSITION || GetAnchor())
+        << "Attempting to create a non-null position that has a null anchor:"
+        << "\n* Anchor id: " << anchor_id << "\n* Manager: " << GetManager()
+        << "\n* Known tree id? "
+        << (tree_id == AXTreeIDUnknown() ? "false" : "true");
+
     if (!IsValid()) {
       // Reset to the null position.
       kind_ = AXPositionKind::NULL_POSITION;
@@ -4695,7 +4701,7 @@ class AXPosition {
         << "Creating a position without an anchor is disallowed:\n"
         << ToDebugString();
 
-    // TODO(crbug.com/1404289) Remove this line and let the below IsValid()
+    // TODO(crbug.com/40885940) Remove this line and let the below IsValid()
     // assertion get triggered instead. We shouldn't be creating test positions
     // with offsets that are too large. This seems to occur when the anchor node
     // is ignored, and leads to a number of failing tests.
@@ -4717,7 +4723,7 @@ class AXPosition {
     }
 #endif
 
-    // TODO(crbug.com/1404289) see TODO above.
+    // TODO(crbug.com/40885940) see TODO above.
     // Also look for the failures in
     // AXPositionTest.AsLeafTextPositionBeforeCharacterIncludingGeneratedNewlines,
     // AXPlatformNodeTextRangeProviderTest.TestNormalizeTextRangeForceSameAnchorOnDegenerateRange.
@@ -5822,8 +5828,8 @@ class AXPosition {
     return text_position;
   }
 
-  AXPositionKind kind_;
-  // TODO(crbug.com/1362839): use weak pointers for the AXTree, so that
+  AXPositionKind kind_ = AXPositionKind::NULL_POSITION;
+  // TODO(crbug.com/40864560): use weak pointers for the AXTree, so that
   // AXPosition can be used without AXTreeManager support (and also faster than
   // the slow AXTreeID).
   AXTreeID tree_id_;
@@ -5851,7 +5857,7 @@ class AXPosition {
   // leaf text position before the soft line break would be pointing to the
   // end of its anchor node, whilst a leaf text position after the soft line
   // break would be pointing to the start of the next node.
-  ax::mojom::TextAffinity affinity_;
+  ax::mojom::TextAffinity affinity_ = ax::mojom::TextAffinity::kDownstream;
 
   //
   // Cached members that should be lazily created on first use.
@@ -5872,14 +5878,14 @@ const int AXPosition<AXPositionType, AXNodeType>::INVALID_OFFSET;
 template <class AXPositionType, class AXNodeType>
 bool operator==(const AXPosition<AXPositionType, AXNodeType>& first,
                 const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   return compare_to_optional.has_value() && compare_to_optional.value() == 0;
 }
 
 template <class AXPositionType, class AXNodeType>
 bool operator!=(const AXPosition<AXPositionType, AXNodeType>& first,
                 const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   // It makes sense to also return false if the positions are not comparable,
   // because by definition non-comparable positions are uniqual. Positions are
   // not comparable when one position is null and the other is not or if the
@@ -5890,28 +5896,28 @@ bool operator!=(const AXPosition<AXPositionType, AXNodeType>& first,
 template <class AXPositionType, class AXNodeType>
 bool operator<(const AXPosition<AXPositionType, AXNodeType>& first,
                const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   return compare_to_optional.has_value() && compare_to_optional.value() < 0;
 }
 
 template <class AXPositionType, class AXNodeType>
 bool operator<=(const AXPosition<AXPositionType, AXNodeType>& first,
                 const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   return compare_to_optional.has_value() && compare_to_optional.value() <= 0;
 }
 
 template <class AXPositionType, class AXNodeType>
 bool operator>(const AXPosition<AXPositionType, AXNodeType>& first,
                const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   return compare_to_optional.has_value() && compare_to_optional.value() > 0;
 }
 
 template <class AXPositionType, class AXNodeType>
 bool operator>=(const AXPosition<AXPositionType, AXNodeType>& first,
                 const AXPosition<AXPositionType, AXNodeType>& second) {
-  const absl::optional<int> compare_to_optional = first.CompareTo(second);
+  const std::optional<int> compare_to_optional = first.CompareTo(second);
   return compare_to_optional.has_value() && compare_to_optional.value() >= 0;
 }
 

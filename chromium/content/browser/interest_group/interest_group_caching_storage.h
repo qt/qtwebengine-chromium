@@ -146,6 +146,10 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
   void UpdateInterestGroup(const blink::InterestGroupKey& group_key,
                            InterestGroupUpdate update,
                            base::OnceCallback<void(bool)> callback);
+  // Allows the interest group specified by `group_key` to be updated if it was
+  // last updated before `update_if_older_than`.
+  void AllowUpdateIfOlderThan(const blink::InterestGroupKey& group_key,
+                              base::TimeDelta update_if_older_than);
   // Report that updating of the interest group with owner `owner` and name
   // `name` failed. With the exception of parse failures, the rate limit
   // duration for failed updates is shorter than for those that succeed -- for
@@ -172,10 +176,10 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
 
   // Gets the last time that the key was reported to the k-anonymity server.
   void GetLastKAnonymityReported(
-      const std::string& key,
+      const std::string& hashed_key,
       base::OnceCallback<void(std::optional<base::Time>)> callback);
   // Updates the last time that the key was reported to the k-anonymity server.
-  void UpdateLastKAnonymityReported(const std::string& key);
+  void UpdateLastKAnonymityReported(const std::string& hashed_key);
 
   // Gets a single interest group.
   void GetInterestGroup(
@@ -242,6 +246,20 @@ class CONTENT_EXPORT InterestGroupCachingStorage {
       base::flat_map<std::string,
                      auction_worklet::mojom::PrioritySignalsDoublePtr>
           update_priority_signals_overrides);
+
+  // Update B&A keys for a coordinator. This function will overwrite any
+  // existing keys for the coordinator.
+  void SetBiddingAndAuctionServerKeys(
+      const url::Origin& coordinator,
+      const std::vector<BiddingAndAuctionServerKey>& keys,
+      base::Time expiration);
+  // Load stored B&A server keys for a coordinator along with the keys'
+  // expiration.
+  void GetBiddingAndAuctionServerKeys(
+      const url::Origin& coordinator,
+      base::OnceCallback<
+          void(std::pair<base::Time, std::vector<BiddingAndAuctionServerKey>>)>
+          callback);
 
   void GetLastMaintenanceTimeForTesting(
       base::RepeatingCallback<void(base::Time)> callback) const;

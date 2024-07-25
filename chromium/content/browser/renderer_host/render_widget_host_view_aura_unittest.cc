@@ -67,8 +67,10 @@
 #include "content/public/test/fake_frame_widget.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
+#include "content/test/mock_render_input_router.h"
 #include "content/test/mock_render_widget_host_delegate.h"
 #include "content/test/mock_widget.h"
+#include "content/test/mock_widget_input_handler.h"
 #include "content/test/test_overscroll_delegate.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
@@ -395,10 +397,12 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
                                         routing_id, hidden);
   }
 
-  MockWidgetInputHandler* input_handler() { return &input_handler_; }
+  MockWidgetInputHandler* input_handler() {
+    return mock_render_input_router_->mock_widget_input_handler_.get();
+  }
 
-  blink::mojom::WidgetInputHandler* GetWidgetInputHandler() override {
-    return &input_handler_;
+  RenderInputRouter* GetRenderInputRouter() override {
+    return mock_render_input_router_.get();
   }
 
   void reset_new_content_rendering_timeout_fired() {
@@ -433,6 +437,7 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
             hidden,
             /*renderer_initiated_creation=*/false,
             std::make_unique<FrameTokenMessageQueue>()) {
+    SetupMockRenderInputRouter();
     BindWidgetInterfaces(mojo::AssociatedRemote<blink::mojom::WidgetHost>()
                              .BindNewEndpointAndPassDedicatedReceiver(),
                          widget_.GetNewRemote());
@@ -442,10 +447,18 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
     new_content_rendering_timeout_fired_ = true;
   }
 
+  void SetupMockRenderInputRouter() {
+    mock_render_input_router_.reset();
+    mock_render_input_router_ = std::make_unique<MockRenderInputRouter>(
+        this, this, MakeFlingScheduler(), this,
+        base::SingleThreadTaskRunner::GetCurrentDefault());
+    SetupInputRouter();
+  }
+
   ui::LatencyInfo last_wheel_or_touch_event_latency_info_;
   bool new_content_rendering_timeout_fired_ = false;
-  MockWidgetInputHandler input_handler_;
   MockWidget widget_;
+  std::unique_ptr<MockRenderInputRouter> mock_render_input_router_;
   std::optional<WebGestureEvent> last_forwarded_gesture_event_;
 };
 
@@ -3025,7 +3038,7 @@ TEST_F(RenderWidgetHostViewAuraTest, CursorVisibilityChange) {
   base::RunLoop().RunUntilIdle();
   auto events = GetAndResetDispatchedMessages();
 #if BUILDFLAG(IS_CHROMEOS)
-  // TODO(crbug.com/1164453): Investigate occasional extra mousemoves in CrOS.
+  // TODO(crbug.com/40163541): Investigate occasional extra mousemoves in CrOS.
   EXPECT_GE(1u, events.size());
 #else
   EXPECT_EQ(1u, events.size());
@@ -4217,7 +4230,7 @@ TEST_F(RenderWidgetHostViewAuraOverscrollTest,
 
 // Tests that the gesture debounce timer plays nice with the overscroll
 // controller.
-// TODO(crbug.com/776424): Disabled due to flakiness on Linux tsan.
+// TODO(crbug.com/40545668): Disabled due to flakiness on Linux tsan.
 #if BUILDFLAG(USING_SANITIZER)
 #define MAYBE_GestureScrollDebounceTimerOverscroll \
   DISABLED_GestureScrollDebounceTimerOverscroll
@@ -5324,7 +5337,7 @@ TEST_F(RenderWidgetHostViewAuraTest, ForwardMouseEvent) {
   EXPECT_EQ("0 1 0", delegate.GetMouseMotionCountsAndReset());
 
   // Lock the mouse, simulate, and ensure they are forwarded.
-  view_->LockMouse(false /* request_unadjusted_movement */);
+  view_->LockPointer(false /* request_unadjusted_movement */);
 
   mouse_event =
       ui::MouseEvent(ui::ET_MOUSE_PRESSED, gfx::Point(), gfx::Point(),
@@ -5337,7 +5350,7 @@ TEST_F(RenderWidgetHostViewAuraTest, ForwardMouseEvent) {
   view_->OnMouseEvent(&mouse_event);
   EXPECT_EQ("0 1 0", delegate.GetMouseMotionCountsAndReset());
 
-  view_->UnlockMouse();
+  view_->UnlockPointer();
 
   // view_ will be destroyed when parent is destroyed.
   view_ = nullptr;
@@ -5466,29 +5479,9 @@ TEST_F(RenderWidgetHostViewAuraTest, LegacyRenderWidgetHostHWNDAuraLookup) {
 }
 #endif
 
-class TouchpadRenderWidgetHostViewAuraTest
-    : public base::test::WithFeatureOverride,
-      public RenderWidgetHostViewAuraTest {
- public:
-  TouchpadRenderWidgetHostViewAuraTest()
-      : WithFeatureOverride(features::kTouchpadAsyncPinchEvents) {}
-
-  TouchpadRenderWidgetHostViewAuraTest(
-      const TouchpadRenderWidgetHostViewAuraTest&) = delete;
-  TouchpadRenderWidgetHostViewAuraTest& operator=(
-      const TouchpadRenderWidgetHostViewAuraTest&) = delete;
-
-  ~TouchpadRenderWidgetHostViewAuraTest() override = default;
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(TouchpadRenderWidgetHostViewAuraTest);
-
 // Test that we elide touchpad pinch gesture steams consisting of only begin
 // and end events.
-TEST_P(TouchpadRenderWidgetHostViewAuraTest, ElideEmptyTouchpadPinchSequence) {
+TEST_F(RenderWidgetHostViewAuraTest, ElideEmptyTouchpadPinchSequence) {
   ui::GestureEventDetails begin_details(ui::ET_GESTURE_PINCH_BEGIN);
   begin_details.set_device_type(ui::GestureDeviceType::DEVICE_TOUCHPAD);
   ui::GestureEvent begin_event(0, 0, 0, ui::EventTimeForNow(), begin_details);
@@ -5644,7 +5637,7 @@ TEST_F(RenderWidgetHostViewAuraTest, GestureTapFromStylusHasPointerType) {
 
 // Test that the rendering timeout for newly loaded content fires when enough
 // time passes without receiving a new compositor frame.
-// TODO(https://crbug.com/1225139): This test is flaky on "Linux ASan LSan Tests
+// TODO(crbug.com/40775652): This test is flaky on "Linux ASan LSan Tests
 // (1)"
 #if BUILDFLAG(IS_LINUX)
 #define MAYBE_NewContentRenderingTimeout DISABLED_NewContentRenderingTimeout
@@ -6635,7 +6628,7 @@ class RenderWidgetHostViewAuraInputMethodTest
 
   ~RenderWidgetHostViewAuraInputMethodTest() override {}
   void SetUp() override {
-    // TODO(https://crbug.com/1463412) Pass as unique_ptr<>.
+    // TODO(crbug.com/40275284) Pass as unique_ptr<>.
     ui::SetUpInputMethodForTesting(new ui::MockInputMethod(nullptr));
     SetUpEnvironment();
     text_input_client_ = nullptr;
@@ -6783,7 +6776,7 @@ class RenderWidgetHostViewAuraKeyboardTest
 
   ~RenderWidgetHostViewAuraKeyboardTest() override {}
   void SetUp() override {
-    // TODO(https://crbug.com/1463412) Pass as unique_ptr<>.
+    // TODO(crbug.com/40275284) Pass as unique_ptr<>.
     ui::SetUpInputMethodForTesting(
         new RenderWidgetHostViewAuraKeyboardMockInputMethod());
     SetUpEnvironment();

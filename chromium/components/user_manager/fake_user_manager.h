@@ -57,10 +57,6 @@ class USER_MANAGER_EXPORT FakeUserManager : public UserManagerBase {
   void SetUserNonCryptohomeDataEphemeral(const AccountId& account_id,
                                          bool is_ephemeral);
 
-  void set_is_current_user_owner(bool is_current_user_owner) {
-    is_current_user_owner_ = is_current_user_owner;
-  }
-
   // UserManager overrides.
   const UserList& GetUsers() const override;
   UserList GetUsersAllowedForMultiProfile() const override;
@@ -89,6 +85,7 @@ class USER_MANAGER_EXPORT FakeUserManager : public UserManagerBase {
                   UserRemovalReason reason) override {}
   void RemoveUserFromList(const AccountId& account_id) override;
   void RemoveUserFromListForRecreation(const AccountId& account_id) override;
+  void CleanStaleUserInformationFor(const AccountId& account_id) override;
   bool IsKnownUser(const AccountId& account_id) const override;
   const User* FindUser(const AccountId& account_id) const override;
   User* FindUserAndModify(const AccountId& account_id) override;
@@ -97,13 +94,10 @@ class USER_MANAGER_EXPORT FakeUserManager : public UserManagerBase {
   }
   void SaveForceOnlineSignin(const AccountId& account_id,
                              bool force_online_signin) override {}
-  std::u16string GetUserDisplayName(const AccountId& account_id) const override;
   void SaveUserDisplayEmail(const AccountId& account_id,
                             const std::string& display_email) override {}
-  absl::optional<std::string> GetOwnerEmail() override;
-  bool IsCurrentUserOwner() const override;
+  std::optional<std::string> GetOwnerEmail() override;
   bool IsCurrentUserNonCryptohomeDataEphemeral() const override;
-  bool CanCurrentUserLock() const override;
   bool IsUserLoggedIn() const override;
   bool IsLoggedInAsUserWithGaiaAccount() const override;
   bool IsLoggedInAsManagedGuestSession() const override;
@@ -115,37 +109,27 @@ class USER_MANAGER_EXPORT FakeUserManager : public UserManagerBase {
   bool IsLoggedInAsStub() const override;
   bool IsUserNonCryptohomeDataEphemeral(
       const AccountId& account_id) const override;
-  void AddObserver(Observer* obs) override {}
-  void RemoveObserver(Observer* obs) override {}
-  void AddSessionStateObserver(UserSessionStateObserver* obs) override {}
-  void RemoveSessionStateObserver(UserSessionStateObserver* obs) override {}
-  void NotifyLocalStateChanged() override {}
   bool IsGuestSessionAllowed() const override;
   bool IsGaiaUserAllowed(const User& user) const override;
   bool IsUserAllowed(const User& user) const override;
   void AsyncRemoveCryptohome(const AccountId& account_id) const override;
   bool IsDeprecatedSupervisedAccountId(
       const AccountId& account_id) const override;
-  const gfx::ImageSkia& GetResourceImageSkiaNamed(int id) const override;
-  std::u16string GetResourceStringUTF16(int string_id) const override;
-  void ScheduleResolveLocale(const std::string& locale,
-                             base::OnceClosure on_resolved_callback,
-                             std::string* out_resolved_locale) const override;
   bool IsValidDefaultUserImageId(int image_index) const override;
 
   // UserManagerBase overrides:
   void SetEphemeralModeConfig(
       EphemeralModeConfig ephemeral_mode_config) override;
 
-  const std::string& GetApplicationLocale() const override;
-  bool IsEnterpriseManaged() const override;
   void LoadDeviceLocalAccounts(
       std::set<AccountId>* device_local_accounts_set) override {}
-  void PerformPostUserLoggedInActions(bool browser_restart) override {}
   bool IsDeviceLocalAccountMarkedForRemoval(
       const AccountId& account_id) const override;
-  void KioskAppLoggedIn(User* user) override {}
-  void PublicAccountUserLoggedIn(User* user) override {}
+  void SetUserAffiliated(const AccountId& account_id,
+                         bool is_affiliated) override {}
+  // Just make it public for tests.
+  using UserManagerBase::ResetOwnerId;
+  using UserManagerBase::SetOwnerId;
 
  protected:
   // If set this is the active user. If empty, the first created user is the
@@ -163,8 +147,6 @@ class USER_MANAGER_EXPORT FakeUserManager : public UserManagerBase {
 
   // stub. Always empty.
   gfx::ImageSkia empty_image_;
-
-  bool is_current_user_owner_ = false;
 
   // Contains AccountIds for which IsCurrentUserNonCryptohomeDataEphemeral will
   // return true.

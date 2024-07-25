@@ -25,8 +25,7 @@ namespace views {
 
 // Layout manager which explicitly animates its child views and/or its preferred
 // size when the target layout changes (the target layout being provided by a
-// separate, non-animating layout manager; typically a FlexLayout or
-// InterpolatingLayoutManager).
+// separate, non-animating layout manager; typically a FlexLayout).
 //
 // For example, consider a view in which multiple buttons can be displayed
 // depending on context, in a horizontal row. When we add a button, we want all
@@ -180,6 +179,8 @@ class VIEWS_EXPORT AnimatingLayoutManager : public LayoutManagerBase {
 
   // LayoutManagerBase:
   gfx::Size GetPreferredSize(const View* host) const override;
+  gfx::Size GetPreferredSize(const View* host,
+                             const SizeBounds& available_size) const override;
   gfx::Size GetMinimumSize(const View* host) const override;
   int GetPreferredHeightForWidth(const View* host, int width) const override;
   std::vector<raw_ptr<View, VectorExperimental>> GetChildViewsInPaintOrder(
@@ -212,9 +213,7 @@ class VIEWS_EXPORT AnimatingLayoutManager : public LayoutManagerBase {
     return starting_layout_;
   }
 
-  const ProposedLayout& target_layout_for_testing() const {
-    return target_layout_;
-  }
+  const ProposedLayout& target_layout() const { return target_layout_; }
 
  protected:
   // LayoutManagerBase:

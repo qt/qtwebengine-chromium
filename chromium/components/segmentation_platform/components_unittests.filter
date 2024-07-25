@@ -3,6 +3,7 @@
 *CachedResultProviderTest.*
 *CachedResultWriterTest.*
 *ClientResultPrefsTest.*
+*ComposePromotionTest.*
 *ConfigParserTest.*
 *ContextualPageActionsModelTest.*
 *CrossDeviceUserModelTest.*
@@ -17,6 +18,7 @@
 *DummySegmentationPlatformServiceTest.*
 *FailedUkmDatabaseTest.*
 *FeatureAggregatorImplTest.*
+*FeatureListQueryProcessorNoDbCacheTest.*
 *FeatureListQueryProcessorTest.*
 *FeedUserModelTest.*
 *FieldTrialRecorderTest.*
@@ -82,5 +84,6 @@
 *UkmObserverTest.*
 *UkmUrlTableTest.*
 *UmaFeatureProcessorTest.*
+*UmaMetricsTableTest.*
 *UrlSignalHandlerTest.*
 *UserActionSignalHandlerTest.*

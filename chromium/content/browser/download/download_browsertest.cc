@@ -192,24 +192,31 @@ class DownloadTestContentBrowserClient
     return base::FilePath();
   }
 
-  void RegisterNonNetworkNavigationURLLoaderFactories(
-      int frame_tree_node_id,
-      NonNetworkURLLoaderFactoryMap* factories) override {
-    if (!enable_register_non_network_url_loader_)
-      return;
+  mojo::PendingRemote<network::mojom::URLLoaderFactory>
+  CreateNonNetworkNavigationURLLoaderFactory(const std::string& scheme,
+                                             int frame_tree_node_id) override {
+    if (!enable_register_non_network_url_loader_) {
+      return {};
+    }
 
 #if BUILDFLAG(IS_ANDROID)
-    mojo::PendingRemote<network::mojom::URLLoaderFactory>
-        content_factory_remote;
-    content_url_loader_factory_->Clone(
-        content_factory_remote.InitWithNewPipeAndPassReceiver());
-    factories->emplace(url::kContentScheme, std::move(content_factory_remote));
+    if (scheme == url::kContentScheme) {
+      mojo::PendingRemote<network::mojom::URLLoaderFactory>
+          content_factory_remote;
+      content_url_loader_factory_->Clone(
+          content_factory_remote.InitWithNewPipeAndPassReceiver());
+      return content_factory_remote;
+    }
 #endif  // BUILDFLAG(IS_ANDROID)
 
-    mojo::PendingRemote<network::mojom::URLLoaderFactory> file_factory_remote;
-    file_url_loader_factory_->Clone(
-        file_factory_remote.InitWithNewPipeAndPassReceiver());
-    factories->emplace(url::kFileScheme, std::move(file_factory_remote));
+    if (scheme == url::kFileScheme) {
+      mojo::PendingRemote<network::mojom::URLLoaderFactory> file_factory_remote;
+      file_url_loader_factory_->Clone(
+          file_factory_remote.InitWithNewPipeAndPassReceiver());
+      return file_factory_remote;
+    }
+
+    return {};
   }
 
  private:
@@ -329,6 +336,7 @@ class DownloadFileWithDelayFactory : public download::DownloadFileFactory {
       const base::FilePath& default_download_directory,
       std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
+      const base::FilePath& duplicate_download_file_path,
       base::WeakPtr<download::DownloadDestinationObserver> observer) override;
 
   void AddRenameCallback(base::OnceClosure callback);
@@ -404,6 +412,7 @@ download::DownloadFile* DownloadFileWithDelayFactory::CreateFile(
     const base::FilePath& default_download_directory,
     std::unique_ptr<download::InputStream> stream,
     uint32_t download_id,
+    const base::FilePath& duplicate_download_file_path,
     base::WeakPtr<download::DownloadDestinationObserver> observer) {
   return new DownloadFileWithDelay(
       std::move(save_info), default_download_directory, std::move(stream),
@@ -500,6 +509,7 @@ class CountingDownloadFileFactory : public download::DownloadFileFactory {
       const base::FilePath& default_downloads_directory,
       std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
+      const base::FilePath& duplicate_download_file_path,
       base::WeakPtr<download::DownloadDestinationObserver> observer) override {
     return new CountingDownloadFile(std::move(save_info),
                                     default_downloads_directory,
@@ -567,6 +577,7 @@ class ErrorInjectionDownloadFileFactory : public download::DownloadFileFactory {
       const base::FilePath& default_download_directory,
       std::unique_ptr<download::InputStream> stream,
       uint32_t download_id,
+      const base::FilePath& duplicate_download_file_path,
       base::WeakPtr<download::DownloadDestinationObserver> observer) override {
     ErrorInjectionDownloadFile* download_file = new ErrorInjectionDownloadFile(
         std::move(save_info), default_download_directory, std::move(stream),
@@ -3950,7 +3961,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 
 // A file type that Blink can handle should not be downloaded if there are cross
 // origin redirects in the middle of the redirect chain.
-// TODO(https://crbug.com/1009913): Fix flakes on various bots and re-enable
+// TODO(crbug.com/40650833): Fix flakes on various bots and re-enable
 // this test.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest,
                        DISABLED_DownloadAttributeSameOriginRedirectNavigation) {

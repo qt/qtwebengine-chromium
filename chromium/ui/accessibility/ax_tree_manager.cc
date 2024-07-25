@@ -15,6 +15,9 @@
 
 namespace ui {
 
+// A flag to ensure that accessibility fatal errors crash immediately.
+bool AXTreeManager::is_fail_fast_mode_ = false;
+
 // static
 AXTreeManagerMap& AXTreeManager::GetMap() {
   static base::NoDestructor<AXTreeManagerMap> map;
@@ -164,10 +167,10 @@ void AXTreeManager::WillBeRemovedFromMap() {
 }
 
 // static
-absl::optional<AXNodeID> AXTreeManager::last_focused_node_id_ = {};
+std::optional<AXNodeID> AXTreeManager::last_focused_node_id_ = {};
 
 // static
-absl::optional<AXTreeID> AXTreeManager::last_focused_node_tree_id_ = {};
+std::optional<AXTreeID> AXTreeManager::last_focused_node_tree_id_ = {};
 
 // static
 void AXTreeManager::SetLastFocusedNode(AXNode* node) {

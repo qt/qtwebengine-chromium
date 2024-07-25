@@ -38,6 +38,8 @@
 #include <unordered_set>
 #endif
 
+#include <vulkan/utility/vk_concurrent_unordered_map.hpp>
+
 // namespace aliases to allow map and set implementations to easily be swapped out
 namespace vvl {
 
@@ -106,6 +108,14 @@ using map_entry = std::pair<Key, T>;
 
 template <typename T>
 using insert_iterator = std::insert_iterator<T>;
+#endif
+
+#if 1
+template <typename Key, typename T, int BucketsLog2 = 2, typename Hash = std::hash<Key>>
+using concurrent_unordered_map = vku::concurrent::unordered_map<Key, T, BucketsLog2, vvl::unordered_map<Key, T, Hash>>;
+#else
+template <typename Key, typename T, int BucketsLog2 = 2>
+using concurrent_unordered_map = vku::concurrent_unordered_map<Key, T, BucketsLog2, vvl::unordered_map<Key, T>>;
 #endif
 
 }  // namespace vvl
@@ -875,8 +885,8 @@ class enumeration {
     iterator end() { return data_ + count_; }
     const_iterator end() const { return data_ + count_; }
 
-    T &operator[](int i) { return data_[i]; }
-    const T &operator[](int i) const { return data_[i]; }
+    T &operator[](size_t i) { return data_[i]; }
+    const T &operator[](size_t i) const { return data_[i]; }
 
     T &front() { return *data_; }
     const T &front() const { return *data_; }
@@ -887,8 +897,7 @@ class enumeration {
     size_t size() const { return count_; }
     bool empty() const { return count_ == 0; }
 
-    pointer data() { return data_; }
-    const_pointer data() const { return data_; }
+    pointer data() const { return data_; }
 
   private:
     pointer data_ = {};
@@ -952,6 +961,14 @@ enumeration<T, IndexedIterator<T, IndexType>> enumerate(T *begin, IndexType coun
 template <typename T>
 enumeration<T, IndexedIterator<T>> enumerate(T *begin, T *end) {
     return enumeration<T, IndexedIterator<T>>(begin, end);
+}
+
+template <typename Container>
+enumeration<typename Container::value_type, IndexedIterator<typename Container::value_type, typename Container::size_type>>
+enumerate(Container &container) {
+    return enumeration<typename Container::value_type,
+                       IndexedIterator<typename Container::value_type, typename Container::size_type>>(container.data(),
+                                                                                                       container.size());
 }
 
 template <typename BaseType>

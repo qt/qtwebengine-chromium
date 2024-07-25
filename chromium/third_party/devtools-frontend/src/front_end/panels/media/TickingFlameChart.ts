@@ -210,7 +210,7 @@ export class TickingFlameChart extends UI.Widget.VBox {
 
     // Chart settings.
     this.chartGroupExpansionSetting =
-        Common.Settings.Settings.instance().createSetting('mediaFlameChartGroupExpansion', {});
+        Common.Settings.Settings.instance().createSetting('media-flame-chart-group-expansion', {});
 
     // Create the chart.
     this.chart =
@@ -384,6 +384,10 @@ class TickingFlameChartDataProvider implements PerfUI.FlameChart.FlameChartDataP
 
     // The current sum of all group heights.
     this.maxLevel = 0;
+  }
+
+  hasTrackConfigurationMode(): boolean {
+    return false;
   }
 
   /**

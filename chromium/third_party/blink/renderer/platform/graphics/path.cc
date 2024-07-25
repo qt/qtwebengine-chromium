@@ -30,16 +30,34 @@
 #include "third_party/blink/renderer/platform/graphics/path.h"
 
 #include <math.h>
-#include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+#include "third_party/blink/renderer/platform/graphics/stroke_data.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/skia/include/pathops/SkPathOps.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 
 namespace blink {
+
+namespace {
+
+bool PathQuadIntersection(const SkPath& path, const gfx::QuadF& quad) {
+  SkPath quad_path, intersection;
+  quad_path.moveTo(FloatPointToSkPoint(quad.p1()))
+      .lineTo(FloatPointToSkPoint(quad.p2()))
+      .lineTo(FloatPointToSkPoint(quad.p3()))
+      .lineTo(FloatPointToSkPoint(quad.p4()))
+      .close();
+  if (!Op(path, quad_path, kIntersect_SkPathOp, &intersection)) {
+    return false;
+  }
+  return !intersection.isEmpty();
+}
+
+}  // namespace
 
 Path::Path() : path_() {}
 
@@ -81,6 +99,20 @@ bool Path::Contains(const gfx::PointF& point, WindRule rule) const {
     return tmp.contains(x, y);
   }
   return path_.contains(x, y);
+}
+
+bool Path::Intersects(const gfx::QuadF& quad) const {
+  return PathQuadIntersection(path_, quad);
+}
+
+bool Path::Intersects(const gfx::QuadF& quad, WindRule rule) const {
+  SkPathFillType fill_type = WebCoreWindRuleToSkFillType(rule);
+  if (path_.getFillType() != fill_type) {
+    SkPath tmp(path_);
+    tmp.setFillType(fill_type);
+    return PathQuadIntersection(tmp, quad);
+  }
+  return PathQuadIntersection(path_, quad);
 }
 
 SkPath Path::StrokePath(const StrokeData& stroke_data,
@@ -138,8 +170,8 @@ static gfx::PointF* ConvertPathPoints(gfx::PointF dst[],
 void Path::Apply(void* info, PathApplierFunction function) const {
   SkPath::RawIter iter(path_);
   SkPoint pts[4];
-  PathElement path_element;
   gfx::PointF path_points[3];
+  PathElement path_element;
 
   for (;;) {
     switch (iter.next(pts)) {
@@ -212,7 +244,7 @@ gfx::PointF Path::PointAtLength(float length) const {
   return PointAndNormalAtLength(length).point;
 }
 
-static absl::optional<PointAndTangent> CalculatePointAndNormalOnPath(
+static std::optional<PointAndTangent> CalculatePointAndNormalOnPath(
     SkPathMeasure& measure,
     SkScalar& contour_start,
     SkScalar length) {
@@ -233,15 +265,16 @@ static absl::optional<PointAndTangent> CalculatePointAndNormalOnPath(
     }
     contour_start = contour_end;
   } while (measure.nextContour());
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 PointAndTangent Path::PointAndNormalAtLength(float length) const {
   SkPathMeasure measure(path_, false);
   SkScalar start = 0;
-  if (absl::optional<PointAndTangent> result = CalculatePointAndNormalOnPath(
-          measure, start, WebCoreFloatToSkScalar(length)))
+  if (std::optional<PointAndTangent> result = CalculatePointAndNormalOnPath(
+          measure, start, WebCoreFloatToSkScalar(length))) {
     return *result;
+  }
   return {gfx::SkPointToPointF(path_.getPoint(0)), 0};
 }
 
@@ -259,7 +292,7 @@ PointAndTangent Path::PositionCalculator::PointAndNormalAtLength(float length) {
       accumulated_length_ = 0;
     }
 
-    absl::optional<PointAndTangent> result = CalculatePointAndNormalOnPath(
+    std::optional<PointAndTangent> result = CalculatePointAndNormalOnPath(
         path_measure_, accumulated_length_, sk_length);
     if (result)
       return *result;
@@ -385,6 +418,9 @@ void Path::AddEllipse(const gfx::PointF& p,
   // nothing.
   SkScalar s180 = SkIntToScalar(180);
   if (SkScalarNearlyEqual(sweep_degrees, s360)) {
+    // incReserve() results in a single allocation instead of multiple as is
+    // done by multiple calls to arcTo().
+    path_.incReserve(10, 5, 4);
     // SkPath::arcTo can't handle the sweepAngle that is equal to or greater
     // than 2Pi.
     path_.arcTo(oval, start_degrees, s180, false);
@@ -392,6 +428,9 @@ void Path::AddEllipse(const gfx::PointF& p,
     return;
   }
   if (SkScalarNearlyEqual(sweep_degrees, -s360)) {
+    // incReserve() results in a single allocation instead of multiple as is
+    // done by multiple calls to arcTo().
+    path_.incReserve(10, 5, 4);
     path_.arcTo(oval, start_degrees, -s180, false);
     path_.arcTo(oval, start_degrees - s180, -s180, false);
     return;

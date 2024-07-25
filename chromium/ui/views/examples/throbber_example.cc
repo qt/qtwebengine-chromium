@@ -32,11 +32,13 @@ class ThrobberView : public View {
   ThrobberView& operator=(const ThrobberView&) = delete;
 
   // View::
-  gfx::Size CalculatePreferredSize() const override {
-    return gfx::Size(width(), height());
+  gfx::Size CalculatePreferredSize(
+      const SizeBounds& available_size) const override {
+    return gfx::Size(available_size.width().value_or(width()),
+                     available_size.height().value_or(height()));
   }
 
-  void Layout() override {
+  void Layout(PassKey) override {
     int diameter = 16;
     throbber_->SetBounds((width() - diameter) / 2, (height() - diameter) / 2,
                          diameter, diameter);

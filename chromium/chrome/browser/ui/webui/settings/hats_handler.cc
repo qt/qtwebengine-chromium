@@ -6,6 +6,7 @@
 
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_settings_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/hats/hats_service.h"
@@ -20,6 +21,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/privacy_sandbox/privacy_sandbox_settings.h"
+#include "components/safe_browsing/core/common/features.h"
 #include "components/version_info/version_info.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
@@ -213,6 +215,14 @@ SurveyStringData HatsHandler::GetSecurityPageProductSpecificStringData(
     safe_browsing_setting_current = "no_protection";
   }
 
+  std::string friendlier_safe_browsing_settings_enabled =
+      (base::FeatureList::IsEnabled(
+           safe_browsing::kFriendlierSafeBrowsingSettingsStandardProtection) &&
+       base::FeatureList::IsEnabled(
+           safe_browsing::kFriendlierSafeBrowsingSettingsEnhancedProtection))
+          ? "true"
+          : "false";
+
   std::string client_channel =
       std::string(version_info::GetChannelString(chrome::GetChannel()));
 
@@ -221,7 +231,10 @@ SurveyStringData HatsHandler::GetSecurityPageProductSpecificStringData(
       {"Safe Browsing Setting Before Trigger", safe_browsing_setting_before},
       {"Safe Browsing Setting After Trigger", safe_browsing_setting_current},
       {"Client Channel", client_channel},
-      {"Time On Page", std::to_string(args[2].GetDouble())}};
+      {"Time On Page", base::NumberToString(args[2].GetDouble())},
+      {"Friendlier Safe Browsing Settings",
+       friendlier_safe_browsing_settings_enabled},
+  };
 }
 
 void HatsHandler::HandleTrustSafetyInteractionOccurred(

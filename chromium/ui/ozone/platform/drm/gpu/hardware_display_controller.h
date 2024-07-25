@@ -140,6 +140,11 @@ class HardwareDisplayController {
   // doesn't change any state.
   bool TestPageFlip(const DrmOverlayPlaneList& plane_list);
 
+  // Perform a test commit to |mode| on the CRTC to determine if it can be
+  // configured without a modeset.
+  // |mode| must have the same visible area as the currently configured mode.
+  bool TestSeamlessRefreshRate(int32_t crtc_id, const drmModeModeInfo& mode);
+
   // Return the supported modifiers for |fourcc_format| for this controller.
   std::vector<uint64_t> GetSupportedModifiers(uint32_t fourcc_format,
                                               bool is_modeset = false) const;
@@ -168,6 +173,7 @@ class HardwareDisplayController {
   gfx::Point origin() const { return origin_; }
   void set_origin(const gfx::Point& origin) { origin_ = origin; }
 
+  float GetRefreshRate() const;
   base::TimeDelta GetRefreshInterval() const;
   base::TimeTicks GetTimeOfLastFlip() const;
 
@@ -204,18 +210,19 @@ class HardwareDisplayController {
                                const DrmOverlayPlaneList& modeset_planes,
                                bool use_current_crtc_mode,
                                const drmModeModeInfo& mode,
-                               absl::optional<bool> enable_vrr);
+                               std::optional<bool> enable_vrr);
   void OnModesetComplete(const DrmOverlayPlaneList& modeset_planes);
   PageFlipResult ScheduleOrTestPageFlip(
       const DrmOverlayPlaneList& plane_list,
       scoped_refptr<PageFlipRequest> page_flip_request,
       gfx::GpuFenceHandle* release_fence);
   void AllocateCursorBuffers();
-  DrmDumbBuffer* NextCursorBuffer();
-  void UpdateCursorImage();
+  DrmDumbBuffer* NextCursorBuffer(const SkBitmap& image);
+  bool UpdateCursorImage();
   void UpdateCursorLocation();
   void ResetCursor();
   void DisableCursor();
+  void ProbeValidCursorSizes();
 
   std::vector<uint64_t> GetFormatModifiers(uint32_t fourcc_format) const;
 
@@ -232,9 +239,13 @@ class HardwareDisplayController {
   DrmOverlayPlaneList current_planes_;
   base::TimeTicks time_of_last_flip_;
 
-  std::unique_ptr<DrmDumbBuffer> cursor_buffers_[2];
+  // Stores all the valid width/height for cursor plane. We assume the
+  // width/height are always the same here.
+  std::vector<int> valid_cursor_sizes_;
+  // |cursor_buffer_map_| stores active buffers for each |valid_cursor_sizes_|.
+  base::flat_map<int, std::vector<std::unique_ptr<DrmDumbBuffer>>>
+      cursor_buffer_map_;
   gfx::Point cursor_location_;
-  int cursor_frontbuffer_ = 0;
   raw_ptr<DrmDumbBuffer> current_cursor_ = nullptr;
 
   // Maps each fourcc_format to its preferred modifier which was generated

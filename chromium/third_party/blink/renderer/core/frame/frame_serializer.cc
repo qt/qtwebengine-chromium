@@ -49,11 +49,15 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+#include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/html_image_loader.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
+#include "third_party/blink/renderer/core/html/html_no_script_element.h"
+#include "third_party/blink/renderer/core/html/html_picture_element.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
+#include "third_party/blink/renderer/core/html/html_script_element.h"
 #include "third_party/blink/renderer/core/html/html_style_element.h"
 #include "third_party/blink/renderer/core/html/image_document.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -91,7 +95,8 @@ class SerializerMarkupAccumulator : public MarkupAccumulator {
   bool ShouldIgnoreElement(const Element&) const override;
   AtomicString AppendElement(const Element&) override;
   void AppendAttribute(const Element&, const Attribute&) override;
-  std::pair<Node*, Element*> GetAuxiliaryDOMTree(const Element&) const override;
+  std::pair<ShadowRoot*, HTMLTemplateElement*> GetShadowTree(
+      const Element&) const override;
 
  private:
   void AppendAttributeValue(const String& attribute_value);
@@ -116,7 +121,7 @@ SerializerMarkupAccumulator::SerializerMarkupAccumulator(
     : MarkupAccumulator(kResolveAllURLs,
                         IsA<HTMLDocument>(document) ? SerializationType::kHTML
                                                     : SerializationType::kXML,
-                        kNoShadowRoots),
+                        ShadowRootInclusion()),
       delegate_(delegate),
       resource_delegate_(resource_delegate),
       document_(&document) {}
@@ -245,9 +250,9 @@ void SerializerMarkupAccumulator::AppendAttribute(const Element& element,
   MarkupAccumulator::AppendAttribute(element, attribute);
 }
 
-std::pair<Node*, Element*> SerializerMarkupAccumulator::GetAuxiliaryDOMTree(
-    const Element& element) const {
-  return delegate_.GetAuxiliaryDOMTree(element);
+std::pair<ShadowRoot*, HTMLTemplateElement*>
+SerializerMarkupAccumulator::GetShadowTree(const Element& element) const {
+  return delegate_.GetShadowTree(element);
 }
 
 void SerializerMarkupAccumulator::AppendAttributeValue(
@@ -389,7 +394,7 @@ void FrameSerializer::SerializeCSSStyleSheet(CSSStyleSheet& style_sheet,
     css_text.Append("\";\n\n");
 
     for (unsigned i = 0; i < style_sheet.length(); ++i) {
-      CSSRule* rule = style_sheet.item(i);
+      CSSRule* rule = style_sheet.ItemInternal(i);
       String item_text = rule->cssText();
       if (!item_text.empty()) {
         css_text.Append(item_text);
@@ -411,7 +416,7 @@ void FrameSerializer::SerializeCSSStyleSheet(CSSStyleSheet& style_sheet,
   // Sub resources need to be serialized even if the CSS definition doesn't
   // need to be.
   for (unsigned i = 0; i < style_sheet.length(); ++i)
-    SerializeCSSRule(style_sheet.item(i));
+    SerializeCSSRule(style_sheet.ItemInternal(i));
 }
 
 void FrameSerializer::SerializeCSSRule(CSSRule* rule) {
@@ -469,9 +474,8 @@ void FrameSerializer::SerializeCSSRule(CSSRule* rule) {
     case CSSRule::kNamespaceRule:
     case CSSRule::kViewportRule:
     case CSSRule::kLayerStatementRule:
-    case CSSRule::kPositionFallbackRule:
-    case CSSRule::kTryRule:
     case CSSRule::kViewTransitionRule:
+    case CSSRule::kPositionTryRule:
       break;
   }
 }

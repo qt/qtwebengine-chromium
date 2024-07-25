@@ -31,9 +31,11 @@
 #include <map>
 #include <utility>
 
+#include "absl/container/inlined_vector.h"
 #include "dawn/common/Assert.h"
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Enumerator.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/common/Numeric.h"
 #include "dawn/common/Range.h"
 #include "dawn/common/ityp_stack_vec.h"
@@ -56,7 +58,7 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
 
     // Validation for any pixel local storage.
     if (auto* pls = unpacked.Get<PipelineLayoutPixelLocalStorage>()) {
-        StackVector<StorageAttachmentInfoForValidation, 4> attachments;
+        absl::InlinedVector<StorageAttachmentInfoForValidation, 4> attachments;
         for (size_t i = 0; i < pls->storageAttachmentCount; i++) {
             const PipelineLayoutStorageAttachment& attachment = pls->storageAttachments[i];
 
@@ -67,11 +69,11 @@ ResultOrError<UnpackedPtr<PipelineLayoutDescriptor>> ValidatePipelineLayoutDescr
                             "storageAttachments[%i]'s format (%s) cannot be used with %s.", i,
                             format->format, wgpu::TextureUsage::StorageAttachment);
 
-            attachments->push_back({attachment.offset, attachment.format});
+            attachments.push_back({attachment.offset, attachment.format});
         }
 
         DAWN_TRY(ValidatePLSInfo(device, pls->totalPixelLocalStorageSize,
-                                 {attachments->data(), attachments->size()}));
+                                 {attachments.data(), attachments.size()}));
     }
 
     DAWN_INVALID_IF(descriptor->bindGroupLayoutCount > kMaxBindGroups,
@@ -232,57 +234,34 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
            const ExternalTextureBindingLayout* externalTextureBindingEntry)
         -> BindGroupLayoutEntry {
         BindGroupLayoutEntry entry = {};
-        switch (shaderBinding.bindingType) {
-            case BindingInfoType::Buffer:
-                entry.buffer.type = shaderBinding.buffer.type;
-                entry.buffer.hasDynamicOffset = shaderBinding.buffer.hasDynamicOffset;
-                entry.buffer.minBindingSize = shaderBinding.buffer.minBindingSize;
-                break;
-            case BindingInfoType::Sampler:
-                if (shaderBinding.sampler.isComparison) {
-                    entry.sampler.type = wgpu::SamplerBindingType::Comparison;
-                } else {
-                    entry.sampler.type = wgpu::SamplerBindingType::Filtering;
+
+        MatchVariant(
+            shaderBinding.bindingInfo,
+            [&](const BufferBindingInfo& bindingInfo) {
+                entry.buffer.type = bindingInfo.type;
+                entry.buffer.minBindingSize = bindingInfo.minBindingSize;
+            },
+            [&](const SamplerBindingInfo& bindingInfo) { entry.sampler.type = bindingInfo.type; },
+            [&](const TextureBindingInfo& bindingInfo) {
+                entry.texture.sampleType = bindingInfo.sampleType;
+                entry.texture.viewDimension = bindingInfo.viewDimension;
+                entry.texture.multisampled = bindingInfo.multisampled;
+
+                // Default to UnfilterableFloat for texture_Nd<f32> as it will be promoted to Float
+                // if it is used with a sampler.
+                if (entry.texture.sampleType == wgpu::TextureSampleType::Float) {
+                    entry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
                 }
-                break;
-            case BindingInfoType::Texture:
-                switch (shaderBinding.texture.compatibleSampleTypes) {
-                    case SampleTypeBit::Depth:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Depth;
-                        break;
-                    case SampleTypeBit::Sint:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Sint;
-                        break;
-                    case SampleTypeBit::Uint:
-                        entry.texture.sampleType = wgpu::TextureSampleType::Uint;
-                        break;
-                    case SampleTypeBit::Float:
-                    case SampleTypeBit::UnfilterableFloat:
-                    case SampleTypeBit::None:
-                        DAWN_UNREACHABLE();
-                        break;
-                    default:
-                        if (shaderBinding.texture.compatibleSampleTypes ==
-                            (SampleTypeBit::Float | SampleTypeBit::UnfilterableFloat)) {
-                            // Default to UnfilterableFloat. It will be promoted to Float if it
-                            // is used with a sampler.
-                            entry.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
-                        } else {
-                            DAWN_UNREACHABLE();
-                        }
-                }
-                entry.texture.viewDimension = shaderBinding.texture.viewDimension;
-                entry.texture.multisampled = shaderBinding.texture.multisampled;
-                break;
-            case BindingInfoType::StorageTexture:
-                entry.storageTexture.access = shaderBinding.storageTexture.access;
-                entry.storageTexture.format = shaderBinding.storageTexture.format;
-                entry.storageTexture.viewDimension = shaderBinding.storageTexture.viewDimension;
-                break;
-            case BindingInfoType::ExternalTexture:
+            },
+            [&](const StorageTextureBindingInfo& bindingInfo) {
+                entry.storageTexture.access = bindingInfo.access;
+                entry.storageTexture.format = bindingInfo.format;
+                entry.storageTexture.viewDimension = bindingInfo.viewDimension;
+            },
+            [&](const ExternalTextureBindingInfo&) {
                 entry.nextInChain = externalTextureBindingEntry;
-                break;
-        }
+            });
+
         return entry;
     };
 
@@ -384,12 +363,8 @@ ResultOrError<Ref<PipelineLayoutBase>> PipelineLayoutBase::CreateDefault(
     desc.bindGroupLayouts = bgls.data();
     desc.bindGroupLayoutCount = static_cast<uint32_t>(pipelineBGLCount);
 
-    UnpackedPtr<PipelineLayoutDescriptor> unpacked;
-    DAWN_TRY_ASSIGN(unpacked,
-                    ValidatePipelineLayoutDescriptor(device, &desc, pipelineCompatibilityToken));
-
     Ref<PipelineLayoutBase> result;
-    DAWN_TRY_ASSIGN(result, device->GetOrCreatePipelineLayout(unpacked));
+    DAWN_TRY_ASSIGN(result, device->CreatePipelineLayout(&desc, pipelineCompatibilityToken));
     DAWN_ASSERT(!result->IsError());
 
     // Check in debug that the pipeline layout is compatible with the current pipeline.

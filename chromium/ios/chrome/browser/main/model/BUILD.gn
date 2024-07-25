@@ -8,8 +8,6 @@ source_set("model") {
     "browser_agent_util.mm",
     "browser_impl.h",
     "browser_impl.mm",
-    "browser_util.h",
-    "browser_util.mm",
     "browser_web_state_list_delegate.h",
     "browser_web_state_list_delegate.mm",
   ]
@@ -20,9 +18,10 @@ source_set("model") {
     "//base",
     "//components/breadcrumbs/core:status",
     "//ios/chrome/browser/app_launcher/model",
+    "//ios/chrome/browser/contextual_panel/model",
     "//ios/chrome/browser/crash_report/model/breadcrumbs",
     "//ios/chrome/browser/device_sharing/model",
-    "//ios/chrome/browser/favicon",
+    "//ios/chrome/browser/favicon/model",
     "//ios/chrome/browser/follow/model:browser_agent",
     "//ios/chrome/browser/infobars/model/overlays/browser_agent:browser_agent_util",
     "//ios/chrome/browser/intents:user_activity_browser_agent",
@@ -63,7 +62,6 @@ source_set("unit_tests") {
   testonly = true
   sources = [
     "browser_impl_unittest.mm",
-    "browser_util_unittest.mm",
     "browser_web_state_list_delegate_unittest.mm",
   ]
   deps = [

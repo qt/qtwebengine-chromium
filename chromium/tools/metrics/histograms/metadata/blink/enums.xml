@@ -198,7 +198,7 @@ chromium-metrics-reviews@google.com.
       label="Custom property contains different value types in keyframe
              animation"/>
   <int value="17" label="Scroll timeline source is not composited"/>
-  <int value="18" label="Compositor property animations have no effect"/>
+  <int value="18" label="Animation has no visible change"/>
   <int value="19" label="Animation affects an !important property"/>
   <int value="20"
       label="Target SVG element uses an individual transform property"/>
@@ -228,6 +228,21 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="kImageBMP"/>
   <int value="7" label="kImageAVIF"/>
   <int value="8" label="(obsolete) kImageJXL"/>
+</enum>
+
+<enum name="DigitalIdentityRequestStatus">
+  <int value="0" label="kSuccess"/>
+  <int value="1" label="kErrorOther"/>
+  <int value="2" label="kErrorNoCredential"/>
+  <int value="3" label="kErrorUserDeclined"/>
+  <int value="4" label="kErrorAborted"/>
+</enum>
+
+<enum name="FedCmAccountChooserResult">
+  <int value="0" label="Account row clicked"/>
+  <int value="1" label="Cancel button clicked"/>
+  <int value="2" label="Use other account button clicked"/>
+  <int value="3" label="Tab or window is closed or refreshed"/>
 </enum>
 
 <enum name="FedCmAccountsResponseInvalidReason">
@@ -497,20 +512,26 @@ chromium-metrics-reviews@google.com.
              encountered"/>
 </enum>
 
+<enum name="IntersectionObservationUpdateType">
+  <int value="0" label="No update"/>
+  <int value="1" label="Scroll only"/>
+  <int value="2" label="CachedRectInvalid"/>
+  <int value="3" label="Full update"/>
+</enum>
+
 <enum name="KeyboardLockMethods">
   <int value="0" label="keyboardLock() requested for all keys"/>
   <int value="1" label="keyboardLock() requested for a subset of keys"/>
   <int value="2" label="keyboardUnlock()"/>
 </enum>
 
-<enum name="NQEEffectiveConnectionType">
-  <int value="0" label="Unknown"/>
-  <int value="1" label="Offline"/>
-  <int value="2" label="Slow 2G"/>
-  <int value="3" label="2G"/>
-  <int value="4" label="3G"/>
-  <int value="5" label="4G"/>
-  <int value="6" label="(Obsolete) Broadband. Deprecated as of 01/2017."/>
+<enum name="PermissionElementUserInteractionDeniedReason">
+  <int value="0" label="Invalid type"/>
+  <int value="1" label="Failed or has not been registered"/>
+  <int value="2" label="Recently attached to layout tree"/>
+  <int value="3" label="Intersection changed"/>
+  <int value="4" label="Invalid style"/>
+  <int value="5" label="Untrusted event"/>
 </enum>
 
 <enum name="RaceTaskPriority">

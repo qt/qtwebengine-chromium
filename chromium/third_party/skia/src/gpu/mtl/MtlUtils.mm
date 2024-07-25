@@ -13,10 +13,6 @@
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
 
-#ifdef SK_BUILD_FOR_IOS
-#import <UIKit/UIApplication.h>
-#endif
-
 namespace skgpu {
 
 bool MtlFormatIsDepthOrStencil(MTLPixelFormat format) {
@@ -149,10 +145,14 @@ size_t MtlFormatBytesPerBlock(MTLPixelFormat mtlFormat) {
     }
 }
 
-#ifdef SK_BUILD_FOR_IOS
-bool MtlIsAppInBackground() {
-    return [NSThread isMainThread] &&
-           ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground);
-}
+SkTextureCompressionType MtlFormatToCompressionType(MTLPixelFormat mtlFormat) {
+    switch (mtlFormat) {
+        case MTLPixelFormatETC2_RGB8: return SkTextureCompressionType::kETC2_RGB8_UNORM;
+#ifdef SK_BUILD_FOR_MAC
+        case MTLPixelFormatBC1_RGBA:  return SkTextureCompressionType::kBC1_RGBA8_UNORM;
 #endif
+        default:                      return SkTextureCompressionType::kNone;
+    }
+}
+
 } // namespace skgpu

@@ -5,6 +5,7 @@
 import("../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../scripts/build/ninja/devtools_module.gni")
 import("../../../scripts/build/ninja/generate_css.gni")
+import("../../../third_party/typescript/typescript.gni")
 import("../visibility.gni")
 
 generate_css("css_files") {
@@ -20,8 +21,6 @@ generate_css("css_files") {
 devtools_module("profiler") {
   sources = [
     "BottomUpProfileDataGrid.ts",
-    "CPUProfileFlameChart.ts",
-    "CPUProfileView.ts",
     "ChildrenProvider.ts",
     "HeapProfileView.ts",
     "HeapProfilerPanel.ts",
@@ -34,6 +33,7 @@ devtools_module("profiler") {
     "LiveHeapProfileView.ts",
     "ModuleUIStrings.ts",
     "ProfileDataGrid.ts",
+    "ProfileFlameChartDataProvider.ts",
     "ProfileHeader.ts",
     "ProfileLauncherView.ts",
     "ProfileSidebarTreeElement.ts",
@@ -73,11 +73,7 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
-    "../../../test/unittests/front_end/core/sdk/*",
-    "../../../test/unittests/front_end/entrypoints/missing_entrypoints/*",
-    "../../../test/unittests/front_end/panels/profiler/*",
     "../../entrypoints/*",
-    "../js_profiler/*",
     "../timeline/*",
   ]
 

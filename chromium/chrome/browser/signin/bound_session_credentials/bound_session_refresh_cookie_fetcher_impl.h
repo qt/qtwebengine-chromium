@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/timer/elapsed_timer.h"
 #include "chrome/browser/signin/bound_session_credentials/bound_session_refresh_cookie_fetcher.h"
+#include "chrome/browser/signin/bound_session_credentials/rotation_debug_info.pb.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "net/cookies/canonical_cookie.h"
 #include "services/network/public/cpp/simple_url_loader.h"
@@ -23,7 +24,6 @@ class SimpleURLLoader;
 class SharedURLLoaderFactory;
 }  // namespace network
 
-class WaitForNetworkCallbackHelper;
 class SessionBindingHelper;
 
 class BoundSessionRefreshCookieFetcherImpl
@@ -32,14 +32,17 @@ class BoundSessionRefreshCookieFetcherImpl
  public:
   BoundSessionRefreshCookieFetcherImpl(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      WaitForNetworkCallbackHelper& wait_for_network_callback_helper,
       SessionBindingHelper& session_binding_helper,
+      const GURL& refresh_url,
       const GURL& cookie_url,
-      base::flat_set<std::string> cookie_names);
+      base::flat_set<std::string> cookie_names,
+      bool is_off_the_record_profile,
+      bound_session_credentials::RotationDebugInfo debug_info);
   ~BoundSessionRefreshCookieFetcherImpl() override;
 
   // BoundSessionRefreshCookieFetcher:
   void Start(RefreshCookieCompleteCallback callback) override;
+  bool IsChallengeReceived() const override;
 
  private:
   friend class BoundSessionRefreshCookieFetcherImplTest;
@@ -83,13 +86,21 @@ class BoundSessionRefreshCookieFetcherImpl
                  observer) override;
 
   const scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-  const raw_ref<WaitForNetworkCallbackHelper> wait_for_network_callback_helper_;
   const raw_ref<SessionBindingHelper> session_binding_helper_;
+
+  // Temporarily, this URL might be empty, meaning that the hardcoded URL must
+  // be used instead.
+  // TODO(b/325441004): require URL to be valid after migrating the storage.
+  const GURL refresh_url_;
 
   // Used to check whether the refresh request has set the required cookie.
   // Otherwise, the request is considered a failure.
   const GURL expected_cookie_domain_;
   const base::flat_set<std::string> expected_cookie_names_;
+
+  // Required to attach X-Client-Data header to cookie rotation request for
+  // GWS-visible Finch experiment.
+  const bool is_off_the_record_profile_;
 
   RefreshCookieCompleteCallback callback_;
 
@@ -101,6 +112,7 @@ class BoundSessionRefreshCookieFetcherImpl
   Result result_;
   bool cookie_refresh_completed_ = false;
   size_t assertion_requests_count_ = 0;
+  bound_session_credentials::RotationDebugInfo debug_info_;
 
   // Non-null after a fetch has started.
   std::unique_ptr<network::SimpleURLLoader> url_loader_;

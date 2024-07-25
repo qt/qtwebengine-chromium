@@ -16,6 +16,7 @@
 #include "osp/public/network_service_manager.h"
 #include "osp/public/protocol_connection_server.h"
 #include "osp/public/testing/message_demuxer_test_support.h"
+#include "platform/base/span.h"
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 
@@ -55,15 +56,17 @@ class MockReceiverDelegate final : public ReceiverDelegate {
                bool(uint64_t request_id,
                     const std::string& id,
                     uint64_t source_id));
-  MOCK_METHOD2(TerminatePresentation,
-               void(const std::string& id, TerminationReason reason));
+  MOCK_METHOD3(TerminatePresentation,
+               void(const std::string& id,
+                    TerminationSource source,
+                    TerminationReason reason));
 };
 
 class PresentationReceiverTest : public ::testing::Test {
  public:
   PresentationReceiverTest()
       : fake_clock_(Clock::time_point(std::chrono::milliseconds(1298424))),
-        task_runner_(&fake_clock_),
+        task_runner_(fake_clock_),
         quic_bridge_(task_runner_, FakeClock::now) {}
 
  protected:
@@ -116,13 +119,11 @@ TEST_F(PresentationReceiverTest, QueryAvailability) {
   std::unique_ptr<ProtocolConnection> stream = MakeClientStream();
   ASSERT_TRUE(stream);
 
-  msgs::PresentationUrlAvailabilityRequest request{/* .request_id = */ 0,
-                                                   /* .urls = */ {url1_},
-                                                   /* .watch_duration = */ 0,
-                                                   /* .watch_id = */ 0};
+  msgs::PresentationUrlAvailabilityRequest request = {
+      .request_id = 0, .urls = {url1_}, .watch_duration = 0, .watch_id = 0};
   msgs::CborEncodeBuffer buffer;
   ASSERT_TRUE(msgs::EncodePresentationUrlAvailabilityRequest(request, &buffer));
-  stream->Write(buffer.data(), buffer.size());
+  stream->Write(ByteView(buffer.data(), buffer.size()));
 
   EXPECT_CALL(mock_receiver_delegate_, OnUrlAvailabilityRequest(_, _, _))
       .WillOnce(Invoke([this](uint64_t watch_id, uint64_t watch_duration,
@@ -139,7 +140,7 @@ TEST_F(PresentationReceiverTest, QueryAvailability) {
                                    msgs::Type message_type, const uint8_t* buf,
                                    size_t buffer_size, Clock::time_point now) {
         ssize_t result = msgs::DecodePresentationUrlAvailabilityResponse(
-            buf, buffer_size, &response);
+            buf, buffer_size, response);
         return result;
       }));
   quic_bridge_.RunTasksUntilIdle();
@@ -159,14 +160,14 @@ TEST_F(PresentationReceiverTest, StartPresentation) {
   ASSERT_TRUE(stream);
 
   const std::string presentation_id = "KMvyNqTCvvSv7v5X";
-  msgs::PresentationStartRequest request;
-  request.request_id = 0;
-  request.presentation_id = presentation_id;
-  request.url = url1_;
-  request.headers = {msgs::HttpHeader{"Accept-Language", "de"}};
+  msgs::PresentationStartRequest request = {
+      .request_id = 0,
+      .presentation_id = presentation_id,
+      .url = url1_,
+      .headers = {msgs::HttpHeader{"Accept-Language", "de"}}};
   msgs::CborEncodeBuffer buffer;
   ASSERT_TRUE(msgs::EncodePresentationStartRequest(request, &buffer));
-  stream->Write(buffer.data(), buffer.size());
+  stream->Write(ByteView(buffer.data(), buffer.size()));
   Connection::PresentationInfo info;
   EXPECT_CALL(mock_receiver_delegate_, StartPresentation(_, _, request.headers))
       .WillOnce(::testing::DoAll(::testing::SaveArg<0>(&info),
@@ -186,7 +187,7 @@ TEST_F(PresentationReceiverTest, StartPresentation) {
                                    msgs::Type message_type, const uint8_t* buf,
                                    size_t buf_size, Clock::time_point now) {
         ssize_t result =
-            msgs::DecodePresentationStartResponse(buf, buf_size, &response);
+            msgs::DecodePresentationStartResponse(buf, buf_size, response);
         return result;
       }));
   quic_bridge_.RunTasksUntilIdle();

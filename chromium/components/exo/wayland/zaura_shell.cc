@@ -10,6 +10,7 @@
 
 #include <limits>
 #include <memory>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -756,6 +757,7 @@ using AuraSurfaceConfigureCallback = base::RepeatingCallback<void(
     bool resizing,
     bool activated,
     float raster_scale,
+    aura::Window::OcclusionState occlusion_state,
     std::optional<chromeos::WindowStateType> restore_state_type)>;
 
 uint32_t HandleAuraSurfaceConfigureCallback(
@@ -768,11 +770,12 @@ uint32_t HandleAuraSurfaceConfigureCallback(
     bool activated,
     const gfx::Vector2d& origin_offset,
     float raster_scale,
+    aura::Window::OcclusionState occlusion_state,
     std::optional<chromeos::WindowStateType> restore_state_type) {
   uint32_t serial =
       serial_tracker->GetNextSerial(SerialTracker::EventType::OTHER_EVENT);
   callback.Run(bounds, state_type, resizing, activated, raster_scale,
-               restore_state_type);
+               occlusion_state, restore_state_type);
   xdg_surface_send_configure(resource, serial);
   wl_client_flush(wl_resource_get_client(resource));
   return serial;
@@ -970,7 +973,7 @@ void AuraToplevel::SetPersistable(bool persistable) {
   shell_surface_->SetPersistable(persistable);
 }
 
-void AuraToplevel::SetShape(absl::optional<cc::Region> shape) {
+void AuraToplevel::SetShape(std::optional<cc::Region> shape) {
   shell_surface_->SetShape(std::move(shape));
 }
 
@@ -1026,12 +1029,13 @@ void AuraToplevel::OnConfigure(
     bool resizing,
     bool activated,
     float raster_scale,
+    aura::Window::OcclusionState occlusion_state,
     std::optional<chromeos::WindowStateType> restore_state_type) {
   wl_array states;
   wl_array_init(&states);
   if (state_type == chromeos::WindowStateType::kMaximized)
     AddState(&states, XDG_TOPLEVEL_STATE_MAXIMIZED);
-  // TODO(crbug/1250129): Support snapped state.
+  // TODO(crbug.com/40197882): Support snapped state.
   if (IsFullscreenOrPinnedWindowStateType(state_type)) {
     // If pinned state is not yet supported, always set fullscreen.
     if (wl_resource_get_version(aura_toplevel_resource_) <
@@ -1049,7 +1053,7 @@ void AuraToplevel::OnConfigure(
         shell_surface_->GetWidget()->GetNativeWindow()->GetProperty(
             chromeos::kImmersiveImpliedByFullscreen)) {
       // Imemrsive state should NOT be set for pinned state.
-      // TODO(crbug.com/1511187): Lacros randomly enters/exits immersive state
+      // TODO(crbug.com/41483774): Lacros randomly enters/exits immersive state
       // when transitioning to pinned/unpinned state. Add CHECK to guarantee
       // `state_type` is as same as chrome::WindowStateType::kFullscreen here
       // after resolving this bug.
@@ -1095,6 +1099,12 @@ void AuraToplevel::OnConfigure(
       ZAURA_TOPLEVEL_CONFIGURE_RASTER_SCALE_SINCE_VERSION) {
     uint32_t value = base::bit_cast<uint32_t>(raster_scale);
     zaura_toplevel_send_configure_raster_scale(aura_toplevel_resource_, value);
+  }
+
+  if (wl_resource_get_version(aura_toplevel_resource_) >=
+      ZAURA_TOPLEVEL_CONFIGURE_OCCLUSION_STATE_SINCE_VERSION) {
+    zaura_toplevel_send_configure_occlusion_state(
+        aura_toplevel_resource_, WaylandOcclusionState(occlusion_state));
   }
 }
 
@@ -1258,7 +1268,7 @@ class WaylandAuraShell : public ash::DesksController::Observer,
     }
     if (wl_resource_get_version(aura_shell_resource_) >=
         ZAURA_SHELL_COMPOSITOR_VERSION_SINCE_VERSION) {
-      const base::StringPiece ash_version = version_info::GetVersionNumber();
+      const std::string_view ash_version = version_info::GetVersionNumber();
       zaura_shell_send_compositor_version(aura_shell_resource_,
                                           ash_version.data());
     }
@@ -1666,9 +1676,9 @@ void aura_toplevel_set_shape(wl_client* client,
                              wl_resource* resource,
                              wl_resource* region_resource) {
   GetUserDataAs<AuraToplevel>(resource)->SetShape(
-      region_resource ? absl::optional<cc::Region>(
-                            *GetUserDataAs<SkRegion>(region_resource))
-                      : absl::nullopt);
+      region_resource
+          ? std::optional<cc::Region>(*GetUserDataAs<SkRegion>(region_resource))
+          : std::nullopt);
 }
 
 void aura_toplevel_set_top_inset(wl_client* client,

@@ -1,4 +1,3 @@
-#include "./centipede/binary_info.h"
 // Copyright 2022 The Centipede Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,12 +15,15 @@
 #ifndef THIRD_PARTY_CENTIPEDE_CENTIPEDE_H_
 #define THIRD_PARTY_CENTIPEDE_CENTIPEDE_H_
 
+#include <atomic>
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "absl/base/nullability.h"
 #include "absl/time/time.h"
+#include "./centipede/binary_info.h"
 #include "./centipede/blob_file.h"
 #include "./centipede/centipede_callbacks.h"
 #include "./centipede/command.h"
@@ -46,7 +48,7 @@ class Centipede {
  public:
   Centipede(const Environment &env, CentipedeCallbacks &user_callbacks,
             const BinaryInfo &binary_info, CoverageLogger &coverage_logger,
-            Stats &stats);
+            std::atomic<Stats> &stats);
   virtual ~Centipede() = default;
 
   // Non-copyable and non-movable.
@@ -77,8 +79,9 @@ class Centipede {
   // Returns true if new features were observed.
   // Post-condition: `batch_result.results.size()` == `input_vec.size()`.
   bool RunBatch(const std::vector<ByteArray> &input_vec,
-                BlobFileWriter *corpus_file, BlobFileWriter *features_file,
-                BlobFileWriter *unconditional_features_file);
+                absl::Nullable<BlobFileWriter *> corpus_file,
+                absl::Nullable<BlobFileWriter *> features_file,
+                absl::Nullable<BlobFileWriter *> unconditional_features_file);
   // Loads seed inputs from the user callbacks.
   void LoadSeedInputs();
   // Loads a shard `shard_index` from `load_env.workdir`.
@@ -192,7 +195,7 @@ class Centipede {
   CoverageLogger &coverage_logger_;
 
   // Statistics of the current run.
-  Stats &stats_;
+  std::atomic<Stats> &stats_;
 
   // Counts the number of crashes reported so far.
   int num_crashes_ = 0;

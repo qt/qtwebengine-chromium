@@ -87,6 +87,11 @@ inline constexpr char kSafeBrowsingSawInterstitialScoutReporting[] =
 inline constexpr char kSafeBrowsingScoutReportingEnabled[] =
     "safebrowsing.scout_reporting_enabled";
 
+// Boolean indicating whether Safe Browsing Scout reporting was enabled at the
+// time that extended reporting was deprecated.
+inline constexpr char kSafeBrowsingScoutReportingEnabledWhenDeprecated[] =
+    "safebrowsing.scout_reporting_enabled_when_deprecated";
+
 // Dictionary containing safe browsing triggers and the list of times they have
 // fired recently. The keys are TriggerTypes (4-byte ints) and the values are
 // lists of doubles.
@@ -179,7 +184,7 @@ inline constexpr char kTailoredSecuritySyncFlowLastRunTime[] =
 
 // Integer that maps to TailoredSecurityUserInteractionState. Indicates the
 // last known state of the tailored security sync flow.
-// TODO(crbug.com/1469133): remove this preference value.
+// TODO(crbug.com/40925236): remove this preference value.
 inline constexpr char kTailoredSecuritySyncFlowLastUserInteractionState[] =
     "safebrowsing.aesb_sync_flow_last_user_interaction_state";
 
@@ -230,20 +235,27 @@ inline constexpr char kExtensionTelemetryFileData[] =
 inline constexpr char kHashPrefixRealTimeChecksAllowedByPolicy[] =
     "safebrowsing.hash_prefix_real_time_checks_allowed_by_policy";
 
-// A boolean indicating if the user has previously seen a deep
-// scanning prompt.
-inline constexpr char kSafeBrowsingDeepScanPromptSeen[] =
-    "safebrowsing.deep_scan_prompt_seen";
+// A preference indicating if the user has opted in to Enhanced Safe Browsing
+// before or after the friendlier settings launch. This pref was added after the
+// launch, so a value of `true` indicates that the user is opted in to ESB, and
+// definitely opted in with friendlier settings, but a value of `false` is not
+// definitive. If the user is not opted in to ESB at all, this preference will
+// be `false`.
+inline constexpr char kSafeBrowsingEsbOptInWithFriendlierSettings[] =
+    "safebrowsing.esb_opt_in_with_friendlier_settings";
 
-// A timestamp indicating when the user most recently enrolled in
-// Enhanced Safe Browsing. For users who enrolled in Enhanced Safe
-// Browsing before this pref was added, the timestamp is the first
-// Chrome startup with the pref, so the timestamp should be considered
-// a lower bound on the amount of time a user has been
-// enrolled. Contains a null time for users not enrolled in Enhanced
-// Safe Browsing.
-inline constexpr char kSafeBrowsingEsbEnabledTimestamp[] =
-    "safebrowsing.esb_enabled_timestamp";
+// A preference indicating that the user has seen the IPH telling them automatic
+// deep scans are coming. Since IPH may be delayed for a variety of reasons
+// (startup grace periods, other IPH in the session), we want to wait to enable
+// automatic deep scans until they've actually seen the IPH.
+inline constexpr char kSafeBrowsingAutomaticDeepScanningIPHSeen[] =
+    "safebrowsing.automatic_deep_scanning_iph_seen";
+
+// A preference indicating that the user has already done an automatic
+// deep scan. This addresses an edge case where deep scan notices remain
+// in the bubble after the user performs an automatic deep scan.
+inline constexpr char kSafeBrowsingAutomaticDeepScanPerformed[] =
+    "safe_browsing.automatic_deep_scan_performed";
 
 }  // namespace prefs
 

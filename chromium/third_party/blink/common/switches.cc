@@ -61,10 +61,6 @@ const char kDisableImageAnimationResync[] = "disable-image-animation-resync";
 // during fast scrolling especially on slower devices.
 const char kDisableLowResTiling[] = "disable-low-res-tiling";
 
-// Disallow use of the feature NewBaseUrlInheritanceBehavior.
-const char kDisableNewBaseUrlInheritanceBehavior[] =
-    "disable-new-base-url-inheritance-behavior";
-
 // Disable partial raster in the renderer. Disabling this switch also disables
 // the use of persistent gpu memory buffers.
 const char kDisablePartialRaster[] = "disable-partial-raster";
@@ -86,6 +82,11 @@ const char kDumpRuntimeCallStats[] = "dump-blink-runtime-call-stats";
 // Specify that all compositor resources should be backed by GPU memory buffers.
 const char kEnableGpuMemoryBufferCompositorResources[] =
     "enable-gpu-memory-buffer-compositor-resources";
+
+// Enables taking a heap snapshot and dumping it to file when using leak
+// detection.
+const char kEnableLeakDetectionHeapSnapshot[] =
+    "enable-leak-detection-heap-snapshot";
 
 // When using CPU rasterizing generate low resolution tiling. Low res
 // tiles may be displayed during fast scrolls especially on slower devices.
@@ -132,6 +133,12 @@ const char kMaxUntiledLayerWidth[] = "max-untiled-layer-width";
 // Sets the min tile height for GPU raster.
 const char kMinHeightForGpuRasterTile[] = "min-height-for-gpu-raster-tile";
 
+// Used to communicate managed policy for MutationEvents feature. This feature
+// is typically controlled by a RuntimeEnabledFeature, but requires an
+// enterprise policy override.
+extern const char kMutationEventsEnabled[] =
+    "deprecated-mutation-events-enabled";
+
 // Sets the timeout seconds of the network-quiet timers in IdlenessDetector.
 // Used by embedders who want to change the timeout time in order to run web
 // contents on various embedded devices and changeable network bandwidths in
@@ -146,11 +153,6 @@ const char kShowLayoutShiftRegions[] = "show-layout-shift-regions";
 // Visibly render a border around paint rects in the web page to help debug
 // and study painting behavior.
 const char kShowPaintRects[] = "show-paint-rects";
-
-// Used to override the ThrottleDisplayNoneAndVisibilityHiddenCrossOrigin
-// feature from an enterprise policy.
-const char kDisableThrottleNonVisibleCrossOriginIframes[] =
-    "disable-throttle-non-visible-cross-origin-iframes";
 
 // Controls how text selection granularity changes when touch text selection
 // handles are dragged. Should be "character" or "direction". If not specified,
@@ -169,9 +171,6 @@ const char kConditionalFocusWindowMs[] = "conditional-focus-window-ms";
 
 // Specifies the flags passed to JS engine.
 const char kJavaScriptFlags[] = "js-flags";
-
-// Controls whether WebSQL is force enabled.
-const char kWebSQLAccess[] = "web-sql-access";
 
 }  // namespace switches
 }  // namespace blink

@@ -5,11 +5,11 @@
 #include "chrome/browser/ui/webui/family_link_user_internals/family_link_user_internals_message_handler.h"
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/functional/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
@@ -22,9 +22,10 @@
 #include "components/signin/public/identity_manager/tribool.h"
 #include "components/supervised_user/core/browser/child_account_service.h"
 #include "components/supervised_user/core/browser/supervised_user_error_page.h"
+#include "components/supervised_user/core/browser/supervised_user_preferences.h"
 #include "components/supervised_user/core/browser/supervised_user_settings_service.h"
+#include "components/supervised_user/core/browser/supervised_user_utils.h"
 #include "components/supervised_user/core/common/features.h"
-#include "components/supervised_user/core/common/supervised_user_utils.h"
 #include "components/url_formatter/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
@@ -40,7 +41,7 @@ namespace {
 // section's contents, for use with |AddSectionEntry| below. Note that
 // |parent_list|, not the caller, owns the newly added section.
 base::Value::List* AddSection(base::Value::List* parent_list,
-                              base::StringPiece title) {
+                              std::string_view title) {
   base::Value::Dict section;
   base::Value::List section_contents;
   section.Set("title", title);
@@ -53,7 +54,7 @@ base::Value::List* AddSection(base::Value::List* parent_list,
 
 // Adds a bool entry to a section (created with |AddSection| above).
 void AddSectionEntry(base::Value::List* section_list,
-                     base::StringPiece name,
+                     std::string_view name,
                      bool value) {
   base::Value::Dict entry;
   entry.Set("stat_name", name);
@@ -64,8 +65,8 @@ void AddSectionEntry(base::Value::List* section_list,
 
 // Adds a string entry to a section (created with |AddSection| above).
 void AddSectionEntry(base::Value::List* section_list,
-                     base::StringPiece name,
-                     base::StringPiece value) {
+                     std::string_view name,
+                     std::string_view value) {
   base::Value::Dict entry;
   entry.Set("stat_name", name);
   entry.Set("stat_value", value);
@@ -188,11 +189,6 @@ void FamilyLinkUserInternalsMessageHandler::HandleTryURL(
 
 void FamilyLinkUserInternalsMessageHandler::SendBasicInfo() {
   base::Value::List section_list;
-
-  base::Value::List* section_general = AddSection(&section_list, "General");
-  AddSectionEntry(section_general, "Child detection enabled",
-                  supervised_user::IsChildAccountSupervisionEnabled());
-
   Profile* profile = Profile::FromWebUI(web_ui());
 
   base::Value::List* section_profile = AddSection(&section_list, "Profile");
@@ -203,8 +199,8 @@ void FamilyLinkUserInternalsMessageHandler::SendBasicInfo() {
       GetSupervisedUserService()->GetURLFilter();
 
   base::Value::List* section_filter = AddSection(&section_list, "Filter");
-  AddSectionEntry(section_filter, "Online checks active",
-                  filter->HasAsyncURLChecker());
+  AddSectionEntry(section_filter, "SafeSites enabled",
+                  supervised_user::IsSafeSitesEnabled(*profile->GetPrefs()));
   AddSectionEntry(
       section_filter, "Default behavior",
       FilteringBehaviorToString(filter->GetDefaultFilteringBehavior()));

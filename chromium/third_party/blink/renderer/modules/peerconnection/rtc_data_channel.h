@@ -65,11 +65,11 @@ class MODULES_EXPORT RTCDataChannel final
   bool reliable() const;
 
   bool ordered() const;
-  absl::optional<uint16_t> maxPacketLifeTime() const;
-  absl::optional<uint16_t> maxRetransmits() const;
+  std::optional<uint16_t> maxPacketLifeTime() const;
+  std::optional<uint16_t> maxRetransmits() const;
   String protocol() const;
   bool negotiated() const;
-  absl::optional<uint16_t> id() const;
+  std::optional<uint16_t> id() const;
   String readyState() const;
   unsigned bufferedAmount() const;
 
@@ -165,9 +165,6 @@ class MODULES_EXPORT RTCDataChannel final
 
   void Dispose();
 
-  void ScheduleDispatchEvent(Event*);
-  void ScheduledEventTimerFired(TimerBase*);
-
   const rtc::scoped_refptr<webrtc::DataChannelInterface>& channel() const;
   bool ValidateSendLength(size_t length, ExceptionState& exception_state);
   void SendRawData(const char* data, size_t length);
@@ -183,8 +180,6 @@ class MODULES_EXPORT RTCDataChannel final
   enum BinaryType { kBinaryTypeBlob, kBinaryTypeArrayBuffer };
   BinaryType binary_type_ = kBinaryTypeArrayBuffer;
 
-  HeapTaskRunnerTimer<RTCDataChannel> scheduled_event_timer_;
-  HeapVector<Member<Event>> scheduled_events_;
   FRIEND_TEST_ALL_PREFIXES(RTCDataChannelTest, Open);
   FRIEND_TEST_ALL_PREFIXES(RTCDataChannelTest, Close);
   FRIEND_TEST_ALL_PREFIXES(RTCDataChannelTest, Message);
@@ -199,7 +194,7 @@ class MODULES_EXPORT RTCDataChannel final
   // Once an id has been assigned, we'll set this value and use it instead
   // of querying the channel (which requires thread hop). This is a cached
   // value to optimize a const getter, and therefore `mutable`.
-  mutable absl::optional<uint16_t> id_;
+  mutable std::optional<uint16_t> id_;
   unsigned buffered_amount_low_threshold_ = 0u;
   unsigned buffered_amount_ = 0u;
   bool stopped_ = false;

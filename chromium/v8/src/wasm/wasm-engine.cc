@@ -46,18 +46,104 @@ namespace v8::internal::wasm {
     if (v8_flags.trace_wasm_code_gc) PrintF("[wasm-gc] " __VA_ARGS__); \
   } while (false)
 
+// This class exists in order to solve a shutdown ordering problem.
+// The basic situation is that the process-global WasmEngine has, for each
+// Isolate that it knows about, a map from NativeModule to Script, using
+// WeakScriptHandles to make sure that the NativeModules, which are shared
+// across the process, don't keep the (Isolate-specific) Scripts alive.
+// In the other direction, the Scripts keep the NativeModule alive, IOW
+// usually the Scripts die first, and the WeakScriptHandles are cleared
+// before being freed.
+// In case of asm.js modules and in case of Isolate shutdown, it can happen
+// that the NativeModule dies first, so the WeakScriptHandles are no longer
+// needed and should be destroyed. That can only happen on the main thread of
+// the Isolate they belong to, whereas the last thread that releases a
+// NativeModule might be any other thread, so we post a
+// ClearWeakScriptHandleTask to that isolate's foreground task runner.
+// In case of Isolate shutdown at an inconvenient moment, this task runner can
+// destroy all waiting tasks; and *afterwards* global handles are freed, which
+// writes to the memory location backing the handle, so this bit of memory must
+// not be owned by (and die with) the ClearWeakScriptHandleTask.
+// The solution is this class here: its instances form a linked list owned by
+// the Isolate to which the referenced Scripts belong. Its name refers to the
+// fact that it stores global handles that used to have a purpose but are now
+// just waiting for the right thread to destroy them.
+// If the ClearWeakScriptHandleTask gets to run (i.e. in the regular case),
+// it destroys the weak global handle and then the WasmOrphanedGlobalHandle
+// container, removing it from the isolate's list.
+// If the ClearWeakScriptHandleTask is destroyed before it runs, the isolate's
+// list of WasmOrphanedGlobalHandles isn't modified, so the indirection cell
+// is still around when all remaining global handles are freed; nevertheless
+// it won't leak because the Isolate owns it and will free it.
+class WasmOrphanedGlobalHandle {
+ public:
+  WasmOrphanedGlobalHandle() = default;
+
+  void InitializeLocation(std::unique_ptr<Address*> location) {
+    location_ = std::move(location);
+  }
+
+  static void Destroy(WasmOrphanedGlobalHandle* that) {
+    // Destroy the global handle if it still exists.
+    Address** location = that->location_.get();
+    if (location) GlobalHandles::Destroy(*location);
+    that->location_.reset();
+    // Unlink and free the container.
+    *that->prev_ptr_ = that->next_;
+    if (that->next_ != nullptr) that->next_->prev_ptr_ = that->prev_ptr_;
+    // This function could be a non-static method, but then the next line
+    // would read "delete this", which is UB.
+    delete that;
+  }
+
+ private:
+  friend class WasmEngine;
+
+  // This is a doubly linked list with a twist: the {next_} pointer is just
+  // what you would expect, whereas {prev_ptr_} points at the slot inside
+  // the previous element that's pointing at the current element. The purpose
+  // of this design is to make it possible for the previous element to be
+  // the {Isolate::wasm_orphaned_handle_} field, without requiring any
+  // special-casing in the insert and delete operations.
+  WasmOrphanedGlobalHandle* next_ = nullptr;
+  WasmOrphanedGlobalHandle** prev_ptr_ = nullptr;
+  std::unique_ptr<Address*> location_;
+};
+
+// static
+WasmOrphanedGlobalHandle* WasmEngine::NewOrphanedGlobalHandle(
+    WasmOrphanedGlobalHandle** pointer) {
+  // No need for additional locking: this is only ever called indirectly
+  // from {WasmEngine::ClearWeakScriptHandle()}, which holds the engine-wide
+  // {mutex_}.
+  WasmOrphanedGlobalHandle* orphan = new WasmOrphanedGlobalHandle();
+  orphan->next_ = *pointer;
+  orphan->prev_ptr_ = pointer;
+  if (orphan->next_ != nullptr) orphan->next_->prev_ptr_ = &orphan->next_;
+  *pointer = orphan;
+  return orphan;
+}
+
+// static
+void WasmEngine::FreeAllOrphanedGlobalHandles(WasmOrphanedGlobalHandle* start) {
+  // This is meant to be called from ~Isolate, so we no longer care about
+  // maintaining invariants: the only task is to free memory to prevent leaks.
+  while (start != nullptr) {
+    WasmOrphanedGlobalHandle* next = start->next_;
+    delete start;
+    start = next;
+  }
+}
+
 namespace {
 // A task to log a set of {WasmCode} objects in an isolate. It does not own any
 // data itself, since it is owned by the platform, so lifetime is not really
 // bound to the wasm engine.
 class LogCodesTask : public Task {
  public:
-  LogCodesTask(base::Mutex* mutex, LogCodesTask** task_slot, Isolate* isolate,
+  LogCodesTask(std::atomic<LogCodesTask*>* task_slot, Isolate* isolate,
                WasmEngine* engine)
-      : mutex_(mutex),
-        task_slot_(task_slot),
-        isolate_(isolate),
-        engine_(engine) {
+      : task_slot_(task_slot), isolate_(isolate), engine_(engine) {
     DCHECK_NOT_NULL(task_slot);
     DCHECK_NOT_NULL(isolate);
   }
@@ -89,18 +175,15 @@ class LogCodesTask : public Task {
     if (task_slot_ == nullptr) return;  // already deregistered.
     // Remove this task from the {IsolateInfo} in the engine. The next
     // logging request will allocate and schedule a new task.
-    base::MutexGuard guard(mutex_);
-    DCHECK_EQ(this, *task_slot_);
-    *task_slot_ = nullptr;
+    LogCodesTask* old_task = task_slot_->exchange(nullptr);
+    CHECK(old_task == nullptr || old_task == this);
     task_slot_ = nullptr;
   }
 
  private:
-  // The mutex of the WasmEngine.
-  base::Mutex* const mutex_;
   // The slot in the WasmEngine where this LogCodesTask is stored. This is
   // cleared by this task before execution or on task destruction.
-  LogCodesTask** task_slot_;
+  std::atomic<LogCodesTask*>* task_slot_;
   Isolate* isolate_;
   WasmEngine* const engine_;
 };
@@ -136,8 +219,10 @@ class ClearWeakScriptHandleTask : public CancelableTask {
  public:
   explicit ClearWeakScriptHandleTask(Isolate* isolate,
                                      std::unique_ptr<Address*> location)
-      : CancelableTask(isolate->cancelable_task_manager()),
-        location_(std::move(location)) {}
+      : CancelableTask(isolate->cancelable_task_manager()) {
+    handle_ = isolate->NewWasmOrphanedGlobalHandle();
+    handle_->InitializeLocation(std::move(location));
+  }
 
   // We don't override the destructor, because there is nothing to do:
   // if the task is deleted before it was run, then everything is shutting
@@ -145,13 +230,13 @@ class ClearWeakScriptHandleTask : public CancelableTask {
   // it might well be too late to do that safely).
 
   void RunInternal() override {
-    Address** location = location_.get();
-    if (location) GlobalHandles::Destroy(*location);
-    location_.reset();
+    WasmOrphanedGlobalHandle::Destroy(handle_);
+    handle_ = nullptr;
   }
 
  private:
-  std::unique_ptr<Address*> location_;
+  // This is owned by the Isolate to ensure correct shutdown ordering.
+  WasmOrphanedGlobalHandle* handle_;
 };
 
 class WeakScriptHandle {
@@ -428,7 +513,7 @@ struct WasmEngine::IsolateInfo {
   bool log_codes;
 
   // The currently scheduled LogCodesTask.
-  LogCodesTask* log_codes_task = nullptr;
+  std::atomic<LogCodesTask*> log_codes_task = nullptr;
 
   // Maps script ID to vector of code objects that still need to be logged, and
   // the respective source URL.
@@ -620,9 +705,7 @@ MaybeHandle<WasmModuleObject> WasmEngine::SyncCompile(
     module = std::move(result).value();
     if (WasmError error = ValidateAndSetBuiltinImports(
             module.get(), bytes.module_bytes(), compile_imports)) {
-      // TODO(14179): When we have the offset, include it in the message.
-      DCHECK_EQ(0, error.offset());
-      thrower->LinkError("%s", error.message().c_str());
+      thrower->LinkError("%s @+%u", error.message().c_str(), error.offset());
       return {};
     }
   }
@@ -1024,6 +1107,15 @@ void WasmEngine::FlushCode() {
   }
 }
 
+size_t WasmEngine::GetLiftoffCodeSize() {
+  size_t codesize_liftoff = 0;
+  for (auto& entry : native_modules_) {
+    NativeModule* native_module = entry.first;
+    codesize_liftoff += native_module->SumLiftoffCodeSize();
+  }
+  return codesize_liftoff;
+}
+
 std::shared_ptr<CompilationStatistics>
 WasmEngine::GetOrCreateTurboStatistics() {
   base::MutexGuard guard(&mutex_);
@@ -1163,14 +1255,6 @@ void WasmEngine::AddIsolate(Isolate* isolate) {
   DCHECK_EQ(0, isolates_.count(isolate));
   isolates_.emplace(isolate, std::make_unique<IsolateInfo>(isolate));
 
-#if defined(V8_COMPRESS_POINTERS)
-  // The null value is not accessible on mksnapshot runs.
-  if (isolate->snapshot_available()) {
-    wasm_null_tagged_compressed_ = V8HeapCompressionScheme::CompressObject(
-        isolate->factory()->wasm_null()->ptr());
-  }
-#endif
-
   // Install sampling GC callback.
   // TODO(v8:7424): For now we sample module sizes in a GC callback. This will
   // bias samples towards apps with high memory pressure. We should switch to
@@ -1248,19 +1332,16 @@ void WasmEngine::RemoveIsolate(Isolate* isolate) {
   }
 
   // Cancel outstanding code logging and clear the {code_to_log} vector.
-  if (auto* task = isolate_info->log_codes_task) {
-    task->Cancel();
-    for (auto& [script_id, code_to_log] : isolate_info->code_to_log) {
-      for (WasmCode* code : code_to_log.code) {
-        // Keep a reference in the {code_ref_scope_for_dead_code} such that the
-        // code cannot become dead immediately.
-        WasmCodeRefScope::AddRef(code);
-        code->DecRefOnLiveCode();
-      }
+  if (auto* task = isolate_info->log_codes_task.load()) task->Cancel();
+  for (auto& [script_id, code_to_log] : isolate_info->code_to_log) {
+    for (WasmCode* code : code_to_log.code) {
+      // Keep a reference in the {code_ref_scope_for_dead_code} such that the
+      // code cannot become dead immediately.
+      WasmCodeRefScope::AddRef(code);
+      code->DecRefOnLiveCode();
     }
-    isolate_info->code_to_log.clear();
   }
-  DCHECK(isolate_info->code_to_log.empty());
+  isolate_info->code_to_log.clear();
 
   // Finally remove the {IsolateInfo} for this isolate.
   isolates_.erase(isolates_it);
@@ -1308,10 +1389,10 @@ void WasmEngine::LogCode(base::Vector<WasmCode*> code_vec) {
         code->IncRef();
       }
 
-      if (info->log_codes_task == nullptr) {
-        auto new_task = std::make_unique<LogCodesTask>(
-            &mutex_, &info->log_codes_task, isolate, this);
-        info->log_codes_task = new_task.get();
+      if (info->log_codes_task.load() == nullptr) {
+        std::unique_ptr<LogCodesTask> new_task = std::make_unique<LogCodesTask>(
+            &info->log_codes_task, isolate, this);
+        CHECK_NULL(info->log_codes_task.exchange(new_task.get()));
         // Store the LogCodeTasks to post them outside the WasmEngine::mutex_.
         // Posting the task in the mutex can cause the following deadlock (only
         // in d8): When d8 shuts down, it sets a terminate to the task runner.
@@ -1608,23 +1689,25 @@ void ReportLiveCodeFromFrameForGC(
 void WasmEngine::ReportLiveCodeFromStackForGC(Isolate* isolate) {
   wasm::WasmCodeRefScope code_ref_scope;
   std::unordered_set<wasm::WasmCode*> live_wasm_code;
-  if (v8_flags.experimental_wasm_stack_switching) {
-    wasm::StackMemory* current = isolate->wasm_stacks();
-    DCHECK_NOT_NULL(current);
-    do {
-      if (current->IsActive()) {
+
+  wasm::StackMemory* current = isolate->wasm_stacks();
+
+  if (current != nullptr) {
+      do {
+        if (current->IsActive()) {
         // The active stack's jump buffer does not match the current state, use
         // the thread info below instead.
         current = current->next();
         continue;
-      }
+        }
       for (StackFrameIterator it(isolate, current); !it.done(); it.Advance()) {
         StackFrame* const frame = it.frame();
         ReportLiveCodeFromFrameForGC(isolate, frame, live_wasm_code);
       }
       current = current->next();
-    } while (current != isolate->wasm_stacks());
+      } while (current != isolate->wasm_stacks());
   }
+
   for (StackFrameIterator it(isolate); !it.done(); it.Advance()) {
     StackFrame* const frame = it.frame();
     ReportLiveCodeFromFrameForGC(isolate, frame, live_wasm_code);

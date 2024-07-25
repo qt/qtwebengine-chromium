@@ -279,8 +279,9 @@ bool Builder::Build() {
                 wgsl::Extension::kChromiumDisableUniformityAnalysis,
                 wgsl::Extension::kChromiumExperimentalPushConstant,
                 wgsl::Extension::kChromiumExperimentalSubgroups,
-                wgsl::Extension::kF16,
                 wgsl::Extension::kChromiumInternalDualSourceBlending,
+                wgsl::Extension::kChromiumInternalGraphite,
+                wgsl::Extension::kF16,
             })) {
         return false;
     }
@@ -326,7 +327,6 @@ uint32_t Builder::LookupVariableID(const sem::Variable* var) {
     auto it = var_to_id_.find(var);
     if (it == var_to_id_.end()) {
         TINT_ICE() << "unable to find ID for variable: " + var->Declaration()->name->symbol.Name();
-        return 0;
     }
     return it->second;
 }
@@ -350,7 +350,6 @@ bool Builder::GenerateExtension(wgsl::Extension extension) {
             module_.PushCapability(SpvCapabilityFloat16);
             module_.PushCapability(SpvCapabilityUniformAndStorageBuffer16BitAccess);
             module_.PushCapability(SpvCapabilityStorageBuffer16BitAccess);
-            module_.PushCapability(SpvCapabilityStorageInputOutput16);
             break;
         default:
             return false;
@@ -395,7 +394,6 @@ bool Builder::GenerateAssignStatement(const ast::AssignmentStatement* assign) {
 bool Builder::GenerateBreakStatement(const ast::BreakStatement*) {
     if (merge_stack_.empty()) {
         TINT_ICE() << "Attempted to break without a merge block";
-        return false;
     }
     if (!push_function_inst(spv::Op::OpBranch, {Operand(merge_stack_.back())})) {
         return false;
@@ -419,7 +417,6 @@ bool Builder::GenerateBreakIfStatement(const ast::BreakIfStatement* stmt) {
 bool Builder::GenerateContinueStatement(const ast::ContinueStatement*) {
     if (continue_stack_.empty()) {
         TINT_ICE() << "Attempted to continue without a continue block";
-        return false;
     }
     if (!push_function_inst(spv::Op::OpBranch, {Operand(continue_stack_.back())})) {
         return false;
@@ -441,7 +438,6 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
     auto stage = pipeline_stage_to_execution_model(func->PipelineStage());
     if (stage == SpvExecutionModelMax) {
         TINT_ICE() << "Unknown pipeline stage provided";
-        return false;
     }
 
     OperandList operands = {Operand(stage), Operand(id), Operand(func->name->symbol.Name())};
@@ -459,7 +455,6 @@ bool Builder::GenerateEntryPoint(const ast::Function* func, uint32_t id) {
         if (var_id == 0) {
             TINT_ICE() << "unable to find ID for global variable: " +
                               var->Declaration()->name->symbol.Name();
-            return false;
         }
 
         operands.push_back(Operand(var_id));
@@ -484,7 +479,6 @@ bool Builder::GenerateExecutionModes(const ast::Function* func, uint32_t id) {
             TINT_ICE()
                 << "override-expressions should have been removed with the SubstituteOverride "
                    "transform";
-            return false;
         }
         module_.PushExecutionMode(
             spv::Op::OpExecutionMode,
@@ -529,7 +523,6 @@ uint32_t Builder::GenerateExpression(const sem::Expression* expr) {
         expr->Declaration(),  //
         [&](const ast::AccessorExpression* a) { return GenerateAccessorExpression(a); },
         [&](const ast::BinaryExpression* b) { return GenerateBinaryExpression(b); },
-        [&](const ast::BitcastExpression* b) { return GenerateBitcastExpression(b); },
         [&](const ast::CallExpression* c) { return GenerateCallExpression(c); },
         [&](const ast::IdentifierExpression* i) { return GenerateIdentifierExpression(i); },
         [&](const ast::LiteralExpression* l) { return GenerateLiteralIfNeeded(l); },
@@ -589,10 +582,8 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
     current_label_id_ = current_function_.label_id();
     TINT_DEFER(current_function_ = Function());
 
-    for (auto* stmt : func_ast->body->statements) {
-        if (!GenerateStatement(stmt)) {
-            return false;
-        }
+    if (!GenerateBlockStatementWithoutScoping(func_ast->body)) {
+        return false;
     }
 
     if (InsideBasicBlock()) {
@@ -622,7 +613,7 @@ bool Builder::GenerateFunction(const ast::Function* func_ast) {
 }
 
 uint32_t Builder::GenerateFunctionTypeIfNeeded(const sem::Function* func) {
-    return tint::GetOrCreate(func_sig_to_id_, func->Signature(), [&]() -> uint32_t {
+    return func_sig_to_id_.GetOrAdd(func->Signature(), [&]() -> uint32_t {
         auto func_op = result_op();
         auto func_type_id = std::get<uint32_t>(func_op);
 
@@ -665,7 +656,6 @@ bool Builder::GenerateFunctionVariable(const ast::Variable* v) {
     if (v->Is<ast::Let>()) {
         if (!v->initializer) {
             TINT_ICE() << "missing initializer for let";
-            return false;
         }
         RegisterVariable(sem, init_id);
         return true;
@@ -716,7 +706,6 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
     auto* sem = builder_.Sem().Get<sem::GlobalVariable>(v);
     if (TINT_UNLIKELY(!sem)) {
         TINT_ICE() << "attempted to generate a global from a non-global variable";
-        return false;
     }
     auto* type = sem->Type()->UnwrapRef();
 
@@ -737,6 +726,13 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
     auto type_id = GenerateTypeIfNeeded(sem->Type());
     if (type_id == 0) {
         return false;
+    }
+
+    // Emit the StorageInputOutput16 capability if needed.
+    if (sc == core::AddressSpace::kIn || sc == core::AddressSpace::kOut) {
+        if (type->DeepestElement()->Is<core::type::F16>()) {
+            module_.PushCapability(SpvCapabilityStorageInputOutput16);
+        }
     }
 
     module_.PushDebug(spv::Op::OpName, {Operand(var_id), Operand(v->name->symbol.Name())});
@@ -801,7 +797,7 @@ bool Builder::GenerateGlobalVariable(const ast::Variable* v) {
                                    Operand(sem->Attributes().location.value())});
                 return true;
             },
-            [&](const ast::IndexAttribute*) {
+            [&](const ast::BlendSrcAttribute*) {
                 module_.PushAnnot(spv::Op::OpDecorate,
                                   {Operand(var_id), U32Operand(SpvDecorationIndex),
                                    Operand(sem->Attributes().index.value())});
@@ -872,7 +868,6 @@ bool Builder::GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, Ac
     } else if (TINT_UNLIKELY(info->source_type->Is<core::type::Pointer>())) {
         TINT_ICE() << "lhs of index accesor expression should not be a pointer. These should have "
                       "been removed by the SimplifyPointers transform";
-        return false;
     }
 
     auto result_type_id = GenerateTypeIfNeeded(TypeOf(expr));
@@ -918,7 +913,6 @@ bool Builder::GenerateIndexAccessor(const ast::IndexAccessorExpression* expr, Ac
     }
 
     TINT_ICE() << "unsupported index accessor expression";
-    return false;
 }
 
 bool Builder::GenerateMemberAccessor(const ast::MemberAccessorExpression* expr,
@@ -1121,7 +1115,6 @@ uint32_t Builder::GenerateIdentifierExpression(const ast::IdentifierExpression* 
     }
     TINT_ICE() << "identifier '" + expr->identifier->symbol.Name() +
                       "' does not resolve to a variable";
-    return 0;
 }
 
 uint32_t Builder::GenerateLoad(const core::type::Reference* type, uint32_t id) {
@@ -1215,7 +1208,6 @@ uint32_t Builder::GenerateConstructorExpression(const ast::Variable* var,
         }
     }
     TINT_ICE() << "unknown constructor expression";
-    return 0;
 }
 
 bool Builder::IsConstructorConst(const ast::CallExpression* expr) {
@@ -1382,7 +1374,6 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
             }
         } else {
             TINT_ICE() << "Unhandled type cast value type";
-            return 0;
         }
     }
 
@@ -1400,7 +1391,7 @@ uint32_t Builder::GenerateValueConstructorOrConversion(const sem::Call* call,
                       ? scope_stack_[0]       // Global scope
                       : scope_stack_.back();  // Lexical scope
 
-    return tint::GetOrCreate(stack.type_init_to_id_, OperandListKey{ops}, [&]() -> uint32_t {
+    return tint::GetOrAdd(stack.type_init_to_id_, OperandListKey{ops}, [&]() -> uint32_t {
         auto result = result_op();
         ops[kOpsResultIdx] = result;
 
@@ -1426,7 +1417,6 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const core::type::Type* to_typ
     if (TINT_UNLIKELY(is_global_init)) {
         TINT_ICE() << "Module-level conversions are not supported. Conversions should "
                       "have already been constant-folded by the FoldConstants transform.";
-        return 0;
     }
 
     auto elem_type_of = [](const core::type::Type* t) -> const core::type::Type* {
@@ -1522,7 +1512,6 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const core::type::Type* to_typ
             one_id = GenerateConstantIfNeeded(ScalarConstant::I32(1));
         } else {
             TINT_ICE() << "invalid destination type for bool conversion";
-            return false;
         }
         if (auto* to_vec = to_type->As<core::type::Vector>()) {
             // Splat the scalars into vectors.
@@ -1559,7 +1548,6 @@ uint32_t Builder::GenerateCastOrCopyOrPassthrough(const core::type::Type* to_typ
     if (op == spv::Op::OpNop) {
         TINT_ICE() << "unable to determine conversion type for cast, from: " +
                           from_type->FriendlyName() + " to: " + to_type->FriendlyName();
-        return 0;
     }
 
     if (!push_function_inst(op, {Operand(result_type_id), result, Operand(val_id)})) {
@@ -1640,13 +1628,13 @@ uint32_t Builder::GenerateConstantIfNeeded(const core::constant::Value* constant
         }
 
         auto& global_scope = scope_stack_[0];
-        return tint::GetOrCreate(global_scope.type_init_to_id_, OperandListKey{ops},
-                                 [&]() -> uint32_t {
-                                     auto result = result_op();
-                                     ops[kOpsResultIdx] = result;
-                                     module_.PushType(spv::Op::OpConstantComposite, std::move(ops));
-                                     return std::get<uint32_t>(result);
-                                 });
+        return tint::GetOrAdd(global_scope.type_init_to_id_, OperandListKey{ops},
+                              [&]() -> uint32_t {
+                                  auto result = result_op();
+                                  ops[kOpsResultIdx] = result;
+                                  module_.PushType(spv::Op::OpConstantComposite, std::move(ops));
+                                  return std::get<uint32_t>(result);
+                              });
     };
 
     return Switch(
@@ -1675,9 +1663,8 @@ uint32_t Builder::GenerateConstantIfNeeded(const core::constant::Value* constant
         [&](const core::type::Matrix* m) { return composite(m->columns()); },
         [&](const core::type::Array* a) {
             auto count = a->ConstantCount();
-            if (!count) {
+            if (TINT_UNLIKELY(!count)) {
                 TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
-                return static_cast<uint32_t>(0);
             }
             return composite(count.value());
         },
@@ -1765,7 +1752,7 @@ uint32_t Builder::GenerateConstantNullIfNeeded(const core::type::Type* type) {
         return 0;
     }
 
-    return tint::GetOrCreate(const_null_to_id_, type, [&] {
+    return tint::GetOrAdd(const_null_to_id_, type, [&] {
         auto result = result_op();
 
         module_.PushType(spv::Op::OpConstantNull, {Operand(type_id), result});
@@ -1782,7 +1769,7 @@ uint32_t Builder::GenerateConstantVectorSplatIfNeeded(const core::type::Vector* 
     }
 
     uint64_t key = (static_cast<uint64_t>(type->Width()) << 32) + value_id;
-    return tint::GetOrCreate(const_splat_to_id_, key, [&] {
+    return tint::GetOrAdd(const_splat_to_id_, key, [&] {
         auto result = result_op();
         auto result_id = std::get<uint32_t>(result);
 
@@ -1993,7 +1980,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
         // This should already have been validated by resolver
         if (lhs_mat->rows() != rhs_mat->rows() || lhs_mat->columns() != rhs_mat->columns()) {
             TINT_ICE() << "matrices must have same dimensionality for add or subtract";
-            return 0;
         }
 
         return GenerateMatrixAddOrSub(lhs_id, rhs_id, lhs_mat,
@@ -2039,7 +2025,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             op = spv::Op::OpLogicalAnd;
         } else {
             TINT_ICE() << "invalid and expression";
-            return 0;
         }
     } else if (expr->IsAdd()) {
         op = lhs_is_float_or_vec ? spv::Op::OpFAdd : spv::Op::OpIAdd;
@@ -2060,7 +2045,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             op = spv::Op::OpIEqual;
         } else {
             TINT_ICE() << "invalid equal expression";
-            return 0;
         }
     } else if (expr->IsGreaterThan()) {
         if (lhs_is_float_or_vec) {
@@ -2140,7 +2124,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             op = spv::Op::OpMatrixTimesMatrix;
         } else {
             TINT_ICE() << "invalid multiply expression";
-            return 0;
         }
     } else if (expr->IsNotEqual()) {
         if (lhs_is_float_or_vec) {
@@ -2151,7 +2134,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             op = spv::Op::OpINotEqual;
         } else {
             TINT_ICE() << "invalid not-equal expression";
-            return 0;
         }
     } else if (expr->IsOr()) {
         if (lhs_is_integer_or_vec) {
@@ -2160,7 +2142,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
             op = spv::Op::OpLogicalOr;
         } else {
             TINT_ICE() << "invalid and expression";
-            return 0;
         }
     } else if (expr->IsShiftLeft()) {
         op = spv::Op::OpShiftLeftLogical;
@@ -2175,7 +2156,6 @@ uint32_t Builder::GenerateBinaryExpression(const ast::BinaryExpression* expr) {
         op = spv::Op::OpBitwiseXor;
     } else {
         TINT_ICE() << "unknown binary expression";
-        return 0;
     }
 
     if (!push_function_inst(op, {Operand(type_id), result, Operand(lhs_id), Operand(rhs_id)})) {
@@ -2192,6 +2172,9 @@ bool Builder::GenerateBlockStatement(const ast::BlockStatement* stmt) {
 
 bool Builder::GenerateBlockStatementWithoutScoping(const ast::BlockStatement* stmt) {
     for (auto* block_stmt : stmt->statements) {
+        if (!InsideBasicBlock()) {
+            break;
+        }
         if (!GenerateStatement(block_stmt)) {
             return false;
         }
@@ -2232,7 +2215,6 @@ uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Functio
     auto func_id = func_symbol_to_id_[ident->symbol];
     if (func_id == 0) {
         TINT_ICE() << "unable to find called function: " + ident->symbol.Name();
-        return 0;
     }
     ops.push_back(Operand(func_id));
 
@@ -2252,6 +2234,10 @@ uint32_t Builder::GenerateFunctionCall(const sem::Call* call, const sem::Functio
 }
 
 uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinFn* builtin) {
+    if (builtin->Fn() == wgsl::BuiltinFn::kBitcast) {
+        return GenerateBitcastExpression(call->Declaration());
+    }
+
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
@@ -2337,7 +2323,6 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             if (!address_of || address_of->op != core::UnaryOp::kAddressOf) {
                 TINT_ICE() << "arrayLength() expected pointer to member access, got " +
                                   std::string(address_of->TypeInfo().name);
-                return 0;
             }
             auto* array_expr = address_of->expr;
 
@@ -2345,7 +2330,6 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             if (!accessor) {
                 TINT_ICE() << "arrayLength() expected pointer to member access, got pointer to " +
                                   std::string(array_expr->TypeInfo().name);
-                return 0;
             }
 
             auto struct_id = GenerateExpression(accessor->object);
@@ -2358,7 +2342,6 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             if (!type->Is<core::type::Struct>()) {
                 TINT_ICE() << "invalid type (" + type->FriendlyName() +
                                   ") for runtime array length";
-                return 0;
             }
             // Runtime array must be the last member in the structure
             params.push_back(
@@ -2582,7 +2565,6 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
             auto inst_id = builtin_to_glsl_method(builtin);
             if (inst_id == 0) {
                 TINT_ICE() << "unknown method " + std::string(builtin->str());
-                return 0;
             }
             glsl_std450(inst_id);
             break;
@@ -2591,7 +2573,6 @@ uint32_t Builder::GenerateBuiltinCall(const sem::Call* call, const sem::BuiltinF
 
     if (op == spv::Op::OpNop) {
         TINT_ICE() << "unable to determine operator for: " + std::string(builtin->str());
-        return 0;
     }
 
     for (size_t i = 0; i < call->Arguments().Length(); i++) {
@@ -2782,7 +2763,6 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
             switch (texture_type->dim()) {
                 case core::type::TextureDimension::kNone:
                     TINT_ICE() << "texture dimension is kNone";
-                    return false;
                 case core::type::TextureDimension::k1d:
                 case core::type::TextureDimension::k2d:
                 case core::type::TextureDimension::k3d:
@@ -2819,7 +2799,6 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
             switch (texture_type->dim()) {
                 default:
                     TINT_ICE() << "texture is not arrayed";
-                    return false;
                 case core::type::TextureDimension::k2dArray:
                 case core::type::TextureDimension::kCubeArray:
                     spirv_dims = 3;
@@ -2990,7 +2969,6 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
         }
         default:
             TINT_UNREACHABLE();
-            return false;
     }
 
     if (auto* offset = arg(Usage::kOffset)) {
@@ -3014,7 +2992,6 @@ bool Builder::GenerateTextureBuiltin(const sem::Call* call,
 
     if (op == spv::Op::OpNop) {
         TINT_ICE() << "unable to determine operator for: " + std::string(builtin->str());
-        return false;
     }
 
     if (!push_function_inst(op, spirv_params)) {
@@ -3049,7 +3026,6 @@ bool Builder::GenerateControlBarrierBuiltin(const sem::BuiltinFn* builtin) {
                     static_cast<uint32_t>(spv::MemorySemanticsMask::ImageMemory);
     } else {
         TINT_ICE() << "unexpected barrier builtin type " << builtin->Fn();
-        return false;
     }
 
     auto execution_id = GenerateConstantIfNeeded(ScalarConstant::U32(execution));
@@ -3087,7 +3063,6 @@ bool Builder::GenerateAtomicBuiltin(const sem::Call* call,
             break;
         default:
             TINT_UNREACHABLE() << "unhandled atomic address space " << address_space;
-            return false;
     }
     if (memory_id == 0) {
         return false;
@@ -3269,7 +3244,6 @@ bool Builder::GenerateAtomicBuiltin(const sem::Call* call,
         }
         default:
             TINT_UNREACHABLE() << "unhandled atomic builtin " << builtin->Fn();
-            return false;
     }
 }
 
@@ -3286,7 +3260,7 @@ uint32_t Builder::GenerateSampledImage(const core::type::Type* texture_type,
     }
 
     uint32_t sampled_image_type_id =
-        tint::GetOrCreate(texture_type_to_sampled_image_type_id_, texture_type, [&] {
+        tint::GetOrAdd(texture_type_to_sampled_image_type_id_, texture_type, [&] {
             // We need to create the sampled image type and cache the result.
             auto sampled_image_type = result_op();
             auto texture_type_id = GenerateTypeIfNeeded(texture_type);
@@ -3304,24 +3278,26 @@ uint32_t Builder::GenerateSampledImage(const core::type::Type* texture_type,
     return std::get<uint32_t>(sampled_image);
 }
 
-uint32_t Builder::GenerateBitcastExpression(const ast::BitcastExpression* expr) {
+uint32_t Builder::GenerateBitcastExpression(const ast::CallExpression* call) {
     auto result = result_op();
     auto result_id = std::get<uint32_t>(result);
 
-    auto result_type_id = GenerateTypeIfNeeded(TypeOf(expr));
+    auto* arg = call->args[0];
+    auto* src_type = TypeOf(arg)->UnwrapRef();
+    auto* dst_type = TypeOf(call);
+
+    auto result_type_id = GenerateTypeIfNeeded(dst_type);
     if (result_type_id == 0) {
         return 0;
     }
 
-    auto val_id = GenerateExpression(expr->expr);
+    auto val_id = GenerateExpression(arg);
     if (val_id == 0) {
         return 0;
     }
 
     // Bitcast does not allow same types, just emit a CopyObject
-    auto* to_type = TypeOf(expr)->UnwrapRef();
-    auto* from_type = TypeOf(expr->expr)->UnwrapRef();
-    if (to_type == from_type) {
+    if (src_type == dst_type) {
         if (!push_function_inst(spv::Op::OpCopyObject,
                                 {Operand(result_type_id), result, Operand(val_id)})) {
             return 0;
@@ -3630,7 +3606,6 @@ bool Builder::GenerateVariableDeclStatement(const ast::VariableDeclStatement* st
 uint32_t Builder::GenerateTypeIfNeeded(const core::type::Type* type) {
     if (type == nullptr) {
         TINT_ICE() << "attempting to generate type from null type";
-        return 0;
     }
 
     // Atomics are a type in WGSL, but aren't a distinct type in SPIR-V.
@@ -3667,7 +3642,7 @@ uint32_t Builder::GenerateTypeIfNeeded(const core::type::Type* type) {
                                                     core::Access::kReadWrite);
     }
 
-    return tint::GetOrCreate(type_to_id_, type, [&]() -> uint32_t {
+    return tint::GetOrAdd(type_to_id_, type, [&]() -> uint32_t {
         auto result = result_op();
         auto id = std::get<uint32_t>(result);
         bool ok = Switch(
@@ -3758,7 +3733,6 @@ uint32_t Builder::GenerateTypeIfNeeded(const core::type::Type* type) {
 bool Builder::GenerateTextureType(const core::type::Texture* texture, const Operand& result) {
     if (TINT_UNLIKELY(texture->Is<core::type::ExternalTexture>())) {
         TINT_ICE() << "Multiplanar external texture transform was not run.";
-        return false;
     }
 
     uint32_t array_literal = 0u;
@@ -3849,7 +3823,6 @@ bool Builder::GenerateArrayType(const core::type::Array* arr, const Operand& res
         auto count = arr->ConstantCount();
         if (!count) {
             TINT_ICE() << core::type::Array::kErrExpectedConstantCount;
-            return static_cast<uint32_t>(0);
         }
 
         auto len_id = GenerateConstantIfNeeded(ScalarConstant::U32(count.value()));
@@ -3887,7 +3860,6 @@ bool Builder::GeneratePointerType(const core::type::Pointer* ptr, const Operand&
     auto stg_class = ConvertAddressSpace(ptr->AddressSpace());
     if (stg_class == SpvStorageClassMax) {
         TINT_ICE() << "invalid address space for pointer";
-        return false;
     }
 
     module_.PushType(spv::Op::OpTypePointer, {result, U32Operand(stg_class), Operand(subtype_id)});
@@ -3904,7 +3876,6 @@ bool Builder::GenerateReferenceType(const core::type::Reference* ref, const Oper
     auto stg_class = ConvertAddressSpace(ref->AddressSpace());
     if (stg_class == SpvStorageClassMax) {
         TINT_ICE() << "invalid address space for reference";
-        return false;
     }
 
     module_.PushType(spv::Op::OpTypePointer, {result, U32Operand(stg_class), Operand(subtype_id)});
@@ -4012,7 +3983,6 @@ SpvStorageClass Builder::ConvertAddressSpace(core::AddressSpace address_space) c
             break;
     }
     TINT_UNREACHABLE() << "unhandled address space '" << address_space << "'";
-    return SpvStorageClassMax;
 }
 
 SpvBuiltIn Builder::ConvertBuiltin(core::BuiltinValue builtin, core::AddressSpace storage) {
@@ -4024,7 +3994,6 @@ SpvBuiltIn Builder::ConvertBuiltin(core::BuiltinValue builtin, core::AddressSpac
                 return SpvBuiltInPosition;
             } else {
                 TINT_ICE() << "invalid address space for builtin";
-                break;
             }
         case core::BuiltinValue::kVertexIndex:
             return SpvBuiltInVertexIndex;
@@ -4097,7 +4066,9 @@ SpvImageFormat Builder::convert_texel_format_to_spv(const core::TexelFormat form
     switch (format) {
         case core::TexelFormat::kBgra8Unorm:
             TINT_ICE() << "bgra8unorm should have been polyfilled to rgba8unorm";
-            return SpvImageFormatUnknown;
+        case core::TexelFormat::kR8Unorm:
+            module_.PushCapability(SpvCapabilityStorageImageExtendedFormats);
+            return SpvImageFormatR8;
         case core::TexelFormat::kR32Uint:
             return SpvImageFormatR32ui;
         case core::TexelFormat::kR32Sint:
@@ -4145,7 +4116,6 @@ bool Builder::push_function_inst(spv::Op op, const OperandList& operands) {
         ss << "Internal error: trying to add SPIR-V instruction " << int(op)
            << " outside a function";
         TINT_ICE() << ss.str();
-        return false;
     }
     current_function_.push_inst(op, operands);
     return true;

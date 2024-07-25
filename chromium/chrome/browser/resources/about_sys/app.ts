@@ -2,25 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import './log_entry.js';
+import '/shared/key_value_pair_viewer/key_value_pair_viewer.js';
 import './strings.m.js';
 
-import {EventTracker} from 'chrome://resources/js/event_tracker.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import type {KeyValuePairEntry} from '/shared/key_value_pair_viewer/key_value_pair_entry.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getTemplate} from './app.html.js';
-import {BrowserProxyImpl, SystemLog} from './browser_proxy.js';
-import {LogEntryElement} from './log_entry.js';
-import {parseSystemLog} from './log_parser.js';
-
-// Limit file size to 10 MiB to prevent hanging on accidental upload.
-const MAX_FILE_SIZE = 10485760;
+import type {SystemLog} from './browser_proxy.js';
+import {BrowserProxyImpl} from './browser_proxy.js';
 
 export interface SystemAppElement {
   $: {
-    tableTitle: HTMLElement,
-    status: HTMLElement,
+    title: HTMLElement,
   };
 }
 
@@ -35,8 +29,7 @@ export class SystemAppElement extends PolymerElement {
 
   static get properties() {
     return {
-      logs_: Array,
-
+      entries_: Array,
       loading_: {
         type: Boolean,
         value: false,
@@ -45,14 +38,11 @@ export class SystemAppElement extends PolymerElement {
     };
   }
 
-  private logs_: SystemLog[];
-  private loading_: boolean;
-
-  private eventTracker_: EventTracker = new EventTracker();
-
+  private entries_: KeyValuePairEntry[];
   // <if expr="chromeos_ash">
   private isLacrosEnabled_: boolean;
   // </if>
+  private loading_: boolean;
 
   override async connectedCallback() {
     super.connectedCallback();
@@ -63,82 +53,17 @@ export class SystemAppElement extends PolymerElement {
     // </if>
 
     this.loading_ = true;
-    this.logs_ = await BrowserProxyImpl.getInstance().requestSystemInfo();
+    const logs = await BrowserProxyImpl.getInstance().requestSystemInfo();
+    this.entries_ = logs.map((log: SystemLog) => {
+      return {
+        key: log.statName,
+        value: log.statValue,
+      };
+    });
     this.loading_ = false;
 
-    // Add event listeners for handling drag and dropping a system_logs.txt file
-    // onto chrome://system for viewing.
-    this.eventTracker_.add(
-        document.documentElement, 'dragover', this.onDragOver_.bind(this),
-        false);
-    this.eventTracker_.add(
-        document.documentElement, 'drop', this.onDrop_.bind(this), false);
-  }
-
-  override disconnectedCallback() {
-    super.disconnectedCallback();
-    this.eventTracker_.removeAll();
-  }
-
-  private onExpandAllClick_() {
-    const logs = this.shadowRoot!.querySelectorAll<LogEntryElement>(
-        'log-entry[collapsed]');
-    for (const log of logs) {
-      log.collapsed = false;
-    }
-  }
-
-  private onCollapseAllClick_() {
-    const logs = this.shadowRoot!.querySelectorAll<LogEntryElement>(
-        'log-entry:not([collapsed])');
-    for (const log of logs) {
-      log.collapsed = true;
-    }
-  }
-
-  private onDragOver_(e: DragEvent) {
-    e.dataTransfer!.dropEffect = 'copy';
-    e.preventDefault();
-  }
-
-  private onDrop_(e: DragEvent) {
-    const file = e.dataTransfer!.files[0];
-    if (file) {
-      e.preventDefault();
-      this.importLog_(file);
-    }
-  }
-
-  /**
-   * Read in a log asynchronously and update the UI if parsing succeeds, or show
-   * an error if it fails.
-   */
-  private importLog_(file: File) {
-    if (!file || file.size > MAX_FILE_SIZE) {
-      this.showImportError_(file.name);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const systemLog = parseSystemLog(reader.result as string);
-
-      if (systemLog === null) {
-        this.showImportError_(file.name);
-        return;
-      }
-
-      this.logs_ = systemLog;
-      // Reset table title and status
-      this.$.tableTitle.textContent =
-          loadTimeData.getStringF('logFileTableTitle', file.name);
-      this.$.status.textContent = '';
-    };
-    reader.readAsText(file);
-  }
-
-  private showImportError_(fileName: string) {
-    this.$.status.textContent = loadTimeData.getStringF('parseError', fileName);
+    // Dispatch event used by tests.
+    this.dispatchEvent(new CustomEvent('ready-for-testing'));
   }
 
   // <if expr="chromeos_ash">

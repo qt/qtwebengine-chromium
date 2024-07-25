@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxge/cfx_glyphcache.h"
 
 #include <stdarg.h>
@@ -27,9 +32,9 @@
 #include "third_party/skia/include/ports/SkFontMgr_empty.h"  // nogncheck
 
 #if BUILDFLAG(IS_WIN)
-#include "include/ports/SkTypeface_win.h"  // nogncheck
+#include "third_party/skia/include/ports/SkTypeface_win.h"  // nogncheck
 #elif BUILDFLAG(IS_APPLE)
-#include "include/ports/SkFontMgr_mac_ct.h"  // nogncheck
+#include "third_party/skia/include/ports/SkFontMgr_mac_ct.h"  // nogncheck
 #endif
 
 #endif

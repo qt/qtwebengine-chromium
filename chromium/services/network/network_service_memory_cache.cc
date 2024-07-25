@@ -30,9 +30,9 @@
 #include "services/network/network_service_memory_cache_url_loader.h"
 #include "services/network/network_service_memory_cache_writer.h"
 #include "services/network/private_network_access_checker.h"
-#include "services/network/public/cpp/corb/corb_api.h"
 #include "services/network/public/cpp/cross_origin_resource_policy.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/orb/orb_api.h"
 #include "services/network/public/cpp/private_network_access_check_result.h"
 #include "services/network/public/cpp/request_destination.h"
 #include "services/network/public/cpp/resource_request.h"
@@ -68,7 +68,7 @@ struct HeaderNameAndValue {
 
 // Collected from kPassThroughHeaders, kValidationHeaders, kForceFetchHeaders,
 // kForceValidateHeaders, in //net/http/http_cache_transaction.cc.
-// TODO(https://crbug.com/1339708): It'd be worthwhile to remove the
+// TODO(crbug.com/40230090): It'd be worthwhile to remove the
 // duplication.
 constexpr HeaderNameAndValue kSpecialHeaders[] = {
     {"if-unmodified-since", nullptr,
@@ -87,14 +87,14 @@ constexpr HeaderNameAndValue kSpecialHeaders[] = {
     {"range", nullptr, BlockedByRequestHeaderReason::kRange},
 };
 
-// TODO(https://crbug.com/1339708): Adjust these parameters based on stats.
+// TODO(crbug.com/40230090): Adjust these parameters based on stats.
 const base::FeatureParam<int> kNetworkServiceMemoryCacheMaxTotalSize{
     &features::kNetworkServiceMemoryCache, "max_total_size", 64 * 1024 * 1024};
 const base::FeatureParam<int> kNetworkServiceMemoryCacheMaxPerEntrySize{
     &features::kNetworkServiceMemoryCache, "max_per_entry_size",
     4 * 1024 * 1024};
 
-absl::optional<std::string> GenerateCacheKeyForResourceRequest(
+std::optional<std::string> GenerateCacheKeyForResourceRequest(
     const ResourceRequest& resource_request,
     const net::NetworkIsolationKey& network_isolation_key) {
   const bool is_subframe_document_resource =
@@ -104,7 +104,7 @@ absl::optional<std::string> GenerateCacheKeyForResourceRequest(
       /*upload_data_identifier=*/0, is_subframe_document_resource);
 }
 
-absl::optional<std::string> GenerateCacheKeyForURLRequest(
+std::optional<std::string> GenerateCacheKeyForURLRequest(
     const net::URLRequest& url_request,
     mojom::RequestDestination request_destination) {
   bool is_subframe_document_resource =
@@ -123,26 +123,27 @@ bool CheckCrossOriginReadBlocking(const ResourceRequest& resource_request,
   // the stored response is blocked, CorsURLLoader falls back to a URLLoader and
   // the URLLoader performs appropriate Opaque Resource Blocking checks.
   //
-  // TODO(https://crbug.com/1339708): Consider moving CORB/ORB handling from
-  // URLLoader to CorsURLLoader. It will eliminate the need for CORB/ORB checks
+  // TODO(crbug.com/40230090): Consider moving ORB handling from
+  // URLLoader to CorsURLLoader. It will eliminate the need for ORB checks
   // here.
-  corb::PerFactoryState state;
-  auto analyzer = corb::ResponseAnalyzer::Create(state);
-  corb::ResponseAnalyzer::Decision decision = analyzer->Init(
+  orb::PerFactoryState state;
+  auto analyzer = orb::ResponseAnalyzer::Create(state);
+  orb::ResponseAnalyzer::Decision decision = analyzer->Init(
       resource_request.url, resource_request.request_initiator,
       resource_request.mode, resource_request.destination, response);
 
-  if (decision == corb::ResponseAnalyzer::Decision::kSniffMore) {
+  if (decision == orb::ResponseAnalyzer::Decision::kSniffMore) {
     const size_t size =
         std::min(static_cast<size_t>(net::kMaxBytesToSniff), content.size());
-    decision = analyzer->Sniff(
-        std::string_view(reinterpret_cast<const char*>(content.front()), size));
-    if (decision == corb::ResponseAnalyzer::Decision::kSniffMore)
+    decision =
+        analyzer->Sniff(base::as_string_view(base::span(content).first(size)));
+    if (decision == orb::ResponseAnalyzer::Decision::kSniffMore) {
       decision = analyzer->HandleEndOfSniffableResponseBody();
-    DCHECK_NE(decision, corb::ResponseAnalyzer::Decision::kSniffMore);
+    }
+    DCHECK_NE(decision, orb::ResponseAnalyzer::Decision::kSniffMore);
   }
 
-  return decision == corb::ResponseAnalyzer::Decision::kAllow;
+  return decision == orb::ResponseAnalyzer::Decision::kAllow;
 }
 
 bool CheckPrivateNetworkAccess(
@@ -174,7 +175,7 @@ bool VaryHasSupportedHeadersOnly(
     if (value == net::HttpRequestHeaders::kOrigin)
       continue;
 
-    // TODO(https://crbug.com/1339708): Support more headers. We need to extract
+    // TODO(crbug.com/40230090): Support more headers. We need to extract
     // some header calculations from net::URLRequestHttpJob.
     return false;
   }
@@ -182,7 +183,7 @@ bool VaryHasSupportedHeadersOnly(
   return true;
 }
 
-absl::optional<BlockedByRequestHeaderReason> CheckSpecialRequestHeaders(
+std::optional<BlockedByRequestHeaderReason> CheckSpecialRequestHeaders(
     const net::HttpRequestHeaders& headers) {
   for (const auto& [name, value, reason] : kSpecialHeaders) {
     std::string header_value;
@@ -198,7 +199,7 @@ absl::optional<BlockedByRequestHeaderReason> CheckSpecialRequestHeaders(
         return reason;
     }
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 bool MatchVaryHeader(const ResourceRequest& resource_request,
@@ -287,7 +288,7 @@ NetworkServiceMemoryCache::MaybeCreateWriter(
     const mojom::URLResponseHeadPtr& response) {
   DCHECK(url_request);
 
-  // TODO(https://crbug.com/1339708): Make `this` work with
+  // TODO(crbug.com/40230090): Make `this` work with
   // SplitCacheByIncludeCredentials. Currently some tests are failing when
   // the feature is enabled.
   if (base::FeatureList::IsEnabled(
@@ -299,7 +300,7 @@ NetworkServiceMemoryCache::MaybeCreateWriter(
   if (!url_request->url().SchemeIsHTTPOrHTTPS())
     return nullptr;
 
-  const absl::optional<std::string> cache_key =
+  const std::optional<std::string> cache_key =
       GenerateCacheKeyForURLRequest(*url_request, request_destination);
   if (!cache_key.has_value())
     return nullptr;
@@ -316,7 +317,7 @@ NetworkServiceMemoryCache::MaybeCreateWriter(
     return nullptr;
   }
 
-  // TODO(https://crbug.com/1339708): Make `this` work for responses from
+  // TODO(crbug.com/40230090): Make `this` work for responses from
   // private network. Currently some tests are failing.
   if (response->response_address_space == mojom::IPAddressSpace::kPrivate) {
     return nullptr;
@@ -364,7 +365,7 @@ void NetworkServiceMemoryCache::StoreResponse(
     std::vector<unsigned char> data) {
   DCHECK_GE(max_per_entry_bytes_, data.size());
 
-  // TODO(https://crbug.com/1339708): Consider caching a response that doesn't
+  // TODO(crbug.com/40230090): Consider caching a response that doesn't
   // have contents.
   if (status.error_code != net::OK || data.size() == 0)
     return;
@@ -397,80 +398,80 @@ void NetworkServiceMemoryCache::StoreResponse(
   ShrinkToTotalBytes();
 }
 
-absl::optional<std::string> NetworkServiceMemoryCache::CanServe(
+std::optional<std::string> NetworkServiceMemoryCache::CanServe(
     uint32_t load_options,
     const ResourceRequest& resource_request,
     const net::NetworkIsolationKey& network_isolation_key,
     const CrossOriginEmbedderPolicy& cross_origin_embedder_policy,
     const mojom::ClientSecurityState* factory_client_security_state) {
-  // TODO(https://crbug.com/1339708): Support automatically assigned network
+  // TODO(crbug.com/40230090): Support automatically assigned network
   // isolation key for request from browsers. See comments in
   // CorsURLLoaderFactory::CorsURLLoaderFactory.
 
   const GURL& url = resource_request.url;
   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
-    return absl::nullopt;
+    return std::nullopt;
 
   if (resource_request.method != net::HttpRequestHeaders::kGetMethod)
-    return absl::nullopt;
+    return std::nullopt;
 
   if (resource_request.load_flags & net::LOAD_BYPASS_CACHE ||
       resource_request.load_flags & net::LOAD_DISABLE_CACHE ||
       resource_request.load_flags & net::LOAD_VALIDATE_CACHE) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   // We hit a DCHECK failure without this early return. Let's have this
   // workaround for now.
-  // TODO(crbug.com/1360815): Remove this, and handle this request correctly.
+  // TODO(crbug.com/40863303): Remove this, and handle this request correctly.
   if (resource_request.trusted_params &&
       !resource_request.trusted_params->isolation_info.IsEmpty()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
-  absl::optional<std::string> cache_key = GenerateCacheKeyForResourceRequest(
+  std::optional<std::string> cache_key = GenerateCacheKeyForResourceRequest(
       resource_request, network_isolation_key);
   if (!cache_key.has_value())
-    return absl::nullopt;
+    return std::nullopt;
 
   auto it = entries_.Peek(*cache_key);
   if (it == entries_.end()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
-  absl::optional<BlockedByRequestHeaderReason> blocked_by_headers =
+  std::optional<BlockedByRequestHeaderReason> blocked_by_headers =
       CheckSpecialRequestHeaders(resource_request.headers);
   if (blocked_by_headers.has_value()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   if (!CheckPrivateNetworkAccess(load_options, resource_request,
                                  factory_client_security_state,
                                  it->second->transport_info)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   const mojom::URLResponseHeadPtr& response = it->second->response_head;
 
-  absl::optional<mojom::BlockedByResponseReason> blocked_reason =
+  std::optional<mojom::BlockedByResponseReason> blocked_reason =
       CrossOriginResourcePolicy::IsBlocked(
           /*request_url=*/url, /*original_url=*/url,
           resource_request.request_initiator, *response, resource_request.mode,
           resource_request.destination, cross_origin_embedder_policy,
           /*reporter=*/nullptr);
   if (blocked_reason.has_value())
-    return absl::nullopt;
+    return std::nullopt;
 
   if (!CheckCrossOriginReadBlocking(resource_request, *response,
                                     *it->second->content)) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   if (!MatchVaryHeader(
           resource_request, it->second->vary_data, *response->headers,
           network_context_->url_request_context()->enable_brotli(),
           network_context_->url_request_context()->enable_zstd())) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   net::ValidationType validation_type = response->headers->RequiresValidation(
@@ -478,7 +479,7 @@ absl::optional<std::string> NetworkServiceMemoryCache::CanServe(
   if (validation_type != net::VALIDATION_NONE) {
     // The cached response is stale, erase it from the in-memory cache.
     EraseEntry(it);
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   return std::move(*cache_key);
@@ -491,7 +492,7 @@ void NetworkServiceMemoryCache::CreateLoaderAndStart(
     const std::string& cache_key,
     const ResourceRequest& resource_request,
     const net::NetLogWithSource net_log,
-    const absl::optional<net::CookiePartitionKey> cookie_partition_key,
+    const std::optional<net::CookiePartitionKey> cookie_partition_key,
     mojo::PendingRemote<mojom::URLLoaderClient> client) {
   auto it = entries_.Get(cache_key);
   CHECK(it != entries_.end());
@@ -533,7 +534,7 @@ void NetworkServiceMemoryCache::OnRedirect(
   if (url_request->method() != net::HttpRequestHeaders::kGetMethod)
     return;
 
-  absl::optional<std::string> cache_key =
+  std::optional<std::string> cache_key =
       GenerateCacheKeyForURLRequest(*url_request, request_destination);
   if (!cache_key.has_value())
     return;

@@ -6,6 +6,7 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_METRICS_AUTOFILL_METRICS_H_
 
 #include <stddef.h>
+
 #include <memory>
 #include <set>
 #include <string>
@@ -23,10 +24,11 @@
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
 #include "components/autofill/core/browser/field_types.h"
+#include "components/autofill/core/browser/filling_product.h"
 #include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/browser/metrics/form_events/form_events.h"
 #include "components/autofill/core/browser/metrics/log_event.h"
-#include "components/autofill/core/browser/ui/popup_types.h"
+#include "components/autofill/core/browser/ui/suggestion_hiding_reason.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-forward.h"
 #include "components/autofill/core/common/signatures.h"
@@ -56,22 +58,6 @@ extern const int kMaxBucketsCount;
 
 class AutofillMetrics {
  public:
-  enum AutofillProfileAction {
-    EXISTING_PROFILE_USED,
-    EXISTING_PROFILE_UPDATED,
-    NEW_PROFILE_CREATED,
-    AUTOFILL_PROFILE_ACTION_ENUM_SIZE,
-  };
-
-  enum AutofillFormSubmittedState {
-    NON_FILLABLE_FORM_OR_NEW_DATA,
-    FILLABLE_FORM_AUTOFILLED_ALL,
-    FILLABLE_FORM_AUTOFILLED_SOME,
-    FILLABLE_FORM_AUTOFILLED_NONE_DID_SHOW_SUGGESTIONS,
-    FILLABLE_FORM_AUTOFILLED_NONE_DID_NOT_SHOW_SUGGESTIONS,
-    AUTOFILL_FORM_SUBMITTED_STATE_ENUM_SIZE,
-  };
-
   enum DeveloperEngagementMetric {
     // Parsed a form that is potentially autofillable and does not contain any
     // web developer-specified field type hint.
@@ -79,10 +65,8 @@ class AutofillMetrics {
     // Parsed a form that is potentially autofillable and contains at least one
     // web developer-specified field type hint, a la
     // http://is.gd/whatwg_autocomplete
-    FILLABLE_FORM_PARSED_WITH_TYPE_HINTS,
-    // Parsed a form that is potentially autofillable and contains at least one
-    // UPI Virtual Payment Address hint (upi-vpa)
-    FORM_CONTAINS_UPI_VPA_HINT,
+    FILLABLE_FORM_PARSED_WITH_TYPE_HINTS = 1,
+    FORM_CONTAINS_UPI_VPA_HINT_DEPRECATED = 2,
     NUM_DEVELOPER_ENGAGEMENT_METRICS,
   };
 
@@ -309,6 +293,19 @@ class AutofillMetrics {
     NUM_FIELD_TYPE_QUALITY_METRICS
   };
 
+  // Defines email prediction confusion matrix enums used by UMA records.
+  // Entries should not be renumbered and numeric values should never be reused.
+  // Please update "EmailPredictionConfusionMatrix" in
+  // `tools/metrics/histograms/enums.xml` when new enums are added.
+  enum class EmailPredictionConfusionMatrix {
+    kTruePositive = 0,
+    kFalsePositive = 1,
+    kTrueNegative = 2,
+    kFalseNegative = 3,
+    // Required by UMA histogram macro.
+    kMaxValue = kFalseNegative
+  };
+
   // Metrics measuring how well rationalization has performed given user's
   // actual input.
   enum RationalizationQualityMetric {
@@ -374,52 +371,6 @@ class AutofillMetrics {
     // The user selected something in the dropdown besides "scan card".
     SCAN_CARD_OTHER_ITEM_SELECTED,
     NUM_SCAN_CREDIT_CARD_PROMPT_METRICS,
-  };
-
-  // Each of these metrics is logged only for potentially autofillable forms,
-  // i.e. forms with at least three fields, etc.
-  // These are used to derive certain "user happiness" metrics.  For example, we
-  // can compute the ratio (USER_DID_EDIT_AUTOFILLED_FIELD / USER_DID_AUTOFILL)
-  // to see how often users have to correct autofilled data.
-  enum UserHappinessMetric {
-    // Loaded a page containing forms.
-    FORMS_LOADED,
-    // Submitted a fillable form -- i.e. one with at least three field values
-    // that match the user's stored Autofill data -- and all matching fields
-    // were autofilled.
-    SUBMITTED_FILLABLE_FORM_AUTOFILLED_ALL,
-    // Submitted a fillable form and some (but not all) matching fields were
-    // autofilled.
-    SUBMITTED_FILLABLE_FORM_AUTOFILLED_SOME,
-    // Submitted a fillable form and no fields were autofilled.
-    SUBMITTED_FILLABLE_FORM_AUTOFILLED_NONE,
-    // Submitted a non-fillable form. This also counts entering new data into
-    // a form with identified fields. Because we didn't have the data the user
-    // wanted, from the user's perspective, the form was not autofillable.
-    SUBMITTED_NON_FILLABLE_FORM,
-
-    // User manually filled one of the form fields.
-    USER_DID_TYPE,
-    // We showed a popup containing Autofill suggestions.
-    SUGGESTIONS_SHOWN,
-    // Same as above, but only logged once per page load.
-    SUGGESTIONS_SHOWN_ONCE,
-    // User autofilled at least part of the form.
-    USER_DID_AUTOFILL,
-    // Same as above, but only logged once per page load.
-    USER_DID_AUTOFILL_ONCE,
-    // User edited a previously autofilled field.
-    USER_DID_EDIT_AUTOFILLED_FIELD,
-    // Same as above, but only logged once per page load.
-    USER_DID_EDIT_AUTOFILLED_FIELD_ONCE,
-
-    // User entered form data that appears to be a UPI Virtual Payment Address.
-    USER_DID_ENTER_UPI_VPA,
-
-    // A field was populated by autofill.
-    FIELD_WAS_AUTOFILLED,
-
-    NUM_USER_HAPPINESS_METRICS,
   };
 
   // Cardholder name fix flow prompt metrics.
@@ -590,33 +541,6 @@ class AutofillMetrics {
     kMaxValue = AUTOFILLED_FIELD_WAS_NOT_EDITED,
   };
 
-  // The filling status of an autofilled field.
-  // These values are persisted to logs. Entries should not be renumbered and
-  // numeric values should never be reused.
-  enum class FieldFillingStatus {
-    // The field was filled and accepted.
-    kAccepted = 0,
-    // The field was filled and corrected to a value of the same type.
-    kCorrectedToSameType = 1,
-    // The field was filled and corrected to a value of a different type.
-    kCorrectedToDifferentType = 2,
-    // The field was filled and corrected to a value of an unknown type.
-    kCorrectedToUnknownType = 3,
-    // The field was filled and the value was cleared afterwards.
-    kCorrectedToEmpty = 4,
-    // The field was manually filled to a value of the same type as the
-    // field was predicted to.
-    kManuallyFilledToSameType = 5,
-    // The field was manually filled to a value of a different type as the field
-    // was predicted to.
-    kManuallyFilledToDifferentType = 6,
-    // The field was manually filled to a value of an unknown type.
-    kManuallyFilledToUnknownType = 7,
-    // The field was left empty.
-    kLeftEmpty = 8,
-    kMaxValue = kLeftEmpty
-  };
-
   enum class AutocompleteState {
     kNone = 0,
     kValid = 1,
@@ -693,7 +617,7 @@ class AutofillMetrics {
       return static_cast<uint64_t>(QualitativeMetric());
     }
 
-    // TODO(crbug.com/1275953): Remove once the new UKM metric has gained
+    // TODO(crbug.com/40207287): Remove once the new UKM metric has gained
     // traction.
     autofill_metrics::FormEvent QualitativeFillableFormEvent() const;
     autofill_metrics::FormEvent QualitativeFillFormEvent() const;
@@ -768,13 +692,6 @@ class AutofillMetrics {
         FormEventSet form_events,
         const base::TimeTicks& initial_interaction_timestamp,
         const base::TimeTicks& form_submitted_timestamp);
-    void LogFormSubmitted(bool is_for_credit_card,
-                          bool has_upi_vpa_field,
-                          const DenseSet<FormType>& form_types,
-                          AutofillFormSubmittedState state,
-                          const base::TimeTicks& form_parsed_timestamp,
-                          FormSignature form_signature,
-                          const FormInteractionCounts& form_interaction_counts);
     void LogKeyMetrics(const DenseSet<FormType>& form_types,
                        bool data_to_fill_available,
                        bool suggestions_shown,
@@ -942,28 +859,9 @@ class AutofillMetrics {
       const FormStructure& form,
       const AutofillField& field,
       QualityMetricType metric_type);
+  static void LogEmailFieldPredictionMetrics(const AutofillField& field);
 
   static void LogServerQueryMetric(ServerQueryMetric metric);
-
-  static void LogUserHappinessMetric(
-      UserHappinessMetric metric,
-      FieldTypeGroup field_type_group,
-      security_state::SecurityLevel security_level,
-      uint32_t profile_form_bitmask);
-
-  static void LogUserHappinessMetric(
-      UserHappinessMetric metric,
-      const DenseSet<FormType>& form_types,
-      security_state::SecurityLevel security_level,
-      uint32_t profile_form_bitmask);
-
-  static void LogUserHappinessBySecurityLevel(
-      UserHappinessMetric metric,
-      FormType form_type,
-      security_state::SecurityLevel security_level);
-
-  static void LogUserHappinessByProfileFormType(UserHappinessMetric metric,
-                                                uint32_t profile_form_bitmask);
 
   // Logs |event| to the unmask prompt events histogram.
   static void LogUnmaskPromptEvent(UnmaskPromptEvent event,
@@ -1100,27 +998,12 @@ class AutofillMetrics {
   // always offered, regardless of how recently they have been used.
   static void LogNumberOfAddressesSuppressedForDisuse(size_t num_profiles);
 
-  // Log the number of unverified autofill addresses deleted because they have
-  // not been used for a long time, and are not used as billing addresses of
-  // valid credit cards. Note the deletion only happens once per major version
-  // upgrade.
-  static void LogNumberOfAddressesDeletedForDisuse(size_t num_profiles);
-
-  // Log the number of Autofill address suggestions presented to the user when
-  // filling a form.
-  static void LogAddressSuggestionsCount(size_t num_suggestions);
-
   // Log the reason for which the Autofill popup disappeared.
-  static void LogAutofillPopupHidingReason(PopupHidingReason reason);
-
-  // Logs that the user cleared the form.
-  static void LogAutofillFormCleared();
+  static void LogAutofillSuggestionHidingReason(FillingProduct filling_product,
+                                                SuggestionHidingReason reason);
 
   // Log the number of days since an Autocomplete suggestion was last used.
   static void LogAutocompleteDaysSinceLastUse(size_t days);
-
-  // Log the index of the selected Autocomplete suggestion in the popup.
-  static void LogAutocompleteSuggestionAcceptedIndex(int index);
 
   // Log the fact that an autocomplete popup was shown.
   static void OnAutocompleteSuggestionsShown();
@@ -1130,35 +1013,12 @@ class AutofillMetrics {
   static void OnAutocompleteSuggestionDeleted(
       SingleEntryRemovalMethod removal_method);
 
-  // Log how many autofilled fields in a given form were edited before the
-  // submission or when the user unfocused the form (depending on
-  // |observed_submission|).
-  static void LogNumberOfEditedAutofilledFields(
-      size_t num_edited_autofilled_fields,
-      bool observed_submission);
-
   // Logs the number of sections and the number of fields/section.
   static void LogSectioningMetrics(
       const base::flat_map<Section, size_t>& fields_per_section);
 
   // This should be called each time a server response is parsed for a form.
   static void LogServerResponseHasDataForForm(bool has_data);
-
-  // This should be called at each form submission to indicate what profile
-  // action happened.
-  static void LogProfileActionOnFormSubmitted(AutofillProfileAction action);
-
-  // This should be called at each form submission to indicate the autofilled
-  // state of the form.
-  static void LogAutofillFormSubmittedState(
-      AutofillFormSubmittedState state,
-      bool is_for_credit_card,
-      bool has_upi_vpa_field,
-      const DenseSet<FormType>& form_types,
-      const base::TimeTicks& form_parsed_timestamp,
-      FormSignature form_signature,
-      FormInteractionsUkmLogger* form_interactions_ukm_logger,
-      const FormInteractionCounts& form_interaction_counts);
 
   // Logs if every non-empty field in a submitted form was filled by Autofill.
   // If |is_address| an address was filled, otherwise it was a credit card.
@@ -1191,12 +1051,6 @@ class AutofillMetrics {
 
   // This should be called when parsing each form.
   static void LogParseFormTiming(const base::TimeDelta& duration);
-
-  // Log how many profiles were considered for the deduplication process.
-  static void LogNumberOfProfilesConsideredForDedupe(size_t num_considered);
-
-  // Log how many profiles were removed as part of the deduplication process.
-  static void LogNumberOfProfilesRemovedDuringDedupe(size_t num_removed);
 
   // Log whether the Autofill query on a credit card form is made in a secure
   // context.
@@ -1233,10 +1087,6 @@ class AutofillMetrics {
                                         int developer_engagement_metrics,
                                         FormSignature form_signature);
 
-  // Log the number of hidden or presentational 'select' fields that were
-  // autofilled to support synthetic fields.
-  static void LogHiddenOrPresentationalSelectFieldsFilled();
-
   // Converts form type to bit vector to store in UKM.
   static int64_t FormTypesToBitVector(const DenseSet<FormType>& form_types);
 
@@ -1245,18 +1095,7 @@ class AutofillMetrics {
   static void LogServerCardLinkClicked(PaymentsSigninState sync_state);
 
   // Records if an autofilled field of a specific type was edited by the user.
-  // TODO(crbug.com/1368096): This metric is the successor of
-  // LogEditedAutofilledFieldAtSubmissionDeprecated which is defective. Remove
-  // comment once the old metric was removed.
   static void LogEditedAutofilledFieldAtSubmission(
-      FormInteractionsUkmLogger* form_interactions_ukm_logger,
-      const FormStructure& form,
-      const AutofillField& field);
-
-  // Records if an autofilled field of a specific type was edited by the user.
-  // TODO(crbug.com/1368096): This metric is defective because it is falsely
-  // conditioned on having a detected field type. Remove after M112.
-  static void LogEditedAutofilledFieldAtSubmissionDeprecated(
       FormInteractionsUkmLogger* form_interactions_ukm_logger,
       const FormStructure& form,
       const AutofillField& field);
@@ -1275,27 +1114,6 @@ class AutofillMetrics {
       ukm::UkmRecorder* ukm_recorder,
       ukm::SourceId source_id,
       uint32_t phone_collection_metric_state);
-
-  // Logs the number of autofilled fields at submission time.
-  static void LogNumberOfAutofilledFieldsAtSubmission(
-      size_t number_of_accepted_fields,
-      size_t number_of_corrected_fields);
-
-  // Logs the number of autofilled fields with unrecognized autocomplete
-  // attribute at submission time.
-  static void
-  LogNumberOfAutofilledFieldsWithAutocompleteUnrecognizedAtSubmission(
-      size_t number_of_accepted_fields,
-      size_t number_of_corrected_fields);
-
-  // Logs that local heuristics matched phone number fields using `grammar_id`.
-  // `suffix_matched` indicates if the special case handling for phone number
-  // suffixes was triggered.
-  // `num_grammars` indicates the total number of phone number grammars. It is
-  // not logged and used for validation.
-  static void LogPhoneNumberGrammarMatched(int grammar_id,
-                                           bool suffix_matched,
-                                           int num_grammars);
 
   // Logs when the virtual card metadata for one card have been updated.
   static void LogVirtualCardMetadataSynced(bool existing_card);
@@ -1344,17 +1162,6 @@ class AutofillMetrics {
       absl::variant<AutofillClient::PaymentsRpcCardType, CreditCard::RecordType>
           card_type);
 
-  // Logs the context menu impressions based on the autofill type as well as
-  // based on the autocomplete type.
-  static void LogContextMenuImpressionsForField(
-      FieldType field_type,
-      AutocompleteState autocomplete_state);
-
-  // Logs the context menu impressions for a submitted form. Mainly logs the
-  // number of fields in the form where the context menu was shown.
-  static void LogContextMenuImpressionsForForm(
-      int num_of_fields_with_context_menu_shown);
-
   // Returns 64-bit hash of the string of form global id, which consists of
   // |frame_token| and |renderer_id|.
   static uint64_t FormGlobalIdToHash64Bit(const FormGlobalId& form_global_id);
@@ -1379,8 +1186,7 @@ class AutofillMetrics {
   // accessory.
   static void LogDeleteAddressProfileFromKeyboardAccessory();
 
- private:
-  static void Log(AutocompleteEvent event);
+  static void LogAutocompleteEvent(AutocompleteEvent event);
 };
 
 #if defined(UNIT_TEST)

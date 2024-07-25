@@ -27,7 +27,7 @@
 namespace perfetto {
 namespace protos {
 namespace pbzero {
-class ChromeCompositorSchedulerState;
+class ChromeCompositorSchedulerStateV2;
 }
 }  // namespace protos
 }  // namespace perfetto
@@ -254,9 +254,17 @@ class CC_EXPORT Scheduler : public viz::BeginFrameObserverBase {
 
   void AsProtozeroInto(
       perfetto::EventContext& ctx,
-      perfetto::protos::pbzero::ChromeCompositorSchedulerState* state) const;
+      perfetto::protos::pbzero::ChromeCompositorSchedulerStateV2* state) const;
 
   void SetVideoNeedsBeginFrames(bool video_needs_begin_frames);
+
+  // When `SetIsScrolling` notifies of a scroll, and when
+  // `SetWaitingForScrollEvent` notifies that we do not yet have input to
+  // process, we will prioritize BeginImplFrameDeadlineMode::SCROLL over that of
+  // BeginImplFrameDeadlineMode::IMMEDIATE, BeginImplFrameDeadlineMode::REGULAR,
+  // and BeginImplFrameDeadlineMode::LATE.
+  void SetIsScrolling(bool is_scrolling);
+  void SetWaitingForScrollEvent(bool waiting_for_scroll_event);
 
   const viz::BeginFrameSource* begin_frame_source() const {
     return begin_frame_source_;

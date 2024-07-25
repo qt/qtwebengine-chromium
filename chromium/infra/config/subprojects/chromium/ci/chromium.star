@@ -31,6 +31,8 @@ ci.defaults.set(
     reclient_jobs = reclient.jobs.DEFAULT,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    siso_enabled = True,
+    siso_remote_jobs = reclient.jobs.DEFAULT,
 )
 
 consoles.console_view(
@@ -105,6 +107,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -162,6 +165,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -208,6 +212,7 @@ ci.builder(
     # needs longer time to complete.
     execution_timeout = 7 * time.hour,
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -288,6 +293,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -321,7 +327,7 @@ ci.builder(
         additional_compile_targets = "chrome",
     ),
     cores = 8,
-    # TODO(crbug.com/1362019): Turn on when stable.
+    # TODO(crbug.com/40238185): Turn on when stable.
     sheriff_rotations = args.ignore_default(None),
     tree_closing = False,
     console_view_entry = consoles.console_view_entry(
@@ -340,6 +346,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -400,6 +407,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -460,6 +468,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -503,7 +512,7 @@ ci.builder(
     ),
     cores = 32,
     sheriff_rotations = args.ignore_default(None),
-    # TODO(crbug.com/1363272): Enable tree_closing/sheriff when stable.
+    # TODO(crbug.com/40238619): Enable tree_closing/sheriff when stable.
     tree_closing = False,
     console_view_entry = consoles.console_view_entry(
         category = "lacros",
@@ -521,6 +530,7 @@ ci.builder(
         },
     },
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -693,8 +703,10 @@ ci.builder(
     targets = targets.bundle(
         additional_compile_targets = "all",
     ),
-    cores = 12,
+    builderless = True,
+    cores = None,
     os = os.MAC_DEFAULT,
+    cpu = cpu.ARM64,
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "mac|arm",
@@ -750,7 +762,7 @@ ci.builder(
         short_name = "off",
     ),
     contact_team_email = "bling-engprod@google.com",
-    # TODO(crbug.com/1279290) builds with PGO change take long time.
+    # TODO(crbug.com/40208487) builds with PGO change take long time.
     # Keep in sync with mac-official in try/chromium.star.
     execution_timeout = 15 * time.hour,
 )
@@ -842,9 +854,10 @@ ci.builder(
         short_name = "64",
     ),
     contact_team_email = "chrome-desktop-engprod@google.com",
-    # TODO(crbug.com/1155416) builds with PGO change take long time.
+    # TODO(crbug.com/40735404) builds with PGO change take long time.
     execution_timeout = 7 * time.hour,
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -935,7 +948,8 @@ ci.builder(
         short_name = "32",
     ),
     contact_team_email = "chrome-desktop-engprod@google.com",
-    # TODO(crbug.com/1155416) builds with PGO change take long time.
+    # TODO(crbug.com/40735404) builds with PGO change take long time.
     execution_timeout = 7 * time.hour,
     reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CI,
 )

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -31,7 +32,6 @@
 #include "build/build_config.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/input/web_input_event_attribution.h"
@@ -41,6 +41,8 @@
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/public/platform/scheduler/web_renderer_process_type.h"
 #include "third_party/blink/public/platform/web_input_event_result.h"
+#include "third_party/blink/renderer/platform/bindings/parkable_string_manager.h"
+#include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/instrumentation/resource_coordinator/renderer_resource_coordinator.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -70,10 +72,6 @@ class LazyNow;
 
 namespace blink {
 namespace scheduler {
-
-BASE_FEATURE(kTaskAttributionInfrastructureDisabledForTesting,
-             "TaskAttributionInfrastructureDisabledForTesting",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 using base::sequence_manager::TaskQueue;
 using base::sequence_manager::TaskTimeObserver;
@@ -166,7 +164,7 @@ const char* RendererProcessTypeToString(WebRendererProcessType process_type) {
 }
 
 const char* OptionalTaskDescriptionToString(
-    absl::optional<MainThreadSchedulerImpl::TaskDescriptionForTracing> desc) {
+    std::optional<MainThreadSchedulerImpl::TaskDescriptionForTracing> desc) {
   if (!desc)
     return nullptr;
   if (desc->task_type != TaskType::kDeprecatedNone)
@@ -177,8 +175,7 @@ const char* OptionalTaskDescriptionToString(
       MainThreadTaskQueue::NameForQueueType(desc->queue_type.value()));
 }
 
-const char* OptionalTaskPriorityToString(
-    absl::optional<TaskPriority> priority) {
+const char* OptionalTaskPriorityToString(std::optional<TaskPriority> priority) {
   if (!priority)
     return nullptr;
   return TaskPriorityToString(*priority);
@@ -410,11 +407,6 @@ MainThreadSchedulerImpl::MainThreadOnly::MainThreadOnly(
                        "Scheduler.UseCase",
                        &main_thread_scheduler_impl->tracing_controller_,
                        UseCaseToString),
-      longest_jank_free_task_duration(
-          base::TimeDelta(),
-          "Scheduler.LongestJankFreeTaskDuration",
-          &main_thread_scheduler_impl->tracing_controller_,
-          TimeDeltaToMilliseconds),
       renderer_pause_count(0,
                            "Scheduler.PauseCount",
                            &main_thread_scheduler_impl->tracing_controller_),
@@ -433,11 +425,6 @@ MainThreadSchedulerImpl::MainThreadOnly::MainThreadOnly(
       blocking_input_expected_soon(
           false,
           "Scheduler.BlockingInputExpectedSoon",
-          &main_thread_scheduler_impl->tracing_controller_,
-          YesNoStateToString),
-      has_visible_render_widget_with_touch_handler(
-          false,
-          "Scheduler.HasVisibleRenderWidgetWithTouchHandler",
           &main_thread_scheduler_impl->tracing_controller_,
           YesNoStateToString),
       in_idle_period_for_testing(
@@ -473,12 +460,12 @@ MainThreadSchedulerImpl::MainThreadOnly::MainThreadOnly(
                    &main_thread_scheduler_impl->tracing_controller_,
                    RendererProcessTypeToString),
       task_description_for_tracing(
-          absl::nullopt,
+          std::nullopt,
           "Scheduler.MainThreadTask",
           &main_thread_scheduler_impl->tracing_controller_,
           OptionalTaskDescriptionToString),
       task_priority_for_tracing(
-          absl::nullopt,
+          std::nullopt,
           "Scheduler.TaskPriority",
           &main_thread_scheduler_impl->tracing_controller_,
           OptionalTaskPriorityToString),
@@ -1017,20 +1004,6 @@ void MainThreadSchedulerImpl::SetAllRenderWidgetsHidden(bool hidden) {
   CreateTraceEventObjectSnapshot();
 }
 
-void MainThreadSchedulerImpl::SetHasVisibleRenderWidgetWithTouchHandler(
-    bool has_visible_render_widget_with_touch_handler) {
-  helper_.CheckOnValidThread();
-  if (has_visible_render_widget_with_touch_handler ==
-      main_thread_only().has_visible_render_widget_with_touch_handler)
-    return;
-
-  main_thread_only().has_visible_render_widget_with_touch_handler =
-      has_visible_render_widget_with_touch_handler;
-
-  base::AutoLock lock(any_thread_lock_);
-  UpdatePolicyLocked(UpdateType::kForceUpdate);
-}
-
 void MainThreadSchedulerImpl::SetRendererHidden(bool hidden) {
   if (hidden) {
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("renderer.scheduler"),
@@ -1075,7 +1048,13 @@ void MainThreadSchedulerImpl::SetRendererBackgrounded(bool backgrounded) {
     main_thread_only().metrics_helper.OnRendererForegrounded(now);
   }
 
+  ParkableStringManager::Instance().SetRendererBackgrounded(backgrounded);
   memory_purge_manager_.SetRendererBackgrounded(backgrounded);
+}
+
+void MainThreadSchedulerImpl::SetRendererBackgroundedForTesting(
+    bool backgrounded) {
+  SetRendererBackgrounded(backgrounded);
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1217,14 +1196,6 @@ void MainThreadSchedulerImpl::DidHandleInputEventOnCompositorThread(
   UpdateForInputEventOnCompositorThread(web_input_event, event_state);
 }
 
-void MainThreadSchedulerImpl::DidAnimateForInputOnCompositorThread() {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("renderer.scheduler"),
-               "MainThreadSchedulerImpl::DidAnimateForInputOnCompositorThread");
-  base::AutoLock lock(any_thread_lock_);
-  any_thread().fling_compositor_escalation_deadline =
-      helper_.NowTicks() + base::Milliseconds(kFlingEscalationLimitMillis);
-}
-
 void MainThreadSchedulerImpl::UpdateForInputEventOnCompositorThread(
     const blink::WebInputEvent& web_input_event,
     WidgetScheduler::InputEventState input_event_state) {
@@ -1292,9 +1263,6 @@ void MainThreadSchedulerImpl::UpdateForInputEventOnCompositorThread(
       break;
 
     case blink::WebInputEvent::Type::kGestureFlingCancel:
-      any_thread().fling_compositor_escalation_deadline = base::TimeTicks();
-      break;
-
     case blink::WebInputEvent::Type::kGestureTapDown:
     case blink::WebInputEvent::Type::kGestureShowPress:
     case blink::WebInputEvent::Type::kGestureScrollEnd:
@@ -1390,22 +1358,6 @@ void MainThreadSchedulerImpl::DidHandleInputEventOnMainThread(
   if (!PendingUserInput::IsContinuousEventType(web_input_event.GetType())) {
     main_thread_only().is_current_task_discrete_input = true;
   }
-}
-
-bool MainThreadSchedulerImpl::IsHighPriorityWorkAnticipated() {
-  helper_.CheckOnValidThread();
-  if (helper_.IsShutdown())
-    return false;
-
-  MaybeUpdatePolicy();
-  // The touchstart, synchronized gesture and main-thread gesture use cases
-  // indicate a strong likelihood of high-priority work in the near future.
-  UseCase use_case = main_thread_only().current_use_case;
-  return main_thread_only().blocking_input_expected_soon ||
-         use_case == UseCase::kTouchstart ||
-         use_case == UseCase::kMainThreadGesture ||
-         use_case == UseCase::kMainThreadCustomInputHandling ||
-         use_case == UseCase::kSynchronizedGesture;
 }
 
 bool MainThreadSchedulerImpl::ShouldYieldForHighPriorityWork() {
@@ -1513,11 +1465,6 @@ void MainThreadSchedulerImpl::UpdatePolicyLocked(UpdateType update_type) {
         any_thread().user_model.IsGestureExpectedSoon(
             now, &gesture_expected_flag_valid_for_duration);
   }
-
-  base::TimeDelta longest_jank_free_task_duration =
-      EstimateLongestJankFreeTaskDuration();
-  main_thread_only().longest_jank_free_task_duration =
-      longest_jank_free_task_duration;
 
   // The |new_policy_duration| is the minimum of |expected_use_case_duration|
   // and |gesture_expected_flag_valid_for_duration| unless one is zero in
@@ -1650,7 +1597,7 @@ void MainThreadSchedulerImpl::UpdatePolicyLocked(UpdateType update_type) {
 }
 
 void MainThreadSchedulerImpl::UpdateStateForAllTaskQueues(
-    absl::optional<Policy> previous_policy) {
+    std::optional<Policy> previous_policy) {
   helper_.CheckOnValidThread();
 
   const Policy& current_policy = main_thread_only().current_policy;
@@ -1694,14 +1641,7 @@ UseCase MainThreadSchedulerImpl::ComputeCurrentUseCase(
     base::TimeTicks now,
     base::TimeDelta* expected_use_case_duration) const {
   any_thread_lock_.AssertAcquired();
-  // Special case for flings. This is needed because we don't get notification
-  // of a fling ending (although we do for cancellation).
-  if (any_thread().fling_compositor_escalation_deadline > now &&
-      !any_thread().awaiting_touch_start_response) {
-    *expected_use_case_duration =
-        any_thread().fling_compositor_escalation_deadline - now;
-    return UseCase::kCompositorGesture;
-  }
+
   // Above all else we want to be responsive to user input.
   *expected_use_case_duration =
       any_thread().user_model.TimeLeftInUserGesture(now);
@@ -1755,28 +1695,6 @@ UseCase MainThreadSchedulerImpl::ComputeCurrentUseCase(
     }
   }
   return UseCase::kNone;
-}
-
-base::TimeDelta MainThreadSchedulerImpl::EstimateLongestJankFreeTaskDuration()
-    const {
-  switch (main_thread_only().current_use_case) {
-    case UseCase::kTouchstart:
-    case UseCase::kCompositorGesture:
-    case UseCase::kEarlyLoading:
-    case UseCase::kLoading:
-    case UseCase::kNone:
-      return base::Milliseconds(kRailsResponseTimeMillis);
-
-    case UseCase::kMainThreadCustomInputHandling:
-    case UseCase::kMainThreadGesture:
-    case UseCase::kSynchronizedGesture:
-      return main_thread_only().idle_time_estimator.GetExpectedIdleDuration(
-          main_thread_only().compositor_frame_interval);
-
-    default:
-      NOTREACHED();
-      return base::Milliseconds(kRailsResponseTimeMillis);
-  }
 }
 
 bool MainThreadSchedulerImpl::CanEnterLongIdlePeriod(
@@ -1883,8 +1801,6 @@ void MainThreadSchedulerImpl::WriteIntoTraceLocked(
 
   if (optional_now.is_null())
     optional_now = helper_.NowTicks();
-  dict.Add("has_visible_render_widget_with_touch_handler",
-           main_thread_only().has_visible_render_widget_with_touch_handler);
   dict.Add("current_use_case",
            UseCaseToString(main_thread_only().current_use_case));
   dict.Add("compositor_will_send_main_frame_not_expected",
@@ -1904,10 +1820,6 @@ void MainThreadSchedulerImpl::WriteIntoTraceLocked(
   dict.Add("renderer_backgrounded",
            main_thread_only().renderer_backgrounded.get());
   dict.Add("now", (optional_now - base::TimeTicks()).InMillisecondsF());
-  dict.Add(
-      "fling_compositor_escalation_deadline",
-      (any_thread().fling_compositor_escalation_deadline - base::TimeTicks())
-          .InMillisecondsF());
   dict.Add("last_idle_period_end_time",
            (any_thread().last_idle_period_end_time - base::TimeTicks())
                .InMillisecondsF());
@@ -1929,9 +1841,6 @@ void MainThreadSchedulerImpl::WriteIntoTraceLocked(
   dict.Add("policy", main_thread_only().current_policy);
 
   // TODO(skyostil): Can we somehow trace how accurate these estimates were?
-  dict.Add(
-      "longest_jank_free_task_duration",
-      main_thread_only().longest_jank_free_task_duration->InMillisecondsF());
   dict.Add("compositor_frame_interval",
            main_thread_only().compositor_frame_interval.InMillisecondsF());
   dict.Add("estimated_next_frame_begin",
@@ -2241,7 +2150,7 @@ void MainThreadSchedulerImpl::BeginAgentGroupSchedulerScope(
 
   scoped_refptr<base::SingleThreadTaskRunner> previous_task_runner =
       base::SingleThreadTaskRunner::GetCurrentDefault();
-  std::unique_ptr<base::SingleThreadTaskRunner::CurrentHandleOverride>
+  std::unique_ptr<base::SingleThreadTaskRunner::CurrentDefaultHandle>
       single_thread_task_runner_current_handle_override;
   if (scheduling_settings().mbi_override_task_runner_handle &&
       next_task_runner != previous_task_runner) {
@@ -2255,10 +2164,10 @@ void MainThreadSchedulerImpl::BeginAgentGroupSchedulerScope(
     // returning an unexpected task runner from STTR/STR::GetCurrentDefault() in
     // this specific case.
     single_thread_task_runner_current_handle_override =
-        std::unique_ptr<base::SingleThreadTaskRunner::CurrentHandleOverride>(
-            new base::SingleThreadTaskRunner::CurrentHandleOverride(
-                next_task_runner,
-                /*allow_nested_runloop=*/true));
+        std::unique_ptr<base::SingleThreadTaskRunner::CurrentDefaultHandle>(
+            new base::SingleThreadTaskRunner::CurrentDefaultHandle(
+                next_task_runner, base::SingleThreadTaskRunner::
+                                      CurrentDefaultHandle::MayAlreadyExist{}));
   }
 
   main_thread_only().agent_group_scheduler_scope_stack.emplace_back(
@@ -2399,13 +2308,12 @@ void MainThreadSchedulerImpl::OnTaskStarted(
   main_thread_only().current_task_start_time = task_timing.start_time();
   main_thread_only().task_description_for_tracing = TaskDescriptionForTracing{
       static_cast<TaskType>(task.task_type),
-      queue
-          ? absl::optional<MainThreadTaskQueue::QueueType>(queue->queue_type())
-          : absl::nullopt};
+      queue ? std::optional<MainThreadTaskQueue::QueueType>(queue->queue_type())
+            : std::nullopt};
 
   main_thread_only().task_priority_for_tracing =
-      queue ? absl::optional<TaskPriority>(queue->GetQueuePriority())
-            : absl::nullopt;
+      queue ? std::optional<TaskPriority>(queue->GetQueuePriority())
+            : std::nullopt;
 }
 
 void MainThreadSchedulerImpl::OnTaskCompleted(
@@ -2448,10 +2356,10 @@ void MainThreadSchedulerImpl::OnTaskCompleted(
   // TODO(altimin): Per-page metrics should also be considered.
   main_thread_only().metrics_helper.RecordTaskMetrics(queue.get(), task,
                                                       *task_timing);
-  main_thread_only().task_description_for_tracing = absl::nullopt;
+  main_thread_only().task_description_for_tracing = std::nullopt;
 
   // Unset the state of |task_priority_for_tracing|.
-  main_thread_only().task_priority_for_tracing = absl::nullopt;
+  main_thread_only().task_priority_for_tracing = std::nullopt;
 
   RecordTaskUkm(queue.get(), task, *task_timing);
 
@@ -2633,9 +2541,9 @@ MainThreadSchedulerImpl::scheduling_settings() const {
 }
 
 TaskPriority MainThreadSchedulerImpl::ComputeCompositorPriority() const {
-  absl::optional<TaskPriority> targeted_main_frame_priority =
+  std::optional<TaskPriority> targeted_main_frame_priority =
       ComputeCompositorPriorityForMainFrame();
-  absl::optional<TaskPriority> use_case_priority =
+  std::optional<TaskPriority> use_case_priority =
       ComputeCompositorPriorityFromUseCase();
   if (!targeted_main_frame_priority && !use_case_priority) {
     return TaskPriority::kNormalPriority;
@@ -2773,7 +2681,7 @@ void MainThreadSchedulerImpl::MaybeUpdateIPCTaskQueuePriorityOnTaskCompleted() {
   }
 }
 
-absl::optional<TaskPriority>
+std::optional<TaskPriority>
 MainThreadSchedulerImpl::ComputeCompositorPriorityFromUseCase() const {
   switch (current_use_case()) {
     case UseCase::kCompositorGesture:
@@ -2802,7 +2710,7 @@ MainThreadSchedulerImpl::ComputeCompositorPriorityFromUseCase() const {
       // to the page's functionality or not.
       if (main_thread_only().main_thread_compositing_is_fast)
         return TaskPriority::kHighestPriority;
-      return absl::nullopt;
+      return std::nullopt;
 
     case UseCase::kMainThreadGesture:
     case UseCase::kTouchstart:
@@ -2815,19 +2723,19 @@ MainThreadSchedulerImpl::ComputeCompositorPriorityFromUseCase() const {
     case UseCase::kNone:
     case UseCase::kEarlyLoading:
     case UseCase::kLoading:
-      return absl::nullopt;
+      return std::nullopt;
 
     default:
       NOTREACHED();
-      return absl::nullopt;
+      return std::nullopt;
   }
 }
 
-absl::optional<TaskPriority>
+std::optional<TaskPriority>
 MainThreadSchedulerImpl::ComputeCompositorPriorityForMainFrame() const {
   switch (main_thread_only().main_frame_prioritization_state) {
     case RenderingPrioritizationState::kNone:
-      return absl::nullopt;
+      return std::nullopt;
     case RenderingPrioritizationState::kRenderingStarved:
       // Set higher than most tasks, but lower than render blocking tasks and
       // input.
@@ -2852,19 +2760,6 @@ bool MainThreadSchedulerImpl::AllPagesFrozen() const {
       return false;
   }
   return true;
-}
-
-TaskAttributionTracker* MainThreadSchedulerImpl::GetTaskAttributionTracker() {
-  return base::FeatureList::IsEnabled(
-             kTaskAttributionInfrastructureDisabledForTesting)
-             ? nullptr
-             : main_thread_only().task_attribution_tracker.get();
-}
-
-void MainThreadSchedulerImpl::InitializeTaskAttributionTracker(
-    std::unique_ptr<TaskAttributionTracker> tracker) {
-  DCHECK(!main_thread_only().task_attribution_tracker);
-  main_thread_only().task_attribution_tracker = std::move(tracker);
 }
 
 // static

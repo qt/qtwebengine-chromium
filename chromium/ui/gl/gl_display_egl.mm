@@ -33,22 +33,13 @@ struct GLDisplayEGL::ObjCStorage {
 GLDisplayEGL::GLDisplayEGL(uint64_t system_device_id, DisplayKey display_key)
     : GLDisplay(system_device_id, display_key, EGL) {
   ext = std::make_unique<DisplayExtensionsEGL>();
-
-  // -- BEGIN difference from copy in gl_display.cc --
-  objc_storage_ = std::make_unique<ObjCStorage>();
-  // -- END difference from copy in gl_display.cc --
 }
 
 GLDisplayEGL::~GLDisplayEGL() = default;
 
-bool GLDisplayEGL::IsANGLEMetalSharedEventSyncSupported() {
-  return this->ext->b_EGL_ANGLE_metal_shared_event_sync;
-}
-
 bool GLDisplayEGL::CreateMetalSharedEvent(id<MTLSharedEvent>* shared_event_out,
                                           uint64_t* signal_value_out) {
-  DCHECK(g_driver_egl.fn.eglCreateSyncFn);
-  DCHECK(g_driver_egl.fn.eglGetSyncAttribFn);
+  CHECK(ext->b_EGL_ANGLE_metal_shared_event_sync);
   if (!objc_storage_->metal_shared_event) {
     std::vector<EGLAttrib> attribs;
     attribs.push_back(EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE);
@@ -103,6 +94,7 @@ bool GLDisplayEGL::CreateMetalSharedEvent(id<MTLSharedEvent>* shared_event_out,
 
 void GLDisplayEGL::WaitForMetalSharedEvent(id<MTLSharedEvent> shared_event,
                                            uint64_t signal_value) {
+  CHECK(ext->b_EGL_ANGLE_metal_shared_event_sync);
   EGLAttrib attribs[] = {
       // Pass the Metal shared event as an EGLAttrib.
       EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE,
@@ -122,7 +114,6 @@ void GLDisplayEGL::WaitForMetalSharedEvent(id<MTLSharedEvent> shared_event,
       EGL_NONE,
   };
 
-  DCHECK(g_driver_egl.fn.eglCreateSyncFn);
   EGLSync sync =
       eglCreateSync(display_, EGL_SYNC_METAL_SHARED_EVENT_ANGLE, attribs);
   EGLBoolean res = eglWaitSync(display_, sync, 0);
@@ -132,7 +123,11 @@ void GLDisplayEGL::WaitForMetalSharedEvent(id<MTLSharedEvent> shared_event,
   eglDestroySync(display_, sync);
 }
 
-void GLDisplayEGL::CleanupMetalSharedEvent() {
+void GLDisplayEGL::InitMetalSharedEventStorage() {
+  objc_storage_ = std::make_unique<ObjCStorage>();
+}
+
+void GLDisplayEGL::CleanupMetalSharedEventStorage() {
   objc_storage_.reset();
 }
 

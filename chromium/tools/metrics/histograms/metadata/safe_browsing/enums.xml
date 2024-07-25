@@ -72,6 +72,8 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="MISSING_WEB_CONTENTS"/>
   <int value="1" label="SB_NAVIGATION_MANAGER_NOT_READY"/>
   <int value="2" label="COMPLETE"/>
+  <int value="3" label="MISSING_RENDER_FRAME_HOST"/>
+  <int value="4" label="RENDER_FRAME_HOST_INVALID_URL"/>
 </enum>
 
 <enum name="ApkDownloadTelemetryOutcome">
@@ -94,6 +96,11 @@ chromium-metrics-reviews@google.com.
 <enum name="BooleanBackoff">
   <int value="0" label="No backoff"/>
   <int value="1" label="Backoff mode enabled"/>
+</enum>
+
+<enum name="BooleanFreshness">
+  <int value="0" label="Is stale"/>
+  <int value="1" label="Is up to date"/>
 </enum>
 
 <enum name="BooleanHasKey">
@@ -136,9 +143,26 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Received"/>
 </enum>
 
+<enum name="BooleanTransferred">
+  <int value="0" label="Did not transfer"/>
+  <int value="1" label="Transferred"/>
+</enum>
+
 <enum name="BooleanUnavailable">
   <int value="0" label="Available"/>
   <int value="1" label="Unavailable"/>
+</enum>
+
+<enum name="ClientReportPersistDownloadReportResult">
+  <int value="0" label="kPersistTaskPosted"/>
+  <int value="1" label="kSerializationError"/>
+  <int value="2" label="kEmptyReport"/>
+</enum>
+
+<enum name="ClientReportPersisterWriteResult">
+  <int value="0" label="kSuccess"/>
+  <int value="1" label="kFailedCreateDirectory"/>
+  <int value="2" label="kFailedWriteFile"/>
 </enum>
 
 <enum name="ClientSafeBrowsingReportType">
@@ -160,6 +184,11 @@ chromium-metrics-reviews@google.com.
   <int value="19" label="Blocked Ad redirect"/>
   <int value="20" label="Blocked Ad popup"/>
   <int value="21" label="Hash-prefix real-time experiment"/>
+  <int value="22" label="Phishy site interactions"/>
+  <int value="23" label="Safe Browsing warning shown to user"/>
+  <int value="24" label="Abusive notification permission accepted"/>
+  <int value="25" label="dangerous download auto deleted"/>
+  <int value="26" label="dangerous download canceled on profile closure"/>
 </enum>
 
 <enum name="SafeBrowsingAllowlistAsyncMatch">
@@ -295,6 +324,15 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="WithoutToken"/>
 </enum>
 
+<!-- LINT.IfChange(SafeBrowsingEsbDownloadRowPromoOutcome) -->
+
+<enum name="SafeBrowsingEsbDownloadRowPromoOutcome">
+  <int value="0" label="Shown"/>
+  <int value="1" label="Clicked"/>
+</enum>
+
+<!-- LINT.ThenChange(//chrome/browser/ui/webui/downloads/downloads_dom_handler.h:SafeBrowsingEsbDownloadRowPromoOutcome) -->
+
 <enum name="SafeBrowsingHPRTOperationOutcome">
   <int value="0" label="Success"/>
   <int value="1" label="Parse response error"/>
@@ -307,6 +345,7 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Result found in local cache"/>
   <int value="9" label="Service is in backoff mode"/>
   <int value="10" label="OHTTP key fetch failed"/>
+  <int value="11" label="No OHTTP key service"/>
 </enum>
 
 <enum name="SafeBrowsingOhttpFetchKeyTriggerReason">
@@ -346,6 +385,8 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="SAFETY_CHECK"/>
   <int value="2" label="PROMOSLINGER_REFERRAL"/>
   <int value="3" label="DOWNLOAD_BUBBLE_SUBPAGE"/>
+  <int value="4" label="DOWNLOAD_BUTTON_IPH_PROMO"/>
+  <int value="5" label="DOWNLOAD_PAGE_ROW_PROMO"/>
 </enum>
 
 <enum name="SafeBrowsingRTConsumerVersionReason">
@@ -526,6 +567,15 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="UNABLE_TO_RENAME_FAILURE"/>
 </enum>
 
+<enum name="SafetyCheckWarningReason">
+  <int value="1" label="Unpublished"/>
+  <int value="2" label="Policy"/>
+  <int value="3" label="Malware"/>
+  <int value="4" label="Offstore"/>
+  <int value="5" label="Unwanted"/>
+  <int value="6" label="No Privacy Practice"/>
+</enum>
+
 <enum name="SBExtensionTelemetryDisableReason">
   <int value="0" label="Unknown"/>
   <int value="1" label="Malware"/>
@@ -540,6 +590,7 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="CookiesGet"/>
   <int value="6" label="DeclarativeNetRequest"/>
   <int value="7" label="TabsApi"/>
+  <int value="8" label="DeclarativeNetRequestAction"/>
 </enum>
 
 <enum name="SBFileTypeUpdateResult">
@@ -570,6 +621,7 @@ chromium-metrics-reviews@google.com.
   <int value="13" label="HASH_PREFIX_REAL_TIME_INTERSTITIAL_BYPASS"/>
   <int value="14" label="ANDROID_SAFEBROWSING_REAL_TIME_INTERSTITIAL_BYPASS"/>
   <int value="15" label="ANDROID_SAFEBROWSING_INTERSTITIAL_BYPASS"/>
+  <int value="16" label="DOWNLOAD_DEEP_SCAN"/>
 </enum>
 
 <enum name="SBThreatType">

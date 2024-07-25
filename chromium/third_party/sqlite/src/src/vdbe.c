@@ -2301,7 +2301,9 @@ case OP_Ge: {             /* same as TK_GE, jump, in1, in3 */
         }
       }
     }else if( affinity==SQLITE_AFF_TEXT && ((flags1 | flags3) & MEM_Str)!=0 ){
-      if( (flags1 & MEM_Str)==0 && (flags1&(MEM_Int|MEM_Real|MEM_IntReal))!=0 ){
+      if( (flags1 & MEM_Str)!=0 ){
+        pIn1->flags &= ~(MEM_Int|MEM_Real|MEM_IntReal);
+      }else if( (flags1&(MEM_Int|MEM_Real|MEM_IntReal))!=0 ){
         testcase( pIn1->flags & MEM_Int );
         testcase( pIn1->flags & MEM_Real );
         testcase( pIn1->flags & MEM_IntReal );
@@ -2310,7 +2312,9 @@ case OP_Ge: {             /* same as TK_GE, jump, in1, in3 */
         flags1 = (pIn1->flags & ~MEM_TypeMask) | (flags1 & MEM_TypeMask);
         if( NEVER(pIn1==pIn3) ) flags3 = flags1 | MEM_Str;
       }
-      if( (flags3 & MEM_Str)==0 && (flags3&(MEM_Int|MEM_Real|MEM_IntReal))!=0 ){
+      if( (flags3 & MEM_Str)!=0 ){
+        pIn3->flags &= ~(MEM_Int|MEM_Real|MEM_IntReal);
+      }else if( (flags3&(MEM_Int|MEM_Real|MEM_IntReal))!=0 ){
         testcase( pIn3->flags & MEM_Int );
         testcase( pIn3->flags & MEM_Real );
         testcase( pIn3->flags & MEM_IntReal );
@@ -8180,9 +8184,10 @@ case OP_VCheck: {             /* out2 */
 
   pOut = &aMem[pOp->p2];
   sqlite3VdbeMemSetNull(pOut);  /* Innocent until proven guilty */
-  assert( pOp->p4type==P4_TABLE );
+  assert( pOp->p4type==P4_TABLEREF );
   pTab = pOp->p4.pTab;
   assert( pTab!=0 );
+  assert( pTab->nTabRef>0 );
   assert( IsVirtual(pTab) );
   if( pTab->u.vtab.p==0 ) break;
   pVtab = pTab->u.vtab.p->pVtab;
@@ -8191,13 +8196,11 @@ case OP_VCheck: {             /* out2 */
   assert( pModule!=0 );
   assert( pModule->iVersion>=4 );
   assert( pModule->xIntegrity!=0 );
-  pTab->nTabRef++;
   sqlite3VtabLock(pTab->u.vtab.p);
   assert( pOp->p1>=0 && pOp->p1<db->nDb );
   rc = pModule->xIntegrity(pVtab, db->aDb[pOp->p1].zDbSName, pTab->zName,
                            pOp->p3, &zErr);
   sqlite3VtabUnlock(pTab->u.vtab.p);
-  sqlite3DeleteTable(db, pTab);
   if( rc ){
     sqlite3_free(zErr);
     goto abort_due_to_error;
@@ -8322,6 +8325,7 @@ case OP_VColumn: {           /* ncycle */
   const sqlite3_module *pModule;
   Mem *pDest;
   sqlite3_context sContext;
+  FuncDef nullFunc;
 
   VdbeCursor *pCur = p->apCsr[pOp->p1];
   assert( pCur!=0 );
@@ -8339,6 +8343,9 @@ case OP_VColumn: {           /* ncycle */
   memset(&sContext, 0, sizeof(sContext));
   sContext.pOut = pDest;
   sContext.enc = encoding;
+  nullFunc.pUserData = 0;
+  nullFunc.funcFlags = SQLITE_RESULT_SUBTYPE;
+  sContext.pFunc = &nullFunc;
   assert( pOp->p5==OPFLAG_NOCHNG || pOp->p5==0 );
   if( pOp->p5 & OPFLAG_NOCHNG ){
     sqlite3VdbeMemSetNull(pDest);
@@ -8668,6 +8675,42 @@ case OP_Function: {            /* group */
 case OP_ClrSubtype: {   /* in1 */
   pIn1 = &aMem[pOp->p1];
   pIn1->flags &= ~MEM_Subtype;
+  break;
+}
+
+/* Opcode: GetSubtype P1 P2 * * *
+** Synopsis:  r[P2] = r[P1].subtype
+**
+** Extract the subtype value from register P1 and write that subtype
+** into register P2.  If P1 has no subtype, then P1 gets a NULL.
+*/
+case OP_GetSubtype: {   /* in1 out2 */
+  pIn1 = &aMem[pOp->p1];
+  pOut = &aMem[pOp->p2];
+  if( pIn1->flags & MEM_Subtype ){
+    sqlite3VdbeMemSetInt64(pOut, pIn1->eSubtype);
+  }else{
+    sqlite3VdbeMemSetNull(pOut);
+  }
+  break;
+}
+
+/* Opcode: SetSubtype P1 P2 * * *
+** Synopsis:  r[P2].subtype = r[P1]
+**
+** Set the subtype value of register P2 to the integer from register P1.
+** If P1 is NULL, clear the subtype from p2.
+*/
+case OP_SetSubtype: {   /* in1 out2 */
+  pIn1 = &aMem[pOp->p1];
+  pOut = &aMem[pOp->p2];
+  if( pIn1->flags & MEM_Null ){
+    pOut->flags &= ~MEM_Subtype;
+  }else{
+    assert( pIn1->flags & MEM_Int );
+    pOut->flags |= MEM_Subtype;
+    pOut->eSubtype = (u8)(pIn1->u.i & 0xff);
+  }
   break;
 }
 

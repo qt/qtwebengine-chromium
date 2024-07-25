@@ -315,7 +315,7 @@ GSourceFuncs g_observer_funcs = {ObserverPrepare, ObserverCheck, nullptr,
 
 struct FdWatchSource : public GSource {
   raw_ptr<MessagePumpGlib> pump;
-  raw_ptr<MessagePumpGlib::FdWatchController, DanglingUntriaged> controller;
+  raw_ptr<MessagePumpGlib::FdWatchController> controller;
 };
 
 gboolean FdWatchSourcePrepare(GSource* source, gint* timeout_ms) {
@@ -336,7 +336,7 @@ gboolean FdWatchSourceDispatch(GSource* gsource,
   return TRUE;
 }
 
-void FdWatchSourcFinalize(GSource* gsource) {
+void FdWatchSourceFinalize(GSource* gsource) {
   // Read the comment in `WorkSourceFinalize`, the issue is exactly the same.
   auto* source = static_cast<FdWatchSource*>(gsource);
   source->pump = nullptr;
@@ -345,7 +345,7 @@ void FdWatchSourcFinalize(GSource* gsource) {
 
 GSourceFuncs g_fd_watch_source_funcs = {
     FdWatchSourcePrepare, FdWatchSourceCheck, FdWatchSourceDispatch,
-    FdWatchSourcFinalize};
+    FdWatchSourceFinalize};
 
 }  // namespace
 
@@ -368,7 +368,7 @@ struct MessagePumpGlib::RunState {
   // g_main_context_iteration() in Run(). nullopt if Run() is not calling
   // g_main_context_iteration(). Used to track whether the pump has forced a
   // nested state due to a native pump.
-  absl::optional<int> g_depth_on_iteration;
+  std::optional<int> g_depth_on_iteration;
 
   // Used to keep track of the native event work items processed by the message
   // pump.
@@ -434,6 +434,9 @@ MessagePumpGlib::FdWatchController::FdWatchController(const Location& location)
 
 MessagePumpGlib::FdWatchController::~FdWatchController() {
   if (IsInitialized()) {
+    auto* source = static_cast<FdWatchSource*>(source_);
+    source->controller = nullptr;
+
     CHECK(StopWatchingFileDescriptor());
   }
   if (was_destroyed_) {
@@ -616,7 +619,7 @@ bool MessagePumpGlib::HandleCheck() {
     char msg[2];
     const long num_bytes = HANDLE_EINTR(read(wakeup_pipe_read_, msg, 2));
     if (num_bytes < 1) {
-      NOTREACHED() << "Error reading from the wakeup pipe.";
+      NOTREACHED_IN_MIGRATION() << "Error reading from the wakeup pipe.";
     }
     DCHECK((num_bytes == 1 && msg[0] == '!') ||
            (num_bytes == 2 && msg[0] == '!' && msg[1] == '!'));
@@ -710,7 +713,7 @@ void MessagePumpGlib::Quit() {
   if (state_) {
     state_->should_quit = true;
   } else {
-    NOTREACHED() << "Quit called outside Run!";
+    NOTREACHED_IN_MIGRATION() << "Quit called outside Run!";
   }
 }
 
@@ -720,7 +723,8 @@ void MessagePumpGlib::ScheduleWork() {
   // we are sleeping in a poll that we will wake up.
   char msg = '!';
   if (HANDLE_EINTR(write(wakeup_pipe_write_, &msg, 1)) != 1) {
-    NOTREACHED() << "Could not write to the UI message loop wakeup pipe!";
+    NOTREACHED_IN_MIGRATION()
+        << "Could not write to the UI message loop wakeup pipe!";
   }
 }
 

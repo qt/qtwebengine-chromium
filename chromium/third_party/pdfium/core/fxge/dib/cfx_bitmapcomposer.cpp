@@ -4,10 +4,16 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxge/dib/cfx_bitmapcomposer.h"
 
-#include <string.h>
+#include <stddef.h>
 
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/fx_2d_size.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_safe_types.h"
@@ -15,7 +21,6 @@
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "third_party/base/check_op.h"
 
 CFX_BitmapComposer::CFX_BitmapComposer() = default;
 

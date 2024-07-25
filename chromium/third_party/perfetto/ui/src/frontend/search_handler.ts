@@ -13,8 +13,10 @@
 // limitations under the License.
 
 import {searchSegment} from '../base/binary_search';
+import {assertUnreachable} from '../base/logging';
 import {Actions} from '../common/actions';
 import {globals} from './globals';
+import {verticalScrollToTrack} from './scroll_helper';
 
 function setToPrevious(current: number) {
   let index = current - 1;
@@ -25,8 +27,7 @@ function setToPrevious(current: number) {
 }
 
 function setToNext(current: number) {
-  const index =
-      (current + 1) % globals.currentSearchResults.totalResults;
+  const index = (current + 1) % globals.currentSearchResults.totalResults;
   globals.dispatch(Actions.setSearchIndex({index}));
 }
 
@@ -35,7 +36,7 @@ export function executeSearch(reverse = false) {
   const vizWindow = globals.stateVisibleTime();
   const startNs = vizWindow.start;
   const endNs = vizWindow.end;
-  const currentTs = globals.currentSearchResults.tsStarts[index];
+  const currentTs = globals.currentSearchResults.tses[index];
 
   // If the value of |globals.currentSearchResults.totalResults| is 0,
   // it means that the query is in progress or no results are found.
@@ -45,10 +46,12 @@ export function executeSearch(reverse = false) {
 
   // If this is a new search or the currentTs is not in the viewport,
   // select the first/last item in the viewport.
-  if (index === -1 || currentTs < startNs || currentTs > endNs) {
+  if (
+    index === -1 ||
+    (currentTs !== -1n && (currentTs < startNs || currentTs > endNs))
+  ) {
     if (reverse) {
-      const [smaller] =
-          searchSegment(globals.currentSearchResults.tsStarts, endNs);
+      const [smaller] = searchSegment(globals.currentSearchResults.tses, endNs);
       // If there is no item in the viewport just go to the previous.
       if (smaller === -1) {
         setToPrevious(index);
@@ -56,8 +59,10 @@ export function executeSearch(reverse = false) {
         globals.dispatch(Actions.setSearchIndex({index: smaller}));
       }
     } else {
-      const [, larger] =
-          searchSegment(globals.currentSearchResults.tsStarts, startNs);
+      const [, larger] = searchSegment(
+        globals.currentSearchResults.tses,
+        startNs,
+      );
       // If there is no item in the viewport just go to the next.
       if (larger === -1) {
         setToNext(index);
@@ -79,28 +84,61 @@ export function executeSearch(reverse = false) {
 function selectCurrentSearchResult() {
   const searchIndex = globals.state.searchIndex;
   const source = globals.currentSearchResults.sources[searchIndex];
-  const currentId = globals.currentSearchResults.sliceIds[searchIndex];
+  const currentId = globals.currentSearchResults.eventIds[searchIndex];
   const trackKey = globals.currentSearchResults.trackKeys[searchIndex];
 
   if (currentId === undefined) return;
 
-  if (source === 'cpu') {
-    globals.makeSelection(
-        Actions.selectSlice({id: currentId, trackKey, scroll: true}),
-        {clearSearch: false},
-    );
-  } else if (source === 'log') {
-    globals.makeSelection(
-        Actions.selectLog({id: currentId, trackKey, scroll: true}),
-        {clearSearch: false},
-    );
-  } else {
-    // Search results only include slices from the slice table for now.
-    // When we include annotations we need to pass the correct table.
-    globals.makeSelection(
-        Actions.selectChromeSlice(
-            {id: currentId, trackKey, table: 'slice', scroll: true}),
-        {clearSearch: false},
-    );
+  switch (source) {
+    case 'track':
+      verticalScrollToTrack(trackKey, true);
+      break;
+    case 'cpu':
+      globals.setLegacySelection(
+        {
+          kind: 'SLICE',
+          id: currentId,
+          trackKey,
+        },
+        {
+          clearSearch: false,
+          pendingScrollId: currentId,
+          switchToCurrentSelectionTab: true,
+        },
+      );
+      break;
+    case 'log':
+      globals.setLegacySelection(
+        {
+          kind: 'LOG',
+          id: currentId,
+          trackKey,
+        },
+        {
+          clearSearch: false,
+          pendingScrollId: currentId,
+          switchToCurrentSelectionTab: true,
+        },
+      );
+      break;
+    case 'slice':
+      // Search results only include slices from the slice table for now.
+      // When we include annotations we need to pass the correct table.
+      globals.setLegacySelection(
+        {
+          kind: 'CHROME_SLICE',
+          id: currentId,
+          trackKey,
+          table: 'slice',
+        },
+        {
+          clearSearch: false,
+          pendingScrollId: currentId,
+          switchToCurrentSelectionTab: true,
+        },
+      );
+      break;
+    default:
+      assertUnreachable(source);
   }
 }

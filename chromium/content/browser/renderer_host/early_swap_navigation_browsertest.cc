@@ -207,7 +207,7 @@ IN_PROC_BROWSER_TEST_F(EarlySwapNavigationBrowserTest, BackNavigation) {
     // already locked to a.com.
     EXPECT_EQ(
         shell()->web_contents()->GetPrimaryMainFrame()->GetLastCommittedURL(),
-        GURL::EmptyGURL());
+        GURL());
     EXPECT_EQ(navigating_rfh->GetSiteInstance()->GetSiteInfo().site_url(),
               GURL("http://a.com"));
     EXPECT_TRUE(
@@ -495,7 +495,7 @@ IN_PROC_BROWSER_TEST_F(EarlySwapNavigationBrowserTest,
 // response, the early swap still happens.  Currently, this leaves an
 // about:blank page from the swapped-in RFH as the primary page.
 //
-// TODO(https://crbug.com/1480129): This case should be converted to show a new
+// TODO(crbug.com/40281212): This case should be converted to show a new
 // error page.
 IN_PROC_BROWSER_TEST_F(EarlySwapNavigationBrowserTest,
                        EarlySwapWith204Response) {
@@ -541,7 +541,7 @@ IN_PROC_BROWSER_TEST_F(EarlySwapNavigationBrowserTest,
       GURL("http://a.com"));
   EXPECT_EQ(
       shell()->web_contents()->GetPrimaryMainFrame()->GetLastCommittedURL(),
-      GURL::EmptyGURL());
+      GURL());
 }
 
 // Exercise a case where a back navigation performs an early RFH swap, but that

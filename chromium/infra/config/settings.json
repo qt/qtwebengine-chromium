@@ -1,8 +1,8 @@
 {
-    "project": "chromium-m122",
-    "project_title": "Chromium M122",
-    "ref": "refs/branch-heads/6261",
-    "chrome_project": "chrome-m122",
+    "project": "chromium-m126",
+    "project_title": "Chromium M126",
+    "ref": "refs/branch-heads/6478",
+    "chrome_project": "chrome-m126",
     "is_main": false,
     "platforms": {
         "android": {
@@ -14,6 +14,14 @@
             "sheriff_rotation": "chrome_browser_release"
         },
         "fuchsia": {
+            "description": "beta/stable",
+            "sheriff_rotation": "chrome_browser_release"
+        },
+        "ios": {
+            "description": "beta/stable",
+            "sheriff_rotation": "chrome_browser_release"
+        },
+        "linux": {
             "description": "beta/stable",
             "sheriff_rotation": "chrome_browser_release"
         },

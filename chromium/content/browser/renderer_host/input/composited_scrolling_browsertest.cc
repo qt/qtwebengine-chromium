@@ -7,6 +7,7 @@
 
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/numerics/angle_conversions.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -29,7 +30,6 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "third_party/blink/public/common/switches.h"
-#include "ui/gfx/geometry/angle_conversions.h"
 
 namespace {
 
@@ -179,7 +179,7 @@ IN_PROC_BROWSER_TEST_F(CompositedScrollingBrowserTest,
   double scroll_distance =
       DoTouchScroll(gfx::Point(50, 150), gfx::Vector2d(0, 100));
   // The scroll distance is increased due to the rotation of the scroller.
-  EXPECT_NEAR(100 / std::cos(gfx::DegToRad(30.f)), scroll_distance, 1.f);
+  EXPECT_NEAR(100 / std::cos(base::DegToRad(30.0f)), scroll_distance, 1.0f);
 }
 
 class CompositedScrollingMetricTest : public CompositedScrollingBrowserTest,
@@ -307,7 +307,15 @@ IN_PROC_BROWSER_TEST_P(CompositedScrollingMetricTest, BlockingEventHandlers) {
 // Tests the composited vs main thread scrolling histogram in the presence of
 // passive event handlers. These should behave the same as the case without any
 // event handlers at all.
-IN_PROC_BROWSER_TEST_P(CompositedScrollingMetricTest, PassiveEventHandlers) {
+
+// TODO(crbug.com/335028963): Re-enable this test
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_PassiveEventHandlers DISABLED_PassiveEventHandlers
+#else
+#define MAYBE_PassiveEventHandlers PassiveEventHandlers
+#endif
+IN_PROC_BROWSER_TEST_P(CompositedScrollingMetricTest,
+                       MAYBE_PassiveEventHandlers) {
   LoadURL(R"HTML(
     data:text/html;charset=utf-8,
     <!DOCTYPE html>

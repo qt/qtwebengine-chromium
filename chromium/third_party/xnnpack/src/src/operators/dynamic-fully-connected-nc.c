@@ -4,25 +4,27 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <math.h>
-
-#include <fp16/fp16.h>
 
 #include <xnnpack.h>
 #include <xnnpack/allocator.h>
 #include <xnnpack/common.h>
+#include <xnnpack/compute.h>
+#include <xnnpack/config.h>
 #include <xnnpack/log.h>
 #include <xnnpack/math.h>
-#include <xnnpack/microfnptr.h>
+#include <xnnpack/microkernel-type.h>
+#include <xnnpack/microparams.h>
+#include <xnnpack/operator-type.h>
 #include <xnnpack/operator.h>
-#include <xnnpack/operator-utils.h>
-#include <xnnpack/pack.h>
 #include <xnnpack/params.h>
 
+#include "pthreadpool.h"
+#include <fp16/fp16.h>
 
 static enum xnn_status create_dynamic_fully_connected_nc(
     uint32_t flags,
@@ -185,9 +187,9 @@ enum xnn_status xnn_create_dynamic_fully_connected_nc_f32(
     return xnn_status_invalid_parameter;
   }
 
-  if (output_min >= output_max) {
+  if (output_min > output_max) {
     xnn_log_error(
-      "failed to create %s operator with [%.7g, %.7g] output range: lower bound must be below upper bound",
+      "failed to create %s operator with [%.7g, %.7g] output range: lower bound must be less than or equal to upper bound",
       xnn_operator_type_to_string(xnn_operator_type_dynamic_fully_connected_nc_f32), output_min, output_max);
     return xnn_status_invalid_parameter;
   }

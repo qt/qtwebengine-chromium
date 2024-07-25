@@ -15,6 +15,7 @@
 
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "cc/cc_export.h"
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_impl.h"
@@ -80,9 +81,9 @@ class CC_EXPORT PictureLayerImpl
   bool HasValidTilePriorities() const override;
   bool RequiresHighResToDraw() const override;
   const PaintWorkletRecordMap& GetPaintWorkletRecords() const override;
-  bool IsDirectlyCompositedImage() const override;
   bool ScrollInteractionInProgress() const override;
   bool CurrentScrollCheckerboardsDueToNoRecording() const override;
+  void OnTilesAdded() override;
 
   // ImageAnimationController::AnimationDriver overrides.
   bool ShouldAnimate(PaintImage::Id paint_image_id) const override;
@@ -106,13 +107,6 @@ class CC_EXPORT PictureLayerImpl
   void GetContentsResourceId(viz::ResourceId* resource_id,
                              gfx::Size* resource_size,
                              gfx::SizeF* resource_uv_size) const override;
-
-  void SetNearestNeighbor(bool nearest_neighbor);
-
-  void SetDirectlyCompositedImageDefaultRasterScale(
-      const gfx::Vector2dF& scale);
-  // TODO(crbug.com/1196414): Support 2D scales in directly composited images.
-  void SetDirectlyCompositedImageDefaultRasterScale(float scale);
 
   size_t GPUMemoryUsageInBytes() const override;
 
@@ -213,6 +207,9 @@ class CC_EXPORT PictureLayerImpl
   // their contents scale.
   float CalculateDirectlyCompositedImageRasterScale() const;
 
+  bool IsDirectlyCompositedImage() const;
+  void UpdateDirectlyCompositedImageFromRasterSource();
+
   void SanityCheckTilingState() const;
 
   void GetDebugBorderProperties(SkColor4f* color, float* width) const override;
@@ -241,7 +238,8 @@ class CC_EXPORT PictureLayerImpl
   // node, has a will-change hint for one of the transform properties.
   bool AffectedByWillChangeTransformHint() const;
 
-  raw_ptr<PictureLayerImpl> twin_layer_ = nullptr;
+  // RAW_PTR_EXCLUSION: Performance reasons (based on analysis of speedometer3).
+  RAW_PTR_EXCLUSION PictureLayerImpl* twin_layer_ = nullptr;
 
   std::unique_ptr<PictureLayerTilingSet> tilings_ =
       CreatePictureLayerTilingSet();
@@ -305,7 +303,7 @@ class CC_EXPORT PictureLayerImpl
   // To avoid re-raster on scale changes, this may be different than the used
   // raster scale, see: |RecalculateRasterScales()| and
   // |CalculateDirectlyCompositedImageRasterScale()|.
-  // TODO(crbug.com/1196414): Support 2D scales in directly composited images.
+  // TODO(crbug.com/40176440): Support 2D scales in directly composited images.
   float directly_composited_image_default_raster_scale_ = 0;
 
   // Use this instead of |visible_layer_rect()| for tiling calculations. This

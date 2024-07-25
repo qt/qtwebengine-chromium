@@ -164,6 +164,7 @@ void DrmThread::CreateBuffer(gfx::AcceleratedWidget widget,
   // allocation should fail if it's not possible to allocate a BO_USE_SCANOUT
   // buffer in that case.
   if (!*buffer && usage != gfx::BufferUsage::SCANOUT &&
+      usage != gfx::BufferUsage::PROTECTED_SCANOUT &&
       usage != gfx::BufferUsage::PROTECTED_SCANOUT_VDA_WRITE &&
       usage != gfx::BufferUsage::SCANOUT_FRONT_RENDERING) {
     flags &= ~GBM_BO_USE_SCANOUT;
@@ -295,7 +296,7 @@ void DrmThread::SetWindowBounds(gfx::AcceleratedWidget widget,
 
 void DrmThread::SetCursor(gfx::AcceleratedWidget widget,
                           const std::vector<SkBitmap>& bitmaps,
-                          const absl::optional<gfx::Point>& location,
+                          const std::optional<gfx::Point>& location,
                           base::TimeDelta frame_delay) {
   TRACE_EVENT0("drm", "DrmThread::SetCursor");
   screen_manager_->GetWindow(widget)->SetCursor(bitmaps, location, frame_delay);
@@ -387,12 +388,12 @@ void DrmThread::RefreshNativeDisplays(
 
 void DrmThread::ConfigureNativeDisplays(
     const std::vector<display::DisplayConfigurationParams>& config_requests,
-    uint32_t modeset_flag,
+    display::ModesetFlags modeset_flags,
     base::OnceCallback<void(bool)> callback) {
   TRACE_EVENT0("drm", "DrmThread::ConfigureNativeDisplays");
 
   bool config_success =
-      display_manager_->ConfigureDisplays(config_requests, modeset_flag);
+      display_manager_->ConfigureDisplays(config_requests, modeset_flags);
   std::move(callback).Run(config_success);
 }
 
@@ -502,6 +503,14 @@ void DrmThread::SetPrivacyScreen(int64_t display_id,
   std::move(callback).Run(success);
 }
 
+void DrmThread::GetSeamlessRefreshRates(
+    int64_t display_id,
+    GetSeamlessRefreshRatesCallback callback) {
+  std::optional<std::vector<float>> ranges =
+      display_manager_->GetSeamlessRefreshRates(display_id);
+  std::move(callback).Run(std::move(ranges));
+}
+
 void DrmThread::AddDrmDeviceReceiver(
     mojo::PendingReceiver<ozone::mojom::DrmDevice> receiver) {
   TRACE_EVENT0("drm", "DrmThread::AddDrmDeviceReceiver");
@@ -518,19 +527,6 @@ void DrmThread::ProcessPendingTasks() {
   }
 
   pending_tasks_.clear();
-}
-
-void DrmThread::SetColorSpace(gfx::AcceleratedWidget widget,
-                              const gfx::ColorSpace& color_space) {
-  DCHECK(screen_manager_->GetWindow(widget));
-  HardwareDisplayController* controller =
-      screen_manager_->GetWindow(widget)->GetController();
-  if (!controller)
-    return;
-
-  const auto& crtc_controllers = controller->crtc_controllers();
-  for (const auto& crtc_controller : crtc_controllers)
-    display_manager_->SetColorSpace(crtc_controller->crtc(), color_space);
 }
 
 }  // namespace ui

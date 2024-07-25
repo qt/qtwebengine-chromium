@@ -4,14 +4,15 @@
 
 #include "components/attribution_reporting/suitable_origin.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "base/check.h"
+#include "base/not_fatal_until.h"
 #include "components/attribution_reporting/is_origin_suitable.h"
 #include "mojo/public/cpp/bindings/default_construct_tag.h"
 #include "net/base/schemeful_site.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -28,31 +29,31 @@ bool SuitableOrigin::IsSuitable(const url::Origin& origin) {
 }
 
 // static
-absl::optional<SuitableOrigin> SuitableOrigin::Create(url::Origin origin) {
+std::optional<SuitableOrigin> SuitableOrigin::Create(url::Origin origin) {
   if (!IsSuitable(origin))
-    return absl::nullopt;
+    return std::nullopt;
 
   return SuitableOrigin(std::move(origin));
 }
 
 // static
-absl::optional<SuitableOrigin> SuitableOrigin::Create(const GURL& url) {
+std::optional<SuitableOrigin> SuitableOrigin::Create(const GURL& url) {
   return Create(url::Origin::Create(url));
 }
 
 // static
-absl::optional<SuitableOrigin> SuitableOrigin::Deserialize(
+std::optional<SuitableOrigin> SuitableOrigin::Deserialize(
     std::string_view str) {
   return Create(GURL(str));
 }
 
 SuitableOrigin::SuitableOrigin(mojo::DefaultConstruct::Tag) {
-  DCHECK(!IsValid());
+  CHECK(!IsValid(), base::NotFatalUntil::M128);
 }
 
 SuitableOrigin::SuitableOrigin(url::Origin origin)
     : origin_(std::move(origin)) {
-  DCHECK(IsValid());
+  CHECK(IsValid(), base::NotFatalUntil::M128);
 }
 
 SuitableOrigin::~SuitableOrigin() = default;
@@ -66,7 +67,7 @@ SuitableOrigin::SuitableOrigin(SuitableOrigin&&) = default;
 SuitableOrigin& SuitableOrigin::operator=(SuitableOrigin&&) = default;
 
 std::string SuitableOrigin::Serialize() const {
-  DCHECK(IsValid());
+  CHECK(IsValid(), base::NotFatalUntil::M128);
   return origin_.Serialize();
 }
 

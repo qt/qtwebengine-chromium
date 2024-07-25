@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fgas/crt/cfgas_decimal.h"
 
 #include <math.h>
@@ -12,8 +17,8 @@
 #include <limits>
 #include <utility>
 
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_extension.h"
-#include "third_party/base/check.h"
 
 #define FXMATH_DECIMAL_SCALELIMIT 0x1c
 #define FXMATH_DECIMAL_RSHIFT32BIT(x) ((x) >> 0x10 >> 0x10)

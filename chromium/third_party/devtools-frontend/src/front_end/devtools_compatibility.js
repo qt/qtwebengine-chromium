@@ -405,12 +405,10 @@ window.DevToolsAPI = DevToolsAPI;
  */
 const EnumeratedHistogram = {
   ActionTaken: 'DevTools.ActionTaken',
-  BreakpointWithConditionAdded: 'DevTools.BreakpointWithConditionAdded',
   BreakpointEditDialogRevealedFrom: 'DevTools.BreakpointEditDialogRevealedFrom',
   CSSHintShown: 'DevTools.CSSHintShown',
   DeveloperResourceLoaded: 'DevTools.DeveloperResourceLoaded',
   DeveloperResourceScheme: 'DevTools.DeveloperResourceScheme',
-  ElementsSidebarTabShown: 'DevTools.Elements.SidebarTabShown',
   ExperimentDisabled: 'DevTools.ExperimentDisabled',
   ExperimentDisabledAtLaunch: 'DevTools.ExperimentDisabledAtLaunch',
   ExperimentEnabled: 'DevTools.ExperimentEnabled',
@@ -424,8 +422,6 @@ const EnumeratedHistogram = {
   Language: 'DevTools.Language',
   LighthouseModeRun: 'DevTools.LighthouseModeRun',
   LighthouseCategoryUsed: 'DevTools.LighthouseCategoryUsed',
-  LinearMemoryInspectorRevealedFrom: 'DevTools.LinearMemoryInspector.RevealedFrom',
-  LinearMemoryInspectorTarget: 'DevTools.LinearMemoryInspector.Target',
   ManifestSectionSelected: 'DevTools.ManifestSectionSelected',
   PanelClosed: 'DevTools.PanelClosed',
   PanelShown: 'DevTools.PanelShown',
@@ -449,11 +445,7 @@ const EnumeratedHistogram = {
   ColorConvertedFrom: 'DevTools.ColorConvertedFrom',
   ColorPickerOpenedFrom: 'DevTools.ColorPickerOpenedFrom',
   CSSPropertyDocumentation: 'DevTools.CSSPropertyDocumentation',
-  InlineScriptParsed: 'DevTools.InlineScriptParsed',
-  VMInlineScriptTypeShown: 'DevTools.VMInlineScriptShown',
-  BreakpointsRestoredFromStorageCount: 'DevTools.BreakpointsRestoredFromStorageCount',
   SwatchActivated: 'DevTools.SwatchActivated',
-  BadgeActivated: 'DevTools.BadgeActivated',
   AnimationPlaybackRateChanged: 'DevTools.AnimationPlaybackRateChanged',
   AnimationPointDragged: 'DevTools.AnimationPointDragged',
   LegacyResourceTypeFilterNumberOfSelectedChanged: 'DevTools.LegacyResourceTypeFilterNumberOfSelectedChanged',
@@ -680,6 +672,14 @@ const InspectorFrontendHostImpl = class {
 
   /**
    * @override
+   * @param {string} query
+   */
+  openSearchResultsInNewTab(query) {
+    DevToolsAPI.sendMessageToEmbedder('openSearchResultsInNewTab', [query], null);
+  }
+
+  /**
+   * @override
    * @param {string} fileSystemPath
    */
   showItemInFolder(fileSystemPath) {
@@ -691,9 +691,10 @@ const InspectorFrontendHostImpl = class {
    * @param {string} url
    * @param {string} content
    * @param {boolean} forceSaveAs
+   * @param {boolean} isBase64
    */
-  save(url, content, forceSaveAs) {
-    DevToolsAPI.sendMessageToEmbedder('save', [url, content, forceSaveAs], null);
+  save(url, content, forceSaveAs, isBase64) {
+    DevToolsAPI.sendMessageToEmbedder('save', [url, content, forceSaveAs, isBase64], null);
   }
 
   /**
@@ -1003,6 +1004,14 @@ const InspectorFrontendHostImpl = class {
 
   /**
    * @override
+   * @param {InspectorFrontendHostAPI.ResizeEvent} resizeEvent
+   */
+  recordResize(resizeEvent) {
+    DevToolsAPI.sendMessageToEmbedder('recordResize', [resizeEvent], null);
+  }
+
+  /**
+   * @override
    * @param {InspectorFrontendHostAPI.ClickEvent} clickEvent
    */
   recordClick(clickEvent) {
@@ -1120,10 +1129,19 @@ const InspectorFrontendHostImpl = class {
 
   /**
    * @param {string} request
+   * @param {number} streamId
    * @param {function(!InspectorFrontendHostAPI.DoAidaConversationResult): void} cb
    */
-  doAidaConversation(request, cb) {
-    DevToolsAPI.sendMessageToEmbedder('doAidaConversation', [request], cb);
+  doAidaConversation(request, streamId, cb) {
+    DevToolsAPI.sendMessageToEmbedder('doAidaConversation', [request, streamId], cb);
+  }
+
+  /**
+   * @param {string} request
+   * @param {function(!InspectorFrontendHostAPI.DoAidaConversationResult): void} cb
+   */
+  registerAidaClientEvent(request) {
+    DevToolsAPI.sendMessageToEmbedder('registerAidaClientEvent', [request]);
   }
 };
 

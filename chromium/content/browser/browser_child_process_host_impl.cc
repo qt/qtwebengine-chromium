@@ -21,6 +21,7 @@
 #include "base/metrics/persistent_histogram_allocator.h"
 #include "base/metrics/persistent_memory_allocator.h"
 #include "base/observer_list.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/single_thread_task_runner.h"
@@ -28,11 +29,11 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/metrics/histogram_controller.h"
 #include "components/tracing/common/trace_startup_config.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_host_impl.h"
-#include "content/browser/metrics/histogram_controller.h"
 #include "content/browser/metrics/histogram_shared_memory_config.h"
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
@@ -184,13 +185,13 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
 
   data_.id = ChildProcessHostImpl::GenerateChildProcessUniqueId();
 
+  // Create a persistent memory segment for subprocess histograms.
+  CreateMetricsAllocator();
+
   child_process_host_ = ChildProcessHost::Create(this, ipc_mode);
 
   g_child_process_list.Get().push_back(this);
   GetContentClient()->browser()->BrowserChildProcessHostCreated(this);
-
-  // Create a persistent memory segment for subprocess histograms.
-  CreateMetricsAllocator();
 }
 
 BrowserChildProcessHostImpl::~BrowserChildProcessHostImpl() {
@@ -324,17 +325,11 @@ void BrowserChildProcessHostImpl::LaunchWithoutExtraCommandLineSwitches(
   static const char* const kForwardSwitches[] = {
       switches::kDisableInProcessStackTraces,
       switches::kDisableBestEffortTasks,
-      switches::kDisableLogging,
-      switches::kEnableLogging,
       switches::kIPCConnectionTimeout,
       switches::kLogBestEffortTasks,
-      switches::kLogFile,
-      switches::kLoggingLevel,
       switches::kMojoCoreLibraryPath,
       switches::kPerfettoDisableInterning,
       switches::kTraceToConsole,
-      switches::kV,
-      switches::kVModule,
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kForwardSwitches);
 
@@ -362,7 +357,8 @@ void BrowserChildProcessHostImpl::LaunchWithoutExtraCommandLineSwitches(
       base::BindRepeating(&BrowserChildProcessHostImpl::OnMojoError,
                           weak_factory_.GetWeakPtr(),
                           base::SingleThreadTaskRunner::GetCurrentDefault()),
-      std::move(file_data), terminate_on_shutdown);
+      std::move(file_data), metrics_shared_region_.Duplicate(),
+      terminate_on_shutdown);
   ShareMetricsAllocatorToProcess();
 
   if (!has_legacy_ipc_channel_)
@@ -397,7 +393,7 @@ ChildProcessTerminationInfo BrowserChildProcessHostImpl::GetTerminationInfo(
   if (!child_process_launcher_) {
     // If the delegate doesn't use Launch() helper.
     ChildProcessTerminationInfo info;
-    // TODO(crbug.com/1412835): iOS is single process mode for now.
+    // TODO(crbug.com/40255458): iOS is single process mode for now.
 #if !BUILDFLAG(IS_IOS)
     info.status = base::GetTerminationStatus(data_.GetProcess().Handle(),
                                              &info.exit_code);
@@ -445,11 +441,17 @@ void BrowserChildProcessHostImpl::OnBadMessageReceived(
     const IPC::Message& message) {
   std::string log_message = "Bad message received of type: ";
   if (message.IsValid()) {
-    log_message += std::to_string(message.type());
+    log_message += base::NumberToString(message.type());
   } else {
     log_message += "unknown";
   }
   TerminateOnBadMessageReceived(log_message);
+}
+
+void BrowserChildProcessHostImpl::BindChildHistogramFetcherFactory(
+    mojo::PendingReceiver<metrics::mojom::ChildHistogramFetcherFactory>
+        factory) {
+  GetHost()->BindReceiver(std::move(factory));
 }
 
 void BrowserChildProcessHostImpl::TerminateOnBadMessageReceived(
@@ -562,13 +564,14 @@ bool BrowserChildProcessHostImpl::Send(IPC::Message* message) {
 void BrowserChildProcessHostImpl::CreateMetricsAllocator() {
   // Create a persistent memory segment for subprocess histograms only if
   // they're active in the browser.
-  // TODO(crbug.com/1290457): Remove this.
+  // TODO(crbug.com/40818143): Remove this.
   if (!base::GlobalHistogramAllocator::Get()) {
+    DVLOG(1) << "GlobalHistogramAllocator not configured";
     return;
   }
 
   // This class is not expected to be used for renderer child processes.
-  // TODO(crbug/1028263): CHECK, once proven that this scenario does not
+  // TODO(crbug.com/40109064): CHECK, once proven that this scenario does not
   // occur in the wild, else remove dump and just return early if disproven.
   if (data_.process_type == PROCESS_TYPE_RENDERER) {
     base::debug::DumpWithoutCrashing();
@@ -579,28 +582,48 @@ void BrowserChildProcessHostImpl::CreateMetricsAllocator() {
   auto shared_memory_config =
       GetHistogramSharedMemoryConfig(data_.process_type);
   if (!shared_memory_config.has_value()) {
+    DVLOG(1) << "No histogram shared memory configured: " << "pid=" << data_.id
+             << "; process_type='"
+             << GetProcessTypeNameInEnglish(data_.process_type) << "'";
     return;
   }
 
   // Create the shared memory region and histogram allocator.
   auto shared_memory = base::HistogramSharedMemory::Create(
       data_.id, shared_memory_config.value());
+
   if (!shared_memory.has_value()) {
+    DVLOG(1) << "Failed to create histogram shared memory for pid=" << data_.id
+             << "; process_type='"
+             << GetProcessTypeNameInEnglish(data_.process_type) << "'";
     return;
   }
 
-  // Move the memory region and allocator out of the |shared_memory| helper.
-  metrics_allocator_ = shared_memory->TakeAllocator();
-  metrics_shared_region_ = shared_memory->TakeRegion();
+  DVLOG(1) << "Createdhistogram shared memory for pid=" << data_.id
+           << "; process_type='"
+           << GetProcessTypeNameInEnglish(data_.process_type) << "'";
+
+  metrics_shared_region_ = std::move(shared_memory->region);
+  metrics_allocator_ = std::move(shared_memory->allocator);
 }
 
 void BrowserChildProcessHostImpl::ShareMetricsAllocatorToProcess() {
+  // Only get histograms from content process types; skip "embedder" process
+  // types.
+  metrics::HistogramController::ChildProcessMode histogram_mode =
+      data_.process_type >= PROCESS_TYPE_CONTENT_END
+          ? metrics::HistogramController::ChildProcessMode::kPingOnly
+          : metrics::HistogramController::ChildProcessMode::kGetHistogramData;
+
   if (metrics_allocator_) {
-    HistogramController::GetInstance()->SetHistogramMemory<ChildProcessHost>(
-        GetHost(), std::move(metrics_shared_region_));
+    metrics::HistogramController::GetInstance()->SetHistogramMemory(
+        this, std::move(metrics_shared_region_), histogram_mode);
+    DVLOG(1) << "metrics_shared_region_ has been moved: " << "pid=" << data_.id
+             << "; process_type="
+             << GetProcessTypeNameInEnglish(data_.process_type);
   } else {
-    HistogramController::GetInstance()->SetHistogramMemory<ChildProcessHost>(
-        GetHost(), base::WritableSharedMemoryRegion());
+    metrics::HistogramController::GetInstance()->SetHistogramMemory(
+        this, base::UnsafeSharedMemoryRegion(), histogram_mode);
   }
 }
 
@@ -756,7 +779,7 @@ void BrowserChildProcessHostImpl::TerminateProcessForBadMessage(
           switches::kDisableKillAfterBadIPC)) {
     return;
   }
-  LOG(ERROR) << "Terminating child process for bad message: " << error;
+  DVLOG(1) << "Terminating child process for bad message: " << error;
   process->child_process_launcher_->Terminate(RESULT_CODE_KILLED_BAD_MESSAGE);
 }
 

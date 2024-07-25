@@ -28,6 +28,8 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/not_fatal_until.h"
+#include "base/notreached.h"
 #include "base/observer_list.h"
 #include "base/rand_util.h"
 #include "base/ranges/algorithm.h"
@@ -43,7 +45,7 @@
 #include "components/search_engines/enterprise_site_search_manager.h"
 #include "components/search_engines/keyword_web_data_service.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_service.h"
-#include "components/search_engines/search_engine_choice_utils.h"
+#include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/search_engines_pref_names.h"
 #include "components/search_engines/search_terms_data.h"
@@ -485,6 +487,13 @@ void TemplateURLService::RegisterProfilePrefs(
     registry->RegisterStringPref(
         prefs::kDefaultSearchProviderChoiceScreenCompletionVersion,
         std::string());
+    registry->RegisterDictionaryPref(
+        prefs::kDefaultSearchProviderPendingChoiceScreenDisplayState);
+
+#if BUILDFLAG(IS_IOS)
+    registry->RegisterIntegerPref(
+        prefs::kDefaultSearchProviderChoiceScreenSkippedCount, 0);
+#endif
   }
 }
 
@@ -539,19 +548,71 @@ bool TemplateURLService::ShowInDefaultList(const TemplateURL* t_url) const {
 }
 
 bool TemplateURLService::ShowInActivesList(const TemplateURL* t_url) const {
-  return t_url->is_active() == TemplateURLData::ActiveStatus::kTrue ||
-         (t_url->created_by_policy() ==
-              TemplateURLData::CreatedByPolicy::kSiteSearch &&
-          t_url->featured_by_policy());
+  return t_url->is_active() == TemplateURLData::ActiveStatus::kTrue;
 }
 
 bool TemplateURLService::HiddenFromLists(const TemplateURL* t_url) const {
-  // Hide synthetic entries created by SiteSearchSettings policy, since they
-  // are only used for discoverability and the corresponding entry that doesn't
-  // start with "@" is already shown in the actives list.
-  return t_url->created_by_policy() ==
+  switch (t_url->created_by_policy()) {
+    case TemplateURLData::CreatedByPolicy::kNoPolicy:
+      // Hide if the preferred search engine for the keyword is created by
+      // policy. The call to `GetTemplateURLForKeyword` already ensure
+      // prioritization of search engines, so there is no need to replicate the
+      // logic here.
+      return GetTemplateURLForKeyword(t_url->keyword())->created_by_policy() !=
+             TemplateURLData::CreatedByPolicy::kNoPolicy;
+
+    case TemplateURLData::CreatedByPolicy::kDefaultSearchProvider:
+      return false;
+
+    case TemplateURLData::CreatedByPolicy::kSiteSearch: {
+      // Always show featured Enterprise site search engines.
+      if (t_url->featured_by_policy()) {
+        return false;
+      }
+
+      // A featured site search engine with keyword "work" is represented by two
+      // TemplateURLs in the service:
+      // - One with `featured_by_policy = true` and keyword "@work"
+      // - One with `featured_by_policy = false` and keyword "work"
+      //
+      // In the settings page, we want to show only one entry with both keywords
+      // separated by a comma ("@work, work"). The logic below hides the one
+      // that doesn't start with the "@" symbol.
+      //
+      // It also handles one corner case when the user explicitely created a
+      // site search engine with keyword "work", which overrides the one with
+      // the same keyword created by policy. In that case, we want to show both
+      // the Enterprise one with keyword "@work" and the user-defined one.
+      const TemplateURL* t_url_with_at =
+          GetTemplateURLForKeyword(u"@" + t_url->keyword());
+      return t_url_with_at &&
+             t_url_with_at->created_by_policy() ==
+                 TemplateURLData::CreatedByPolicy::kSiteSearch &&
+             t_url_with_at->featured_by_policy();
+    }
+  }
+}
+
+bool TemplateURLService::FeaturedOverridesNonFeatured(
+    const TemplateURL* template_url) const {
+  CHECK(template_url);
+
+  if (template_url->created_by_policy() !=
+          TemplateURLData::CreatedByPolicy::kSiteSearch ||
+      !template_url->featured_by_policy()) {
+    return false;
+  }
+
+  const std::u16string& keyword = template_url->keyword();
+  CHECK(!keyword.empty());
+  CHECK_EQ(keyword[0], u'@');
+
+  const TemplateURL* turl_without_at =
+      GetTemplateURLForKeyword(std::u16string(keyword, 1));
+  return turl_without_at &&
+         turl_without_at->created_by_policy() ==
              TemplateURLData::CreatedByPolicy::kSiteSearch &&
-         t_url->featured_by_policy();
+         !turl_without_at->featured_by_policy();
 }
 
 void TemplateURLService::AddMatchingKeywords(const std::u16string& prefix,
@@ -795,9 +856,10 @@ TemplateURLService::TemplateURLVector TemplateURLService::GetTemplateURLs() {
   return result;
 }
 
-TemplateURLService::OwnedTemplateURLVector
-TemplateURLService::GetTemplateURLsForChoiceScreen() {
-  OwnedTemplateURLVector result;
+std::unique_ptr<search_engines::ChoiceScreenData>
+TemplateURLService::GetChoiceScreenData() {
+  OwnedTemplateURLVector owned_template_urls;
+  bool was_current_default_inserted = false;
 
   // We call `GetPrepopulatedEngines` instead of
   // `GetSearchProvidersUsingLoadedEngines` because the latter will return the
@@ -809,11 +871,17 @@ TemplateURLService::GetTemplateURLsForChoiceScreen() {
       TemplateURLPrepopulateData::GetPrepopulatedEngines(
           prefs_, search_engine_choice_service_,
           /*default_search_provider_index=*/nullptr,
-          /*include_current_default=*/true, /*template_url_service=*/this);
+          /*include_current_default=*/true, /*template_url_service=*/this,
+          /*was_current_default_inserted=*/&was_current_default_inserted);
   for (const auto& engine : engines) {
-    result.push_back(std::make_unique<TemplateURL>(*engine));
+    owned_template_urls.push_back(std::make_unique<TemplateURL>(*engine));
   }
-  return result;
+
+  return std::make_unique<search_engines::ChoiceScreenData>(
+      std::move(owned_template_urls),
+      search_engine_choice_service_->GetCountryId(),
+      /*list_is_modified_by_current_default=*/was_current_default_inserted,
+      search_terms_data());
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -881,11 +949,13 @@ void TemplateURLService::SetIsActiveTemplateURL(TemplateURL* url,
       BuiltinEngineType::KEYWORD_MODE_ENGINE_TYPE_MAX);
 }
 
-TemplateURL* TemplateURLService::CreatePlayAPISearchEngine(
-    const std::u16string& title,
+#if BUILDFLAG(IS_ANDROID)
+// static
+TemplateURLData TemplateURLService::CreatePlayAPITemplateURLData(
     const std::u16string& keyword,
+    const std::u16string& name,
     const std::string& search_url,
-    const std::string& suggestions_url,
+    const std::string& suggest_url,
     const std::string& favicon_url,
     const std::string& new_tab_url,
     const std::string& image_url,
@@ -893,20 +963,11 @@ TemplateURL* TemplateURLService::CreatePlayAPISearchEngine(
     const std::string& image_translate_url,
     const std::string& image_translate_source_language_param_key,
     const std::string& image_translate_target_language_param_key) {
-  // It's the caller's responsibility to check that there are no existing
-  // Play API for engine, but still CHECK this to avoid polluting the database.
-  // Currently, we never update Play API engine data. If we ever want to do
-  // that, we need to change how this method behaves.
-  const auto match_range = keyword_to_turl_.equal_range(keyword);
-  for (auto it = match_range.first; it != match_range.second; ++it) {
-    CHECK(!it->second->created_from_play_api());
-  }
-
   TemplateURLData data;
-  data.SetShortName(title);
+  data.SetShortName(name);
   data.SetKeyword(keyword);
   data.SetURL(search_url);
-  data.suggestions_url = suggestions_url;
+  data.suggestions_url = suggest_url;
   data.favicon_url = GURL(favicon_url);
   data.new_tab_url = new_tab_url;
   data.image_url = image_url;
@@ -921,12 +982,101 @@ TemplateURL* TemplateURLService::CreatePlayAPISearchEngine(
   // auto-replaceable by an auto-generated engine as the user browses.
   data.safe_for_autoreplace = false;
   data.is_active = TemplateURLData::ActiveStatus::kTrue;
-
-  // The Play API search engine is not guaranteed to be the best engine for
-  // |keyword|, if there are user-defined, extension, or policy engines.
-  // In practice on Android, this rarely happens, as there is only policy.
-  return Add(std::make_unique<TemplateURL>(data));
+  return data;
 }
+
+bool TemplateURLService::ResetPlayAPISearchEngine(
+    const TemplateURLData& new_play_api_turl_data) {
+  CHECK(loaded());
+  CHECK(new_play_api_turl_data.created_from_play_api);
+
+  auto new_play_api_turl =
+      std::make_unique<TemplateURL>(new_play_api_turl_data);
+
+  SCOPED_CRASH_KEY_NUMBER("ResetPlayAPISearchEngine", "OldDspSource",
+                          default_search_provider_source_);
+  SCOPED_CRASH_KEY_STRING64(
+      "ResetPlayAPISearchEngine", "OldDspKw",
+      default_search_provider_
+          ? base::UTF16ToUTF8(default_search_provider_->keyword())
+          : "<null>");
+  std::u16string old_play_keyword;
+
+  Scoper scoper{this};
+
+  // Part 1. Add the new play engine
+  // Can fail if there is an old play engine or if there is a better engine
+  // matching the new keyword.
+
+  // 1.A) The Play API search engine is not guaranteed to be the best engine for
+  // `keyword`, if there are user-defined, extension, or policy engines that can
+  // take precedence. In practice on Android, this rarely happens, as only
+  // policy engines are possible.
+  const auto match_range =
+      keyword_to_turl_.equal_range(new_play_api_turl->keyword());
+  for (auto it = match_range.first; it != match_range.second; ++it) {
+    TemplateURL* same_keyword_engine = it->second;
+    if (same_keyword_engine->created_from_play_api()) {
+      // We will look into replacing this one below, don't consider it a blocker
+      // yet.
+      continue;
+    }
+
+    if (same_keyword_engine->IsBetterThanConflictingEngine(
+            new_play_api_turl.get())) {
+      // We won't be able to add the new search engine at all.
+      return false;
+    }
+  }
+
+  // 1.B) We can only have 1 Play API engine at a time. we have to remove the
+  // old one, if it exits. If it's the current default, we'll have to remove it
+  // first.
+  auto found = base::ranges::find_if(template_urls_,
+                                     &TemplateURL::created_from_play_api);
+  if (found != template_urls_.cend()) {
+    // There is already an old Play API engine. To proceed we'll need to remove
+    // it.
+    TemplateURL* old_play_api_engine = found->get();
+    old_play_keyword = old_play_api_engine->keyword();
+    if (old_play_api_engine == default_search_provider_) {
+      // The DSE can't be removed from the loaded engines. We need to clear the
+      // DSE first. The old Play API engine should be replaceable, since having
+      // it as DSE means that we don't have a policy-enforced engine, and we
+      // know that the incoming engine otherwise meets the criteria to be to be
+      // set as DSE.
+      CHECK(CanMakeDefault(new_play_api_turl.get()), base::NotFatalUntil::M129);
+
+      // Clearing the member is OK here, we just have to make sure it is
+      // re-populated by the time `scoper` is cleared.
+      default_search_provider_ = nullptr;
+    }
+
+    Remove(old_play_api_engine);
+  }
+
+  SCOPED_CRASH_KEY_STRING64("ResetPlayAPISearchEngine", "OldPlayKw",
+                            base::UTF16ToUTF8(old_play_keyword));
+
+  TemplateURL* new_play_api_turl_ptr = Add(std::move(new_play_api_turl));
+
+  // Adding the engine should be successful, we already checked for blockers
+  // above.
+  CHECK(new_play_api_turl_ptr, base::NotFatalUntil::M129);
+
+  // Part 2: Set as DSE.
+  // It is still possible that policies control the DSE, so ensure we don't
+  // break that.
+  if (CanMakeDefault(new_play_api_turl_ptr)) {
+    SetUserSelectedDefaultSearchProvider(
+        new_play_api_turl_ptr,
+        search_engines::ChoiceMadeLocation::kChoiceScreen);
+  }
+
+  CHECK(default_search_provider_, base::NotFatalUntil::M132);
+  return true;
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 void TemplateURLService::UpdateProviderFavicons(
     const GURL& potential_search_url,
@@ -963,8 +1113,7 @@ bool TemplateURLService::CanMakeDefault(const TemplateURL* url) const {
               DefaultSearchManager::FROM_FALLBACK) &&
          (url != GetDefaultSearchProvider()) &&
          url->url_ref().SupportsReplacement(search_terms_data()) &&
-         (url->type() == TemplateURL::NORMAL) &&
-         (url->starter_pack_id() != TemplateURLStarterPackData::kTabs);
+         (url->type() == TemplateURL::NORMAL) && (url->starter_pack_id() == 0);
 }
 
 void TemplateURLService::SetUserSelectedDefaultSearchProvider(
@@ -988,12 +1137,22 @@ void TemplateURLService::SetUserSelectedDefaultSearchProvider(
       ApplyDefaultSearchChange(url ? &url->data() : nullptr,
                                DefaultSearchManager::FROM_USER);
       selection_added = true;
+    } else {
+      // When we are setting the search engine choice from choice screens,
+      // the DSP source is expected to allow the search engine to be changed by
+      // the user. But theoretically there is a possibility that a policy
+      // kicked in after a choice screen was shown, that could be a way to
+      // enter this state
+      // TODO(crbug.com/328041262): Investigate mitigation options.
+      CHECK_NE(choice_made_location, search_engines::ChoiceMadeLocation::kOther,
+               base::NotFatalUntil::M127);
     }
   } else {
     // We rely on the DefaultSearchManager to call ApplyDefaultSearchChange if,
     // in fact, the effective DSE changes.
     if (url) {
-      default_search_manager_.SetUserSelectedDefaultSearchEngine(url->data());
+      default_search_manager_.SetUserSelectedDefaultSearchEngine(
+          url->data(), choice_made_location);
       selection_added = true;
     } else {
       default_search_manager_.ClearUserSelectedDefaultSearchEngine();
@@ -1053,11 +1212,11 @@ GURL TemplateURLService::GenerateSearchURLForDefaultSearchProvider(
                           : GURL();
 }
 
-absl::optional<TemplateURLService::SearchMetadata>
+std::optional<TemplateURLService::SearchMetadata>
 TemplateURLService::ExtractSearchMetadata(const GURL& url) const {
   const TemplateURL* template_url = GetTemplateURLForHost(url.host());
   if (!template_url) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   GURL normalized_url;
@@ -1070,7 +1229,7 @@ TemplateURLService::ExtractSearchMetadata(const GURL& url) const {
                           /*normalize_search_terms=*/true, &normalized_url,
                           &normalized_search_terms);
   if (!is_valid_search_url) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   return SearchMetadata{template_url, normalized_url, normalized_search_terms};
@@ -1347,12 +1506,15 @@ void TemplateURLService::OnWebDataServiceRequestDone(
 
 std::u16string TemplateURLService::GetKeywordShortName(
     const std::u16string& keyword,
-    bool* is_omnibox_api_extension_keyword) const {
+    bool* is_omnibox_api_extension_keyword,
+    bool* is_ask_google_keyword) const {
   const TemplateURL* template_url = GetTemplateURLForKeyword(keyword);
 
   // TODO(sky): Once LocationBarView adds a listener to the TemplateURLService
   // to track changes to the model, this should become a DCHECK.
   if (template_url) {
+    *is_ask_google_keyword = template_url->starter_pack_id() ==
+                             TemplateURLStarterPackData::kAskGoogle;
     *is_omnibox_api_extension_keyword =
         template_url->type() == TemplateURL::OMNIBOX_API_EXTENSION;
     return template_url->AdjustedShortNameForLocaleDirection();
@@ -1417,7 +1579,7 @@ syncer::SyncDataList TemplateURLService::GetAllSyncData(
   return current_data;
 }
 
-absl::optional<syncer::ModelError> TemplateURLService::ProcessSyncChanges(
+std::optional<syncer::ModelError> TemplateURLService::ProcessSyncChanges(
     const base::Location& from_here,
     const syncer::SyncChangeList& change_list) {
   if (!models_associated_) {
@@ -1436,7 +1598,7 @@ absl::optional<syncer::ModelError> TemplateURLService::ProcessSyncChanges(
       &dsp_change_origin_, DSP_CHANGE_SYNC_UNINTENTIONAL);
 
   syncer::SyncChangeList new_changes;
-  absl::optional<syncer::ModelError> error;
+  std::optional<syncer::ModelError> error;
   for (auto iter = change_list.begin(); iter != change_list.end(); ++iter) {
     DCHECK_EQ(syncer::SEARCH_ENGINES, iter->sync_data().GetDataType());
 
@@ -1522,7 +1684,7 @@ base::WeakPtr<syncer::SyncableService> TemplateURLService::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-absl::optional<syncer::ModelError> TemplateURLService::MergeDataAndStartSyncing(
+std::optional<syncer::ModelError> TemplateURLService::MergeDataAndStartSyncing(
     syncer::ModelType type,
     const syncer::SyncDataList& initial_sync_data,
     std::unique_ptr<syncer::SyncChangeProcessor> sync_processor) {
@@ -1628,7 +1790,7 @@ absl::optional<syncer::ModelError> TemplateURLService::MergeDataAndStartSyncing(
   PruneSyncChanges(&sync_data_map, &new_changes);
 
   LogDuplicatesHistogram(GetTemplateURLs());
-  absl::optional<syncer::ModelError> error =
+  std::optional<syncer::ModelError> error =
       sync_processor_->ProcessSyncChanges(FROM_HERE, new_changes);
   if (!error.has_value()) {
     // The ACTION_DELETEs from this set are processed. Empty it so we don't try
@@ -1690,9 +1852,8 @@ std::string TemplateURLService::GetSessionToken() {
   base::TimeTicks current_time(base::TimeTicks::Now());
   // Renew token if it expired.
   if (current_time > token_expiration_time_) {
-    const size_t kTokenBytes = 12;
-    std::string raw_data;
-    base::RandBytes(base::WriteInto(&raw_data, kTokenBytes + 1), kTokenBytes);
+    std::array<uint8_t, 12> raw_data;
+    base::RandBytes(raw_data);
     base::Base64UrlEncode(raw_data,
                           base::Base64UrlEncodePolicy::INCLUDE_PADDING,
                           &current_token_);
@@ -1960,7 +2121,8 @@ void TemplateURLService::ApplyInitializersForTesting(
 
     // Set the first provided identifier to be the default.
     if (i == 0) {
-      default_search_manager_.SetUserSelectedDefaultSearchEngine(data);
+      default_search_manager_.SetUserSelectedDefaultSearchEngine(
+          data, search_engines::ChoiceMadeLocation::kOther);
     }
   }
 }
@@ -2144,10 +2306,18 @@ void TemplateURLService::UpdateTemplateURLIfPrepopulated(
 }
 
 void TemplateURLService::MaybeUpdateDSEViaPrefs(TemplateURL* synced_turl) {
+  // The DSE is not synced anymore when the `kSearchEngineChoiceTrigger` feature
+  // is enabled.
+  // TODO(b/341011768): Revisit whether we need to keep the DSE sync code.
+  if (search_engines::IsChoiceScreenFlagEnabled(
+          search_engines::ChoicePromo::kAny)) {
+    return;
+  }
+
   if (prefs_ && (synced_turl->sync_guid() ==
                  GetDefaultSearchProviderPrefValue(*prefs_))) {
     default_search_manager_.SetUserSelectedDefaultSearchEngine(
-        synced_turl->data());
+        synced_turl->data(), search_engines::ChoiceMadeLocation::kOther);
   }
 }
 
@@ -2727,8 +2897,19 @@ void TemplateURLService::OnDefaultSearchProviderGUIDChanged() {
   }
 
   const TemplateURL* turl = GetTemplateURLForGUID(new_guid);
-  if (turl)
-    default_search_manager_.SetUserSelectedDefaultSearchEngine(turl->data());
+  if (turl) {
+    // The choice location should remain the same as it was before calling
+    // `OnDefaultSearchProviderGUIDChanged` if we the search engine wasn't
+    // modified.
+    search_engines::ChoiceMadeLocation choice_location =
+        GetDefaultSearchProvider()->prepopulate_id() == turl->prepopulate_id()
+            ? default_search_manager_
+                  .GetChoiceMadeLocationForUserSelectedDefaultSearchEngine()
+            : search_engines::ChoiceMadeLocation::kOther;
+
+    default_search_manager_.SetUserSelectedDefaultSearchEngine(turl->data(),
+                                                               choice_location);
+  }
 }
 
 void TemplateURLService::MaybeSetIsActiveSearchEngines(
@@ -2915,7 +3096,7 @@ bool TemplateURLService::MatchesDefaultSearchProvider(TemplateURL* turl) const {
 std::unique_ptr<EnterpriseSiteSearchManager>
 TemplateURLService::GetEnterpriseSiteSearchManager(PrefService* prefs) {
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_CHROMEOS_ASH)
+    BUILDFLAG(IS_CHROMEOS)
   return base::FeatureList::IsEnabled(omnibox::kSiteSearchSettingsPolicy)
              ? std::make_unique<EnterpriseSiteSearchManager>(
                    prefs, base::BindRepeating(

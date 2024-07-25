@@ -14,7 +14,9 @@
 #include "build/build_config.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/prefs/pref_service.h"
+#include "components/safe_browsing/core/browser/db/hit_report.h"
 #include "components/safe_browsing/core/common/features.h"
+#include "components/security_interstitials/core/unsafe_resource.h"
 #include "crypto/sha2.h"
 #include "net/base/ip_address.h"
 #include "net/base/url_util.h"
@@ -46,7 +48,7 @@ std::string ShortURLForReporting(const GURL& url) {
     if (comma_pos != std::string::npos && comma_pos != spec.size() - 1) {
       std::string hash_value = crypto::SHA256HashString(spec);
       spec.erase(comma_pos + 1);
-      spec += base::HexEncode(hash_value.data(), hash_value.size());
+      spec += base::HexEncode(hash_value);
     }
   }
   return spec;
@@ -101,8 +103,8 @@ bool CanGetReputationOfUrl(const GURL& url) {
     return false;
   }
   const std::string hostname = url.host();
-  // A valid hostname should be longer than 3 characters and have at least 1
-  // dot.
+  // There is no reason to send URLs with very short or single-label hosts.
+  // The Safe Browsing server does not check them.
   if (hostname.size() < 4 || base::ranges::count(hostname, '.') < 1) {
     return false;
   }
@@ -142,6 +144,29 @@ bool ErrorIsRetriable(int net_error, int http_error) {
   return (net_error == net::ERR_INTERNET_DISCONNECTED ||
           net_error == net::ERR_NETWORK_CHANGED) &&
          (http_error == kUnsetHttpResponseCode || http_error == net::HTTP_OK);
+}
+
+std::string GetExtraMetricsSuffix(
+    security_interstitials::UnsafeResource unsafe_resource) {
+  switch (unsafe_resource.threat_source) {
+    case safe_browsing::ThreatSource::REMOTE:
+      return "from_device";
+    case safe_browsing::ThreatSource::LOCAL_PVER4:
+      return "from_device_v4";
+    case safe_browsing::ThreatSource::CLIENT_SIDE_DETECTION:
+      return "from_client_side_detection";
+    case safe_browsing::ThreatSource::URL_REAL_TIME_CHECK:
+      return "from_real_time_check";
+    case safe_browsing::ThreatSource::NATIVE_PVER5_REAL_TIME:
+      return "from_hash_prefix_real_time_check_v5";
+    case safe_browsing::ThreatSource::ANDROID_SAFEBROWSING_REAL_TIME:
+      return "from_android_safebrowsing_real_time";
+    case safe_browsing::ThreatSource::ANDROID_SAFEBROWSING:
+      return "from_android_safebrowsing";
+    case safe_browsing::ThreatSource::UNKNOWN:
+      break;
+  }
+  NOTREACHED_NORETURN();
 }
 
 }  // namespace safe_browsing

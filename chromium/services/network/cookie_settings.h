@@ -5,12 +5,14 @@
 #ifndef SERVICES_NETWORK_COOKIE_SETTINGS_H_
 #define SERVICES_NETWORK_COOKIE_SETTINGS_H_
 
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
+#include "base/memory/raw_ptr.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
@@ -23,7 +25,7 @@
 #include "net/cookies/cookie_util.h"
 #include "net/first_party_sets/first_party_set_metadata.h"
 #include "services/network/public/cpp/session_cookie_delete_predicate.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 
 class GURL;
 
@@ -37,6 +39,10 @@ class Origin;
 }  // namespace url
 
 namespace network {
+
+namespace tpcd::metadata {
+class Manager;
+}
 
 // Handles cookie access and deletion logic for the network service.
 class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
@@ -96,6 +102,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
     tracking_protection_enabled_for_3pcd_ = enable;
   }
 
+  void set_tpcd_metadata_manager(tpcd::metadata::Manager* manager) {
+    tpcd_metadata_manager_ = manager;
+  }
+
   bool are_truncated_cookies_blocked() const {
     return block_truncated_cookies_;
   }
@@ -119,7 +129,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
   net::NetworkDelegate::PrivacySetting IsPrivacyModeEnabled(
       const GURL& url,
       const net::SiteForCookies& site_for_cookies,
-      const absl::optional<url::Origin>& top_frame_origin,
+      const std::optional<url::Origin>& top_frame_origin,
       net::CookieSettingOverrides overrides) const;
 
   // Returns true and maybe update `cookie_inclusion_status` to include reason
@@ -129,7 +139,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
       const net::CanonicalCookie& cookie,
       const GURL& url,
       const net::SiteForCookies& site_for_cookies,
-      const absl::optional<url::Origin>& top_frame_origin,
+      const std::optional<url::Origin>& top_frame_origin,
       const net::FirstPartySetMetadata& first_party_set_metadata,
       net::CookieSettingOverrides overrides,
       net::CookieInclusionStatus* cookie_inclusion_status) const;
@@ -173,21 +183,17 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
       const std::string& scheme) const override;
   bool ShouldBlockThirdPartyCookies() const override;
   bool MitigationsEnabledFor3pcd() const override;
-  bool IsStorageAccessApiEnabled() const override;
 
   bool IsThirdPartyPhaseoutEnabled() const;
 
   const ContentSettingsForOneType& GetContentSettings(
       ContentSettingsType type) const;
 
-  // Returns a host-indexed map of ContentSettingPatternSources associated with
-  // the input `type`.
-  const content_settings::HostIndexedContentSettings&
+  // Returns a vector of host-indexed content settings associated with the input
+  // `type`. Each element of the vector corresponds to a Provider from
+  // HostContentSettingsMap with the highest priority Provider first.
+  const std::vector<content_settings::HostIndexedContentSettings>&
   GetHostIndexedContentSettings(ContentSettingsType type) const;
-
-  // An enum that represents the scope of cookies to which the user's
-  // third-party-cookie-blocking setting applies, in a given context.
-  using ThirdPartyBlockingScope = CookieSettingsBase::ThirdPartyBlockingScope;
 
   // Returns whether the given cookie should be allowed to be sent, according
   // to the user's settings. Assumes that the `cookie.access_result` has been
@@ -209,6 +215,23 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
       const url::Origin* top_frame_origin,
       net::CookieSettingOverrides overrides) const;
 
+  // Forwards to FirstPartyURL in most cases, except when the top-level
+  // document is sandboxed (such as due to Content-Security-Policy). We do this
+  // to allow searching for explicit content settings which may re-enable
+  // SameSite=None cookies on those pages.
+  static GURL FirstPartyURLForMetadata(
+      const net::SiteForCookies& site_for_cookies,
+      const url::Origin* top_frame_origin);
+
+  // Adds exclusion reasons, warnings, etc. as appropriate to `out_status` for
+  // the given cookie in the given context.
+  void AugmentInclusionStatus(
+      const net::CanonicalCookie& cookie,
+      bool is_third_party_request,
+      const CookieSettings::CookieSettingWithMetadata& setting_with_metadata,
+      const net::FirstPartySetMetadata& first_party_set_metadata,
+      net::CookieInclusionStatus& out_status) const;
+
   // Returns true if at least one content settings is session only.
   bool HasSessionOnlyOrigins() const;
 
@@ -223,12 +246,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieSettings
   std::set<std::string> matching_scheme_cookies_allowed_schemes_;
   std::set<std::string> third_party_cookies_allowed_schemes_;
 
-  base::flat_map<ContentSettingsType, ContentSettingsForOneType>
-      content_settings_;
+  typedef base::flat_map<ContentSettingsType, ContentSettingsForOneType>
+      EntryMap;
+  typedef base::flat_map<
+      ContentSettingsType,
+      std::vector<content_settings::HostIndexedContentSettings>>
+      EntryIndex;
 
-  base::flat_map<ContentSettingsType,
-                 std::unique_ptr<content_settings::HostIndexedContentSettings>>
-      host_indexed_content_settings_;
+  // Holds an EntryIndex if kHostIndexedMetadataGrants is enabled.
+  // Holds an EntryMap otherwise.
+  absl::variant<EntryMap, EntryIndex> content_settings_;
+
+  raw_ptr<tpcd::metadata::Manager> tpcd_metadata_manager_;
 };
 
 }  // namespace network

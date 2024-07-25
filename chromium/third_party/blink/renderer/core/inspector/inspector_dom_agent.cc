@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/core/dom/focus_params.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
 #include "third_party/blink/renderer/core/dom/node.h"
+#include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/dom/static_node_list.h"
@@ -82,6 +83,7 @@
 #include "third_party/blink/renderer/core/inspector/inspector_history.h"
 #include "third_party/blink/renderer/core/inspector/resolve_node.h"
 #include "third_party/blink/renderer/core/inspector/v8_inspector_string.h"
+#include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -200,6 +202,8 @@ protocol::DOM::PseudoType InspectorDOMAgent::ProtocolPseudoElementType(
       return protocol::DOM::PseudoTypeEnum::Backdrop;
     case kPseudoIdSelection:
       return protocol::DOM::PseudoTypeEnum::Selection;
+    case kPseudoIdSearchText:
+      return protocol::DOM::PseudoTypeEnum::SearchText;
     case kPseudoIdTargetText:
       return protocol::DOM::PseudoTypeEnum::TargetText;
     case kPseudoIdSpellingError:
@@ -222,6 +226,10 @@ protocol::DOM::PseudoType InspectorDOMAgent::ProtocolPseudoElementType(
       return protocol::DOM::PseudoTypeEnum::ScrollbarTrackPiece;
     case kPseudoIdScrollbarCorner:
       return protocol::DOM::PseudoTypeEnum::ScrollbarCorner;
+    case kPseudoIdScrollMarker:
+      return protocol::DOM::PseudoTypeEnum::ScrollMarker;
+    case kPseudoIdScrollMarkers:
+      return protocol::DOM::PseudoTypeEnum::ScrollMarkers;
     case kPseudoIdResizer:
       return protocol::DOM::PseudoTypeEnum::Resizer;
     case kPseudoIdInputListButton:
@@ -238,6 +246,7 @@ protocol::DOM::PseudoType InspectorDOMAgent::ProtocolPseudoElementType(
       return protocol::DOM::PseudoTypeEnum::ViewTransitionOld;
     case kAfterLastInternalPseudoId:
     case kPseudoIdNone:
+    case kPseudoIdInvalid:
       CHECK(false);
       return "";
   }
@@ -590,7 +599,7 @@ protocol::Response InspectorDOMAgent::getNodesForSubtreeByStyle(
 
   HashMap<CSSPropertyID, HashSet<String>> properties;
   for (const auto& style : *computed_styles) {
-    absl::optional<CSSPropertyName> property_name = CSSPropertyName::From(
+    std::optional<CSSPropertyName> property_name = CSSPropertyName::From(
         document_->GetExecutionContext(), style->getName());
     if (!property_name)
       return protocol::Response::InvalidParams("Invalid CSS property name");
@@ -1638,29 +1647,29 @@ protocol::Response InspectorDOMAgent::getContainerForNode(
   if (!response.IsSuccess())
     return response;
 
-  PhysicalAxes physical = kPhysicalAxisNone;
+  PhysicalAxes physical = kPhysicalAxesNone;
   // TODO(crbug.com/1378237): Need to keep the broken behavior of querying the
   // inline-axis by default to avoid even worse behavior before devtools-
-  // frontend catches up. Change value here to kLogicalAxisNone.
-  LogicalAxes logical = kLogicalAxisInline;
+  // frontend catches up. Change value here to kLogicalAxesNone.
+  LogicalAxes logical = kLogicalAxesInline;
 
   if (physical_axes.has_value()) {
     if (physical_axes.value() == protocol::DOM::PhysicalAxesEnum::Horizontal) {
-      physical = kPhysicalAxisHorizontal;
+      physical = kPhysicalAxesHorizontal;
     } else if (physical_axes.value() ==
                protocol::DOM::PhysicalAxesEnum::Vertical) {
-      physical = kPhysicalAxisVertical;
+      physical = kPhysicalAxesVertical;
     } else if (physical_axes.value() == protocol::DOM::PhysicalAxesEnum::Both) {
-      physical = kPhysicalAxisBoth;
+      physical = kPhysicalAxesBoth;
     }
   }
   if (logical_axes.has_value()) {
     if (logical_axes.value() == protocol::DOM::LogicalAxesEnum::Inline) {
-      logical = kLogicalAxisInline;
+      logical = kLogicalAxesInline;
     } else if (logical_axes.value() == protocol::DOM::LogicalAxesEnum::Block) {
-      logical = kLogicalAxisBlock;
+      logical = kLogicalAxesBlock;
     } else if (logical_axes.value() == protocol::DOM::LogicalAxesEnum::Both) {
-      logical = kLogicalAxisBoth;
+      logical = kLogicalAxesBoth;
     }
   }
 
@@ -1694,6 +1703,30 @@ protocol::Response InspectorDOMAgent::getQueryingDescendantsForContainer(
     (*node_ids)->push_back(id);
   }
 
+  return protocol::Response::Success();
+}
+
+protocol::Response InspectorDOMAgent::getElementByRelation(
+    int node_id,
+    const String& relation,
+    int* related_element_id) {
+  *related_element_id = 0;
+  Node* node = nullptr;
+  protocol::Response response = AssertNode(node_id, node);
+  if (!response.IsSuccess()) {
+    return response;
+  }
+
+  Element* element = nullptr;
+  if (relation == protocol::DOM::GetElementByRelation::RelationEnum::PopoverTarget) {
+      if (auto* invoker = DynamicTo<HTMLFormControlElement>(node)) {
+        element = invoker->popoverTargetElement().popover;
+      }
+  }
+
+  if (element) {
+    *related_element_id = PushNodePathToFrontend(element);
+  }
   return protocol::Response::Success();
 }
 
@@ -1764,12 +1797,12 @@ String InspectorDOMAgent::DocumentBaseURLString(Document* document) {
 // static
 protocol::DOM::ShadowRootType InspectorDOMAgent::GetShadowRootType(
     ShadowRoot* shadow_root) {
-  switch (shadow_root->GetType()) {
-    case ShadowRootType::kUserAgent:
+  switch (shadow_root->GetMode()) {
+    case ShadowRootMode::kUserAgent:
       return protocol::DOM::ShadowRootTypeEnum::UserAgent;
-    case ShadowRootType::kOpen:
+    case ShadowRootMode::kOpen:
       return protocol::DOM::ShadowRootTypeEnum::Open;
-    case ShadowRootType::kClosed:
+    case ShadowRootMode::kClosed:
       return protocol::DOM::ShadowRootTypeEnum::Closed;
   }
   NOTREACHED();

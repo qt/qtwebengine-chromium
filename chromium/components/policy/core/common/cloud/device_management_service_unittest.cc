@@ -5,6 +5,7 @@
 #include "components/policy/core/common/cloud/device_management_service.h"
 
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <utility>
 #include <vector>
@@ -15,6 +16,7 @@
 #include "base/run_loop.h"
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -36,7 +38,6 @@
 #include "services/network/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using testing::_;
 using testing::DoAll;
@@ -142,7 +143,7 @@ class DeviceManagementServiceTestBase : public testing::Test {
       DeviceManagementService::JobConfiguration::JobType type,
       bool critical,
       DMAuth auth_data,
-      absl::optional<std::string>&& oauth_token,
+      std::optional<std::string>&& oauth_token,
       const std::string& payload = std::string(),
       DeviceManagementService::Job::RetryMethod method =
           DeviceManagementService::Job::NO_RETRY,
@@ -198,13 +199,13 @@ class DeviceManagementServiceTestBase : public testing::Test {
         /*critical=*/false, DMAuth::NoAuth(), std::string(), payload, method);
   }
 
-  std::unique_ptr<DeviceManagementService::Job> StartTokenEnrollmentJob(
+  std::unique_ptr<DeviceManagementService::Job> StartBrowserRegistrationJob(
       const std::string& payload = std::string(),
       DeviceManagementService::Job::RetryMethod method =
           DeviceManagementService::Job::NO_RETRY,
       base::TimeDelta timeout = base::Seconds(0)) {
     return StartJob(
-        DeviceManagementService::JobConfiguration::TYPE_TOKEN_ENROLLMENT,
+        DeviceManagementService::JobConfiguration::TYPE_BROWSER_REGISTRATION,
         /*critical=*/false, DMAuth::FromEnrollmentToken(kEnrollmentToken),
         std::string(), payload, method, timeout);
   }
@@ -417,13 +418,13 @@ TEST_P(DeviceManagementServiceFailedRequestTest, CertBasedRegisterRequest) {
                GetParam().response_);
 }
 
-TEST_P(DeviceManagementServiceFailedRequestTest, TokenEnrollmentRequest) {
+TEST_P(DeviceManagementServiceFailedRequestTest, BrowserRegistrationRequest) {
   EXPECT_CALL(*this, OnJobDone(_, GetParam().expected_status_, _, _));
   EXPECT_CALL(*this, OnJobRetry(_, _)).Times(0);
   EXPECT_CALL(*this,
               OnShouldJobRetry(GetParam().http_status_, GetParam().response_));
   std::unique_ptr<DeviceManagementService::Job> request_job(
-      StartTokenEnrollmentJob());
+      StartBrowserRegistrationJob());
   auto* request = GetPendingRequest();
   ASSERT_TRUE(request);
 
@@ -711,7 +712,7 @@ TEST_F(DeviceManagementServiceTest, CertBasedRegisterRequest) {
   SendResponse(net::OK, 200, expected_data);
 }
 
-TEST_F(DeviceManagementServiceTest, TokenEnrollmentRequest) {
+TEST_F(DeviceManagementServiceTest, BrowserRegistrationRequest) {
   em::DeviceManagementResponse expected_response;
   expected_response.mutable_register_response()->set_device_management_token(
       kDMToken);
@@ -722,11 +723,11 @@ TEST_F(DeviceManagementServiceTest, TokenEnrollmentRequest) {
   EXPECT_CALL(*this, OnJobRetry(_, _)).Times(0);
   EXPECT_CALL(*this, OnShouldJobRetry(200, expected_data));
   std::unique_ptr<DeviceManagementService::Job> request_job(
-      StartTokenEnrollmentJob(expected_data));
+      StartBrowserRegistrationJob(expected_data));
   auto* request = GetPendingRequest();
   ASSERT_TRUE(request);
 
-  CheckURLAndQueryParams(request, dm_protocol::kValueRequestTokenEnrollment,
+  CheckURLAndQueryParams(request, dm_protocol::kValueRequestRegisterBrowser,
                          kClientID, "");
 
   // Make sure request is properly authorized.
@@ -755,7 +756,7 @@ TEST_F(DeviceManagementServiceTest, OidcEnrollmentRequest) {
   auto* request = GetPendingRequest();
   ASSERT_TRUE(request);
 
-  CheckURLAndQueryParams(request, dm_protocol::kValueRequestOidcRegister,
+  CheckURLAndQueryParams(request, dm_protocol::kValueRequestRegisterProfile,
                          kClientID, "");
 
   // Make sure request is properly authorized.
@@ -841,12 +842,12 @@ TEST_F(DeviceManagementServiceTest, CancelCertBasedRegisterRequest) {
   request_job.reset();
 }
 
-TEST_F(DeviceManagementServiceTest, CancelTokenEnrollmentRequest) {
+TEST_F(DeviceManagementServiceTest, CancelBrowserRegistrationRequest) {
   EXPECT_CALL(*this, OnJobDone(_, _, _, _)).Times(0);
   EXPECT_CALL(*this, OnJobRetry(_, _)).Times(0);
   EXPECT_CALL(*this, OnShouldJobRetry(_, _)).Times(0);
   std::unique_ptr<DeviceManagementService::Job> request_job(
-      StartTokenEnrollmentJob());
+      StartBrowserRegistrationJob());
   auto* request = GetPendingRequest();
   ASSERT_TRUE(request);
 
@@ -988,8 +989,9 @@ TEST_F(DeviceManagementServiceTest, RetryOnProxyError) {
   EXPECT_TRUE(request->request.load_flags & net::LOAD_BYPASS_PROXY);
   EXPECT_EQ(upload_data, network::GetUploadData(request->request));
   // Retry with last error net::ERR_PROXY_CONNECTION_FAILED.
-  CheckURLAndQueryParams(request, dm_protocol::kValueRequestRegister, kClientID,
-                         std::to_string(net::ERR_PROXY_CONNECTION_FAILED));
+  CheckURLAndQueryParams(
+      request, dm_protocol::kValueRequestRegister, kClientID,
+      base::NumberToString(net::ERR_PROXY_CONNECTION_FAILED));
 }
 
 TEST_F(DeviceManagementServiceTest, RetryOnBadResponseFromProxy) {
@@ -1063,7 +1065,7 @@ TEST_F(DeviceManagementServiceTest, RetryOnNetworkChanges) {
   EXPECT_EQ(original_upload_data, network::GetUploadData(request->request));
   // Retry with last error net::ERR_NETWORK_CHANGED.
   CheckURLAndQueryParams(request, dm_protocol::kValueRequestRegister, kClientID,
-                         std::to_string(net::ERR_NETWORK_CHANGED));
+                         base::NumberToString(net::ERR_NETWORK_CHANGED));
 }
 
 TEST_F(DeviceManagementServiceTest, PolicyFetchRetryImmediately) {
@@ -1095,7 +1097,7 @@ TEST_F(DeviceManagementServiceTest, PolicyFetchRetryImmediately) {
   EXPECT_EQ(original_upload_data, network::GetUploadData(request->request));
   // Retry with last error net::ERR_NETWORK_CHANGED.
   CheckURLAndQueryParams(request, dm_protocol::kValueRequestPolicy, kClientID,
-                         std::to_string(net::ERR_NETWORK_CHANGED));
+                         base::NumberToString(net::ERR_NETWORK_CHANGED));
 
   // Request is succeeded with retry.
   EXPECT_CALL(*this, OnJobDone(_, DM_STATUS_SUCCESS, _, _));
@@ -1126,7 +1128,7 @@ TEST_F(DeviceManagementServiceTest, RetryLimit) {
       // Retry with last error net::ERR_NETWORK_CHANGED.
       CheckURLAndQueryParams(request, dm_protocol::kValueRequestRegister,
                              kClientID,
-                             std::to_string(net::ERR_NETWORK_CHANGED));
+                             base::NumberToString(net::ERR_NETWORK_CHANGED));
     }
     SendResponse(net::ERR_NETWORK_CHANGED, 0, std::string());
     Mock::VerifyAndClearExpectations(this);
@@ -1173,7 +1175,7 @@ class DeviceManagementRequestAuthTest : public DeviceManagementServiceTestBase {
 
   std::unique_ptr<DeviceManagementService::Job> StartJobWithAuthData(
       DMAuth auth,
-      absl::optional<std::string> oauth_token) {
+      std::optional<std::string> oauth_token) {
     EXPECT_CALL(*this, OnJobDone(_, DM_STATUS_SUCCESS, _, _));
     EXPECT_CALL(*this, OnJobRetry(_, _)).Times(0);
 
@@ -1181,7 +1183,7 @@ class DeviceManagementRequestAuthTest : public DeviceManagementServiceTestBase {
     std::unique_ptr<DeviceManagementService::Job> job =
         StartJob(DeviceManagementService::JobConfiguration::TYPE_POLICY_FETCH,
                  /*critical=*/false, std::move(auth),
-                 oauth_token ? *oauth_token : absl::optional<std::string>());
+                 oauth_token ? *oauth_token : std::optional<std::string>());
     return job;
   }
 
@@ -1193,12 +1195,12 @@ class DeviceManagementRequestAuthTest : public DeviceManagementServiceTestBase {
   }
 
   // Returns the value of 'Authorization' header if found.
-  absl::optional<std::string> GetAuthHeader(
+  std::optional<std::string> GetAuthHeader(
       const network::TestURLLoaderFactory::PendingRequest& request) {
     std::string header;
     bool result =
         request.request.headers.GetHeader(dm_protocol::kAuthHeader, &header);
-    return result ? absl::optional<std::string>(header) : absl::nullopt;
+    return result ? std::optional<std::string>(header) : std::nullopt;
   }
 };
 
@@ -1228,7 +1230,7 @@ TEST_F(DeviceManagementRequestAuthTest, OnlyOAuthToken) {
 TEST_F(DeviceManagementRequestAuthTest, OnlyDMToken) {
   std::unique_ptr<DeviceManagementService::Job> request_job(
       StartJobWithAuthData(DMAuth::FromDMToken(kDMToken),
-                           absl::nullopt /* oauth_token */));
+                           std::nullopt /* oauth_token */));
   EXPECT_CALL(*this, OnShouldJobRetry(200, std::string()));
 
   const network::TestURLLoaderFactory::PendingRequest* request =
@@ -1246,7 +1248,7 @@ TEST_F(DeviceManagementRequestAuthTest, OnlyDMToken) {
 TEST_F(DeviceManagementRequestAuthTest, OnlyEnrollmentToken) {
   std::unique_ptr<DeviceManagementService::Job> request_job(
       StartJobWithAuthData(DMAuth::FromEnrollmentToken(kEnrollmentToken),
-                           absl::nullopt /* oauth_token */));
+                           std::nullopt /* oauth_token */));
   EXPECT_CALL(*this, OnShouldJobRetry(200, std::string()));
 
   const network::TestURLLoaderFactory::PendingRequest* request =
@@ -1345,15 +1347,15 @@ class DeviceManagementServiceTestWithTimeManipulation
 };
 
 TEST_F(DeviceManagementServiceTestWithTimeManipulation,
-       TokenEnrollmentRequestWithTimeout) {
+       BrowserRegistrationRequestWithTimeout) {
   // In enrollment timeout cases, expected status is DM_STATUS_REQUEST_FAILED,
   // and expected net error is NET_ERROR(TIMED_OUT, -7)
   EXPECT_CALL(*this, OnJobDone(_, DM_STATUS_REQUEST_FAILED, _, ""));
   EXPECT_CALL(*this, OnJobRetry(_, _)).Times(0);
 
   std::unique_ptr<DeviceManagementService::Job> request_job(
-      StartTokenEnrollmentJob("", DeviceManagementService::Job::NO_RETRY,
-                              GetTimeoutDuration()));
+      StartBrowserRegistrationJob("", DeviceManagementService::Job::NO_RETRY,
+                                  GetTimeoutDuration()));
   ASSERT_TRUE(GetPendingRequest());
 
   // fast forward 30+ seconds

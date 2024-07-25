@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -19,8 +19,6 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
-#include "utils/hash_vk_types.h"
-#include "utils/vk_layer_utils.h"
 
 enum QueryState {
     QUERYSTATE_UNKNOWN,    // Initial state.
@@ -36,11 +34,12 @@ class VideoProfileDesc;
 
 class QueryPool : public StateObject {
   public:
-    QueryPool(VkQueryPool qp, const VkQueryPoolCreateInfo *pCreateInfo, uint32_t index_count, uint32_t perf_queue_family_index,
+    QueryPool(VkQueryPool handle, const VkQueryPoolCreateInfo *pCreateInfo, uint32_t index_count, uint32_t perf_queue_family_index,
               uint32_t n_perf_pass, bool has_cb, bool has_rb, std::shared_ptr<const vvl::VideoProfileDesc> &&supp_video_profile,
               VkVideoEncodeFeedbackFlagsKHR enabled_video_encode_feedback_flags)
-        : StateObject(qp, kVulkanObjectTypeQueryPool),
-          createInfo(*pCreateInfo),
+        : StateObject(handle, kVulkanObjectTypeQueryPool),
+          safe_create_info(pCreateInfo),
+          create_info(*safe_create_info.ptr()),
           has_perf_scope_command_buffer(has_cb),
           has_perf_scope_render_pass(has_rb),
           n_performance_passes(n_perf_pass),
@@ -58,7 +57,7 @@ class QueryPool : public StateObject {
         }
     }
 
-    VkQueryPool pool() const { return handle_.Cast<VkQueryPool>(); }
+    VkQueryPool VkHandle() const { return handle_.Cast<VkQueryPool>(); }
 
     void SetQueryState(uint32_t query, uint32_t perf_pass, QueryState state) {
         auto guard = WriteLock();
@@ -81,7 +80,8 @@ class QueryPool : public StateObject {
         return QUERYSTATE_UNKNOWN;
     }
 
-    const VkQueryPoolCreateInfo createInfo;
+    const vku::safe_VkQueryPoolCreateInfo safe_create_info;
+    const VkQueryPoolCreateInfo &create_info;
 
     const bool has_perf_scope_command_buffer;
     const bool has_perf_scope_render_pass;

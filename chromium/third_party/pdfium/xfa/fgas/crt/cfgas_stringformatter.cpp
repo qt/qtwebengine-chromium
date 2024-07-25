@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "xfa/fgas/crt/cfgas_stringformatter.h"
 
 #include <math.h>
@@ -14,10 +19,10 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_datetime.h"
+#include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
-#include "third_party/base/containers/contains.h"
-#include "third_party/base/notreached.h"
+#include "core/fxcrt/notreached.h"
 #include "xfa/fgas/crt/cfgas_decimal.h"
 #include "xfa/fgas/crt/locale_mgr_iface.h"
 
@@ -1867,7 +1872,7 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
 
   pdfium::span<const wchar_t> spNumFormat = wsNumFormat.span();
   WideString wsSrcNum = wsInputNum;
-  wsSrcNum.TrimLeft('0');
+  wsSrcNum.TrimFront('0');
   if (wsSrcNum.IsEmpty() || wsSrcNum[0] == '.')
     wsSrcNum.InsertAtFront('0');
 
@@ -1930,8 +1935,8 @@ bool CFGAS_StringFormatter::FormatNum(LocaleMgrIface* pLocaleMgr,
     wsSrcNum = decimal.ToWideString();
   }
   if (bTrimTailZeros && scale > 0 && iTreading > 0) {
-    wsSrcNum.TrimRight(L"0");
-    wsSrcNum.TrimRight(L".");
+    wsSrcNum.TrimBack(L"0");
+    wsSrcNum.TrimBack(L".");
   }
 
   WideString wsGroupSymbol = pLocale->GetGroupingSymbol();

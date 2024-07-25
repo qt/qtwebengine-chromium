@@ -163,6 +163,10 @@ bool EventConverterEvdev::HasAssistantKey() const {
   return false;
 }
 
+bool EventConverterEvdev::HasFunctionKey() const {
+  return false;
+}
+
 bool EventConverterEvdev::HasCapsLockLed() const {
   return false;
 }
@@ -226,6 +230,11 @@ int EventConverterEvdev::GetTouchPoints() const {
 void EventConverterEvdev::SetKeyFilter(bool enable_filter,
                                        std::vector<DomCode> allowed_keys) {
   NOTREACHED();
+}
+
+void EventConverterEvdev::SetBlockModifiers(bool block_modifiers) {
+  // No-op implementation on purpose for converter that do not implement the
+  // method.
 }
 
 void EventConverterEvdev::SetCapsLockLed(bool enabled) {

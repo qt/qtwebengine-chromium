@@ -22,6 +22,7 @@
 
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
 
+#include "base/metrics/histogram_macros.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -42,7 +43,6 @@
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/speculation_rules/document_speculation_rules.h"
-#include "third_party/blink/renderer/core/view_transition/view_transition_supplement.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
@@ -334,7 +334,7 @@ blink::mojom::ViewportFit HTMLMetaElement::ParseViewportFitValueAsEnum(
 }
 
 // static
-absl::optional<ui::mojom::blink::VirtualKeyboardMode>
+std::optional<ui::mojom::blink::VirtualKeyboardMode>
 HTMLMetaElement::ParseVirtualKeyboardValueAsEnum(const String& value) {
   if (EqualIgnoringASCIICase(value, "resizes-content"))
     return ui::mojom::blink::VirtualKeyboardMode::kResizesContent;
@@ -343,7 +343,7 @@ HTMLMetaElement::ParseVirtualKeyboardValueAsEnum(const String& value) {
   else if (EqualIgnoringASCIICase(value, "overlays-content"))
     return ui::mojom::blink::VirtualKeyboardMode::kOverlaysContent;
 
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 void HTMLMetaElement::ProcessViewportKeyValuePair(
@@ -406,7 +406,7 @@ void HTMLMetaElement::ProcessViewportKeyValuePair(
   } else if (key_string == "shrink-to-fit") {
     // Ignore vendor-specific argument.
   } else if (key_string == "interactive-widget") {
-    absl::optional<ui::mojom::blink::VirtualKeyboardMode> resize_type =
+    std::optional<ui::mojom::blink::VirtualKeyboardMode> resize_type =
         ParseVirtualKeyboardValueAsEnum(value_string);
 
     if (resize_type) {
@@ -543,11 +543,7 @@ void HTMLMetaElement::NameRemoved(const AtomicString& name_value) {
     GetDocument().ColorSchemeMetaChanged();
   } else if (EqualIgnoringASCIICase(name_value, "supports-reduced-motion")) {
     GetDocument().SupportsReducedMotionMetaChanged();
-  } else if (RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled() &&
-             EqualIgnoringASCIICase(name_value, "view-transition")) {
-    ViewTransitionSupplement::From(GetDocument())
-        ->OnMetaTagChanged(g_null_atom);
-  } else if (RuntimeEnabledFeatures::AppTitleEnabled() &&
+  } else if (RuntimeEnabledFeatures::AppTitleEnabled(GetExecutionContext()) &&
              EqualIgnoringASCIICase(name_value, "app-title")) {
     GetDocument().UpdateAppTitle();
   }
@@ -723,12 +719,9 @@ void HTMLMetaElement::ProcessContent() {
       UseCounter::Count(&GetDocument(),
                         WebFeature::kHTMLMetaElementMonetization);
     }
-  } else if (RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled() &&
-             EqualIgnoringASCIICase(name_value, "view-transition")) {
-    ViewTransitionSupplement::From(GetDocument())
-        ->OnMetaTagChanged(content_value);
-  } else if (RuntimeEnabledFeatures::AppTitleEnabled() &&
+  } else if (RuntimeEnabledFeatures::AppTitleEnabled(GetExecutionContext()) &&
              EqualIgnoringASCIICase(name_value, "app-title")) {
+    UseCounter::Count(&GetDocument(), WebFeature::kWebAppTitle);
     GetDocument().UpdateAppTitle();
   }
 }
@@ -780,9 +773,7 @@ void HTMLMetaElement::ProcessMetaCH(Document& document,
     return;
   }
 
-  if (!FrameFetchContext::AllowScriptFromSourceWithoutNotifying(
-          document.Url(), frame->GetContentSettingsClient(),
-          frame->GetSettings())) {
+  if (!frame->ScriptEnabled()) {
     // Do not allow configuring client hints if JavaScript is disabled.
     return;
   }

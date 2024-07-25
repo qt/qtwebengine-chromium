@@ -18,6 +18,7 @@
 #pragma once
 
 #include "gpu_validation/gpu_state_tracker.h"
+#include "gpu_validation/gpu_shader_instrumentor.h"
 #include "gpu_validation/gpu_error_message.h"
 
 namespace debug_printf {
@@ -59,11 +60,12 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
   public:
     std::vector<BufferInfo> buffer_infos;
 
-    CommandBuffer(Validator* dp, VkCommandBuffer cb, const VkCommandBufferAllocateInfo* create_info, const vvl::CommandPool* pool);
+    CommandBuffer(Validator& dp, VkCommandBuffer handle, const VkCommandBufferAllocateInfo* create_info,
+                  const vvl::CommandPool* pool);
     ~CommandBuffer();
 
-    bool NeedsProcessing() const final { return !buffer_infos.empty(); }
-    void Process(VkQueue queue, const Location &loc) final;
+    bool PreProcess() final { return !buffer_infos.empty(); }
+    void PostProcess(VkQueue queue, const Location& loc) final;
 
     void Destroy() final;
     void Reset() final;
@@ -76,29 +78,30 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, debug_printf::CommandBuffer, vvl::CommandBuffer)
 
 namespace debug_printf {
-class Validator : public gpu_tracker::Validator {
+class Validator : public GpuShaderInstrumentor {
   public:
-    using BaseClass = gpu_tracker::Validator;
+    using BaseClass = GpuShaderInstrumentor;
     Validator() {
-        setup_vuid = "UNASSIGNED-DEBUG-PRINTF";
         container_type = LayerObjectTypeDebugPrintf;
         desired_features.vertexPipelineStoresAndAtomics = true;
         desired_features.fragmentStoresAndAtomics = true;
     }
 
-    void CreateDevice(const VkDeviceCreateInfo* pCreateInfo) override;
-    bool InstrumentShader(const vvl::span<const uint32_t>& input, std::vector<uint32_t>& new_pgm, uint32_t unique_shader_id,
-                          const Location& loc) override;
+    void ReportSetupProblemPrintF(LogObjectList objlist, const Location& loc, const char* const specific_message,
+                                  bool vma_fail) const;
+    void CreateDevice(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) override;
+    bool InstrumentShader(const vvl::span<const uint32_t>& input, std::vector<uint32_t>& instrumented_spirv,
+                          uint32_t unique_shader_id, const Location& loc) override;
     void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                          const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
-                                         const RecordObject& record_obj, void* csm_state_data) override;
+                                         const RecordObject& record_obj, chassis::CreateShaderModule& chassis_state) override;
     void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos,
                                        const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders,
-                                       const RecordObject& record_obj, void* csm_state_data) override;
+                                       const RecordObject& record_obj, chassis::ShaderObject& chassis_state) override;
     std::vector<Substring> ParseFormatString(const std::string& format_string);
-    std::string FindFormatString(vvl::span<const uint32_t> pgm, uint32_t string_id);
-    void AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQueue queue, BufferInfo& buffer_info,
-                                    uint32_t operation_index, uint32_t* const debug_output_buffer);
+    std::string FindFormatString(const std::vector<spirv::Instruction>& instructions, uint32_t string_id);
+    void AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueue queue, BufferInfo& buffer_info, uint32_t operation_index,
+                                   uint32_t* const debug_output_buffer, const Location& loc);
     void PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex,
                               uint32_t firstInstance, const RecordObject& record_obj) override;
     void PreCallRecordCmdDrawMultiEXT(VkCommandBuffer commandBuffer, uint32_t drawCount, const VkMultiDrawInfoEXT* pVertexInfo,
@@ -175,7 +178,7 @@ class Validator : public gpu_tracker::Validator {
                                               VkDeviceAddress indirectDeviceAddress, const RecordObject& record_obj) override;
     void PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuffer, VkDeviceAddress indirectDeviceAddress,
                                                const RecordObject& record_obj) override;
-    void AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point);
+    void AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point, const Location& loc);
 
     std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer cb, const VkCommandBufferAllocateInfo* create_info,
                                                              const vvl::CommandPool* pool) final;

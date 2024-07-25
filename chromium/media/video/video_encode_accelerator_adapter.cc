@@ -21,6 +21,7 @@
 #include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "media/base/bitstream_buffer.h"
 #include "media/base/media_log.h"
+#include "media/base/media_switches.h"
 #include "media/base/svc_scalability_mode.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
@@ -53,7 +54,7 @@ uint32_t ComputeCheckedDefaultBitrate(const gfx::Size& frame_size) {
 }
 
 uint32_t ComputeCheckedPeakBitrate(uint32_t target_bitrate) {
-  // TODO(crbug.com/1342850): Reconsider whether this is good peak bps.
+  // TODO(crbug.com/40851972): Reconsider whether this is good peak bps.
   base::CheckedNumeric<uint32_t> checked_bitrate_product =
       base::CheckMul<uint32_t>(target_bitrate, 10u);
   return checked_bitrate_product.ValueOrDefault(
@@ -61,7 +62,7 @@ uint32_t ComputeCheckedPeakBitrate(uint32_t target_bitrate) {
 }
 
 Bitrate CreateBitrate(
-    const absl::optional<Bitrate>& requested_bitrate,
+    const std::optional<Bitrate>& requested_bitrate,
     const gfx::Size& frame_size,
     VideoEncodeAccelerator::SupportedRateControlMode supported_rc_modes) {
   uint32_t default_bitrate = ComputeCheckedDefaultBitrate(frame_size);
@@ -89,15 +90,13 @@ VideoEncodeAccelerator::Config SetUpVeaConfig(
     VideoFrame::StorageType storage_type,
     VideoEncodeAccelerator::SupportedRateControlMode supported_rc_modes,
     VideoEncodeAccelerator::Config::EncoderType required_encoder_type) {
-  absl::optional<uint32_t> initial_framerate;
-  if (opts.framerate.has_value())
-    initial_framerate = static_cast<uint32_t>(opts.framerate.value());
-
   Bitrate bitrate =
       CreateBitrate(opts.bitrate, opts.frame_size, supported_rc_modes);
-  auto config =
-      VideoEncodeAccelerator::Config(format, opts.frame_size, profile, bitrate);
-  config.initial_framerate = initial_framerate;
+  auto config = VideoEncodeAccelerator::Config(
+      format, opts.frame_size, profile, bitrate,
+      opts.framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate),
+      VideoEncodeAccelerator::Config::StorageType::kShmem,
+      VideoEncodeAccelerator::Config::ContentType::kCamera);
   config.gop_length = opts.keyframe_interval;
 
   if (opts.content_hint) {
@@ -111,6 +110,11 @@ VideoEncodeAccelerator::Config SetUpVeaConfig(
             VideoEncodeAccelerator::Config::ContentType::kDisplay;
         break;
     }
+  }
+
+  if (opts.latency_mode == VideoEncoder::LatencyMode::Realtime) {
+    config.drop_frame_thresh_percentage =
+        GetDefaultVideoEncoderDropFrameThreshold();
   }
 
   size_t num_temporal_layers = 1;
@@ -135,8 +139,7 @@ VideoEncodeAccelerator::Config SetUpVeaConfig(
     layer.width = opts.frame_size.width();
     layer.height = opts.frame_size.height();
     layer.bitrate_bps = config.bitrate.target_bps();
-    if (initial_framerate.has_value())
-      layer.framerate = initial_framerate.value();
+    layer.framerate = config.framerate;
     layer.num_of_temporal_layers = num_temporal_layers;
     config.spatial_layers.push_back(layer);
   }
@@ -620,7 +623,7 @@ void VideoEncodeAcceleratorAdapter::ChangeOptionsOnAcceleratorThread(
     return;
   }
 
-  absl::optional<gfx::Size> new_frame_size;
+  std::optional<gfx::Size> new_frame_size;
   if (options.frame_size != options_.frame_size) {
     if (supports_frame_size_change_) {
       input_pool_.reset();
@@ -771,7 +774,7 @@ void VideoEncodeAcceleratorAdapter::RequireBitstreamBuffers(
 void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
     int32_t buffer_id,
     const BitstreamBufferMetadata& metadata) {
-  absl::optional<CodecDescription> desc;
+  std::optional<CodecDescription> desc;
   VideoEncoderOutput result;
   result.key_frame = metadata.key_frame;
   result.timestamp = metadata.timestamp;
@@ -811,13 +814,12 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
     uint8_t* src = static_cast<uint8_t*>(mapping.memory());
     size_t dst_size = result.size;
     size_t actual_output_size = 0;
-    auto dst = std::make_unique<uint8_t[]>(dst_size);
+    auto dst = base::HeapArray<uint8_t>::Uninit(dst_size);
     bool config_changed = false;
     media::MP4Status status;
     if (h264_converter_) {
       status = h264_converter_->ConvertChunk(
-          base::span<uint8_t>(src, result.size),
-          base::span<uint8_t>(dst.get(), dst_size), &config_changed,
+          base::span<uint8_t>(src, result.size), dst, &config_changed,
           &actual_output_size);
       if (status.code() == MP4Status::Codes::kBufferTooSmall) {
         // Between AnnexB and AVCC bitstream formats, the start code length and
@@ -825,10 +827,9 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
         // http://www.itu.int/rec/T-REC-H.264. Retry the conversion if the
         // output buffer size is too small.
         dst_size = actual_output_size;
-        dst = std::make_unique<uint8_t[]>(dst_size);
+        dst = base::HeapArray<uint8_t>::Uninit(dst_size);
         status = h264_converter_->ConvertChunk(
-            base::span<uint8_t>(src, result.size),
-            base::span<uint8_t>(dst.get(), dst_size), &config_changed,
+            base::span<uint8_t>(src, result.size), dst, &config_changed,
             &actual_output_size);
       }
 
@@ -855,15 +856,13 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
     BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
       if (h265_converter_) {
         status = h265_converter_->ConvertChunk(
-            base::span<uint8_t>(src, result.size),
-            base::span<uint8_t>(dst.get(), dst_size), &config_changed,
+            base::span<uint8_t>(src, result.size), dst, &config_changed,
             &actual_output_size);
         if (status.code() == MP4Status::Codes::kBufferTooSmall) {
           dst_size = actual_output_size;
-          dst = std::make_unique<uint8_t[]>(dst_size);
+          dst = base::HeapArray<uint8_t>::Uninit(dst_size);
           status = h265_converter_->ConvertChunk(
-              base::span<uint8_t>(src, result.size),
-              base::span<uint8_t>(dst.get(), dst_size), &config_changed,
+              base::span<uint8_t>(src, result.size), dst, &config_changed,
               &actual_output_size);
         }
 
@@ -892,8 +891,8 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
     }
 #endif  // BUILDFLAG(USE_PROPRIETARY_CODECS)
     if (!stream_converted) {
-      result.data = std::make_unique<uint8_t[]>(result.size);
-      memcpy(result.data.get(), mapping.memory(), result.size);
+      result.data = base::HeapArray<uint8_t>::Uninit(result.size);
+      memcpy(result.data.data(), mapping.memory(), result.size);
     }
   }
 
@@ -915,11 +914,8 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
     }
   }
   DCHECK(erased_active_encode);
-  if (result.size > 0) {
-    // Size = 0 means that frame was dropped by the platform encoder, we don't
-    // need to call the output callback in such cases.
-    output_cb_.Run(std::move(result), std::move(desc));
-  }
+  output_cb_.Run(std::move(result), std::move(desc));
+
   if (active_encodes_.empty() && !flush_support_.value()) {
     // Manually call FlushCompleted(), since |accelerator_| won't do it for us.
     FlushCompleted(true);
@@ -972,7 +968,9 @@ void VideoEncodeAcceleratorAdapter::NotifyEncoderInfoChange(
     const VideoEncoderInfo& info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(accelerator_sequence_checker_);
   supports_frame_size_change_ = info.supports_frame_size_change;
-  info_cb_.Run(info);
+  if (info_cb_) {
+    info_cb_.Run(info);
+  }
 }
 
 void VideoEncodeAcceleratorAdapter::InitCompleted(EncoderStatus status) {

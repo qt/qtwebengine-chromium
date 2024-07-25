@@ -85,6 +85,10 @@ Vector<CSSParserToken, 32> CSSTokenizer::TokenizeToEOFWithUnicodeRanges() {
   return tokens;
 }
 
+StringView CSSTokenizer::StringRangeFrom(wtf_size_t start) const {
+  return input_.RangeFrom(start);
+}
+
 StringView CSSTokenizer::StringRangeAt(wtf_size_t start,
                                        wtf_size_t length) const {
   return input_.RangeAt(start, length);
@@ -460,13 +464,16 @@ CSSParserToken CSSTokenizer::ConsumeNumber() {
   NumericValueType type = kIntegerValueType;
   NumericSign sign = kNoSign;
   unsigned number_length = 0;
+  unsigned sign_length = 0;
 
   UChar next = input_.PeekWithoutReplacement(0);
   if (next == '+') {
     ++number_length;
+    ++sign_length;
     sign = kPlusSign;
   } else if (next == '-') {
     ++number_length;
+    ++sign_length;
     sign = kMinusSign;
   }
 
@@ -493,8 +500,19 @@ CSSParserToken CSSTokenizer::ConsumeNumber() {
     }
   }
 
-  double value = input_.GetDouble(0, number_length);
-  input_.Advance(number_length);
+  double value;
+  if (type == kIntegerValueType) {
+    // Fast path.
+    value = input_.GetNaturalNumberAsDouble(sign_length, number_length);
+    if (sign == kMinusSign) {
+      value = -value;
+    }
+    DCHECK_EQ(value, input_.GetDouble(0, number_length));
+    input_.Advance(number_length);
+  } else {
+    value = input_.GetDouble(0, number_length);
+    input_.Advance(number_length);
+  }
 
   return CSSParserToken(kNumberToken, value, type, sign);
 }

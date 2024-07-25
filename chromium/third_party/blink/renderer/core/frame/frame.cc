@@ -171,7 +171,7 @@ bool Frame::Detach(FrameDetachType type) {
   // the frame tree. https://crbug.com/578349.
   DisconnectOwnerElement();
   page_ = nullptr;
-  embedding_token_ = absl::nullopt;
+  embedding_token_ = std::nullopt;
 
   return true;
 }
@@ -286,10 +286,21 @@ void Frame::DidChangeVisibilityState() {
     child_frames[i]->DidChangeVisibilityState();
 }
 
+void Frame::NotifyUserActivationInFrameTreeStickyOnly() {
+  NotifyUserActivationInFrameTree(
+      mojom::blink::UserActivationNotificationType::kNone,
+      /*sticky_only=*/true);
+}
+
 void Frame::NotifyUserActivationInFrameTree(
-    mojom::blink::UserActivationNotificationType notification_type) {
+    mojom::blink::UserActivationNotificationType notification_type,
+    bool sticky_only) {
   for (Frame* node = this; node; node = node->Tree().Parent()) {
-    node->user_activation_state_.Activate(notification_type);
+    if (sticky_only) {
+      node->user_activation_state_.SetHasBeenActive();
+    } else {
+      node->user_activation_state_.Activate(notification_type);
+    }
     auto* local_node = DynamicTo<LocalFrame>(node);
     if (local_node) {
       local_node->SetHadUserInteraction(true);
@@ -310,7 +321,11 @@ void Frame::NotifyUserActivationInFrameTree(
       if (local_frame_node &&
           security_origin->CanAccess(
               local_frame_node->GetSecurityContext()->GetSecurityOrigin())) {
-        node->user_activation_state_.Activate(notification_type);
+        if (sticky_only) {
+          node->user_activation_state_.SetHasBeenActive();
+        } else {
+          node->user_activation_state_.Activate(notification_type);
+        }
         local_frame_node->SetHadUserInteraction(true);
       }
     }
@@ -365,15 +380,15 @@ bool Frame::IsFencedFrameRoot() const {
   return IsInFencedFrameTree() && IsMainFrame();
 }
 
-absl::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
+std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
 Frame::GetDeprecatedFencedFrameMode() const {
   DCHECK(!IsDetached());
 
   if (!features::IsFencedFramesEnabled())
-    return absl::nullopt;
+    return std::nullopt;
 
   if (!IsInFencedFrameTree())
-    return absl::nullopt;
+    return std::nullopt;
 
   return GetPage()->DeprecatedFencedFrameMode();
 }
@@ -535,7 +550,28 @@ void Frame::InsertAfter(Frame* new_child, Frame* previous_sibling) {
   }
 
   Tree().InvalidateScopedChildCount();
-  GetPage()->IncrementSubframeCount();
+
+  // When a frame is inserted, we almost always want to increment the
+  // subframe count that is local to the current `blink::Page`. The exception is
+  // if in the frame's embedder process, it is a state-preserving atomic move
+  // that triggers the insert. In that case, skip the increment, because the
+  // insertion under these circumstances is really a "move" operation. During
+  // a move, we never decremented the subframe count since frame did not
+  // detach, so we shouldn't re-increment it here.
+  HTMLFrameOwnerElement* local_owner = new_child->DeprecatedLocalOwner();
+  const bool increment_subframe_count =
+      // When `local_owner` is null, then this code is running in an OOPIF's
+      // inner process, where its embedder is remote. The concept of a
+      // state-preserving atomic move does not apply there, so increment the
+      // subframe count as usual.
+      !local_owner ||
+      // If `local_owner` is non-null but is not experiencing a state-preserving
+      // atomic move, then increment the subframe count as usual.
+      !local_owner->GetDocument().StatePreservingAtomicMoveInProgress();
+
+  if (increment_subframe_count) {
+    GetPage()->IncrementSubframeCount();
+  }
 }
 
 base::OnceClosure Frame::ScheduleFormSubmission(

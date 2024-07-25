@@ -8,6 +8,7 @@
 #include "dm/DMSrcSink.h"
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkPixmapUtils.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkDocument.h"
@@ -17,6 +18,7 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/docs/SkMultiPictureDocument.h"
@@ -36,6 +38,7 @@
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "modules/skcms/skcms.h"
 #include "modules/skottie/utils/SkottieUtils.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkRandom.h"
 #include "src/base/SkTLazy.h"
@@ -71,23 +74,24 @@
 #include "tools/gpu/MemoryCache.h"
 
 #if defined(SK_BUILD_FOR_WIN)
-    #include "include/docs/SkXPSDocument.h"
-    #include "src/utils/win/SkAutoCoInitialize.h"
-    #include "src/utils/win/SkHRESULT.h"
-    #include "src/utils/win/SkTScopedComPtr.h"
-    #include <XpsObjectModel.h>
+#include "include/docs/SkXPSDocument.h"
+#include "src/utils/win/SkAutoCoInitialize.h"
+#include "src/utils/win/SkHRESULT.h"
+#include "src/utils/win/SkTScopedComPtr.h"
+
+#include <XpsObjectModel.h>
 #endif
 
 #if defined(SK_ENABLE_SKOTTIE)
-    #include "modules/skottie/include/Skottie.h"
-    #include "modules/skresources/include/SkResources.h"
+#include "modules/skottie/include/Skottie.h"
+#include "modules/skresources/include/SkResources.h"
 #endif
 
 #if defined(SK_ENABLE_SVG)
-    #include "include/svg/SkSVGCanvas.h"
-    #include "modules/svg/include/SkSVGDOM.h"
-    #include "modules/svg/include/SkSVGNode.h"
-    #include "src/xml/SkXMLWriter.h"
+#include "include/svg/SkSVGCanvas.h"
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#include "src/xml/SkXMLWriter.h"
 #endif
 
 #if defined(SK_GRAPHITE)
@@ -101,7 +105,21 @@
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
 #include "tools/graphite/GraphiteTestContext.h"
-#endif
+
+#if defined(SK_ENABLE_PRECOMPILE)
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/GraphicsPipeline.h"
+#include "src/gpu/graphite/GraphicsPipelineDesc.h"
+#include "src/gpu/graphite/PublicPrecompile.h"
+#include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
+#include "src/gpu/graphite/RendererProvider.h"
+#include "tools/graphite/UniqueKeyUtils.h"
+#endif // SK_ENABLE_PRECOMPILE
+
+#endif // SK_GRAPHITE
+
 
 #if defined(SK_ENABLE_ANDROID_UTILS)
     #include "client_utils/android/BitmapRegionDecoder.h"
@@ -1065,6 +1083,9 @@ Result ColorCodecSrc::draw(SkCanvas* canvas, GraphiteTestContext*) const {
     }
 
     SkImageInfo info = codec->getInfo();
+    if (SkEncodedOriginSwapsWidthHeight(codec->getOrigin())) {
+        info = SkPixmapUtils::SwapWidthHeight(info);
+    }
     if (fDecodeToDst) {
         SkImageInfo canvasInfo = canvas->imageInfo();
         if (!canvasInfo.colorSpace()) {
@@ -1250,6 +1271,8 @@ SkottieSrc::SkottieSrc(Path path) : fPath(std::move(path)) {}
 
 Result SkottieSrc::draw(SkCanvas* canvas, GraphiteTestContext*) const {
     auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
+    // DM should have already registered the codecs necessary for DataURIResourceProviderProxy
+    // to decode images.
     auto resource_provider = skresources::DataURIResourceProviderProxy::Make(
             skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()), predecode),
             predecode,
@@ -1268,6 +1291,7 @@ Result SkottieSrc::draw(SkCanvas* canvas, GraphiteTestContext*) const {
         .setFontManager(ToolUtils::TestFontMgr())
         .setResourceProvider(std::move(resource_provider))
         .setPrecompInterceptor(std::move(precomp_interceptor))
+        .setTextShapingFactory(SkShapers::BestAvailable())
         .makeFromFile(fPath.c_str());
     if (!animation) {
         return Result::Fatal("Unable to parse file: %s", fPath.c_str());
@@ -1338,15 +1362,19 @@ SVGSrc::SVGSrc(Path path)
         return;
     }
 
+    // DM should have already registered the codecs necessary for DataURIResourceProviderProxy
+    // to decode images.
     auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
     auto rp = skresources::DataURIResourceProviderProxy::Make(
             skresources::FileResourceProvider::Make(SkOSPath::Dirname(path.c_str()), predecode),
             predecode,
             ToolUtils::TestFontMgr());
 
-    fDom = SkSVGDOM::Builder().setResourceProvider(std::move(rp))
-                              .setFontManager(ToolUtils::TestFontMgr())
-                              .make(*stream);
+    fDom = SkSVGDOM::Builder()
+                   .setResourceProvider(std::move(rp))
+                   .setFontManager(ToolUtils::TestFontMgr())
+                   .setTextShapingFactory(SkShapers::BestAvailable())
+                   .make(*stream);
     if (!fDom) {
         return;
     }
@@ -2093,6 +2121,10 @@ RasterSink::RasterSink(SkColorType colorType)
 
 Result RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) const {
     const SkISize size = src.size();
+    if (size.isEmpty()) {
+        return Result(Result::Status::Skip,
+                      SkStringPrintf("Skipping empty source: %s", src.name().c_str()));
+    }
 
     dst->allocPixelsFlags(SkImageInfo::Make(size, this->colorInfo()),
                           SkBitmap::kZeroPixels_AllocFlag);
@@ -2190,7 +2222,198 @@ sk_sp<SkSurface> GraphiteSink::makeSurface(skgpu::graphite::Recorder* recorder,
     SkUNREACHABLE;
 }
 
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+#if defined(SK_ENABLE_PRECOMPILE)
+
+GraphitePrecompileTestingSink::GraphitePrecompileTestingSink(
+        const SkCommandLineConfigGraphite* config) : GraphiteSink(config) {}
+
+GraphitePrecompileTestingSink::~GraphitePrecompileTestingSink() {}
+
+Result GraphitePrecompileTestingSink::drawSrc(
+        const Src& src,
+        skgpu::graphite::Context* context,
+        skiatest::graphite::GraphiteTestContext* testContext) const {
+    if (!fRecorder) {
+        fRecorder = context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
+        if (!fRecorder) {
+            return Result::Fatal("Could not create a recorder.");
+        }
+    }
+
+    sk_sp<SkSurface> surface = this->makeSurface(fRecorder.get(), src.size());
+    if (!surface) {
+        return Result::Fatal("Could not create a surface.");
+    }
+    Result result = src.draw(surface->getCanvas(), testContext);
+    if (!result.isOk()) {
+        return result;
+    }
+
+    std::unique_ptr<skgpu::graphite::Recording> recording = fRecorder->snap();
+    if (!recording) {
+        return Result::Fatal("Could not create a recording.");
+    }
+
+    skgpu::graphite::InsertRecordingInfo info;
+    info.fRecording = recording.get();
+    if (!context->insertRecording(info)) {
+        return Result::Fatal("Context::insertRecording failed.");
+    }
+    if (!context->submit(skgpu::graphite::SyncToCpu::kYes)) {
+        return Result::Fatal("Context::submit failed.");
+    }
+
+    return Result::Ok();
+}
+
+Result GraphitePrecompileTestingSink::resetAndRecreatePipelines(
+        skgpu::graphite::Context* context) const {
+    using namespace skgpu::graphite;
+
+    SkASSERT(fRecorder);
+
+    RuntimeEffectDictionary* rteDict = fRecorder->priv().runtimeEffectDictionary();
+
+    std::vector<skgpu::UniqueKey> origKeys;
+
+    UniqueKeyUtils::FetchUniqueKeys(context->priv().globalCache(), &origKeys);
+
+    SkDEBUGCODE(int numBeforeReset = context->priv().globalCache()->numGraphicsPipelines();)
+    SkASSERT(numBeforeReset == (int) origKeys.size());
+
+    context->priv().globalCache()->resetGraphicsPipelines();
+
+    SkASSERT(context->priv().globalCache()->numGraphicsPipelines() == 0);
+
+    for (const skgpu::UniqueKey& k : origKeys) {
+        // TODO: add a separate path that decomposes the keys into PaintOptions
+        //  and uses them to Precompile
+        GraphicsPipelineDesc pipelineDesc;
+        RenderPassDesc renderPassDesc;
+
+        if (!UniqueKeyUtils::ExtractKeyDescs(context, k, &pipelineDesc, &renderPassDesc)) {
+            continue;
+        }
+
+        Precompile(context, rteDict, pipelineDesc, renderPassDesc);
+    }
+
+    SkDEBUGCODE(int postRecreate = context->priv().globalCache()->numGraphicsPipelines();)
+
+    SkASSERT(numBeforeReset == postRecreate);
+
+    {
+        std::vector<skgpu::UniqueKey> recreatedKeys;
+
+        UniqueKeyUtils::FetchUniqueKeys(context->priv().globalCache(), &recreatedKeys);
+
+        for (const skgpu::UniqueKey& origKey : origKeys) {
+            if(std::find(recreatedKeys.begin(), recreatedKeys.end(), origKey) ==
+                         recreatedKeys.end()) {
+                sk_sp<GraphicsPipeline> pipeline =
+                        context->priv().globalCache()->findGraphicsPipeline(origKey);
+                SkASSERT(!pipeline);
+
+#ifdef SK_DEBUG
+                const RendererProvider* rendererProvider = context->priv().rendererProvider();
+                const ShaderCodeDictionary* dict = context->priv().shaderCodeDictionary();
+
+                {
+                    GraphicsPipelineDesc originalPipelineDesc;
+                    RenderPassDesc originalRenderPassDesc;
+                    UniqueKeyUtils::ExtractKeyDescs(context, origKey,
+                                                    &originalPipelineDesc,
+                                                    &originalRenderPassDesc);
+
+                    SkDebugf("------- Missing key from rebuilt keys:\n");
+                    origKey.dump("original key:");
+                    UniqueKeyUtils::DumpDescs(rendererProvider, dict,
+                                              originalPipelineDesc,
+                                              originalRenderPassDesc);
+                }
+
+                SkDebugf("Have %d recreated keys -----------------\n", (int) recreatedKeys.size());
+                int count = 0;
+                for (const skgpu::UniqueKey& recreatedKey : recreatedKeys) {
+
+                    GraphicsPipelineDesc recreatedPipelineDesc;
+                    RenderPassDesc recreatedRenderPassDesc;
+                    UniqueKeyUtils::ExtractKeyDescs(context, recreatedKey,
+                                                    &recreatedPipelineDesc,
+                                                    &recreatedRenderPassDesc);
+
+                    SkDebugf("%d ----\n", count++);
+                    recreatedKey.dump("recreated key:");
+                    UniqueKeyUtils::DumpDescs(rendererProvider, dict,
+                                              recreatedPipelineDesc,
+                                              recreatedRenderPassDesc);
+                }
 #endif
+
+                SK_ABORT("missing");
+            }
+        }
+    }
+
+    return Result::Ok();
+}
+
+Result GraphitePrecompileTestingSink::draw(const Src& src,
+                                           SkBitmap* dst,
+                                           SkWStream* dstStream,
+                                           SkString* log) const {
+    skiatest::graphite::TestOptions options = fOptions;
+    // If we've copied context options from an external source we can't trust that the
+    // priv pointer is still in scope, so assume it should be NULL and set our own up.
+    SkASSERT(!options.fContextOptions.fOptionsPriv);
+    skgpu::graphite::ContextOptionsPriv optionsPriv;
+    options.fContextOptions.fOptionsPriv = &optionsPriv;
+
+    src.modifyGraphiteContextOptions(&options.fContextOptions);
+
+    skiatest::graphite::ContextFactory factory(options);
+    skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(fContextType);
+    skgpu::graphite::Context* context = ctxInfo.fContext;
+    if (!context) {
+        return Result::Fatal("Could not create a context.");
+    }
+
+    // First, clear out any miscellaneous Pipelines that might be cluttering up the global cache.
+    context->priv().globalCache()->resetGraphicsPipelines();
+
+    // Draw the Src for the first time, populating the global pipeline cache.
+    Result result = this->drawSrc(src, context, ctxInfo.fTestContext);
+    if (!result.isOk()) {
+        fRecorder.reset();
+        return result;
+    }
+
+    // Call resetAndRecreatePipelines to clear out all the Pipelines in the global cache and then
+    // regenerate them using the Precompilation system.
+    result = this->resetAndRecreatePipelines(context);
+    if (!result.isOk()) {
+        fRecorder.reset();
+        return result;
+    }
+
+    // Draw the Src for the second time. This shouldn't create any new Pipelines since the ones
+    // generated via Precompilation should be sufficient.
+    result = this->drawSrc(src, context, ctxInfo.fTestContext);
+    if (!result.isOk()) {
+        fRecorder.reset();
+        return result;
+    }
+
+    fRecorder.reset();
+
+    // TODO: verify that no additional pipelines were created during the second 'drawSrc' call
+    return Result::Ok();
+}
+#endif // SK_ENABLE_PRECOMPILE
+
+#endif // SK_GRAPHITE
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
@@ -2384,10 +2607,6 @@ Result ViaRuntimeBlend::draw(const Src& src,
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 #ifdef TEST_VIA_SVG
-#include "include/svg/SkSVGCanvas.h"
-#include "modules/svg/include/SkSVGDOM.h"
-#include "src/xml/SkXMLWriter.h"
-
 Result ViaSVG::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkString* log) const {
     auto size = src.size();
     return draw_to_canvas(fSink.get(), bitmap, stream, log, size,
@@ -2399,9 +2618,18 @@ Result ViaSVG::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkStrin
         if (!result.isOk()) {
             return result;
         }
+
+        auto shapingFactory = SkShapers::BestAvailable();
+        auto fontMgr = ToolUtils::TestFontMgr();
+        // When rendering our SVGs we want to be sure we are using shaping.
+        // If we fail to make a shaper, then it can mean something like skunicode is misconfigured.
+        SkASSERT(shapingFactory->makeShaper(fontMgr));
+
         std::unique_ptr<SkStream> rstream(wstream.detachAsStream());
-        sk_sp<SkSVGDOM> dom =
-                SkSVGDOM::Builder().setFontManager(ToolUtils::TestFontMgr()).make(*rstream);
+        sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
+                                      .setFontManager(std::move(fontMgr))
+                                      .setTextShapingFactory(std::move(shapingFactory))
+                                      .make(*rstream);
         if (dom) {
             dom->setContainerSize(SkSize::Make(size));
             dom->render(canvas);

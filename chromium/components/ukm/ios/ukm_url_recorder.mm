@@ -108,6 +108,7 @@ void SourceUrlRecorderWebStateObserver::DidFinishNavigation(
 
   DCHECK(!navigation_context->IsSameDocument());
 
+  const auto previous_last_committed_source_id = last_committed_source_id_;
   if (navigation_context->HasCommitted()) {
     last_committed_source_id_ = ConvertToSourceId(
         navigation_context->GetNavigationId(), SourceIdType::NAVIGATION_ID);
@@ -120,6 +121,13 @@ void SourceUrlRecorderWebStateObserver::DidFinishNavigation(
   if (navigation_context->IsDownload())
     return;
 
+  if (last_committed_source_id_ == previous_last_committed_source_id) {
+    // When the user is going back to a historical entry via action
+    // "MobileToolbarBack", we've observed that NavigationContext is sometimes
+    // (likely incorrectly) reused. In this case, the URL is already recorded,
+    // so skip the URL recording. See b/40075835.
+    return;
+  }
   MaybeRecordUrl(navigation_context, initial_url);
 }
 
@@ -139,13 +147,14 @@ void SourceUrlRecorderWebStateObserver::MaybeRecordUrl(
   const GURL& final_url = navigation_context->GetUrl();
 
   UkmSource::NavigationData navigation_data;
-  // TODO(crbug.com/869123): This check isn't quite correct, as self redirecting
-  // is possible. This may also be changed to include the entire redirect chain.
+  // TODO(crbug.com/40587196): This check isn't quite correct, as self
+  // redirecting is possible. This may also be changed to include the entire
+  // redirect chain.
   if (final_url != initial_url)
     navigation_data.urls = {initial_url};
   navigation_data.urls.push_back(final_url);
 
-  // TODO(crbug.com/873316): Fill out the other fields in NavigationData.
+  // TODO(crbug.com/41407501): Fill out the other fields in NavigationData.
 
   const ukm::SourceId source_id = ukm::ConvertToSourceId(
       navigation_context->GetNavigationId(), ukm::SourceIdType::NAVIGATION_ID);

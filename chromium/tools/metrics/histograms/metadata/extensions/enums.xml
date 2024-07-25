@@ -49,16 +49,18 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Has withheld hosts"/>
 </enum>
 
-<enum name="CorruptExtensionDisabledReason">
+<enum name="ContentVerifyJobResult">
   <summary>
-    The reason why content verification flagged an extension as corrupted. See
-    ContentVerifyJob::FailureReason in
-    src/extensions/browser/content_verify_job.h.
+    The result of a content verification job, either indicating success (no
+    failure) or the reason why content verification flagged an extension as
+    corrupted. See ContentVerifyJob::FailureReason in
+    src/extensions/browser/content_verifier/content_verify_job.h.
   </summary>
-  <int value="0" label="Unknown Reason"/>
+  <int value="0" label="No Failure"/>
   <int value="1" label="Missing All Hashes"/>
-  <int value="2" label="Missing File Hash"/>
-  <int value="3" label="Hash Mismatch"/>
+  <int value="2" label="Corrupted Hashes"/>
+  <int value="3" label="No Hashes For File"/>
+  <int value="4" label="Hash Mismatch"/>
 </enum>
 
 <enum name="DeclarativeAPIFunctionType">
@@ -750,6 +752,8 @@ Called by update_extension_histograms.py.-->
   <int value="553" label="PDF_VIEWER_PRIVATE_ON_SAVE"/>
   <int value="554"
       label="ACCESSIBILITY_PRIVATE_ON_SELECT_TO_SPEAK_FOCUS_CHANGED"/>
+  <int value="555" label="TTS_ON_VOICES_CHANGED"/>
+  <int value="556" label="OS_DIAGNOSTICS_ON_ROUTINE_FINISHED"/>
 </enum>
 
 <enum name="ExtensionForceInstalledPreInstalledDeprecatedSite">
@@ -1815,7 +1819,7 @@ Called by update_extension_histograms.py.-->
   <int value="1015" label="AUTOFILLPRIVATE_SAVECREDITCARD"/>
   <int value="1016" label="AUTOFILLPRIVATE_REMOVEENTRY"/>
   <int value="1017" label="DELETED_AUTOFILLPRIVATE_VALIDATEPHONENUMBERS"/>
-  <int value="1018" label="AUTOFILLPRIVATE_MASKCREDITCARD"/>
+  <int value="1018" label="DELETED_AUTOFILLPRIVATE_MASKCREDITCARD"/>
   <int value="1019" label="INSTANCEID_GETID"/>
   <int value="1020" label="INSTANCEID_GETCREATIONTIME"/>
   <int value="1021" label="INSTANCEID_GETTOKEN"/>
@@ -2717,6 +2721,29 @@ Called by update_extension_histograms.py.-->
   <int value="1867" label="ACCESSIBILITY_PRIVATE_INSTALLFACEGAZEASSETS"/>
   <int value="1868" label="OS_MANAGEMENT_SETAUDIOVOLUME"/>
   <int value="1869" label="AUTOTESTPRIVATE_SETDEVICELANGUAGE"/>
+  <int value="1870" label="AUTOFILLPRIVATE_SETAUTOFILLSYNCTOGGLEENABLED"/>
+  <int value="1871"
+      label="ODFSCONFIGPRIVATE_ISFILESYSTEMPROVIDERCLOUDFILESYSTEMENABLED"/>
+  <int value="1872" label="PDFVIEWERPRIVATE_SETPDFDOCUMENTTITLE"/>
+  <int value="1873" label="FILEMANAGERPRIVATE_GETMATERIALIZEDVIEWS"/>
+  <int value="1874" label="FILEMANAGERPRIVATE_READMATERIALIZEDVIEW"/>
+  <int value="1875"
+      label="FILESYSTEMPROVIDERINTERNAL_OPENFILEREQUESTEDSUCCESS"/>
+  <int value="1876" label="OS_DIAGNOSTICS_CREATEROUTINE"/>
+  <int value="1877" label="OS_DIAGNOSTICS_ISROUTINEARGUMENTSUPPORTED"/>
+  <int value="1878" label="PASSWORDSPRIVATE_CHANGEPASSWORDMANAGERPIN"/>
+  <int value="1879" label="PASSWORDSPRIVATE_ISPASSWORDMANAGERPINAVAILABLE"/>
+  <int value="1880" label="OS_DIAGNOSTICS_REPLYTOROUTINEINQUIRY"/>
+  <int value="1881" label="USERSCRIPTS_GETWORLDCONFIGURATIONS"/>
+  <int value="1882" label="USERSCRIPTS_RESETWORLDCONFIGURATION"/>
+  <int value="1883" label="AUTOTESTPRIVATE_WAITFORLOGINANIMATIONEND"/>
+  <int value="1884" label="CHROMEOSINFOPRIVATE_ISRUNNINGONLACROS"/>
+  <int value="1885" label="WEBSTOREPRIVATE_GETFULLCHROMEVERSION"/>
+  <int value="1886"
+      label="ODFSCONFIGPRIVATE_ISFILESYSTEMPROVIDERCONTENTCACHEENABLED"/>
+  <int value="1887" label="PASSWORDSPRIVATE_DISCONNECTCLOUDAUTHENTICATOR"/>
+  <int value="1888" label="PASSWORDSPRIVATE_ISCONNECTEDTOCLOUDAUTHENTICATOR"/>
+  <int value="1889" label="WEBSTOREPRIVATE_GETMV2DEPRECATIONSTATUS"/>
 </enum>
 
 <enum name="ExtensionInstallationCrxInstallError">
@@ -3093,6 +3120,7 @@ Called by update_extension_permission.py.-->
   <int value="255" label="kEnterpriseKioskInput"/>
   <int value="256" label="kOdfsConfigPrivate"/>
   <int value="257" label="kChromeOSManagementAudio"/>
+  <int value="258" label="kChromeOSDiagnosticsNetworkInfoForMlab"/>
 </enum>
 
 <enum name="ExtensionPolicyReinstallReason">
@@ -3207,6 +3235,14 @@ Called by update_extension_permission.py.-->
   <int value="3" label="Not Available, Incognito mode"/>
 </enum>
 
+<enum name="GuestViewType">
+  <int value="0" label="Invalid"/>
+  <int value="1" label="webview"/>
+  <int value="2" label="mime handler view"/>
+  <int value="3" label="extension options"/>
+  <int value="4" label="app view"/>
+</enum>
+
 <enum name="HostPermissionsAccess">
   <int value="0" label="CANNOT_AFFECT"/>
   <int value="1" label="NOT_REQUESTED"/>
@@ -3264,6 +3300,16 @@ Called by update_extension_permission.py.-->
   <int value="13" label="Bad App Status"/>
 </enum>
 
+<enum name="ManifestVersion">
+  <int value="1" label="Manifest Version 1"/>
+  <int value="2" label="Manifest Version 2"/>
+  <int value="3" label="Manifest Version 3"/>
+  <int value="4" label="Manifest Version 4"/>
+  <int value="5" label="Manifest Version 5"/>
+  <int value="6" label="Manifest Version 6"/>
+  <int value="7" label="Manifest Version 7"/>
+</enum>
+
 <enum name="ManifestVersionPopulationSplit">
   <int value="0" label="No extensions"/>
   <int value="1" label="Manifest Version 2 extensions only"/>
@@ -3299,6 +3345,16 @@ Called by update_extension_permission.py.-->
   <int value="2" label="Worker not running"/>
   <int value="3" label="Worker not found"/>
   <int value="4" label="Null context"/>
+</enum>
+
+<enum name="ServiceWorkerVersionStatus">
+  <int value="0" label="kUnknown"/>
+  <int value="1" label="kNew"/>
+  <int value="2" label="kInstalling"/>
+  <int value="3" label="kInstalled"/>
+  <int value="4" label="kActivating"/>
+  <int value="5" label="kActivated"/>
+  <int value="6" label="kRedundant"/>
 </enum>
 
 <enum name="SessionType">
@@ -3341,6 +3397,21 @@ Called by update_extension_permission.py.-->
   <int value="16" label="kErrorSerializeToJson"/>
   <int value="17" label="kErrorWriteJson"/>
   <int value="18" label="kErrorWriteFlatbuffer"/>
+</enum>
+
+<enum name="VerifiedFileType">
+  <summary>
+    The type of file that was verified in content verification. Keep in sync
+    with ContentVerifier::VerifiedFileType.
+  </summary>
+  <int value="0" label="None"/>
+  <int value="1" label="Background Page"/>
+  <int value="2" label="Background Script"/>
+  <int value="3" label="Service Worker Script"/>
+  <int value="4" label="Content Script"/>
+  <int value="5" label="Misc Html File"/>
+  <int value="6" label="Misc Js File"/>
+  <int value="7" label="Misc File"/>
 </enum>
 
 <enum name="WebRequest.RequestHeader">

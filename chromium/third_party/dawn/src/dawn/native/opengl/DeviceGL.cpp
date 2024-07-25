@@ -46,6 +46,8 @@
 #include "dawn/native/opengl/SamplerGL.h"
 #include "dawn/native/opengl/ShaderModuleGL.h"
 #include "dawn/native/opengl/TextureGL.h"
+#include "dawn/native/opengl/UtilsGL.h"
+#include "dawn/native/opengl/opengl_platform.h"
 
 namespace {
 
@@ -121,9 +123,10 @@ ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const UnpackedPtr<DeviceDescriptor>& descriptor,
                                           const OpenGLFunctions& functions,
                                           std::unique_ptr<Context> context,
-                                          const TogglesState& deviceToggles) {
-    Ref<Device> device =
-        AcquireRef(new Device(adapter, descriptor, functions, std::move(context), deviceToggles));
+                                          const TogglesState& deviceToggles,
+                                          Ref<DeviceBase::DeviceLostEvent>&& lostEvent) {
+    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, functions, std::move(context),
+                                               deviceToggles, std::move(lostEvent)));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -132,8 +135,9 @@ Device::Device(AdapterBase* adapter,
                const UnpackedPtr<DeviceDescriptor>& descriptor,
                const OpenGLFunctions& functions,
                std::unique_ptr<Context> context,
-               const TogglesState& deviceToggles)
-    : DeviceBase(adapter, descriptor, deviceToggles),
+               const TogglesState& deviceToggles,
+               Ref<DeviceBase::DeviceLostEvent>&& lostEvent)
+    : DeviceBase(adapter, descriptor, deviceToggles, std::move(lostEvent)),
       mGL(functions),
       mContext(std::move(context)) {}
 
@@ -181,7 +185,6 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
     // Set initial state.
     gl.Enable(GL_DEPTH_TEST);
     gl.Enable(GL_SCISSOR_TEST);
-    gl.Enable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
     if (gl.GetVersion().IsDesktop()) {
         // These are not necessary on GLES. The functionality is enabled by default, and
         // works by specifying sample counts and SRGB textures, respectively.
@@ -192,6 +195,9 @@ MaybeError Device::Initialize(const UnpackedPtr<DeviceDescriptor>& descriptor) {
 
     Ref<Queue> queue;
     DAWN_TRY_ASSIGN(queue, Queue::Create(this, &descriptor->defaultQueue));
+    if (HasAnisotropicFiltering(gl)) {
+        gl.GetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &mMaxTextureMaxAnisotropy);
+    }
     return DeviceBase::Initialize(std::move(queue));
 }
 
@@ -255,10 +261,9 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     OwnedCompilationMessages* compilationMessages) {
     return ShaderModule::Create(this, descriptor, parseResult, compilationMessages);
 }
-ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    Surface* surface,
-    SwapChainBase* previousSwapChain,
-    const SwapChainDescriptor* descriptor) {
+ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
+                                                              SwapChainBase* previousSwapChain,
+                                                              const SurfaceConfiguration* config) {
     return DAWN_VALIDATION_ERROR("New swapchains not implemented.");
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
@@ -267,7 +272,7 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
-    const TextureViewDescriptor* descriptor) {
+    const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return AcquireRef(new TextureView(texture, descriptor));
 }
 
@@ -421,10 +426,38 @@ float Device::GetTimestampPeriodInNS() const {
     return 1.0f;
 }
 
+bool Device::MayRequireDuplicationOfIndirectParameters() const {
+    return true;
+}
+
+bool Device::ShouldApplyIndexBufferOffsetToFirstIndex() const {
+    return true;
+}
+
 const OpenGLFunctions& Device::GetGL() const {
     mContext->MakeCurrent();
     ToBackend(GetQueue())->OnGLUsed();
     return mGL;
+}
+
+int Device::GetMaxTextureMaxAnisotropy() const {
+    return mMaxTextureMaxAnisotropy;
+}
+
+const EGLFunctions& Device::GetEGL(bool makeCurrent) const {
+    if (makeCurrent) {
+        mContext->MakeCurrent();
+        ToBackend(GetQueue())->OnGLUsed();
+    }
+    return mContext->GetEGL();
+}
+
+const EGLExtensionSet& Device::GetEGLExtensions() const {
+    return mContext->GetExtensions();
+}
+
+EGLDisplay Device::GetEGLDisplay() const {
+    return mContext->GetEGLDisplay();
 }
 
 }  // namespace dawn::native::opengl

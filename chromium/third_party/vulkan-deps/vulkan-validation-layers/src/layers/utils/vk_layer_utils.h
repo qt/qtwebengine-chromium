@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2017, 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2017, 2019-2023 Valve Corporation
- * Copyright (c) 2015-2017, 2019-2023 LunarG, Inc.
+/* Copyright (c) 2015-2017, 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2017, 2019-2024 Valve Corporation
+ * Copyright (c) 2015-2017, 2019-2024 LunarG, Inc.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +19,7 @@
 #pragma once
 
 #include <cassert>
+#include <cctype>
 #include <cstddef>
 #include <cstring>
 #include <functional>
@@ -28,6 +29,7 @@
 #include <shared_mutex>
 
 #include <vulkan/utility/vk_format_utils.h>
+#include <vulkan/utility/vk_concurrent_unordered_map.hpp>
 
 #include "cast_utils.h"
 #include "generated/vk_extension_helper.h"
@@ -63,97 +65,11 @@ static inline VkOffset3D CastTo3D(const VkOffset2D &d2) {
     return d3;
 }
 
-// Traits objects to allow string_join to operate on collections of const char *
-template <typename String>
-struct StringJoinSizeTrait {
-    static size_t size(const String &str) { return str.size(); }
-};
-
-template <>
-struct StringJoinSizeTrait<const char *> {
-    static size_t size(const char *str) {
-        if (!str) return 0;
-        return strlen(str);
-    }
-};
-// Similar to perl/python join
-//    * String must support size, reserve, append, and be default constructable
-//    * StringCollection must support size, const forward iteration, and store
-//      strings compatible with String::append
-//    * Accessor trait can be set if default accessors (compatible with string
-//      and const char *) don't support size(StringCollection::value_type &)
-//
-// Return type based on sep type
-template <typename String = std::string, typename StringCollection = std::vector<String>,
-          typename Accessor = StringJoinSizeTrait<typename StringCollection::value_type>>
-static inline String string_join(const String &sep, const StringCollection &strings) {
-    String joined;
-    const size_t count = strings.size();
-    if (!count) return joined;
-
-    // Prereserved storage, s.t. we will execute in linear time (avoids reallocation copies)
-    size_t reserve = (count - 1) * sep.size();
-    for (const auto &str : strings) {
-        reserve += Accessor::size(str);  // abstracted to allow const char * type in StringCollection
-    }
-    joined.reserve(reserve + 1);
-
-    // Seps only occur *between* strings entries, so first is special
-    auto current = strings.cbegin();
-    joined.append(*current);
-    ++current;
-    for (; current != strings.cend(); ++current) {
-        joined.append(sep);
-        joined.append(*current);
-    }
-    return joined;
-}
-
-// Requires StringCollection::value_type has a const char * constructor and is compatible the string_join::String above
-template <typename StringCollection = std::vector<std::string>, typename SepString = std::string>
-static inline SepString string_join(const char *sep, const StringCollection &strings) {
-    return string_join<SepString, StringCollection>(SepString(sep), strings);
-}
-
-static inline std::string string_trim(const std::string &s) {
-    const char *whitespace = " \t\f\v\n\r";
-
-    const auto trimmed_beg = s.find_first_not_of(whitespace);
-    if (trimmed_beg == std::string::npos) return "";
-
-    const auto trimmed_end = s.find_last_not_of(whitespace);
-    assert(trimmed_end != std::string::npos && trimmed_beg <= trimmed_end);
-
-    return s.substr(trimmed_beg, trimmed_end - trimmed_beg + 1);
-}
-
-// Perl/Python style join operation for general types using stream semantics
-// Note: won't be as fast as string_join above, but simpler to use (and code)
-// Note: Modifiable reference doesn't match the google style but does match std style for stream handling and algorithms
-template <typename Stream, typename String, typename ForwardIt>
-Stream &stream_join(Stream &stream, const String &sep, ForwardIt first, ForwardIt last) {
-    if (first != last) {
-        stream << *first;
-        ++first;
-        while (first != last) {
-            stream << sep << *first;
-            ++first;
-        }
-    }
-    return stream;
-}
-
-// stream_join For whole collections with forward iterators
-template <typename Stream, typename String, typename Collection>
-Stream &stream_join(Stream &stream, const String &sep, const Collection &values) {
-    return stream_join(stream, sep, values.cbegin(), values.cend());
-}
-
 typedef void *dispatch_key;
-static inline dispatch_key get_dispatch_key(const void *object) { return (dispatch_key) * (VkLayerDispatchTable **)object; }
+static inline dispatch_key GetDispatchKey(const void *object) { return (dispatch_key) * (VkLayerDispatchTable **)object; }
 
-VkLayerInstanceCreateInfo *get_chain_info(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func);
-VkLayerDeviceCreateInfo *get_chain_info(const VkDeviceCreateInfo *pCreateInfo, VkLayerFunction func);
+VkLayerInstanceCreateInfo *GetChainInfo(const VkInstanceCreateInfo *pCreateInfo, VkLayerFunction func);
+VkLayerDeviceCreateInfo *GetChainInfo(const VkDeviceCreateInfo *pCreateInfo, VkLayerFunction func);
 
 template <typename T>
 constexpr bool IsPowerOfTwo(T x) {
@@ -205,29 +121,6 @@ constexpr T Align(T x, T p2) {
 
 // Returns the 0-based index of the LSB. An input mask of 0 yields -1
 static inline int LeastSignificantBit(uint32_t mask) { return u_ffs(static_cast<int>(mask)) - 1; }
-
-// Compute a binomial coefficient
-template <typename T>
-constexpr T binom(T n, T k) {
-    static_assert(std::numeric_limits<T>::is_integer, "Unsigned integer required.");
-    static_assert(std::is_unsigned<T>::value, "Unsigned integer required.");
-    assert(n >= k);
-    if (n == 0) {
-        return 0;
-    }
-    if (k == 0) {
-        return 1;
-    }
-
-    T numerator = 1;
-    T denominator = 1;
-    for (T i = 1; i <= k; ++i) {
-        numerator *= n - i + 1;
-        denominator *= i;
-    }
-
-    return numerator / denominator;
-}
 
 template <typename FlagBits, typename Flags>
 FlagBits LeastSignificantFlag(Flags flags) {
@@ -347,7 +240,7 @@ static inline uint32_t GetIndexAlignment(VkIndexType indexType) {
             return 2;
         case VK_INDEX_TYPE_UINT32:
             return 4;
-        case VK_INDEX_TYPE_UINT8_EXT:
+        case VK_INDEX_TYPE_UINT8_KHR:
             return 1;
         case VK_INDEX_TYPE_NONE_KHR:  // alias VK_INDEX_TYPE_NONE_NV
             return 0;
@@ -391,18 +284,22 @@ static inline bool IsAnyPlaneAspect(VkImageAspectFlags aspect_mask) {
     return (aspect_mask & valid_planes) != 0;
 }
 
+static const VkShaderStageFlags kShaderStageAllGraphics =
+    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT | VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+    VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT;
+
+static const VkShaderStageFlags kShaderStageAllRayTracing =
+    VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
+    VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 static bool inline IsStageInPipelineBindPoint(VkShaderStageFlags stages, VkPipelineBindPoint bind_point) {
     switch (bind_point) {
         case VK_PIPELINE_BIND_POINT_GRAPHICS:
-            return (stages & (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
-                              VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT | VK_SHADER_STAGE_GEOMETRY_BIT |
-                              VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_TASK_BIT_EXT | VK_SHADER_STAGE_MESH_BIT_EXT)) != 0;
+            return (stages & kShaderStageAllGraphics) != 0;
         case VK_PIPELINE_BIND_POINT_COMPUTE:
             return (stages & VK_SHADER_STAGE_COMPUTE_BIT) != 0;
         case VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR:
-            return (stages &
-                    (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-                     VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_INTERSECTION_BIT_KHR | VK_SHADER_STAGE_CALLABLE_BIT_KHR)) != 0;
+            return (stages & kShaderStageAllRayTracing) != 0;
         default:
             return false;
     }
@@ -484,50 +381,7 @@ static inline uint32_t FullMipChainLevels(VkExtent3D extent) {
 }
 
 // Returns the effective extent of an image subresource, adjusted for mip level and array depth.
-[[nodiscard]] inline VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageAspectFlags aspect_mask,
-                                                   const uint32_t mip_level) {
-    // Return zero extent if mip level doesn't exist
-    if (mip_level >= ci.mipLevels) {
-        return VkExtent3D{0, 0, 0};
-    }
-
-    VkExtent3D extent = ci.extent;
-
-    // If multi-plane, adjust per-plane extent
-    const VkFormat format = ci.format;
-    if (vkuFormatIsMultiplane(format)) {
-        VkExtent2D divisors = vkuFindMultiplaneExtentDivisors(format, static_cast<VkImageAspectFlagBits>(aspect_mask));
-        extent.width /= divisors.width;
-        extent.height /= divisors.height;
-    }
-
-    // Mip Maps
-    {
-        const uint32_t corner = (ci.flags & VK_IMAGE_CREATE_CORNER_SAMPLED_BIT_NV) ? 1 : 0;
-        const uint32_t min_size = 1 + corner;
-        const std::array dimensions = {&extent.width, &extent.height, &extent.depth};
-        for (uint32_t *dim : dimensions) {
-            // Don't allow mip adjustment to create 0 dim, but pass along a 0 if that's what subresource specified
-            if (*dim == 0) {
-                continue;
-            }
-            *dim >>= mip_level;
-            *dim = std::max(min_size, *dim);
-        }
-    }
-
-    // Image arrays have an effective z extent that isn't diminished by mip level
-    if (VK_IMAGE_TYPE_3D != ci.imageType) {
-        extent.depth = ci.arrayLayers;
-    }
-
-    return extent;
-}
-
-// Returns the effective extent of an image subresource, adjusted for mip level and array depth.
-[[nodiscard]] inline VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageSubresourceRange &range) {
-    return GetEffectiveExtent(ci, range.aspectMask, range.baseMipLevel);
-}
+VkExtent3D GetEffectiveExtent(const VkImageCreateInfo &ci, const VkImageAspectFlags aspect_mask, const uint32_t mip_level);
 
 // Calculates the number of mip levels a VkImageView references.
 constexpr uint32_t ResolveRemainingLevels(const VkImageCreateInfo &ci, VkImageSubresourceRange const &range) {
@@ -578,10 +432,8 @@ typedef enum VkStringErrorFlagBits {
 } VkStringErrorFlagBits;
 typedef VkFlags VkStringErrorFlags;
 
-void layer_debug_messenger_actions(debug_report_data *report_data, const char *layer_identifier);
+void LayerDebugMessengerActions(DebugReport *debug_report, const char *layer_identifier);
 
-VkStringErrorFlags vk_string_validate(const int max_length, const char *char_array);
-bool white_list(const char *item, const std::set<std::string> &whitelist);
 std::string GetTempFilePath();
 
 // Aliases to avoid excessive typing. We can't easily auto these away because
@@ -599,180 +451,6 @@ class LockedSharedPtr : public std::shared_ptr<T> {
 
   private:
     Guard guard_;
-};
-
-// https://en.cppreference.com/w/cpp/thread/hardware_destructive_interference_size
-// https://en.wikipedia.org/wiki/False_sharing
-// TODO use C++20 to check for std::hardware_destructive_interference_size feature support.
-constexpr std::size_t get_hardware_destructive_interference_size() { return 64; }
-
-// Limited concurrent_unordered_map that supports internally-synchronized
-// insert/erase/access. Splits locking across N buckets and uses shared_mutex
-// for read/write locking. Iterators are not supported. The following
-// operations are supported:
-//
-// insert_or_assign: Insert a new element or update an existing element.
-// insert: Insert a new element and return whether it was inserted.
-// erase: Remove an element.
-// contains: Returns true if the key is in the map.
-// find: Returns != end() if found, value is in ret->second.
-// pop: Erases and returns the erased value if found.
-//
-// find/end: find returns a vaguely iterator-like type that can be compared to
-// end and can use iter->second to retrieve the reference. This is to ease porting
-// for existing code that combines the existence check and lookup in a single
-// operation (and thus a single lock). i.e.:
-//
-//      auto iter = map.find(key);
-//      if (iter != map.end()) {
-//          T t = iter->second;
-//          ...
-//
-// snapshot: Return an array of elements (key, value pairs) that satisfy an optional
-// predicate. This can be used as a substitute for iterators in exceptional cases.
-template <typename Key, typename T, int BUCKETSLOG2 = 2, typename Hash = vvl::hash<Key>>
-class vl_concurrent_unordered_map {
-  public:
-    template <typename... Args>
-    void insert_or_assign(const Key &key, Args &&...args) {
-        uint32_t h = ConcurrentMapHashObject(key);
-        WriteLockGuard lock(locks[h].lock);
-        maps[h][key] = {std::forward<Args>(args)...};
-    }
-
-    template <typename... Args>
-    bool insert(const Key &key, Args &&...args) {
-        uint32_t h = ConcurrentMapHashObject(key);
-        WriteLockGuard lock(locks[h].lock);
-        auto ret = maps[h].emplace(key, std::forward<Args>(args)...);
-        return ret.second;
-    }
-
-    // returns size_type
-    size_t erase(const Key &key) {
-        uint32_t h = ConcurrentMapHashObject(key);
-        WriteLockGuard lock(locks[h].lock);
-        return maps[h].erase(key);
-    }
-
-    bool contains(const Key &key) const {
-        uint32_t h = ConcurrentMapHashObject(key);
-        ReadLockGuard lock(locks[h].lock);
-        return maps[h].count(key) != 0;
-    }
-
-    // type returned by find() and end().
-    class FindResult {
-      public:
-        FindResult(bool a, T b) : result(a, std::move(b)) {}
-
-        // == and != only support comparing against end()
-        bool operator==(const FindResult &other) const {
-            if (result.first == false && other.result.first == false) {
-                return true;
-            }
-            return false;
-        }
-        bool operator!=(const FindResult &other) const { return !(*this == other); }
-
-        // Make -> act kind of like an iterator.
-        std::pair<bool, T> *operator->() { return &result; }
-        const std::pair<bool, T> *operator->() const { return &result; }
-
-      private:
-        // (found, reference to element)
-        std::pair<bool, T> result;
-    };
-
-    // find()/end() return a FindResult containing a copy of the value. For end(),
-    // return a default value.
-    FindResult end() const { return FindResult(false, T()); }
-    FindResult cend() const { return end(); }
-
-    FindResult find(const Key &key) const {
-        uint32_t h = ConcurrentMapHashObject(key);
-        ReadLockGuard lock(locks[h].lock);
-
-        auto itr = maps[h].find(key);
-        const bool found = itr != maps[h].end();
-
-        if (found) {
-            return FindResult(true, itr->second);
-        } else {
-            return end();
-        }
-    }
-
-    FindResult pop(const Key &key) {
-        uint32_t h = ConcurrentMapHashObject(key);
-        WriteLockGuard lock(locks[h].lock);
-
-        auto itr = maps[h].find(key);
-        const bool found = itr != maps[h].end();
-
-        if (found) {
-            auto ret = FindResult(true, itr->second);
-            maps[h].erase(itr);
-            return ret;
-        } else {
-            return end();
-        }
-    }
-
-    std::vector<std::pair<const Key, T>> snapshot(std::function<bool(T)> f = nullptr) const {
-        std::vector<std::pair<const Key, T>> ret;
-        for (int h = 0; h < BUCKETS; ++h) {
-            ReadLockGuard lock(locks[h].lock);
-            for (const auto &j : maps[h]) {
-                if (!f || f(j.second)) {
-                    ret.emplace_back(j.first, j.second);
-                }
-            }
-        }
-        return ret;
-    }
-
-    void clear() {
-        for (int h = 0; h < BUCKETS; ++h) {
-            WriteLockGuard lock(locks[h].lock);
-            maps[h].clear();
-        }
-    }
-
-    size_t size() const {
-        size_t result = 0;
-        for (int h = 0; h < BUCKETS; ++h) {
-            ReadLockGuard lock(locks[h].lock);
-            result += maps[h].size();
-        }
-        return result;
-    }
-
-    bool empty() const {
-        bool result = 0;
-        for (int h = 0; h < BUCKETS; ++h) {
-            ReadLockGuard lock(locks[h].lock);
-            result |= maps[h].empty();
-        }
-        return result;
-    }
-
-  private:
-    static const int BUCKETS = (1 << BUCKETSLOG2);
-
-    vvl::unordered_map<Key, T, Hash> maps[BUCKETS];
-    struct alignas(get_hardware_destructive_interference_size()) AlignedSharedMutex {
-        std::shared_mutex lock;
-    };
-    mutable std::array<AlignedSharedMutex, BUCKETS> locks;
-
-    uint32_t ConcurrentMapHashObject(const Key &object) const {
-        uint64_t u64 = (uint64_t)(uintptr_t)object;
-        uint32_t hash = (uint32_t)(u64 >> 32) + (uint32_t)u64;
-        hash ^= (hash >> BUCKETSLOG2) ^ (hash >> (2 * BUCKETSLOG2));
-        hash &= (BUCKETS - 1);
-        return hash;
-    }
 };
 
 static constexpr VkPipelineStageFlags2KHR kFramebufferStagePipelineStageFlags =
@@ -794,6 +472,8 @@ static constexpr bool HasFramebufferStagePipelineStageFlags(VkPipelineStageFlags
 static constexpr bool HasNonShaderTileImageAccessFlags(VkAccessFlags2 in_flags) {
     return ((in_flags & ~kShaderTileImageAllowedAccessFlags) != 0);
 }
+
+bool RangesIntersect(int64_t x, uint64_t x_size, int64_t y, uint64_t y_size);
 
 namespace vvl {
 

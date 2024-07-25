@@ -23,6 +23,7 @@
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animator.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/test/event_generator.h"
@@ -159,7 +160,6 @@ class EventHandlingView : public View {
   }
 
   // View:
-  const char* GetClassName() const override { return "EventHandlingView"; }
   void OnMouseEvent(ui::MouseEvent* event) override { event->SetHandled(); }
   void OnGestureEvent(ui::GestureEvent* event) override {
     // Record the handled gesture event.
@@ -935,19 +935,6 @@ TEST_F(NativeWidgetAuraTest, WorkspaceUuid) {
       widget2->GetNativeWindow()->GetProperty(aura::client::kDeskUuidKey));
 }
 
-// NativeWidgetAura has a protected destructor.
-// Use a test object that overrides the destructor for unit tests.
-class TestNativeWidgetAura : public NativeWidgetAura {
- public:
-  explicit TestNativeWidgetAura(internal::NativeWidgetDelegate* delegate)
-      : NativeWidgetAura(delegate) {}
-
-  TestNativeWidgetAura(const TestNativeWidgetAura&) = delete;
-  TestNativeWidgetAura& operator=(const TestNativeWidgetAura&) = delete;
-
-  ~TestNativeWidgetAura() override = default;
-};
-
 // Series of tests that verifies having a null NativeWidgetDelegate doesn't
 // crash.
 class NativeWidgetAuraWithNoDelegateTest : public NativeWidgetAuraTest {
@@ -965,7 +952,7 @@ class NativeWidgetAuraWithNoDelegateTest : public NativeWidgetAuraTest {
   void SetUp() override {
     NativeWidgetAuraTest::SetUp();
     Widget widget;
-    native_widget_ = new TestNativeWidgetAura(&widget);
+    native_widget_ = new NativeWidgetAura(&widget);
     Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_WINDOW);
     params.ownership = views::Widget::InitParams::CLIENT_OWNS_WIDGET;
     params.native_widget = native_widget_;
@@ -985,7 +972,7 @@ class NativeWidgetAuraWithNoDelegateTest : public NativeWidgetAuraTest {
     ViewsTestBase::TearDown();
   }
 
-  raw_ptr<TestNativeWidgetAura> native_widget_ = nullptr;
+  raw_ptr<NativeWidgetAura> native_widget_ = nullptr;
 };
 
 TEST_F(NativeWidgetAuraWithNoDelegateTest, GetHitTestMaskTest) {

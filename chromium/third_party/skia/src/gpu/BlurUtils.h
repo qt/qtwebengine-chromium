@@ -8,15 +8,16 @@
 #ifndef skgpu_BlurUtils_DEFINED
 #define skgpu_BlurUtils_DEFINED
 
-#include "include/core/SkM44.h"
-#include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
 #include "include/private/base/SkFloatingPoint.h"
 
 #include <array>
 
+class SkBitmap;
+class SkRRect;
 class SkRuntimeEffect;
+struct SkV4;
 
 // TODO(b/): Many of these utilities could be lifted even into src/core as part of the backend
 // agnostic blur engine once that API exists.
@@ -38,7 +39,7 @@ constexpr bool BlurIsEffectivelyIdentity(float sigma) { return sigma <= 0.03f; }
 // Convert from a sigma Gaussian standard deviation to a pixel radius such that pixels outside the
 // radius would have an insignificant contribution to the final blurred value.
 inline int BlurSigmaRadius(float sigma) {
-    // sk_float_ceil is not constexpr
+    // sk_float_ceil2int is not constexpr
     return BlurIsEffectivelyIdentity(sigma) ? 0 : sk_float_ceil2int(3.f * sigma);
 }
 
@@ -115,7 +116,7 @@ void Compute2DBlurKernel(SkSize sigma,
 
 // A convenience for the 2D case where one dimension has a sigma of 0.
 inline void Compute1DBlurKernel(float sigma, int radius, SkSpan<float> kernel) {
-    Compute2DBlurKernel({sigma, 0.f}, {radius, 0}, kernel);
+    Compute2DBlurKernel(SkSize{sigma, 0.f}, SkISize{radius, 0}, kernel);
 }
 
 // Utility function to fill in 'offsets' for the effect returned by GetBlur2DEffect(). It
@@ -140,6 +141,23 @@ void Compute2DBlurOffsets(SkISize radius, std::array<SkV4, kMaxBlurSamples/2>& o
 void Compute1DBlurLinearKernel(float sigma,
                                int radius,
                                std::array<SkV4, kMaxBlurSamples/2>& offsetsAndKernel);
+
+// Calculates the integral table for an analytic rectangle blur. The integral values are stored in
+// the red channel of the provided bitmap, which will be 1D with a 1-pixel height.
+SkBitmap CreateIntegralTable(float sixSigma);
+
+// Returns the width of an integral table we will create for the given 6*sigma.
+int ComputeIntegralTableWidth(float sixSigma);
+
+// Creates a profile of a blurred circle.
+SkBitmap CreateCircleProfile(float sigma, float radius, int profileWidth);
+
+// Creates a half plane approximation profile of a blurred circle.
+SkBitmap CreateHalfPlaneProfile(int profileWidth);
+
+// Creates a blurred rounded rectangle mask. 'rrectToDraw' is the original rrect centered within
+// bounds defined by 'dimensions', which encompass the entire blurred rrect.
+SkBitmap CreateRRectBlurMask(const SkRRect& rrectToDraw, const SkISize& dimensions, float sigma);
 
 } // namespace skgpu
 

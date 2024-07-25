@@ -16,8 +16,6 @@
 #include "mojo/public/cpp/system/message_pipe.h"
 #include "services/device/binder_overrides.h"
 #include "services/device/compute_pressure/pressure_manager_impl.h"
-#include "services/device/device_posture/device_posture_platform_provider.h"
-#include "services/device/device_posture/device_posture_provider_impl.h"
 #include "services/device/fingerprint/fingerprint.h"
 #include "services/device/generic_sensor/platform_sensor_provider.h"
 #include "services/device/generic_sensor/sensor_provider_impl.h"
@@ -29,6 +27,7 @@
 #include "services/device/public/mojom/battery_monitor.mojom.h"
 #include "services/device/serial/serial_port_manager_impl.h"
 #include "services/device/time_zone_monitor/time_zone_monitor.h"
+#include "services/device/vibration/vibration_manager_impl.h"
 #include "services/device/wake_lock/wake_lock_provider.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/gfx/native_widget_types.h"
@@ -37,11 +36,11 @@
 #include "base/android/jni_android.h"
 #include "services/device/device_service_jni_headers/InterfaceRegistrar_jni.h"
 #include "services/device/screen_orientation/screen_orientation_listener_android.h"
+#include "services/device/vibration/vibration_manager_android.h"
 #else
 #include "services/device/battery/battery_monitor_impl.h"
 #include "services/device/battery/battery_status_service.h"
 #include "services/device/hid/hid_manager_impl.h"
-#include "services/device/vibration/vibration_manager_impl.h"
 #endif
 
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && defined(USE_UDEV)
@@ -94,7 +93,8 @@ std::unique_ptr<DeviceService> CreateDeviceService(
     mojo::PendingReceiver<mojom::DeviceService> receiver) {
   GeolocationProviderImpl::SetGeolocationConfiguration(
       params->url_loader_factory, params->geolocation_api_key,
-      params->custom_location_provider_callback, params->geolocation_manager,
+      params->custom_location_provider_callback,
+      params->geolocation_system_permission_manager,
       params->use_gms_core_location_provider);
   return std::make_unique<DeviceService>(std::move(params),
                                          std::move(receiver));
@@ -215,11 +215,12 @@ void DeviceService::BindNFCProvider(
 #endif
 
 void DeviceService::BindVibrationManager(
-    mojo::PendingReceiver<mojom::VibrationManager> receiver) {
+    mojo::PendingReceiver<mojom::VibrationManager> receiver,
+    mojo::PendingRemote<mojom::VibrationManagerListener> listener) {
 #if BUILDFLAG(IS_ANDROID)
-  GetJavaInterfaceProvider()->GetInterface(std::move(receiver));
+  VibrationManagerAndroid::Create(std::move(receiver), std::move(listener));
 #else
-  VibrationManagerImpl::Create(std::move(receiver));
+  VibrationManagerImpl::Create(std::move(receiver), std::move(listener));
 #endif
 }
 
@@ -330,18 +331,6 @@ void DeviceService::BindSensorProvider(
   sensor_provider_->Bind(std::move(receiver));
 }
 
-void DeviceService::BindDevicePostureProvider(
-    mojo::PendingReceiver<mojom::DevicePostureProvider> receiver) {
-  if (!device_posture_provider_) {
-    auto posture_platform_provider_ = DevicePosturePlatformProvider::Create();
-    if (!posture_platform_provider_)
-      return;
-    device_posture_provider_ = std::make_unique<DevicePostureProviderImpl>(
-        std::move(posture_platform_provider_));
-  }
-  device_posture_provider_->Bind(std::move(receiver));
-}
-
 void DeviceService::BindSerialPortManager(
     mojo::PendingReceiver<mojom::SerialPortManager> receiver) {
 #if defined(IS_SERIAL_ENABLED_PLATFORM)
@@ -366,7 +355,7 @@ void DeviceService::BindWakeLockProvider(
 
 void DeviceService::BindUsbDeviceManager(
     mojo::PendingReceiver<mojom::UsbDeviceManager> receiver) {
-  // TODO(crbug.com/1109621): usb::DeviceManagerImpl depends on the
+  // TODO(crbug.com/40141825): usb::DeviceManagerImpl depends on the
   // permission_broker service on Chromium OS. We will need to redirect
   // connections for LaCrOS here.
   if (!usb_device_manager_)
@@ -377,7 +366,7 @@ void DeviceService::BindUsbDeviceManager(
 
 void DeviceService::BindUsbDeviceManagerTest(
     mojo::PendingReceiver<mojom::UsbDeviceManagerTest> receiver) {
-  // TODO(crbug.com/1109621): usb::DeviceManagerImpl depends on the
+  // TODO(crbug.com/40141825): usb::DeviceManagerImpl depends on the
   // permission_broker service on Chromium OS. We will need to redirect
   // connections for LaCrOS here.
   if (!usb_device_manager_)

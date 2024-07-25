@@ -33,7 +33,7 @@
 #include "extensions/browser/api/scripting/scripting_constants.h"
 #include "extensions/browser/api/scripting/scripting_utils.h"
 #include "extensions/browser/component_extension_resource_manager.h"
-#include "extensions/browser/content_verifier.h"
+#include "extensions/browser/content_verifier/content_verifier.h"
 #include "extensions/browser/extension_file_task_runner.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
@@ -386,7 +386,7 @@ void LoadScriptsOnFileTaskRunner(
 // Attempts to coerce a `dict` from an `api::content_scripts::ContentScript` to
 // an `api::scripts_internal::SerializedUserScript`, returning std::nullopt on
 // failure.
-// TODO(https://crbug.com/1494155): Remove this when migration is complete.
+// TODO(crbug.com/40286091): Remove this when migration is complete.
 std::optional<api::scripts_internal::SerializedUserScript>
 ContentScriptDictToSerializedUserScript(const base::Value::Dict& dict) {
   auto content_script = api::content_scripts::ContentScript::FromValue(dict);
@@ -440,19 +440,6 @@ ContentScriptDictToSerializedUserScript(const base::Value::Dict& dict) {
     return sources;
   };
 
-  auto convert_run_at = [](api::content_scripts::RunAt run_at) {
-    switch (run_at) {
-      case api::content_scripts::RunAt::kDocumentStart:
-        return api::extension_types::RunAt::kDocumentStart;
-      case api::content_scripts::RunAt::kDocumentEnd:
-        return api::extension_types::RunAt::kDocumentEnd;
-      case api::content_scripts::RunAt::kDocumentIdle:
-        return api::extension_types::RunAt::kDocumentIdle;
-      case api::content_scripts::RunAt::kNone:
-        return api::extension_types::RunAt::kNone;
-    }
-  };
-
   api::scripts_internal::SerializedUserScript serialized_script;
   serialized_script.all_frames = content_script->all_frames;
   if (content_script->css) {
@@ -471,7 +458,7 @@ ContentScriptDictToSerializedUserScript(const base::Value::Dict& dict) {
   serialized_script.matches = std::move(content_script->matches);
   serialized_script.match_origin_as_fallback =
       content_script->match_origin_as_fallback;
-  serialized_script.run_at = convert_run_at(content_script->run_at);
+  serialized_script.run_at = content_script->run_at;
   serialized_script.source = source;
   serialized_script.world = content_script->world;
 
@@ -498,7 +485,7 @@ UserScriptList ConvertValueToScripts(const Extension& extension,
     if (!value.GetDict().Find("source")) {
       // It's the old type, or could be a bad entry.
 
-      // TODO(https://crbug.com/1494155): Add UMA and forced-migration so we
+      // TODO(crbug.com/40286091): Add UMA and forced-migration so we
       // can remove this code.
       serialized_script =
           ContentScriptDictToSerializedUserScript(value.GetDict());
@@ -664,7 +651,7 @@ void ExtensionUserScriptLoader::AddDynamicScripts(
     // Additionally, only add scripts to the set of active scripts in renderers
     // (through `AddScripts()`) if the `source` for that script is enabled.
     if (!base::Contains(disabled_sources_, script->GetSource())) {
-      // TODO(crbug.com/1496555): This results in an additional copy being
+      // TODO(crbug.com/40938420): This results in an additional copy being
       // stored in the browser for each of these scripts. Optimize the usage of
       // inline code.
       scripts_to_add.push_back(CopyDynamicScriptInfo(*script));
@@ -892,8 +879,8 @@ void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::
         *extension, util::IsIncognitoEnabled(extension->id(), browser_context_),
         value->GetList());
 
-    // TODO(crbug.com/1385165): Write back `dynamic_scripts` into the StateStore
-    // if scripts in the StateStore do not have prefixed IDs.
+    // TODO(crbug.com/40061759): Write back `dynamic_scripts` into the
+    // StateStore if scripts in the StateStore do not have prefixed IDs.
 
     scripts.insert(scripts.end(),
                    std::make_move_iterator(dynamic_scripts.begin()),

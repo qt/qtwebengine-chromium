@@ -106,6 +106,9 @@ const char kDesktopNtpModuleUmaName[] = "DesktopNtpModule";
 const char kOptimizationTargetSegmentationDummyKey[] = "segmentation_dummy";
 const char kOptimizationTargetSegmentationDummyUmaName[] = "SegmentationDummy";
 
+const char kComposePromotionKey[] = "compose_promotion";
+const char kComposePromotionUmaName[] = "ComposePromotion";
+
 // SEGMENTATION_CLIENT_KEYS_END
 
 // Please keep the UMA names for keys in sync with SegmentationKey variant in
@@ -149,6 +152,7 @@ const char kAdaptiveToolbarModelLabelShare[] = "Share";
 const char kAdaptiveToolbarModelLabelVoice[] = "Voice";
 const char kAdaptiveToolbarModelLabelTranslate[] = "Translate";
 const char kAdaptiveToolbarModelLabelAddToBookmarks[] = "AddToBookmarks";
+const char kAdaptiveToolbarModelLabelReadAloud[] = "ReadAloud";
 
 // Labels for contextual page actions model.
 const char kContextualPageActionModelLabelPriceTracking[] = "price_tracking";
@@ -200,6 +204,12 @@ const char kTabletProductivityUserModelLabelHigh[] = "High";
 // Labels for Android Home modules for ranking.
 const char kSingleTab[] = "SingleTab";
 const char kPriceChange[] = "PriceChange";
+const char kTabResumptionForAndroidHome[] = "TabResumption";
+
+// Input Context keys for freshness for Android Home modules.
+const char kSingleTabFreshness[] = "single_tab_freshness";
+const char kPriceChangeFreshness[] = "price_change_freshness";
+const char kTabResumptionForAndroidHomeFreshness[] = "tab_resumption_freshness";
 
 // Labels for IOS modules for ranking.
 const char kMostVisitedTiles[] = "MostVisitedTiles";
@@ -214,6 +224,7 @@ const char kShortcutsFreshness[] = "shortcuts_freshness";
 const char kSafetyCheckFreshness[] = "safety_check_freshness";
 const char kTabResumptionFreshness[] = "tab_resumption_freshness";
 const char kParcelTrackingFreshness[] = "parcel_tracking_freshness";
+const char kIsShowingStartSurface[] = "is_showing_start_surface";
 
 // Labels for desktop new tab page drive module model.
 // Any updates to these strings need to also update the field trials allowlist
@@ -224,6 +235,9 @@ const char kDesktopNtpDriveModuleLabelDontShow[] = "dont_show_drive";
 // Custom inputs for contextual page actions model.
 const char kContextualPageActionModelInputPriceTracking[] = "can_track_price";
 const char kContextualPageActionModelInputReaderMode[] = "has_reader_mode";
+
+const char kComposePrmotionLabelShow[] = "Show";
+const char kComposePrmotionLabelDontShow[] = "DontShow";
 
 // Finch parameter key for sampling rate of the model execution results.
 constexpr char kModelExecutionSamplingRateKey[] =

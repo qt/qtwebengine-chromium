@@ -4,6 +4,7 @@
 
 #include "content/browser/child_process_launcher.h"
 
+#include <optional>
 #include <utility>
 
 #include "base/check_op.h"
@@ -12,9 +13,12 @@
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/i18n/icu_util.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/process/launch.h"
 #include "base/time/time.h"
 #include "base/tracing/protos/chrome_track_event.pbzero.h"
+#include "base/types/expected.h"
+#include "base/types/optional_util.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_launcher_utils.h"
@@ -36,7 +40,7 @@ namespace {
 
 #if !BUILDFLAG(IS_ANDROID)
 // Returns the cumulative CPU usage for the specified process.
-base::TimeDelta GetCPUUsage(base::ProcessHandle process_handle) {
+std::optional<base::TimeDelta> GetCPUUsage(base::ProcessHandle process_handle) {
 #if BUILDFLAG(IS_MAC)
   std::unique_ptr<base::ProcessMetrics> process_metrics =
       base::ProcessMetrics::CreateProcessMetrics(
@@ -45,15 +49,7 @@ base::TimeDelta GetCPUUsage(base::ProcessHandle process_handle) {
   std::unique_ptr<base::ProcessMetrics> process_metrics =
       base::ProcessMetrics::CreateProcessMetrics(process_handle);
 #endif
-
-#if BUILDFLAG(IS_WIN)
-  // Use the precise version which is Windows specific.
-  // TODO(pmonette): Clean up this code when the precise version becomes the
-  //                 default.
-  return process_metrics->GetPreciseCumulativeCPUUsage();
-#else
-  return process_metrics->GetCumulativeCPUUsage();
-#endif
+  return base::OptionalFromExpected(process_metrics->GetCumulativeCPUUsage());
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
@@ -100,6 +96,7 @@ ChildProcessLauncher::ChildProcessLauncher(
     mojo::OutgoingInvitation mojo_invitation,
     const mojo::ProcessErrorCallback& process_error_callback,
     std::unique_ptr<ChildProcessLauncherFileData> file_data,
+    base::UnsafeSharedMemoryRegion histogram_memory_region,
     bool terminate_on_shutdown)
     : client_(client),
       starting_(true),
@@ -123,7 +120,8 @@ ChildProcessLauncher::ChildProcessLauncher(
 #if BUILDFLAG(IS_ANDROID)
       client_->CanUseWarmUpConnection(),
 #endif
-      std::move(mojo_invitation), process_error_callback, std::move(file_data));
+      std::move(mojo_invitation), process_error_callback, std::move(file_data),
+      std::move(histogram_memory_region));
   helper_->StartLaunchOnClientThread();
 }
 
@@ -210,7 +208,7 @@ ChildProcessTerminationInfo ChildProcessLauncher::GetChildTerminationInfo(
   }
 
 #if !BUILDFLAG(IS_ANDROID)
-  base::TimeDelta cpu_usage;
+  std::optional<base::TimeDelta> cpu_usage;
   if (!should_launch_elevated_)
     cpu_usage = GetCPUUsage(process_.process.Handle());
 #endif

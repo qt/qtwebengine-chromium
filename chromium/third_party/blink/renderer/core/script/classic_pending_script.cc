@@ -6,6 +6,7 @@
 
 #include "base/feature_list.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/loader/lcp_critical_path_predictor_util.h"
 #include "third_party/blink/public/mojom/script/script_type.mojom-blink-forward.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/referrer_script_info.h"
@@ -104,8 +105,8 @@ ClassicPendingScript* ClassicPendingScript::Fetch(
   }
 
   ScriptResource::Fetch(params, element_document.Fetcher(), pending_script,
-                        ScriptResource::kAllowStreaming, compile_hints_producer,
-                        compile_hints_consumer);
+                        context->GetIsolate(), ScriptResource::kAllowStreaming,
+                        compile_hints_producer, compile_hints_consumer);
   pending_script->CheckState();
   return pending_script;
 }
@@ -188,42 +189,48 @@ void ClassicPendingScript::RecordThirdPartyRequestWithCookieIfNeeded(
   if (response.IsNull())
     return;
 
-  ExecutionContext* execution_context = OriginalExecutionContext();
-  Document* element_document = OriginalElementDocument();
-  if (!execution_context || !element_document)
-    return;
-
-  scoped_refptr<SecurityOrigin> script_origin =
-      SecurityOrigin::Create(response.ResponseUrl());
-  const SecurityOrigin* doc_origin = execution_context->GetSecurityOrigin();
-  scoped_refptr<const SecurityOrigin> top_frame_origin =
-      element_document->TopFrameOrigin();
-
-  // The use counter is meant to gather data for prerendering: how often do
-  // pages make credentialed requests to third parties from first-party frames,
-  // that cannot be delayed during prerendering until the page is navigated to.
-  // Therefore...
-
-  // Ignore third-party frames.
-  if (!top_frame_origin || top_frame_origin->RegistrableDomain() !=
-                               doc_origin->RegistrableDomain()) {
+  // Ignore cookie-less requests.
+  if (!response.WasCookieInRequest()) {
     return;
   }
-
-  // Ignore first-party requests.
-  if (doc_origin->RegistrableDomain() == script_origin->RegistrableDomain())
-    return;
-
-  // Ignore cookie-less requests.
-  if (!response.WasCookieInRequest())
-    return;
 
   // Ignore scripts that can be delayed. This is only async scripts currently.
   // kDefer and kForceDefer don't count as delayable since delaying them
   // artificially further while prerendering would prevent the page from making
   // progress.
-  if (GetSchedulingType() == ScriptSchedulingType::kAsync)
+  if (GetSchedulingType() == ScriptSchedulingType::kAsync) {
     return;
+  }
+
+  ExecutionContext* execution_context = OriginalExecutionContext();
+  Document* element_document = OriginalElementDocument();
+  if (!execution_context || !element_document) {
+    return;
+  }
+
+  scoped_refptr<const SecurityOrigin> top_frame_origin =
+      element_document->TopFrameOrigin();
+  if (!top_frame_origin) {
+    return;
+  }
+
+  // The use counter is meant to gather data for prerendering: how often do
+  // pages make credentialed requests to third parties from first-party frames,
+  // that cannot be delayed during prerendering until the page is navigated to.
+  // Therefore...
+  String doc_registrable_domain =
+      execution_context->GetSecurityOrigin()->RegistrableDomain();
+  // Ignore third-party frames.
+  if (top_frame_origin->RegistrableDomain() != doc_registrable_domain) {
+    return;
+  }
+
+  scoped_refptr<SecurityOrigin> script_origin =
+      SecurityOrigin::Create(response.ResponseUrl());
+  // Ignore first-party requests.
+  if (doc_registrable_domain == script_origin->RegistrableDomain()) {
+    return;
+  }
 
   execution_context->CountUse(
       mojom::blink::WebFeature::
@@ -275,8 +282,7 @@ bool ClassicPendingScript::IsEligibleForLowPriorityAsyncScriptExecution()
   static const bool exclude_lcp_influencers =
       features::kLowPriorityAsyncScriptExecutionExcludeLcpInfluencersParam
           .Get();
-  if (exclude_lcp_influencers &&
-      base::FeatureList::IsEnabled(features::kLCPScriptObserver)) {
+  if (exclude_lcp_influencers && LcppScriptObserverEnabled()) {
     if (LCPCriticalPathPredictor* lcpp = top_document.GetFrame()->GetLCPP()) {
       if (lcpp->IsLcpInfluencerScript(GetResource()->Url())) {
         return false;
@@ -314,6 +320,68 @@ bool ClassicPendingScript::IsEligibleForLowPriorityAsyncScriptExecution()
   // rather than later.
   if (GetResource() && GetResource()->IsLinkPreload())
     return false;
+
+  bool is_ad_resource =
+      GetResource() && GetResource()->GetResourceRequest().IsAdResource();
+  static const features::AsyncScriptExperimentalSchedulingTarget target =
+      features::kLowPriorityAsyncScriptExecutionTargetParam.Get();
+  switch (target) {
+    case features::AsyncScriptExperimentalSchedulingTarget::kAds:
+      if (!is_ad_resource) {
+        return false;
+      }
+      break;
+    case features::AsyncScriptExperimentalSchedulingTarget::kNonAds:
+      if (is_ad_resource) {
+        return false;
+      }
+      break;
+    case features::AsyncScriptExperimentalSchedulingTarget::kBoth:
+      break;
+  }
+
+  static const bool exclude_non_parser_inserted =
+      features::kLowPriorityAsyncScriptExecutionExcludeNonParserInsertedParam
+          .Get();
+  if (exclude_non_parser_inserted && !parser_inserted()) {
+    return false;
+  }
+
+  static const bool exclude_scripts_via_document_write =
+      features::kLowPriorityAsyncScriptExecutionExcludeDocumentWriteParam.Get();
+  if (exclude_scripts_via_document_write && is_in_document_write()) {
+    return false;
+  }
+
+  static const bool opt_out_low =
+      features::kLowPriorityAsyncScriptExecutionOptOutLowFetchPriorityHintParam
+          .Get();
+  static const bool opt_out_auto =
+      features::kLowPriorityAsyncScriptExecutionOptOutAutoFetchPriorityHintParam
+          .Get();
+  static const bool opt_out_high =
+      features::kLowPriorityAsyncScriptExecutionOptOutHighFetchPriorityHintParam
+          .Get();
+
+  if (GetResource()) {
+    switch (GetResource()->GetResourceRequest().GetFetchPriorityHint()) {
+      case mojom::blink::FetchPriorityHint::kLow:
+        if (opt_out_low) {
+          return false;
+        }
+        break;
+      case mojom::blink::FetchPriorityHint::kAuto:
+        if (opt_out_auto) {
+          return false;
+        }
+        break;
+      case mojom::blink::FetchPriorityHint::kHigh:
+        if (opt_out_high) {
+          return false;
+        }
+        break;
+    }
+  }
 
   return true;
 }

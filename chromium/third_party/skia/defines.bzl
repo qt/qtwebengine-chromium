@@ -40,9 +40,6 @@ GENERAL_DEFINES = [
     ],
     "//conditions:default": [],
 }) + select({
-    "//src/sksl:enable_sksl_tracing_true": ["SKSL_ENABLE_TRACING"],
-    "//conditions:default": [],
-}) + select({
     "//src/pdf:enable_pdf_backend_true": ["SK_SUPPORT_PDF"],
     "//conditions:default": [],
 }) + select({
@@ -78,7 +75,6 @@ GPU_DEFINES = select_multi({
     ],
     "//src/gpu:webgl_standard": [
         "SK_ASSUME_WEBGL=1",
-        "SK_USE_WEBGL",
     ],
     "//conditions:default": [],
 }) + select({
@@ -90,7 +86,7 @@ GPU_DEFINES = select_multi({
 
 CODEC_DEFINES = select_multi({
     "//src/codec:avif_decode_codec": ["SK_CODEC_DECODES_AVIF"],
-    "//src/codec:gif_decode_codec": ["SK_HAS_WUFFS_LIBRARY"],
+    "//src/codec:gif_decode_codec": ["SK_HAS_WUFFS_LIBRARY", "SK_CODEC_DECODES_GIF"],
     "//src/codec:jpeg_decode_codec": ["SK_CODEC_DECODES_JPEG"],
     "//src/codec:png_decode_codec": ["SK_CODEC_DECODES_PNG"],
     "//src/codec:raw_decode_codec": [
@@ -112,7 +108,6 @@ PLATFORM_DEFINES = select({
     "//bazel/common_config_settings:cpu_wasm": [
         # working around https://github.com/emscripten-core/emscripten/issues/10072
         "SK_FORCE_8_BYTE_ALIGNMENT",
-        "SK_FORCE_AAA",
     ],
     "//conditions:default": [],
 }) + select({

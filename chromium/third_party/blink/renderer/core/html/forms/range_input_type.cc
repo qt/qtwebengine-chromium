@@ -98,6 +98,34 @@ void RangeInputType::CountUsage() {
   CountUsageIfVisible(WebFeature::kInputTypeRange);
 }
 
+void RangeInputType::DidRecalcStyle(const StyleRecalcChange) {
+  if (const ComputedStyle* style = GetElement().GetComputedStyle()) {
+    if (RuntimeEnabledFeatures::
+            NonStandardAppearanceValueSliderVerticalEnabled() &&
+        style->EffectiveAppearance() == kSliderVerticalPart) {
+      UseCounter::Count(GetElement().GetDocument(),
+                        WebFeature::kInputTypeRangeVerticalAppearance);
+    } else if (RuntimeEnabledFeatures::
+                   FormControlsVerticalWritingModeDirectionSupportEnabled()) {
+      bool is_horizontal = style->IsHorizontalWritingMode();
+      bool is_ltr = style->IsLeftToRightDirection();
+      if (is_horizontal && is_ltr) {
+        UseCounter::Count(GetElement().GetDocument(),
+                          WebFeature::kInputTypeRangeHorizontalLtr);
+      } else if (is_horizontal && !is_ltr) {
+        UseCounter::Count(GetElement().GetDocument(),
+                          WebFeature::kInputTypeRangeHorizontalRtl);
+      } else if (is_ltr) {
+        UseCounter::Count(GetElement().GetDocument(),
+                          WebFeature::kInputTypeRangeVerticalLtr);
+      } else {
+        UseCounter::Count(GetElement().GetDocument(),
+                          WebFeature::kInputTypeRangeVerticalRtl);
+      }
+    }
+  }
+}
+
 double RangeInputType::ValueAsDouble() const {
   return ParseToDoubleForNumberType(GetElement().Value());
 }
@@ -246,6 +274,11 @@ void RangeInputType::CreateShadowSubtree() {
 LayoutObject* RangeInputType::CreateLayoutObject(const ComputedStyle&) const {
   // TODO(crbug.com/1131352): input[type=range] should not use flexbox.
   return MakeGarbageCollected<LayoutFlexibleBox>(&GetElement());
+}
+
+void RangeInputType::AdjustStyle(ComputedStyleBuilder& builder) {
+  builder.SetInlineBlockBaselineEdge(EInlineBlockBaselineEdge::kBorderBox);
+  InputTypeView::AdjustStyle(builder);
 }
 
 Decimal RangeInputType::ParseToNumber(const String& src,

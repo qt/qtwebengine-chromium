@@ -41,7 +41,7 @@ FormattedText::FormattedText(ExecutionContext* execution_context) {
       document->GetStyleResolver().CreateComputedStyleBuilder();
   builder.SetDisplay(EDisplay::kBlock);
   block_ = LayoutBlockFlow::CreateAnonymous(document, builder.TakeStyle());
-  block_->SetIsLayoutNGObjectForFormattedText(true);
+  block_->SetIsDetachedNonDomRoot(true);
 }
 
 void FormattedText::Dispose() {
@@ -198,12 +198,13 @@ PaintRecord FormattedText::PaintFormattedText(Document& document,
       To<PhysicalBoxFragment>(block_results->GetPhysicalFragment());
   block_->RecalcVisualOverflow();
   bounds = gfx::RectF{block_->VisualOverflowRect()};
-  auto* paint_record_builder = MakeGarbageCollected<PaintRecordBuilder>();
-  PaintInfo paint_info(paint_record_builder->Context(), CullRect::Infinite(),
-                       PaintPhase::kForeground);
+  PaintRecordBuilder paint_record_builder;
+  PaintInfo paint_info(paint_record_builder.Context(), CullRect::Infinite(),
+                       PaintPhase::kForeground,
+                       block_->ChildPaintBlockedByDisplayLock());
   BoxFragmentPainter(fragment).PaintObject(
       paint_info, PhysicalOffset(LayoutUnit(x), LayoutUnit(y)));
-  return paint_record_builder->EndRecording();
+  return paint_record_builder.EndRecording();
 }
 
 bool FormattedText::CheckViewExists(ExceptionState* exception_state) const {

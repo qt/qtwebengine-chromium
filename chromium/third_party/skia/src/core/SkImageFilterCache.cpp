@@ -11,6 +11,7 @@
 #include "include/private/base/SkOnce.h"
 #include "src/base/SkTInternalLList.h"
 #include "src/core/SkChecksum.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkTDynamicHash.h"
 #include "src/core/SkTHash.h"
@@ -155,9 +156,13 @@ sk_sp<SkImageFilterCache> SkImageFilterCache::Create(size_t maxBytes) {
     return sk_make_sp<CacheImpl>(maxBytes);
 }
 
-sk_sp<SkImageFilterCache> SkImageFilterCache::Get() {
+sk_sp<SkImageFilterCache> SkImageFilterCache::Get(CreateIfNecessary createIfNecessary) {
     static SkOnce once;
     static sk_sp<SkImageFilterCache> cache;
+
+    if (createIfNecessary == CreateIfNecessary::kNo) {
+        return cache;
+    }
 
     once([]{ cache = SkImageFilterCache::Create(kDefaultCacheSize); });
     return cache;

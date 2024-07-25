@@ -5,6 +5,7 @@
 #include "net/websockets/websocket_http2_handshake_stream.h"
 
 #include <set>
+#include <string_view>
 #include <utility>
 
 #include "base/check.h"
@@ -96,7 +97,7 @@ int WebSocketHttp2HandshakeStream::SendRequest(
 
   if (!session_) {
     const int rv = ERR_CONNECTION_CLOSED;
-    OnFailure("Connection closed before sending request.", rv, absl::nullopt);
+    OnFailure("Connection closed before sending request.", rv, std::nullopt);
     return rv;
   }
 
@@ -105,7 +106,7 @@ int WebSocketHttp2HandshakeStream::SendRequest(
   IPEndPoint address;
   int result = session_->GetPeerAddress(&address);
   if (result != OK) {
-    OnFailure("Error getting IP address.", result, absl::nullopt);
+    OnFailure("Error getting IP address.", result, std::nullopt);
     return result;
   }
   http_response_info_->remote_endpoint = address;
@@ -210,13 +211,6 @@ void WebSocketHttp2HandshakeStream::GetSSLInfo(SSLInfo* ssl_info) {
     stream_->GetSSLInfo(ssl_info);
 }
 
-void WebSocketHttp2HandshakeStream::GetSSLCertRequestInfo(
-    SSLCertRequestInfo* cert_request_info) {
-  // A multiplexed stream cannot request client certificates. Client
-  // authentication may only occur during the initial SSL handshake.
-  NOTREACHED();
-}
-
 int WebSocketHttp2HandshakeStream::GetRemoteEndpoint(IPEndPoint* endpoint) {
   if (!session_)
     return ERR_SOCKET_NOT_CONNECTED;
@@ -250,7 +244,7 @@ const std::set<std::string>& WebSocketHttp2HandshakeStream::GetDnsAliases()
   return dns_aliases_;
 }
 
-base::StringPiece WebSocketHttp2HandshakeStream::GetAcceptChViaAlps() const {
+std::string_view WebSocketHttp2HandshakeStream::GetAcceptChViaAlps() const {
   return {};
 }
 
@@ -324,7 +318,7 @@ void WebSocketHttp2HandshakeStream::OnClose(int status) {
     result_ = HandshakeResult::HTTP2_FAILED;
 
   OnFailure(base::StrCat({"Stream closed with error: ", ErrorToString(status)}),
-            status, absl::nullopt);
+            status, std::nullopt);
 
   if (callback_)
     std::move(callback_).Run(status);
@@ -393,14 +387,14 @@ int WebSocketHttp2HandshakeStream::ValidateUpgradeResponse(
 
   const int rv = ERR_INVALID_RESPONSE;
   OnFailure("Error during WebSocket handshake: " + failure_message, rv,
-            absl::nullopt);
+            std::nullopt);
   return rv;
 }
 
 void WebSocketHttp2HandshakeStream::OnFailure(
     const std::string& message,
     int net_error,
-    absl::optional<int> response_code) {
+    std::optional<int> response_code) {
   stream_request_->OnFailure(message, net_error, response_code);
 }
 

@@ -84,11 +84,6 @@ enum class DecodingMethod {
   kDeserialize
 };
 
-enum PopulateExplicitRecGroups {
-  kDoNotPopulateExplicitRecGroups,
-  kPopulateExplicitRecGroups
-};
-
 // Decodes the bytes of a wasm module in {wire_bytes} while recording events and
 // updating counters.
 V8_EXPORT_PRIVATE ModuleResult DecodeWasmModule(
@@ -101,12 +96,10 @@ V8_EXPORT_PRIVATE ModuleResult DecodeWasmModule(
 // or updating counters.
 V8_EXPORT_PRIVATE ModuleResult DecodeWasmModule(
     WasmFeatures enabled_features, base::Vector<const uint8_t> wire_bytes,
-    bool validate_functions, ModuleOrigin origin,
-    PopulateExplicitRecGroups populate_explicit_rec_groups =
-        kDoNotPopulateExplicitRecGroups);
+    bool validate_functions, ModuleOrigin origin);
 // Stripped down version for disassembler needs.
-V8_EXPORT_PRIVATE ModuleResult
-DecodeWasmModuleForDisassembler(base::Vector<const uint8_t> wire_bytes);
+V8_EXPORT_PRIVATE ModuleResult DecodeWasmModuleForDisassembler(
+    base::Vector<const uint8_t> wire_bytes, ITracer* tracer);
 
 // Exposed for testing. Decodes a single function signature, allocating it
 // in the given zone.

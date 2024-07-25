@@ -159,13 +159,37 @@ class CustomFrameView : public ash::NonClientFrameViewAsh {
       return;
     }
 
+    aura::Window* window = GetWidget()->GetNativeWindow();
+    const ash::WindowState* window_state = ash::WindowState::Get(window);
+    std::optional<gfx::RoundedCornersF> window_radii =
+        shell_surface_->window_corners_radii();
+    std::optional<gfx::RoundedCornersF> shadow_radii =
+        shell_surface_->shadow_corner_radii();
+
+    int corner_radius = -1;
+    if (window_state->IsPip()) {
+      corner_radius = chromeos::kPipRoundedCornerRadius;
+    } else if (window_radii || shadow_radii) {
+      gfx::RoundedCornersF radii;
+
+      // Certain clients (such as Lacros, for instance) handle window rounding
+      // on the client side. These clients do not specify window_radii. However,
+      // they do specify shadow radii which matches window radii.
+      // For such clients, use shadow radii to specify
+      // `aura::client::kWindowCornerRadiusKey` since it is used to round
+      // various server side decorations.
+      radii =
+          window_radii.value_or(shadow_radii.value_or(gfx::RoundedCornersF()));
+
+      // TODO(crbug.com/40256581): Support variable window radii.
+      DCHECK(IsRadiiUniform(radii));
+      corner_radius = radii.upper_left();
+    }
+
     // TODO(b/302034956): Use `ApplyRoundedCornersToSurfaceTree()` to round pip
     // window as well.
     // Round a pip window. Pip windows are rounded by applying rounded corner
     // to host window using ui::Layer API.
-    const ash::WindowState* window_state =
-        ash::WindowState::Get(GetWidget()->GetNativeWindow());
-
     // When un-pipped (window state changed from pip), we must undo the
     // rounded corners of the host_window.
     const int pip_corner_radius =
@@ -178,26 +202,22 @@ class CustomFrameView : public ash::NonClientFrameViewAsh {
       layer->SetIsFastRoundedCorner(/*enable=*/!pip_radii.IsEmpty());
     }
 
-    // If we have a pip window, ignore `window_radii`.
-    if (window_state->IsPip()) {
+    // Various window decorations are rounded using `kWindowCornerRadiusKey`
+    // property.
+    window->SetProperty(aura::client::kWindowCornerRadiusKey, corner_radius);
+
+    // If we have a pip window, ignore `window_radii`. If window_radii is null,
+    // skip rounding the window.
+    if (window_state->IsPip() ||
+        !chromeos::features::IsRoundedWindowsEnabled() || !window_radii) {
       return;
     }
-
-    absl::optional<gfx::RoundedCornersF> window_radii =
-        shell_surface_->window_corners_radii();
-
-    if (!chromeos::features::IsRoundedWindowsEnabled() || !window_radii) {
-      return;
-    }
-
-    // TODO(crbug.com/1415486): Support variable window radii.
-    DCHECK(IsRadiiUniform(window_radii.value()));
 
     if (GetFrameEnabled()) {
-      header_view_->SetHeaderCornerRadius(window_radii->upper_left());
+      header_view_->SetHeaderCornerRadius(corner_radius);
     }
 
-    GetWidget()->client_view()->UpdateWindowRoundedCorners();
+    GetWidget()->client_view()->UpdateWindowRoundedCorners(corner_radius);
   }
 
   gfx::Rect GetWindowBoundsForClientBounds(
@@ -269,21 +289,26 @@ class CustomClientView : public views::ClientView {
   ~CustomClientView() override = default;
 
   // ClientView:
-  void UpdateWindowRoundedCorners() override {
-    absl::optional<gfx::RoundedCornersF> window_radii =
-        shell_surface_->window_corners_radii();
-
+  void UpdateWindowRoundedCorners(int corner_radius) override {
     DCHECK(GetWidget());
-    const bool frame_enabled = static_cast<CustomFrameView*>(
-                                   GetWidget()->non_client_view()->frame_view())
-                                   ->GetFrameEnabled();
+    const CustomFrameView* custom_frame_view = static_cast<CustomFrameView*>(
+        GetWidget()->non_client_view()->frame_view());
 
-    // TODO(crbug.com/1415486): Support variable window radii.
-    DCHECK(IsRadiiUniform(window_radii.value()));
+    // In the typical scenario with frame enabled, we round:
+    //   * Upper corners of the frame.
+    //   * Lower corners of the client view.
+    // But when the frame is overlapped with the client view, for upper corners,
+    // both the top (frame) and the bottom (client view) views need to be
+    // rounded.
+    const bool should_round_client_view_upper_corner =
+        !custom_frame_view->GetFrameEnabled() ||
+        custom_frame_view->GetFrameOverlapped();
+
+    const float corner_radius_f = corner_radius;
     const gfx::RoundedCornersF root_surface_radii = {
-        frame_enabled ? 0 : window_radii->upper_left(),
-        frame_enabled ? 0 : window_radii->upper_right(),
-        window_radii->lower_right(), window_radii->lower_left()};
+        should_round_client_view_upper_corner ? corner_radius_f : 0,
+        should_round_client_view_upper_corner ? corner_radius_f : 0,
+        corner_radius_f, corner_radius_f};
 
     const Surface* root_surface = shell_surface_->root_surface();
 
@@ -569,7 +594,7 @@ void ShellSurfaceBase::SetShadowCornersRadii(
 }
 
 void ShellSurfaceBase::SetBoundsForShadows(
-    const absl::optional<gfx::Rect>& shadow_bounds) {
+    const std::optional<gfx::Rect>& shadow_bounds) {
   if (shadow_bounds_ != shadow_bounds) {
     // Set normal shadow bounds.
     shadow_bounds_ = shadow_bounds;
@@ -609,7 +634,7 @@ void ShellSurfaceBase::UpdateShape() {
     return;
   }
 
-  // TODO(crbug.com/1465999): The current implementation of window shape must
+  // TODO(crbug.com/40276217): The current implementation of window shape must
   // only be used on frameless windows with shadows disabled, otherwise we risk
   // the layer bounds not matching the bounds of the root surface. This needs to
   // be updated such that the shape is applied to the root surface's geometry.
@@ -1164,8 +1189,23 @@ void ShellSurfaceBase::OnSetFrame(SurfaceFrameType frame_type) {
     return;
   }
 
-  bool frame_was_disabled = !frame_enabled();
   bool frame_type_changed = frame_type_ != frame_type;
+
+  // aura-shell's set_frame, when used with xdg-shell, works iff the frame type
+  // or frame colors were specified before firsrt buffer commit. If these are
+  // not specified, the widget's layer is set to 'NOT_DRAWN' and the frame can't
+  // be drawn. `ClientControlledShellSurface` is not affected.
+  if (frame_type_changed && widget_ &&
+      widget_->GetNativeWindow()->layer()->type() == ui::LAYER_NOT_DRAWN) {
+    if (frame_type != SurfaceFrameType::NONE &&
+        frame_type != SurfaceFrameType::SHADOW) {
+      DLOG(FATAL)
+          << "A shell surface with NOT_DRAWN layer can't support visible frame";
+      return;
+    }
+  }
+  bool frame_was_disabled = !frame_enabled();
+
   frame_type_ = frame_type;
   switch (frame_type) {
     case SurfaceFrameType::NONE:
@@ -1211,7 +1251,7 @@ void ShellSurfaceBase::OnSetFrame(SurfaceFrameType frame_type) {
     }
   }
 
-  widget_->GetRootView()->Layout();
+  widget_->GetRootView()->DeprecatedLayoutImmediately();
   // TODO(oshima): We probably should wait applying these if the
   // window is animating.
   set_bounds_is_dirty(true);
@@ -1249,6 +1289,10 @@ void ShellSurfaceBase::OnActivationRequested() {
 }
 
 void ShellSurfaceBase::RequestActivation() {
+  if (!IsReady()) {
+    initially_activated_ = true;
+    return;
+  }
   if (widget_ && GetSecurityDelegate() &&
       GetSecurityDelegate()->CanSelfActivate(widget_->GetNativeWindow())) {
     this->Activate();
@@ -1256,7 +1300,11 @@ void ShellSurfaceBase::RequestActivation() {
 }
 
 void ShellSurfaceBase::RequestDeactivation() {
-  if (widget_ && GetSecurityDelegate() &&
+  if (!IsReady()) {
+    initially_activated_ = false;
+    return;
+  }
+  if (widget_ && GetSecurityDelegate() && IsReady() &&
       GetSecurityDelegate()->CanSelfActivate(widget_->GetNativeWindow())) {
     this->Deactivate();
   }
@@ -1264,6 +1312,10 @@ void ShellSurfaceBase::RequestDeactivation() {
 
 void ShellSurfaceBase::OnSetServerStartResize() {
   server_side_resize_ = true;
+}
+
+bool ShellSurfaceBase::IsReady() const {
+  return widget_ && !pending_show_widget_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1352,14 +1404,25 @@ void ShellSurfaceBase::GetWidgetHitTestMask(SkPath* mask) const {
     return;
   }
 
+  if (!HasHitTestRegion()) {
+    return;
+  }
   GetHitTestMask(mask);
 
-  gfx::Point origin = host_window()->bounds().origin();
+  const float scale = GetScale();
+
+  // `mask` should be in the Widget's coordinates, but the above
+  // GetHitTestMask() call returns the mask in the root_surface's coordinates.
+  // We need to offset the difference.
+  auto widget_bounds = widget_->GetWindowBoundsInScreen().origin();
+  auto root_surface_bounds =
+      root_surface()->window()->GetBoundsInScreen().origin();
+  auto offset = root_surface_bounds - widget_bounds.OffsetFromOrigin();
+
   SkMatrix matrix;
-  float scale = GetScale();
   matrix.setScaleTranslate(
       SkFloatToScalar(1.0f / scale), SkFloatToScalar(1.0f / scale),
-      SkIntToScalar(origin.x()), SkIntToScalar(origin.y()));
+      SkIntToScalar(offset.x()), SkIntToScalar(offset.y()));
   mask->transform(matrix);
 }
 
@@ -1477,7 +1540,7 @@ void ShellSurfaceBase::OnWidgetClosing(views::Widget* widget) {
   // its underlying surface, by asserting to it that the surface destroyed
   // itself. After that, it is safe to call CloseNow() on the widget.
   //
-  // TODO(crbug.com/1010326): This only closes the aura/exo pieces, but we
+  // TODO(crbug.com/40651062): This only closes the aura/exo pieces, but we
   // should go one level deeper and destroy the wayland stuff. Some options:
   //  - Invoke xkill under-the-hood, which will only work for x11 and won't
   //    work if the container itself is stuck.
@@ -1492,7 +1555,8 @@ void ShellSurfaceBase::OnWidgetClosing(views::Widget* widget) {
 ////////////////////////////////////////////////////////////////////////////////
 // views::Views overrides:
 
-gfx::Size ShellSurfaceBase::CalculatePreferredSize() const {
+gfx::Size ShellSurfaceBase::CalculatePreferredSize(
+    const views::SizeBounds& available_size) const {
   if (!geometry_.IsEmpty())
     return geometry_.size();
 
@@ -1855,9 +1919,9 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
         ui::Accelerator(entry.keycode, entry.modifiers),
         ui::AcceleratorManager::kNormalPriority, this);
   }
+
   // Show widget next time Commit() is called.
-  if (show_state != ui::SHOW_STATE_MINIMIZED)
-    pending_show_widget_ = true;
+  pending_show_widget_ = true;
 
   UpdateDisplayOnTree();
 
@@ -1899,7 +1963,7 @@ gfx::Rect ShellSurfaceBase::ComputeAdjustedBounds(
 
 void ShellSurfaceBase::UpdateWidgetBounds() {
   DCHECK(widget_);
-  absl::optional<gfx::Rect> bounds = GetWidgetBounds();
+  std::optional<gfx::Rect> bounds = GetWidgetBounds();
   if (!bounds) {
     return;
   }
@@ -2003,6 +2067,7 @@ void ShellSurfaceBase::UpdateHostWindowOrigin() {
   // This may not be necessary
   set_bounds_is_dirty(true);
   host_window()->SetBounds(surface_bounds);
+  UpdateHostWindowOpaqueRegion();
 }
 
 void ShellSurfaceBase::UpdateShadow() {
@@ -2017,23 +2082,21 @@ void ShellSurfaceBase::UpdateShadow() {
   // committed by the client should not go to current `widget_`'s shadow, but to
   // the old widget's shadow prior to layer clone. Don't show the new shadow for
   // now.
-  // TODO(crbug.com/1491604): Find the old widget's shadow layer and update it,
+  // TODO(crbug.com/40285156): Find the old widget's shadow layer and update it,
   // and maybe show new widget's shadow by predicting its dimensions.
+  int shadow_elevation = wm::kShadowElevationDefault;
   if (!shadow_bounds_ || shape_dp_.has_value() ||
       GetCommitTargetLayer() != host_window()->layer()) {
-    wm::SetShadowElevation(window, wm::kShadowElevationNone);
-  } else {
-    // Use a small style shadow for popup surface.
-    if (frame_type_ == SurfaceFrameType::SHADOW && is_popup_)
-      wm::SetShadowElevation(window, wm::kShadowElevationMenuOrTooltip);
-    else
-      wm::SetShadowElevation(window, wm::kShadowElevationDefault);
+    shadow_elevation = wm::kShadowElevationNone;
+  } else if (frame_type_ == SurfaceFrameType::SHADOW && is_popup_) {
+    shadow_elevation = wm::kShadowElevationMenuOrTooltip;
+  }
+  wm::SetShadowElevation(window, shadow_elevation);
 
-    ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
-    // Maximized/Fullscreen window does not create a shadow.
-    if (!shadow)
-      return;
-
+  // A window may not have a shadow object if the window was created in
+  // maximized/fullscreen state.
+  ui::Shadow* shadow = wm::ShadowController::GetShadowForWindow(window);
+  if (shadow && shadow_elevation != wm::kShadowElevationNone) {
     gfx::Rect shadow_bounds = GetShadowBounds();
     gfx::Point origin = GetClientViewBounds().origin();
 
@@ -2067,6 +2130,25 @@ void ShellSurfaceBase::UpdateShadow() {
 
     UpdateShadowRoundedCorners();
   }
+
+  if (window->layer()->type() == ui::LAYER_NOT_DRAWN) {
+    DCHECK(!window->GetProperty(chromeos::kWindowManagerManagesOpacityKey));
+
+    // Snapped window should not be opaque because it can be drag-resized, in
+    // which case the widget's window can be exposed while waiting for
+    // configure_ack + commit.
+    bool window_is_opaque = widget_->IsFullscreen() || widget_->IsMaximized();
+    window->SetTransparent(!window_is_opaque);
+    if (root_surface()->FillsBoundsOpaquely()) {
+      // Manually control occlusion, but do not make the window
+      // opaque as the host window may not be at the same size unless the
+      // window state is either in fullscreen or maximized.
+      window->SetOpaqueRegionsForOcclusion(
+          {gfx::Rect(window->bounds().size())});
+    } else {
+      window->SetOpaqueRegionsForOcclusion({});
+    }
+  }
 }
 
 void ShellSurfaceBase::UpdateShadowRoundedCorners() {
@@ -2093,11 +2175,11 @@ void ShellSurfaceBase::UpdateShadowRoundedCorners() {
               window_corners_radii_dp_.has_value())) {
     // For backward version compatibility, fallback to use the window radii if
     // the shadow radii is not specified.
-    // TODO(crbug.com/1415486): Revisit once all the clients have migrated.
+    // TODO(crbug.com/40256581): Revisit once all the clients have migrated.
     shadow_radii = shadow_corners_radii_dp_.value_or(
         window_corners_radii_dp_.value_or(gfx::RoundedCornersF()));
 
-    // TODO(crbug.com/1415486): Support shadow with variable radius corners.
+    // TODO(crbug.com/40256581): Support shadow with variable radius corners.
     DCHECK(IsRadiiUniform(shadow_radii));
   }
 
@@ -2223,6 +2305,15 @@ void ShellSurfaceBase::OnPostWidgetCommit() {
   UpdateTopInset();
 }
 
+void ShellSurfaceBase::ShowWidget(bool activate) {
+  if (activate) {
+    // Widget will minimize itself if the initial state is minimized.
+    widget_->Show();
+  } else {
+    widget_->ShowInactive();
+  }
+}
+
 void ShellSurfaceBase::SetContainerInternal(int container) {
   container_ = container;
   WidgetDelegate::SetCanMaximize(
@@ -2312,7 +2403,7 @@ void ShellSurfaceBase::CommitWidget() {
   gfx::Rect bounds = geometry_;
   if (!bounds.IsEmpty() && !widget_->GetNativeWindow()->GetProperty(
                                aura::client::kUseWindowBoundsForShadow)) {
-    SetBoundsForShadows(absl::make_optional(bounds));
+    SetBoundsForShadows(std::make_optional(bounds));
   }
 
   // The calling order matters. Updated window radius is need to correctly
@@ -2320,10 +2411,9 @@ void ShellSurfaceBase::CommitWidget() {
   UpdateWindowRoundedCorners();
   UpdateShadow();
 
-  // Don't show yet if the shell surface doesn't have content or is minimized
-  // while waiting for content.
-  bool should_show =
-      !host_window()->bounds().IsEmpty() && !widget_->IsMinimized();
+  // Don't show yet if the shell surface doesn't have content.
+  bool should_show = !host_window()->bounds().IsEmpty();
+
   // Do not layout the window if the position should not be controlled by window
   // manager. (popup, emulating x11 override direct, or requested not to move)
   if (is_popup_ || movement_disabled_)
@@ -2346,7 +2436,7 @@ void ShellSurfaceBase::CommitWidget() {
     // `views::Widget::InitParams.bounds`
     if (window_state && window_state->IsMaximizedOrFullscreenOrPinned() &&
         (!initial_bounds_ || initial_bounds_->IsEmpty())) {
-      gfx::Size current_content_size = CalculatePreferredSize();
+      gfx::Size current_content_size = CalculatePreferredSize({});
       gfx::Rect restore_bounds = display::Screen::GetScreen()
                                      ->GetDisplayNearestWindow(window)
                                      .work_area();
@@ -2356,7 +2446,7 @@ void ShellSurfaceBase::CommitWidget() {
       window_state->SetRestoreBoundsInScreen(restore_bounds);
     }
 
-    // TODO(crbug.com/1291592): Hook this up with the WM's window positioning
+    // TODO(crbug.com/40212799): Hook this up with the WM's window positioning
     // logic.
     if (needs_layout_on_show_) {
       widget_->CenterWindow(GetWidgetBoundsFromVisibleBounds().size());
@@ -2375,12 +2465,7 @@ void ShellSurfaceBase::CommitWidget() {
       }
     }
 
-    if (initially_activated_) {
-      // Widget will minimize itself if the initial state is minimized.
-      widget_->Show();
-    } else {
-      widget_->ShowInactive();
-    }
+    ShowWidget(initially_activated_);
 
     if (has_grab_)
       StartCapture();
@@ -2428,7 +2513,7 @@ void ShellSurfaceBase::SetZOrder(ui::ZOrderLevel z_order) {
   initial_z_order_ = z_order;
 }
 
-void ShellSurfaceBase::SetShape(absl::optional<cc::Region> shape) {
+void ShellSurfaceBase::SetShape(std::optional<cc::Region> shape) {
   if (!shape) {
     pending_shape_dp_.reset();
     return;
@@ -2446,8 +2531,8 @@ void ShellSurfaceBase::SetShape(absl::optional<cc::Region> shape) {
   // Although window shape is only supported for frameless windows we must also
   // ensure window shadows are disabled as shadows can contribute to the widget
   // window's layer bounds.
-  // TODO(crbug.com/1465999): This will not be necessary once the implementation
-  // is updated to use the root surface's geometry.
+  // TODO(crbug.com/40276217): This will not be necessary once the
+  // implementation is updated to use the root surface's geometry.
   OnSetFrame(SurfaceFrameType::NONE);
 
   pending_shape_dp_ = std::move(shape);

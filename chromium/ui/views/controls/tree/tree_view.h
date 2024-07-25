@@ -117,7 +117,7 @@ class VIEWS_EXPORT TreeView : public View,
   // Marks the specified node as active, scrolls it into view, and reports a
   // keyboard focus update to ATs. Active node should be synced to the selected
   // node and should be nullptr when the tree is empty.
-  // TODO(crbug.com/1080944): Decouple active node from selected node by adding
+  // TODO(crbug.com/40691087): Decouple active node from selected node by adding
   // new keyboard affordances.
   void SetActiveNode(ui::TreeModelNode* model_node);
 
@@ -169,8 +169,9 @@ class VIEWS_EXPORT TreeView : public View,
   }
 
   // View overrides:
-  void Layout() override;
-  gfx::Size CalculatePreferredSize() const override;
+  void Layout(PassKey) override;
+  gfx::Size CalculatePreferredSize(
+      const SizeBounds& /*available_size*/) const override;
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
   bool OnMousePressed(const ui::MouseEvent& event) override;
   void OnGestureEvent(ui::GestureEvent* event) override;
@@ -201,8 +202,8 @@ class VIEWS_EXPORT TreeView : public View,
 
   // PrefixDelegate overrides:
   size_t GetRowCount() override;
-  absl::optional<size_t> GetSelectedRow() override;
-  void SetSelectedRow(absl::optional<size_t> row) override;
+  std::optional<size_t> GetSelectedRow() override;
+  void SetSelectedRow(std::optional<size_t> row) override;
   std::u16string GetTextForRow(size_t row) override;
 
  protected:
@@ -457,9 +458,8 @@ class VIEWS_EXPORT TreeView : public View,
   // The model, may be null.
   raw_ptr<ui::TreeModel> model_ = nullptr;
 
-  // Default icons for closed/open.
-  ui::ImageModel closed_icon_;
-  ui::ImageModel open_icon_;
+  // Default folder icon.
+  ui::ImageModel folder_icon_;
 
   // Icons from the model.
   std::vector<ui::ImageModel> icons_;

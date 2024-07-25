@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -148,12 +148,12 @@ VkPipelineLayoutCreateFlags GetCreateFlags(const vvl::span<const vvl::PipelineLa
 
 namespace vvl {
 
-static PipelineLayout::SetLayoutVector GetSetLayouts(ValidationStateTracker *dev_data,
+static PipelineLayout::SetLayoutVector GetSetLayouts(ValidationStateTracker &dev_data,
                                                      const VkPipelineLayoutCreateInfo *pCreateInfo) {
     PipelineLayout::SetLayoutVector set_layouts(pCreateInfo->setLayoutCount);
 
     for (uint32_t i = 0; i < pCreateInfo->setLayoutCount; ++i) {
-        set_layouts[i] = dev_data->Get<vvl::DescriptorSetLayout>(pCreateInfo->pSetLayouts[i]);
+        set_layouts[i] = dev_data.Get<vvl::DescriptorSetLayout>(pCreateInfo->pSetLayouts[i]);
     }
     return set_layouts;
 }
@@ -194,8 +194,9 @@ static PipelineLayout::SetLayoutVector GetSetLayouts(const vvl::span<const Pipel
     return set_layouts;
 }
 
-PipelineLayout::PipelineLayout(ValidationStateTracker *dev_data, VkPipelineLayout l, const VkPipelineLayoutCreateInfo *pCreateInfo)
-    : StateObject(l, kVulkanObjectTypePipelineLayout),
+PipelineLayout::PipelineLayout(ValidationStateTracker &dev_data, VkPipelineLayout handle,
+                               const VkPipelineLayoutCreateInfo *pCreateInfo)
+    : StateObject(handle, kVulkanObjectTypePipelineLayout),
       set_layouts(GetSetLayouts(dev_data, pCreateInfo)),
       push_constant_ranges(GetCanonicalId(pCreateInfo->pushConstantRangeCount, pCreateInfo->pPushConstantRanges)),
       set_compat_ids(GetCompatForSet(set_layouts, push_constant_ranges)),

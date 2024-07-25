@@ -97,8 +97,18 @@ g.test('location,mismatch')
   });
 
 g.test('location,superset')
-  .desc(`TODO: implement after spec is settled: https://github.com/gpuweb/gpuweb/issues/2038`)
-  .unimplemented();
+  .desc(`Tests that validation should succeed when vertex output is superset of fragment input`)
+  .params(u => u.combine('isAsync', [false, true]))
+  .fn(t => {
+    const { isAsync } = t.params;
+
+    const descriptor = t.getDescriptorWithStates(
+      t.getVertexStateWithOutputs(['@location(0) vout0: f32', '@location(1) vout1: f32']),
+      t.getFragmentStateWithInputs(['@location(1) fin1: f32'])
+    );
+
+    t.doCreateRenderPipelineTest(isAsync, true, descriptor);
+  });
 
 g.test('location,subset')
   .desc(`Tests that validation should fail when vertex output is a subset of fragment input.`)
@@ -252,11 +262,14 @@ g.test('max_components_count,output')
   )
   .params(u =>
     u.combine('isAsync', [false, true]).combineWithParams([
-      // Number of user-defined output scalar components in test shader = device.limits.maxInterStageShaderComponents + numScalarDelta.
+      // Number of user-defined output scalar components in test shader =
+      //     Math.floor((device.limits.maxInterStageShaderComponents + numScalarDelta) / 4) * 4.
       { numScalarDelta: 0, topology: 'triangle-list', _success: true },
       { numScalarDelta: 1, topology: 'triangle-list', _success: false },
       { numScalarDelta: 0, topology: 'point-list', _success: false },
-      { numScalarDelta: -1, topology: 'point-list', _success: true },
+      { numScalarDelta: -1, topology: 'point-list', _success: false },
+      { numScalarDelta: -3, topology: 'point-list', _success: false },
+      { numScalarDelta: -4, topology: 'point-list', _success: true },
     ] as const)
   )
   .fn(t => {
@@ -291,18 +304,20 @@ g.test('max_components_count,input')
   )
   .params(u =>
     u.combine('isAsync', [false, true]).combineWithParams([
-      // Number of user-defined input scalar components in test shader = device.limits.maxInterStageShaderComponents + numScalarDelta.
+      // Number of user-defined input scalar components in test shader =
+      //     Math.floor((device.limits.maxInterStageShaderComponents + numScalarDelta) / 4) * 4.
       { numScalarDelta: 0, useExtraBuiltinInputs: false },
       { numScalarDelta: 1, useExtraBuiltinInputs: false },
       { numScalarDelta: 0, useExtraBuiltinInputs: true },
       { numScalarDelta: -3, useExtraBuiltinInputs: true },
-      { numScalarDelta: -2, useExtraBuiltinInputs: true },
+      { numScalarDelta: -4, useExtraBuiltinInputs: true },
     ] as const)
   )
   .fn(t => {
     const { isAsync, numScalarDelta, useExtraBuiltinInputs } = t.params;
 
-    const numScalarComponents = t.device.limits.maxInterStageShaderComponents + numScalarDelta;
+    const numScalarComponents =
+      Math.floor((t.device.limits.maxInterStageShaderComponents + numScalarDelta) / 4) * 4;
     const numExtraComponents = useExtraBuiltinInputs ? (t.isCompatibility ? 2 : 3) : 0;
     const numUsedComponents = numScalarComponents + numExtraComponents;
     const success = numUsedComponents <= t.device.limits.maxInterStageShaderComponents;

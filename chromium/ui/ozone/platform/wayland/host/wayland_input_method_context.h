@@ -6,12 +6,12 @@
 #define UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_INPUT_METHOD_CONTEXT_H_
 
 #include <memory>
+#include <string_view>
 #include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/strings/string_piece.h"
 #include "ui/base/ime/character_composer.h"
 #include "ui/base/ime/linux/linux_input_method_context.h"
 #include "ui/base/ime/surrounding_text_tracker.h"
@@ -54,8 +54,8 @@ class WaylandInputMethodContext : public LinuxInputMethodContext,
       const std::u16string& text,
       const gfx::Range& text_range,
       const gfx::Range& selection_range,
-      const absl::optional<GrammarFragment>& fragment,
-      const absl::optional<AutocorrectInfo>& autocorrect) override;
+      const std::optional<GrammarFragment>& fragment,
+      const std::optional<AutocorrectInfo>& autocorrect) override;
   void WillUpdateFocus(TextInputClient* old_client,
                        TextInputClient* new_client) override;
   void UpdateFocus(bool has_client,
@@ -76,10 +76,10 @@ class WaylandInputMethodContext : public LinuxInputMethodContext,
   void OnKeyboardFocusedWindowChanged() override;
 
   // ZWPTextInputWrapperClient overrides:
-  void OnPreeditString(base::StringPiece text,
+  void OnPreeditString(std::string_view text,
                        const std::vector<SpanStyle>& spans,
                        int32_t preedit_cursor) override;
-  void OnCommitString(base::StringPiece text) override;
+  void OnCommitString(std::string_view text) override;
   void OnCursorPosition(int32_t index, int32_t anchor) override;
   void OnDeleteSurroundingText(int32_t index, uint32_t length) override;
   void OnKeysym(uint32_t keysym,

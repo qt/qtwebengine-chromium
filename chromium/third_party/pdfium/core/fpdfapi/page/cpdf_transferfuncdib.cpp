@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/page/cpdf_transferfuncdib.h"
 
 #include <utility>
@@ -11,8 +16,8 @@
 #include "build/build_config.h"
 #include "core/fpdfapi/page/cpdf_transferfunc.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
+#include "core/fxcrt/check.h"
 #include "core/fxge/calculate_pitch.h"
-#include "third_party/base/check.h"
 
 CPDF_TransferFuncDIB::CPDF_TransferFuncDIB(
     RetainPtr<CFX_DIBBase> pSrc,

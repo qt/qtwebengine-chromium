@@ -95,7 +95,7 @@ class ImageRepPNG final : public ImageRep {
   std::vector<ImagePNGRep> image_png_reps_;
 
   // Cached to avoid having to parse the raw data multiple times.
-  mutable absl::optional<gfx::Size> size_cache_;
+  mutable std::optional<gfx::Size> size_cache_;
 };
 
 class ImageRepSkia final : public ImageRep {
@@ -219,7 +219,7 @@ Image Image::CreateFrom1xPNGBytes(const unsigned char* input,
     return Image();
 
   scoped_refptr<base::RefCountedBytes> raw_data(new base::RefCountedBytes());
-  raw_data->data().assign(input, input + input_size);
+  raw_data->as_vector().assign(input, input + input_size);
 
   return CreateFrom1xPNGBytes(raw_data);
 }

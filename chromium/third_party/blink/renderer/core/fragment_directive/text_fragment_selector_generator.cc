@@ -122,7 +122,7 @@ constexpr int kMaxRangeWords = 10;
 constexpr int kMaxIterationCountToRecord = 10;
 constexpr int kMinWordCount = 3;
 
-absl::optional<int> g_exactTextMaxCharsOverride;
+std::optional<int> g_exactTextMaxCharsOverride;
 
 TextFragmentSelectorGenerator::TextFragmentSelectorGenerator(
     LocalFrame* main_frame)
@@ -140,8 +140,10 @@ void TextFragmentSelectorGenerator::Generate(const RangeInFlatTree& range,
 }
 
 void TextFragmentSelectorGenerator::Reset() {
-  if (finder_)
+  if (finder_) {
     finder_->Cancel();
+    finder_.Clear();
+  }
 
   generation_start_time_ = base::DefaultTickClock::GetInstance()->NowTicks();
   state_ = kNotStarted;
@@ -183,6 +185,8 @@ String TextFragmentSelectorGenerator::GetSelectorTargetText() const {
 
 void TextFragmentSelectorGenerator::DidFindMatch(const RangeInFlatTree& match,
                                                  bool is_unique) {
+  finder_.Clear();
+
   if (did_find_match_callback_for_testing_)
     std::move(did_find_match_callback_for_testing_).Run(is_unique);
 
@@ -203,6 +207,8 @@ void TextFragmentSelectorGenerator::DidFindMatch(const RangeInFlatTree& match,
 }
 
 void TextFragmentSelectorGenerator::NoMatchFound() {
+  finder_.Clear();
+
   state_ = kFailure;
   error_ = LinkGenerationError::kIncorrectSelector;
   ResolveSelectorState();

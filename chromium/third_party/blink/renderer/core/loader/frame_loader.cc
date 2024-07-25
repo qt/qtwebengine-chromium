@@ -128,12 +128,12 @@
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/runtime_feature_state/runtime_feature_state_override_context.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "url/url_features.h"
 
 namespace blink {
 
@@ -392,10 +392,9 @@ void FrameLoader::DispatchUnloadEventAndFillOldDocumentInfoIfNeeded(
   old_document_info->history_item = GetDocumentLoader()->GetHistoryItem();
   old_document_info->had_sticky_activation_before_navigation =
       frame_->HadStickyUserActivationBeforeNavigation();
-  if (auto* scheduler = static_cast<scheduler::FrameSchedulerImpl*>(
-          frame_->GetFrameScheduler())) {
+  if (auto* scheduler = frame_->GetFrameScheduler()) {
     old_document_info->frame_scheduler_unreported_task_time =
-        scheduler->unreported_task_time();
+        scheduler->UnreportedTaskTime();
   }
 
   frame_->GetDocument()->DispatchUnloadEvents(
@@ -508,7 +507,7 @@ void FrameLoader::DetachDocumentLoader(Member<DocumentLoader>& loader,
 void FrameLoader::ProcessScrollForSameDocumentNavigation(
     const KURL& url,
     WebFrameLoadType frame_load_type,
-    absl::optional<HistoryItem::ViewState> view_state,
+    std::optional<HistoryItem::ViewState> view_state,
     mojom::blink::ScrollRestorationType scroll_restoration_type) {
   if (view_state) {
     RestoreScrollPositionAndViewState(frame_load_type, *view_state,
@@ -531,7 +530,7 @@ bool FrameLoader::AllowRequestForThisFrame(const FrameLoadRequest& request) {
   const KURL& url = request.GetResourceRequest().Url();
   if (url.ProtocolIsJavaScript()) {
     if (request.GetOriginWindow()
-            ->CheckAndGetJavascriptUrl(request.JavascriptWorld().get(), url,
+            ->CheckAndGetJavascriptUrl(request.JavascriptWorld(), url,
                                        frame_->DeprecatedLocalOwner())
             .empty()) {
       return false;
@@ -721,7 +720,7 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
         resource_request.HasUserGesture(), origin_window->GetSecurityOrigin(),
         /*is_synchronously_committed=*/true, request.GetSourceElement(),
         request.GetTriggeringEventInfo(), /*is_browser_initiated=*/false,
-        /*soft_navigation_heuristics_task_id=*/absl::nullopt);
+        /*soft_navigation_heuristics_task_id=*/std::nullopt);
     return;
   }
 
@@ -796,6 +795,18 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
     }
     return;
   }
+  // If kStandardCompliantNonSpecialSchemeURLParsing feature is enabled,
+  // "javascript:" scheme URL can be a invalid URL. e.g. "javascript://a b".
+  //
+  // We shouldn't navigate to such an invalid "javascript:" scheme URL.
+  //
+  // See wpt/url/javascript-urls.window.js test for the standard compliant
+  // behaviors.
+  if (url::IsUsingStandardCompliantNonSpecialSchemeURLParsing() &&
+      ProtocolIsJavaScript(url.GetString())) {
+    DCHECK(!url.IsValid());
+    return;
+  }
 
   if (request.GetNavigationPolicy() == kNavigationPolicyCurrentTab &&
       (!origin_window || origin_window->GetSecurityOrigin()->CanAccess(
@@ -843,7 +854,7 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
   using CSPDisposition = network::mojom::CSPDisposition;
   CSPDisposition should_check_main_world_csp =
       ContentSecurityPolicy::ShouldBypassMainWorldDeprecated(
-          request.JavascriptWorld().get())
+          request.JavascriptWorld())
           ? CSPDisposition::DO_NOT_CHECK
           : CSPDisposition::CHECK;
 
@@ -851,10 +862,15 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
   // Only warn if the resource URL's origin is different than its requestor
   // (we don't want to warn for <img src="faß.de/image.img"> on faß.de).
   // TODO(crbug.com/1396475): Remove once Non-Transitional mode is shipped.
-  if (resource_request.RequestorOrigin() &&
-      !resource_request.RequestorOrigin()->IsSameOriginWith(
-          SecurityOrigin::Create(url).get()) &&
-      url.HasIDNA2008DeviationCharacter()) {
+  if (base::FeatureList::IsEnabled(kAvoidWastefulHostCopies)
+          ? (url.HasIDNA2008DeviationCharacter() &&
+             resource_request.RequestorOrigin() &&
+             !resource_request.RequestorOrigin()->IsSameOriginWith(
+                 SecurityOrigin::Create(url).get()))
+          : (resource_request.RequestorOrigin() &&
+             !resource_request.RequestorOrigin()->IsSameOriginWith(
+                 SecurityOrigin::Create(url).get()) &&
+             url.HasIDNA2008DeviationCharacter())) {
     String message = GetConsoleWarningForIDNADeviationCharacters(url);
     if (!message.empty()) {
       request.GetOriginWindow()->AddConsoleMessage(
@@ -879,7 +895,7 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
       request.GetInputStartTime(), request.HrefTranslate().GetString(),
       request.Impression(), request.GetInitiatorFrameToken(),
       request.TakeSourceLocation(),
-      request.TakeInitiatorPolicyContainerKeepAliveHandle(),
+      request.TakeInitiatorNavigationStateKeepAliveHandle(),
       request.IsContainerInitiated(), request.IsFullscreenRequested());
 }
 
@@ -1406,8 +1422,7 @@ String FrameLoader::UserAgent() const {
   return ApplyUserAgentOverride(Client()->UserAgent());
 }
 
-absl::optional<blink::UserAgentMetadata> FrameLoader::UserAgentMetadata()
-    const {
+std::optional<blink::UserAgentMetadata> FrameLoader::UserAgentMetadata() const {
   return Client()->UserAgentMetadata();
 }
 

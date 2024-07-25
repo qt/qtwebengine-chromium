@@ -5,16 +5,16 @@
 #ifndef COMPONENTS_SIGNIN_PUBLIC_IDENTITY_MANAGER_IDENTITY_TEST_UTILS_H_
 #define COMPONENTS_SIGNIN_PUBLIC_IDENTITY_MANAGER_IDENTITY_TEST_UTILS_H_
 
+#include <optional>
 #include <string>
+#include <string_view>
 
 #include "base/functional/callback_forward.h"
-#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/account_info.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace network {
 class TestURLLoaderFactory;
@@ -51,8 +51,8 @@ class IdentityManager;
 void WaitForRefreshTokensLoaded(IdentityManager* identity_manager);
 
 // Returns the current exact consent level for the primary account, or
-// `absl::nullopt` if there is no primary account set.
-absl::optional<signin::ConsentLevel> GetPrimaryAccountConsentLevel(
+// `std::nullopt` if there is no primary account set.
+std::optional<signin::ConsentLevel> GetPrimaryAccountConsentLevel(
     IdentityManager* identity_manager);
 
 // Sets the primary account (which must not already be set) to the given email
@@ -72,6 +72,11 @@ CoreAccountInfo SetPrimaryAccount(IdentityManager* identity_manager,
                                   const std::string& email,
                                   ConsentLevel consent_level);
 
+// When this is set for the given `identity_manager`, access token requests
+// will be automatically granted with an access token value of "access_token".
+void SetAutomaticIssueOfAccessTokens(IdentityManager* identity_manager,
+                                     bool grant);
+
 // Sets a refresh token for the primary account (which must already be set).
 // Blocks until the refresh token is set. If |token_value| is empty a default
 // value will be used instead.
@@ -83,7 +88,10 @@ void SetRefreshTokenForPrimaryAccount(
 // Sets a special invalid refresh token for the primary account (which must
 // already be set). Blocks until the refresh token is set.
 // NOTE: See disclaimer at top of file re: direct usage.
-void SetInvalidRefreshTokenForPrimaryAccount(IdentityManager* identity_manager);
+void SetInvalidRefreshTokenForPrimaryAccount(
+    IdentityManager* identity_manager,
+    signin_metrics::SourceForRefreshTokenOperation source =
+        signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
 // Removes any refresh token for the primary account, if present. Blocks until
 // the refresh token is removed.
@@ -111,7 +119,7 @@ AccountInfo MakePrimaryAccountAvailable(IdentityManager* identity_manager,
 // NOTE: See disclaimer at top of file re: direct usage.
 // NOTE:`ConsentLevel::kSync` is deprecated, see the `ConsentLevel`
 // documentation.
-// TODO(crbug.com/1462978): remove this function once `ConsentLevel::kSync` is
+// TODO(crbug.com/40067058): remove this function once `ConsentLevel::kSync` is
 // removed.
 void RevokeSyncConsent(IdentityManager* identity_manager);
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -144,13 +152,13 @@ struct AccountAvailabilityOptions {
 
   // If present, the account to be created should be set as primary at
   // `consent_level`.
-  const absl::optional<ConsentLevel> consent_level = absl::nullopt;
+  const std::optional<ConsentLevel> consent_level = std::nullopt;
 
   // If present, a refresh token will be set for the account to be created. Can
   // be an empty string (this is the default), in this case the token's value
   // will be auto-generated. If non-empty, the value of `refresh_token` will be
   // used as the token.
-  const absl::optional<std::string> refresh_token = std::string();
+  const std::optional<std::string> refresh_token = std::string();
 
   // If non-null, the account to be created will be marked as present in the
   // Gaia cookie, by using `url_loader_factory_for_cookies` to mock the
@@ -159,9 +167,9 @@ struct AccountAvailabilityOptions {
       nullptr;
 
   const signin_metrics::AccessPoint access_point =
-      signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN;
+      signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS;
 
-  explicit AccountAvailabilityOptions(base::StringPiece email);
+  explicit AccountAvailabilityOptions(std::string_view email);
   ~AccountAvailabilityOptions();
 
  private:
@@ -169,10 +177,10 @@ struct AccountAvailabilityOptions {
 
   // For complex options, prefer using `AccountAvailabilityOptionsBuilder`.
   AccountAvailabilityOptions(
-      base::StringPiece email,
-      base::StringPiece gaia_id,
-      absl::optional<ConsentLevel> consent_level,
-      absl::optional<std::string> refresh_token,
+      std::string_view email,
+      std::string_view gaia_id,
+      std::optional<ConsentLevel> consent_level,
+      std::optional<std::string> refresh_token,
       raw_ptr<network::TestURLLoaderFactory> url_loader_factory_for_cookies,
       signin_metrics::AccessPoint access_point);
 };
@@ -199,7 +207,7 @@ class AccountAvailabilityOptionsBuilder {
   AccountAvailabilityOptionsBuilder& AsPrimary(ConsentLevel);
 
   // Provide a custom `gaia_id` to use for the new account.
-  AccountAvailabilityOptionsBuilder& WithGaiaId(base::StringPiece gaia_id);
+  AccountAvailabilityOptionsBuilder& WithGaiaId(std::string_view gaia_id);
 
   // Whether to add the new account to the Gaia cookie. See
   // `signin::AddCookieAccount()` for more context.
@@ -211,7 +219,7 @@ class AccountAvailabilityOptionsBuilder {
   // NOTE: by default, the builder will auto-generate a refresh token. Call
   // `WithoutRefreshToken()` to avoid it.
   AccountAvailabilityOptionsBuilder& WithRefreshToken(
-      base::StringPiece refresh_token);
+      std::string_view refresh_token);
 
   // Request that we should not attempt to set a refresh token for the account.
   AccountAvailabilityOptionsBuilder& WithoutRefreshToken();
@@ -219,18 +227,18 @@ class AccountAvailabilityOptionsBuilder {
   AccountAvailabilityOptionsBuilder& WithAccessPoint(
       signin_metrics::AccessPoint access_point);
 
-  AccountAvailabilityOptions Build(base::StringPiece email);
+  AccountAvailabilityOptions Build(std::string_view email);
 
  private:
   raw_ptr<network::TestURLLoaderFactory> url_loader_factory_for_cookies_ =
       nullptr;
 
   std::string gaia_id_;
-  absl::optional<ConsentLevel> primary_account_consent_level_;
-  absl::optional<std::string> refresh_token_ = std::string();
+  std::optional<ConsentLevel> primary_account_consent_level_;
+  std::optional<std::string> refresh_token_ = std::string();
   bool with_cookie_ = false;
   signin_metrics::AccessPoint access_point_ =
-      signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN;
+      signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS;
 };
 
 // Sets up an account identified by `email` according to options provided. See
@@ -265,8 +273,11 @@ void SetRefreshTokenForAccount(IdentityManager* identity_manager,
 // Sets a special invalid refresh token for the given account (which must
 // already be available). Blocks until the refresh token is set.
 // NOTE: See disclaimer at top of file re: direct usage.
-void SetInvalidRefreshTokenForAccount(IdentityManager* identity_manager,
-                                      const CoreAccountId& account_id);
+void SetInvalidRefreshTokenForAccount(
+    IdentityManager* identity_manager,
+    const CoreAccountId& account_id,
+    signin_metrics::SourceForRefreshTokenOperation source =
+        signin_metrics::SourceForRefreshTokenOperation::kUnknown);
 
 // Removes any refresh token that is present for the given account. Blocks until
 // the refresh token is removed. Is a no-op if no refresh token is present for
@@ -318,7 +329,7 @@ std::string GetTestGaiaIdForEmail(const std::string& email);
 //
 // The returned account info will be valid per `AccountInfo::IsValid()`.
 AccountInfo WithGeneratedUserInfo(const AccountInfo& base_account_info,
-                                  base::StringPiece given_name);
+                                  std::string_view given_name);
 
 // Updates the persistent auth error set on |account_id| which must be a known
 // account, i.e., an account with a refresh token.
@@ -337,9 +348,6 @@ void WaitForErrorStateOfRefreshTokenUpdatedForAccount(
 
 // Disables internal retries of failed access token fetches.
 void DisableAccessTokenFetchRetries(IdentityManager* identity_manager);
-
-// Enables account capabilities fetches in AccountFetcherService.
-void EnableAccountCapabilitiesFetches(IdentityManager* identity_manager);
 
 #if BUILDFLAG(IS_ANDROID)
 // Stubs AccountManagerFacade, which requires special initialization of the java

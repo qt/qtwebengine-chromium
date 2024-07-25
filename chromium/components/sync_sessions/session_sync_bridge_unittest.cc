@@ -235,7 +235,7 @@ class SessionSyncBridgeTest : public ::testing::Test {
       initial_updates.push_back(SpecificsToUpdateResponse(specifics));
     }
     real_processor_->OnUpdateReceived(state, std::move(initial_updates),
-                                      /*gc_directive=*/absl::nullopt);
+                                      /*gc_directive=*/std::nullopt);
   }
 
   std::map<std::string, std::unique_ptr<EntityData>> GetAllData() {
@@ -653,8 +653,18 @@ TEST_F(SessionSyncBridgeTest,
   // IDs are persisted by session restore across browser restarts.
   PlaceholderTabDelegate placeholder_tab1(
       SessionID::FromSerializedValue(kTabId1));
+  auto snapshot1 = std::make_unique<TestSyncedTabDelegate>(
+      SessionID::FromSerializedValue(kWindowId1),
+      SessionID::FromSerializedValue(kTabId1), base::DoNothing());
+  placeholder_tab1.SetPlaceholderTabSyncedTabDelegate(std::move(snapshot1));
+
   PlaceholderTabDelegate placeholder_tab2(
       SessionID::FromSerializedValue(kTabId2));
+  auto snapshot2 = std::make_unique<TestSyncedTabDelegate>(
+      SessionID::FromSerializedValue(kWindowId2),
+      SessionID::FromSerializedValue(kTabId2), base::DoNothing());
+  placeholder_tab2.SetPlaceholderTabSyncedTabDelegate(std::move(snapshot2));
+
   ResetWindows();
   TestSyncedWindowDelegate* window = AddWindow(kWindowId2);
   window->OverrideTabAt(0, &placeholder_tab1);
@@ -960,7 +970,7 @@ TEST_F(SessionSyncBridgeTest, ShouldRecycleTabNodeAfterCommitCompleted) {
   // Completing the commit for the previously closed tab should issue a
   // deletion. For that to trigger, we need to trigger the next association,
   // which we do by navigating in one of the open tabs.
-  EXPECT_CALL(mock_processor(), Delete(tab_storage_key2, _));
+  EXPECT_CALL(mock_processor(), Delete(tab_storage_key2, _, _));
   real_processor()->OnCommitCompleted(
       GetModelTypeStateWithInitialSyncDone(),
       {CreateSuccessResponse(tab_client_tag2)},
@@ -1286,7 +1296,7 @@ TEST_F(SessionSyncBridgeTest, ShouldHandleRemoteDeletion) {
       CreateTombstone(SessionStore::GetClientTag(foreign_header)));
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(),
                                      std::move(updates),
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 
   foreign_session_tab = nullptr;
   EXPECT_FALSE(bridge()->GetOpenTabsUIDelegate()->GetForeignTab(
@@ -1312,7 +1322,7 @@ TEST_F(SessionSyncBridgeTest, ShouldHandleRemoteDeletion) {
     underlying_store()->ReadData(
         {header_storage_key, tab_storage_key},
         base::BindLambdaForTesting(
-            [&](const absl::optional<syncer::ModelError>& error,
+            [&](const std::optional<syncer::ModelError>& error,
                 std::unique_ptr<syncer::ModelTypeStore::RecordList>
                     data_records,
                 std::unique_ptr<syncer::ModelTypeStore::IdList>
@@ -1330,7 +1340,7 @@ TEST_F(SessionSyncBridgeTest, ShouldHandleRemoteDeletion) {
   {
     base::RunLoop loop;
     underlying_store()->ReadAllMetadata(base::BindLambdaForTesting(
-        [&](const absl::optional<syncer::ModelError>& error,
+        [&](const std::optional<syncer::ModelError>& error,
             std::unique_ptr<syncer::MetadataBatch> metadata_batch) {
           syncer::EntityMetadataMap entity_metadata_map =
               metadata_batch->TakeAllMetadata();
@@ -1388,7 +1398,7 @@ TEST_F(SessionSyncBridgeTest, ShouldIgnoreRemoteDeletionOfLocalTab) {
   updates.push_back(CreateTombstone(tab_client_tag1));
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(),
                                      std::move(updates),
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 
   // State should remain unchanged (deletions ignored).
   EXPECT_TRUE(bridge()->IsLocalDataOutOfSyncForTest());
@@ -1523,7 +1533,7 @@ TEST_F(SessionSyncBridgeTest, ShouldIgnoreRemoteDeletionOfLocalPlaceholderTab) {
   updates.push_back(CreateTombstone(tab_client_tag1));
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(),
                                      std::move(updates),
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 
   // State should remain unchanged (deletions ignored), but the local data
   // should be marked as "out of sync".
@@ -1628,7 +1638,7 @@ TEST_F(SessionSyncBridgeTest, ShouldNotRestoreLocalSessionWithoutMetadata) {
   updates.push_back(CreateTombstone(tab_client_tag2));
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(),
                                      std::move(updates),
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 
   // State should remain unchanged (deletions ignored).
   EXPECT_TRUE(bridge()->IsLocalDataOutOfSyncForTest());
@@ -1650,6 +1660,11 @@ TEST_F(SessionSyncBridgeTest, ShouldNotRestoreLocalSessionWithoutMetadata) {
   // tab IDs are persisted by session restore across browser restarts.
   PlaceholderTabDelegate placeholder_tab1(
       SessionID::FromSerializedValue(kTabId1));
+  auto snapshot1 = std::make_unique<TestSyncedTabDelegate>(
+      SessionID::FromSerializedValue(kWindowId1),
+      SessionID::FromSerializedValue(kTabId1), base::DoNothing());
+  placeholder_tab1.SetPlaceholderTabSyncedTabDelegate(std::move(snapshot1));
+
   ResetWindows();
   TestSyncedWindowDelegate* window = AddWindow(kWindowId1);
   window->OverrideTabAt(0, &placeholder_tab1);
@@ -1673,7 +1688,7 @@ TEST_F(SessionSyncBridgeTest, ShouldNotRestoreLocalSessionWithoutMetadata) {
 
   // The header and non-placeholder tab should both be restored, but the
   // placeholder tab got lost.
-  // TODO(crbug/1462305): on Android it should be possible to reupload
+  // TODO(crbug.com/40921830): on Android it should be possible to reupload
   // placeholder tabs.
   EXPECT_FALSE(bridge()->IsLocalDataOutOfSyncForTest());
   EXPECT_THAT(GetAllData(),
@@ -1730,8 +1745,8 @@ TEST_F(SessionSyncBridgeTest, ShouldDeleteForeignSessionFromUI) {
   ASSERT_TRUE(real_processor()->IsTrackingMetadata());
 
   // Mimic the user requesting a session deletion from the UI.
-  EXPECT_CALL(mock_processor(), Delete(foreign_header_storage_key, _));
-  EXPECT_CALL(mock_processor(), Delete(foreign_tab_storage_key, _));
+  EXPECT_CALL(mock_processor(), Delete(foreign_header_storage_key, _, _));
+  EXPECT_CALL(mock_processor(), Delete(foreign_tab_storage_key, _, _));
   EXPECT_CALL(mock_foreign_session_updated_cb(), Run());
   bridge()->GetOpenTabsUIDelegate()->DeleteForeignSession(kForeignSessionTag);
 
@@ -1776,7 +1791,7 @@ TEST_F(SessionSyncBridgeTest, ShouldNotBroadcastUpdatesIfEmpty) {
 
   // Mimic receiving an empty list of remote updates.
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(), {},
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 }
 
 TEST_F(SessionSyncBridgeTest, ShouldDoGarbageCollection) {
@@ -1812,16 +1827,17 @@ TEST_F(SessionSyncBridgeTest, ShouldDoGarbageCollection) {
       recent_mtime));
 
   // During garbage collection, we expect |kStaleSessionTag| to be deleted.
-  EXPECT_CALL(mock_processor(),
-              Delete(SessionStore::GetHeaderStorageKey(kStaleSessionTag), _));
   EXPECT_CALL(
       mock_processor(),
-      Delete(SessionStore::GetTabStorageKey(kStaleSessionTag, kTabNodeId), _));
+      Delete(SessionStore::GetHeaderStorageKey(kStaleSessionTag), _, _));
+  EXPECT_CALL(mock_processor(), Delete(SessionStore::GetTabStorageKey(
+                                           kStaleSessionTag, kTabNodeId),
+                                       _, _));
 
   EXPECT_CALL(mock_foreign_session_updated_cb(), Run()).Times(AtLeast(1));
   real_processor()->OnUpdateReceived(GetModelTypeStateWithInitialSyncDone(),
                                      std::move(updates),
-                                     /*gc_directive=*/absl::nullopt);
+                                     /*gc_directive=*/std::nullopt);
 }
 
 TEST_F(SessionSyncBridgeTest, ShouldReturnBrowserTypeInGetData) {

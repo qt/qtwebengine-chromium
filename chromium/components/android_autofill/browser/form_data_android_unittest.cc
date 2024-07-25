@@ -49,14 +49,14 @@ MATCHER(SimilarFieldAs, "") {
 FormFieldData CreateTestField(std::u16string name = u"SomeName") {
   static uint64_t renderer_id = 1;
   FormFieldData f;
-  f.name = std::move(name);
-  f.name_attribute = f.name;
-  f.id_attribute = u"some_id";
-  f.form_control_type = FormControlType::kInputText;
-  f.check_status = FormFieldData::CheckStatus::kChecked;
-  f.role = FormFieldData::RoleAttribute::kOther;
-  f.is_focusable = true;
-  f.unique_renderer_id = FieldRendererId(renderer_id++);
+  f.set_name(std::move(name));
+  f.set_name_attribute(f.name());
+  f.set_id_attribute(u"some_id");
+  f.set_form_control_type(FormControlType::kInputText);
+  f.set_check_status(FormFieldData::CheckStatus::kChecked);
+  f.set_role(FormFieldData::RoleAttribute::kOther);
+  f.set_is_focusable(true);
+  f.set_renderer_id(FieldRendererId(renderer_id++));
   return f;
 }
 
@@ -67,7 +67,7 @@ FormData CreateTestForm() {
   f.id_attribute = u"form_id";
   f.url = GURL("https://foo.com");
   f.action = GURL("https://bar.com");
-  f.is_form_tag = true;
+  f.renderer_id = test::MakeFormRendererId();
   return f;
 }
 
@@ -117,6 +117,7 @@ class FormDataAndroidTest : public ::testing::Test {
   MockFormDataAndroidBridge& form_bridge() { return *form_bridge_; }
 
  private:
+  test::AutofillUnitTestEnvironment autofill_test_environment_;
   std::vector<MockFormFieldDataAndroidBridge*> field_bridges_;
   raw_ptr<MockFormDataAndroidBridge> form_bridge_;
 };
@@ -133,7 +134,7 @@ TEST_F(FormDataAndroidTest, Form) {
 }
 
 // Tests that form similarity checks include name, name_attribute, id_attribute,
-// url, action, and is_form_tag.
+// url, and action.
 // Similarity checks are used to determine whether a web page has modified a
 // field significantly enough to warrant restarting an ongoing Autofill session,
 // e.g., because their change would lead to a change in type predictions. As a
@@ -141,8 +142,8 @@ TEST_F(FormDataAndroidTest, Form) {
 // are unlikely to have been superficial dynamic changes by Javascript on the
 // website.
 TEST_F(FormDataAndroidTest, SimilarFormAs) {
-  FormDataAndroid af(CreateTestForm(), kSampleSessionId);
   FormData f = CreateTestForm();
+  FormDataAndroid af(f, kSampleSessionId);
 
   // If forms are the same, they are similar.
   EXPECT_TRUE(af.SimilarFormAs(f));
@@ -171,14 +172,9 @@ TEST_F(FormDataAndroidTest, SimilarFormAs) {
   f.action = GURL("https://other.com");
   EXPECT_FALSE(af.SimilarFormAs(f));
 
-  // If is_form_tag differs, they are not similar.
-  f = af.form();
-  f.is_form_tag = !f.is_form_tag;
-  EXPECT_FALSE(af.SimilarFormAs(f));
-
   // If their global ids differ, they are not similar.
   f = af.form();
-  f.unique_renderer_id = FormRendererId(f.unique_renderer_id.value() + 1);
+  f.renderer_id = FormRendererId(f.renderer_id.value() + 1);
   EXPECT_FALSE(af.SimilarFormAs(f));
 }
 
@@ -196,12 +192,12 @@ TEST_F(FormDataAndroidTest, SimilarFormAs_Fields) {
 
   // Forms with similar fields are similar.
   f = af.form();
-  f.fields.front().value = f.fields.front().value + u"x";
+  f.fields.front().set_value(f.fields.front().value() + u"x");
   EXPECT_TRUE(af.SimilarFormAs(f));
 
   // Forms with fields that are not similar, are not similar either.
   f = af.form();
-  f.fields.front().name += u"x";
+  f.fields.front().set_name(f.fields.front().name() + u"x");
   EXPECT_FALSE(af.SimilarFormAs(f));
 }
 
@@ -216,14 +212,14 @@ TEST_F(FormDataAndroidTest, SimilarFormAsWithDiagnosis) {
     return SimilarityCheckResult((base::to_underlying(components) | ...));
   };
 
-  FormDataAndroid af(CreateTestForm(), kSampleSessionId);
   FormData f = CreateTestForm();
+  FormDataAndroid af(f, kSampleSessionId);
 
   EXPECT_EQ(af.SimilarFormAsWithDiagnosis(f),
             FormDataAndroid::kFormsAreSimilar);
 
   f = af.form();
-  f.unique_renderer_id = FormRendererId(f.unique_renderer_id.value() + 1);
+  f.renderer_id = FormRendererId(f.renderer_id.value() + 1);
   EXPECT_EQ(af.SimilarFormAsWithDiagnosis(f),
             to_check_result(SimilarityCheckComponent::kGlobalId));
 
@@ -253,11 +249,6 @@ TEST_F(FormDataAndroidTest, SimilarFormAsWithDiagnosis) {
             to_check_result(SimilarityCheckComponent::kAction));
 
   f = af.form();
-  f.is_form_tag = !f.is_form_tag;
-  EXPECT_EQ(af.SimilarFormAsWithDiagnosis(f),
-            to_check_result(SimilarityCheckComponent::kIsFormTag));
-
-  f = af.form();
   f.name_attribute = af.form().name_attribute + u"x";
   f.id_attribute = af.form().id_attribute + u"x";
   EXPECT_EQ(af.SimilarFormAsWithDiagnosis(f),
@@ -276,7 +267,7 @@ TEST_F(FormDataAndroidTest, GetFieldIndex) {
 
   // As updates in `f` are not propagated to the Android version `af`, the
   // lookup fails.
-  f.fields[1].name = u"name3";
+  f.fields[1].set_name(u"name3");
   EXPECT_FALSE(af.GetFieldIndex(f.fields[1], &index));
 }
 
@@ -289,13 +280,13 @@ TEST_F(FormDataAndroidTest, GetSimilarFieldIndex) {
   size_t index = 100;
   // Value is not part of a field similarity check, so this field is similar to
   // af.form().fields[1].
-  f.fields[1].value = u"some value";
+  f.fields[1].set_value(u"some value");
   EXPECT_TRUE(af.GetSimilarFieldIndex(f.fields[1], &index));
   EXPECT_EQ(index, 1u);
 
   // Name is a part of the field similarity check, so there is no field similar
   // to this one.
-  f.fields[1].name = u"name3";
+  f.fields[1].set_name(u"name3");
   EXPECT_FALSE(af.GetSimilarFieldIndex(f.fields[1], &index));
 }
 
@@ -314,7 +305,7 @@ TEST_F(FormDataAndroidTest, OnFormFieldDidChange) {
   EXPECT_CALL(*field_bridges()[0], UpdateValue).Times(0);
   EXPECT_CALL(*field_bridges()[1], UpdateValue(kNewValue));
   form_android.OnFormFieldDidChange(1, kNewValue);
-  EXPECT_EQ(form_android.form().fields[1].value, kNewValue);
+  EXPECT_EQ(form_android.form().fields[1].value(), kNewValue);
 }
 
 // Tests that the calls to update field types are propagated to the fields.
@@ -404,8 +395,8 @@ TEST_F(FormDataAndroidTest, UpdateFieldTypes_ChangedForm) {
 TEST_F(FormDataAndroidTest, UpdateFieldVisibilities) {
   FormData form = CreateTestForm();
   form.fields = {CreateTestField(), CreateTestField(), CreateTestField()};
-  form.fields[0].role = FormFieldData::RoleAttribute::kPresentation;
-  form.fields[1].is_focusable = false;
+  form.fields[0].set_role(FormFieldData::RoleAttribute::kPresentation);
+  form.fields[1].set_is_focusable(false);
   EXPECT_FALSE(form.fields[0].IsFocusable());
   EXPECT_FALSE(form.fields[1].IsFocusable());
   EXPECT_TRUE(form.fields[2].IsFocusable());
@@ -418,8 +409,8 @@ TEST_F(FormDataAndroidTest, UpdateFieldVisibilities) {
 
   // `form_android` created a copy of `form` - therefore modifying the fields
   // here does not change the values inside `form_android`.
-  form.fields[0].role = FormFieldData::RoleAttribute::kOther;
-  form.fields[1].is_focusable = true;
+  form.fields[0].set_role(FormFieldData::RoleAttribute::kOther);
+  form.fields[1].set_is_focusable(true);
   EXPECT_TRUE(form.fields[0].IsFocusable());
   EXPECT_TRUE(form.fields[1].IsFocusable());
   EXPECT_TRUE(form.fields[2].IsFocusable());

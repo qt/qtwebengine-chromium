@@ -404,7 +404,9 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
 
     // TODO(dalecurtis): Just use the profile from the codec context if ffmpeg
     // ever starts supporting xHE-AAC.
-    if (codec_context->profile == FF_PROFILE_UNKNOWN) {
+    // FFmpeg provides the (defined_profile - 1) for AVCodecContext::profile
+    if (codec_context->profile == FF_PROFILE_UNKNOWN ||
+        codec_context->profile == mp4::AAC::kXHeAAcType - 1) {
       // Errors aren't fatal here, so just drop any MediaLog messages.
       NullMediaLog media_log;
       mp4::AAC aac_parser;
@@ -544,7 +546,7 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
     case VideoCodec::kHEVC: {
       int hevc_profile = -1;
-      // We need to parse extradata each time, because we wont add ffmpeg
+      // We need to parse extradata each time, because we won't add ffmpeg
       // hevc decoder & parser to chromium and codec_context->profile
       // should always be FF_PROFILE_UNKNOWN (-99) here
       if (codec_context->extradata && codec_context->extradata_size) {
@@ -653,6 +655,9 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
       profile = ProfileIDToVideoCodecProfile(codec_context->profile);
   }
 
+  VideoPixelFormat video_pixel_format =
+      AVPixelFormatToVideoPixelFormat(codec_context->pix_fmt);
+
   if (!color_space.IsSpecified()) {
     // VP9 frames may have color information, but that information cannot
     // express new color spaces, like HDR. For that reason, color space
@@ -674,18 +679,18 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
     }
   } else if (codec_context->codec_id == AV_CODEC_ID_H264 &&
              codec_context->colorspace == AVCOL_SPC_RGB &&
-             AVPixelFormatToVideoPixelFormat(codec_context->pix_fmt) ==
-                 PIXEL_FORMAT_I420) {
+             VideoPixelFormatToChromaSampling(video_pixel_format) !=
+                 VideoChromaSampling::k444) {
     // Some H.264 videos contain a VUI that specifies a color matrix of GBR,
-    // when they are actually ordinary YUV. Only 4:2:0 formats are checked,
-    // because GBR is reasonable for 4:4:4 content. See crbug.com/1067377.
+    // when they are actually ordinary YUV. Default to BT.709 if the format is
+    // not 4:4:4 as GBR is reasonable for 4:4:4 content. See crbug.com/1067377
+    // and crbug.com/341266991.
     color_space = VideoColorSpace::REC709();
   } else if (codec_context->codec_id == AV_CODEC_ID_HEVC &&
              (color_space.primaries == VideoColorSpace::PrimaryID::INVALID ||
               color_space.transfer == VideoColorSpace::TransferID::INVALID ||
               color_space.matrix == VideoColorSpace::MatrixID::INVALID) &&
-             AVPixelFormatToVideoPixelFormat(codec_context->pix_fmt) ==
-                 PIXEL_FORMAT_I420) {
+             video_pixel_format == PIXEL_FORMAT_I420) {
     // Some HEVC SDR content encoded by the Adobe Premiere HW HEVC encoder has
     // invalid primaries but valid transfer and matrix, and some HEVC SDR
     // content encoded by web camera has invalid primaries and transfer, this
@@ -740,7 +745,7 @@ bool AVStreamToVideoDecoderConfig(const AVStream* stream,
           smpte_st_2086.luminance_min = av_q2d(mdcv->min_luminance);
         }
 
-        // TODO(https://crbug.com/1446302): Consider rejecting metadata that
+        // TODO(crbug.com/40268540): Consider rejecting metadata that
         // does not specify all values.
         if (mdcv->has_primaries || mdcv->has_luminance) {
           hdr_metadata.smpte_st_2086 = smpte_st_2086;
@@ -843,12 +848,18 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
       return CHANNEL_LAYOUT_MONO;
     case AV_CH_LAYOUT_STEREO:
       return CHANNEL_LAYOUT_STEREO;
+    case AV_CH_LAYOUT_2POINT1:
+      return CHANNEL_LAYOUT_2POINT1;
     case AV_CH_LAYOUT_2_1:
       return CHANNEL_LAYOUT_2_1;
     case AV_CH_LAYOUT_SURROUND:
       return CHANNEL_LAYOUT_SURROUND;
+    case AV_CH_LAYOUT_3POINT1:
+      return CHANNEL_LAYOUT_3_1;
     case AV_CH_LAYOUT_4POINT0:
       return CHANNEL_LAYOUT_4_0;
+    case AV_CH_LAYOUT_4POINT1:
+      return CHANNEL_LAYOUT_4_1;
     case AV_CH_LAYOUT_2_2:
       return CHANNEL_LAYOUT_2_2;
     case AV_CH_LAYOUT_QUAD:
@@ -861,20 +872,6 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
       return CHANNEL_LAYOUT_5_0_BACK;
     case AV_CH_LAYOUT_5POINT1_BACK:
       return CHANNEL_LAYOUT_5_1_BACK;
-    case AV_CH_LAYOUT_7POINT0:
-      return CHANNEL_LAYOUT_7_0;
-    case AV_CH_LAYOUT_7POINT1:
-      return CHANNEL_LAYOUT_7_1;
-    case AV_CH_LAYOUT_7POINT1_WIDE:
-      return CHANNEL_LAYOUT_7_1_WIDE;
-    case AV_CH_LAYOUT_STEREO_DOWNMIX:
-      return CHANNEL_LAYOUT_STEREO_DOWNMIX;
-    case AV_CH_LAYOUT_2POINT1:
-      return CHANNEL_LAYOUT_2POINT1;
-    case AV_CH_LAYOUT_3POINT1:
-      return CHANNEL_LAYOUT_3_1;
-    case AV_CH_LAYOUT_4POINT1:
-      return CHANNEL_LAYOUT_4_1;
     case AV_CH_LAYOUT_6POINT0:
       return CHANNEL_LAYOUT_6_0;
     case AV_CH_LAYOUT_6POINT0_FRONT:
@@ -887,14 +884,25 @@ ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout, int channels) {
       return CHANNEL_LAYOUT_6_1_BACK;
     case AV_CH_LAYOUT_6POINT1_FRONT:
       return CHANNEL_LAYOUT_6_1_FRONT;
+    case AV_CH_LAYOUT_7POINT0:
+      return CHANNEL_LAYOUT_7_0;
     case AV_CH_LAYOUT_7POINT0_FRONT:
       return CHANNEL_LAYOUT_7_0_FRONT;
-#ifdef AV_CH_LAYOUT_7POINT1_WIDE_BACK
+    case AV_CH_LAYOUT_7POINT1:
+      return CHANNEL_LAYOUT_7_1;
+    case AV_CH_LAYOUT_7POINT1_WIDE:
+      return CHANNEL_LAYOUT_7_1_WIDE;
     case AV_CH_LAYOUT_7POINT1_WIDE_BACK:
       return CHANNEL_LAYOUT_7_1_WIDE_BACK;
-#endif
     case AV_CH_LAYOUT_OCTAGONAL:
       return CHANNEL_LAYOUT_OCTAGONAL;
+    case AV_CH_LAYOUT_STEREO_DOWNMIX:
+      return CHANNEL_LAYOUT_STEREO_DOWNMIX;
+    case AV_CH_FRONT_CENTER | AV_CH_LOW_FREQUENCY:
+      return CHANNEL_LAYOUT_1_1;
+    case AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT | AV_CH_LOW_FREQUENCY |
+        AV_CH_BACK_CENTER:
+      return CHANNEL_LAYOUT_3_1_BACK;
     default:
       // FFmpeg channel_layout is 0 for .wav and .mp3.  Attempt to guess layout
       // based on the channel count.
@@ -946,13 +954,11 @@ VideoPixelFormat AVPixelFormatToVideoPixelFormat(AVPixelFormat pixel_format) {
     case AV_PIX_FMT_YUV444P12LE:
       return PIXEL_FORMAT_YUV444P12;
 
-    case AV_PIX_FMT_P016LE:
-      return PIXEL_FORMAT_P016LE;
-
     default:
-      DVLOG(1) << "Unsupported AVPixelFormat: " << pixel_format;
+      // FFmpeg knows more pixel formats than Chromium cares about.
+      LOG(ERROR) << "Unsupported pixel format: " << pixel_format;
+      return PIXEL_FORMAT_UNKNOWN;
   }
-  return PIXEL_FORMAT_UNKNOWN;
 }
 
 std::string AVErrorToString(int errnum) {

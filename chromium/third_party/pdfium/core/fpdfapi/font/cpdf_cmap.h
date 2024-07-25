@@ -9,13 +9,14 @@
 
 #include <stdint.h>
 
+#include <array>
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_cidfont.h"
 #include "core/fxcrt/fixed_size_data_vector.h"
 #include "core/fxcrt/retain_ptr.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr.h"
-#include "third_party/base/containers/span.h"
 
 namespace fxcmap {
 struct CMap;
@@ -45,8 +46,8 @@ class CPDF_CMap final : public Retainable {
 
   struct CodeRange {
     size_t m_CharSize;
-    uint8_t m_Lower[4];
-    uint8_t m_Upper[4];
+    std::array<uint8_t, 4> m_Lower;
+    std::array<uint8_t, 4> m_Upper;
   };
 
   struct CIDRange {

@@ -48,11 +48,10 @@ bool WebSocketAdapter::Write(base::span<const uint8_t> data) {
   }
   socket_remote_->SendMessage(network::mojom::WebSocketMessageType::BINARY,
                               data.size());
-  uint32_t num_bytes = static_cast<uint32_t>(data.size());
+  size_t num_bytes = data.size();
   MojoResult result = write_pipe_->WriteData(data.data(), &num_bytes,
                                              MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
-  DCHECK(result != MOJO_RESULT_OK ||
-         data.size() == static_cast<size_t>(num_bytes));
+  DCHECK(result != MOJO_RESULT_OK || data.size() == num_bytes);
   return result == MOJO_RESULT_OK;
 }
 
@@ -84,7 +83,7 @@ void WebSocketAdapter::OnFailure(const std::string& message,
   // this device should be dropped.
   if (on_tunnel_ready_) {
     std::move(on_tunnel_ready_)
-        .Run(Result::GONE, absl::nullopt, ConnectSignalSupport::NO);
+        .Run(Result::GONE, std::nullopt, ConnectSignalSupport::NO);
     // `this` may be invalid now.
   }
 }
@@ -102,7 +101,7 @@ void WebSocketAdapter::OnConnectionEstablished(
     return;
   }
 
-  absl::optional<std::array<uint8_t, kRoutingIdSize>> routing_id;
+  std::optional<std::array<uint8_t, kRoutingIdSize>> routing_id;
   ConnectSignalSupport connect_signal_support = ConnectSignalSupport::NO;
   for (const auto& header : response->headers) {
     if (base::EqualsCaseInsensitiveASCII(header->name.c_str(),
@@ -198,20 +197,14 @@ void WebSocketAdapter::OnClosingHandshake() {
 
 void WebSocketAdapter::OnDataPipeReady(MojoResult,
                                        const mojo::HandleSignalsState&) {
-  const size_t todo = pending_message_.size() - pending_message_i_;
+  size_t todo = pending_message_.size() - pending_message_i_;
   DCHECK_GT(todo, 0u);
 
-  // Truncation to 32-bits cannot overflow because |pending_message_.size()| is
-  // bound by |kMaxIncomingMessageSize| when it is resized in |OnDataFrame|.
-  uint32_t todo_32 = static_cast<uint32_t>(todo);
-  static_assert(
-      kMaxIncomingMessageSize <= std::numeric_limits<decltype(todo_32)>::max(),
-      "");
   const MojoResult result =
-      read_pipe_->ReadData(&pending_message_.data()[pending_message_i_],
-                           &todo_32, MOJO_READ_DATA_FLAG_NONE);
+      read_pipe_->ReadData(&pending_message_.data()[pending_message_i_], &todo,
+                           MOJO_READ_DATA_FLAG_NONE);
   if (result == MOJO_RESULT_OK) {
-    pending_message_i_ += todo_32;
+    pending_message_i_ += todo;
     DCHECK_LE(pending_message_i_, pending_message_.size());
 
     if (pending_message_i_ < pending_message_.size()) {
@@ -238,7 +231,7 @@ void WebSocketAdapter::OnMojoPipeDisconnect() {
   // failure to establish the tunnel.
   if (on_tunnel_ready_) {
     std::move(on_tunnel_ready_)
-        .Run(Result::FAILED, absl::nullopt, ConnectSignalSupport::NO);
+        .Run(Result::FAILED, std::nullopt, ConnectSignalSupport::NO);
     // `this` may be invalid now.
     return;
   }
@@ -253,7 +246,7 @@ void WebSocketAdapter::Close() {
   DCHECK(!closed_);
   closed_ = true;
   client_receiver_.reset();
-  on_tunnel_data_.Run(absl::nullopt);
+  on_tunnel_data_.Run(std::nullopt);
   // `this` may be invalid now.
 }
 

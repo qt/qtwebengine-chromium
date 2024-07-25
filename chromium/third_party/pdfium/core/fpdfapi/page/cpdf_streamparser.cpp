@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/page/cpdf_streamparser.h"
 
 #include <ctype.h>
@@ -26,13 +31,13 @@
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/jpeg/jpegmodule.h"
 #include "core/fxcodec/scanlinedecoder.h"
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxge/calculate_pitch.h"
-#include "third_party/base/check.h"
 
 namespace {
 
@@ -54,7 +59,7 @@ uint32_t DecodeAllScanlines(std::unique_ptr<ScanlineDecoder> pDecoder) {
   if (width <= 0 || height <= 0)
     return FX_INVALID_OFFSET;
 
-  absl::optional<uint32_t> maybe_size =
+  std::optional<uint32_t> maybe_size =
       fxge::CalculatePitch8(bpc, ncomps, width);
   if (!maybe_size.has_value())
     return FX_INVALID_OFFSET;
@@ -162,10 +167,10 @@ RetainPtr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
   if (pCSObj) {
     RetainPtr<CPDF_ColorSpace> pCS =
         CPDF_DocPageData::FromDocument(pDoc)->GetColorSpace(pCSObj, nullptr);
-    nComponents = pCS ? pCS->CountComponents() : 3;
+    nComponents = pCS ? pCS->ComponentCount() : 3;
     bpc = pDict->GetIntegerFor("BitsPerComponent");
   }
-  absl::optional<uint32_t> maybe_size =
+  std::optional<uint32_t> maybe_size =
       fxge::CalculatePitch8(bpc, nComponents, width);
   if (!maybe_size.has_value())
     return nullptr;
@@ -187,8 +192,9 @@ RetainPtr<CPDF_Stream> CPDF_StreamParser::ReadInlineStream(
   } else {
     dwStreamSize = DecodeInlineStream(m_pBuf.subspan(m_Pos), width, height,
                                       decoder, std::move(pParam), dwOrigSize);
-    if (!pdfium::base::IsValueInRangeForNumericType<int>(dwStreamSize))
+    if (!pdfium::IsValueInRangeForNumericType<int>(dwStreamSize)) {
       return nullptr;
+    }
 
     uint32_t dwSavePos = m_Pos;
     m_Pos += dwStreamSize;

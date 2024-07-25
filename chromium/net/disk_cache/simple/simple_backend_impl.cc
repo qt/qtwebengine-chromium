@@ -753,7 +753,7 @@ SimpleBackendImpl::DiskStatResult SimpleBackendImpl::InitCacheStructureOnDisk(
                << " path: " << path.LossyDisplayName();
     result.net_error = net::ERR_FAILED;
   } else {
-    absl::optional<base::File::Info> file_info =
+    std::optional<base::File::Info> file_info =
         file_operations->GetFileInfo(path);
     if (!file_info.has_value()) {
       // Something deleted the directory between when we set it up and the
@@ -841,7 +841,7 @@ EntryResult SimpleBackendImpl::OpenEntryFromHash(uint64_t entry_hash,
     base::OnceCallback<EntryResult(EntryResultCallback)> operation =
         base::BindOnce(&SimpleBackendImpl::OpenEntryFromHash,
                        base::Unretained(this), entry_hash);
-    // TODO(https://crbug.com/1019682) The cancellation behavior looks wrong.
+    // TODO(crbug.com/40105434) The cancellation behavior looks wrong.
     post_doom->emplace_back(base::BindOnce(&RunEntryResultOperationAndCallback,
                                            AsWeakPtr(), std::move(operation),
                                            std::move(callback)));

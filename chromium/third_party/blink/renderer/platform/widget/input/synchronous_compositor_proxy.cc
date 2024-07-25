@@ -133,8 +133,8 @@ void SynchronousCompositorProxy::DemandDrawHw(
   if (hardware_draw_reply_) {
     // Did not swap.
     std::move(hardware_draw_reply_)
-        .Run(PopulateNewCommonParams(), 0u, 0u, absl::nullopt, absl::nullopt,
-             absl::nullopt);
+        .Run(PopulateNewCommonParams(), 0u, 0u, std::nullopt, std::nullopt,
+             std::nullopt);
   }
 }
 
@@ -187,7 +187,7 @@ void SynchronousCompositorProxy::DemandDrawSw(
   if (software_draw_reply_) {
     // Did not swap.
     std::move(software_draw_reply_)
-        .Run(PopulateNewCommonParams(), 0u, absl::nullopt);
+        .Run(PopulateNewCommonParams(), 0u, std::nullopt);
   }
 }
 
@@ -218,8 +218,8 @@ void SynchronousCompositorProxy::DoDemandDrawSw(
 void SynchronousCompositorProxy::SubmitCompositorFrame(
     uint32_t layer_tree_frame_sink_id,
     const viz::LocalSurfaceId& local_surface_id,
-    absl::optional<viz::CompositorFrame> frame,
-    absl::optional<viz::HitTestRegionList> hit_test_region_list) {
+    std::optional<viz::CompositorFrame> frame,
+    std::optional<viz::HitTestRegionList> hit_test_region_list) {
   // Verify that exactly one of these is true.
   DCHECK(hardware_draw_reply_.is_null() ^ software_draw_reply_.is_null());
   mojom::blink::SyncCompositorCommonRendererParamsPtr common_renderer_params =
@@ -253,6 +253,17 @@ void SynchronousCompositorProxy::SetNeedsBeginFrames(bool needs_begin_frames) {
 
 void SynchronousCompositorProxy::SinkDestroyed() {
   layer_tree_frame_sink_ = nullptr;
+}
+
+void SynchronousCompositorProxy::SetThreadIds(
+    const Vector<base::PlatformThreadId>& thread_ids) {
+  if (thread_ids_ == thread_ids) {
+    return;
+  }
+  thread_ids_ = thread_ids;
+  if (host_) {
+    host_->SetThreadIds(thread_ids_);
+  }
 }
 
 void SynchronousCompositorProxy::SetBeginFrameSourcePaused(bool paused) {
@@ -346,9 +357,9 @@ void SynchronousCompositorProxy::SendDemandDrawHwAsyncReply(
     mojom::blink::SyncCompositorCommonRendererParamsPtr,
     uint32_t layer_tree_frame_sink_id,
     uint32_t metadata_version,
-    const absl::optional<viz::LocalSurfaceId>& local_surface_id,
-    absl::optional<viz::CompositorFrame> frame,
-    absl::optional<viz::HitTestRegionList> hit_test_region_list) {
+    const std::optional<viz::LocalSurfaceId>& local_surface_id,
+    std::optional<viz::CompositorFrame> frame,
+    std::optional<viz::HitTestRegionList> hit_test_region_list) {
   control_host_->ReturnFrame(layer_tree_frame_sink_id, metadata_version,
                              local_surface_id, std::move(frame),
                              std::move(hit_test_region_list));
@@ -394,6 +405,9 @@ void SynchronousCompositorProxy::BindChannel(
 
   if (needs_begin_frames_)
     host_->SetNeedsBeginFrames(true);
+  if (!thread_ids_.empty()) {
+    host_->SetThreadIds(thread_ids_);
+  }
 }
 
 void SynchronousCompositorProxy::HostDisconnected() {

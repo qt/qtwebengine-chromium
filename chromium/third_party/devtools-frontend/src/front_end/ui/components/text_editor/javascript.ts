@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Root from '../../../core/root/root.js';
 import * as SDK from '../../../core/sdk/sdk.js';
 import * as Bindings from '../../../models/bindings/bindings.js';
 import * as JavaScriptMetaData from '../../../models/javascript_metadata/javascript_metadata.js';
@@ -26,13 +25,12 @@ export async function completeInContext(
     extensions: CodeMirror.javascript.javascriptLanguage,
   });
   const result = await javascriptCompletionSource(new CodeMirror.CompletionContext(state, state.doc.length, force));
-  return result ?
-      result.options.filter((o): boolean => o.label.startsWith(query)).map((o): UI.SuggestBox.Suggestion => ({
-                                                                             text: o.label,
-                                                                             priority: 100 + (o.boost || 0),
-                                                                             isSecondary: o.type === 'secondary',
-                                                                           })) :
-      [];
+  return result ? result.options.filter(o => o.label.startsWith(query)).map(o => ({
+                                                                              text: o.label,
+                                                                              priority: 100 + (o.boost || 0),
+                                                                              isSecondary: o.type === 'secondary',
+                                                                            })) :
+                  [];
 }
 
 class CompletionSet {
@@ -410,14 +408,8 @@ async function completeExpressionInScope(): Promise<CompletionSet> {
     return result;
   }
 
-  const scopeObjectForScope = (scope: SDK.DebuggerModel.Scope): SDK.RemoteObject.RemoteObject =>
-      // TODO(crbug.com/1444349): Inline into `map` call below when experiment is removed.
-      Root.Runtime.experiments.isEnabled('evaluateExpressionsWithSourceMaps') ?
-      SourceMapScopes.NamesResolver.resolveScopeInObject(scope) :
-      scope.object();
-
-  const scopes = await Promise.all(
-      selectedFrame.scopeChain().map(scope => scopeObjectForScope(scope).getAllProperties(false, false)));
+  const scopes = await Promise.all(selectedFrame.scopeChain().map(
+      scope => SourceMapScopes.NamesResolver.resolveScopeInObject(scope).getAllProperties(false, false)));
   for (const scope of scopes) {
     for (const property of scope.properties || []) {
       result.add({
@@ -517,7 +509,7 @@ async function getArgumentHints(
     }
     scanPos = before.from;
   }
-  return (): {dom: HTMLElement} => tooltipBuilder(argumentList, argumentIndex);
+  return () => tooltipBuilder(argumentList, argumentIndex);
 }
 
 async function getArgumentsForExpression(

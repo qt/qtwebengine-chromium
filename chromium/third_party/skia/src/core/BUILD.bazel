@@ -1,4 +1,8 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_library", "skia_filegroup", "split_srcs_and_hdrs")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "generate_cpp_files_for_headers", "skia_cc_library", "skia_filegroup", "split_srcs_and_hdrs")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
@@ -53,7 +57,6 @@ CORE_FILES = [
     "SkBitmapProcState.h",
     "SkBitmapProcState_matrixProcs.cpp",
     "SkBitmapProcState_opts.cpp",
-    "SkBitmapProcState_opts_hsw.cpp",
     "SkBitmapProcState_opts_ssse3.cpp",
     "SkBlendMode.cpp",
     "SkBlendModeBlender.cpp",
@@ -171,6 +174,8 @@ CORE_FILES = [
     "SkImageInfo.cpp",
     "SkImageInfoPriv.h",
     "SkImagePriv.h",
+    "SkKnownRuntimeEffects.cpp",
+    "SkKnownRuntimeEffects.h",
     "SkLRUCache.h",
     "SkLatticeIter.cpp",
     "SkLatticeIter.h",
@@ -314,7 +319,6 @@ CORE_FILES = [
     "SkScan_Antihair.cpp",
     "SkScan_Hairline.cpp",
     "SkScan_Path.cpp",
-    "SkScan_SAAPath.cpp",
     "SkSpecialImage.cpp",
     "SkSpecialImage.h",
     "SkSpriteBlitter.h",
@@ -344,8 +348,6 @@ CORE_FILES = [
     "SkTaskGroup.h",
     "SkTextBlob.cpp",
     "SkTextBlobPriv.h",
-    "SkTextBlobTrace.cpp",
-    "SkTextBlobTrace.h",
     "SkTextFormatParams.h",
     "SkTraceEvent.h",
     "SkTraceEventCommon.h",
@@ -378,13 +380,6 @@ CORE_FILES = [
 split_srcs_and_hdrs(
     name = "legacy_core",
     files = CORE_FILES,
-)
-
-skia_filegroup(
-    name = "legacy_draw_looper",
-    srcs = [
-        "SkDrawLooper.cpp",
-    ],
 )
 
 skia_filegroup(
@@ -525,7 +520,6 @@ skia_filegroup(
         "SkTMultiMap.h",
         "SkTaskGroup.h",
         "SkTextBlobPriv.h",
-        "SkTextBlobTrace.h",
         "SkTextFormatParams.h",
         "SkTraceEvent.h",
         "SkTraceEventCommon.h",
@@ -583,6 +577,7 @@ skia_filegroup(
         "SkEdgeBuilder.h",
         "SkGaussFilter.h",
         "SkGlyphRunPainter.h",
+        "SkKnownRuntimeEffects.h",
         "SkLineClipper.h",
         "SkMaskBlurFilter.h",
         "SkMaskCache.h",
@@ -628,7 +623,6 @@ skia_filegroup(
         "SkBitmapProcState.cpp",
         "SkBitmapProcState_matrixProcs.cpp",
         "SkBitmapProcState_opts.cpp",
-        "SkBitmapProcState_opts_hsw.cpp",
         "SkBitmapProcState_opts_ssse3.cpp",
         "SkBlendMode.cpp",
         "SkBlendModeBlender.cpp",
@@ -698,6 +692,7 @@ skia_filegroup(
         "SkImageFilterTypes.cpp",
         "SkImageGenerator.cpp",
         "SkImageInfo.cpp",
+        "SkKnownRuntimeEffects.cpp",
         "SkLatticeIter.cpp",
         "SkLineClipper.cpp",
         "SkLocalMatrixImageFilter.cpp",
@@ -774,7 +769,6 @@ skia_filegroup(
         "SkScan_Antihair.cpp",
         "SkScan_Hairline.cpp",
         "SkScan_Path.cpp",
-        "SkScan_SAAPath.cpp",
         "SkSpecialImage.cpp",
         "SkSpriteBlitter_ARGB32.cpp",
         "SkStream.cpp",
@@ -792,7 +786,6 @@ skia_filegroup(
         "SkSwizzler_opts_ssse3.cpp",
         "SkTaskGroup.cpp",
         "SkTextBlob.cpp",
-        "SkTextBlobTrace.cpp",
         "SkTypeface.cpp",
         "SkTypefaceCache.cpp",
         "SkTypeface_remote.cpp",
@@ -834,13 +827,11 @@ skia_cc_library(
         "//include/codec:core_hdrs",
         "//include/core:core_hdrs",
         "//include/effects:core_hdrs",
-        "//include/ports:core_hdrs",
         "//include/sksl:core_hdrs",
         "//include/utils:core_hdrs",
     ],
     features = ["layering_check"],
     local_defines = [
-        "SK_SLUG_DISABLE_LEGACY_DESERIALIZE",
         "SK_DISABLE_LEGACY_PNG_WRITEBUFFER",
         "SK_DISABLE_LEGACY_IMAGE_READBUFFER",
     ],
@@ -866,6 +857,8 @@ skia_cc_library(
     hdrs = [":core_priv_hdrs"],
     features = ["layering_check"],
     visibility = [
+        "//bench:__subpackages__",
+        "//gm:__subpackages__",
         "//modules:__subpackages__",
         "//src:__subpackages__",
         "//tools:__subpackages__",
@@ -874,5 +867,21 @@ skia_cc_library(
         ":core",
         "//modules/skcms",
         "//src/base",
+    ],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        # All headers listed here will have a .cpp file generated that is a copy of the header file
+        # just with a .cpp suffix so Bazel will try to compile it.
+        # This allows us to run IWYU on these files.
+        "SkAdvancedTypefaceMetrics.h",
+        "SkColorSpacePriv.h",
+        "SkCoreBlitters.h",
+        "SkDrawProcs.h",
+        "SkMatrixPriv.h",
+        "SkPathPriv.h",
+        "SkRuntimeEffectPriv.h",
     ],
 )

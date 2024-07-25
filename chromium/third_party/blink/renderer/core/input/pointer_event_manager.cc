@@ -168,8 +168,10 @@ WebInputEventResult PointerEventManager::DispatchPointerEvent(
   // We are about to dispatch this event. It has to be trusted at this point.
   pointer_event->SetTrusted(true);
   std::unique_ptr<EventTiming> event_timing;
-  if (frame_ && frame_->DomWindow())
-    event_timing = EventTiming::Create(frame_->DomWindow(), *pointer_event);
+  if (frame_ && frame_->DomWindow()) {
+    event_timing =
+        EventTiming::Create(frame_->DomWindow(), *pointer_event, target);
+  }
 
   if (event_type == event_type_names::kPointerdown ||
       event_type == event_type_names::kPointerover ||
@@ -716,7 +718,7 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
           pointer_event_target.target_element,
           pointer_event_factory_.CreatePointerCancelEvent(
               core_pointer_event->pointerId(), event.TimeStamp(),
-              core_pointer_event->deviceId()),
+              core_pointer_event->deviceProperties()->uniqueId()),
           event.hovering);
     }
 

@@ -32,6 +32,7 @@
 #include "third_party/blink/renderer/core/timing/performance.h"
 
 #include <algorithm>
+#include <optional>
 
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
@@ -39,7 +40,6 @@
 #include "base/time/default_clock.h"
 #include "base/time/default_tick_clock.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/permissions_policy/document_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
@@ -321,7 +321,7 @@ EventCounts* Performance::eventCounts() {
   return nullptr;
 }
 
-ScriptPromise Performance::measureUserAgentSpecificMemory(
+ScriptPromise<MemoryMeasurement> Performance::measureUserAgentSpecificMemory(
     ScriptState* script_state,
     ExceptionState& exception_state) const {
   return MeasureMemoryController::StartMeasurement(script_state,
@@ -704,6 +704,10 @@ void Performance::setBackForwardCacheRestorationBufferSizeForTest(
   back_forward_cache_restoration_buffer_size_limit_ = size;
 }
 
+void Performance::setEventTimingBufferSizeForTest(unsigned size) {
+  event_timing_buffer_max_size_ = size;
+}
+
 void Performance::AddResourceTiming(mojom::blink::ResourceTimingInfoPtr info,
                                     const AtomicString& initiator_type) {
   ExecutionContext* context = GetExecutionContext();
@@ -780,7 +784,7 @@ void Performance::FireResourceTimingBufferFull(TimerBase*) {
   resource_timing_buffer_full_event_pending_ = false;
 }
 
-void Performance::AddElementTimingBuffer(PerformanceElementTiming& entry) {
+void Performance::AddToElementTimingBuffer(PerformanceElementTiming& entry) {
   if (!IsElementTimingBufferFull()) {
     InsertEntryIntoSortedBuffer(element_timing_buffer_, entry, kRecordSwaps);
   } else {
@@ -788,7 +792,7 @@ void Performance::AddElementTimingBuffer(PerformanceElementTiming& entry) {
   }
 }
 
-void Performance::AddEventTimingBuffer(PerformanceEventTiming& entry) {
+void Performance::AddToEventTimingBuffer(PerformanceEventTiming& entry) {
   if (!IsEventTimingBufferFull()) {
     InsertEntryIntoSortedBuffer(event_timing_buffer_, entry, kRecordSwaps);
   } else {
@@ -796,7 +800,7 @@ void Performance::AddEventTimingBuffer(PerformanceEventTiming& entry) {
   }
 }
 
-void Performance::AddLayoutShiftBuffer(LayoutShift& entry) {
+void Performance::AddToLayoutShiftBuffer(LayoutShift& entry) {
   probe::PerformanceEntryAdded(GetExecutionContext(), &entry);
   if (layout_shift_buffer_.size() < kDefaultLayoutShiftBufferSize) {
     InsertEntryIntoSortedBuffer(layout_shift_buffer_, entry, kRecordSwaps);
@@ -945,7 +949,8 @@ PerformanceMark* Performance::mark(ScriptState* script_state,
   if (performance_mark) {
     background_tracing_helper_->MaybeEmitBackgroundTracingPerformanceMarkEvent(
         *performance_mark);
-    GetUserTiming().AddMarkToPerformanceTimeline(*performance_mark);
+    GetUserTiming().AddMarkToPerformanceTimeline(*performance_mark,
+                                                 mark_options);
     if (mark_name == mark_fully_loaded) {
       if (LocalDOMWindow* window = LocalDOMWindow::From(script_state)) {
         window->GetFrame()
@@ -1039,7 +1044,7 @@ PerformanceMeasure* Performance::measure(ScriptState* script_state,
                                          ExceptionState& exception_state) {
   // When |startOrOptions| is not provided, it's assumed to be an empty
   // dictionary.
-  return MeasureInternal(script_state, measure_name, nullptr, absl::nullopt,
+  return MeasureInternal(script_state, measure_name, nullptr, std::nullopt,
                          exception_state);
 }
 
@@ -1049,7 +1054,7 @@ PerformanceMeasure* Performance::measure(
     const V8UnionPerformanceMeasureOptionsOrString* start_or_options,
     ExceptionState& exception_state) {
   return MeasureInternal(script_state, measure_name, start_or_options,
-                         absl::nullopt, exception_state);
+                         std::nullopt, exception_state);
 }
 
 PerformanceMeasure* Performance::measure(
@@ -1059,7 +1064,7 @@ PerformanceMeasure* Performance::measure(
     const String& end,
     ExceptionState& exception_state) {
   return MeasureInternal(script_state, measure_name, start_or_options,
-                         absl::optional<String>(end), exception_state);
+                         std::optional<String>(end), exception_state);
 }
 
 // |MeasureInternal| exists to unify the arguments from different
@@ -1076,13 +1081,13 @@ PerformanceMeasure* Performance::measure(
 //  - If an options dictionary contains neither a 'start' nor an 'end' field.
 //  - If an options dictionary contains all of 'start', 'duration' and 'end'.
 //
-// |end_mark| will be absl::nullopt unless the `performance.measure()` overload
+// |end_mark| will be std::nullopt unless the `performance.measure()` overload
 // specified an end mark.
 PerformanceMeasure* Performance::MeasureInternal(
     ScriptState* script_state,
     const AtomicString& measure_name,
     const V8UnionPerformanceMeasureOptionsOrString* start_or_options,
-    absl::optional<String> end_mark,
+    std::optional<String> end_mark,
     ExceptionState& exception_state) {
   // An empty option is treated with no difference as null, undefined.
   if (start_or_options && start_or_options->IsPerformanceMeasureOptions() &&
@@ -1114,7 +1119,7 @@ PerformanceMeasure* Performance::MeasureInternal(
     }
 
     V8UnionDoubleOrString* start = options->getStartOr(nullptr);
-    absl::optional<double> duration;
+    std::optional<double> duration;
     if (options->hasDuration()) {
       duration = options->duration();
     }
@@ -1139,7 +1144,7 @@ PerformanceMeasure* Performance::MeasureInternal(
     end = MakeGarbageCollected<V8UnionDoubleOrString>(*end_mark);
   }
   return MeasureWithDetail(script_state, measure_name, start,
-                           /* duration = */ absl::nullopt, end,
+                           /* duration = */ std::nullopt, end,
                            ScriptValue::CreateNull(script_state->GetIsolate()),
                            exception_state);
 }
@@ -1148,7 +1153,7 @@ PerformanceMeasure* Performance::MeasureWithDetail(
     ScriptState* script_state,
     const AtomicString& measure_name,
     const V8UnionDoubleOrString* start,
-    const absl::optional<double>& duration,
+    const std::optional<double>& duration,
     const V8UnionDoubleOrString* end,
     const ScriptValue& detail,
     ExceptionState& exception_state) {
@@ -1224,9 +1229,9 @@ void Performance::DeliverObservationsTimerFired(TimerBase*) {
   active_observers_.Swap(observers);
   for (const auto& observer : observers) {
     observer->Deliver(observer->RequiresDroppedEntries()
-                          ? absl::optional<int>(GetDroppedEntriesForTypes(
+                          ? std::optional<int>(GetDroppedEntriesForTypes(
                                 observer->FilterOptions()))
-                          : absl::nullopt);
+                          : std::nullopt);
   }
 }
 

@@ -32,7 +32,7 @@ BASE_FEATURE(kNoWorkerThreadReclaim,
 
 BASE_FEATURE(kDelayFirstWorkerWake,
              "DelayFirstWorkerWake",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAddTaskLeewayFeature,
              "AddTaskLeeway",
@@ -52,6 +52,10 @@ BASE_FEATURE(kTimerSlackMac,
 BASE_FEATURE(kExplicitHighResolutionTimerWin,
              "ExplicitHighResolutionTimerWin",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kUIPumpImprovementsWin,
+             "UIPumpImprovementsWin",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kRunTasksByBatches,
              "RunTasksByBatches",
@@ -75,8 +79,10 @@ BASE_FEATURE(kMaxDelayedStarvationTasks,
 const base::FeatureParam<int> kMaxDelayedStarvationTasksParam{
     &kMaxDelayedStarvationTasks, "count", 3};
 
-BASE_FEATURE(kUseNewJobImplementation,
-             "UseNewJobImplementation",
+BASE_FEATURE(kThreadGroupSemaphore,
+             "ThreadGroupSemaphore",
              base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<int> kMaxNumWorkersCreated{
+    &kThreadGroupSemaphore, "max_num_workers_created", 2};
 
 }  // namespace base

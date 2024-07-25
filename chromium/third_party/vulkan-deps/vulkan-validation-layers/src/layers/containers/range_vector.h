@@ -1,7 +1,7 @@
-/* Copyright (c) 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
- * Copyright (C) 2019-2023 Google Inc.
+/* Copyright (c) 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (C) 2019-2024 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -954,20 +954,20 @@ class small_range_map {
 
     // As hint is going to be ignored, make it as lightweight as possible, by reference and no conversion construction
     template <typename Value>
-    iterator emplace_hint(const const_iterator &hint, Value &&value) {
+    iterator emplace_hint([[maybe_unused]] const const_iterator &hint, Value &&value) {
         // We have direct access so we can drop the hint
         return emplace(std::forward<Value>(value));
     }
 
     template <typename Value>
-    iterator emplace_hint(const iterator &hint, Value &&value) {
+    iterator emplace_hint([[maybe_unused]] const iterator &hint, Value &&value) {
         // We have direct access so we can drop the hint
         return emplace(std::forward<Value>(value));
     }
 
     // Again, hint is going to be ignored, make it as lightweight as possible, by reference and no conversion construction
-    iterator insert(const const_iterator &hint, const value_type &value) { return emplace(value); }
-    iterator insert(const iterator &hint, const value_type &value) { return emplace(value); }
+    iterator insert([[maybe_unused]] const const_iterator &hint, const value_type &value) { return emplace(value); }
+    iterator insert([[maybe_unused]] const iterator &hint, const value_type &value) { return emplace(value); }
 
     std::pair<iterator, bool> insert(const value_type &value) {
         const auto &key = value.first;
@@ -983,7 +983,7 @@ class small_range_map {
     }
 
     template <typename SplitOp>
-    iterator split(const iterator whole_it, const index_type &index, const SplitOp &split_op) {
+    iterator split(const iterator whole_it, const index_type &index, [[maybe_unused]] const SplitOp &split_op) {
         if (!whole_it->first.includes(index)) return whole_it;  // If we don't have a valid split point, just return the iterator
 
         const auto &key = whole_it->first;
@@ -1075,7 +1075,7 @@ class small_range_map {
 
     // We don't need a hint...
     template <typename Value>
-    iterator overwrite_range(const iterator &hint, Value &&value) {
+    iterator overwrite_range([[maybe_unused]] const iterator &hint, Value &&value) {
         return overwrite_range(std::forward<Value>(value));
     }
 
@@ -1929,13 +1929,14 @@ struct update_prefer_source {
 
 template <typename T>
 struct update_prefer_dest {
-    bool update(T &dst, const T &src) const { return false; }
+    bool update([[maybe_unused]] T &dst, [[maybe_unused]] const T &src) const { return false; }
 
     std::optional<T> insert(const T &src) const { return std::optional<T>(vvl::in_place, src); }
 };
 
 template <typename RangeMap, typename SourceIterator = typename RangeMap::const_iterator>
-bool splice(RangeMap &to, const RangeMap &from, value_precedence arbiter, SourceIterator begin, SourceIterator end) {
+bool splice(RangeMap &to, const RangeMap &from, value_precedence arbiter, [[maybe_unused]] SourceIterator begin,
+            [[maybe_unused]] SourceIterator end) {
     if (arbiter == value_precedence::prefer_source) {
         return splice(to, from, from.cbegin(), from.cend(), update_prefer_source<typename RangeMap::mapped_type>());
     } else {
@@ -2032,3 +2033,11 @@ void consolidate(RangeMap &map) {
 }
 
 }  // namespace sparse_container
+
+// Returns the intersection of the ranges [x, x + x_size) and [y, y + y_size)
+static inline sparse_container::range<int64_t> GetRangeIntersection(int64_t x, uint64_t x_size, int64_t y, uint64_t y_size) {
+    int64_t intersection_min = std::max(x, y);
+    int64_t intersection_max = std::min(x + static_cast<int64_t>(x_size), y + static_cast<int64_t>(y_size));
+
+    return {intersection_min, intersection_max};
+}

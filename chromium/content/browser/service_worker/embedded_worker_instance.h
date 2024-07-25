@@ -8,7 +8,6 @@
 #include <stdint.h>
 
 #include <memory>
-#include <optional>
 #include <string>
 
 #include "base/check_op.h"
@@ -51,6 +50,7 @@ class RenderProcessHost;
 class ServiceWorkerContentSettingsProxyImpl;
 class ServiceWorkerContextCore;
 class ServiceWorkerVersion;
+class StoragePartitionImpl;
 
 namespace service_worker_new_script_loader_unittest {
 class ServiceWorkerNewScriptLoaderTest;
@@ -88,7 +88,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   };
 
   // DEPRECATED, only for use by ServiceWorkerVersion.
-  // TODO(crbug.com/855852): Remove this interface.
+  // TODO(crbug.com/41396417): Remove this interface.
   class Listener {
    public:
     virtual ~Listener() {}
@@ -186,7 +186,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   base::UnguessableToken WorkerDevtoolsId() const;
 
   // DEPRECATED, only for use by ServiceWorkerVersion.
-  // TODO(crbug.com/855852): Remove the Listener interface.
+  // TODO(crbug.com/41396417): Remove the Listener interface.
   void AddObserver(Listener* listener);
   void RemoveObserver(Listener* listener);
 
@@ -266,12 +266,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
       ContentBrowserClient::URLLoaderFactoryType factory_type,
       const std::string& devtools_worker_token);
 
-  // Returns the unique token that has been generated to identify this worker
-  // instance, and its corresponding GlobalScope in the renderer process. If the
-  // service worker is not currently running, this is std::nullopt.
-  const std::optional<blink::ServiceWorkerToken>& token() const {
-    return token_;
-  }
+  mojo::PendingRemote<network::mojom::CrossOriginEmbedderPolicyReporter>
+  GetCoepReporter();
 
  private:
   typedef base::ObserverList<Listener>::Unchecked ListenerList;
@@ -339,6 +335,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
       std::unique_ptr<blink::PendingURLLoaderFactoryBundle> script_bundle);
 
   void BindCacheStorageInternal();
+  mojo::PendingRemote<network::mojom::CrossOriginEmbedderPolicyReporter>
+  GetCoepReporterInternal(StoragePartitionImpl* storage_partition);
 
   base::WeakPtr<ServiceWorkerContextCore> context_;
   raw_ptr<ServiceWorkerVersion> owner_version_;
@@ -353,10 +351,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // Pause initializing global scope when this flag is true
   // (https://crbug.com/1431792).
   bool pause_initializing_global_scope_ = false;
-
-  // If true, warms up service worker after service worker is stopped.
-  // (https://crbug.com/1431792).
-  bool warm_up_on_stopped_ = false;
 
   // Current running information.
   std::unique_ptr<EmbeddedWorkerInstance::WorkerProcessHandle> process_handle_;
@@ -421,12 +415,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance
   // requests initiated from the service worker. The impl lives on the UI
   // thread, and |coep_reporter_| has the ownership of the impl instance.
   std::unique_ptr<CrossOriginEmbedderPolicyReporter> coep_reporter_;
-
-  // A unique identifier for this service worker instance. This is unique across
-  // the browser process, but not persistent across service worker restarts.
-  // This token is set every time the worker starts, and is plumbed through to
-  // the corresponding ServiceWorkerGlobalScope in the renderer process.
-  std::optional<blink::ServiceWorkerToken> token_;
 
   base::WeakPtrFactory<EmbeddedWorkerInstance> weak_factory_{this};
 };

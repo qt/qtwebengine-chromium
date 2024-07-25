@@ -22,11 +22,6 @@
 #include <set>
 #include <vulkan/vulkan.h>
 
-#include "state_tracker/state_tracker.h"
-#include "state_tracker/cmd_buffer_state.h"
-#include "state_tracker/render_pass_state.h"
-#include "state_tracker/video_session_state.h"
-
 #include "sync/sync_common.h"
 #include "sync/sync_access_context.h"
 #include "sync/sync_renderpass.h"
@@ -79,8 +74,6 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
 
     void UpdateSyncImageMemoryBindState(uint32_t count, const VkBindImageMemoryInfo *infos);
 
-    const QueueSyncState *GetQueueSyncState(VkQueue queue) const;
-    QueueSyncState *GetQueueSyncState(VkQueue queue);
     std::shared_ptr<const QueueSyncState> GetQueueSyncStateShared(VkQueue queue) const;
     std::shared_ptr<QueueSyncState> GetQueueSyncStateShared(VkQueue queue);
     QueueId GetQueueIdLimit() const { return queue_id_limit_; }
@@ -117,7 +110,7 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
     void RecordCmdEndRenderPass(VkCommandBuffer commandBuffer, const VkSubpassEndInfo *pSubpassEndInfo, Func command);
     bool SupressedBoundDescriptorWAW(const HazardResult &hazard) const;
 
-    void CreateDevice(const VkDeviceCreateInfo *pCreateInfo) override;
+    void CreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) override;
 
     bool ValidateBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
                                  const VkSubpassBeginInfo *pSubpassBeginInfo, const ErrorObject &error_obj) const;
@@ -577,8 +570,5 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                      uint64_t timeout, const RecordObject &record_obj) override;
     void PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t *pSwapchainImageCount,
                                              VkImage *pSwapchainImages, const RecordObject &record_obj) override;
-    void PreCallRecordCmdBeginDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT *pLabelInfo,
-                                                 const RecordObject &record_obj) override;
-    void PreCallRecordCmdEndDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const RecordObject &record_obj) override;
 };
 

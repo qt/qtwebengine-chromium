@@ -79,8 +79,6 @@ void UpdatePageSpecificContentSettings(
 
   content_settings::PageSpecificContentSettings::MicrophoneCameraState
       microphone_camera_state;
-  std::string requested_audio_device = request.requested_audio_device_id;
-  std::string requested_video_device = request.requested_video_device_id;
 
   if (audio_setting != CONTENT_SETTING_DEFAULT) {
     microphone_camera_state.Put(
@@ -166,7 +164,7 @@ bool PermissionBubbleMediaAccessHandler::CheckMediaAccessPermission(
           ? blink::PermissionType::AUDIO_CAPTURE
           : blink::PermissionType::VIDEO_CAPTURE;
 
-  // TODO(crbug.com/1321100): Remove `security_origin`.
+  // TODO(crbug.com/40223767): Remove `security_origin`.
   if (render_frame_host->GetLastCommittedOrigin() != security_origin) {
     return false;
   }
@@ -234,7 +232,7 @@ void PermissionBubbleMediaAccessHandler::ProcessQueuedAccessRequest(
   const content::MediaStreamRequest& request =
       it->second.begin()->second.request;
 #if BUILDFLAG(IS_ANDROID)
-  // TODO(https://crbug.com/1157166): This should be split into
+  // TODO(crbug.com/40160723): This should be split into
   // DisplayMediaAccessHandler and DesktopCaptureAccessHandler.
   if (blink::IsScreenCaptureMediaType(request.video_type)) {
     screen_capture::GetScreenCapturePermissionAndroid(

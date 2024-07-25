@@ -33,12 +33,17 @@ public:
                                              Renderable) const override;
     TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
                                              Mipmapped mipmapped) const override;
+    TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
+                                                Mipmapped mipmapped,
+                                                Protected) const override;
     TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                           Discardable discardable) const override;
     TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
                                                   uint32_t sampleCount,
                                                   Protected) const override;
     TextureInfo getDefaultStorageTextureInfo(SkColorType) const override;
+    SkISize getDepthAttachmentDimensions(const TextureInfo&,
+                                         const SkISize colorAttachmentDimensions) const override;
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
@@ -52,7 +57,7 @@ public:
                             GraphiteResourceKey*) const override;
     uint64_t getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const;
 
-    static constexpr size_t kFormatCnt = 14;
+    static constexpr size_t kFormatCnt = 16;
 
 private:
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;

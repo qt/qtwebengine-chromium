@@ -4,6 +4,7 @@
 
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
 
+#include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/prefs/pref_registry_simple.h"
 
@@ -67,18 +68,14 @@ const char kPreviousOptimizationTypesWithFilter[] =
     "optimization_guide.previous_optimization_types_with_filter";
 
 // Pref that contains user opt-in state for different features.
-std::string GetSettingEnabledPrefName(proto::ModelExecutionFeature feature) {
+std::string GetSettingEnabledPrefName(UserVisibleFeatureKey feature) {
   switch (feature) {
-    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_COMPOSE:
+    case UserVisibleFeatureKey::kCompose:
       return "optimization_guide.compose_setting_state";
-    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_TAB_ORGANIZATION:
+    case UserVisibleFeatureKey::kTabOrganization:
       return "optimization_guide.tab_organization_setting_state";
-    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_WALLPAPER_SEARCH:
+    case UserVisibleFeatureKey::kWallpaperSearch:
       return "optimization_guide.wallpaper_search_setting_state";
-    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_TEST:
-    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_UNSPECIFIED:
-      NOTREACHED();
-      return "Invalid";
   }
 }
 
@@ -87,19 +84,10 @@ void RegisterSettingsEnabledPrefs(PrefRegistrySimple* registry) {
       kModelExecutionMainToggleSettingState,
       static_cast<int>(FeatureOptInState::kNotInitialized));
 
-  for (int i = proto::ModelExecutionFeature_MIN;
-       i <= proto::ModelExecutionFeature_MAX; ++i) {
-    proto::ModelExecutionFeature feature =
-        static_cast<proto::ModelExecutionFeature>(i);
-    switch (feature) {
-      case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_TEST:
-      case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_UNSPECIFIED:
-        continue;
-      default:
-        registry->RegisterIntegerPref(
-            GetSettingEnabledPrefName(feature),
-            static_cast<int>(FeatureOptInState::kNotInitialized));
-    }
+  for (auto key : kAllUserVisibleFeatureKeys) {
+    registry->RegisterIntegerPref(
+        GetSettingEnabledPrefName(key),
+        static_cast<int>(FeatureOptInState::kNotInitialized));
   }
 }
 
@@ -133,6 +121,14 @@ const char kOnDeviceModelTimeoutCount[] =
 const char kOnDevicePerformanceClass[] =
     "optimization_guide.on_device.performance_class";
 
+// Stores the version of the last downloaded on-device model.
+const char kOnDeviceBaseModelVersion[] =
+    "optimization_guide.on_device.base_model_version";
+
+// Stores the name of the last downloaded on-device model.
+const char kOnDeviceBaseModelName[] =
+    "optimization_guide.on_device.base_model_name";
+
 // A dictionary pref that stores the file paths that need to be deleted as keys.
 // The value will not be used.
 const char kStoreFilePathsToDelete[] =
@@ -151,6 +147,11 @@ const char kLastTimeEligibleForOnDeviceModelDownload[] =
 // An integer pref that contains the user's client id.
 const char kModelQualityLogggingClientId[] =
     "optimization_guide.model_quality_logging_client_id";
+
+// An integer pref for the on-device GenAI foundational model enterprise policy
+// settings.
+const char kGenAILocalFoundationalModelEnterprisePolicySettings[] =
+    "optimization_guide.gen_ai_local_foundational_model_settings";
 
 }  // namespace localstate
 
@@ -188,6 +189,10 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(localstate::kOnDeviceModelCrashCount, 0);
   registry->RegisterIntegerPref(localstate::kOnDeviceModelTimeoutCount, 0);
   registry->RegisterIntegerPref(localstate::kOnDevicePerformanceClass, 0);
+  registry->RegisterStringPref(localstate::kOnDeviceBaseModelVersion,
+                               std::string());
+  registry->RegisterStringPref(localstate::kOnDeviceBaseModelName,
+                               std::string());
   registry->RegisterDictionaryPref(localstate::kStoreFilePathsToDelete);
   registry->RegisterTimePref(
       localstate::kLastTimeOnDeviceEligibleFeatureWasUsed, base::Time::Min());
@@ -195,6 +200,8 @@ void RegisterLocalStatePrefs(PrefRegistrySimple* registry) {
       localstate::kLastTimeEligibleForOnDeviceModelDownload, base::Time::Min());
   registry->RegisterInt64Pref(localstate::kModelQualityLogggingClientId, 0,
                               PrefRegistry::LOSSY_PREF);
+  registry->RegisterIntegerPref(
+      localstate::kGenAILocalFoundationalModelEnterprisePolicySettings, 0);
 }
 
 }  // namespace prefs

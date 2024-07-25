@@ -53,8 +53,10 @@
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 #include "third_party/blink/renderer/core/fullscreen/scoped_allow_fullscreen.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/html/html_embed_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
 #include "third_party/blink/renderer/core/html/html_meta_element.h"
+#include "third_party/blink/renderer/core/html/html_object_element.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
@@ -69,6 +71,7 @@
 #include "third_party/blink/renderer/core/paint/timing/paint_timing.h"
 #include "third_party/blink/renderer/core/script/classic_script.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
+#include "third_party/blink/renderer/core/view_transition/page_swap_event.h"
 #include "third_party/blink/renderer/core/view_transition/view_transition_supplement.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_timing_utils.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
@@ -96,7 +99,7 @@ size_t GetCurrentCursorPositionInFrame(LocalFrame* local_frame) {
 #endif
 
 RemoteFrame* SourceFrameForOptionalToken(
-    const absl::optional<RemoteFrameToken>& source_frame_token) {
+    const std::optional<RemoteFrameToken>& source_frame_token) {
   if (!source_frame_token)
     return nullptr;
   return RemoteFrame::FromFrameToken(source_frame_token.value());
@@ -348,10 +351,6 @@ LocalFrameMojoHandler::LocalFrameMojoHandler(blink::LocalFrame& frame)
   registry->AddAssociatedInterface(
       WTF::BindRepeating(&LocalFrameMojoHandler::BindToLocalFrameReceiver,
                          WrapWeakPersistent(this)));
-  registry->AddInterface(
-      WTF::BindRepeating(&LocalFrameMojoHandler::BindToHighPriorityReceiver,
-                         WrapWeakPersistent(this)),
-      frame.GetTaskRunner(TaskType::kInternalHighPriorityLocalFrame));
   registry->AddAssociatedInterface(WTF::BindRepeating(
       &LocalFrameMojoHandler::BindFullscreenVideoElementReceiver,
       WrapWeakPersistent(this)));
@@ -369,7 +368,6 @@ void LocalFrameMojoHandler::Trace(Visitor* visitor) const {
   visitor->Trace(non_associated_local_frame_host_remote_);
   visitor->Trace(local_frame_receiver_);
   visitor->Trace(main_frame_receiver_);
-  visitor->Trace(high_priority_frame_receiver_);
   visitor->Trace(fullscreen_video_receiver_);
   visitor->Trace(device_posture_receiver_);
 }
@@ -385,7 +383,6 @@ void LocalFrameMojoHandler::DidDetachFrame() {
   // automatically reset on context destruction.
   local_frame_receiver_.reset();
   main_frame_receiver_.reset();
-  high_priority_frame_receiver_.reset();
   // TODO(tkent): Should we reset other receivers?
 }
 
@@ -424,7 +421,7 @@ mojom::blink::ReportingServiceProxy* LocalFrameMojoHandler::ReportingService() {
   return reporting_service_.get();
 }
 
-device::mojom::blink::DevicePostureProvider*
+mojom::blink::DevicePostureProvider*
 LocalFrameMojoHandler::DevicePostureProvider() {
   if (!frame_->IsLocalRoot()) {
     return frame_->LocalFrameRoot().GetDevicePostureProvider();
@@ -440,15 +437,15 @@ LocalFrameMojoHandler::DevicePostureProvider() {
   return device_posture_provider_service_.get();
 }
 
-device::mojom::blink::DevicePostureType
-LocalFrameMojoHandler::GetDevicePosture() {
+mojom::blink::DevicePostureType LocalFrameMojoHandler::GetDevicePosture() {
   if (!frame_->IsLocalRoot()) {
     return frame_->LocalFrameRoot().GetDevicePosture();
   }
 
   DCHECK(frame_->IsLocalRoot());
-  if (device_posture_provider_service_.is_bound())
+  if (device_posture_receiver_.is_bound()) {
     return current_device_posture_;
+  }
 
   auto task_runner = frame_->GetTaskRunner(TaskType::kInternalDefault);
   DevicePostureProvider()->AddListenerAndGetCurrentPosture(
@@ -459,7 +456,7 @@ LocalFrameMojoHandler::GetDevicePosture() {
 }
 
 void LocalFrameMojoHandler::OverrideDevicePostureForEmulation(
-    device::mojom::blink::DevicePostureType device_posture_param) {
+    mojom::blink::DevicePostureType device_posture_param) {
   DevicePostureProvider()->OverrideDevicePostureForEmulation(
       device_posture_param);
 }
@@ -499,18 +496,6 @@ void LocalFrameMojoHandler::BindToMainFrameReceiver(
   main_frame_receiver_.Bind(std::move(receiver),
                             frame_->GetTaskRunner(TaskType::kInternalDefault));
   main_frame_receiver_.SetFilter(
-      std::make_unique<ActiveURLMessageFilter>(frame_));
-}
-
-void LocalFrameMojoHandler::BindToHighPriorityReceiver(
-    mojo::PendingReceiver<mojom::blink::HighPriorityLocalFrame> receiver) {
-  if (frame_->IsDetached())
-    return;
-
-  high_priority_frame_receiver_.Bind(
-      std::move(receiver),
-      frame_->GetTaskRunner(TaskType::kInternalHighPriorityLocalFrame));
-  high_priority_frame_receiver_.SetFilter(
       std::make_unique<ActiveURLMessageFilter>(frame_));
 }
 
@@ -727,7 +712,7 @@ void LocalFrameMojoHandler::RequestVideoFrameAt(
 
 void LocalFrameMojoHandler::AdvanceFocusInFrame(
     mojom::blink::FocusType focus_type,
-    const absl::optional<RemoteFrameToken>& source_frame_token) {
+    const std::optional<RemoteFrameToken>& source_frame_token) {
   RemoteFrame* source_frame =
       source_frame_token ? SourceFrameForOptionalToken(*source_frame_token)
                          : nullptr;
@@ -797,9 +782,11 @@ void LocalFrameMojoHandler::DidUpdateFramePolicy(
 }
 
 void LocalFrameMojoHandler::OnPostureChanged(
-    device::mojom::blink::DevicePostureType posture) {
-  if (!RuntimeEnabledFeatures::DevicePostureEnabled())
+    mojom::blink::DevicePostureType posture) {
+  if (!RuntimeEnabledFeatures::DevicePostureEnabled(
+          GetDocument()->GetExecutionContext())) {
     return;
+  }
   current_device_posture_ = posture;
   // A change of the device posture requires re-evaluation of media queries
   // for the local frame subtree (the device posture affect the
@@ -809,7 +796,7 @@ void LocalFrameMojoHandler::OnPostureChanged(
 }
 
 void LocalFrameMojoHandler::PostMessageEvent(
-    const absl::optional<RemoteFrameToken>& source_frame_token,
+    const std::optional<RemoteFrameToken>& source_frame_token,
     const String& source_origin,
     const String& target_origin,
     BlinkTransferableMessage message) {
@@ -911,7 +898,8 @@ void LocalFrameMojoHandler::JavaScriptExecuteRequestForTests(
     case ScriptEvaluationResult::ResultType::kSuccess: {
       v8::Local<v8::Value> value = result.GetSuccessValue();
       if (resolve_promises && !value.IsEmpty() && value->IsPromise()) {
-        ScriptPromise promise = ScriptPromise::Cast(script_state, value);
+        auto promise = ScriptPromise<IDLAny>::FromV8Promise(
+            script_state->GetIsolate(), value.As<v8::Promise>());
         promise.Then(handler->CreateResolveCallback(script_state, frame_),
                      handler->CreateRejectCallback(script_state, frame_));
       } else {
@@ -963,7 +951,7 @@ void LocalFrameMojoHandler::JavaScriptExecuteRequestInIsolatedWorld(
       mojom::blink::LoadEventBlockingOption::kDoNotBlock,
       WTF::BindOnce(
           [](JavaScriptExecuteRequestInIsolatedWorldCallback callback,
-             absl::optional<base::Value> value, base::TimeTicks start_time) {
+             std::optional<base::Value> value, base::TimeTicks start_time) {
             std::move(callback).Run(value ? std::move(*value) : base::Value());
           },
           std::move(callback)),
@@ -1031,7 +1019,7 @@ void LocalFrameMojoHandler::BindReportingObserver(
 }
 
 void LocalFrameMojoHandler::UpdateOpener(
-    const absl::optional<blink::FrameToken>& opener_frame_token) {
+    const std::optional<blink::FrameToken>& opener_frame_token) {
   if (WebFrame::FromCoreFrame(frame_)) {
     Frame* opener_frame = nullptr;
     if (opener_frame_token)
@@ -1136,8 +1124,8 @@ void LocalFrameMojoHandler::GetCanonicalUrlForSharing(
     if (doc_url.HasFragmentIdentifier() && !canon_url.HasFragmentIdentifier())
       canon_url.SetFragmentIdentifier(doc_url.FragmentIdentifier());
   }
-  std::move(callback).Run(canon_url.IsNull() ? absl::nullopt
-                                             : absl::make_optional(canon_url));
+  std::move(callback).Run(canon_url.IsNull() ? std::nullopt
+                                             : std::make_optional(canon_url));
 #if BUILDFLAG(IS_ANDROID)
   base::UmaHistogramMicrosecondsTimes("Blink.Frame.GetCanonicalUrlRendererTime",
                                       base::TimeTicks::Now() - start_time);
@@ -1347,15 +1335,27 @@ void LocalFrameMojoHandler::SetV8CompileHints(
 }
 
 void LocalFrameMojoHandler::SnapshotDocumentForViewTransition(
+    const blink::ViewTransitionToken& transition_token,
+    mojom::blink::PageSwapEventParamsPtr params,
     SnapshotDocumentForViewTransitionCallback callback) {
   ViewTransitionSupplement::SnapshotDocumentForNavigation(
-      *frame_->GetDocument(), std::move(callback));
+      *frame_->GetDocument(), transition_token, std::move(params),
+      std::move(callback));
 }
 
-void LocalFrameMojoHandler::DispatchBeforeUnload(
-    bool is_reload,
-    mojom::blink::LocalFrame::BeforeUnloadCallback callback) {
-  BeforeUnload(is_reload, std::move(callback));
+void LocalFrameMojoHandler::NotifyViewTransitionAbortedToOldDocument() {
+  if (auto* transition =
+          ViewTransitionUtils::GetOutgoingCrossDocumentTransition(
+              *frame_->GetDocument())) {
+    transition->SkipTransition();
+  }
+}
+
+void LocalFrameMojoHandler::DispatchPageSwap(
+    mojom::blink::PageSwapEventParamsPtr params) {
+  auto* page_swap_event = MakeGarbageCollected<PageSwapEvent>(
+      *frame_->GetDocument(), std::move(params), nullptr);
+  frame_->GetDocument()->domWindow()->DispatchEvent(*page_swap_event);
 }
 
 void LocalFrameMojoHandler::AddResourceTimingEntryForFailedSubframeNavigation(
@@ -1435,6 +1435,34 @@ void LocalFrameMojoHandler::RequestFullscreenVideoElement() {
       return;
     }
   }
+}
+
+void LocalFrameMojoHandler::UpdatePrerenderURL(
+    const KURL& matched_url,
+    UpdatePrerenderURLCallback callback) {
+  CHECK(SecurityOrigin::Create(matched_url)
+            ->IsSameOriginWith(
+                &*GetDocument()->GetExecutionContext()->GetSecurityOrigin()));
+  auto* params = MakeGarbageCollected<NavigateEventDispatchParams>(
+      matched_url, NavigateEventType::kPrerenderNoVarySearchActivation,
+      WebFrameLoadType::kReplaceCurrentItem);
+  params->is_browser_initiated = true;
+
+  // TODO(crbug.com/41494389): Add test for how the navigation API can intercept
+  // this update.
+  if (frame_->DomWindow()->navigation()->DispatchNavigateEvent(params) !=
+      NavigationApi::DispatchResult::kContinue) {
+    std::move(callback).Run();
+    return;
+  }
+
+  GetDocument()->Loader()->RunURLAndHistoryUpdateSteps(
+      matched_url, nullptr,
+      mojom::blink::SameDocumentNavigationType::
+          kPrerenderNoVarySearchActivation,
+      /*data=*/nullptr, WebFrameLoadType::kReplaceCurrentItem,
+      /*is_browser_initiated=*/true);
+  std::move(callback).Run();
 }
 
 }  // namespace blink

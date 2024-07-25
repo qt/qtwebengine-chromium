@@ -15,14 +15,8 @@
 import m from 'mithril';
 
 import {duration, Time, time} from '../../base/time';
-import {
-  BottomTab,
-  bottomTabRegistry,
-  NewBottomTabArgs,
-} from '../../frontend/bottom_tab';
-import {
-  GenericSliceDetailsTabConfig,
-} from '../../frontend/generic_slice_details_tab';
+import {BottomTab, NewBottomTabArgs} from '../../frontend/bottom_tab';
+import {GenericSliceDetailsTabConfig} from '../../frontend/generic_slice_details_tab';
 import {DurationWidget} from '../../frontend/widgets/duration';
 import {Timestamp} from '../../frontend/widgets/timestamp';
 import {LONG, NUM, STR, STR_NULL} from '../../trace_processor/query_result';
@@ -42,17 +36,18 @@ interface Data {
   upid: Upid;
 }
 
-export class StartupDetailsPanel extends
-    BottomTab<GenericSliceDetailsTabConfig> {
+export class StartupDetailsPanel extends BottomTab<GenericSliceDetailsTabConfig> {
   static readonly kind = 'org.perfetto.StartupDetailsPanel';
   private loaded = false;
-  private data: Data|undefined;
+  private data: Data | undefined;
 
-  static create(args: NewBottomTabArgs): StartupDetailsPanel {
+  static create(
+    args: NewBottomTabArgs<GenericSliceDetailsTabConfig>,
+  ): StartupDetailsPanel {
     return new StartupDetailsPanel(args);
   }
 
-  constructor(args: NewBottomTabArgs) {
+  constructor(args: NewBottomTabArgs<GenericSliceDetailsTabConfig>) {
     super(args);
     this.loadData();
   }
@@ -104,13 +99,16 @@ export class StartupDetailsPanel extends
     details['Browser Upid'] = this.data.upid;
     details['Startup Event'] = this.data.eventName;
     details['Startup Timestamp'] = m(Timestamp, {ts: this.data.startupBeginTs});
-    details['Duration to First Visible Content'] =
-        m(DurationWidget, {dur: this.data.durToFirstVisibleContent});
+    details['Duration to First Visible Content'] = m(DurationWidget, {
+      dur: this.data.durToFirstVisibleContent,
+    });
     if (this.data.launchCause) {
       details['Launch Cause'] = this.data.launchCause;
     }
-    details['SQL ID'] =
-        m(SqlRef, {table: 'chrome_startups', id: this.config.id});
+    details['SQL ID'] = m(SqlRef, {
+      table: 'chrome_startups',
+      id: this.config.id,
+    });
     return details;
   }
 
@@ -120,19 +118,22 @@ export class StartupDetailsPanel extends
     }
 
     return m(
-        DetailsShell,
-        {
-          title: this.getTitle(),
-        },
-        m(GridLayout,
+      DetailsShell,
+      {
+        title: this.getTitle(),
+      },
+      m(
+        GridLayout,
+        m(
+          GridLayoutColumn,
           m(
-              GridLayoutColumn,
-              m(
-                  Section,
-                  {title: 'Details'},
-                  m(Tree, dictToTreeNodes(this.getDetailsDictionary())),
-                  ),
-              )));
+            Section,
+            {title: 'Details'},
+            m(Tree, dictToTreeNodes(this.getDetailsDictionary())),
+          ),
+        ),
+      ),
+    );
   }
 
   getTitle(): string {
@@ -143,5 +144,3 @@ export class StartupDetailsPanel extends
     return !this.loaded;
   }
 }
-
-bottomTabRegistry.register(StartupDetailsPanel);

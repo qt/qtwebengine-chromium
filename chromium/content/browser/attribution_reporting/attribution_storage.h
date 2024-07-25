@@ -44,17 +44,12 @@ class AttributionStorage {
   // pair. When a source is stored, all matching sources that have already
   // converted are marked as inactive, and are no longer eligible for reporting.
   // Unconverted matching sources are not modified.
-  //
-  // TODO(linnan): Remove default argument for `debug_cookie_set`.
-  // Alternatively, consider making this a field in `StorableSource`.
-  virtual StoreSourceResult StoreSource(const StorableSource& source,
-                                        bool debug_cookie_set = false) = 0;
+  virtual StoreSourceResult StoreSource(StorableSource source) = 0;
 
   // Finds all stored sources matching a given `trigger`, and stores the
   // new associated report. Only active sources will receive new attributions.
   // Returns whether a new report has been scheduled/added to storage.
-  virtual CreateReportResult MaybeCreateAndStoreReport(
-      const AttributionTrigger& trigger) = 0;
+  virtual CreateReportResult MaybeCreateAndStoreReport(AttributionTrigger) = 0;
 
   // Returns all of the reports that should be sent before
   // |max_report_time|. This call is logically const, and does not modify the
@@ -67,10 +62,9 @@ class AttributionStorage {
   // Returns the first report time strictly after `time`.
   virtual std::optional<base::Time> GetNextReportTime(base::Time time) = 0;
 
-  // Returns the reports with the given IDs. This call is logically const, and
+  // Returns the report with the given ID. This call is logically const, and
   // does not modify the underlying storage.
-  virtual std::vector<AttributionReport> GetReports(
-      const std::vector<AttributionReport::Id>& ids) = 0;
+  virtual std::optional<AttributionReport> GetReport(AttributionReport::Id) = 0;
 
   // Returns all active sources in storage. Active sources are all
   // sources that can still convert. Sources that: are past expiry,

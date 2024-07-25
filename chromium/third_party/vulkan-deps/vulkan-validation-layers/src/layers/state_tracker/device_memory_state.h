@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,7 @@
 #pragma once
 #include "state_tracker/state_object.h"
 #include "containers/range_vector.h"
-#include "generated/vk_safe_struct.h"
+#include <vulkan/utility/vk_safe_struct.hpp>
 
 namespace vvl {
 struct MemRange {
@@ -46,7 +46,9 @@ struct DedicatedBinding {
 // Data struct for tracking memory object
 class DeviceMemory : public StateObject {
   public:
-    const safe_VkMemoryAllocateInfo alloc_info;
+    const vku::safe_VkMemoryAllocateInfo safe_allocate_info;
+    const VkMemoryAllocateInfo &allocate_info;
+
     const VkExternalMemoryHandleTypeFlags export_handle_types;  // from VkExportMemoryAllocateInfo::handleTypes
     const std::optional<VkExternalMemoryHandleTypeFlagBits> import_handle_type;
     const bool unprotected;     // can't be used for protected memory
@@ -60,7 +62,7 @@ class DeviceMemory : public StateObject {
     void *p_driver_data;                   // Pointer to application's actual memory
     const VkDeviceSize fake_base_address;  // To allow a unified view of allocations, useful to Synchronization Validation
 
-    DeviceMemory(VkDeviceMemory memory, const VkMemoryAllocateInfo *p_alloc_info, uint64_t fake_address,
+    DeviceMemory(VkDeviceMemory memory, const VkMemoryAllocateInfo *pAllocateInfo, uint64_t fake_address,
                  const VkMemoryType &memory_type, const VkMemoryHeap &memory_heap,
                  std::optional<DedicatedBinding> &&dedicated_binding, uint32_t physical_device_count);
 
@@ -81,7 +83,7 @@ class DeviceMemory : public StateObject {
     }
     bool IsDedicatedImage() const { return GetDedicatedImage() != VK_NULL_HANDLE; }
 
-    VkDeviceMemory deviceMemory() const { return handle_.Cast<VkDeviceMemory>(); }
+    VkDeviceMemory VkHandle() const { return handle_.Cast<VkDeviceMemory>(); }
 };
 
 // Generic memory binding struct to track objects bound to objects
@@ -138,7 +140,7 @@ class BindableLinearMemoryTracker : public BindableMemoryTracker {
 
     const MEM_BINDING *Binding() const override { return binding_.memory_state ? &binding_ : nullptr; }
     unsigned CountDeviceMemory(VkDeviceMemory memory) const override {
-        return binding_.memory_state && binding_.memory_state->deviceMemory() == memory ? 1 : 0;
+        return binding_.memory_state && binding_.memory_state->VkHandle() == memory ? 1 : 0;
     }
 
     bool HasFullRangeBound() const override { return binding_.memory_state != nullptr; }
@@ -212,8 +214,12 @@ class BindableMultiplanarMemoryTracker : public BindableMemoryTracker {
 class Bindable : public StateObject {
   public:
     template <typename Handle>
-    Bindable(Handle h, VulkanObjectType t, bool is_sparse, bool is_unprotected, VkExternalMemoryHandleTypeFlags handle_types)
-        : StateObject(h, t), external_memory_handle_types(handle_types), sparse(is_sparse), unprotected(is_unprotected),
+    Bindable(Handle handle, VulkanObjectType type, bool is_sparse, bool is_unprotected,
+             VkExternalMemoryHandleTypeFlags handle_types)
+        : StateObject(handle, type),
+          external_memory_handle_types(handle_types),
+          sparse(is_sparse),
+          unprotected(is_unprotected),
           memory_tracker_(nullptr) {}
 
     virtual ~Bindable() {

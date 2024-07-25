@@ -80,7 +80,6 @@ void CoreOobeHandler::DeclareJSCallbacks() {
 }
 
 void CoreOobeHandler::GetAdditionalParameters(base::Value::Dict* dict) {
-  dict->Set("isInTabletMode", display::Screen::GetScreen()->InTabletMode());
   dict->Set("isDemoModeEnabled", DemoSetupController::IsDemoModeAllowed());
   if (policy::EnrollmentRequisitionManager::IsMeetDevice()) {
     // The value is used to show a different UI for this type of the devices.
@@ -169,6 +168,10 @@ void CoreOobeHandler::SetOsVersionLabelText(const std::string& label_text) {
 void CoreOobeHandler::SetBluetoothDeviceInfo(
     const std::string& bluetooth_name) {
   CallJS("cr.ui.Oobe.setBluetoothDeviceInfo", bluetooth_name);
+}
+
+base::WeakPtr<CoreOobeView> CoreOobeHandler::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void CoreOobeHandler::HandleInitializeCoreHandler() {

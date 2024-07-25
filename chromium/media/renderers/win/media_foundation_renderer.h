@@ -86,7 +86,7 @@ class MEDIA_EXPORT MediaFoundationRenderer
                   RendererClient* client,
                   PipelineStatusCallback init_cb) override;
   void SetCdm(CdmContext* cdm_context, CdmAttachedCB cdm_attached_cb) override;
-  void SetLatencyHint(absl::optional<base::TimeDelta> latency_hint) override;
+  void SetLatencyHint(std::optional<base::TimeDelta> latency_hint) override;
   void Flush(base::OnceClosure flush_cb) override;
   void StartPlayingFrom(base::TimeDelta time) override;
   void SetPlaybackRate(double playback_rate) override;
@@ -238,6 +238,13 @@ class MEDIA_EXPORT MediaFoundationRenderer
 
   bool has_reported_playing_ = false;
   bool has_reported_significant_playback_ = false;
+
+  // Value saved from last call to SetLatencyHint(). Latency hint can only be
+  // used to determine real-time mode on MediaEngine creation.
+  // IMFMediaEngineEx::SetRealTimeMode is only applicable to the next
+  // IMFMediaEngine::SetSource call so we aren't able to change real-time mode
+  // dynamically in MFR use cases.
+  std::optional<base::TimeDelta> latency_hint_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<MediaFoundationRenderer> weak_factory_{this};

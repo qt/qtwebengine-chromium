@@ -46,7 +46,7 @@ void AddRenderPassQuad(CompositorRenderPass* render_pass,
                        CompositorRenderPassId render_pass_id) {
   auto* sqs = render_pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(gfx::Transform(), kOutputRect, kOutputRect, gfx::MaskFilterInfo(),
-              /*clip=*/absl::nullopt, /*contents_opaque=*/false, 1,
+              /*clip=*/std::nullopt, /*contents_opaque=*/false, 1,
               SkBlendMode::kSrcOver, /*sorting_context=*/0,
               /*layer_id=*/0u, /*fast_rounded_corner=*/false);
   auto* quad =
@@ -217,10 +217,6 @@ TEST_F(ResolvedFrameDataTest, RenderPassWithPerQuadDamage) {
 
   // The damage rect should not include TextureDrawQuad's damage_rect.
   EXPECT_EQ(resolved_frame.GetSurfaceDamage(), pass_damage_rect);
-
-  // The quads to prewalk should only include the TextureDrawQuad.
-  EXPECT_THAT(resolved_frame.GetRootRenderPassData().prewalk_quads(),
-              testing::ElementsAre(IsTextureQuad()));
 }
 
 TEST_F(ResolvedFrameDataTest, MarkAsUsed) {

@@ -200,7 +200,6 @@ struct BuiltinPolyfill::State {
             }
             default:
                 TINT_ICE() << "unhandled polyfill level: " << static_cast<int>(cfg.builtins.acosh);
-                return {};
         }
 
         b.Func(name, tint::Vector{b.Param("x", T(ty))}, T(ty), body);
@@ -252,7 +251,6 @@ struct BuiltinPolyfill::State {
                 break;
             default:
                 TINT_ICE() << "unhandled polyfill level: " << static_cast<int>(cfg.builtins.acosh);
-                return {};
         }
 
         b.Func(name, tint::Vector{b.Param("x", T(ty))}, T(ty), body);
@@ -442,7 +440,6 @@ struct BuiltinPolyfill::State {
             default:
                 TINT_ICE() << "unhandled polyfill level: "
                            << static_cast<int>(cfg.builtins.extract_bits);
-                return {};
         }
 
         b.Func(name,
@@ -587,6 +584,27 @@ struct BuiltinPolyfill::State {
         return name;
     }
 
+    /// Builds the polyfill function for the `fwidthFine` builtin
+    /// @param ty the parameter and return type for the function
+    /// @return the polyfill function name
+    Symbol fwidthFine(const core::type::Type* ty) {
+        auto name = b.Symbols().New("tint_fwidth_fine");
+        // WGSL polyfill function:
+        //      fn tint_fwidth_fine(v : T) -> T {
+        //          return abs(dpdxFine(v)) + abs(dpdyFine(v));
+        //      }
+        auto body = tint::Vector{
+            b.Return(b.Add(b.Call("abs", b.Call("dpdxFine", "v")),
+                           b.Call("abs", b.Call("dpdyFine", "v")))),
+        };
+        b.Func(name,
+               tint::Vector{
+                   b.Param("v", T(ty)),
+               },
+               T(ty), body);
+        return name;
+    }
+
     /// Builds the polyfill function for the `insertBits` builtin
     /// @param ty the parameter and return type for the function
     /// @return the polyfill function name
@@ -599,7 +617,6 @@ struct BuiltinPolyfill::State {
             TINT_ICE()
                 << "insertBits polyfill only support i32, u32, and vector of i32 or u32, got "
                 << ty->FriendlyName();
-            return {};
         }
 
         constexpr uint32_t W = 32u;  // 32-bit
@@ -680,7 +697,6 @@ struct BuiltinPolyfill::State {
             default:
                 TINT_ICE() << "unhandled polyfill level: "
                            << static_cast<int>(cfg.builtins.insert_bits);
-                return {};
         }
 
         b.Func(name,
@@ -1117,7 +1133,7 @@ struct BuiltinPolyfill::State {
         auto* lhs_ty = src.TypeOf(bin_op->lhs)->UnwrapRef();
         auto* rhs_ty = src.TypeOf(bin_op->rhs)->UnwrapRef();
         BinaryOpSignature sig{bin_op->op, lhs_ty, rhs_ty};
-        auto fn = binary_op_polyfills.GetOrCreate(sig, [&] {
+        auto fn = binary_op_polyfills.GetOrAdd(sig, [&] {
             const bool is_div = bin_op->op == core::BinaryOp::kDivide;
 
             const auto [lhs_el_ty, lhs_width] = lhs_ty->Elements(lhs_ty, 1);
@@ -1210,7 +1226,7 @@ struct BuiltinPolyfill::State {
         auto* lhs_ty = src.TypeOf(bin_op->lhs)->UnwrapRef();
         auto* rhs_ty = src.TypeOf(bin_op->rhs)->UnwrapRef();
         BinaryOpSignature sig{bin_op->op, lhs_ty, rhs_ty};
-        auto fn = binary_op_polyfills.GetOrCreate(sig, [&] {
+        auto fn = binary_op_polyfills.GetOrAdd(sig, [&] {
             const auto [lhs_el_ty, lhs_width] = lhs_ty->Elements(lhs_ty, 1);
             const auto [rhs_el_ty, rhs_width] = rhs_ty->Elements(rhs_ty, 1);
 
@@ -1295,21 +1311,21 @@ struct BuiltinPolyfill::State {
                 switch (builtin->Fn()) {
                     case wgsl::BuiltinFn::kAcosh:
                         if (cfg.builtins.acosh != Level::kNone) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return acosh(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kAsinh:
                         if (cfg.builtins.asinh) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return asinh(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kAtanh:
                         if (cfg.builtins.atanh != Level::kNone) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return atanh(builtin->ReturnType()); });
                         }
                         return Symbol{};
@@ -1318,7 +1334,7 @@ struct BuiltinPolyfill::State {
                         if (cfg.builtins.clamp_int) {
                             auto& sig = builtin->Signature();
                             if (sig.parameters[0]->Type()->is_integer_scalar_or_vector()) {
-                                return builtin_polyfills.GetOrCreate(
+                                return builtin_polyfills.GetOrAdd(
                                     builtin, [&] { return clampInteger(builtin->ReturnType()); });
                             }
                         }
@@ -1326,42 +1342,49 @@ struct BuiltinPolyfill::State {
 
                     case wgsl::BuiltinFn::kCountLeadingZeros:
                         if (cfg.builtins.count_leading_zeros) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return countLeadingZeros(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kCountTrailingZeros:
                         if (cfg.builtins.count_trailing_zeros) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return countTrailingZeros(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kExtractBits:
                         if (cfg.builtins.extract_bits != Level::kNone) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return extractBits(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kFirstLeadingBit:
                         if (cfg.builtins.first_leading_bit) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return firstLeadingBit(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kFirstTrailingBit:
                         if (cfg.builtins.first_trailing_bit) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return firstTrailingBit(builtin->ReturnType()); });
+                        }
+                        return Symbol{};
+
+                    case wgsl::BuiltinFn::kFwidthFine:
+                        if (cfg.builtins.fwidth_fine) {
+                            return builtin_polyfills.GetOrAdd(
+                                builtin, [&] { return fwidthFine(builtin->ReturnType()); });
                         }
                         return Symbol{};
 
                     case wgsl::BuiltinFn::kInsertBits:
                         if (cfg.builtins.insert_bits != Level::kNone) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return insertBits(builtin->ReturnType()); });
                         }
                         return Symbol{};
@@ -1373,7 +1396,7 @@ struct BuiltinPolyfill::State {
                             auto& sig = builtin->Signature();
                             auto* vec = sig.return_type->As<core::type::Vector>();
                             if (vec && vec->Width() == 2 && vec->type()->Is<core::type::F32>()) {
-                                return builtin_polyfills.GetOrCreate(
+                                return builtin_polyfills.GetOrAdd(
                                     builtin, [&] { return reflect(builtin->ReturnType()); });
                             }
                         }
@@ -1381,7 +1404,7 @@ struct BuiltinPolyfill::State {
 
                     case wgsl::BuiltinFn::kSaturate:
                         if (cfg.builtins.saturate) {
-                            return builtin_polyfills.GetOrCreate(
+                            return builtin_polyfills.GetOrAdd(
                                 builtin, [&] { return saturate(builtin->ReturnType()); });
                         }
                         return Symbol{};
@@ -1390,8 +1413,8 @@ struct BuiltinPolyfill::State {
                         if (cfg.builtins.sign_int) {
                             auto* ty = builtin->ReturnType();
                             if (ty->is_signed_integer_scalar_or_vector()) {
-                                return builtin_polyfills.GetOrCreate(builtin,
-                                                                     [&] { return sign_int(ty); });
+                                return builtin_polyfills.GetOrAdd(builtin,
+                                                                  [&] { return sign_int(ty); });
                             }
                         }
                         return Symbol{};
@@ -1418,7 +1441,7 @@ struct BuiltinPolyfill::State {
                             auto* tex = sig.Parameter(core::ParameterUsage::kTexture);
                             if (auto* stex = tex->Type()->As<core::type::SampledTexture>()) {
                                 if (stex->type()->Is<core::type::F32>()) {
-                                    return builtin_polyfills.GetOrCreate(builtin, [&] {
+                                    return builtin_polyfills.GetOrAdd(builtin, [&] {
                                         return textureSampleBaseClampToEdge_2d_f32();
                                     });
                                 }
@@ -1456,7 +1479,7 @@ struct BuiltinPolyfill::State {
                     case wgsl::BuiltinFn::kQuantizeToF16:
                         if (cfg.builtins.quantize_to_vec_f16) {
                             if (auto* vec = builtin->ReturnType()->As<core::type::Vector>()) {
-                                return builtin_polyfills.GetOrCreate(
+                                return builtin_polyfills.GetOrAdd(
                                     builtin, [&] { return quantizeToF16(vec); });
                             }
                         }
@@ -1464,7 +1487,7 @@ struct BuiltinPolyfill::State {
 
                     case wgsl::BuiltinFn::kWorkgroupUniformLoad:
                         if (cfg.builtins.workgroup_uniform_load) {
-                            return builtin_polyfills.GetOrCreate(builtin, [&] {
+                            return builtin_polyfills.GetOrAdd(builtin, [&] {
                                 return workgroupUniformLoad(builtin->ReturnType());
                             });
                         }
@@ -1472,64 +1495,62 @@ struct BuiltinPolyfill::State {
 
                     case wgsl::BuiltinFn::kDot4I8Packed: {
                         if (cfg.builtins.dot_4x8_packed) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Dot4I8Packed(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Dot4I8Packed(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kDot4U8Packed: {
                         if (cfg.builtins.dot_4x8_packed) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Dot4U8Packed(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Dot4U8Packed(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kPack4XI8: {
                         if (cfg.builtins.pack_unpack_4x8) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Pack4xI8(); });
+                            return builtin_polyfills.GetOrAdd(builtin, [&] { return Pack4xI8(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kPack4XU8: {
                         if (cfg.builtins.pack_unpack_4x8) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Pack4xU8(); });
+                            return builtin_polyfills.GetOrAdd(builtin, [&] { return Pack4xU8(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kPack4XI8Clamp: {
                         if (cfg.builtins.pack_unpack_4x8) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Pack4xI8Clamp(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Pack4xI8Clamp(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kPack4XU8Clamp: {
                         if (cfg.builtins.pack_4xu8_clamp) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Pack4xU8Clamp(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Pack4xU8Clamp(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kUnpack4XI8: {
                         if (cfg.builtins.pack_unpack_4x8) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Unpack4xI8(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Unpack4xI8(); });
                         }
                         return Symbol{};
                     }
 
                     case wgsl::BuiltinFn::kUnpack4XU8: {
                         if (cfg.builtins.pack_unpack_4x8) {
-                            return builtin_polyfills.GetOrCreate(builtin,
-                                                                 [&] { return Unpack4xU8(); });
+                            return builtin_polyfills.GetOrAdd(builtin,
+                                                              [&] { return Unpack4xU8(); });
                         }
                         return Symbol{};
                     }
@@ -1545,7 +1566,7 @@ struct BuiltinPolyfill::State {
                         auto* dst_ty = conv->Target();
                         if (tint::IsAnyOf<core::type::I32, core::type::U32>(
                                 dst_ty->Elements(dst_ty).type)) {
-                            return f32_conv_polyfills.GetOrCreate(dst_ty, [&] {  //
+                            return f32_conv_polyfills.GetOrAdd(dst_ty, [&] {  //
                                 return ConvF32ToIU32(src_ty, dst_ty);
                             });
                         }
@@ -1576,6 +1597,7 @@ Transform::ApplyResult BuiltinPolyfill::Apply(const Program& src,
     return State{src, *cfg}.Run();
 }
 
+BuiltinPolyfill::Config::Config() = default;
 BuiltinPolyfill::Config::Config(const Builtins& b) : builtins(b) {}
 BuiltinPolyfill::Config::Config(const Config&) = default;
 BuiltinPolyfill::Config::~Config() = default;

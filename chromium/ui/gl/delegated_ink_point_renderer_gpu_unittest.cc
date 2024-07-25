@@ -8,16 +8,17 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/win/hidden_window.h"
 #include "ui/gfx/geometry/vector2d_f.h"
 #include "ui/gl/dc_layer_tree.h"
+#include "ui/gl/dcomp_presenter.h"
 #include "ui/gl/direct_composition_support.h"
-#include "ui/gl/direct_composition_surface_win.h"
-#include "ui/gl/gl_angle_util_win.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/init/gl_factory.h"
+#include "ui/gl/test/gl_test_helper.h"
 
 namespace gl {
 namespace {
@@ -29,9 +30,9 @@ class DelegatedInkPointRendererGpuTest : public testing::Test {
  public:
   DelegatedInkPointRendererGpuTest() : parent_window_(ui::GetHiddenWindow()) {}
 
-  DirectCompositionSurfaceWin* surface() { return surface_.get(); }
+  DCompPresenter* presenter() { return presenter_.get(); }
 
-  DCLayerTree* layer_tree() { return surface()->GetLayerTreeForTesting(); }
+  DCLayerTree* layer_tree() { return presenter()->GetLayerTreeForTesting(); }
 
   DCLayerTree::DelegatedInkRenderer* ink_renderer() {
     return layer_tree()->GetInkRendererForTesting();
@@ -60,7 +61,7 @@ class DelegatedInkPointRendererGpuTest : public testing::Test {
   }
 
   void SendMetadata(const gfx::DelegatedInkMetadata& metadata) {
-    surface()->SetDelegatedInkTrailStartPoint(
+    ink_renderer()->SetDelegatedInkTrailStartPoint(
         std::make_unique<gfx::DelegatedInkMetadata>(metadata));
   }
 
@@ -103,61 +104,51 @@ class DelegatedInkPointRendererGpuTest : public testing::Test {
         /*init_bindings=*/true,
         /*gpu_preference=*/gl::GpuPreference::kDefault);
     if (!gl::DirectCompositionSupported()) {
-      LOG(WARNING)
+      GTEST_SKIP()
           << "GL implementation not using DirectComposition, skipping test.";
-      return;
     }
 
-    CreateDirectCompositionSurfaceWin();
-    if (!surface_->SupportsDelegatedInk()) {
-      LOG(WARNING) << "Delegated ink unsupported, skipping test.";
-      return;
-    }
+    std::tie(gl_surface_, context_) =
+        GLTestHelper::CreateOffscreenGLSurfaceAndContext();
 
-    CreateGLContext();
-    surface_->SetEnableDCLayers(true);
+    CreateDCompPresenter();
+
+    if (!presenter_->SupportsDelegatedInk()) {
+      GTEST_SKIP() << "Delegated ink unsupported, skipping test.";
+    }
 
     // Create the swap chain
     constexpr gfx::Size window_size(100, 100);
-    EXPECT_TRUE(surface_->Resize(window_size, 1.0, gfx::ColorSpace(), true));
-    EXPECT_TRUE(surface_->SetDrawRectangle(gfx::Rect(window_size)));
+    EXPECT_TRUE(presenter_->Resize(window_size, 1.0, gfx::ColorSpace(), true));
+
+    ink_renderer()->InitializeForTesting(gl::GetDirectCompositionDevice());
   }
 
   void TearDown() override {
-    context_ = nullptr;
-    if (surface_)
-      DestroySurface(std::move(surface_));
+    context_.reset();
+    gl_surface_.reset();
+    if (presenter_) {
+      DestroyPresenter(std::move(presenter_));
+    }
     gl::init::ShutdownGL(display_, false);
   }
 
  private:
-  void CreateDirectCompositionSurfaceWin() {
-    DirectCompositionSurfaceWin::Settings settings;
-    surface_ = base::MakeRefCounted<DirectCompositionSurfaceWin>(
-        gl::GLSurfaceEGL::GetGLDisplayEGL(),
-        DirectCompositionSurfaceWin::VSyncCallback(), settings);
-    EXPECT_TRUE(surface_->Initialize(GLSurfaceFormat()));
+  void CreateDCompPresenter() {
+    DCompPresenter::Settings settings;
+    presenter_ = base::MakeRefCounted<DCompPresenter>(settings);
 
-    // ImageTransportSurfaceDelegate::AddChildWindowToBrowser() is called in
-    // production code here. However, to remove dependency from
-    // gpu/ipc/service/image_transport_surface_delegate.h, here we directly
-    // executes the required minimum code.
+    // Add our child window to the root window.
     if (parent_window_)
-      ::SetParent(surface_->window(), parent_window_);
+      ::SetParent(presenter_->GetWindow(), parent_window_);
   }
 
-  void CreateGLContext() {
-    context_ =
-        gl::init::CreateGLContext(nullptr, surface_.get(), GLContextAttribs());
-    EXPECT_TRUE(context_->MakeCurrent(surface_.get()));
-  }
-
-  void DestroySurface(scoped_refptr<DirectCompositionSurfaceWin> surface) {
+  void DestroyPresenter(scoped_refptr<DCompPresenter> presenter) {
     scoped_refptr<base::TaskRunner> task_runner =
-        surface->GetWindowTaskRunnerForTesting();
-    DCHECK(surface->HasOneRef());
+        presenter->GetWindowTaskRunnerForTesting();
+    EXPECT_TRUE(presenter->HasOneRef());
 
-    surface = nullptr;
+    presenter = nullptr;
 
     base::RunLoop run_loop;
     task_runner->PostTask(FROM_HERE, run_loop.QuitClosure());
@@ -165,7 +156,8 @@ class DelegatedInkPointRendererGpuTest : public testing::Test {
   }
 
   HWND parent_window_;
-  scoped_refptr<DirectCompositionSurfaceWin> surface_;
+  scoped_refptr<GLSurface> gl_surface_;
+  scoped_refptr<DCompPresenter> presenter_;
   scoped_refptr<GLContext> context_;
   raw_ptr<GLDisplay> display_ = nullptr;
 
@@ -177,8 +169,9 @@ class DelegatedInkPointRendererGpuTest : public testing::Test {
 // Test to confirm that points and tokens are stored and removed correctly based
 // on when the metadata and points arrive.
 TEST_F(DelegatedInkPointRendererGpuTest, StoreAndRemovePointsAndTokens) {
-  if (!surface() || !surface()->SupportsDelegatedInk())
+  if (!presenter() || !presenter()->SupportsDelegatedInk()) {
     return;
+  }
 
   // Send some points and make sure they are all stored even with no metadata.
   const int32_t kPointerId = 1;
@@ -235,8 +228,9 @@ TEST_F(DelegatedInkPointRendererGpuTest, StoreAndRemovePointsAndTokens) {
 // Basic test to confirm that points are drawn as they arrive if they are in the
 // presentation area and after the metadata's timestamp.
 TEST_F(DelegatedInkPointRendererGpuTest, DrawPointsAsTheyArrive) {
-  if (!surface() || !surface()->SupportsDelegatedInk())
+  if (!presenter() || !presenter()->SupportsDelegatedInk()) {
     return;
+  }
 
   gfx::DelegatedInkMetadata metadata(
       gfx::PointF(12, 12), /*diameter=*/3, SK_ColorBLACK,
@@ -288,8 +282,9 @@ TEST_F(DelegatedInkPointRendererGpuTest, DrawPointsAsTheyArrive) {
 
 // Confirm that points with different pointer ids are handled correctly.
 TEST_F(DelegatedInkPointRendererGpuTest, MultiplePointerIds) {
-  if (!surface() || !surface()->SupportsDelegatedInk())
+  if (!presenter() || !presenter()->SupportsDelegatedInk()) {
     return;
+  }
 
   const int32_t kPointerId1 = 1;
   const int32_t kPointerId2 = 2;
@@ -384,8 +379,9 @@ TEST_F(DelegatedInkPointRendererGpuTest, MultiplePointerIds) {
 // Make sure that the DelegatedInkPoint with the earliest timestamp is removed
 // if we have reached the maximum number of pointer ids.
 TEST_F(DelegatedInkPointRendererGpuTest, MaximumPointerIds) {
-  if (!surface() || !surface()->SupportsDelegatedInk())
+  if (!presenter() || !presenter()->SupportsDelegatedInk()) {
     return;
+  }
 
   // First add DelegatedInkPoints with unique pointer ids up to the limit and
   // make sure they are all correctly added separately.
@@ -436,6 +432,48 @@ TEST_F(DelegatedInkPointRendererGpuTest, MaximumPointerIds) {
             kMaxNumberOfPointerIds);
   EXPECT_FALSE(
       ink_renderer()->CheckForPointerIdForTesting(kEarlyTimestampPointerId));
+}
+
+// Verify that the `points_to_be_drawn_` is set correctly when points are
+// added to the API's trail, and that the TimeToDrawPointsMillis histogram is
+// reported correctly on draw.
+TEST_F(DelegatedInkPointRendererGpuTest, ReportTimeToDraw) {
+  if (!presenter() || !presenter()->SupportsDelegatedInk()) {
+    return;
+  }
+  const std::string kHistogramName =
+      "Renderer.DelegatedInkTrail.OS.TimeToDrawPointsMillis";
+  const base::HistogramTester histogram_tester;
+  constexpr int32_t kPointerId = 1u;
+
+  EXPECT_TRUE(ink_renderer()->PointstoBeDrawnForTesting().empty());
+  ink_renderer()->ReportPointsDrawn();
+  // No histogram should be fired if `points_to_be_drawn_` is empty.
+  histogram_tester.ExpectTotalCount(kHistogramName, 0);
+
+  const base::TimeTicks timestamp = base::TimeTicks::Now();
+  SendDelegatedInkPoint(
+      gfx::DelegatedInkPoint(gfx::PointF(20, 20), timestamp, kPointerId));
+  SendMetadataBasedOnStoredPoint(0);
+
+  // `DrawDelegatedInkPoint` should've added the point's timestamp to
+  // `points_to_be_drawn_`.
+  EXPECT_EQ(ink_renderer()->PointstoBeDrawnForTesting().size(), 1u);
+  EXPECT_EQ(ink_renderer()->PointstoBeDrawnForTesting()[0], timestamp);
+
+  // Send another point and expect that the new point's timestamp is added to
+  // `points_to_be_drawn_`.
+  SendDelegatedInkPointBasedOnPrevious(kPointerId);
+  EXPECT_EQ(ink_renderer()->PointstoBeDrawnForTesting().size(), 2u);
+  EXPECT_EQ(ink_renderer()->PointstoBeDrawnForTesting()[1],
+            timestamp + base::Microseconds(kMicrosecondsBetweenEachPoint));
+
+  ink_renderer()->ReportPointsDrawn();
+  // Two histograms should've been fired with the delta between the point's
+  // creation times and the function call, and `points_to_be_drawn_` should've
+  // been cleared.
+  histogram_tester.ExpectTotalCount(kHistogramName, 2);
+  EXPECT_TRUE(ink_renderer()->PointstoBeDrawnForTesting().empty());
 }
 
 }  // namespace

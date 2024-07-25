@@ -15,21 +15,20 @@
 import {BigintMath as BIMath} from '../../base/bigint_math';
 import {clamp} from '../../base/math_utils';
 import {Duration, duration, time} from '../../base/time';
+import {uuidv4} from '../../base/uuid';
+import {ChromeSliceDetailsTab} from '../../frontend/chrome_slice_details_tab';
 import {
   NAMED_ROW,
   NamedSliceTrack,
   NamedSliceTrackTypes,
 } from '../../frontend/named_slice_track';
 import {SLICE_LAYOUT_FIT_CONTENT_DEFAULTS} from '../../frontend/slice_layout';
-import {
-  SliceData,
-  SliceTrackLEGACY,
-} from '../../frontend/slice_track';
+import {SliceData, SliceTrackLEGACY} from '../../frontend/slice_track';
 import {NewTrackArgs} from '../../frontend/track';
 import {
+  BottomTabToSCSAdapter,
   EngineProxy,
   Plugin,
-  PluginContext,
   PluginContextTrace,
   PluginDescriptor,
 } from '../../public';
@@ -49,13 +48,20 @@ export class ChromeSliceTrack extends SliceTrackLEGACY {
   private maxDurNs: duration = 0n;
 
   constructor(
-      protected engine: EngineProxy, maxDepth: number, trackKey: string,
-      private trackId: number, namespace?: string) {
+    protected engine: EngineProxy,
+    maxDepth: number,
+    trackKey: string,
+    private trackId: number,
+    namespace?: string,
+  ) {
     super(maxDepth, trackKey, 'slice', namespace);
   }
 
-  async onBoundsChange(start: time, end: time, resolution: duration):
-      Promise<SliceData> {
+  async onBoundsChange(
+    start: time,
+    end: time,
+    resolution: duration,
+  ): Promise<SliceData> {
     const tableName = this.namespaceTable('slice');
 
     if (this.maxDurNs === Duration.ZERO) {
@@ -144,7 +150,9 @@ export class ChromeSliceTrack extends SliceTrackLEGACY {
         // it is less than or equal to one, incase the thread duration exceeds
         // the total duration.
         cpuTimeRatio = Math.min(
-            Math.round(BIMath.ratio(it.threadDur, it.dur) * 100) / 100, 1);
+          Math.round(BIMath.ratio(it.threadDur, it.dur) * 100) / 100,
+          1,
+        );
       }
       slices.cpuTimeRatio![row] = cpuTimeRatio;
     }
@@ -192,8 +200,9 @@ export class ChromeSliceTrackV2 extends NamedSliceTrack<ChromeSliceTrackTypes> {
   }
 
   // Converts a SQL result row to an "Impl" Slice.
-  rowToSlice(row: ChromeSliceTrackTypes['row']):
-      ChromeSliceTrackTypes['slice'] {
+  rowToSlice(
+    row: ChromeSliceTrackTypes['row'],
+  ): ChromeSliceTrackTypes['slice'] {
     const namedSlice = super.rowToSlice(row);
 
     if (row.dur > 0n && row.threadDur !== null) {
@@ -206,17 +215,20 @@ export class ChromeSliceTrackV2 extends NamedSliceTrack<ChromeSliceTrackTypes> {
 
   onUpdatedSlices(slices: ChromeSliceTrackTypes['slice'][]) {
     for (const slice of slices) {
-      slice.isHighlighted = (slice === this.hoveredSlice);
+      slice.isHighlighted = slice === this.hoveredSlice;
     }
   }
 }
 
 class ChromeSlicesPlugin implements Plugin {
-  onActivate(_ctx: PluginContext): void {}
-
   async onTraceLoad(ctx: PluginContextTrace): Promise<void> {
     const {engine} = ctx;
     const result = await engine.query(`
+        with max_depth_materialized as (
+          select track_id, max(depth) as maxDepth
+          from slice
+          group by track_id
+        )
         select
           thread_track.utid as utid,
           thread_track.id as trackId,
@@ -225,13 +237,11 @@ class ChromeSlicesPlugin implements Plugin {
                       'is_root_in_scope') as isDefaultTrackForScope,
           tid,
           thread.name as threadName,
-          max(slice.depth) as maxDepth,
-          process.upid as upid
-        from slice
-        join thread_track on slice.track_id = thread_track.id
+          maxDepth,
+          thread.upid as upid
+        from thread_track
         join thread using(utid)
-        left join process using(upid)
-        group by thread_track.id
+        join max_depth_materialized mdd on mdd.track_id = thread_track.id
   `);
 
     const it = result.iter({
@@ -266,24 +276,7 @@ class ChromeSlicesPlugin implements Plugin {
         displayName,
         trackIds: [trackId],
         kind: SLICE_TRACK_KIND,
-        track: ({trackKey}) => {
-          return new ChromeSliceTrack(
-              engine,
-              maxDepth,
-              trackKey,
-              trackId,
-          );
-        },
-      });
-
-      // trackIds can only be registered by one track at a time.
-      // TODO(hjd): Move trackIds to only be on V2.
-      ctx.registerTrack({
-        uri: `perfetto.ChromeSlices#${trackId}.v2`,
-        displayName,
-        trackIds: [trackId],
-        kind: SLICE_TRACK_KIND,
-        track: ({trackKey}) => {
+        trackFactory: ({trackKey}) => {
           const newTrackArgs = {
             engine: ctx.engine,
             trackKey,
@@ -292,6 +285,24 @@ class ChromeSlicesPlugin implements Plugin {
         },
       });
     }
+
+    ctx.registerDetailsPanel(
+      new BottomTabToSCSAdapter({
+        tabFactory: (sel) => {
+          if (sel.kind !== 'CHROME_SLICE') {
+            return undefined;
+          }
+          return new ChromeSliceDetailsTab({
+            config: {
+              table: sel.table ?? 'slice',
+              id: sel.id,
+            },
+            engine: ctx.engine,
+            uuid: uuidv4(),
+          });
+        },
+      }),
+    );
   }
 }
 

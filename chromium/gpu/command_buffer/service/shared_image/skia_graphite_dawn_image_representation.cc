@@ -20,6 +20,7 @@
 namespace gpu {
 
 namespace {
+
 bool SupportsMultiplanarRendering(SharedContextState* context_state) {
   auto* dawn_context_provider = context_state->dawn_context_provider();
   if (!dawn_context_provider) {
@@ -49,7 +50,9 @@ SkiaGraphiteDawnImageRepresentation::Create(
     SharedImageBacking* backing,
     MemoryTypeTracker* tracker,
     bool is_yuv_plane,
-    int legacy_plane_index) {
+    int legacy_plane_index,
+    int array_slice) {
+  CHECK(dawn_representation);
   const bool is_dcomp_surface =
       backing->usage() & SHARED_IMAGE_USAGE_SCANOUT_DCOMP_SURFACE;
   const bool supports_multiplanar_rendering =
@@ -57,11 +60,11 @@ SkiaGraphiteDawnImageRepresentation::Create(
   const bool supports_multiplanar_copy =
       SupportsMultiplanarCopy(context_state.get());
   wgpu::TextureUsage supported_tex_usages = SupportedDawnTextureUsage(
-      is_yuv_plane, is_dcomp_surface, supports_multiplanar_rendering,
-      supports_multiplanar_copy);
+      backing->format(), is_yuv_plane, is_dcomp_surface,
+      supports_multiplanar_rendering, supports_multiplanar_copy);
   return base::WrapUnique(new SkiaGraphiteDawnImageRepresentation(
       std::move(dawn_representation), recorder, std::move(context_state),
-      manager, backing, tracker, is_yuv_plane, legacy_plane_index,
+      manager, backing, tracker, is_yuv_plane, legacy_plane_index, array_slice,
       supported_tex_usages));
 }
 
@@ -74,6 +77,7 @@ SkiaGraphiteDawnImageRepresentation::SkiaGraphiteDawnImageRepresentation(
     MemoryTypeTracker* tracker,
     bool is_yuv_plane,
     int legacy_plane_index,
+    int array_slice,
     wgpu::TextureUsage supported_tex_usages)
     : SkiaGraphiteImageRepresentation(manager, backing, tracker),
       dawn_representation_(std::move(dawn_representation)),
@@ -81,6 +85,7 @@ SkiaGraphiteDawnImageRepresentation::SkiaGraphiteDawnImageRepresentation(
       recorder_(recorder),
       is_yuv_plane_(is_yuv_plane),
       legacy_plane_index_(legacy_plane_index),
+      array_slice_(array_slice),
       supported_tex_usages_(supported_tex_usages) {
   CHECK(dawn_representation_);
 }
@@ -96,7 +101,8 @@ SkiaGraphiteDawnImageRepresentation::~SkiaGraphiteDawnImageRepresentation() {
 
 std::vector<skgpu::graphite::BackendTexture>
 SkiaGraphiteDawnImageRepresentation::CreateBackendTextures(
-    wgpu::Texture texture) {
+    wgpu::Texture texture,
+    bool readonly) {
   std::vector<skgpu::graphite::BackendTexture> backend_textures;
   const bool supports_multiplanar_rendering =
       SupportsMultiplanarRendering(context_state_.get());
@@ -112,7 +118,8 @@ SkiaGraphiteDawnImageRepresentation::CreateBackendTextures(
       SkISize plane_size =
           gfx::SizeToSkISize(format().GetPlaneSize(plane_index, size()));
       skgpu::graphite::DawnTextureInfo plane_info = DawnBackendTextureInfo(
-          format(), /*is_yuv_plane=*/true, plane_index, /*mipmapped=*/false,
+          format(), readonly, /*is_yuv_plane=*/true, plane_index, array_slice_,
+          /*mipmapped=*/false,
           /*scanout_dcomp_surface=*/false, supports_multiplanar_rendering,
           supports_multiplanar_copy);
       backend_textures.emplace_back(plane_size, plane_info, texture.Get());
@@ -121,8 +128,8 @@ SkiaGraphiteDawnImageRepresentation::CreateBackendTextures(
     // Legacy multi-planar NV12 - format() is either R8 or RG8.
     SkISize plane_size = gfx::SizeToSkISize(size());
     skgpu::graphite::DawnTextureInfo plane_info = DawnBackendTextureInfo(
-        format(), /*is_yuv_plane=*/true, legacy_plane_index_,
-        /*mipmapped=*/false, /*scanout_dcomp_surface=*/false,
+        format(), readonly, /*is_yuv_plane=*/true, legacy_plane_index_,
+        array_slice_, /*mipmapped=*/false, /*scanout_dcomp_surface=*/false,
         supports_multiplanar_rendering, supports_multiplanar_copy);
     backend_textures = {
         skgpu::graphite::BackendTexture(plane_size, plane_info, texture.Get())};
@@ -148,7 +155,7 @@ SkiaGraphiteDawnImageRepresentation::BeginWriteAccess(
   }
 
   std::vector<skgpu::graphite::BackendTexture> backend_textures =
-      CreateBackendTextures(dawn_scoped_access_->texture());
+      CreateBackendTextures(dawn_scoped_access_->texture(), /*readonly=*/false);
 
   std::vector<sk_sp<SkSurface>> surfaces;
   surfaces.reserve(format().NumberOfPlanes());
@@ -189,7 +196,8 @@ SkiaGraphiteDawnImageRepresentation::BeginWriteAccess() {
   }
 
   mode_ = RepresentationAccessMode::kWrite;
-  return CreateBackendTextures(dawn_scoped_access_->texture());
+  return CreateBackendTextures(dawn_scoped_access_->texture(),
+                               /*readonly=*/false);
 }
 
 void SkiaGraphiteDawnImageRepresentation::EndWriteAccess() {
@@ -202,22 +210,29 @@ std::vector<skgpu::graphite::BackendTexture>
 SkiaGraphiteDawnImageRepresentation::BeginReadAccess() {
   CHECK_EQ(mode_, RepresentationAccessMode::kNone);
   CHECK(!dawn_scoped_access_);
-
+  constexpr wgpu::TextureUsage kReadOnlyTextureUsage =
+      wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::TextureBinding;
   dawn_scoped_access_ = dawn_representation_->BeginScopedAccess(
-      supported_tex_usages_, AllowUnclearedAccess::kNo);
+      supported_tex_usages_ & kReadOnlyTextureUsage, AllowUnclearedAccess::kNo);
   if (!dawn_scoped_access_) {
     DLOG(ERROR) << "Could not create DawnImageRepresentation::ScopedAccess";
     return {};
   }
 
   mode_ = RepresentationAccessMode::kRead;
-  return CreateBackendTextures(dawn_scoped_access_->texture());
+  return CreateBackendTextures(dawn_scoped_access_->texture(),
+                               /*readonly=*/true);
 }
 
 void SkiaGraphiteDawnImageRepresentation::EndReadAccess() {
   CHECK_EQ(mode_, RepresentationAccessMode::kRead);
   dawn_scoped_access_.reset();
   mode_ = RepresentationAccessMode::kNone;
+}
+
+bool SkiaGraphiteDawnImageRepresentation::
+    SupportsMultipleConcurrentReadAccess() {
+  return dawn_representation_->SupportsMultipleConcurrentReadAccess();
 }
 
 }  // namespace gpu

@@ -13,6 +13,8 @@
 
 #include "base/check.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/not_fatal_until.h"
+#include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "components/services/storage/shared_storage/shared_storage_manager.h"
 #include "content/browser/attribution_reporting/attribution_manager.h"
@@ -56,6 +58,64 @@ using SharedStorageURNMappingResult =
 using OperationResult = storage::SharedStorageManager::OperationResult;
 using GetResult = storage::SharedStorageManager::GetResult;
 
+void LogSharedStorageWorkletErrorFromErrorMessage(
+    bool from_select_url,
+    const std::string& error_message) {
+  if (error_message == blink::kSharedStorageModuleScriptNotLoadedErrorMessage) {
+    LogSharedStorageWorkletError(
+        from_select_url ? blink::SharedStorageWorkletErrorType::
+                              kSelectURLNonWebVisibleModuleScriptNotLoaded
+                        : blink::SharedStorageWorkletErrorType::
+                              kRunNonWebVisibleModuleScriptNotLoaded);
+  } else if (error_message ==
+             blink::kSharedStorageOperationNotFoundErrorMessage) {
+    LogSharedStorageWorkletError(
+        from_select_url ? blink::SharedStorageWorkletErrorType::
+                              kSelectURLNonWebVisibleOperationNotFound
+                        : blink::SharedStorageWorkletErrorType::
+                              kRunNonWebVisibleOperationNotFound);
+  } else if (error_message ==
+             blink::
+                 kSharedStorageEmptyOperationDefinitionInstanceErrorMessage) {
+    LogSharedStorageWorkletError(
+        from_select_url
+            ? blink::SharedStorageWorkletErrorType::
+                  kSelectURLNonWebVisibleEmptyOperationDefinitionInstance
+            : blink::SharedStorageWorkletErrorType::
+                  kRunNonWebVisibleEmptyOperationDefinitionInstance);
+  } else if (error_message ==
+             blink::kSharedStorageCannotDeserializeDataErrorMessage) {
+    LogSharedStorageWorkletError(
+        from_select_url ? blink::SharedStorageWorkletErrorType::
+                              kSelectURLNonWebVisibleCannotDeserializeData
+                        : blink::SharedStorageWorkletErrorType::
+                              kRunNonWebVisibleCannotDeserializeData);
+  } else if (error_message ==
+             blink::kSharedStorageEmptyScriptResultErrorMessage) {
+    LogSharedStorageWorkletError(
+        from_select_url ? blink::SharedStorageWorkletErrorType::
+                              kSelectURLNonWebVisibleEmptyScriptResult
+                        : blink::SharedStorageWorkletErrorType::
+                              kRunNonWebVisibleEmptyScriptResult);
+  } else if (error_message ==
+                 blink::kSharedStorageReturnValueToIntErrorMessage &&
+             from_select_url) {
+    LogSharedStorageWorkletError(blink::SharedStorageWorkletErrorType::
+                                     kSelectURLNonWebVisibleReturnValueToInt);
+  } else if (error_message ==
+                 blink::kSharedStorageReturnValueOutOfRangeErrorMessage &&
+             from_select_url) {
+    LogSharedStorageWorkletError(
+        blink::SharedStorageWorkletErrorType::
+            kSelectURLNonWebVisibleReturnValueOutOfRange);
+  } else {
+    LogSharedStorageWorkletError(
+        from_select_url
+            ? blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisibleOther
+            : blink::SharedStorageWorkletErrorType::kRunNonWebVisibleOther);
+  }
+}
+
 SharedStorageURNMappingResult CreateSharedStorageURNMappingResult(
     StoragePartition* storage_partition,
     BrowserContext* browser_context,
@@ -67,8 +127,8 @@ SharedStorageURNMappingResult CreateSharedStorageURNMappingResult(
         urls_with_metadata,
     uint32_t index,
     double budget_remaining,
-    bool& failed_due_to_no_budget) {
-  DCHECK(!failed_due_to_no_budget);
+    blink::SharedStorageSelectUrlBudgetStatus& budget_status) {
+  DCHECK_EQ(budget_status, blink::SharedStorageSelectUrlBudgetStatus::kOther);
   DCHECK_GT(urls_with_metadata.size(), 0u);
   DCHECK_LT(index, urls_with_metadata.size());
   DCHECK(page);
@@ -77,12 +137,20 @@ SharedStorageURNMappingResult CreateSharedStorageURNMappingResult(
 
   // If we are running out of budget, consider this mapping to be failed. Use
   // the default URL, and there's no need to further charge the budget.
-  if (budget_to_charge > 0.0 && (budget_to_charge > budget_remaining ||
-                                 !page->CheckAndMaybeDebitSelectURLBudgets(
-                                     shared_storage_site, budget_to_charge))) {
-    failed_due_to_no_budget = true;
-    index = 0;
-    budget_to_charge = 0.0;
+  if (budget_to_charge > 0.0) {
+    budget_status = (budget_to_charge > budget_remaining)
+                        ? blink::SharedStorageSelectUrlBudgetStatus::
+                              kInsufficientSiteNavigationBudget
+                        : page->CheckAndMaybeDebitSelectURLBudgets(
+                              shared_storage_site, budget_to_charge);
+    if (budget_status !=
+        blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget) {
+      index = 0;
+      budget_to_charge = 0.0;
+    }
+  } else {
+    budget_status =
+        blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget;
   }
 
   GURL mapped_url = urls_with_metadata[index]->url;
@@ -101,7 +169,7 @@ SharedStorageURNMappingResult CreateSharedStorageURNMappingResult(
       std::move(fenced_frame_reporter));
 }
 
-// TODO(crbug.com/1335504): Consider moving this function to
+// TODO(crbug.com/40847123): Consider moving this function to
 // third_party/blink/common/fenced_frame/fenced_frame_utils.cc.
 bool IsValidFencedFrameReportingURL(const GURL& url) {
   if (!url.is_valid()) {
@@ -164,14 +232,14 @@ SharedStorageWorkletHost::SharedStorageWorkletHost(
     SharedStorageDocumentServiceImpl& document_service,
     const url::Origin& frame_origin,
     const GURL& script_source_url,
+    network::mojom::CredentialsMode credentials_mode,
     const std::vector<blink::mojom::OriginTrialFeature>& origin_trial_features,
     mojo::PendingAssociatedReceiver<blink::mojom::SharedStorageWorkletHost>
         worklet_host,
     blink::mojom::SharedStorageDocumentService::CreateWorkletCallback callback)
     : driver_(std::make_unique<SharedStorageRenderThreadWorkletDriver>(
-          &(static_cast<RenderFrameHostImpl&>(
-                document_service.render_frame_host())
-                .GetAgentSchedulingGroup()))),
+          document_service.render_frame_host(),
+          script_source_url)),
       document_service_(document_service.GetWeakPtr()),
       page_(
           static_cast<PageImpl&>(document_service.render_frame_host().GetPage())
@@ -183,10 +251,12 @@ SharedStorageWorkletHost::SharedStorageWorkletHost(
           storage_partition_->GetSharedStorageWorkletHostManager()),
       browser_context_(
           document_service.render_frame_host().GetBrowserContext()),
-      shared_storage_origin_(
-          document_service.render_frame_host().GetLastCommittedOrigin()),
+      shared_storage_origin_(url::Origin::Create(script_source_url)),
       shared_storage_site_(net::SchemefulSite(shared_storage_origin_)),
       main_frame_origin_(document_service.main_frame_origin()),
+      is_same_origin_worklet_(document_service.render_frame_host()
+                                  .GetLastCommittedOrigin()
+                                  .IsSameOriginWith(shared_storage_origin_)),
       creation_time_(base::TimeTicks::Now()) {
   GetContentClient()->browser()->OnSharedStorageWorkletHostCreated(
       &(document_service.render_frame_host()));
@@ -229,7 +299,10 @@ SharedStorageWorkletHost::SharedStorageWorkletHost(
       std::make_unique<SharedStorageURLLoaderFactoryProxy>(
           std::move(frame_url_loader_factory),
           url_loader_factory.InitWithNewPipeAndPassReceiver(), frame_origin,
-          script_source_url);
+          script_source_url, credentials_mode,
+          static_cast<RenderFrameHostImpl&>(
+              document_service_->render_frame_host())
+              .ComputeSiteForCookies());
 
   shared_storage_worklet_host_manager_->NotifySharedStorageAccessed(
       AccessType::kDocumentAddModule, document_service_->main_frame_id(),
@@ -269,16 +342,18 @@ SharedStorageWorkletHost::~SharedStorageWorkletHost() {
   while (it != unresolved_urns_.end()) {
     const GURL& urn_uuid = it->first;
 
-    bool failed_due_to_no_budget = false;
+    blink::SharedStorageSelectUrlBudgetStatus budget_status =
+        blink::SharedStorageSelectUrlBudgetStatus::kOther;
+
     std::optional<FencedFrameConfig> config =
         page_->fenced_frame_urls_map()
             .OnSharedStorageURNMappingResultDetermined(
-                urn_uuid, CreateSharedStorageURNMappingResult(
-                              storage_partition_, browser_context_, page_.get(),
-                              main_frame_origin_, shared_storage_origin_,
-                              shared_storage_site_, std::move(it->second),
-                              /*index=*/0, /*budget_remaining=*/0.0,
-                              failed_due_to_no_budget));
+                urn_uuid,
+                CreateSharedStorageURNMappingResult(
+                    storage_partition_, browser_context_, page_.get(),
+                    main_frame_origin_, shared_storage_origin_,
+                    shared_storage_site_, std::move(it->second),
+                    /*index=*/0, /*budget_remaining=*/0.0, budget_status));
 
     shared_storage_worklet_host_manager_->NotifyConfigPopulated(config);
 
@@ -292,9 +367,9 @@ void SharedStorageWorkletHost::SelectURL(
         urls_with_metadata,
     blink::CloneableMessage serialized_data,
     bool keep_alive_after_operation,
-    const std::optional<std::string>& context_id,
-    const std::optional<url::Origin>& aggregation_coordinator_origin,
+    blink::mojom::PrivateAggregationConfigPtr private_aggregation_config,
     SelectURLCallback callback) {
+  CHECK(private_aggregation_config);
   // `page_` can be null. See test
   // MainFrameDocumentAssociatedDataChangesOnSameSiteNavigation in
   // SitePerProcessBrowserTest.
@@ -306,7 +381,11 @@ void SharedStorageWorkletHost::SelectURL(
     return;
   }
 
-  // TODO(https://crbug.com/1505448): `document_service_` can somehow be null.
+  // Increment the page load metrics counter for selectURL calls.
+  GetContentClient()->browser()->OnSharedStorageSelectURLCalled(
+      &(page_->GetMainDocument()));
+
+  // TODO(crbug.com/40946074): `document_service_` can somehow be null.
   if (!document_service_) {
     std::move(callback).Run(
         /*success=*/false, /*error_message=*/
@@ -321,14 +400,15 @@ void SharedStorageWorkletHost::SelectURL(
         "Attempted to execute RunURLSelectionOperationOnWorklet with invalid "
         "URLs array length.");
     LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+        blink::SharedStorageWorkletErrorType::
+            kSelectURLNonWebVisibleInvalidURLArrayLength);
     return;
   }
 
   std::vector<SharedStorageEventParams::SharedStorageUrlSpecWithMetadata>
       converted_urls;
   for (const auto& url_with_metadata : urls_with_metadata) {
-    // TODO(crbug.com/1318970): Use `blink::IsValidFencedFrameURL()` here.
+    // TODO(crbug.com/40223071): Use `blink::IsValidFencedFrameURL()` here.
     if (!url_with_metadata->url.is_valid()) {
       // This could indicate a compromised renderer, since the URLs were already
       // validated in the renderer.
@@ -336,7 +416,8 @@ void SharedStorageWorkletHost::SelectURL(
           base::StrCat({"Invalid fenced frame URL '",
                         url_with_metadata->url.possibly_invalid_spec(), "'"}));
       LogSharedStorageWorkletError(
-          blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+          blink::SharedStorageWorkletErrorType::
+              kSelectURLNonWebVisibleInvalidFencedFrameURL);
       return;
     }
 
@@ -350,7 +431,8 @@ void SharedStorageWorkletHost::SelectURL(
                           metadata_pair.second.possibly_invalid_spec(),
                           "' for '", metadata_pair.first, "'"}));
         LogSharedStorageWorkletError(
-            blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+            blink::SharedStorageWorkletErrorType::
+                kSelectURLNonWebVisibleInvalidReportingURL);
         return;
       }
       reporting_metadata.insert(
@@ -361,19 +443,21 @@ void SharedStorageWorkletHost::SelectURL(
                                 std::move(reporting_metadata));
   }
 
-  if (context_id.has_value() &&
-      !blink::IsValidPrivateAggregationContextId(context_id.value())) {
+  if (private_aggregation_config->context_id.has_value() &&
+      !blink::IsValidPrivateAggregationContextId(
+          private_aggregation_config->context_id.value())) {
     receiver_.ReportBadMessage("Invalid context_id.");
-    LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+    LogSharedStorageWorkletError(blink::SharedStorageWorkletErrorType::
+                                     kSelectURLNonWebVisibleInvalidContextId);
     return;
   }
 
-  if (!IsSharedStorageSelectURLAllowed()) {
-    std::move(callback).Run(
-        /*success=*/false,
-        /*error_message=*/kSharedStorageSelectURLDisabledMessage,
-        /*result_config=*/std::nullopt);
+  if (!blink::IsValidPrivateAggregationFilteringIdMaxBytes(
+          private_aggregation_config->filtering_id_max_bytes)) {
+    receiver_.ReportBadMessage("Invalid fitering_id_byte_size.");
+    LogSharedStorageWorkletError(
+        blink::SharedStorageWorkletErrorType::
+            kSelectURLNonWebVisibleInvalidFilteringIdMaxBytes);
     return;
   }
 
@@ -381,11 +465,14 @@ void SharedStorageWorkletHost::SelectURL(
     receiver_.ReportBadMessage(
         "Received further operations when previous operation did not include "
         "the option \'keepAlive: true\'.");
-    LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+    LogSharedStorageWorkletError(blink::SharedStorageWorkletErrorType::
+                                     kSelectURLNonWebVisibleKeepAliveFalse);
     return;
   }
 
+  // TODO(crbug.com/335818079): If `keep_alive_after_operation_` switches to
+  // false, but the operation doesn't get executed (e.g. fails other checks), we
+  // should destroy this worklet host as well.
   keep_alive_after_operation_ = keep_alive_after_operation;
 
   size_t shared_storage_fenced_frame_root_count = 0u;
@@ -428,6 +515,36 @@ void SharedStorageWorkletHost::SelectURL(
   }
 
   GURL urn_uuid = pending_urn_uuid.value();
+
+  std::string debug_message;
+  bool prefs_failure_is_site_setting_specific = false;
+  if (!IsSharedStorageSelectURLAllowed(
+          &debug_message, &prefs_failure_is_site_setting_specific)) {
+    if (is_same_origin_worklet_ || !prefs_failure_is_site_setting_specific) {
+      std::move(callback).Run(
+          /*success=*/false,
+          /*error_message=*/
+          GetSharedStorageErrorMessage(debug_message,
+                                       kSharedStorageSelectURLDisabledMessage),
+          /*result_config=*/std::nullopt);
+    } else {
+      // When the worklet and the worklet creator are not same-origin, the user
+      // preferences for the worklet origin should not be revealed.
+      LogSharedStorageWorkletError(
+          blink::SharedStorageWorkletErrorType::
+              kSelectURLNonWebVisibleCrossOriginSharedStorageDisabled);
+      FencedFrameConfig config(urn_uuid, GURL());
+      std::move(callback).Run(
+          /*success=*/true, /*error_message=*/{},
+          /*result_config=*/
+          config.RedactFor(FencedFrameEntity::kEmbedder));
+    }
+    return;
+  }
+
+  // Further error checks/messages should be avoided, as they might indirectly
+  // reveal the user preferences for the worklet origin.
+
   IncrementPendingOperationsCount();
 
   std::vector<GURL> urls;
@@ -456,8 +573,8 @@ void SharedStorageWorkletHost::SelectURL(
 
   GetAndConnectToSharedStorageWorkletService()->RunURLSelectionOperation(
       name, urls, std::move(serialized_data),
-      MaybeBindPrivateAggregationHost(context_id,
-                                      aggregation_coordinator_origin),
+      MaybeConstructPrivateAggregationOperationDetails(
+          private_aggregation_config),
       base::BindOnce(
           &SharedStorageWorkletHost::
               OnRunURLSelectionOperationOnWorkletScriptExecutionFinished,
@@ -468,9 +585,9 @@ void SharedStorageWorkletHost::Run(
     const std::string& name,
     blink::CloneableMessage serialized_data,
     bool keep_alive_after_operation,
-    const std::optional<std::string>& context_id,
-    const std::optional<url::Origin>& aggregation_coordinator_origin,
+    blink::mojom::PrivateAggregationConfigPtr private_aggregation_config,
     RunCallback callback) {
+  CHECK(private_aggregation_config);
   // `page_` can be null. See test
   // MainFrameDocumentAssociatedDataChangesOnSameSiteNavigation in
   // SitePerProcessBrowserTest.
@@ -481,7 +598,7 @@ void SharedStorageWorkletHost::Run(
     return;
   }
 
-  // TODO(https://crbug.com/1505448): `document_service_` can somehow be null.
+  // TODO(crbug.com/40946074): `document_service_` can somehow be null.
   if (!document_service_) {
     std::move(callback).Run(
         /*success=*/false, /*error_message=*/
@@ -489,17 +606,21 @@ void SharedStorageWorkletHost::Run(
     return;
   }
 
-  if (context_id.has_value() &&
-      !blink::IsValidPrivateAggregationContextId(context_id.value())) {
+  if (private_aggregation_config->context_id.has_value() &&
+      !blink::IsValidPrivateAggregationContextId(
+          private_aggregation_config->context_id.value())) {
     receiver_.ReportBadMessage("Invalid context_id.");
-    LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kRunNonWebVisible);
+    LogSharedStorageWorkletError(blink::SharedStorageWorkletErrorType::
+                                     kRunNonWebVisibleInvalidContextId);
     return;
   }
 
-  if (!IsSharedStorageAllowed()) {
-    std::move(callback).Run(/*success=*/false,
-                            /*error_message=*/kSharedStorageDisabledMessage);
+  if (!blink::IsValidPrivateAggregationFilteringIdMaxBytes(
+          private_aggregation_config->filtering_id_max_bytes)) {
+    receiver_.ReportBadMessage("Invalid fitering_id_byte_size.");
+    LogSharedStorageWorkletError(
+        blink::SharedStorageWorkletErrorType::
+            kRunNonWebVisibleInvalidFilteringIdMaxBytes);
     return;
   }
 
@@ -508,11 +629,39 @@ void SharedStorageWorkletHost::Run(
         "Received further operations when previous operation did not include "
         "the option \'keepAlive: true\'.");
     LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kRunNonWebVisible);
+        blink::SharedStorageWorkletErrorType::kRunNonWebVisibleKeepAliveFalse);
     return;
   }
 
+  // TODO(crbug.com/335818079): If `keep_alive_after_operation_` switches to
+  // false, but the operation doesn't get executed (e.g. fails other checks), we
+  // should destroy this worklet host as well.
   keep_alive_after_operation_ = keep_alive_after_operation;
+
+  std::string debug_message;
+  bool prefs_failure_is_site_setting_specific = false;
+  if (!IsSharedStorageAllowed(&debug_message,
+                              &prefs_failure_is_site_setting_specific)) {
+    if (is_same_origin_worklet_ || !prefs_failure_is_site_setting_specific) {
+      std::move(callback).Run(
+          /*success=*/false,
+          /*error_message=*/GetSharedStorageErrorMessage(
+              debug_message, kSharedStorageDisabledMessage));
+    } else {
+      // When the worklet and the worklet creator are not same-origin, the user
+      // preferences for the worklet origin should not be revealed.
+      LogSharedStorageWorkletError(
+          blink::SharedStorageWorkletErrorType::
+              kRunNonWebVisibleCrossOriginSharedStorageDisabled);
+      std::move(callback).Run(
+          /*success=*/true,
+          /*error_message=*/{});
+    }
+    return;
+  }
+
+  // Further error checks/messages should be avoided, as they might indirectly
+  // reveal the user preferences for the worklet origin.
 
   IncrementPendingOperationsCount();
 
@@ -525,8 +674,8 @@ void SharedStorageWorkletHost::Run(
 
   GetAndConnectToSharedStorageWorkletService()->RunOperation(
       name, std::move(serialized_data),
-      MaybeBindPrivateAggregationHost(context_id,
-                                      aggregation_coordinator_origin),
+      MaybeConstructPrivateAggregationOperationDetails(
+          private_aggregation_config),
       base::BindOnce(&SharedStorageWorkletHost::OnRunOperationOnWorkletFinished,
                      weak_ptr_factory_.GetWeakPtr(), base::TimeTicks::Now()));
 }
@@ -559,10 +708,12 @@ void SharedStorageWorkletHost::SharedStorageSet(
     const std::u16string& value,
     bool ignore_if_present,
     SharedStorageSetCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage);
+        /*error_message=*/GetSharedStorageErrorMessage(
+            debug_message, kSharedStorageDisabledMessage));
     return;
   }
 
@@ -605,10 +756,12 @@ void SharedStorageWorkletHost::SharedStorageAppend(
     const std::u16string& key,
     const std::u16string& value,
     SharedStorageAppendCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage);
+        /*error_message=*/GetSharedStorageErrorMessage(
+            debug_message, kSharedStorageDisabledMessage));
     return;
   }
 
@@ -642,10 +795,12 @@ void SharedStorageWorkletHost::SharedStorageAppend(
 void SharedStorageWorkletHost::SharedStorageDelete(
     const std::u16string& key,
     SharedStorageDeleteCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage);
+        /*error_message=*/GetSharedStorageErrorMessage(
+            debug_message, kSharedStorageDisabledMessage));
     return;
   }
 
@@ -677,10 +832,12 @@ void SharedStorageWorkletHost::SharedStorageDelete(
 
 void SharedStorageWorkletHost::SharedStorageClear(
     SharedStorageClearCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage);
+        /*error_message=*/GetSharedStorageErrorMessage(
+            debug_message, kSharedStorageDisabledMessage));
     return;
   }
 
@@ -713,9 +870,12 @@ void SharedStorageWorkletHost::SharedStorageClear(
 void SharedStorageWorkletHost::SharedStorageGet(
     const std::u16string& key,
     SharedStorageGetCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(blink::mojom::SharedStorageGetStatus::kError,
-                            /*error_message=*/kSharedStorageDisabledMessage,
+                            /*error_message=*/
+                            GetSharedStorageErrorMessage(
+                                debug_message, kSharedStorageDisabledMessage),
                             /*value=*/{});
     return;
   }
@@ -759,11 +919,14 @@ void SharedStorageWorkletHost::SharedStorageGet(
 void SharedStorageWorkletHost::SharedStorageKeys(
     mojo::PendingRemote<blink::mojom::SharedStorageEntriesListener>
         pending_listener) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     mojo::Remote<blink::mojom::SharedStorageEntriesListener> listener(
         std::move(pending_listener));
     listener->DidReadEntries(
-        /*success=*/false, kSharedStorageDisabledMessage,
+        /*success=*/false,
+        GetSharedStorageErrorMessage(debug_message,
+                                     kSharedStorageDisabledMessage),
         /*entries=*/{}, /*has_more_entries=*/false, /*total_queued_to_send=*/0);
     return;
   }
@@ -782,11 +945,14 @@ void SharedStorageWorkletHost::SharedStorageKeys(
 void SharedStorageWorkletHost::SharedStorageEntries(
     mojo::PendingRemote<blink::mojom::SharedStorageEntriesListener>
         pending_listener) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     mojo::Remote<blink::mojom::SharedStorageEntriesListener> listener(
         std::move(pending_listener));
     listener->DidReadEntries(
-        /*success=*/false, kSharedStorageDisabledMessage,
+        /*success=*/false,
+        GetSharedStorageErrorMessage(debug_message,
+                                     kSharedStorageDisabledMessage),
         /*entries=*/{}, /*has_more_entries=*/false, /*total_queued_to_send=*/0);
     return;
   }
@@ -804,10 +970,14 @@ void SharedStorageWorkletHost::SharedStorageEntries(
 
 void SharedStorageWorkletHost::SharedStorageLength(
     SharedStorageLengthCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage, /*length=*/0);
+        /*error_message=*/
+        GetSharedStorageErrorMessage(debug_message,
+                                     kSharedStorageDisabledMessage),
+        /*length=*/0);
     return;
   }
 
@@ -842,10 +1012,14 @@ void SharedStorageWorkletHost::SharedStorageLength(
 
 void SharedStorageWorkletHost::SharedStorageRemainingBudget(
     SharedStorageRemainingBudgetCallback callback) {
-  if (!IsSharedStorageAllowed()) {
+  std::string debug_message;
+  if (!IsSharedStorageAllowed(&debug_message)) {
     std::move(callback).Run(
         /*success=*/false,
-        /*error_message=*/kSharedStorageDisabledMessage, /*bits=*/0.0);
+        /*error_message=*/
+        GetSharedStorageErrorMessage(debug_message,
+                                     kSharedStorageDisabledMessage),
+        /*bits=*/0.0);
     return;
   }
 
@@ -933,8 +1107,8 @@ void SharedStorageWorkletHost::OnRunOperationOnWorkletFinished(
     bool success,
     const std::string& error_message) {
   if (!success) {
-    LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kRunNonWebVisible);
+    LogSharedStorageWorkletErrorFromErrorMessage(/*from_select_url=*/false,
+                                                 error_message);
     if (document_service_) {
       DCHECK(!IsInKeepAlivePhase());
       devtools_instrumentation::LogWorkletMessage(
@@ -942,6 +1116,9 @@ void SharedStorageWorkletHost::OnRunOperationOnWorkletFinished(
               document_service_->render_frame_host()),
           blink::mojom::ConsoleMessageLevel::kError, error_message);
     }
+  } else {
+    LogSharedStorageWorkletError(
+        blink::SharedStorageWorkletErrorType::kSuccess);
   }
 
   base::UmaHistogramLongTimes(
@@ -966,7 +1143,8 @@ void SharedStorageWorkletHost::
     shared_storage_worklet_service_client_.ReportBadMessage(
         "Unexpected index number returned from selectURL().");
     LogSharedStorageWorkletError(
-        blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
+        blink::SharedStorageWorkletErrorType::
+            kSelectURLNonWebVisibleUnexpectedIndexReturned);
 
     unresolved_urns_.erase(it);
     DecrementPendingOperationsCount();
@@ -996,34 +1174,48 @@ void SharedStorageWorkletHost::OnRunURLSelectionOperationOnWorkletFinished(
   unresolved_urns_.erase(it);
 
   if (page_) {
-    bool failed_due_to_no_budget = false;
+    blink::SharedStorageSelectUrlBudgetStatus budget_status =
+        blink::SharedStorageSelectUrlBudgetStatus::kOther;
+
     SharedStorageURNMappingResult mapping_result =
         CreateSharedStorageURNMappingResult(
             storage_partition_, browser_context_, page_.get(),
             main_frame_origin_, shared_storage_origin_, shared_storage_site_,
             std::move(urls_with_metadata), index, budget_result.bits,
-            failed_due_to_no_budget);
+            budget_status);
+
+    // Log histograms. These do not need the `document_service_`.
+    blink::LogSharedStorageSelectURLBudgetStatus(budget_status);
+    if (budget_status !=
+        blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget) {
+      LogSharedStorageWorkletError(
+          blink::SharedStorageWorkletErrorType::
+              kSelectURLNonWebVisibleInsufficientBudget);
+    } else if (!script_execution_succeeded) {
+      LogSharedStorageWorkletErrorFromErrorMessage(
+          /*from_select_url=*/true, script_execution_error_message);
+    } else {
+      LogSharedStorageWorkletError(
+          blink::SharedStorageWorkletErrorType::kSuccess);
+    }
 
     if (document_service_) {
       DCHECK(!IsInKeepAlivePhase());
 
       // Let the insufficient-budget failure supersede the script failure.
-      if (failed_due_to_no_budget) {
+      if (budget_status !=
+          blink::SharedStorageSelectUrlBudgetStatus::kSufficientBudget) {
         devtools_instrumentation::LogWorkletMessage(
             static_cast<RenderFrameHostImpl&>(
                 document_service_->render_frame_host()),
             blink::mojom::ConsoleMessageLevel::kError,
             "Insufficient budget for selectURL().");
-        LogSharedStorageWorkletError(
-            blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
       } else if (!script_execution_succeeded) {
         devtools_instrumentation::LogWorkletMessage(
             static_cast<RenderFrameHostImpl&>(
                 document_service_->render_frame_host()),
             blink::mojom::ConsoleMessageLevel::kError,
             script_execution_error_message);
-        LogSharedStorageWorkletError(
-            blink::SharedStorageWorkletErrorType::kSelectURLNonWebVisible);
       }
     }
 
@@ -1048,7 +1240,7 @@ void SharedStorageWorkletHost::ExpireWorklet() {
 
   // This will remove this worklet host from the manager.
   shared_storage_worklet_host_manager_->ExpireWorkletHostForDocumentService(
-      document_service_.get());
+      document_service_.get(), this);
 
   // Do not add code after this. SharedStorageWorkletHost has been destroyed.
 }
@@ -1143,58 +1335,71 @@ SharedStorageWorkletHost::GetAndConnectToSharedStorageWorkletService() {
   return shared_storage_worklet_service_.get();
 }
 
-mojo::PendingRemote<blink::mojom::PrivateAggregationHost>
-SharedStorageWorkletHost::MaybeBindPrivateAggregationHost(
-    const std::optional<std::string>& context_id,
-    const std::optional<url::Origin>& aggregation_coordinator_origin) {
-  DCHECK(browser_context_);
+blink::mojom::PrivateAggregationOperationDetailsPtr
+SharedStorageWorkletHost::MaybeConstructPrivateAggregationOperationDetails(
+    const blink::mojom::PrivateAggregationConfigPtr&
+        private_aggregation_config) {
+  CHECK(browser_context_, base::NotFatalUntil::M128);
+  CHECK(private_aggregation_config);
 
   if (!blink::ShouldDefinePrivateAggregationInSharedStorage()) {
-    return mojo::PendingRemote<blink::mojom::PrivateAggregationHost>();
+    return nullptr;
   }
 
   PrivateAggregationManager* private_aggregation_manager =
       PrivateAggregationManager::GetManager(*browser_context_);
-  DCHECK(private_aggregation_manager);
+  CHECK(private_aggregation_manager, base::NotFatalUntil::M128);
 
-  mojo::PendingRemote<blink::mojom::PrivateAggregationHost>
-      pending_pa_host_remote;
+  blink::mojom::PrivateAggregationOperationDetailsPtr pa_operation_details =
+      blink::mojom::PrivateAggregationOperationDetails::New(
+          mojo::PendingRemote<blink::mojom::PrivateAggregationHost>(),
+          private_aggregation_config->filtering_id_max_bytes);
 
   std::optional<base::TimeDelta> timeout =
       (base::FeatureList::IsEnabled(blink::features::kSharedStorageAPIM118) &&
-       context_id)
+       private_aggregation_config->context_id)
           ? std::optional<base::TimeDelta>(base::Seconds(5))
           : std::nullopt;
 
+  // TODO(crbug.com/330744610): Allow filtering ID byte size to be set.
   bool success = private_aggregation_manager->BindNewReceiver(
       shared_storage_origin_, main_frame_origin_,
-      PrivateAggregationBudgetKey::Api::kSharedStorage, context_id,
-      std::move(timeout), aggregation_coordinator_origin,
-      pending_pa_host_remote.InitWithNewPipeAndPassReceiver());
+      PrivateAggregationBudgetKey::Api::kSharedStorage,
+      private_aggregation_config->context_id, std::move(timeout),
+      private_aggregation_config->aggregation_coordinator_origin,
+      private_aggregation_config->filtering_id_max_bytes,
+      pa_operation_details->pa_host.InitWithNewPipeAndPassReceiver());
   CHECK(success);
 
-  return pending_pa_host_remote;
+  return pa_operation_details;
 }
 
-bool SharedStorageWorkletHost::IsSharedStorageAllowed() {
+bool SharedStorageWorkletHost::IsSharedStorageAllowed(
+    std::string* out_debug_message,
+    bool* out_block_is_site_setting_specific) {
   RenderFrameHost* rfh =
       document_service_ ? &(document_service_->render_frame_host()) : nullptr;
   return GetContentClient()->browser()->IsSharedStorageAllowed(
-      browser_context_, rfh, main_frame_origin_, shared_storage_origin_);
+      browser_context_, rfh, main_frame_origin_, shared_storage_origin_,
+      out_debug_message, out_block_is_site_setting_specific);
 }
 
-bool SharedStorageWorkletHost::IsSharedStorageSelectURLAllowed() {
+bool SharedStorageWorkletHost::IsSharedStorageSelectURLAllowed(
+    std::string* out_debug_message,
+    bool* out_block_is_site_setting_specific) {
   CHECK(document_service_);
 
   // Will trigger a call to
   // `content_settings::PageSpecificContentSettings::BrowsingDataAccessed()` for
   // reporting purposes.
-  if (!IsSharedStorageAllowed()) {
+  if (!IsSharedStorageAllowed(out_debug_message,
+                              out_block_is_site_setting_specific)) {
     return false;
   }
 
   return GetContentClient()->browser()->IsSharedStorageSelectURLAllowed(
-      browser_context_, main_frame_origin_, shared_storage_origin_);
+      browser_context_, main_frame_origin_, shared_storage_origin_,
+      out_debug_message, out_block_is_site_setting_specific);
 }
 
 }  // namespace content

@@ -15,7 +15,7 @@
 --
 
 -- Count packages by package UID.
-CREATE PERFETTO TABLE internal_uid_package_count AS
+CREATE PERFETTO TABLE _uid_package_count AS
 SELECT uid, COUNT(1) AS cnt
 FROM package_list
 GROUP BY 1;
@@ -51,27 +51,27 @@ SELECT
     ELSE process.name
   END AS process_name,
   process.android_appid AS uid,
-  CASE WHEN internal_uid_package_count.cnt > 1 THEN TRUE ELSE NULL END AS shared_uid,
+  CASE WHEN _uid_package_count.cnt > 1 THEN TRUE ELSE NULL END AS shared_uid,
   plist.package_name,
   plist.version_code,
   plist.debuggable
 FROM process
-LEFT JOIN internal_uid_package_count ON process.android_appid = internal_uid_package_count.uid
+LEFT JOIN _uid_package_count ON process.android_appid = _uid_package_count.uid
 LEFT JOIN package_list plist
   ON (
     (
       process.android_appid = plist.uid
-      AND internal_uid_package_count.uid = plist.uid
+      AND _uid_package_count.uid = plist.uid
       AND (
         -- unique match
-        internal_uid_package_count.cnt = 1
+        _uid_package_count.cnt = 1
         -- or process name starts with the package name
         OR process.name GLOB plist.package_name || '*')
     )
     OR
     (
-      -- isolated processes can only be matched based on the name prefix
+      -- isolated processes can only be matched based on the name
       process.android_appid >= 90000 AND process.android_appid < 100000
-      AND STR_SPLIT(process.name, ':', 0) GLOB plist.package_name || '*'
+      AND STR_SPLIT(process.name, ':', 0) = plist.package_name
     )
   );

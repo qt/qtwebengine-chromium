@@ -37,8 +37,7 @@
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "tools/json_schema_compiler/util.h"
 
-namespace extensions {
-namespace declarative_net_request {
+namespace extensions::declarative_net_request {
 
 namespace {
 
@@ -97,7 +96,7 @@ ReadJSONRulesResult ParseRulesFromJSON(const RulesetID& ruleset_id,
   if (rules_list.size() > rule_limit && !is_dynamic_ruleset) {
     result.status = ReadJSONRulesResult::Status::kRuleCountLimitExceeded;
     result.error = ErrorUtils::FormatErrorMessage(
-        kIndexingRuleLimitExceeded, std::to_string(ruleset_id.value()));
+        kIndexingRuleLimitExceeded, base::NumberToString(ruleset_id.value()));
 
     return result;
   }
@@ -199,9 +198,10 @@ IndexAndPersistJSONRulesetResult IndexAndPersistRuleset(
     warnings.erase(warnings.begin() + kMaxUnparsedRulesWarnings,
                    warnings.end());
     warnings.push_back(CreateInstallWarning(
-        source.json_path(), ErrorUtils::FormatErrorMessage(
-                                kTooManyParseFailuresWarning,
-                                std::to_string(kMaxUnparsedRulesWarnings))));
+        source.json_path(),
+        ErrorUtils::FormatErrorMessage(
+            kTooManyParseFailuresWarning,
+            base::NumberToString(kMaxUnparsedRulesWarnings))));
   }
 
   return IndexAndPersistJSONRulesetResult::CreateSuccessResult(
@@ -478,5 +478,4 @@ FileBackedRulesetSource::FileBackedRulesetSource(base::FilePath json_path,
       json_path_(std::move(json_path)),
       indexed_path_(std::move(indexed_path)) {}
 
-}  // namespace declarative_net_request
-}  // namespace extensions
+}  // namespace extensions::declarative_net_request

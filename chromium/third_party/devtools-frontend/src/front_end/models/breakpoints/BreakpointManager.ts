@@ -29,8 +29,7 @@
  */
 
 import * as Common from '../../core/common/common.js';
-import * as Host from '../../core/host/host.js';
-import * as Platform from '../../core/platform/platform.js';
+import type * as Platform from '../../core/platform/platform.js';
 import {assertNotNullOrUndefined} from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -71,11 +70,9 @@ export class BreakpointManager extends Common.ObjectWrapper.ObjectWrapper<EventT
     this.targetManager = targetManager;
     this.debuggerWorkspaceBinding = debuggerWorkspaceBinding;
 
-    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.SET_ALL_BREAKPOINTS_EAGERLY)) {
-      this.storage.mute();
-      this.#setInitialBreakpoints(restoreInitialBreakpointCount ?? INITIAL_RESTORE_BREAKPOINT_COUNT);
-      this.storage.unmute();
-    }
+    this.storage.mute();
+    this.#setInitialBreakpoints(restoreInitialBreakpointCount ?? INITIAL_RESTORE_BREAKPOINT_COUNT);
+    this.storage.unmute();
 
     this.#workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeAdded, this.uiSourceCodeAdded, this);
     this.#workspace.addEventListener(Workspace.Workspace.Events.UISourceCodeRemoved, this.uiSourceCodeRemoved, this);
@@ -591,10 +588,6 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
   updateLastResolvedState(locations: Position[]|null): void {
     this.#lastResolvedState = locations;
 
-    if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.SET_ALL_BREAKPOINTS_EAGERLY)) {
-      return;
-    }
-
     let locationsOrUndefined: ScriptBreakpointLocation[]|undefined = undefined;
     if (locations) {
       locationsOrUndefined = locations.map(
@@ -815,7 +808,7 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
       return `${condition}\n\n//# sourceURL=${sourceUrl}` as SDK.DebuggerModel.BackendCondition;
     };
 
-    if (Root.Runtime.experiments.isEnabled('evaluateExpressionsWithSourceMaps') && location) {
+    if (location) {
       return SourceMapScopes.NamesResolver.allVariablesAtPosition(location)
           .then(
               nameMap => nameMap.size > 0 ?
@@ -840,10 +833,11 @@ export class Breakpoint implements SDK.TargetManager.SDKModelObserver<SDK.Debugg
 
   updateState(newState: BreakpointStorageState): void {
     // Only 'enabled', 'condition' and 'isLogpoint' can change (except during initialization).
-    Platform.DCHECK(
-        () => !this.#storageState ||
-            (this.#storageState.url === newState.url && this.#storageState.lineNumber === newState.lineNumber &&
-             this.#storageState.columnNumber === newState.columnNumber));
+    if (this.#storageState &&
+        (this.#storageState.url !== newState.url || this.#storageState.lineNumber !== newState.lineNumber ||
+         this.#storageState.columnNumber !== newState.columnNumber)) {
+      throw new Error('Invalid breakpoint state update');
+    }
     if (this.#storageState?.enabled === newState.enabled && this.#storageState?.condition === newState.condition &&
         this.#storageState?.isLogpoint === newState.isLogpoint) {
       return;
@@ -1283,7 +1277,6 @@ class Storage {
     for (const breakpoint of this.setting.get()) {
       this.breakpoints.set(Storage.computeId(breakpoint), breakpoint);
     }
-    Host.userMetrics.breakpointsRestoredFromStorage(this.breakpoints.size);
   }
 
   mute(): void {

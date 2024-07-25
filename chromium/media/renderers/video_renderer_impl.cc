@@ -478,7 +478,7 @@ void VideoRendererImpl::OnTimeStopped() {
 }
 
 void VideoRendererImpl::SetLatencyHint(
-    absl::optional<base::TimeDelta> latency_hint) {
+    std::optional<base::TimeDelta> latency_hint) {
   base::AutoLock auto_lock(lock_);
 
   latency_hint_ = latency_hint;
@@ -855,7 +855,7 @@ void VideoRendererImpl::ReportFrameRateIfNeeded_Locked() {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   lock_.AssertAcquired();
 
-  absl::optional<int> current_fps = fps_estimator_.ComputeFPS();
+  std::optional<int> current_fps = fps_estimator_.ComputeFPS();
   if (last_reported_fps_ && current_fps &&
       *last_reported_fps_ == *current_fps) {
     // Reported an FPS before, and it hasn't changed.
@@ -1077,8 +1077,8 @@ void VideoRendererImpl::PaintFirstFrame() {
   auto first_frame =
       algorithm_->Render(base::TimeTicks(), base::TimeTicks(), nullptr);
   DCHECK(first_frame);
-  CheckForMetadataChanges(first_frame->format(), first_frame->natural_size());
   sink_->PaintSingleFrame(first_frame);
+  CheckForMetadataChanges(first_frame->format(), first_frame->natural_size());
   painted_first_frame_ = true;
   paint_first_frame_cb_.Cancel();
 }

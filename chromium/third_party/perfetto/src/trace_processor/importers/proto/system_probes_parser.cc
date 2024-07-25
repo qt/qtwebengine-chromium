@@ -16,12 +16,12 @@
 
 #include "src/trace_processor/importers/proto/system_probes_parser.h"
 
-#include <set>
-
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_utils.h"
+#include "perfetto/ext/base/string_view.h"
 #include "perfetto/ext/traced/sys_stats_counters.h"
 #include "perfetto/protozero/proto_decoder.h"
+#include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
 #include "src/trace_processor/importers/common/metadata_tracker.h"
 #include "src/trace_processor/importers/common/process_tracker.h"
@@ -30,6 +30,7 @@
 #include "src/trace_processor/storage/metadata.h"
 #include "src/trace_processor/types/trace_processor_context.h"
 
+#include "protos/perfetto/common/builtin_clock.pbzero.h"
 #include "protos/perfetto/trace/ps/process_stats.pbzero.h"
 #include "protos/perfetto/trace/ps/process_tree.pbzero.h"
 #include "protos/perfetto/trace/system_info.pbzero.h"
@@ -106,6 +107,10 @@ std::optional<int> FingerprintToSdkVersion(const std::string& fingerprint) {
 SystemProbesParser::SystemProbesParser(TraceProcessorContext* context)
     : context_(context),
       utid_name_id_(context->storage->InternString("utid")),
+      ns_unit_id_(context->storage->InternString("ns")),
+      bytes_unit_id_(context->storage->InternString("bytes")),
+      available_chunks_unit_id_(
+          context->storage->InternString("available chunks")),
       num_forks_name_id_(context->storage->InternString("num_forks")),
       num_irq_total_name_id_(context->storage->InternString("num_irq_total")),
       num_softirq_total_name_id_(
@@ -163,6 +168,12 @@ SystemProbesParser::SystemProbesParser(TraceProcessorContext* context)
       context->storage->InternString("mem.smaps.pss.file");
   proc_stats_process_names_[ProcessStats::Process::kSmrPssShmemKbFieldNumber] =
       context->storage->InternString("mem.smaps.pss.shmem");
+  proc_stats_process_names_
+      [ProcessStats::Process::kRuntimeUserModeFieldNumber] =
+          context->storage->InternString("runtime.user_ns");
+  proc_stats_process_names_
+      [ProcessStats::Process::kRuntimeKernelModeFieldNumber] =
+          context->storage->InternString("runtime.kernel_ns");
 
   using PsiResource = protos::pbzero::SysStats::PsiSample::PsiResource;
   sys_stats_psi_resource_names_[PsiResource::PSI_RESOURCE_UNSPECIFIED] =
@@ -201,6 +212,8 @@ void SystemProbesParser::ParseDiskStats(int64_t ts, ConstBytes blob) {
     context_->event_tracker->PushCounter(ts, value, track);
   };
 
+  // TODO(rsavitski): with the UI now supporting rate mode for counter tracks,
+  // this is likely redundant.
   auto calculate_throughput = [](double amount, int64_t diff) {
     return diff == 0 ? 0 : amount * MS_PER_SEC / static_cast<double>(diff);
   };
@@ -270,9 +283,10 @@ void SystemProbesParser::ParseSysStats(int64_t ts, ConstBytes blob) {
     }
     // /proc/meminfo counters are in kB, convert to bytes
     TrackId track = context_->track_tracker->InternGlobalCounterTrack(
-        TrackTracker::Group::kMemory, meminfo_strs_id_[key]);
+        TrackTracker::Group::kMemory, meminfo_strs_id_[key], {},
+        bytes_unit_id_);
     context_->event_tracker->PushCounter(
-        ts, static_cast<double>(mi.value()) * 1024., track);
+        ts, static_cast<double>(mi.value()) * 1024, track);
   }
 
   for (auto it = sys_stats.devfreq(); it; ++it) {
@@ -395,20 +409,23 @@ void SystemProbesParser::ParseSysStats(int64_t ts, ConstBytes blob) {
         ts, static_cast<double>(sys_stats.num_softirq_total()), track);
   }
 
+  // Fragmentation of the kernel binary buddy memory allocator.
+  // See /proc/buddyinfo in `man 5 proc`.
   for (auto it = sys_stats.buddy_info(); it; ++it) {
     protos::pbzero::SysStats::BuddyInfo::Decoder bi(*it);
     int order = 0;
     for (auto order_it = bi.order_pages(); order_it; ++order_it) {
       std::string node = bi.node().ToStdString();
       std::string zone = bi.zone().ToStdString();
-      uint32_t size_kb =
+      uint32_t chunk_size_kb =
           static_cast<uint32_t>(((1 << order) * page_size_) / 1024);
       base::StackString<255> counter_name("mem.buddyinfo[%s][%s][%u kB]",
-                                          node.c_str(), zone.c_str(), size_kb);
+                                          node.c_str(), zone.c_str(),
+                                          chunk_size_kb);
       StringId name =
           context_->storage->InternString(counter_name.string_view());
       TrackId track = context_->track_tracker->InternGlobalCounterTrack(
-          TrackTracker::Group::kMemory, name);
+          TrackTracker::Group::kMemory, name, {}, available_chunks_unit_id_);
       context_->event_tracker->PushCounter(ts, static_cast<double>(*order_it),
                                            track);
       order++;
@@ -419,6 +436,8 @@ void SystemProbesParser::ParseSysStats(int64_t ts, ConstBytes blob) {
     ParseDiskStats(ts, *it);
   }
 
+  // Pressure Stall Information. See
+  // https://docs.kernel.org/accounting/psi.html.
   for (auto it = sys_stats.psi(); it; ++it) {
     protos::pbzero::SysStats::PsiSample::Decoder psi(*it);
 
@@ -429,11 +448,12 @@ void SystemProbesParser::ParseSysStats(int64_t ts, ConstBytes blob) {
       continue;
     }
 
+    // Unit = total blocked time on this resource in nanoseconds.
     // TODO(b/315152880): Consider moving psi entries for cpu/io/memory into
     // groups specific to that resource (e.g., `Group::kMemory`).
     TrackId track = context_->track_tracker->InternGlobalCounterTrack(
         TrackTracker::Group::kDeviceState,
-        sys_stats_psi_resource_names_[resource]);
+        sys_stats_psi_resource_names_[resource], {}, ns_unit_id_);
     context_->event_tracker->PushCounter(
         ts, static_cast<double>(psi.total_ns()), track);
   }
@@ -457,31 +477,74 @@ void SystemProbesParser::ParseProcessTree(ConstBytes blob) {
       context_->process_tracker->UpdateNamespacedProcess(pid, std::move(nspid));
     }
 
-    auto raw_cmdline = proc.cmdline();
+    protozero::RepeatedFieldIterator<protozero::ConstChars> raw_cmdline =
+        proc.cmdline();
     base::StringView argv0 = raw_cmdline ? *raw_cmdline : base::StringView();
-    // Chrome child process overwrites /proc/self/cmdline and replaces all
-    // '\0' with ' '. This makes argv0 contain the full command line. Extract
-    // the actual argv0 if it's Chrome.
-    static const char kChromeBinary[] = "/chrome ";
-    auto pos = argv0.find(kChromeBinary);
-    if (pos != base::StringView::npos) {
-      argv0 = argv0.substr(0, pos + strlen(kChromeBinary) - 1);
+    base::StringView joined_cmdline{};
+
+    // Special case: workqueue kernel threads (kworker). Worker threads are
+    // organised in pools, which can process work from different workqueues.
+    // When we read their thread name via procfs, the kernel takes a dedicated
+    // codepath that appends the name of the current/last workqueue that the
+    // worker processed. This is highly transient and therefore misleading to
+    // users if we keep using this name for the kernel thread.
+    // Example:
+    //   kworker/45:2-mm_percpu_wq
+    //   ^           ^
+    //   [worker id ][last queue ]
+    //
+    // Instead, use a truncated version of the process name that identifies just
+    // the worker itself. For the above example, this would be "kworker/45:2".
+    //
+    // https://github.com/torvalds/linux/blob/6d280f4d760e3bcb4a8df302afebf085b65ec982/kernel/workqueue.c#L5336
+    uint32_t kThreaddPid = 2;
+    if (ppid == kThreaddPid && argv0.StartsWith("kworker/")) {
+      size_t delim_loc = std::min(argv0.find('+', 8), argv0.find('-', 8));
+      if (delim_loc != base::StringView::npos) {
+        argv0 = argv0.substr(0, delim_loc);
+        joined_cmdline = argv0;
+      }
+    }
+
+    // Special case: some processes rewrite their cmdline with spaces as a
+    // separator instead of a NUL byte. Assume that's the case if there's only a
+    // single cmdline element. This will be wrong for binaries that have spaces
+    // in their path and are invoked without additional arguments, but those are
+    // very rare. The full cmdline will still be correct either way.
+    if (bool(++proc.cmdline()) == false) {
+      size_t delim_pos = argv0.find(' ');
+      if (delim_pos != base::StringView::npos) {
+        argv0 = argv0.substr(0, delim_pos);
+      }
     }
 
     std::string cmdline_str;
-    for (auto cmdline_it = raw_cmdline; cmdline_it;) {
-      auto cmdline_part = *cmdline_it;
-      cmdline_str.append(cmdline_part.data, cmdline_part.size);
+    if (joined_cmdline.empty()) {
+      for (auto cmdline_it = raw_cmdline; cmdline_it;) {
+        auto cmdline_part = *cmdline_it;
+        cmdline_str.append(cmdline_part.data, cmdline_part.size);
 
-      if (++cmdline_it)
-        cmdline_str.append(" ");
+        if (++cmdline_it)
+          cmdline_str.append(" ");
+      }
+      joined_cmdline = base::StringView(cmdline_str);
     }
-    base::StringView cmdline = base::StringView(cmdline_str);
     UniquePid upid = context_->process_tracker->SetProcessMetadata(
-        pid, ppid, argv0, cmdline);
+        pid, ppid, argv0, joined_cmdline);
+
     if (proc.has_uid()) {
       context_->process_tracker->SetProcessUid(
           upid, static_cast<uint32_t>(proc.uid()));
+    }
+
+    // note: early kernel threads can have an age of zero (at tick resolution)
+    if (proc.has_process_start_from_boot()) {
+      base::StatusOr<int64_t> start_ts = context_->clock_tracker->ToTraceTime(
+          protos::pbzero::BUILTIN_CLOCK_BOOTTIME,
+          static_cast<int64_t>(proc.process_start_from_boot()));
+      if (start_ts.ok()) {
+        context_->process_tracker->SetStartTsIfUnset(upid, *start_ts);
+      }
     }
   }
 
@@ -511,8 +574,6 @@ void SystemProbesParser::ParseProcessTree(ConstBytes blob) {
 void SystemProbesParser::ParseProcessStats(int64_t ts, ConstBytes blob) {
   using Process = protos::pbzero::ProcessStats::Process;
   protos::pbzero::ProcessStats::Decoder stats(blob.data, blob.size);
-  const auto kOomScoreAdjFieldNumber =
-      protos::pbzero::ProcessStats::Process::kOomScoreAdjFieldNumber;
   for (auto it = stats.processes(); it; ++it) {
     // Maps a process counter field it to its value.
     // E.g., 4 := 1024 -> "mem.rss.anon" := 1024.
@@ -540,9 +601,13 @@ void SystemProbesParser::ParseProcessStats(int64_t ts, ConstBytes blob) {
       if (is_counter_field) {
         // Memory counters are in KB, keep values in bytes in the trace
         // processor.
-        counter_values[fld.id()] = fld.id() == kOomScoreAdjFieldNumber
-                                       ? fld.as_int64()
-                                       : fld.as_int64() * 1024;
+        int64_t value = fld.as_int64();
+        if (fld.id() != Process::kOomScoreAdjFieldNumber &&
+            fld.id() != Process::kRuntimeUserModeFieldNumber &&
+            fld.id() != Process::kRuntimeKernelModeFieldNumber) {
+          value = value * 1024;  // KB -> B
+        }
+        counter_values[fld.id()] = value;
         has_counter[fld.id()] = true;
       } else {
         // Chrome fields are processed by ChromeSystemProbesParser.
@@ -601,6 +666,8 @@ void SystemProbesParser::ParseProcessFds(int64_t ts,
 
 void SystemProbesParser::ParseSystemInfo(ConstBytes blob) {
   protos::pbzero::SystemInfo::Decoder packet(blob.data, blob.size);
+  SystemInfoTracker* system_info_tracker =
+      SystemInfoTracker::GetOrCreate(context_);
   if (packet.has_utsname()) {
     ConstBytes utsname_blob = packet.utsname();
     protos::pbzero::Utsname::Decoder utsname(utsname_blob.data,
@@ -608,15 +675,13 @@ void SystemProbesParser::ParseSystemInfo(ConstBytes blob) {
     base::StringView machine = utsname.machine();
     SyscallTracker* syscall_tracker = SyscallTracker::GetOrCreate(context_);
     Architecture arch = SyscallTable::ArchFromString(machine);
-    if (arch != kUnknown) {
+    if (arch != Architecture::kUnknown) {
       syscall_tracker->SetArchitecture(arch);
     } else {
       PERFETTO_ELOG("Unknown architecture %s. Syscall traces will not work.",
                     machine.ToStdString().c_str());
     }
 
-    SystemInfoTracker* system_info_tracker =
-        SystemInfoTracker::GetOrCreate(context_);
     system_info_tracker->SetKernelVersion(utsname.sysname(), utsname.release());
 
     StringPool::Id sysname_id =
@@ -666,13 +731,14 @@ void SystemProbesParser::ParseSystemInfo(ConstBytes blob) {
         metadata::android_sdk_version, Variadic::Integer(*opt_sdk_version));
   }
 
-  int64_t hz = packet.hz();
-  if (hz > 0)
-    ms_per_tick_ = 1000u / static_cast<uint64_t>(hz);
-
   page_size_ = packet.page_size();
-  if (!page_size_)
+  if (!page_size_) {
     page_size_ = 4096;
+  }
+
+  if (packet.has_num_cpus()) {
+    system_info_tracker->SetNumCpus(packet.num_cpus());
+  }
 }
 
 void SystemProbesParser::ParseCpuInfo(ConstBytes blob) {
@@ -695,6 +761,7 @@ void SystemProbesParser::ParseCpuInfo(ConstBytes blob) {
       cluster_id++;
     }
     cpu_row.cluster_id = cluster_id;
+    cpu_row.machine_id = context_->machine_id();
 
     last_cpu_freqs = freqs;
     tables::CpuTable::Id cpu_row_id =
@@ -705,6 +772,7 @@ void SystemProbesParser::ParseCpuInfo(ConstBytes blob) {
       tables::CpuFreqTable::Row cpu_freq_row;
       cpu_freq_row.cpu_id = cpu_row_id;
       cpu_freq_row.freq = freq;
+      cpu_freq_row.machine_id = context_->machine_id();
       context_->storage->mutable_cpu_freq_table()->Insert(cpu_freq_row);
     }
   }

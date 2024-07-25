@@ -6,6 +6,7 @@
 #define COMPONENTS_SUPERVISED_USER_CORE_BROWSER_PROTO_FETCHER_H_
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -27,7 +28,7 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/supervised_user/core/browser/api_access_token_fetcher.h"
 #include "components/supervised_user/core/browser/fetcher_config.h"
-#include "components/supervised_user/core/browser/proto/kidschromemanagement_messages.pb.h"
+#include "components/supervised_user/core/browser/proto/kidsmanagement_messages.pb.h"
 #include "components/supervised_user/core/browser/proto/permissions_common.pb.h"
 #include "components/supervised_user/core/browser/proto/test.pb.h"
 #include "components/supervised_user/core/common/supervised_user_constants.h"
@@ -40,7 +41,6 @@
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/protobuf/src/google/protobuf/message_lite.h"
 #include "url/gurl.h"
 
@@ -169,10 +169,11 @@ class Metrics {
     kRetryCount,
     kAccessTokenLatency,
     kApiLatency,
+    kAuthError,
   };
 
   Metrics() = delete;
-  static absl::optional<Metrics> FromConfig(const FetcherConfig& config);
+  static std::optional<Metrics> FromConfig(const FetcherConfig& config);
 
   void RecordStatus(const ProtoFetcherStatus& status) const;
   void RecordLatency() const;
@@ -180,6 +181,7 @@ class Metrics {
   void RecordApiLatency(
       ProtoFetcherStatus::HttpStatusOrNetErrorType http_status_or_net_error);
   virtual void RecordStatusLatency(const ProtoFetcherStatus& status) const;
+  void RecordAuthError(const ProtoFetcherStatus& status) const;
   void RecordHttpStatusOrNetError(const ProtoFetcherStatus& status) const;
 
  protected:
@@ -227,7 +229,7 @@ class Metrics {
 class OverallMetrics final : public Metrics {
  public:
   OverallMetrics() = delete;
-  static absl::optional<OverallMetrics> FromConfig(const FetcherConfig& config);
+  static std::optional<OverallMetrics> FromConfig(const FetcherConfig& config);
 
   // Per-status latency is not defined for OverallMetrics.
   void RecordStatusLatency(const ProtoFetcherStatus& status) const override;
@@ -282,13 +284,13 @@ class AbstractProtoFetcher {
 
  private:
   // Returns payload when it's eligible for the request type.
-  absl::optional<std::string> GetRequestPayload() const;
+  std::optional<std::string> GetRequestPayload() const;
 
   std::unique_ptr<network::SimpleURLLoader> simple_url_loader_;
   const std::string payload_;
   const FetcherConfig config_;
   const FetcherConfig::PathArgs args_;
-  absl::optional<Metrics> metrics_;
+  std::optional<Metrics> metrics_;
 
   // Entrypoint of the fetch process, which starts with ApiAccessToken access
   // followed by a request made with SimpleURLLoader. Purposely made last field
@@ -351,6 +353,32 @@ class TypedProtoFetcher : public AbstractProtoFetcher {
   Callback callback_;
 };
 
+// Overlay over ProtoFetcher that only cares about status of the response.
+// Every instance of Fetcher is disposable and should be
+// used only once.
+class StatusFetcher : public AbstractProtoFetcher {
+ public:
+  using Callback = base::OnceCallback<void(const ProtoFetcherStatus&)>;
+
+  StatusFetcher() = delete;
+  StatusFetcher(
+      signin::IdentityManager& identity_manager,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
+      std::string_view payload,
+      const FetcherConfig& fetcher_config,
+      const FetcherConfig::PathArgs& args,
+      Callback callback);
+  ~StatusFetcher() override;
+
+ protected:
+  void OnError(const ProtoFetcherStatus& status) override;
+  void OnResponse(std::unique_ptr<std::string> response_body) override;
+
+ private:
+  void OnStatus(const ProtoFetcherStatus& status);
+  Callback callback_;
+};
+
 // Use instance of ProtoFetcher to create fetch process which is
 // unstarted yet.
 template <typename Response>
@@ -372,11 +400,17 @@ class ProtoFetcher {
         args_(args) {}
   virtual ~ProtoFetcher() = default;
 
+  // Kicks off the fetching process. The fetcher must not be started before
+  // calling this method.
   virtual void Start(Callback callback) {
+    CHECK(!fetcher_) << "Only stopped fetcher can be started.";
     fetcher_ = std::make_unique<TypedProtoFetcher<Response>>(
         identity_manager_.get(), url_loader_factory_, payload_, config_, args_,
         std::move(callback));
   }
+
+  // Terminates the fetching process. The fetcher must be still operating while
+  // calling this method.
   virtual void Stop() {
     CHECK(fetcher_) << "Only started fetcher can be stopped.";
     fetcher_.reset();
@@ -452,6 +486,7 @@ class RetryingFetcherImpl final : public ProtoFetcher<Response> {
   void OnRetriedResponse(const ProtoFetcherStatus& status,
                          std::unique_ptr<Response> response) {
     if (ShouldRetry(status)) {
+      Stop();
       backoff_entry_.InformOfRequest(/*succeeded=*/false);
       timer_.Start(FROM_HERE, backoff_entry_.GetTimeUntilRelease(), this,
                    &RetryingFetcherImpl<Response>::Retry);
@@ -476,7 +511,7 @@ class RetryingFetcherImpl final : public ProtoFetcher<Response> {
   net::BackoffEntry backoff_entry_;
   int retry_count_{0};
 
-  const absl::optional<OverallMetrics> metrics_;
+  const std::optional<OverallMetrics> metrics_;
 };
 
 // Component for managing multiple fetches at once.
@@ -530,30 +565,28 @@ class ParallelFetchManager {
 
 namespace {
 
-using ClassifyUrlFetcher =
-    ProtoFetcher<kids_chrome_management::ClassifyUrlResponse>;
+using ClassifyUrlFetcher = ProtoFetcher<kidsmanagement::ClassifyUrlResponse>;
 using ListFamilyMembersFetcher =
-    ProtoFetcher<kids_chrome_management::ListFamilyMembersResponse>;
+    ProtoFetcher<kidsmanagement::ListMembersResponse>;
 using PermissionRequestFetcher =
-    ProtoFetcher<kids_chrome_management::CreatePermissionRequestResponse>;
+    ProtoFetcher<kidsmanagement::CreatePermissionRequestResponse>;
 }  // namespace
 
 // Fetches list family members. The returned fetcher is already started.
-std::unique_ptr<ProtoFetcher<kids_chrome_management::ListFamilyMembersResponse>>
+std::unique_ptr<ProtoFetcher<kidsmanagement::ListMembersResponse>>
 FetchListFamilyMembers(
     signin::IdentityManager& identity_manager,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-    TypedProtoFetcher<
-        kids_chrome_management::ListFamilyMembersResponse>::Callback callback,
+    TypedProtoFetcher<kidsmanagement::ListMembersResponse>::Callback callback,
     const FetcherConfig& config = kListFamilyMembersConfig);
 
 // Creates a disposable instance of an access token consumer that will classify
 // the URL for supervised user.
-std::unique_ptr<ProtoFetcher<kids_chrome_management::ClassifyUrlResponse>>
+std::unique_ptr<ProtoFetcher<kidsmanagement::ClassifyUrlResponse>>
 CreateClassifyURLFetcher(
     signin::IdentityManager& identity_manager,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-    const kids_chrome_management::ClassifyUrlRequest& request,
+    const kidsmanagement::ClassifyUrlRequest& request,
     const FetcherConfig& config = kClassifyUrlConfig);
 
 // Creates a disposable instance of an access token consumer that will create
@@ -563,12 +596,11 @@ CreateClassifyURLFetcher(
 // which is mapped to the body of the `CreatePermissionRequestRequest`
 // message by the http to gRPC mapping on the server side.
 // See go/rpc-create-permission-request.
-std::unique_ptr<
-    ProtoFetcher<kids_chrome_management::CreatePermissionRequestResponse>>
+std::unique_ptr<ProtoFetcher<kidsmanagement::CreatePermissionRequestResponse>>
 CreatePermissionRequestFetcher(
     signin::IdentityManager& identity_manager,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-    const kids_chrome_management::PermissionRequest& request,
+    const kidsmanagement::PermissionRequest& request,
     const FetcherConfig& config = kCreatePermissionRequestConfig);
 
 std::unique_ptr<ProtoFetcher<Response>> CreateTestFetcher(

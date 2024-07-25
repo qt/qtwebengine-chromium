@@ -10,6 +10,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -83,7 +84,7 @@ class V8ValueConverterImpl::FromV8ValueState {
     }
 
    private:
-    raw_ptr<FromV8ValueState, ExperimentalRenderer> state_;
+    raw_ptr<FromV8ValueState> state_;
   };
 
   explicit FromV8ValueState(bool avoid_identity_hash_for_testing)
@@ -176,7 +177,7 @@ class V8ValueConverterImpl::ScopedUniquenessGuard {
 
  private:
   typedef std::multimap<int, v8::Local<v8::Object> > HashToHandleMap;
-  raw_ptr<V8ValueConverterImpl::FromV8ValueState, ExperimentalRenderer> state_;
+  raw_ptr<V8ValueConverterImpl::FromV8ValueState> state_;
   v8::Local<v8::Object> value_;
   bool is_valid_;
 };
@@ -241,8 +242,8 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
     v8::Local<v8::Object> creation_context,
     base::ValueView value) const {
   struct Visitor {
-    raw_ptr<const V8ValueConverterImpl, ExperimentalRenderer> converter;
-    raw_ptr<v8::Isolate, ExperimentalRenderer> isolate;
+    raw_ptr<const V8ValueConverterImpl> converter;
+    raw_ptr<v8::Isolate> isolate;
     v8::Local<v8::Object> creation_context;
 
     v8::Local<v8::Value> operator()(absl::monostate value) {
@@ -261,7 +262,7 @@ v8::Local<v8::Value> V8ValueConverterImpl::ToV8ValueImpl(
       return v8::Number::New(isolate, value);
     }
 
-    v8::Local<v8::Value> operator()(base::StringPiece value) {
+    v8::Local<v8::Value> operator()(std::string_view value) {
       return v8::String::NewFromUtf8(isolate, value.data(),
                                      v8::NewStringType::kNormal, value.length())
           .ToLocalChecked();
@@ -503,10 +504,11 @@ std::unique_ptr<base::Value> V8ValueConverterImpl::FromV8ArrayBuffer(
   }
 
   if (val->IsArrayBuffer()) {
-    auto backing_store = val.As<v8::ArrayBuffer>()->GetBackingStore();
-    const auto* data = static_cast<const uint8_t*>(backing_store->Data());
+    auto array_buffer = val.As<v8::ArrayBuffer>();
+    const auto* data = static_cast<const uint8_t*>(array_buffer->Data());
+    const size_t byte_length = array_buffer->ByteLength();
     return base::Value::ToUniquePtrValue(
-        base::Value(base::make_span(data, backing_store->ByteLength())));
+        base::Value(base::make_span(data, byte_length)));
   }
   if (val->IsArrayBufferView()) {
     v8::Local<v8::ArrayBufferView> view = val.As<v8::ArrayBufferView>();
@@ -557,7 +559,7 @@ std::unique_ptr<base::Value> V8ValueConverterImpl::FromV8Object(
   // See also http://crbug.com/330559.
   base::Value::Dict result;
 
-  if (val->InternalFieldCount())
+  if (val->IsApiWrapper())
     return std::make_unique<base::Value>(std::move(result));
 
   v8::Local<v8::Array> property_names;

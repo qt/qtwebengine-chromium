@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <utility>
 
 #include "base/command_line.h"
@@ -35,7 +36,6 @@
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
@@ -58,10 +58,17 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_id.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/switches.h"
+#include "pdf/buildflags.h"
 #include "url/origin.h"
+
+#if BUILDFLAG(ENABLE_PDF)
+#include "components/pdf/common/pdf_util.h"
+#include "pdf/pdf_features.h"
+#endif  // BUILDFLAG(ENABLE_PDF)
 
 using content::DevToolsAgentHost;
 using content::RenderProcessHost;
@@ -87,6 +94,31 @@ void CopyDebuggee(Debuggee* dst, const Debuggee& src) {
   dst->extension_id = src.extension_id;
   dst->target_id = src.target_id;
 }
+
+void DebuggerSessionFromDebugee(DebuggerSession& dst,
+                                const Debuggee& src,
+                                std::string* maybe_session_id) {
+  dst.tab_id = src.tab_id;
+  dst.extension_id = src.extension_id;
+  dst.target_id = src.target_id;
+  if (maybe_session_id) {
+    dst.session_id = *maybe_session_id;
+  }
+}
+
+void DebuggeeFromDebuggerSession(Debuggee& dst, const DebuggerSession& src) {
+  dst.tab_id = src.tab_id;
+  dst.extension_id = src.extension_id;
+  dst.target_id = src.target_id;
+}
+
+#if BUILDFLAG(ENABLE_PDF)
+// Returns whether `url` is the URL for the built-in PDF extension.
+bool IsPdfExtensionUrl(const GURL& url) {
+  return url.scheme() == kExtensionScheme &&
+         url.host() == extension_misc::kPdfExtensionId;
+}
+#endif  // BUILDFLAG(ENABLE_PDF)
 
 bool ExtensionMayAttachToTargetProfile(Profile* extension_profile,
                                        bool allow_incognito_access,
@@ -116,12 +148,23 @@ bool ExtensionMayAttachToURL(const Extension& extension,
   // NOTE: The `debugger` permission implies all URLs access (and indicates
   // such to the user), so we don't check explicit page access. However, we
   // still need to check if it's an otherwise-restricted URL.
-  if (extension.permissions_data()->IsRestrictedUrl(url, error))
+  // NOTE: blob URLs are generally restricted but debugger should be able to
+  // attach if it has access to the origin that created the blob.
+  // See https://crbug.com/1492134.
+  const GURL& url_for_restriction_check =
+      url.SchemeIsBlob() ? url::Origin::Create(url).GetURL() : url;
+  if (extension.permissions_data()->IsRestrictedUrl(url_for_restriction_check,
+                                                    error)) {
     return false;
+  }
 
   // Policy blocked hosts supersede the `debugger` permission.
-  if (extension.permissions_data()->IsPolicyBlockedHost(url))
+  if (extension.permissions_data()->IsPolicyBlockedHost(url) ||
+      extension.permissions_data()->IsPolicyBlockedHost(
+          url_for_restriction_check)) {
+    *error = debugger_api_constants::kRestrictedError;
     return false;
+  }
 
   if (url.SchemeIsFile() &&
       !util::AllowFileAccess(extension.id(), extension_profile)) {
@@ -170,6 +213,23 @@ bool ExtensionMayAttachToRenderFrameHost(
         if (MimeHandlerViewGuest::FromRenderFrameHost(render_frame_host)) {
           return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
         }
+
+#if BUILDFLAG(ENABLE_PDF)
+        // The PDF extension frame would normally prevent all other frames in
+        // the frame tree from being attachable. Skip it so this doesn't occur.
+        // This should be okay, since the PDF extension frame and PDF content
+        // frame aren't listed in chrome.debugger.getTargets(). Check both the
+        // last committed origin and the SiteURL for the PDF extension frame,
+        // because this method may be called in the middle of a navigation where
+        // the SiteURL has been updated but navigation hasn't committed yet.
+        if (chrome_pdf::features::IsOopifPdfEnabled() &&
+            (IsPdfExtensionOrigin(
+                 render_frame_host->GetLastCommittedOrigin()) ||
+             IsPdfExtensionUrl(
+                 render_frame_host->GetSiteInstance()->GetSiteURL()))) {
+          return content::RenderFrameHost::FrameIterationAction::kContinue;
+        }
+#endif  // BUILDFLAG(ENABLE_PDF)
 
         if (render_frame_host->GetWebUI()) {
           *error = debugger_api_constants::kRestrictedError;
@@ -272,13 +332,14 @@ class ExtensionDevToolsClientHost : public content::DevToolsAgentHostClient,
   std::string GetTypeForMetrics() override { return "Extension"; }
 
   bool Attach();
-  const std::string& extension_id() { return extension_->id(); }
+  const ExtensionId& extension_id() { return extension_->id(); }
   DevToolsAgentHost* agent_host() { return agent_host_.get(); }
   void RespondDetachedToPendingRequests();
   void Close();
   void SendMessageToBackend(DebuggerSendCommandFunction* function,
                             const std::string& method,
-                            SendCommand::Params::CommandParams* command_params);
+                            SendCommand::Params::CommandParams* command_params,
+                            std::optional<std::string> session_id);
 
   // Closes connection as terminated by the user.
   void InfoBarDestroyed();
@@ -429,7 +490,8 @@ void ExtensionDevToolsClientHost::Close() {
 void ExtensionDevToolsClientHost::SendMessageToBackend(
     DebuggerSendCommandFunction* function,
     const std::string& method,
-    SendCommand::Params::CommandParams* command_params) {
+    SendCommand::Params::CommandParams* command_params,
+    std::optional<std::string> session_id) {
   base::Value::Dict protocol_request;
   int request_id = ++last_request_id_;
   pending_requests_[request_id] = function;
@@ -438,6 +500,9 @@ void ExtensionDevToolsClientHost::SendMessageToBackend(
   if (command_params) {
     protocol_request.Set("params",
                          command_params->additional_properties.Clone());
+  }
+  if (session_id.has_value()) {
+    protocol_request.Set("sessionId", session_id.value());
   }
 
   std::string json;
@@ -491,8 +556,7 @@ void ExtensionDevToolsClientHost::DispatchProtocolMessage(
   if (!EventRouter::Get(profile_))
     return;
 
-  base::StringPiece message_str(reinterpret_cast<const char*>(message.data()),
-                                message.size());
+  std::string_view message_str = base::as_string_view(message);
   std::optional<base::Value> result = base::JSONReader::Read(
       message_str, base::JSON_REPLACE_INVALID_CHARACTERS);
   if (!result || !result->is_dict()) {
@@ -512,7 +576,11 @@ void ExtensionDevToolsClientHost::DispatchProtocolMessage(
       params.additional_properties = std::move(*params_value);
     }
 
-    auto args(OnEvent::Create(debuggee_, *method_name, params));
+    DebuggerSession session;
+    DebuggerSessionFromDebugee(session, debuggee_,
+                               dictionary.FindString("sessionId"));
+
+    auto args(OnEvent::Create(session, *method_name, params));
     auto event =
         std::make_unique<Event>(events::DEBUGGER_ON_EVENT, OnEvent::kEventName,
                                 std::move(args), profile_);
@@ -629,7 +697,7 @@ bool DebuggerFunction::InitAgentHost(std::string* error) {
       // TODO(caseq): get rid of the below code, browser agent host should
       // really be a singleton.
       // Re-use existing browser agent hosts.
-      const std::string& extension_id = extension()->id();
+      const ExtensionId& extension_id = extension()->id();
       AttachedClientHosts& hosts = g_attached_client_hosts.Get();
       auto it = base::ranges::find_if(
           hosts, [&extension_id](ExtensionDevToolsClientHost* client_host) {
@@ -673,7 +741,7 @@ ExtensionDevToolsClientHost* DebuggerFunction::FindClientHost() {
   if (!agent_host_.get())
     return nullptr;
 
-  const std::string& extension_id = extension()->id();
+  const ExtensionId& extension_id = extension()->id();
   DevToolsAgentHost* agent_host = agent_host_.get();
   AttachedClientHosts& hosts = g_attached_client_hosts.Get();
   auto it = base::ranges::find_if(
@@ -765,13 +833,14 @@ ExtensionFunction::ResponseAction DebuggerSendCommandFunction::Run() {
       SendCommand::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
-  CopyDebuggee(&debuggee_, params->target);
+  DebuggeeFromDebuggerSession(debuggee_, params->target);
   std::string error;
   if (!InitClientHost(&error))
     return RespondNow(Error(std::move(error)));
 
   client_host_->SendMessageToBackend(
-      this, params->method, base::OptionalToPtr(params->command_params));
+      this, params->method, base::OptionalToPtr(params->command_params),
+      params->target.session_id);
   if (did_respond())
     return AlreadyResponded();
   return RespondLater();
@@ -860,7 +929,7 @@ ExtensionFunction::ResponseAction DebuggerGetTargetsFunction::Run() {
   base::Value::List result;
   Profile* profile = Profile::FromBrowserContext(browser_context());
   for (auto& host : list) {
-    // TODO(crbug.com/1348385): hide all Tab targets for now to avoid
+    // TODO(crbug.com/40233332): hide all Tab targets for now to avoid
     // compatibility problems. Consider exposing them later when they're fully
     // supported, and compatibility considerations are better understood.
     if (host->GetType() == DevToolsAgentHost::kTypeTab)
@@ -869,6 +938,17 @@ ExtensionFunction::ResponseAction DebuggerGetTargetsFunction::Run() {
             profile, include_incognito_information(), *host)) {
       continue;
     }
+#if BUILDFLAG(ENABLE_PDF)
+    // OOPIF PDF viewer only. Don't list the `content::DevToolsAgentHost`s for
+    // inner PDF frames. PDF extension frames and PDF content frames shouldn't
+    // be exposed to chrome.debugger clients.
+    auto* process_host = host->GetProcessHost();
+    if (chrome_pdf::features::IsOopifPdfEnabled() &&
+        (IsPdfExtensionUrl(host->GetURL()) ||
+         (process_host && process_host->IsPdf()))) {
+      continue;
+    }
+#endif  // BUILDFLAG(ENABLE_PDF)
     result.Append(SerializeTarget(host));
   }
 

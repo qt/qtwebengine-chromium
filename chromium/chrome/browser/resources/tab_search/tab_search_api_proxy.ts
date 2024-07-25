@@ -4,7 +4,8 @@
 
 import {stringToMojoString16} from 'chrome://resources/js/mojo_type_util.js';
 
-import {PageCallbackRouter, PageHandlerFactory, PageHandlerRemote, ProfileData, SwitchToTabInfo, Tab, TabOrganizationSession, UserFeedback} from './tab_search.mojom-webui.js';
+import type {ProfileData, SwitchToTabInfo, Tab, TabOrganizationSession, UserFeedback} from './tab_search.mojom-webui.js';
+import {PageCallbackRouter, PageHandlerFactory, PageHandlerRemote} from './tab_search.mojom-webui.js';
 
 /**
  * These values are persisted to logs and should not be renumbered or re-used.
@@ -32,6 +33,8 @@ export interface TabSearchApiProxy {
       id: number, withSearch: boolean, isTab: boolean, index: number): void;
 
   requestTabOrganization(): void;
+
+  rejectSession(sessionId: number): void;
 
   restartSession(): void;
 
@@ -61,7 +64,9 @@ export interface TabSearchApiProxy {
   setUserFeedback(
       sessionId: number, organizationId: number, feedback: UserFeedback): void;
 
-  showUi(): void;
+  notifyOrganizationUiReadyToShow(): void;
+
+  notifySearchUiReadyToShow(): void;
 }
 
 export class TabSearchApiProxyImpl implements TabSearchApiProxy {
@@ -115,6 +120,10 @@ export class TabSearchApiProxyImpl implements TabSearchApiProxy {
 
   requestTabOrganization() {
     this.handler.requestTabOrganization();
+  }
+
+  rejectSession(sessionId: number) {
+    this.handler.rejectSession(sessionId);
   }
 
   restartSession() {
@@ -171,8 +180,12 @@ export class TabSearchApiProxyImpl implements TabSearchApiProxy {
     this.handler.setUserFeedback(sessionId, organizationId, feedback);
   }
 
-  showUi() {
-    this.handler.showUI();
+  notifyOrganizationUiReadyToShow() {
+    this.handler.notifyOrganizationUIReadyToShow();
+  }
+
+  notifySearchUiReadyToShow() {
+    this.handler.notifySearchUIReadyToShow();
   }
 
   static getInstance(): TabSearchApiProxy {

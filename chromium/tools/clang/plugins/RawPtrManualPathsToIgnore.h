@@ -26,12 +26,6 @@ constexpr const char* const kRawPtrManualPathsToIgnore[] = {
     // Exclude to prevent PartitionAlloc<->raw_ptr<T> cyclical dependency.
     "base/allocator/",
 
-    // Exclude dependences of raw_ptr.h
-    // TODO(bartekn): Update the list of dependencies.
-    "base/logging.h",
-    "base/synchronization/lock_impl.h",
-    "base/check.h",
-
     // win:pe_image target that uses this file does not depend on base/.
     "base/no_destructor.h",
 
@@ -45,8 +39,7 @@ constexpr const char* const kRawPtrManualPathsToIgnore[] = {
     // Exclude tools that do not ship in the Chrome binary. Can't depend on
     // //base.
     "base/android/linker/",
-    "tools/",
-    "net/tools/",
+    "/tools/",  // catches subdirs e.g. /net/tools, but not devtools/ etc.
     "chrome/chrome_elf/",
     "chrome/installer/mini_installer/",
     "testing/platform_test.h",
@@ -100,6 +93,13 @@ constexpr const char* const kRawPtrManualPathsToIgnore[] = {
     "third_party/blink/public/web/",  // TODO: Consider renaming this directory
                                       // to",
                                       // public/renderer?",
+    // The below paths are an explicitly listed subset of Renderer-only code,
+    // because the plan is to Oilpanize it.
+    // TODO(crbug.com/330759291): Remove once Oilpanization is completed or
+    // abandoned.
+    "third_party/blink/renderer/core/paint/",
+    "third_party/blink/renderer/platform/graphics/compositing/",
+    "third_party/blink/renderer/platform/graphics/paint/",
 
     // Contains sysroot dirs like debian_bullseye_amd64-sysroot/ that are not
     // part of the repository.

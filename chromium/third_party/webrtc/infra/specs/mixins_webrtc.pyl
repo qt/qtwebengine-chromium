@@ -38,10 +38,10 @@
       '--test-arg=--undefok=test_launcher_summary_output'
     ],
   },
-  'ios-device-16.6': {
+  'ios-device-16.7': {
     'swarming': {
       'dimensions': {
-        'os': 'iOS-16.6',
+        'os': 'iOS-16.7.1',
         'pool': 'chrome.tests',
         'device_status': 'available'
       }
@@ -57,6 +57,14 @@
         'device_status': 'available'
       },
     },
+  },
+  'ios_runtime_cache_15_5': {
+    'swarming': {
+      'named_caches': [{
+        'name': 'runtime_ios_15_5',
+        'path': 'Runtime-ios-15.5'
+      }]
+    }
   },
   'limited-capacity': {
     # Sometimes there are multiple tests that can be run only on one machine.

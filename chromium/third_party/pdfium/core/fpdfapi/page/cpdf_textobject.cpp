@@ -4,15 +4,20 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/page/cpdf_textobject.h"
 
 #include <algorithm>
 
 #include "core/fpdfapi/font/cpdf_cidfont.h"
 #include "core/fpdfapi/font/cpdf_font.h"
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_coordinates.h"
-#include "third_party/base/check.h"
-#include "third_party/base/containers/span.h"
+#include "core/fxcrt/span.h"
 
 #define ISLATINWORD(u) (u != 0x20 && u <= 0x28FF)
 

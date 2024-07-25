@@ -43,6 +43,7 @@
 #include "dawn/native/Toggles.h"
 #include "dawn/native/ValidationUtils_autogen.h"
 #include "dawn/platform/DawnPlatform.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 #include "tint/lang/wgsl/features/status.h"
 
 // For SwiftShader fallback
@@ -104,13 +105,6 @@ BackendConnection* Connect(InstanceBase* instance);
 #endif  // defined(DAWN_ENABLE_BACKEND_VULKAN)
 
 namespace {
-
-dawn::platform::CachingInterface* GetCachingInterface(dawn::platform::Platform* platform) {
-    if (platform != nullptr) {
-        return platform->GetCachingInterface();
-    }
-    return nullptr;
-}
 
 wgpu::WGSLFeatureName ToWGPUFeature(tint::wgsl::LanguageFeature f) {
     switch (f) {
@@ -195,6 +189,10 @@ void InstanceBase::DeleteThis() {
     RefCountedWithExternalCount::DeleteThis();
 }
 
+void InstanceBase::DisconnectDawnPlatform() {
+    SetPlatform(nullptr);
+}
+
 void InstanceBase::WillDropLastExternalRef() {
     // InstanceBase uses RefCountedWithExternalCount to break refcycles.
 
@@ -211,6 +209,9 @@ void InstanceBase::WillDropLastExternalRef() {
             backend->ClearPhysicalDevices();
         }
     }
+
+    mLoggingCallback = nullptr;
+    mLoggingCallbackUserdata = nullptr;
 }
 
 // TODO(crbug.com/dawn/832): make the platform an initialization parameter of the instance.
@@ -228,7 +229,29 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
 
         mBackendValidationLevel = dawnDesc->backendValidationLevel;
         mBeginCaptureOnStartup = dawnDesc->beginCaptureOnStartup;
-        mEnableAdapterBlocklist = dawnDesc->enableAdapterBlocklist;
+
+        mLoggingCallback = dawnDesc->loggingCallback;
+        mLoggingCallbackUserdata = dawnDesc->loggingCallbackUserdata;
+    }
+
+    if (!mLoggingCallback) {
+        mLoggingCallback = [](WGPULoggingType type, char const* message, void*) {
+            switch (static_cast<wgpu::LoggingType>(type)) {
+                case wgpu::LoggingType::Verbose:
+                    dawn::DebugLog() << message;
+                    break;
+                case wgpu::LoggingType::Info:
+                    dawn::InfoLog() << message;
+                    break;
+                case wgpu::LoggingType::Warning:
+                    dawn::WarningLog() << message;
+                    break;
+                case wgpu::LoggingType::Error:
+                    dawn::ErrorLog() << message;
+                    break;
+            }
+        };
+        mLoggingCallbackUserdata = nullptr;
     }
 
     // Default paths to search are next to the shared library, next to the executable, and
@@ -258,29 +281,49 @@ void InstanceBase::APIRequestAdapter(const RequestAdapterOptions* options,
 
 Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
                                         const RequestAdapterCallbackInfo& callbackInfo) {
+    return APIRequestAdapter2(
+        options, {nullptr, ToAPI(callbackInfo.mode),
+                  [](WGPURequestAdapterStatus status, WGPUAdapter adapter, char const* message,
+                     void* callback, void* userdata) {
+                      auto cb = reinterpret_cast<WGPURequestAdapterCallback>(callback);
+                      cb(status, adapter, message, userdata);
+                  },
+                  reinterpret_cast<void*>(callbackInfo.callback), callbackInfo.userdata});
+}
+
+Future InstanceBase::APIRequestAdapter2(const RequestAdapterOptions* options,
+                                        const WGPURequestAdapterCallbackInfo2& callbackInfo) {
     struct RequestAdapterEvent final : public EventManager::TrackedEvent {
-        WGPURequestAdapterCallback mCallback;
-        void* mUserdata;
+        WGPURequestAdapterCallback2 mCallback;
+        raw_ptr<void> mUserdata1;
+        raw_ptr<void> mUserdata2;
         Ref<AdapterBase> mAdapter;
 
-        RequestAdapterEvent(const RequestAdapterCallbackInfo& callbackInfo,
+        RequestAdapterEvent(const WGPURequestAdapterCallbackInfo2& callbackInfo,
                             Ref<AdapterBase> adapter)
-            : TrackedEvent(callbackInfo.mode, TrackedEvent::Completed{}),
+            : TrackedEvent(static_cast<wgpu::CallbackMode>(callbackInfo.mode),
+                           TrackedEvent::Completed{}),
               mCallback(callbackInfo.callback),
-              mUserdata(callbackInfo.userdata),
-              mAdapter(std::move(adapter)) {
-            CompleteIfSpontaneous();
-        }
+              mUserdata1(callbackInfo.userdata1),
+              mUserdata2(callbackInfo.userdata2),
+              mAdapter(std::move(adapter)) {}
 
         ~RequestAdapterEvent() override { EnsureComplete(EventCompletionType::Shutdown); }
 
         void Complete(EventCompletionType completionType) override {
+            if (completionType == EventCompletionType::Shutdown) {
+                mCallback(WGPURequestAdapterStatus_InstanceDropped, nullptr, nullptr,
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
+                return;
+            }
+
             WGPUAdapter adapter = ToAPI(ReturnToAPI(std::move(mAdapter)));
             if (adapter == nullptr) {
                 mCallback(WGPURequestAdapterStatus_Unavailable, nullptr, "No supported adapters",
-                          mUserdata);
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
             } else {
-                mCallback(WGPURequestAdapterStatus_Success, adapter, nullptr, mUserdata);
+                mCallback(WGPURequestAdapterStatus_Success, adapter, nullptr,
+                          mUserdata1.ExtractAsDangling(), mUserdata2.ExtractAsDangling());
             }
         }
     };
@@ -291,9 +334,8 @@ Future InstanceBase::APIRequestAdapterF(const RequestAdapterOptions* options,
     }
     auto adapters = EnumerateAdapters(options);
 
-    FutureID futureID = GetEventManager()->TrackEvent(
-        callbackInfo.mode, AcquireRef(new RequestAdapterEvent(
-                               callbackInfo, adapters.empty() ? nullptr : std::move(adapters[0]))));
+    FutureID futureID = GetEventManager()->TrackEvent(AcquireRef(new RequestAdapterEvent(
+        callbackInfo, adapters.empty() ? nullptr : std::move(adapters[0]))));
     return {futureID};
 }
 
@@ -325,15 +367,12 @@ Toggle InstanceBase::ToggleNameToEnum(const char* toggleName) {
     return mTogglesInfo.ToggleNameToEnum(toggleName);
 }
 
-const FeatureInfo* InstanceBase::GetFeatureInfo(wgpu::FeatureName feature) {
-    return dawn::native::GetFeatureInfo(feature);
-}
-
 std::vector<Ref<AdapterBase>> InstanceBase::EnumerateAdapters(
     const RequestAdapterOptions* options) {
     static constexpr RequestAdapterOptions kDefaultOptions = {};
     if (options == nullptr) {
-        // Default path that returns all WebGPU core adapters on the system with default toggles.
+        // Default path that returns all WebGPU core adapters on the system with default
+        // toggles.
         return EnumerateAdapters(&kDefaultOptions);
     }
 
@@ -454,21 +493,13 @@ std::vector<Ref<PhysicalDeviceBase>> InstanceBase::EnumeratePhysicalDevices(
     return discoveredPhysicalDevices;
 }
 
-bool InstanceBase::ConsumedError(MaybeError maybeError) {
-    if (maybeError.IsError()) {
-        ConsumeError(maybeError.AcquireError());
-        return true;
-    }
-    return false;
-}
-
 bool InstanceBase::ConsumedErrorAndWarnOnce(MaybeError maybeErr) {
     if (!maybeErr.IsError()) {
         return false;
     }
     std::string message = maybeErr.AcquireError()->GetFormattedMessage();
-    if (mWarningMessages.insert(message).second) {
-        dawn::WarningLog() << message;
+    if (mWarningMessages.insert(message).second && mLoggingCallback) {
+        mLoggingCallback(WGPULoggingType_Warning, message.c_str(), mLoggingCallbackUserdata);
     }
     return true;
 }
@@ -493,21 +524,12 @@ bool InstanceBase::IsBeginCaptureOnStartupEnabled() const {
     return mBeginCaptureOnStartup;
 }
 
-void InstanceBase::EnableAdapterBlocklist(bool enable) {
-    mEnableAdapterBlocklist = enable;
-}
-
-bool InstanceBase::IsAdapterBlocklistEnabled() const {
-    return mEnableAdapterBlocklist;
-}
-
 void InstanceBase::SetPlatform(dawn::platform::Platform* platform) {
     if (platform == nullptr) {
         mPlatform = mDefaultPlatform.get();
     } else {
         mPlatform = platform;
     }
-    mBlobCache = std::make_unique<BlobCache>(GetCachingInterface(platform));
 }
 
 void InstanceBase::SetPlatformForTesting(dawn::platform::Platform* platform) {
@@ -516,13 +538,6 @@ void InstanceBase::SetPlatformForTesting(dawn::platform::Platform* platform) {
 
 dawn::platform::Platform* InstanceBase::GetPlatform() {
     return mPlatform;
-}
-
-BlobCache* InstanceBase::GetBlobCache(bool enabled) {
-    if (enabled) {
-        return mBlobCache.get();
-    }
-    return &mPassthroughBlobCache;
 }
 
 uint64_t InstanceBase::GetDeviceCountForTesting() const {
@@ -537,7 +552,7 @@ void InstanceBase::RemoveDevice(DeviceBase* device) {
     mDevicesList.Use([&](auto deviceList) { deviceList->erase(device); });
 }
 
-void InstanceBase::APIProcessEvents() {
+bool InstanceBase::ProcessEvents() {
     std::vector<Ref<DeviceBase>> devices;
     mDevicesList.Use([&](auto deviceList) {
         for (auto device : *deviceList) {
@@ -545,12 +560,18 @@ void InstanceBase::APIProcessEvents() {
         }
     });
 
+    bool processedEvents = false;
     for (auto device : devices) {
-        device->APITick();
+        processedEvents |= device->APITick();
     }
 
     mCallbackTaskManager->Flush();
-    mEventManager.ProcessPollEvents();
+    processedEvents |= mEventManager.ProcessPollEvents();
+    return processedEvents;
+}
+
+void InstanceBase::APIProcessEvents() {
+    ProcessEvents();
 }
 
 wgpu::WaitStatus InstanceBase::APIWaitAny(size_t count,
@@ -571,9 +592,15 @@ EventManager* InstanceBase::GetEventManager() {
     return &mEventManager;
 }
 
-void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error) {
+void InstanceBase::ConsumeError(std::unique_ptr<ErrorData> error,
+                                InternalErrorType additionalAllowedErrors) {
+    // Note: `additionalAllowedErrors` is ignored. The instance considers every type of error to be
+    // an error that is logged.
     DAWN_ASSERT(error != nullptr);
-    dawn::ErrorLog() << error->GetFormattedMessage();
+    if (mLoggingCallback) {
+        std::string messageStr = error->GetFormattedMessage();
+        mLoggingCallback(WGPULoggingType_Error, messageStr.c_str(), mLoggingCallbackUserdata);
+    }
 }
 
 const X11Functions* InstanceBase::GetOrLoadX11Functions() {
@@ -607,7 +634,7 @@ Surface* InstanceBase::APICreateSurface(const SurfaceDescriptor* descriptor) {
     return ReturnToAPI(AcquireRef(new Surface(this, unpacked)));
 }
 
-const std::unordered_set<tint::wgsl::LanguageFeature>&
+const absl::flat_hash_set<tint::wgsl::LanguageFeature>&
 InstanceBase::GetAllowedWGSLLanguageFeatures() const {
     return mTintLanguageFeatures;
 }

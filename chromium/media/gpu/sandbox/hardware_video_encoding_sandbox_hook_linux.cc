@@ -53,9 +53,9 @@ bool HardwareVideoEncodingPreSandboxHook(
 #elif BUILDFLAG(USE_VAAPI)
   command_set.set(sandbox::syscall_broker::COMMAND_OPEN);
   command_set.set(sandbox::syscall_broker::COMMAND_STAT);
+  command_set.set(sandbox::syscall_broker::COMMAND_ACCESS);
 
   if (options.use_amd_specific_policies) {
-    command_set.set(sandbox::syscall_broker::COMMAND_ACCESS);
     command_set.set(sandbox::syscall_broker::COMMAND_READLINK);
 
     permissions.push_back(BrokerFilePermission::ReadOnly("/dev/dri"));
@@ -94,8 +94,7 @@ bool HardwareVideoEncodingPreSandboxHook(
   }
 
   sandbox::policy::SandboxLinux::GetInstance()->StartBrokerProcess(
-      command_set, permissions, sandbox::policy::SandboxLinux::PreSandboxHook(),
-      options);
+      command_set, permissions, options);
 
   // TODO(b/248528896): the hardware video encoding sandbox is really only
   // useful when building with VA-API or V4L2 (otherwise, we're not really doing

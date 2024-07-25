@@ -37,6 +37,7 @@
 #include "dawn/native/Instance.h"
 #include "dawn/native/Surface.h"
 #include "dawn/native/TintUtils.h"
+#include "partition_alloc/pointers/raw_ptr.h"
 
 #include "tint/tint.h"
 
@@ -65,6 +66,15 @@ bool PhysicalDevice::SupportsFeatureLevel(FeatureLevel) const {
     return true;
 }
 
+ResultOrError<PhysicalDeviceSurfaceCapabilities> PhysicalDevice::GetSurfaceCapabilities(
+    const Surface* surface) const {
+    PhysicalDeviceSurfaceCapabilities capabilities;
+    capabilities.formats = {wgpu::TextureFormat::BGRA8Unorm};
+    capabilities.presentModes = {wgpu::PresentMode::Fifo};
+    capabilities.alphaModes = {wgpu::CompositeAlphaMode::Auto};
+    return capabilities;
+}
+
 MaybeError PhysicalDevice::InitializeImpl() {
     return {};
 }
@@ -91,8 +101,9 @@ void PhysicalDevice::SetupBackendDeviceToggles(TogglesState* deviceToggles) cons
 ResultOrError<Ref<DeviceBase>> PhysicalDevice::CreateDeviceImpl(
     AdapterBase* adapter,
     const UnpackedPtr<DeviceDescriptor>& descriptor,
-    const TogglesState& deviceToggles) {
-    return Device::Create(adapter, descriptor, deviceToggles);
+    const TogglesState& deviceToggles,
+    Ref<DeviceBase::DeviceLostEvent>&& lostEvent) {
+    return Device::Create(adapter, descriptor, deviceToggles, std::move(lostEvent));
 }
 
 void PhysicalDevice::PopulateBackendProperties(UnpackedPtr<AdapterProperties>& properties) const {
@@ -152,7 +163,7 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
         destination->CopyFromStaging(staging, sourceOffset, destinationOffset, size);
     }
 
-    BufferBase* staging;
+    raw_ptr<BufferBase> staging;
     Ref<Buffer> destination;
     uint64_t sourceOffset;
     uint64_t destinationOffset;
@@ -164,8 +175,10 @@ struct CopyFromStagingToBufferOperation : PendingOperation {
 // static
 ResultOrError<Ref<Device>> Device::Create(AdapterBase* adapter,
                                           const UnpackedPtr<DeviceDescriptor>& descriptor,
-                                          const TogglesState& deviceToggles) {
-    Ref<Device> device = AcquireRef(new Device(adapter, descriptor, deviceToggles));
+                                          const TogglesState& deviceToggles,
+                                          Ref<DeviceBase::DeviceLostEvent>&& lostEvent) {
+    Ref<Device> device =
+        AcquireRef(new Device(adapter, descriptor, deviceToggles, std::move(lostEvent)));
     DAWN_TRY(device->Initialize(descriptor));
     return device;
 }
@@ -222,11 +235,10 @@ ResultOrError<Ref<ShaderModuleBase>> Device::CreateShaderModuleImpl(
     DAWN_TRY(module->Initialize(parseResult, compilationMessages));
     return module;
 }
-ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(
-    Surface* surface,
-    SwapChainBase* previousSwapChain,
-    const SwapChainDescriptor* descriptor) {
-    return SwapChain::Create(this, surface, previousSwapChain, descriptor);
+ResultOrError<Ref<SwapChainBase>> Device::CreateSwapChainImpl(Surface* surface,
+                                                              SwapChainBase* previousSwapChain,
+                                                              const SurfaceConfiguration* config) {
+    return SwapChain::Create(this, surface, previousSwapChain, config);
 }
 ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
     const UnpackedPtr<TextureDescriptor>& descriptor) {
@@ -234,7 +246,7 @@ ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(
 }
 ResultOrError<Ref<TextureViewBase>> Device::CreateTextureViewImpl(
     TextureBase* texture,
-    const TextureViewDescriptor* descriptor) {
+    const UnpackedPtr<TextureViewDescriptor>& descriptor) {
     return AcquireRef(new TextureView(texture, descriptor));
 }
 
@@ -269,7 +281,7 @@ MaybeError Device::CopyFromStagingToBufferImpl(BufferBase* source,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
     if (IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
-        destination->SetIsDataInitialized();
+        destination->SetInitialized(true);
     }
 
     auto operation = std::make_unique<CopyFromStagingToBufferOperation>();
@@ -333,7 +345,7 @@ BindGroupDataHolder::BindGroupDataHolder(size_t size)
 {}
 
 BindGroupDataHolder::~BindGroupDataHolder() {
-    free(mBindingDataAllocation);
+    free(mBindingDataAllocation.ExtractAsDangling());
 }
 
 // BindGroup
@@ -443,6 +455,10 @@ bool Queue::HasPendingCommands() const {
     return false;
 }
 
+MaybeError Queue::SubmitPendingCommands() {
+    return {};
+}
+
 ResultOrError<bool> Queue::WaitForQueueSerial(ExecutionSerial serial, Nanoseconds timeout) {
     return true;
 }
@@ -453,7 +469,7 @@ MaybeError Queue::WaitForIdleForDestruction() {
 }
 
 // ComputePipeline
-MaybeError ComputePipeline::Initialize() {
+MaybeError ComputePipeline::InitializeImpl() {
     const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
 
     tint::Program transformedProgram;
@@ -472,9 +488,9 @@ MaybeError ComputePipeline::Initialize() {
             BuildSubstituteOverridesTransformConfig(computeStage));
     }
 
-    DAWN_TRY_ASSIGN(transformedProgram,
-                    RunTransforms(&transformManager, computeStage.module->GetTintProgram(),
-                                  transformInputs, nullptr, nullptr));
+    auto tintProgram = computeStage.module->GetTintProgram();
+    DAWN_TRY_ASSIGN(transformedProgram, RunTransforms(&transformManager, &(tintProgram->program),
+                                                      transformInputs, nullptr, nullptr));
 
     // Do the workgroup size validation, although different backend will have different
     // fullSubgroups parameter.
@@ -492,7 +508,7 @@ MaybeError ComputePipeline::Initialize() {
 }
 
 // RenderPipeline
-MaybeError RenderPipeline::Initialize() {
+MaybeError RenderPipeline::InitializeImpl() {
     return {};
 }
 
@@ -502,8 +518,8 @@ MaybeError RenderPipeline::Initialize() {
 ResultOrError<Ref<SwapChain>> SwapChain::Create(Device* device,
                                                 Surface* surface,
                                                 SwapChainBase* previousSwapChain,
-                                                const SwapChainDescriptor* descriptor) {
-    Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, descriptor));
+                                                const SurfaceConfiguration* config) {
+    Ref<SwapChain> swapchain = AcquireRef(new SwapChain(device, surface, config));
     DAWN_TRY(swapchain->Initialize(previousSwapChain));
     return swapchain;
 }
@@ -528,10 +544,14 @@ MaybeError SwapChain::PresentImpl() {
     return {};
 }
 
-ResultOrError<Ref<TextureBase>> SwapChain::GetCurrentTextureImpl() {
+ResultOrError<SwapChainTextureInfo> SwapChain::GetCurrentTextureImpl() {
     TextureDescriptor textureDesc = GetSwapChainBaseTextureDescriptor(this);
     mTexture = AcquireRef(new Texture(GetDevice(), Unpack(&textureDesc)));
-    return mTexture;
+    SwapChainTextureInfo info;
+    info.texture = mTexture;
+    info.status = wgpu::SurfaceGetCurrentTextureStatus::Success;
+    info.suboptimal = false;
+    return info;
 }
 
 void SwapChain::DetachFromSurfaceImpl() {

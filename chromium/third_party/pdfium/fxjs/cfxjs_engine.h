@@ -108,15 +108,14 @@ class CFXJS_Engine : public CFX_V8 {
                        v8::FunctionCallback pMethodCall);
   void DefineObjProperty(uint32_t nObjDefnID,
                          const char* sPropName,
-                         v8::AccessorGetterCallback pPropGet,
-                         v8::AccessorSetterCallback pPropPut);
-  void DefineObjAllProperties(
-      uint32_t nObjDefnID,
-      v8::GenericNamedPropertyQueryCallback pPropQurey,
-      v8::GenericNamedPropertyGetterCallback pPropGet,
-      v8::GenericNamedPropertySetterCallback pPropPut,
-      v8::GenericNamedPropertyDeleterCallback pPropDel,
-      v8::GenericNamedPropertyEnumeratorCallback pPropEnum);
+                         v8::AccessorNameGetterCallback pPropGet,
+                         v8::AccessorNameSetterCallback pPropPut);
+  void DefineObjAllProperties(uint32_t nObjDefnID,
+                              v8::NamedPropertyQueryCallback pPropQurey,
+                              v8::NamedPropertyGetterCallback pPropGet,
+                              v8::NamedPropertySetterCallback pPropPut,
+                              v8::NamedPropertyDeleterCallback pPropDel,
+                              v8::NamedPropertyEnumeratorCallback pPropEnum);
   void DefineObjConst(uint32_t nObjDefnID,
                       const char* sConstName,
                       v8::Local<v8::Value> pDefault);
@@ -130,7 +129,7 @@ class CFXJS_Engine : public CFX_V8 {
   void ReleaseEngine();
 
   // Called after FXJS_InitializeEngine call made.
-  absl::optional<IJS_Runtime::JS_Error> Execute(const WideString& script);
+  std::optional<IJS_Runtime::JS_Error> Execute(const WideString& script);
 
   v8::Local<v8::Object> GetThisObj();
   v8::Local<v8::Object> NewFXJSBoundObject(uint32_t nObjDefnID,

@@ -125,10 +125,6 @@ class FixedInvalidationPictureLayerTilingClient
     return base_client_->GetPaintWorkletRecords();
   }
 
-  bool IsDirectlyCompositedImage() const override {
-    return base_client_->IsDirectlyCompositedImage();
-  }
-
   bool ScrollInteractionInProgress() const override {
     return base_client_->ScrollInteractionInProgress();
   }
@@ -136,6 +132,8 @@ class FixedInvalidationPictureLayerTilingClient
   bool CurrentScrollCheckerboardsDueToNoRecording() const override {
     return base_client_->CurrentScrollCheckerboardsDueToNoRecording();
   }
+
+  void OnTilesAdded() override { return base_client_->OnTilesAdded(); }
 
  private:
   raw_ptr<PictureLayerTilingClient> base_client_;

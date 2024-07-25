@@ -68,6 +68,26 @@ def main():
                         'default this is '
                         '/data/data/<package>/cache/pgo_profiles/ but you can '
                         'override it for your device if needed.')
+    parser.add_argument('--skip-profdata',
+                        action='store_true',
+                        default=False,
+                        help='Only run benchmarks and skip merging profile '
+                        'data. Used for sample-based profiling for Propeller '
+                        'and BOLT')
+    parser.add_argument(
+        '--run-public-benchmarks-only',
+        action='store_true',
+        help='Only run benchmarks that do not require any special access. See '
+        'https://www.chromium.org/developers/telemetry/upload_to_cloud_storage/#request-access-for-google-partners '
+        'for more information.')
+    parser.add_argument('--skip-jetstream',
+                        action='store_true',
+                        help='Jetstream2 is very flaky (60% pass rate), so it '
+                        'is helpful to skip it when iterating fast locally.')
+    parser.add_argument(
+        '--temporal-trace-length',
+        type=int,
+        help='Add flags necessary for temporal PGO (experimental).')
     parser.add_argument('-v',
                         '--verbose',
                         action='count',
@@ -130,7 +150,14 @@ def main():
                 f'--browser-executable={chrome_path}',
             ]
 
-        subprocess.run(cmd, check=True, env=env, cwd=ROOT_DIR)
+        subprocess.run(cmd,
+                       check=True,
+                       shell=sys.platform == 'win32',
+                       env=env,
+                       cwd=ROOT_DIR)
+        if args.skip_profdata:
+            return
+
         profdata_path = f'{profiledir}/{name}.profdata'
 
         # Android's `adb pull` does not allow * globbing (i.e. pulling
@@ -144,29 +171,51 @@ def main():
     if os.path.exists(profiledir):
         shutil.rmtree(profiledir)
 
-    # Run the shortest benchmark first to fail early if anything is wrong.
-    run_benchmark(['speedometer2'])
-    if args.android_browser:
-        run_benchmark(
-            ['system_health.common_mobile', '--run-abridged-story-set'])
-    else:
-        run_benchmark(
-            ['system_health.common_desktop', '--run-abridged-story-set'])
-    run_benchmark(['jetstream2'])
-    if args.android_browser:
-        run_benchmark([
-            'rendering.mobile', '--also-run-disabled-tests',
-            '--story-tag-filter=motionmark_fixed_2_seconds'
-        ])
-    else:
-        run_benchmark([
-            'rendering.desktop', '--also-run-disabled-tests',
-            '--story-tag-filter=motionmark_fixed_2_seconds'
-        ])
+    # Run the shortest benchmarks first to fail early if anything is wrong.
+    run_benchmark(['speedometer3'])
 
-    subprocess.run([PROFDATA, 'merge', '-o', f'{builddir}/profile.profdata'] +
-                   glob.glob(f'{profiledir}/*.profdata'),
-                   check=True)
+    if not args.skip_jetstream:
+        run_benchmark(['jetstream2'])
+
+    # These benchmarks require special access permissions:
+    # https://www.chromium.org/developers/telemetry/upload_to_cloud_storage/#request-access-for-google-partners
+    if not args.run_public_benchmarks_only:
+        run_benchmark([
+            'system_health.common_mobile' if args.android_browser else
+            'system_health.common_desktop', '--run-abridged-story-set'
+        ])
+        run_benchmark([
+            'rendering.mobile' if args.android_browser else
+            'rendering.desktop', '--also-run-disabled-tests',
+            '--story-tag-filter=motionmark_fixed_2_seconds',
+            '--story-filter-exclude=motionmark_fixed_2_seconds_images'
+        ])
+        if sys.platform == 'darwin':
+            run_benchmark([
+                'rendering.desktop', '--also-run-disabled-tests',
+                '--story-tag-filter=motionmark_fixed_2_seconds',
+                '--extra-browser-args=--enable-features=SkiaGraphite'
+            ])
+
+    if not args.skip_profdata:
+        merge_cmd = [PROFDATA, 'merge']
+        if args.temporal_trace_length:
+            merge_cmd += [
+                '--temporal-profile-max-trace-length',
+                str(args.temporal_trace_length)
+            ]
+        profile_output_path = f'{builddir}/profile.profdata'
+        merge_cmd += ['-o', profile_output_path]
+        subprocess.run(merge_cmd + glob.glob(f'{profiledir}/*.profdata'),
+                       check=True)
+
+        if args.temporal_trace_length:
+            orderfile_cmd = [
+                PROFDATA, 'order', profile_output_path, '-o',
+                f'{builddir}/orderfile.txt'
+            ]
+            subprocess.run(orderfile_cmd, check=True)
+
 
     if not args.keep_temps:
         shutil.rmtree(profiledir)

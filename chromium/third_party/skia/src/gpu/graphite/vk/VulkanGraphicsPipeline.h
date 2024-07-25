@@ -27,6 +27,7 @@ class GraphicsPipelineDesc;
 class RuntimeEffectDictionary;
 class VulkanSharedContext;
 struct RenderPassDesc;
+class TextureInfo;
 class VulkanRenderPass;
 
 class VulkanGraphicsPipeline final : public GraphicsPipeline {
@@ -42,25 +43,25 @@ public:
     inline static constexpr unsigned int kUniformBufferDescSetIndex = 0;
     inline static constexpr unsigned int kTextureBindDescSetIndex = 1;
     // Currently input attachments are only used for loading MSAA from resolve, so we can use the
-    // descriptor set index normally assigned to texture desc sets.
-    inline static constexpr unsigned int kInputAttachmentDescSetIndex = kTextureBindDescSetIndex;
+    // descriptor set index normally assigned to uniform desc sets.
+    inline static constexpr unsigned int kInputAttachmentDescSetIndex = kUniformBufferDescSetIndex;
 
     inline static constexpr unsigned int kVertexBufferIndex = 0;
     inline static constexpr unsigned int kInstanceBufferIndex = 1;
     inline static constexpr unsigned int kNumInputBuffers = 2;
 
     inline static const DescriptorData kIntrinsicUniformBufferDescriptor = {
-            DescriptorType::kUniformBuffer, /*descCount=*/1,
+            DescriptorType::kUniformBuffer, /*count=*/1,
             kIntrinsicUniformBufferIndex,
             PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader};
 
     inline static const DescriptorData kRenderStepUniformDescriptor = {
-            DescriptorType::kUniformBuffer, /*descCount=*/1,
+            DescriptorType::kUniformBuffer, /*count=*/1,
             kRenderStepUniformBufferIndex,
             PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader};
 
     inline static const DescriptorData kPaintUniformDescriptor = {
-            DescriptorType::kUniformBuffer, /*descCount=*/1,
+            DescriptorType::kUniformBuffer, /*count=*/1,
             kPaintUniformBufferIndex,
             PipelineStageFlags::kFragmentShader};
 
@@ -68,7 +69,7 @@ public:
     // binding index will always be 0.
     inline static constexpr unsigned int kInputAttachmentBindingIndex = 0;
     inline static const DescriptorData kInputAttachmentDescriptor = {
-            DescriptorType::kInputAttachment, /*descCount=*/1,
+            DescriptorType::kInputAttachment, /*count=*/1,
             kInputAttachmentBindingIndex,
             PipelineStageFlags::kFragmentShader};
 
@@ -78,6 +79,16 @@ public:
                                               const RenderPassDesc&,
                                               const sk_sp<VulkanRenderPass>& compatibleRenderPass,
                                               VkPipelineCache);
+
+    static sk_sp<VulkanGraphicsPipeline> MakeLoadMSAAPipeline(
+            const VulkanSharedContext*,
+            VkShaderModule vsModule,
+            VkShaderModule fsModule,
+            VkPipelineShaderStageCreateInfo* pipelineShaderStages,
+            VkPipelineLayout,
+            sk_sp<VulkanRenderPass> compatibleRenderPass,
+            VkPipelineCache,
+            const TextureInfo& dstColorAttachmentTexInfo);
 
     static bool InitializeMSAALoadPipelineStructs(
             const VulkanSharedContext*,

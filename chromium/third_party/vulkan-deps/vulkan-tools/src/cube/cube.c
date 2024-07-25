@@ -394,6 +394,7 @@ struct demo {
     VkPresentModeKHR presentMode;
     VkFence fences[FRAME_LAG];
     int frame_index;
+    bool first_swapchain_frame;
 
     VkCommandPool cmd_pool;
     VkCommandPool present_cmd_pool;
@@ -1134,10 +1135,17 @@ static void demo_draw(struct demo *demo) {
         uint32_t eighthOfWidth = demo->width / 8;
         uint32_t eighthOfHeight = demo->height / 8;
 
-        rect.offset.x = eighthOfWidth;
-        rect.offset.y = eighthOfHeight;
-        rect.extent.width = eighthOfWidth * 6;
-        rect.extent.height = eighthOfHeight * 6;
+        if (demo->first_swapchain_frame) {
+            rect.offset.x = 0;
+            rect.offset.y = 0;
+            rect.extent.width = demo->width;
+            rect.extent.height = demo->height;
+        } else {
+            rect.offset.x = eighthOfWidth;
+            rect.offset.y = eighthOfHeight;
+            rect.extent.width = eighthOfWidth * 6;
+            rect.extent.height = eighthOfHeight * 6;
+        }
         rect.layer = 0;
 
         region.rectangleCount = 1;
@@ -1188,6 +1196,7 @@ static void demo_draw(struct demo *demo) {
     err = vkQueuePresentKHR(demo->present_queue, &present);
     demo->frame_index += 1;
     demo->frame_index %= FRAME_LAG;
+    demo->first_swapchain_frame = false;
 
     if (err == VK_ERROR_OUT_OF_DATE_KHR) {
         // demo->swapchain is out of date (e.g. the window was resized) and
@@ -2152,8 +2161,6 @@ static void demo_prepare_pipeline(struct demo *demo) {
     pipeline.renderPass = demo->render_pass;
     pipeline.pDynamicState = &dynamicState;
 
-    pipeline.renderPass = demo->render_pass;
-
     err = vkCreateGraphicsPipelines(demo->device, demo->pipelineCache, 1, &pipeline, NULL, &demo->pipeline);
     assert(!err);
 
@@ -2359,6 +2366,7 @@ static void demo_prepare(struct demo *demo) {
 
     demo->current_buffer = 0;
     demo->prepared = true;
+    demo->first_swapchain_frame = true;
 }
 
 static void demo_cleanup(struct demo *demo) {
@@ -2817,10 +2825,24 @@ static void demo_create_xcb_window(struct demo *demo) {
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
 static void demo_run(struct demo *demo) {
     while (!demo->quit) {
+        // Flush any commands to the server
+        wl_display_flush(demo->display);
+
         if (demo->pause) {
-            wl_display_dispatch(demo->display);  // block and wait for input
+            // block and wait for input
+            wl_display_dispatch(demo->display);
         } else {
-            wl_display_dispatch_pending(demo->display);  // don't block
+            // Lock the display event queue in case the driver is doing something on another thread
+            // while we wait, keep pumping events
+            while (wl_display_prepare_read(demo->display) != 0) {
+                wl_display_dispatch_pending(demo->display);
+            }
+            // Actually do the read from the socket
+            wl_display_read_events(demo->display);
+
+            // Pump events
+            wl_display_dispatch_pending(demo->display);
+
             demo_draw(demo);
             demo->curFrame++;
             if (demo->frameCount != INT32_MAX && demo->curFrame == demo->frameCount) demo->quit = true;
@@ -4009,6 +4031,7 @@ static void demo_init_vk_swapchain(struct demo *demo) {
         }
     }
     demo->frame_index = 0;
+    demo->first_swapchain_frame = true;
 
     // Get Memory information and properties
     vkGetPhysicalDeviceMemoryProperties(demo->gpu, &demo->memory_properties);

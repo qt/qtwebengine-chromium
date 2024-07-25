@@ -14,7 +14,7 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 
 from crossbench.browsers.chromium.webdriver import (
-    ChromiumWebDriver, ChromiumWebDriverAndroid,
+    ChromiumWebDriver, ChromiumWebDriverAndroid, ChromiumWebDriverSsh,
     build_chromedriver_instructions)
 from crossbench.browsers.webdriver import DriverException
 
@@ -86,4 +86,8 @@ class ChromeWebDriver(ChromiumWebDriver):
 
 
 class ChromeWebDriverAndroid(ChromiumWebDriverAndroid, ChromeWebDriver):
+  pass
+
+
+class ChromeWebDriverSsh(ChromiumWebDriverSsh, ChromeWebDriver):
   pass

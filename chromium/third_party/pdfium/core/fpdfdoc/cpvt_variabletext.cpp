@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfdoc/cpvt_variabletext.h"
 
 #include <algorithm>
@@ -14,10 +19,10 @@
 #include "core/fpdfdoc/cpvt_word.h"
 #include "core/fpdfdoc/cpvt_wordinfo.h"
 #include "core/fpdfdoc/ipvt_fontmap.h"
+#include "core/fxcrt/check.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/stl_util.h"
-#include "third_party/base/check.h"
 
 namespace {
 
@@ -346,7 +351,7 @@ CPVT_WordPlace CPVT_VariableText::WordIndexToWordPlace(int32_t index) const {
       break;
     }
     if (nIndex > index) {
-      place.nSecIndex = pdfium::base::checked_cast<int32_t>(i);
+      place.nSecIndex = pdfium::checked_cast<int32_t>(i);
       place.nWordIndex = index - nOldIndex - 1;
       pSection->UpdateWordPlace(place);
       bFound = true;

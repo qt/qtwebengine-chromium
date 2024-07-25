@@ -64,18 +64,38 @@ declare namespace chrome {
     // Whether the Read Aloud feature flag is enabled.
     let isReadAloudEnabled: boolean;
 
-    // Indicates if select-to-distill works on the web page. Used to
-    // determine which empty state to display.
-    let isSelectable: boolean;
+    // Whether the automatic voice switching feature flag is enabled.
+    let isAutoVoiceSwitchingEnabled: boolean;
+
+    // Whether the language pack download feature flag is enabled.
+    let isLanguagePackDownloadingEnabled: boolean;
+
+    let isAutomaticWordHighlightingEnabled: boolean;
+
+    // Indicates if this page is a Google doc.
+    let isGoogleDocs: boolean;
 
     // Fonts supported by the browser's preferred language.
     let supportedFonts: string[];
 
-    // The language code that should be used for speech synthesis voices.
-    let speechSynthesisLanguageCode: string;
+    // The base language code that should be used for speech synthesis voices.
+    let baseLanguageForSpeech: string;
 
-    // Returns the stored user voice preference for the given language.
-    function getStoredVoice(lang: string): string;
+    // The fallback language, corresponding to the browser language, that
+    // should only be used when baseLanguageForSpeech is unavailable.
+    let defaultLanguageForSpeech: string;
+
+    // If the current platform is ChromeOS Ash.
+    let isChromeOsAsh: boolean;
+
+    // If distillations have been queued up.
+    let requiresDistillation: boolean;
+
+    // Returns the stored user voice preference for the current language
+    function getStoredVoice(): string;
+
+    // Returns the stored user preference for enabled languages.
+    function getLanguagesEnabledInPref(): string[];
 
     // Returns a list of AXNodeIDs corresponding to the unignored children of
     // the AXNode for the provided AXNodeID. If there is a selection contained
@@ -104,6 +124,9 @@ declare namespace chrome {
     // Returns the url of the AXNode for the provided AXNodeID.
     function getUrl(nodeId: number): string;
 
+    // Returns the alt text of the AXNode for the provided AXNodeID.
+    function getAltText(nodeId: number): string;
+
     // Returns true if the text node / element should be bolded.
     function shouldBold(nodeId: number): boolean;
 
@@ -113,9 +136,6 @@ declare namespace chrome {
     // Returns true if the element is a leaf node.
     function isLeafNode(nodeId: number): boolean;
 
-    // Returns true if the webpage corresponds to a Google Doc.
-    function isGoogleDocs(): boolean;
-
     // Connects to the browser process. Called by ts when the read anything
     // element is added to the document.
     function onConnected(): void;
@@ -123,6 +143,9 @@ declare namespace chrome {
     // Called when a user tries to copy text from reading mode with keyboard
     // shortcuts.
     function onCopy(): void;
+
+    // Called when speech is paused or played.
+    function onSpeechPlayingStateChanged(paused: boolean): void;
 
     // Called when the Read Anything panel is scrolled.
     function onScroll(onSelection: boolean): void;
@@ -139,6 +162,9 @@ declare namespace chrome {
     // Called when a user makes a font size change via the webui toolbar.
     function onFontSizeChanged(increase: boolean): void;
     function onFontSizeReset(): void;
+
+    // Called when a user toggles links via the webui toolbar.
+    function onLinksEnabledToggled(): void;
 
     // Called when the letter spacing is changed via the webui toolbar.
     function onStandardLetterSpacing(): void;
@@ -160,6 +186,10 @@ declare namespace chrome {
 
     // Called when the voice used for speech is changed via the webui toolbar.
     function onVoiceChange(voice: string, lang: string): void;
+
+    // Called when a language is enabled/disabled for Read Aloud
+    // via the webui language menu.
+    function onLanguagePrefChange(lang: string, enabled: boolean): void;
 
     // Called when the highlight granularity is changed via the webui toolbar.
     function turnedHighlightOn(): void;
@@ -209,12 +239,12 @@ declare namespace chrome {
         foregroundColor: number, backgroundColor: number, lineSpacing: number,
         letterSpacing: number): void;
 
-    // Sets the default language. Used by tests only.
+    // Sets the page language. Used by tests only.
     function setLanguageForTesting(code: string): void;
 
     // Called when the side panel has finished loading and it's safe to call
     // SidePanelWebUIView::ShowUI
-    function shouldShowUI(): boolean;
+    function shouldShowUi(): boolean;
 
     ////////////////////////////////////////////////////////////////
     // Implemented in read_anything/app.ts and called by native c++.
@@ -230,12 +260,29 @@ declare namespace chrome {
     // and is available to consume.
     function updateContent(): void;
 
+    // Redraws links when the enabled state changes.
+    function updateLinks(): void;
+
+    // Updates an images src attribute with a data url. The data url must have
+    // been requested first.
+    function updateImage(nodeId: number): void;
+
     // Ping that the selection has been updated.
     function updateSelection(): void;
 
     // Ping that the theme choices of the user have been changed using the
     // toolbar and are ready to consume.
     function updateTheme(): void;
+
+    // Read Aloud state should be updated if the lock screen state changes.
+    function onLockScreen(): void;
+
+    // Called with the response of sendGetVoicePackInfoRequest()
+    function updateVoicePackStatus(lang: string, status: string): void;
+
+    // Called with the response of sendInstallVoicePackRequest()
+    function updateVoicePackStatusFromInstallResponse(
+        lang: string, status: string): void;
 
     // Ping that the theme choices of the user have been retrieved from
     // preferences and can be used to set up the page.
@@ -244,30 +291,83 @@ declare namespace chrome {
     // Inits the AXPosition instance in ReadAnythingAppController with the
     // starting node. Currently needed to orient the AXPosition to the correct
     // position, but we should be able to remove this in the future.
-    function initAXPositionWithNode(startingNodeId: number): void;
+    function initAxPositionWithNode(startingNodeId: number): void;
 
     // Gets the starting text index for the current Read Aloud text segment
-    // for the given node. nodeId should be a node returned by getNextText or
-    // getPreviousText. Returns -1 if the node is invalid.
-    function getNextTextStartIndex(nodeId: number): number;
+    // for the given node. nodeId should be a node returned by getCurrentText.
+    // Returns -1 if the node is invalid.
+    function getCurrentTextStartIndex(nodeId: number): number;
 
     // Gets the ending text index for the current Read Aloud text segment
-    // for the given node. nodeId should be a node returned by getNextText or
+    // for the given node. nodeId should be a node returned by getCurrentText or
     // getPreviousText. Returns -1 if the node is invalid.
-    function getNextTextEndIndex(nodeId: number): number;
+    function getCurrentTextEndIndex(nodeId: number): number;
 
     // Gets the nodes of the  next text that should be spoken and highlighted.
-    // Use getNextTextStartIndex and getNextTextEndIndex to get the bounds
+    // Use getCurrentTextStartIndex and getCurrentTextEndIndex to get the bounds
     // for text associated with these nodes.
-    function getNextText(maxTextLength: number): number[];
+    function getCurrentText(): number[];
 
-    // Gets the nodes for the previous text that should be spoken and
-    // highlighted. Use getNextTextStartIndex and getNextTextEndIndex to get
-    // the bounds for text associated with these nodes.
-    function getPreviousText(maxTextLength: number): number[];
+    // Increments the processed_granularity_index_ in ReadAnythingAppModel,
+    // effectively updating ReadAloud's state of the current granularity to
+    // refer to the next granularity.
+    function movePositionToNextGranularity(): void;
 
-    // Signal that the supported fonts should be updated i.e. that the brower's
-    // preferred language has changed.
-    function updateFonts(): void;
+    // Decrements the processed_granularity_index_ in ReadAnythingAppModel,
+    // effectively updating ReadAloud's state of the current granularity to
+    // refer to the previous granularity.
+    function movePositionToPreviousGranularity(): void;
+
+    // Signal that the page language has changed.
+    function languageChanged(): void;
+
+    // Gets the accessible text boundary for the given string
+    function getAccessibleBoundary(text: string, maxSpeechLength: number):
+        number;
+
+    // Requests the image in the form of a data url. The result will then be
+    // stored in the AXNode which can be fetched on content update.
+    function requestImageDataUrl(nodeId: number): void;
+
+    // Gets the stored image data url from the AXNode.
+    function getImageDataUrl(nodeId: number): string;
+
+    // Gets the readable name for a locale code
+    function getDisplayNameForLocale(locale: string, displayLocale: string):
+        string;
+
+    // Sends an async request to get the status of a Natural voice pack for a
+    // specific language. The response is sent back to the UI via
+    // updateVoicePackStatus()
+    function sendGetVoicePackInfoRequest(language: string): void;
+
+    // Sends an async request to install a  Natural voice pack for a
+    // specific language. The response is sent back to the UI via
+    // updateVoicePackStatusFromInstallResponse()
+    function sendInstallVoicePackRequest(language: string): void;
+
+    // Log UmaHistogram
+    function logMetric(time: number, metricName: string): void;
+
+    // Log UmaHistogramLong
+    function logLongMetric(time: number, metricName: string): void;
+
+    // Log UmaHistogramCount
+    function incrementMetricCount(metricName: string): void;
+
+    // Log speech errors.
+    function logSpeechError(errorCode: string): void;
+
+    // Returns the node id associated with the index within the given text
+    // segment.
+    // For example, for a segment of text composed of two nodes:
+    // Node 1: "Hello, this is a "
+    // Node 2: "segment of text."
+    // An index of "20" will return the node id associated with node 2.
+    function getNodeIdForCurrentSegmentIndex(index: number): number;
+
+    // The highlight length of the next word starting at the given index within
+    // the current segment.
+    function getNextWordHighlightLength(index: number): number;
   }
 }

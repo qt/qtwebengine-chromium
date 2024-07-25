@@ -208,6 +208,14 @@ double MediaValuesCached::ContainerHeight() const {
   return SmallViewportHeight();
 }
 
+double MediaValuesCached::ContainerWidth(const ScopedCSSName&) const {
+  return SmallViewportWidth();
+}
+
+double MediaValuesCached::ContainerHeight(const ScopedCSSName&) const {
+  return SmallViewportHeight();
+}
+
 int MediaValuesCached::DeviceWidth() const {
   return data_.device_width;
 }
@@ -337,8 +345,7 @@ int MediaValuesCached::GetVerticalViewportSegments() const {
   return data_.vertical_viewport_segments;
 }
 
-device::mojom::blink::DevicePostureType MediaValuesCached::GetDevicePosture()
-    const {
+mojom::blink::DevicePostureType MediaValuesCached::GetDevicePosture() const {
   return data_.device_posture;
 }
 

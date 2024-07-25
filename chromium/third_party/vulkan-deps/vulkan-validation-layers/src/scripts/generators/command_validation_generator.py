@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2021-2023 The Khronos Group Inc.
+# Copyright (c) 2021-2024 The Khronos Group Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,8 +34,8 @@ class CommandValidationOutputGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2021-2023 Valve Corporation
-            * Copyright (c) 2021-2023 LunarG, Inc.
+            * Copyright (c) 2021-2024 Valve Corporation
+            * Copyright (c) 2021-2024 LunarG, Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -174,11 +174,15 @@ class CommandValidationOutputGenerator(BaseGenerator):
 
                     default:
                         assert(loc.function != Func::Empty);
-                        skip |= LogError(info.recording_vuid, cb_state.commandBuffer(), loc, "was called before vkBeginCommandBuffer().");
+                        skip |= LogError(info.recording_vuid, cb_state.Handle(), loc, "was called before vkBeginCommandBuffer().");
                 }
 
                 // Validate the command pool from which the command buffer is from that the command is allowed for queue type
-                skip |= ValidateCmdQueueFlags(cb_state, loc, info.queue_flags, info.queue_vuid);
+                if (!HasRequiredQueueFlags(cb_state, *physical_device_state, info.queue_flags)) {
+                    const LogObjectList objlist(cb_state.Handle(), cb_state.command_pool->Handle());
+                    skip |= LogError(info.queue_vuid, objlist, loc,
+                                "%s", DescribeRequiredQueueFlag(cb_state, *physical_device_state, info.queue_flags).c_str());
+                }
 
                 // Validate if command is inside or outside a render pass if applicable
                 if (info.render_pass == CMD_SCOPE_INSIDE) {

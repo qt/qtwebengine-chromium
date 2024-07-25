@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/request_conversion.h"
 
+#include <string_view>
+
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
@@ -47,13 +49,13 @@ constexpr char kCorsExemptRequestedWithHeaderName[] = "X-Requested-With";
 
 // TODO(yhirano) Dedupe this and the same-name function in
 // web_url_request_util.cc.
-std::string TrimLWSAndCRLF(const base::StringPiece& input) {
-  base::StringPiece string = net::HttpUtil::TrimLWS(input);
+std::string TrimLWSAndCRLF(const std::string_view& input) {
+  std::string_view string = net::HttpUtil::TrimLWS(input);
   const char* begin = string.data();
   const char* end = string.data() + string.size();
   while (begin < end && (end[-1] == '\r' || end[-1] == '\n'))
     --end;
-  return std::string(base::StringPiece(begin, end - begin));
+  return std::string(std::string_view(begin, end - begin));
 }
 
 mojom::ResourceType RequestContextToResourceType(
@@ -329,7 +331,7 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->fetch_integrity = src.GetFetchIntegrity().Utf8();
   if (src.GetWebBundleTokenParams().has_value()) {
     dest->web_bundle_token_params =
-        absl::make_optional(network::ResourceRequest::WebBundleTokenParams(
+        std::make_optional(network::ResourceRequest::WebBundleTokenParams(
             GURL(src.GetWebBundleTokenParams()->bundle_url),
             src.GetWebBundleTokenParams()->token,
             ToCrossVariantMojoType(
@@ -362,7 +364,7 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->required_ip_address_space = src.GetTargetAddressSpace();
 
   if (base::UnguessableToken window_id = src.GetFetchWindowId())
-    dest->fetch_window_id = absl::make_optional(window_id);
+    dest->fetch_window_id = std::make_optional(window_id);
 
   if (!src.GetDevToolsId().IsNull()) {
     dest->devtools_request_id = src.GetDevToolsId().Ascii();
@@ -389,9 +391,6 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   network_utils::SetAcceptHeader(dest->headers, request_destination);
 
   dest->original_destination = src.GetOriginalDestination();
-
-  if (dest->load_flags & net::LOAD_PREFETCH)
-    dest->corb_detachable = true;
 
   if (src.GetURLRequestExtraData()) {
     src.GetURLRequestExtraData()->CopyToResourceRequest(dest);

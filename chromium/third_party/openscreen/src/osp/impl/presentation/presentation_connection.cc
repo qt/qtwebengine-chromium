@@ -21,16 +21,6 @@
 
 namespace openscreen::osp {
 
-namespace {
-
-// TODO(jophba): replace Write methods with a unified write message surface
-Error WriteConnectionMessage(const msgs::PresentationConnectionMessage& message,
-                             ProtocolConnection* connection) {
-  return connection->WriteMessage(message,
-                                  msgs::EncodePresentationConnectionMessage);
-}
-}  // namespace
-
 Connection::Connection(const PresentationInfo& info,
                        Delegate* delegate,
                        ParentDelegate* parent_delegate)
@@ -50,7 +40,7 @@ Connection::~Connection() {
 }
 
 void Connection::OnConnecting() {
-  OSP_DCHECK(!protocol_connection_);
+  OSP_CHECK(!protocol_connection_);
   state_ = State::kConnecting;
 }
 
@@ -78,7 +68,7 @@ bool Connection::OnClosed() {
   return true;
 }
 
-void Connection::OnClosedByError(Error cause) {
+void Connection::OnClosedByError(const Error& cause) {
   if (OnClosed()) {
     std::ostringstream stream;
     stream << cause;
@@ -112,7 +102,8 @@ Error Connection::SendString(std::string_view message) {
 
   new (&cbor_message.message.str) std::string(message);
 
-  return WriteConnectionMessage(cbor_message, protocol_connection_.get());
+  return protocol_connection_->WriteMessage(
+      cbor_message, &msgs::EncodePresentationConnectionMessage);
 }
 
 Error Connection::SendBinary(std::vector<uint8_t>&& data) {
@@ -128,7 +119,8 @@ Error Connection::SendBinary(std::vector<uint8_t>&& data) {
 
   new (&cbor_message.message.bytes) std::vector<uint8_t>(std::move(data));
 
-  return WriteConnectionMessage(cbor_message, protocol_connection_.get());
+  return protocol_connection_->WriteMessage(
+      cbor_message, &msgs::EncodePresentationConnectionMessage);
 }
 
 Error Connection::Close(CloseReason reason) {
@@ -141,12 +133,12 @@ Error Connection::Close(CloseReason reason) {
   return parent_delegate_->CloseConnection(this, reason);
 }
 
-void Connection::Terminate(TerminationReason reason) {
+void Connection::Terminate(TerminationSource source, TerminationReason reason) {
   if (state_ == State::kTerminated)
     return;
   state_ = State::kTerminated;
   protocol_connection_.reset();
-  parent_delegate_->OnPresentationTerminated(presentation_.id, reason);
+  parent_delegate_->OnPresentationTerminated(presentation_.id, source, reason);
 }
 
 ConnectionManager::ConnectionManager(MessageDemuxer* demuxer) {
@@ -164,7 +156,7 @@ void ConnectionManager::AddConnection(Connection* connection) {
   auto emplace_result =
       connections_.emplace(connection->connection_id(), connection);
 
-  OSP_DCHECK(emplace_result.second);
+  OSP_CHECK(emplace_result.second);
 }
 
 void ConnectionManager::RemoveConnection(Connection* connection) {
@@ -188,7 +180,7 @@ ErrorOr<size_t> ConnectionManager::OnStreamMessage(uint64_t endpoint_id,
     case msgs::Type::kPresentationConnectionMessage: {
       msgs::PresentationConnectionMessage message;
       ssize_t bytes_decoded = msgs::DecodePresentationConnectionMessage(
-          buffer, buffer_size, &message);
+          buffer, buffer_size, message);
       if (bytes_decoded < 0) {
         OSP_LOG_WARN << "presentation-connection-message parse error";
         return Error::Code::kParseError;
@@ -217,24 +209,23 @@ ErrorOr<size_t> ConnectionManager::OnStreamMessage(uint64_t endpoint_id,
     case msgs::Type::kPresentationConnectionCloseRequest: {
       msgs::PresentationConnectionCloseRequest request;
       ssize_t bytes_decoded = msgs::DecodePresentationConnectionCloseRequest(
-          buffer, buffer_size, &request);
+          buffer, buffer_size, request);
       if (bytes_decoded < 0) {
         OSP_LOG_WARN << "decode presentation-connection-close-request error: "
                      << bytes_decoded;
         return Error::Code::kCborInvalidMessage;
       }
 
-      msgs::PresentationConnectionCloseResponse response;
-      response.request_id = request.request_id;
+      msgs::PresentationConnectionCloseResponse response = {
+          .request_id = request.request_id,
+          .result = msgs::PresentationConnectionCloseResponse_result::
+              kInvalidConnectionId};
 
       Connection* connection = GetConnection(request.connection_id);
       if (connection) {
         response.result =
             msgs::PresentationConnectionCloseResponse_result::kSuccess;
         connection->OnClosedByRemote();
-      } else {
-        response.result = msgs::PresentationConnectionCloseResponse_result::
-            kInvalidConnectionId;
       }
 
       std::unique_ptr<ProtocolConnection> protocol_connection =
@@ -255,7 +246,7 @@ ErrorOr<size_t> ConnectionManager::OnStreamMessage(uint64_t endpoint_id,
     case msgs::Type::kPresentationConnectionCloseEvent: {
       msgs::PresentationConnectionCloseEvent event;
       ssize_t bytes_decoded = msgs::DecodePresentationConnectionCloseEvent(
-          buffer, buffer_size, &event);
+          buffer, buffer_size, event);
       if (bytes_decoded < 0) {
         OSP_LOG_WARN << "decode presentation-connection-close-event error: "
                      << bytes_decoded;
@@ -286,6 +277,10 @@ Connection* ConnectionManager::GetConnection(uint64_t connection_id) {
 
   OSP_DVLOG << "unknown ID: " << connection_id;
   return nullptr;
+}
+
+size_t ConnectionManager::ConnectionCount() const {
+  return connections_.size();
 }
 
 }  // namespace openscreen::osp

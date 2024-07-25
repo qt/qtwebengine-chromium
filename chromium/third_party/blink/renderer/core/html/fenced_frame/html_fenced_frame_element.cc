@@ -17,7 +17,9 @@
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
+#include "third_party/blink/renderer/core/event_type_names.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/csp/csp_directive_list.h"
@@ -124,6 +126,15 @@ double ComputeSizeLossFunction(const PhysicalSize& requested_size,
                        std::max(requested_area, allowed_area));
 
   return wasted_area_fraction + resolution_penalty;
+}
+
+std::optional<WTF::AtomicString> ConvertEventTypeToFencedEventType(
+    const WTF::String& event_type) {
+  if (!CanNotifyEventTypeAcrossFence(event_type.Ascii())) {
+    return std::nullopt;
+  }
+
+  return event_type_names::kFencedtreeclick;
 }
 
 }  // namespace
@@ -249,9 +260,6 @@ bool HTMLFencedFrameElement::canLoadOpaqueURL(ScriptState* script_state) {
   ExecutionContext* context = ExecutionContext::From(script_state);
   DCHECK(frame_to_check && context);
 
-  ContentSecurityPolicy* csp = context->GetContentSecurityPolicy();
-  DCHECK(csp);
-
   // "A fenced frame tree of one mode cannot contain a child fenced frame of
   // another mode."
   // See: https://github.com/WICG/fenced-frame/blob/master/explainer/modes.md
@@ -290,26 +298,10 @@ bool HTMLFencedFrameElement::canLoadOpaqueURL(ScriptState* script_state) {
   // piggy-back off of the ancestor_or_self_has_cspee bit being sent from the
   // browser (which is sent at commit time) since it doesn't know about all the
   // CSP headers yet.
-  for (const auto& policy : csp->GetParsedPolicies()) {
-    CSPOperativeDirective directive = CSPDirectiveListOperativeDirective(
-        *policy, CSPDirectiveName::FencedFrameSrc);
-    if (directive.type != CSPDirectiveName::Unknown) {
-      // "*" urls will cause the allow_star flag to set
-      if (directive.source_list->allow_star) {
-        continue;
-      }
-
-      // Check for "https:" or "https://*:*"
-      bool found_matching_source = false;
-      for (const auto& source : directive.source_list->sources) {
-        if (source->scheme == url::kHttpsScheme && source->host == "") {
-          found_matching_source = true;
-          break;
-        }
-      }
-      if (!found_matching_source)
-        return false;
-    }
+  ContentSecurityPolicy* csp = context->GetContentSecurityPolicy();
+  DCHECK(csp);
+  if (!csp->AllowFencedFrameOpaqueURL()) {
+    return false;
   }
 
   return true;
@@ -392,9 +384,9 @@ void HTMLFencedFrameElement::CollectStyleForPresentationAttribute(
 
 void HTMLFencedFrameElement::Navigate(
     const KURL& url,
-    absl::optional<bool> deprecated_should_freeze_initial_size,
-    absl::optional<gfx::Size> container_size,
-    absl::optional<gfx::Size> content_size,
+    std::optional<bool> deprecated_should_freeze_initial_size,
+    std::optional<gfx::Size> container_size,
+    std::optional<gfx::Size> content_size,
     String embedder_shared_storage_context) {
   TRACE_EVENT0("navigation", "HTMLFencedFrameElement::Navigate");
   if (!isConnected())
@@ -707,10 +699,10 @@ PhysicalSize HTMLFencedFrameElement::CoerceFrameSize(
   return PhysicalSize(best_size);
 }
 
-const absl::optional<PhysicalSize> HTMLFencedFrameElement::FrozenFrameSize()
+const std::optional<PhysicalSize> HTMLFencedFrameElement::FrozenFrameSize()
     const {
   if (!frozen_frame_size_)
-    return absl::nullopt;
+    return std::nullopt;
   const float ratio = GetDocument().DevicePixelRatio();
   return PhysicalSize(
       LayoutUnit::FromFloatRound(frozen_frame_size_->width * ratio),
@@ -726,7 +718,7 @@ void HTMLFencedFrameElement::UnfreezeFrameSize() {
   }
 
   // Otherwise, the frame previously had a frozen size. Unfreeze it.
-  frozen_frame_size_ = absl::nullopt;
+  frozen_frame_size_ = std::nullopt;
   frame_delegate_->MarkFrozenFrameSizeStale();
 }
 
@@ -741,7 +733,7 @@ void HTMLFencedFrameElement::FreezeCurrentFrameSize() {
   }
 
   // Otherwise, we need to change the frozen size of the frame.
-  frozen_frame_size_ = absl::nullopt;
+  frozen_frame_size_ = std::nullopt;
 
   // If we know the current outer frame size, freeze the inner frame to it.
   if (content_rect_) {
@@ -811,6 +803,16 @@ void HTMLFencedFrameElement::OnResize(const PhysicalRect& content_rect) {
   }
 }
 
+void HTMLFencedFrameElement::DispatchFencedEvent(
+    const WTF::String& event_type) {
+  std::optional<WTF::AtomicString> fenced_event_type =
+      ConvertEventTypeToFencedEventType(event_type);
+  CHECK(fenced_event_type.has_value());
+  // Note: This method sets isTrusted = true on the event object, to indicate
+  // that the event was dispatched by the browser.
+  DispatchEvent(*Event::CreateFenced(*fenced_event_type));
+}
+
 // START HTMLFencedFrameElement::FencedFrameDelegate
 
 // static
@@ -863,7 +865,7 @@ HTMLFencedFrameElement::FencedFrameDelegate::Create(
     RecordFencedFrameUnsandboxedFlags(
         outer_element->GetExecutionContext()->GetSandboxFlags());
     RecordFencedFrameFailedSandboxLoadInTopLevelFrame(
-        outer_element->GetDocument().GetFrame()->IsMainFrame());
+        outer_element->GetDocument().IsInMainFrame());
     return nullptr;
   }
 

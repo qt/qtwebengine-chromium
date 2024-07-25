@@ -398,6 +398,10 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
         fSupportsDRMFormatModifiers = true;
     }
 
+    if (extensions.hasExtension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME, 1)) {
+        fSupportsDeviceFaultInfo = true;
+    }
+
     fMaxInputAttachmentDescriptors = properties.limits.maxDescriptorSetInputAttachments;
 
     fMaxSamplerAnisotropy = properties.limits.maxSamplerAnisotropy;
@@ -1612,7 +1616,7 @@ int GrVkCaps::getRenderTargetSampleCount(int requestedCount, VkFormat format) co
     }
 
     if (1 == requestedCount) {
-        SkASSERT(info.fColorSampleCounts.size() && info.fColorSampleCounts[0] == 1);
+        SkASSERT(!info.fColorSampleCounts.empty() && info.fColorSampleCounts[0] == 1);
         return 1;
     }
 
@@ -1636,7 +1640,7 @@ int GrVkCaps::maxRenderTargetSampleCount(VkFormat format) const {
     const FormatInfo& info = this->getFormatInfo(format);
 
     const auto& table = info.fColorSampleCounts;
-    if (!table.size()) {
+    if (table.empty()) {
         return 0;
     }
     return table[table.size() - 1];

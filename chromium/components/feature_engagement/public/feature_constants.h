@@ -16,29 +16,26 @@ namespace feature_engagement {
 // A feature for enabling a demonstration mode for In-Product Help (IPH).
 BASE_DECLARE_FEATURE(kIPHDemoMode);
 
-// A feature for enabling In-Product Help (IPH) to use client side
-// configuration. When this flag is enabled, finch config will be ignored for
-// all IPHs.
-BASE_DECLARE_FEATURE(kUseClientConfigIPH);
-
 // A feature to ensure all arrays can contain at least one feature.
 BASE_DECLARE_FEATURE(kIPHDummyFeature);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
+BASE_DECLARE_FEATURE(kEsbDownloadRowPromoFeature);
 BASE_DECLARE_FEATURE(kIPHBatterySaverModeFeature);
 BASE_DECLARE_FEATURE(kIPHCompanionSidePanelFeature);
 BASE_DECLARE_FEATURE(kIPHCompanionSidePanelRegionSearchFeature);
-BASE_DECLARE_FEATURE(kIPHComposeMenuNewBadgeFeature);
 BASE_DECLARE_FEATURE(kIPHComposeMSBBSettingsFeature);
 BASE_DECLARE_FEATURE(kIPHComposeNewBadgeFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopSharedHighlightingFeature);
-BASE_DECLARE_FEATURE(kIPHDesktopTabGroupsNewGroupFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopCustomizeChromeFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopCustomizeChromeRefreshFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopNewTabPageModulesCustomizeFeature);
+BASE_DECLARE_FEATURE(kIPHDesktopReEngagementFeature);
+BASE_DECLARE_FEATURE(kIPHDiscardRingFeature);
 BASE_DECLARE_FEATURE(kIPHDownloadEsbPromoFeature);
 BASE_DECLARE_FEATURE(kIPHExperimentalAIPromoFeature);
+BASE_DECLARE_FEATURE(kIPHExplicitBrowserSigninPreferenceRememberedFeature);
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 BASE_DECLARE_FEATURE(kIPHExtensionsMenuFeature);
 BASE_DECLARE_FEATURE(kIPHExtensionsRequestAccessButtonFeature);
@@ -66,13 +63,16 @@ BASE_DECLARE_FEATURE(kIPHReadingModeSidePanelFeature);
 BASE_DECLARE_FEATURE(kIPHShoppingCollectionFeature);
 BASE_DECLARE_FEATURE(kIPHSidePanelGenericMenuFeature);
 BASE_DECLARE_FEATURE(kIPHSidePanelGenericPinnableFeature);
+BASE_DECLARE_FEATURE(kIPHSidePanelLensOverlayPinnableFeature);
+BASE_DECLARE_FEATURE(kIPHSidePanelLensOverlayPinnableFollowupFeature);
 BASE_DECLARE_FEATURE(kIPHSideSearchAutoTriggeringFeature);
-BASE_DECLARE_FEATURE(kIPHSideSearchFeature);
 BASE_DECLARE_FEATURE(kIPHSideSearchPageActionLabelFeature);
+BASE_DECLARE_FEATURE(kIPHSignoutWebInterceptFeature);
 BASE_DECLARE_FEATURE(kIPHTabOrganizationSuccessFeature);
 BASE_DECLARE_FEATURE(kIPHTabSearchFeature);
 BASE_DECLARE_FEATURE(kIPHTrackingProtectionOffboardingFeature);
 BASE_DECLARE_FEATURE(kIPHTrackingProtectionOnboardingFeature);
+BASE_DECLARE_FEATURE(kIPHTrackingProtectionReminderFeature);
 BASE_DECLARE_FEATURE(kIPHWebUITabStripFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopSnoozeFeature);
 BASE_DECLARE_FEATURE(kIPHDesktopPwaInstallFeature);
@@ -98,9 +98,11 @@ BASE_DECLARE_FEATURE(
 BASE_DECLARE_FEATURE(
     kIPHAdaptiveButtonInTopToolbarCustomizationReadAloudFeature);
 BASE_DECLARE_FEATURE(kIPHAddToHomescreenMessageFeature);
+BASE_DECLARE_FEATURE(kIPHAppSpecificHistory);
 BASE_DECLARE_FEATURE(kIPHAutoDarkOptOutFeature);
 BASE_DECLARE_FEATURE(kIPHAutoDarkUserEducationMessageFeature);
 BASE_DECLARE_FEATURE(kIPHAutoDarkUserEducationMessageOptInFeature);
+BASE_DECLARE_FEATURE(kIPHCCTHistory);
 BASE_DECLARE_FEATURE(kIPHCCTMinimized);
 BASE_DECLARE_FEATURE(kIPHContextualPageActionsQuietVariantFeature);
 BASE_DECLARE_FEATURE(kIPHContextualPageActionsActionChipFeature);
@@ -117,24 +119,6 @@ BASE_DECLARE_FEATURE(kIPHDownloadSettingsFeature);
 BASE_DECLARE_FEATURE(kIPHDownloadInfoBarDownloadContinuingFeature);
 BASE_DECLARE_FEATURE(kIPHDownloadInfoBarDownloadsAreFasterFeature);
 BASE_DECLARE_FEATURE(kIPHEphemeralTabFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideDefaultBrowserNotificationShownFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideSignInNotificationShownFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideIncognitoTabNotificationShownFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideNTPSuggestionCardNotificationShownFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideVoiceSearchNotificationShownFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideDefaultBrowserPromoFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideSignInHelpBubbleFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideIncognitoTabHelpBubbleFeature);
-BASE_DECLARE_FEATURE(
-    kIPHFeatureNotificationGuideNTPSuggestionCardHelpBubbleFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideVoiceSearchHelpBubbleFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideIncognitoTabUsedFeature);
-BASE_DECLARE_FEATURE(kIPHFeatureNotificationGuideVoiceSearchUsedFeature);
 BASE_DECLARE_FEATURE(kIPHFeedCardMenuFeature);
 BASE_DECLARE_FEATURE(kIPHGenericAlwaysTriggerHelpUiFeature);
 BASE_DECLARE_FEATURE(kIPHHomePageButtonFeature);
@@ -154,13 +138,13 @@ BASE_DECLARE_FEATURE(kIPHPageZoomFeature);
 BASE_DECLARE_FEATURE(kIPHPreviewsOmniboxUIFeature);
 BASE_DECLARE_FEATURE(kIPHPriceDropNTPFeature);
 BASE_DECLARE_FEATURE(kIPHQuietNotificationPromptsFeature);
+BASE_DECLARE_FEATURE(kIPHReadAloudAppMenuFeature);
 BASE_DECLARE_FEATURE(kIPHReadLaterContextMenuFeature);
 BASE_DECLARE_FEATURE(kIPHReadLaterAppMenuBookmarkThisPageFeature);
 BASE_DECLARE_FEATURE(kIPHReadLaterAppMenuBookmarksFeature);
 BASE_DECLARE_FEATURE(kIPHReadLaterBottomSheetFeature);
 BASE_DECLARE_FEATURE(kIPHRequestDesktopSiteAppMenuFeature);
 BASE_DECLARE_FEATURE(kIPHRequestDesktopSiteDefaultOnFeature);
-BASE_DECLARE_FEATURE(kIPHRequestDesktopSiteOptInFeature);
 BASE_DECLARE_FEATURE(kIPHRequestDesktopSiteExceptionsGenericFeature);
 BASE_DECLARE_FEATURE(kIPHRequestDesktopSiteWindowSettingFeature);
 BASE_DECLARE_FEATURE(kIPHShoppingListMenuItemFeature);
@@ -184,7 +168,6 @@ BASE_DECLARE_FEATURE(kIPHFeedSwipeRefresh);
 BASE_DECLARE_FEATURE(kIPHChromeReengagementNotification1Feature);
 BASE_DECLARE_FEATURE(kIPHChromeReengagementNotification2Feature);
 BASE_DECLARE_FEATURE(kIPHChromeReengagementNotification3Feature);
-BASE_DECLARE_FEATURE(kIPHPwaInstallAvailableFeature);
 BASE_DECLARE_FEATURE(kIPHShareScreenshotFeature);
 BASE_DECLARE_FEATURE(kIPHSharingHubLinkToggleFeature);
 BASE_DECLARE_FEATURE(kIPHWebFeedFollowFeature);
@@ -217,28 +200,30 @@ BASE_DECLARE_FEATURE(kIPHiOSPromoAppStoreFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoWhatsNewFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoPostRestoreFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoCredentialProviderExtensionFeature);
-BASE_DECLARE_FEATURE(kIPHiOSPromoDefaultBrowserFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoDefaultBrowserReminderFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoOmniboxPositionFeature);
 BASE_DECLARE_FEATURE(kIPHiOSNewTabToolbarItemFeature);
 BASE_DECLARE_FEATURE(kIPHiOSTabGridToolbarItemFeature);
 BASE_DECLARE_FEATURE(kIPHiOSHistoryOnOverflowMenuFeature);
 BASE_DECLARE_FEATURE(kIPHiOSShareToolbarItemFeature);
-BASE_DECLARE_FEATURE(kIPHiOSDefaultBrowserVideoPromoTriggerFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoPostRestoreDefaultBrowserFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoPasswordManagerWidgetFeature);
-BASE_DECLARE_FEATURE(kIPHiOSChoiceScreenFeature);
 BASE_DECLARE_FEATURE(kIPHiOSParcelTrackingFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPullToRefreshFeature);
 BASE_DECLARE_FEATURE(kIPHiOSReplaceSyncPromosWithSignInPromos);
-BASE_DECLARE_FEATURE(kIPHiOSBlueDotPromoEnhancedSafeBrowsingFeature);
-BASE_DECLARE_FEATURE(kIPHiOSInlinePromoEnhancedSafeBrowsingFeature);
-BASE_DECLARE_FEATURE(kIPHiOSTabGridSwipeLeftForIncognito);
+BASE_DECLARE_FEATURE(kIPHiOSTabGridSwipeRightForIncognito);
 BASE_DECLARE_FEATURE(kIPHiOSDockingPromoFeature);
 BASE_DECLARE_FEATURE(kIPHiOSDockingPromoRemindMeLaterFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoAllTabsFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoMadeForIOSFeature);
 BASE_DECLARE_FEATURE(kIPHiOSPromoStaySafeFeature);
+BASE_DECLARE_FEATURE(kIPHiOSSwipeBackForwardFeature);
+BASE_DECLARE_FEATURE(kIPHiOSSwipeToolbarToChangeTabFeature);
+BASE_DECLARE_FEATURE(kIPHiOSPostDefaultAbandonmentPromoFeature);
+BASE_DECLARE_FEATURE(kIPHiOSPromoGenericDefaultBrowserFeature);
+BASE_DECLARE_FEATURE(kIPHiOSOverflowMenuCustomizationFeature);
+BASE_DECLARE_FEATURE(kIPHiOSPageInfoRevampFeature);
+BASE_DECLARE_FEATURE(kIPHiOSInlineEnhancedSafeBrowsingPromoFeature);
 
 // A feature flag to enable and parametrize the sliding window of time for a
 // user's eligibility to be shown a default browser promo. This is not an FET
@@ -250,20 +235,36 @@ BASE_DECLARE_FEATURE(kDefaultBrowserEligibilitySlidingWindow);
 // days.
 extern const base::FeatureParam<int>
     kDefaultBrowserEligibilitySlidingWindowParam;
+
+// The param name for the lifetime maximum occurrence for gesture in-product
+// help features.
+extern const char kGestureInProductHelpMaxOccurrence[];
+
+// The param name for the minimum number of days between two impressions for
+// each type of in-product help feature.
+extern const char kGestureInProductHelpDaysBetweenOccurrences[];
+
+// Non-FET feature flag that enables the generic default browser promo to be
+// displayed without matching all the criteria and in depth metrics collection
+// for the displayed promo.
+BASE_DECLARE_FEATURE(kDefaultBrowserTriggerCriteriaExperiment);
+
 #endif  // BUILDFLAG(IS_IOS)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
+BASE_DECLARE_FEATURE(kIPHAutofillCreditCardBenefitFeature);
 BASE_DECLARE_FEATURE(kIPHAutofillExternalAccountProfileSuggestionFeature);
+BASE_DECLARE_FEATURE(kIPHAutofillManualFallbackFeature);
 BASE_DECLARE_FEATURE(kIPHAutofillVirtualCardCVCSuggestionFeature);
 BASE_DECLARE_FEATURE(kIPHAutofillVirtualCardSuggestionFeature);
 BASE_DECLARE_FEATURE(kIPHCookieControlsFeature);
-BASE_DECLARE_FEATURE(kIPH3pcdUserBypassFeature);
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) ||
         // BUILDFLAG(IS_FUCHSIA)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+BASE_DECLARE_FEATURE(kIPHGrowthFramework);
 BASE_DECLARE_FEATURE(kIPHGoogleOneOfferNotificationFeature);
 BASE_DECLARE_FEATURE(kIPHLauncherSearchHelpUiFeature);
 BASE_DECLARE_FEATURE(kIPHScalableIphTimerBasedOneFeature);

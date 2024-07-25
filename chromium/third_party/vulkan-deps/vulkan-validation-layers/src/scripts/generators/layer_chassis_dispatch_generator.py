@@ -1,9 +1,9 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2023 The Khronos Group Inc.
-# Copyright (c) 2015-2023 Valve Corporation
-# Copyright (c) 2015-2023 LunarG, Inc.
-# Copyright (c) 2015-2023 Google Inc.
+# Copyright (c) 2015-2024 The Khronos Group Inc.
+# Copyright (c) 2015-2024 Valve Corporation
+# Copyright (c) 2015-2024 LunarG, Inc.
+# Copyright (c) 2015-2024 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,15 +33,16 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             'vkDestroyInstance',
             'vkCreateDevice',
             'vkDestroyDevice',
-            'vkCreateSwapchainKHR',
-            'vkCreateSharedSwapchainsKHR',
+            # Need to handle Acquired swapchain image handles
             'vkGetSwapchainImagesKHR',
             'vkDestroySwapchainKHR',
+            # Have issues with generating logic to work correctly with Safe Struct
             'vkQueuePresentKHR',
             'vkCreateGraphicsPipelines',
             'vkCreateComputePipelines',
             'vkCreateRayTracingPipelinesNV',
             'vkCreateRayTracingPipelinesKHR',
+            # Need handle which pool descriptors were allocated from
             'vkResetDescriptorPool',
             'vkDestroyDescriptorPool',
             'vkAllocateDescriptorSets',
@@ -54,48 +55,58 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             'vkUpdateDescriptorSetWithTemplateKHR',
             'vkCmdPushDescriptorSetWithTemplateKHR',
             'vkCmdPushDescriptorSetWithTemplate2KHR',
-            'vkDebugMarkerSetObjectTagEXT',
-            'vkDebugMarkerSetObjectNameEXT',
+            # Tracking renderpass state for the pipeline safe struct
             'vkCreateRenderPass',
             'vkCreateRenderPass2KHR',
             'vkCreateRenderPass2',
             'vkDestroyRenderPass',
+            # Accesses to the map itself are internally synchronized.
+            'vkDebugMarkerSetObjectTagEXT',
+            'vkDebugMarkerSetObjectNameEXT',
             'vkSetDebugUtilsObjectNameEXT',
             'vkSetDebugUtilsObjectTagEXT',
-            'vkGetPhysicalDeviceDisplayPropertiesKHR',
-            'vkGetPhysicalDeviceDisplayProperties2KHR',
-            'vkGetPhysicalDeviceDisplayPlanePropertiesKHR',
-            'vkGetPhysicalDeviceDisplayPlaneProperties2KHR',
-            'vkGetDisplayPlaneSupportedDisplaysKHR',
-            'vkGetDisplayModePropertiesKHR',
-            'vkGetDisplayModeProperties2KHR',
+            # TODO - These have no manual source, but we still produce the headers
             'vkEnumerateInstanceExtensionProperties',
             'vkEnumerateInstanceLayerProperties',
-            'vkEnumerateDeviceExtensionProperties',
             'vkEnumerateDeviceLayerProperties',
             'vkEnumerateInstanceVersion',
+            # Manually track pToolCount
             'vkGetPhysicalDeviceToolProperties',
             'vkGetPhysicalDeviceToolPropertiesEXT',
-            'vkSetPrivateDataEXT',
-            'vkGetPrivateDataEXT',
+            # Track deferred operations
             'vkDeferredOperationJoinKHR',
             'vkGetDeferredOperationResultKHR',
-            'vkSetPrivateData',
-            'vkGetPrivateData',
+            # Need to deal with VkAccelerationStructureGeometryKHR
             'vkBuildAccelerationStructuresKHR',
+            'vkGetAccelerationStructureBuildSizesKHR',
+            # Depends on the VkDescriptorType
             'vkGetDescriptorEXT',
+            # Special destroy call from the Acquire
             'vkReleasePerformanceConfigurationINTEL',
+            # need to call CopyExportMetalObjects
             'vkExportMetalObjectsEXT',
             # These are for special-casing the pInheritanceInfo issue (must be ignored for primary CBs)
             'vkAllocateCommandBuffers',
             'vkFreeCommandBuffers',
             'vkDestroyCommandPool',
             'vkBeginCommandBuffer',
-            'vkGetAccelerationStructureBuildSizesKHR'
+            # Currently we don't properly generate a Wrap and will accidently unwrap the VkDisplayKHR handle
+            'vkGetPhysicalDeviceDisplayPropertiesKHR',
+            'vkGetPhysicalDeviceDisplayProperties2KHR',
+            'vkGetPhysicalDeviceDisplayPlanePropertiesKHR',
+            'vkGetPhysicalDeviceDisplayPlaneProperties2KHR',
+            'vkGetDisplayModePropertiesKHR',
+            'vkGetDisplayModeProperties2KHR',
+            'vkGetDisplayPlaneSupportedDisplaysKHR',
             ]
 
         # List of all extension structs strings containing handles
         self.ndo_extension_structs = []
+
+        # Dispatch functions that need special state tracking variables passed in
+        self.custom_definition = {
+            'vkBeginCommandBuffer' : ', bool is_secondary'
+        }
 
     def isNonDispatchable(self, name: str) -> bool:
         return name in self.vk.handles and not self.vk.handles[name].dispatchable
@@ -118,9 +129,9 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2015-2023 The Khronos Group Inc.
-            * Copyright (c) 2015-2023 Valve Corporation
-            * Copyright (c) 2015-2023 LunarG, Inc.
+            * Copyright (c) 2015-2024 The Khronos Group Inc.
+            * Copyright (c) 2015-2024 Valve Corporation
+            * Copyright (c) 2015-2024 LunarG, Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -161,6 +172,8 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             prototype = command.cPrototype
             prototype = prototype.replace("VKAPI_ATTR ", "")
             prototype = prototype.replace("VKAPI_CALL vk", "Dispatch")
+            if command.name in self.custom_definition:
+                prototype = prototype.replace(');', f'{self.custom_definition[command.name]});')
             out.extend(guard_helper.add_guard(command.protect))
             out.append(f'{prototype}\n')
         out.extend(guard_helper.add_guard(None))
@@ -180,7 +193,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             #include "utils/cast_utils.h"
             #include "chassis.h"
             #include "layer_chassis_dispatch.h"
-            #include "vk_safe_struct.h"
+            #include <vulkan/utility/vk_safe_struct.hpp>
             #include "state_tracker/pipeline_state.h"
 
             #define DISPATCH_MAX_STACK_ALLOCATIONS 32
@@ -199,9 +212,10 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             # Only process extension structs containing handles
             if not api_pre:
                 continue
+            safe_name = 'vku::safe_' + struct.name
             out.extend(guard_helper.add_guard(struct.protect))
             out.append(f'case {struct.sType}: {{\n')
-            out.append(f'    safe_{struct.name} *safe_struct = reinterpret_cast<safe_{struct.name} *>(cur_pnext);\n')
+            out.append(f'    auto *safe_struct = reinterpret_cast<{safe_name} *>(cur_pnext);\n')
             out.append(api_pre)
             out.append('} break;\n')
         out.extend(guard_helper.add_guard(None))
@@ -215,12 +229,37 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             }
             }
             ''')
+
+        out.append('''
+            static bool NotDispatchableHandle(VkObjectType object_type) {
+                switch(object_type) {
+        ''')
+        out.extend([f'case {handle.type}:\n' for handle in self.vk.handles.values() if handle.dispatchable])
+        out.append('''return false;
+                  default:
+                    return true;
+                }
+            }
+        ''')
+
         for command in [x for x in self.vk.commands.values() if x.name not in self.no_autogen_list]:
             out.extend(guard_helper.add_guard(command.protect))
 
             # Generate NDO wrapping/unwrapping code for all parameters
-            isCreate = any(x in command.name for x in ['Create', 'Allocate', 'GetRandROutputDisplayEXT', 'GetDrmDisplayEXT', 'RegisterDeviceEvent', 'RegisterDisplayEvent', 'AcquirePerformanceConfigurationINTEL'])
-            isDestroy = any(x in command.name for x in ['Destroy', 'Free'])
+            isCreate = any(x in command.name for x in [
+                'vkCreate',
+                'vkAllocate',
+                # Create a VkFence object
+                'vkRegisterDeviceEvent',
+                'vkRegisterDisplayEvent',
+                # Create VkPerformanceConfigurationINTEL object
+                'vkAcquirePerformanceConfigurationINTEL',
+                # Special calls that we wrap because they are created statically on the driver, but users query for them
+                'vkGetWinrtDisplayNV',
+                'vkGetRandROutputDisplayEXT',
+                'vkGetDrmDisplayEXT',
+            ])
+            isDestroy = any(x in command.name for x in ['vkDestroy', 'vkFree'])
 
             # Handle ndo create/allocate operations
             create_ndo_code = ''
@@ -229,13 +268,14 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                 handle_type = lastParam.type
                 if self.isNonDispatchable(handle_type):
                     # Check for special case where multiple handles are returned
+                    wrap_call = 'WrapNew' if handle_type != 'VkDisplayKHR' else 'MaybeWrapDisplay'
                     ndo_array = lastParam.length is not None
                     create_ndo_code += 'if (VK_SUCCESS == result) {\n'
                     ndo_dest = f'*{lastParam.name}'
                     if ndo_array:
                         create_ndo_code += f'for (uint32_t index0 = 0; index0 < {lastParam.length}; index0++) {{\n'
                         ndo_dest = f'{lastParam.name}[index0]'
-                    create_ndo_code += f'{ndo_dest} = layer_data->WrapNew({ndo_dest});\n'
+                    create_ndo_code += f'{ndo_dest} = layer_data->{wrap_call}({ndo_dest});\n'
                     if ndo_array:
                         create_ndo_code += '}\n'
                     create_ndo_code += '}\n'
@@ -292,7 +332,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
             dispatch_table = 'instance_dispatch_table' if command.instance else 'device_dispatch_table'
 
             # first parameter is always dispatchable
-            out.append(f'auto layer_data = GetLayerDataPtr(get_dispatch_key({command.params[0].name}), layer_data_map);\n')
+            out.append(f'auto layer_data = GetLayerDataPtr(GetDispatchKey({command.params[0].name}), layer_data_map);\n')
             # Put all this together for the final down-chain call
             if not down_chain_call_only:
                 out.append(f'if (!wrap_handles) return layer_data->{dispatch_table}.{command.name[2:]}({paramstext});\n')
@@ -401,7 +441,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                 process_pnext = struct.extendedBy and any(x in self.ndo_extension_structs for x in struct.extendedBy)
                 # Structs at first level will have an NDO, OR, we need a safe_struct for the pnext chain
                 if self.containsNonDispatchableObject(member.type) or process_pnext:
-                    safe_type = 'safe_' + member.type if any(x.pointer for x in struct.members) else member.type
+                    safe_type = 'vku::safe_' + member.type if any(x.pointer for x in struct.members) else member.type
                     # Struct Array
                     if member.length is not None:
                         # Check if this function can be deferred.
@@ -409,7 +449,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                         # Update struct prefix
                         if topLevel:
                             new_prefix = f'local_{member.name}'
-                            # Declare safe_VarType for struct
+                            # Declare vku::safe_VkVarType for struct
                             decls += f'{safe_type} *{new_prefix} = nullptr;\n'
                         else:
                             new_prefix = f'{prefix}{member.name}'
@@ -418,7 +458,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                             pre_code += f'{new_prefix} = new {safe_type}[{member.length}];\n'
                         pre_code += f'for (uint32_t {index} = 0; {index} < {prefix}{member.length}; ++{index}) {{\n'
                         if topLevel:
-                            if 'safe_' in safe_type:
+                            if safe_type.startswith('vku::safe'):
                                 # Handle special initialize function for VkAccelerationStructureBuildGeometryInfoKHR
                                 if member.type == "VkAccelerationStructureBuildGeometryInfoKHR":
                                     pre_code += f'{new_prefix}[{index}].initialize(&{member.name}[{index}], false, nullptr);\n'
@@ -426,8 +466,8 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                                     pre_code += f'{new_prefix}[{index}].initialize(&{member.name}[{index}]);\n'
                             else:
                                 pre_code += f'{new_prefix}[{index}] = {member.name}[{index}];\n'
-                            if process_pnext:
-                                pre_code += f'WrapPnextChainHandles(layer_data, {new_prefix}[{index}].pNext);\n'
+                        if process_pnext:
+                            pre_code += f'WrapPnextChainHandles(layer_data, {new_prefix}[{index}].pNext);\n'
                         local_prefix = f'{new_prefix}[{index}].'
                         # Process sub-structs in this struct
                         (tmp_decl, tmp_pre, tmp_post) = self.uniquifyMembers(struct.members, local_prefix, arrayIndex, isCreate, isDestroy, False)
@@ -457,7 +497,7 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                                 pre_code += f'local_{prefix}{member.name} = &var_local_{prefix}{member.name};\n'
                             else:
                                 pre_code += f'local_{member.name} = new {safe_type};\n'
-                            if 'safe_' in safe_type:
+                            if safe_type.startswith('vku::safe'):
                                 # Handle special initialize function for VkAccelerationStructureBuildGeometryInfoKHR
                                 if member.type == "VkAccelerationStructureBuildGeometryInfoKHR":
                                     pre_code += f'local_{prefix}{member.name}->initialize({member.name}, false, nullptr);\n'
@@ -488,4 +528,10 @@ class LayerChassisDispatchOutputGenerator(BaseGenerator):
                         post_code += tmp_post
                         if process_pnext:
                             pre_code += f'WrapPnextChainHandles(layer_data, {prefix}{member.name}.pNext);\n'
+            elif member.type == 'VkObjectType':
+                pre_code += '''
+                    if (NotDispatchableHandle(objectType)) {
+                        objectHandle = layer_data->Unwrap(objectHandle);
+                    }
+                '''
         return decls, pre_code, post_code

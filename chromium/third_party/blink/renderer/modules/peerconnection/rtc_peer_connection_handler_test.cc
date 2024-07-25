@@ -26,6 +26,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
@@ -74,6 +75,7 @@ using testing::_;
 using testing::Invoke;
 using testing::NiceMock;
 using testing::Ref;
+using testing::Return;
 using testing::SaveArg;
 using testing::WithArg;
 
@@ -91,7 +93,7 @@ class MockPeerConnectionTracker : public PeerConnectionTracker {
  public:
   MockPeerConnectionTracker()
       : PeerConnectionTracker(
-            mojo::Remote<mojom::blink::PeerConnectionTrackerHost>(),
+            mojo::PendingRemote<mojom::blink::PeerConnectionTrackerHost>(),
             blink::scheduler::GetSingleThreadTaskRunnerForTesting(),
             base::PassKey<MockPeerConnectionTracker>()) {}
 
@@ -936,6 +938,8 @@ TEST_F(RTCPeerConnectionHandlerTest, OnIceCandidate) {
 
 TEST_F(RTCPeerConnectionHandlerTest, OnRenegotiationNeeded) {
   testing::InSequence sequence;
+  EXPECT_CALL(*mock_peer_connection_, ShouldFireNegotiationNeededEvent)
+      .WillOnce(Return(true));
   EXPECT_CALL(*mock_tracker_.Get(),
               TrackOnRenegotiationNeeded(pc_handler_.get()));
   EXPECT_CALL(*mock_client_.Get(), NegotiationNeeded());
@@ -1078,7 +1082,6 @@ TEST_F(RTCPeerConnectionHandlerTest,
   WebHeap::CollectAllGarbageForTesting();
   EXPECT_FALSE(pc_handler->Initialize(
       /*context=*/nullptr, webrtc::PeerConnectionInterface::RTCConfiguration(),
-      /*media_constraints=*/nullptr,
       /*frame=*/nullptr, exception_state));
 }
 

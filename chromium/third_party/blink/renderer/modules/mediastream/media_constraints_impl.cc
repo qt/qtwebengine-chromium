@@ -32,7 +32,6 @@
 
 #include "build/build_config.h"
 #include "third_party/blink/public/platform/web_string.h"
-#include "third_party/blink/renderer/bindings/core/v8/array_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_string_stringsequence.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_constrain_boolean_parameters.h"
@@ -136,8 +135,7 @@ static bool ParseOptionalConstraintsVectorElement(
     return false;
   }
   const String& key = local_names[0];
-  absl::optional<String> value =
-      constraint.Get<IDLString>(key, exception_state);
+  std::optional<String> value = constraint.Get<IDLString>(key, exception_state);
   if (exception_state.HadException() || !value) {
     return false;
   }

@@ -54,6 +54,7 @@
 #include "third_party/blink/renderer/core/highlight/highlight_registry.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
+#include "third_party/blink/renderer/core/html/html_html_element.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
@@ -1273,13 +1274,15 @@ void Range::surroundContents(Node* new_parent,
 
   // 1. If a non-Text node is partially contained in the context object, then
   // throw an InvalidStateError.
-  Node* start_non_text_container = &start_.Container();
-  if (start_non_text_container->getNodeType() == Node::kTextNode)
-    start_non_text_container = start_non_text_container->parentNode();
-  Node* end_non_text_container = &end_.Container();
-  if (end_non_text_container->getNodeType() == Node::kTextNode)
-    end_non_text_container = end_non_text_container->parentNode();
-  if (start_non_text_container != end_non_text_container) {
+  Node* start_node = &start_.Container();
+  Node* end_node = &end_.Container();
+  if (start_node->IsTextNode()) {
+    start_node = start_node->parentNode();
+  }
+  if (end_node->IsTextNode()) {
+    end_node = end_node->parentNode();
+  }
+  if (start_node != end_node) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
         "The Range has partially selected a non-Text node.");
@@ -1382,34 +1385,16 @@ bool AreRangesEqual(const Range* a, const Range* b) {
 static inline void BoundaryNodeChildrenWillBeRemoved(
     RangeBoundaryPoint& boundary,
     ContainerNode& container) {
-  for (Node* node_to_be_removed = container.firstChild(); node_to_be_removed;
-       node_to_be_removed = node_to_be_removed->nextSibling()) {
-    if (boundary.ChildBefore() == node_to_be_removed) {
-      boundary.SetToStartOfNode(container);
-      return;
-    }
-
-    for (Node* n = &boundary.Container(); n; n = n->parentNode()) {
-      if (n == node_to_be_removed) {
-        boundary.SetToStartOfNode(container);
-        return;
-      }
-    }
+  if (container.contains(&boundary.Container())) {
+    boundary.SetToStartOfNode(container);
   }
 }
 
 static void BoundaryShadowNodeChildrenWillBeRemoved(
     RangeBoundaryPoint& boundary,
     ContainerNode& container) {
-  for (Node* node_to_be_removed = container.firstChild(); node_to_be_removed;
-       node_to_be_removed = node_to_be_removed->nextSibling()) {
-    for (Node* n = &boundary.Container(); n;
-         n = n->ParentOrShadowHostElement()) {
-      if (n == node_to_be_removed) {
-        boundary.SetToStartOfNode(container);
-        return;
-      }
-    }
+  if (boundary.Container().IsDescendantOrShadowDescendantOf(&container)) {
+    boundary.SetToStartOfNode(container);
   }
 }
 
@@ -1741,7 +1726,7 @@ void Range::GetBorderAndTextQuads(Vector<gfx::QuadF>& quads) const {
 }
 
 gfx::RectF Range::BoundingRect() const {
-  absl::optional<DisplayLockUtilities::ScopedForcedUpdate> force_locks;
+  std::optional<DisplayLockUtilities::ScopedForcedUpdate> force_locks;
   if (!collapsed()) {
     force_locks = DisplayLockUtilities::ScopedForcedUpdate(
         this, DisplayLockContext::ForcedPhase::kLayout);

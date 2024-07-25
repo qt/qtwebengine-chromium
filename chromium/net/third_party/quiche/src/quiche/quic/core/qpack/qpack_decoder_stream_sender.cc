@@ -16,7 +16,11 @@
 
 namespace quic {
 
-QpackDecoderStreamSender::QpackDecoderStreamSender() : delegate_(nullptr) {}
+QpackDecoderStreamSender::QpackDecoderStreamSender()
+    : delegate_(nullptr),
+      // None of the instructions sent by the QpackDecoderStreamSender
+      // are strings, so huffman encoding is not relevant.
+      instruction_encoder_(HuffmanEncoding::kEnabled) {}
 
 void QpackDecoderStreamSender::SendInsertCountIncrement(uint64_t increment) {
   instruction_encoder_.Encode(
@@ -38,8 +42,8 @@ void QpackDecoderStreamSender::Flush() {
   if (buffer_.empty() || delegate_ == nullptr) {
     return;
   }
-  if (GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data3)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_opport_bundle_qpack_decoder_data3, 3, 4);
+  if (GetQuicRestartFlag(quic_opport_bundle_qpack_decoder_data5)) {
+    QUIC_RESTART_FLAG_COUNT_N(quic_opport_bundle_qpack_decoder_data5, 3, 4);
     // Swap buffer_ before calling WriteStreamData, which might result in a
     // reentrant call to `Flush()`.
     std::string copy;

@@ -7,6 +7,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "base/containers/lru_cache.h"
@@ -50,7 +51,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
                             public PasswordFormPredictionWaiter::Client,
                             public FormFetcher::Consumer {
  public:
-  // TODO(crbug.com/621355): So far, |form_fetcher| can be null. In that case
+  // TODO(crbug.com/41259715): So far, |form_fetcher| can be null. In that case
   // |this| creates an instance of it itself (meant for production code). Once
   // the fetcher is shared between PasswordFormManager instances, it will be
   // required that |form_fetcher| is not null. |form_saver| is used to
@@ -85,6 +86,12 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   bool DoesManage(autofill::FormRendererId form_renderer_id,
                   const PasswordManagerDriver* driver) const;
 
+  // Returns whether the form managed by this password form manager contains
+  // a field identified by the `field_renderer_id`. `driver` is used to check
+  // is this password form manager corresponds to the queried web frame.
+  bool DoesManage(autofill::FieldRendererId field_renderer_id,
+                  const PasswordManagerDriver* driver) const;
+
   // Check that |submitted_form_| is equal to |form| from the user point of
   // view. It is used for detecting that a form is reappeared after navigation
   // for success detection.
@@ -100,7 +107,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
       const autofill::FormData& submitted_form,
       const PasswordManagerDriver* driver,
       const base::LRUCache<PossibleUsernameFieldIdentifier,
-                           PossibleUsernameData>* possible_usernames);
+                           PossibleUsernameData>& possible_usernames);
 
   // If |submitted_form| is managed by *this then saves |submitted_form| to
   // |submitted_form_| field, sets |is_submitted| = true and returns true.
@@ -156,8 +163,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // PasswordFormManagerForUI:
   const GURL& GetURL() const override;
-  const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-  GetBestMatches() const override;
+  base::span<const PasswordForm> GetBestMatches() const override;
   std::vector<raw_ptr<const PasswordForm, VectorExperimental>>
   GetFederatedMatches() const override;
   const PasswordForm& GetPendingCredentials() const override;
@@ -170,7 +176,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   bool IsMovableToAccountStore() const override;
 
   void Save() override;
-  void Update(const PasswordForm& credentials_to_update) override;
+  bool IsUpdateAffectingPasswordsStoredInTheGoogleAccount() const override;
   void OnUpdateUsernameFromPrompt(const std::u16string& new_username) override;
   void OnUpdatePasswordFromPrompt(const std::u16string& new_password) override;
 
@@ -181,6 +187,8 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   void OnPasswordsRevealed() override;
   void MoveCredentialsToAccountStore() override;
   void BlockMovingCredentialsToAccountStore() override;
+  PasswordForm::Store GetPasswordStoreForSaving(
+      const PasswordForm& password_form) const override;
 
   bool IsNewLogin() const;
   FormFetcher* GetFormFetcher();
@@ -195,6 +203,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   bool IsPasswordUpdate() const;
   base::WeakPtr<PasswordManagerDriver> GetDriver() const;
   const PasswordForm* GetSubmittedForm() const;
+  const PasswordForm* GetParsedObservedForm() const;
 
   // Returns the frame id of the corresponding PasswordManagerDriver. See
   // `GetFrameId()` in PasswordManagerDriver for more details.
@@ -214,14 +223,22 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // and provisionally saves the manager if the relevant data is found.
   void ProvisionallySaveFieldDataManagerInfo(
       const autofill::FieldDataManager& field_data_manager,
-      const PasswordManagerDriver* driver);
+      const PasswordManagerDriver* driver,
+      const base::LRUCache<PossibleUsernameFieldIdentifier,
+                           PossibleUsernameData>& possible_usernames);
+
+  // Checks if `this` can be inspected for submission detection after unowned
+  // form fields were removed. Only to be used on formless form managers.
+  bool AreRemovedUnownedFieldsValidForSubmissionDetection(
+      const std::set<autofill::FieldRendererId>& removed_fields,
+      const autofill::FieldDataManager& field_data_manager) const;
 #endif  // BUILDFLAG(IS_IOS)
 
   // Create a copy of |*this| which can be passed to the code handling
   // save-password related UI. This omits some parts of the internal data, so
   // the result is not identical to the original.
-  // TODO(crbug.com/739366): Replace with translating one appropriate class into
-  // another one.
+  // TODO(crbug.com/41328828): Replace with translating one appropriate class
+  // into another one.
   std::unique_ptr<PasswordFormManager> Clone();
 
   // Because of the android integration tests, it can't be guarded by if
@@ -438,6 +455,9 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   autofill::FormData submitted_form_;
   std::unique_ptr<PasswordForm> parsed_submitted_form_;
 
+  // The form cached after the form parsing corresponding to this form manager.
+  std::unique_ptr<PasswordForm> parsed_observed_form_;
+
   // If Chrome has already autofilled a few times, it is probable that autofill
   // is triggered by programmatic changes in the page. We set a maximum number
   // of times that Chrome will autofill to avoid being stuck in an infinite
@@ -462,6 +482,10 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // The decision is captured at the provisional save time while it can be
   // already different for the landing page.
   bool is_saving_allowed_ = true;
+
+  // Stores if Save() was called when FormFetcher was in WAITING state.
+  // In that case we should schedule a Save() call, when FormFecher is ready.
+  bool should_schedule_save_for_later_ = false;
 
   // A password field that is used for generation.
   autofill::FieldRendererId generation_element_;

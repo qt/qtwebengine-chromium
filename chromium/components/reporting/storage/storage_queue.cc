@@ -11,6 +11,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -59,7 +60,6 @@
 #include "components/reporting/util/task_runner_context.h"
 #include "crypto/random.h"
 #include "crypto/sha2.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/protobuf/src/google/protobuf/io/zero_copy_stream_impl_lite.h"
 
 namespace reporting {
@@ -73,10 +73,6 @@ BASE_FEATURE(kReportingStorageDegradationFeature,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 namespace {
-
-// Storage queue generation id reset UMA metric name.
-constexpr char kStorageQueueGenerationIdResetUma[] =
-    "Browser.ERP.StorageQueueGenerationIdReset";
 
 // Metadata file name prefix.
 const base::FilePath::CharType METADATA_NAME[] = FILE_PATH_LITERAL("META");
@@ -280,11 +276,10 @@ Status StorageQueue::Init() {
       // earlier.
       if (generation_id_ <= 0) {
         LOG(ERROR) << "Unable to retrieve generation id, performing full reset";
-        base::UmaHistogramBoolean(kStorageQueueGenerationIdResetUma, true);
         next_sequencing_id_ = 0;
         first_sequencing_id_ = 0;
-        first_unconfirmed_sequencing_id_ = absl::nullopt;
-        last_record_digest_ = absl::nullopt;
+        first_unconfirmed_sequencing_id_ = std::nullopt;
+        last_record_digest_ = std::nullopt;
         ReleaseAllFileInstances();
         used_files_set.clear();
       }
@@ -318,7 +313,7 @@ Status StorageQueue::Init() {
   return Status::StatusOK();
 }
 
-absl::optional<std::string> StorageQueue::GetLastRecordDigest() const {
+std::optional<std::string> StorageQueue::GetLastRecordDigest() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(storage_queue_sequence_checker_);
   // Attach last record digest, if present.
   return last_record_digest_;
@@ -407,7 +402,7 @@ Status StorageQueue::EnumerateDataFiles(
   // We need to set first_sequencing_id_ to 0 if this is the initialization
   // of an empty StorageQueue, and to the lowest sequencing id among all
   // existing files, if it was already used.
-  absl::optional<int64_t> first_sequencing_id;
+  std::optional<int64_t> first_sequencing_id;
   base::FileEnumerator dir_enum(
       options_.directory(),
       /*recursive=*/false, base::FileEnumerator::FILES,
@@ -659,9 +654,10 @@ Status StorageQueue::WriteHeaderAndBlock(
   if (total_size > RecordHeader::kSize + data.size()) {
     // Fill in with random bytes.
     const size_t pad_size = total_size - (RecordHeader::kSize + data.size());
-    char junk_bytes[FRAME_SIZE];
-    crypto::RandBytes(junk_bytes, pad_size);
-    write_status = file->Append(std::string_view(&junk_bytes[0], pad_size));
+    uint8_t junk_bytes[FRAME_SIZE];
+    auto padding = base::span(junk_bytes).first(pad_size);
+    crypto::RandBytes(padding);
+    write_status = file->Append(base::as_string_view(padding));
     if (!write_status.has_value()) {
       return Status(error::RESOURCE_EXHAUSTED,
                     base::StrCat({"Cannot pad file=", file->name(), " status=",
@@ -1645,7 +1641,7 @@ class StorageQueue::WriteContext : public TaskRunnerContext<Status> {
   void OnCompressedRecordReady(
       ScopedReservation scoped_reservation,
       std::string compressed_record_result,
-      absl::optional<CompressionInformation> compression_information) {
+      std::optional<CompressionInformation> compression_information) {
     // Reduce amount of memory reserved to the resulting size after compression.
     scoped_reservation.Reduce(compressed_record_result.size());
 
@@ -1660,7 +1656,7 @@ class StorageQueue::WriteContext : public TaskRunnerContext<Status> {
   }
 
   void OnEncryptedRecordReady(
-      absl::optional<CompressionInformation> compression_information,
+      std::optional<CompressionInformation> compression_information,
       StatusOr<EncryptedRecord> encrypted_record_result) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(
         storage_queue_->storage_queue_sequence_checker_);
@@ -1688,7 +1684,7 @@ class StorageQueue::WriteContext : public TaskRunnerContext<Status> {
   }
 
   void SerializeEncryptedRecord(
-      absl::optional<CompressionInformation> compression_information,
+      std::optional<CompressionInformation> compression_information,
       EncryptedRecord encrypted_record) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(
         storage_queue_->storage_queue_sequence_checker_);
@@ -1894,7 +1890,7 @@ class StorageQueue::WriteContext : public TaskRunnerContext<Status> {
   size_t remaining_attempts_ = 16u;
 
   // Copy of the original record, if required.
-  absl::optional<Record> record_copy_;
+  std::optional<Record> record_copy_;
 
   // Position in the `storage_queue_`->`write_contexts_queue_`.
   // We use it in order to detect whether the context is in the queue
@@ -2275,7 +2271,7 @@ Status StorageQueue::SingleFile::Open(bool read_only) {
 
 void StorageQueue::SingleFile::Close() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  is_readonly_ = absl::nullopt;
+  is_readonly_ = std::nullopt;
   buffer_.Clear();
   if (!handle_) {
     // TODO(b/157943192): Restart auto-closing timer.

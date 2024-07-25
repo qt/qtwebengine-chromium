@@ -4,16 +4,17 @@
 
 #include "components/password_manager/core/browser/password_store/get_logins_with_affiliations_request_handler.h"
 
+#include <string_view>
+
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
-#include "base/strings/string_piece.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "components/affiliations/core/browser/mock_affiliation_service.h"
 #include "components/password_manager/core/browser/affiliation/affiliated_match_helper.h"
-#include "components/password_manager/core/browser/affiliation/mock_affiliation_service.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_store/fake_password_store_backend.h"
@@ -22,17 +23,21 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using testing::ElementsAre;
-using testing::ElementsAreArray;
-using testing::IsEmpty;
-using testing::UnorderedElementsAreArray;
-using testing::VariantWith;
 
 namespace password_manager {
 
 namespace {
 
+using ::affiliations::Facet;
+using ::affiliations::FacetURI;
+using ::affiliations::GroupedFacets;
+using ::affiliations::MockAffiliationService;
 using ::base::test::RunOnceCallback;
+using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
+using ::testing::IsEmpty;
+using ::testing::UnorderedElementsAreArray;
+using ::testing::VariantWith;
 
 constexpr const char kTestWebURL[] = "https://example.com/";
 constexpr const char kTestPSLURL[] = "https://one.example.com/";
@@ -51,8 +56,8 @@ PasswordFormDigest CreateFormDigest(const std::string& url_string) {
 
 // Creates a form.
 PasswordForm CreateForm(const std::string& url_string,
-                        base::StringPiece16 username,
-                        base::StringPiece16 password) {
+                        std::u16string_view username,
+                        std::u16string_view password) {
   PasswordForm form;
   form.username_value = std::u16string(username);
   form.password_value = std::u16string(password);
@@ -101,10 +106,6 @@ TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, NoMatchesTest) {
 
   EXPECT_CALL(result_callback, Run(VariantWith<LoginsResult>(IsEmpty())));
   RunUntilIdle();
-  histogram_tester.ExpectUniqueSample(
-      "PasswordManager.GetLogins.GroupedMatchesStatus",
-      password_manager::metrics_util::GroupedPasswordFetchResult::kNoMatches,
-      1);
 }
 
 TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, ExactAndPslMatchesTest) {
@@ -271,8 +272,6 @@ TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, AffiliationsArePSLTest) {
 }
 
 TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, GroupedMatchesOnlyTest) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(features::kFillingAcrossGroupedSites);
   backend()->AddLoginAsync(CreateForm(kGroupWebURL, u"username", u"password"),
                            base::DoNothing());
   RunUntilIdle();
@@ -302,45 +301,8 @@ TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, GroupedMatchesOnlyTest) {
   RunUntilIdle();
 }
 
-// Since kFillingAcrossGroupedSites is disabled grouped matches aren't returned.
-TEST_F(GetLoginsWithAffiliationsRequestHandlerTest, GroupedMatchesClearedTest) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(features::kFillingAcrossGroupedSites);
-  backend()->AddLoginAsync(CreateForm(kGroupWebURL, u"username", u"password"),
-                           base::DoNothing());
-  RunUntilIdle();
-
-  EXPECT_CALL(affiliation_service(), GetPSLExtensions)
-      .WillOnce(RunOnceCallback<0>(std::vector<std::string>()));
-  EXPECT_CALL(affiliation_service(), GetAffiliationsAndBranding)
-      .WillOnce(RunOnceCallback<2>(std::vector<Facet>(), true));
-
-  GroupedFacets group;
-  group.facets.emplace_back(FacetURI::FromPotentiallyInvalidSpec(kTestWebURL));
-  group.facets.emplace_back(FacetURI::FromPotentiallyInvalidSpec(kGroupWebURL));
-  EXPECT_CALL(affiliation_service(), GetGroupingInfo)
-      .WillOnce(RunOnceCallback<1>(std::vector<GroupedFacets>{group}));
-
-  PasswordFormDigest observed_form = CreateFormDigest(kTestWebURL);
-  base::MockCallback<LoginsOrErrorReply> result_callback;
-  base::HistogramTester histogram_tester;
-  GetLoginsWithAffiliationsRequestHandler(
-      observed_form, backend(), &match_helper(), result_callback.Get());
-
-  EXPECT_CALL(result_callback, Run(VariantWith<LoginsResult>(IsEmpty())));
-  RunUntilIdle();
-
-  histogram_tester.ExpectUniqueSample(
-      "PasswordManager.GetLogins.GroupedMatchesStatus",
-      password_manager::metrics_util::GroupedPasswordFetchResult::
-          kOnlyGroupedMatches,
-      1);
-}
-
 TEST_F(GetLoginsWithAffiliationsRequestHandlerTest,
        GroupedAndAffiliatedMatchesIntersectTest) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(features::kFillingAcrossGroupedSites);
   backend()->AddLoginAsync(
       CreateForm(kAffiliatedAndroidApp, u"username1", u"password"),
       base::DoNothing());
@@ -383,11 +345,6 @@ TEST_F(GetLoginsWithAffiliationsRequestHandlerTest,
   EXPECT_CALL(result_callback,
               Run(VariantWith<LoginsResult>(ElementsAreArray(expected_forms))));
   RunUntilIdle();
-  histogram_tester.ExpectUniqueSample(
-      "PasswordManager.GetLogins.GroupedMatchesStatus",
-      password_manager::metrics_util::GroupedPasswordFetchResult::
-          kBetterMatchesExist,
-      1);
 }
 
 TEST_F(GetLoginsWithAffiliationsRequestHandlerTest,

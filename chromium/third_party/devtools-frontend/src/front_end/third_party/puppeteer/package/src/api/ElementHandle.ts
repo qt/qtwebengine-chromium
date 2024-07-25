@@ -10,6 +10,7 @@ import type {Frame} from '../api/Frame.js';
 import {getQueryHandlerAndSelector} from '../common/GetQueryHandler.js';
 import {LazyArg} from '../common/LazyArg.js';
 import type {
+  AwaitableIterable,
   ElementFor,
   EvaluateFuncWith,
   HandleFor,
@@ -146,6 +147,13 @@ export abstract class ElementHandle<
   declare [_isElementHandle]: boolean;
 
   /**
+   * @internal
+   * Cached isolatedHandle to prevent
+   * trying to adopt it multiple times
+   */
+  isolatedHandle?: typeof this;
+
+  /**
    * A given method will have it's `this` replaced with an isolated version of
    * `this` when decorated with this decorator.
    *
@@ -163,7 +171,14 @@ export abstract class ElementHandle<
       if (this.realm === this.frame.isolatedRealm()) {
         return await target.call(this, ...args);
       }
-      using adoptedThis = await this.frame.isolatedRealm().adoptHandle(this);
+      let adoptedThis: This;
+      if (this['isolatedHandle']) {
+        adoptedThis = this['isolatedHandle'];
+      } else {
+        this['isolatedHandle'] = adoptedThis = await this.frame
+          .isolatedRealm()
+          .adoptHandle(this);
+      }
       const result = await target.call(adoptedThis, ...args);
       // If the function returns `adoptedThis`, then we return `this`.
       if (result === adoptedThis) {
@@ -477,27 +492,6 @@ export abstract class ElementHandle<
   }
 
   /**
-   * @deprecated Use {@link ElementHandle.$$} with the `xpath` prefix.
-   *
-   * Example: `await elementHandle.$$('xpath/' + xpathExpression)`
-   *
-   * The method evaluates the XPath expression relative to the elementHandle.
-   * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-   * automatically.
-   *
-   * If there are no such elements, the method will resolve to an empty array.
-   * @param expression - Expression to {@link https://developer.mozilla.org/en-US/docs/Web/API/Document/evaluate | evaluate}
-   */
-  @throwIfDisposed()
-  @ElementHandle.bindIsolatedHandle
-  async $x(expression: string): Promise<Array<ElementHandle<Node>>> {
-    if (expression.startsWith('//')) {
-      expression = `.${expression}`;
-    }
-    return await this.$$(`xpath/${expression}`);
-  }
-
-  /**
    * Wait for an element matching the given selector to appear in the current
    * element.
    *
@@ -582,84 +576,6 @@ export abstract class ElementHandle<
   }
 
   /**
-   * @deprecated Use {@link ElementHandle.waitForSelector} with the `xpath`
-   * prefix.
-   *
-   * Example: `await elementHandle.waitForSelector('xpath/' + xpathExpression)`
-   *
-   * The method evaluates the XPath expression relative to the elementHandle.
-   *
-   * Wait for the `xpath` within the element. If at the moment of calling the
-   * method the `xpath` already exists, the method will return immediately. If
-   * the `xpath` doesn't appear after the `timeout` milliseconds of waiting, the
-   * function will throw.
-   *
-   * If `xpath` starts with `//` instead of `.//`, the dot will be appended
-   * automatically.
-   *
-   * @example
-   * This method works across navigation.
-   *
-   * ```ts
-   * import puppeteer from 'puppeteer';
-   * (async () => {
-   *   const browser = await puppeteer.launch();
-   *   const page = await browser.newPage();
-   *   let currentURL;
-   *   page
-   *     .waitForXPath('//img')
-   *     .then(() => console.log('First URL with image: ' + currentURL));
-   *   for (currentURL of [
-   *     'https://example.com',
-   *     'https://google.com',
-   *     'https://bbc.com',
-   *   ]) {
-   *     await page.goto(currentURL);
-   *   }
-   *   await browser.close();
-   * })();
-   * ```
-   *
-   * @param xpath - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/XPath | xpath} of an
-   * element to wait for
-   * @param options - Optional waiting parameters
-   * @returns Promise which resolves when element specified by xpath string is
-   * added to DOM. Resolves to `null` if waiting for `hidden: true` and xpath is
-   * not found in DOM, otherwise resolves to `ElementHandle`.
-   * @remarks
-   * The optional Argument `options` have properties:
-   *
-   * - `visible`: A boolean to wait for element to be present in DOM and to be
-   *   visible, i.e. to not have `display: none` or `visibility: hidden` CSS
-   *   properties. Defaults to `false`.
-   *
-   * - `hidden`: A boolean wait for element to not be found in the DOM or to be
-   *   hidden, i.e. have `display: none` or `visibility: hidden` CSS properties.
-   *   Defaults to `false`.
-   *
-   * - `timeout`: A number which is maximum time to wait for in milliseconds.
-   *   Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The
-   *   default value can be changed by using the {@link Page.setDefaultTimeout}
-   *   method.
-   */
-  @throwIfDisposed()
-  @ElementHandle.bindIsolatedHandle
-  async waitForXPath(
-    xpath: string,
-    options: {
-      visible?: boolean;
-      hidden?: boolean;
-      timeout?: number;
-    } = {}
-  ): Promise<ElementHandle<Node> | null> {
-    if (xpath.startsWith('//')) {
-      xpath = `.${xpath}`;
-    }
-    return await this.waitForSelector(`xpath/${xpath}`, options);
-  }
-
-  /**
    * Converts the current handle to the given element type.
    *
    * @example
@@ -722,7 +638,7 @@ export abstract class ElementHandle<
 
   /**
    * This method scrolls element into view if needed, and then
-   * uses {@link Page} to hover over the center of the element.
+   * uses {@link Page.mouse} to hover over the center of the element.
    * If the element is detached from DOM, the method throws an error.
    */
   @throwIfDisposed()
@@ -735,7 +651,7 @@ export abstract class ElementHandle<
 
   /**
    * This method scrolls element into view if needed, and then
-   * uses {@link Page | Page.mouse} to click in the center of the element.
+   * uses {@link Page.mouse} to click in the center of the element.
    * If the element is detached from DOM, the method throws an error.
    */
   @throwIfDisposed()
@@ -957,6 +873,14 @@ export abstract class ElementHandle<
     this: ElementHandle<HTMLInputElement>,
     ...paths: string[]
   ): Promise<void>;
+
+  /**
+   * @internal
+   */
+  abstract queryAXTree(
+    name?: string,
+    role?: string
+  ): AwaitableIterable<ElementHandle<Node>>;
 
   /**
    * This method scrolls element into view if needed, and then uses
@@ -1335,18 +1259,15 @@ export abstract class ElementHandle<
     this: ElementHandle<Element>,
     options: Readonly<ElementScreenshotOptions> = {}
   ): Promise<string | Buffer> {
-    const {scrollIntoView = true} = options;
-
-    let clip = await this.#nonEmptyVisibleBoundingBox();
+    const {scrollIntoView = true, clip} = options;
 
     const page = this.frame.page();
 
+    // Only scroll the element into view if the user wants it.
     if (scrollIntoView) {
       await this.scrollIntoViewIfNeeded();
-
-      // We measure again just in case.
-      clip = await this.#nonEmptyVisibleBoundingBox();
     }
+    const elementClip = await this.#nonEmptyVisibleBoundingBox();
 
     const [pageLeft, pageTop] = await this.evaluate(() => {
       if (!window.visualViewport) {
@@ -1357,10 +1278,16 @@ export abstract class ElementHandle<
         window.visualViewport.pageTop,
       ] as const;
     });
-    clip.x += pageLeft;
-    clip.y += pageTop;
+    elementClip.x += pageLeft;
+    elementClip.y += pageTop;
+    if (clip) {
+      elementClip.x += clip.x;
+      elementClip.y += clip.y;
+      elementClip.height = clip.height;
+      elementClip.width = clip.width;
+    }
 
-    return await page.screenshot({...options, clip});
+    return await page.screenshot({...options, clip: elementClip});
   }
 
   async #nonEmptyVisibleBoundingBox() {

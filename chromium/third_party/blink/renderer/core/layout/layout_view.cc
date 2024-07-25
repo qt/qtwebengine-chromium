@@ -28,6 +28,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/scroll/scrollbar_mode.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/web/web_print_page_description.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -44,6 +45,7 @@
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/constraint_space_builder.h"
 #include "third_party/blink/renderer/core/layout/geometry/transform_state.h"
+#include "third_party/blink/renderer/core/layout/hit_test_cache.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_counter.h"
 #include "third_party/blink/renderer/core/layout/layout_embedded_content.h"
@@ -67,10 +69,8 @@
 #include "third_party/blink/renderer/platform/instrumentation/histogram.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/traced_value.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "ui/display/screen_info.h"
 #include "ui/gfx/geometry/quad_f.h"
-#include "ui/gfx/geometry/size_conversions.h"
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -129,10 +129,6 @@ LayoutView::LayoutView(ContainerNode* document)
       GetDocument()) {
     SetIsEffectiveRootScroller(true);
   }
-
-  // This flag is normally set when an object is inserted into the tree, but
-  // this doesn't happen for LayoutView, since it's the root.
-  SetMightTraversePhysicalFragments(true);
 }
 
 LayoutView::~LayoutView() = default;
@@ -140,6 +136,7 @@ LayoutView::~LayoutView() = default;
 void LayoutView::Trace(Visitor* visitor) const {
   visitor->Trace(frame_view_);
   visitor->Trace(svg_text_descendants_);
+  visitor->Trace(text_to_variable_length_transform_result_);
   visitor->Trace(hit_test_cache_);
   visitor->Trace(initial_containing_block_resize_handled_list_);
   LayoutNGBlockFlow::Trace(visitor);
@@ -148,8 +145,7 @@ void LayoutView::Trace(Visitor* visitor) const {
 bool LayoutView::HitTest(const HitTestLocation& location,
                          HitTestResult& result) {
   NOT_DESTROYED();
-  if (RuntimeEnabledFeatures::SvgTextFixHittestAfterScaleEnabled() &&
-      has_svg_text_descendants_) {
+  if (has_svg_text_descendants_) {
     // This is necessary because SVG <text> might have obsolete geometry after
     // scale-only changes.  See crbug.com/1296089#c16
     auto it = svg_text_descendants_->find(this);
@@ -412,6 +408,24 @@ TrackedDescendantsMap& LayoutView::SvgTextDescendantsMap() {
   if (!svg_text_descendants_)
     svg_text_descendants_ = MakeGarbageCollected<TrackedDescendantsMap>();
   return *svg_text_descendants_;
+}
+
+void LayoutView::RegisterVariableLengthTransformResult(
+    const LayoutText& text,
+    const VariableLengthTransformResult& result) {
+  CHECK(text.HasVariableLengthTransform());
+  text_to_variable_length_transform_result_.Set(&text, result);
+}
+
+void LayoutView::UnregisterVariableLengthTransformResult(
+    const LayoutText& text) {
+  text_to_variable_length_transform_result_.erase(&text);
+}
+
+VariableLengthTransformResult LayoutView::GetVariableLengthTransformResult(
+    const LayoutText& text) {
+  CHECK(text.HasVariableLengthTransform());
+  return text_to_variable_length_transform_result_.at(&text);
 }
 
 LayoutViewTransitionRoot* LayoutView::GetViewTransitionRoot() const {
@@ -699,34 +713,6 @@ void LayoutView::CalculateScrollbarModes(
 #undef RETURN_SCROLLBAR_MODE
 }
 
-PhysicalSize LayoutView::PageAreaSize(wtf_size_t page_index,
-                                      const AtomicString& page_name) const {
-  NOT_DESTROYED();
-  const ComputedStyle* page_style =
-      GetDocument().StyleForPage(page_index, page_name);
-  WebPrintPageDescription description = default_page_description_;
-  GetDocument().GetPageDescriptionNoLifecycleUpdate(*page_style, &description);
-
-  gfx::SizeF page_size(
-      std::max(.0f, description.size.width() -
-                        (description.margin_left + description.margin_right)),
-      std::max(.0f, description.size.height() -
-                        (description.margin_top + description.margin_bottom)));
-
-  page_size.Scale(page_scale_factor_);
-
-  // Round up to the nearest integer. Although layout itself could have handled
-  // subpixels just fine, the paint code cannot without bleeding across page
-  // boundaries. The printing code (outside Blink) also rounds up. It's
-  // important that all pieces of the machinery agree on which way to round, or
-  // we risk clipping away a pixel or so at the edges. The reason for rounding
-  // up (rather than down, or to the closest integer) is so that any box that
-  // starts exactly at the beginning of a page, and uses a block-size exactly
-  // equal to that of the page area (before rounding) will actually fit on one
-  // page.
-  return PhysicalSize(gfx::ToCeiledSize(page_size));
-}
-
 AtomicString LayoutView::NamedPageAtIndex(wtf_size_t page_index) const {
   // If layout is dirty, it's not possible to look up page names reliably.
   DCHECK_GE(GetDocument().Lifecycle().GetState(),
@@ -807,7 +793,7 @@ void LayoutView::InvalidateSvgRootsWithRelativeLengthDescendents() {
   }
 }
 
-void LayoutView::UpdateLayout() {
+void LayoutView::LayoutRoot() {
   NOT_DESTROYED();
   if (ShouldUsePrintingLayout()) {
     intrinsic_logical_widths_ = LogicalWidth();
@@ -915,13 +901,15 @@ gfx::SizeF LayoutView::DynamicViewportSizeForViewportUnits() const {
 
 gfx::SizeF LayoutView::DefaultPageAreaSize() const {
   NOT_DESTROYED();
+  const WebPrintPageDescription& default_page_description =
+      frame_view_->GetFrame().GetPrintParams().default_page_description;
   return gfx::SizeF(
-      std::max(.0f, default_page_description_.size.width() -
-                        (default_page_description_.margin_left +
-                         default_page_description_.margin_right)),
-      std::max(.0f, default_page_description_.size.height() -
-                        (default_page_description_.margin_top +
-                         default_page_description_.margin_bottom)));
+      std::max(.0f, default_page_description.size.width() -
+                        (default_page_description.margin_left +
+                         default_page_description.margin_right)),
+      std::max(.0f, default_page_description.size.height() -
+                        (default_page_description.margin_top +
+                         default_page_description.margin_bottom)));
 }
 
 void LayoutView::WillBeDestroyed() {
@@ -992,8 +980,7 @@ bool LayoutView::AffectedByResizedInitialContainingBlock(
   return add_result.is_new_entry;
 }
 
-void LayoutView::UpdateMarkersAndCountersAfterStyleChange(
-    LayoutObject* container) {
+void LayoutView::UpdateCountersAfterStyleChange(LayoutObject* container) {
   NOT_DESTROYED();
   if (!needs_marker_counter_update_)
     return;
@@ -1013,9 +1000,9 @@ void LayoutView::UpdateMarkersAndCountersAfterStyleChange(
   // change outside the container. Hence, we can start the update traversal from
   // the container.
   LayoutObject* start = container ? container : this;
-  // Additionally, if the container contains style, we know counters inside the
-  // container cannot affect counters outside the container, which means we can
-  // limit the traversal to the container subtree.
+  // Additionally, if the container contains style, we know list-item counters
+  // inside the container cannot affect list-item counters outside the
+  // container, which means we can limit the traversal to the container subtree.
   LayoutObject* stay_within =
       container && container->ShouldApplyStyleContainment() ? container
                                                             : nullptr;
@@ -1027,8 +1014,6 @@ void LayoutView::UpdateMarkersAndCountersAfterStyleChange(
     } else if (auto* inline_list_item =
                    DynamicTo<LayoutInlineListItem>(layout_object)) {
       inline_list_item->UpdateCounterStyle();
-    } else if (auto* counter = DynamicTo<LayoutCounter>(layout_object)) {
-      counter->UpdateCounter();
     }
   }
 }

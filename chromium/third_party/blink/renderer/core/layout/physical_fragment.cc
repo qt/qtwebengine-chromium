@@ -49,8 +49,14 @@ String StringForBoxType(const PhysicalFragment& fragment) {
     case PhysicalFragment::BoxType::kColumnBox:
       result.Append("column");
       break;
-    case PhysicalFragment::BoxType::kPageBox:
-      result.Append("page");
+    case PhysicalFragment::BoxType::kPageContainer:
+      result.Append("page container");
+      break;
+    case PhysicalFragment::BoxType::kPageBorderBox:
+      result.Append("page border box");
+      break;
+    case PhysicalFragment::BoxType::kPageArea:
+      result.Append("page area");
       break;
     case PhysicalFragment::BoxType::kAtomicInline:
       result.Append("atomic-inline");
@@ -98,7 +104,15 @@ class FragmentTreeDumper {
       : builder_(builder), target_fragment_(target), flags_(flags) {}
 
   void Append(const PhysicalFragment* fragment,
-              absl::optional<PhysicalOffset> fragment_offset,
+              std::optional<PhysicalOffset> fragment_offset,
+              unsigned indent = 2) {
+    Vector<String> attributes;
+    Append(fragment, fragment_offset, attributes, indent);
+  }
+
+  void Append(const PhysicalFragment* fragment,
+              std::optional<PhysicalOffset> fragment_offset,
+              Vector<String>& attributes,
               unsigned indent = 2) {
     AppendIndentation(indent, fragment);
 
@@ -114,17 +128,14 @@ class FragmentTreeDumper {
         String box_type = StringForBoxType(*fragment);
         has_content = true;
         if (!box_type.empty()) {
-          builder_->Append(" (");
-          builder_->Append(box_type);
-          builder_->Append(")");
+          attributes.push_back(box_type);
         }
         if (flags_ & PhysicalFragment::DumpSelfPainting &&
             box->HasSelfPaintingLayer()) {
-          if (box_type.empty())
-            builder_->Append(" ");
-          builder_->Append("(self paint)");
+          attributes.push_back("self paint");
         }
       }
+      AppendAttributes(attributes);
       has_content = AppendOffsetAndSize(fragment, fragment_offset, has_content);
 
       if (flags_ & PhysicalFragment::DumpNodeName && layout_object) {
@@ -181,6 +192,18 @@ class FragmentTreeDumper {
     builder_->Append("\n");
   }
 
+  void AppendAttributes(const Vector<String>& attributes) {
+    if (!attributes.empty()) {
+      String separator = " (";
+      for (const String& attribute : attributes) {
+        builder_->Append(separator);
+        builder_->Append(attribute);
+        separator = ")(";
+      }
+      builder_->Append(")");
+    }
+  }
+
   void AppendLegacySubtree(const LayoutObject& layout_object, unsigned indent) {
     for (const LayoutObject* descendant = &layout_object; descendant;) {
       if (!IsNGRootWithFragments(*descendant)) {
@@ -202,7 +225,7 @@ class FragmentTreeDumper {
         builder_->Append("(Fragment not found when searching the subtree)\n");
         builder_->Append("(Dumping detached fragment tree now:)\n");
       }
-      Append(target_fragment_, absl::nullopt);
+      Append(target_fragment_, std::nullopt);
     }
   }
 
@@ -216,7 +239,7 @@ class FragmentTreeDumper {
     }
     const LayoutBox& box_descendant = To<LayoutBox>(layout_object);
     DCHECK_EQ(box_descendant.PhysicalFragmentCount(), 1u);
-    Append(box_descendant.GetPhysicalFragment(0), absl::nullopt, indent + 4);
+    Append(box_descendant.GetPhysicalFragment(0), std::nullopt, indent + 4);
   }
 
  private:
@@ -225,7 +248,11 @@ class FragmentTreeDumper {
       const InlineCursorPosition& current = cursor->Current();
       const PhysicalFragment* box = current.BoxFragment();
       if (box && !box->IsInlineBox()) {
-        Append(box, current.OffsetInContainerFragment(), indent);
+        Vector<String> attributes;
+        if (current->IsHiddenForPaint()) {
+          attributes.push_back("hidden");
+        }
+        Append(box, current.OffsetInContainerFragment(), attributes, indent);
         continue;
       }
 
@@ -261,7 +288,7 @@ class FragmentTreeDumper {
   }
 
   bool AppendOffsetAndSize(const PhysicalFragment* fragment,
-                           absl::optional<PhysicalOffset> fragment_offset,
+                           std::optional<PhysicalOffset> fragment_offset,
                            bool has_content) {
     if (flags_ & PhysicalFragment::DumpOffset) {
       if (has_content)
@@ -533,7 +560,8 @@ PhysicalFragment::OofData* PhysicalFragment::OofDataFromBuilder(
       oof_data->oof_positioned_descendants.emplace_back(
           descendant.Node(),
           descendant.static_position.ConvertToPhysical(converter),
-          descendant.requires_content_before_breaking, inline_container);
+          descendant.requires_content_before_breaking,
+          descendant.is_hidden_for_paint, inline_container);
     }
   }
 
@@ -584,7 +612,8 @@ PhysicalFragment::OofData* PhysicalFragment::FragmentedOofDataFromBuilder(
         descendant.Node(),
         descendant.static_position.ConvertToPhysical(
             containing_block_converter),
-        descendant.requires_content_before_breaking, inline_container,
+        descendant.requires_content_before_breaking,
+        descendant.is_hidden_for_paint, inline_container,
         PhysicalContainingBlock(builder, size, containing_block_size,
                                 descendant.containing_block),
         PhysicalContainingBlock(builder, size,
@@ -670,7 +699,8 @@ void PhysicalFragment::CheckType() const {
       } else {
         DCHECK(layout_object_->IsBox());
       }
-      if (IsFragmentainerBox()) {
+      if (IsFragmentainerBox() || GetBoxType() == kPageContainer ||
+          GetBoxType() == kPageBorderBox) {
         // Fragmentainers are associated with the same layout object as their
         // multicol container (or the LayoutView, in case of printing). The
         // fragments themselves are regular in-flow block container fragments
@@ -732,7 +762,7 @@ String PhysicalFragment::ToString() const {
 String PhysicalFragment::DumpFragmentTree(
     DumpFlags flags,
     const PhysicalFragment* target,
-    absl::optional<PhysicalOffset> fragment_offset,
+    std::optional<PhysicalOffset> fragment_offset,
     unsigned indent) const {
   StringBuilder string_builder;
   if (flags & DumpHeaderText)
@@ -857,9 +887,11 @@ void PhysicalFragment::AddOutlineRectsForCursor(
     }
     switch (item.Type()) {
       case FragmentItem::kLine: {
-        AddOutlineRectsForDescendant(
-            {item.LineBoxFragment(), item.OffsetInContainerFragment()},
-            collector, additional_offset, outline_type, containing_block);
+        if (item.LineBoxFragment()) {
+          AddOutlineRectsForDescendant(
+              {item.LineBoxFragment(), item.OffsetInContainerFragment()},
+              collector, additional_offset, outline_type, containing_block);
+        }
         break;
       }
       case FragmentItem::kGeneratedText:
@@ -999,10 +1031,11 @@ bool PhysicalFragment::DependsOnPercentageBlockSize(
   }
 
   const ComputedStyle& style = builder.Style();
-  if (style.LogicalHeight().IsPercentOrCalc() ||
-      style.LogicalMinHeight().IsPercentOrCalc() ||
-      style.LogicalMaxHeight().IsPercentOrCalc())
+  if (style.LogicalHeight().MayHavePercentDependence() ||
+      style.LogicalMinHeight().MayHavePercentDependence() ||
+      style.LogicalMaxHeight().MayHavePercentDependence()) {
     return true;
+  }
 
   return false;
 }

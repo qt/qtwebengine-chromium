@@ -94,7 +94,7 @@ std::unique_ptr<EntityData> CreateEntityDataFromAutofillProfile(
       entity_data->specifics.mutable_autofill_profile();
 
   specifics->set_guid(entry.guid());
-  // TODO(crbug.com/1441905): Remove the origin field from
+  // TODO(crbug.com/40266694): Remove the origin field from
   // AutofillProfileSpecifics. AutofillProfile::origin was already deprecated,
   // effectively treating all profiles as unverified. However, older clients
   // reject updates to verified profiles from unverified profiles. To retain
@@ -209,6 +209,8 @@ std::unique_ptr<EntityData> CreateEntityDataFromAutofillProfile(
       UTF16ToUTF8(entry.GetRawInfo(ADDRESS_HOME_STREET_NAME)));
   specifics->set_address_home_thoroughfare_number(
       UTF16ToUTF8(entry.GetRawInfo(ADDRESS_HOME_HOUSE_NUMBER)));
+  specifics->set_address_home_thoroughfare_number_and_apt(
+      UTF16ToUTF8(entry.GetRawInfo(ADDRESS_HOME_HOUSE_NUMBER_AND_APT)));
   specifics->set_address_home_street_location(
       UTF16ToUTF8(entry.GetRawInfo(ADDRESS_HOME_STREET_LOCATION)));
   specifics->set_address_home_subpremise_name(
@@ -224,6 +226,10 @@ std::unique_ptr<EntityData> CreateEntityDataFromAutofillProfile(
   }
   specifics->set_address_home_floor(
       UTF16ToUTF8(entry.GetRawInfo(ADDRESS_HOME_FLOOR)));
+  if (base::FeatureList::IsEnabled(features::kAutofillUseINAddressModel)) {
+    specifics->set_address_home_street_location_and_locality(UTF16ToUTF8(
+        entry.GetRawInfo(ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY)));
+  }
 
   // Set address-related statuses.
   specifics->set_address_home_city_status(
@@ -295,6 +301,9 @@ std::unique_ptr<EntityData> CreateEntityDataFromAutofillProfile(
   specifics->set_address_home_thoroughfare_number_status(
       ConvertProfileToSpecificsVerificationStatus(
           entry.GetVerificationStatus(ADDRESS_HOME_HOUSE_NUMBER)));
+  specifics->set_address_home_thoroughfare_number_and_apt_status(
+      ConvertProfileToSpecificsVerificationStatus(
+          entry.GetVerificationStatus(ADDRESS_HOME_HOUSE_NUMBER_AND_APT)));
   specifics->set_address_home_street_location_status(
       ConvertProfileToSpecificsVerificationStatus(
           entry.GetVerificationStatus(ADDRESS_HOME_STREET_LOCATION)));
@@ -316,11 +325,11 @@ std::unique_ptr<EntityData> CreateEntityDataFromAutofillProfile(
   specifics->set_address_home_floor_status(
       ConvertProfileToSpecificsVerificationStatus(
           entry.GetVerificationStatus(ADDRESS_HOME_FLOOR)));
-
-  // Set birthdate-related values.
-  specifics->set_birthdate_day(entry.GetRawInfoAsInt(BIRTHDATE_DAY));
-  specifics->set_birthdate_month(entry.GetRawInfoAsInt(BIRTHDATE_MONTH));
-  specifics->set_birthdate_year(entry.GetRawInfoAsInt(BIRTHDATE_4_DIGIT_YEAR));
+  if (base::FeatureList::IsEnabled(features::kAutofillUseINAddressModel)) {
+    specifics->set_address_home_street_location_and_locality_status(
+        ConvertProfileToSpecificsVerificationStatus(entry.GetVerificationStatus(
+            ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY)));
+  }
 
   return entity_data;
 }
@@ -563,6 +572,12 @@ std::unique_ptr<AutofillProfile> CreateAutofillProfileFromSpecifics(
           specifics.address_home_thoroughfare_number_status()));
 
   profile->SetRawInfoWithVerificationStatus(
+      ADDRESS_HOME_HOUSE_NUMBER_AND_APT,
+      UTF8ToUTF16(specifics.address_home_thoroughfare_number_and_apt()),
+      ConvertSpecificsToProfileVerificationStatus(
+          specifics.address_home_thoroughfare_number_and_apt_status()));
+
+  profile->SetRawInfoWithVerificationStatus(
       ADDRESS_HOME_STREET_LOCATION,
       UTF8ToUTF16(specifics.address_home_street_location()),
       ConvertSpecificsToProfileVerificationStatus(
@@ -595,10 +610,13 @@ std::unique_ptr<AutofillProfile> CreateAutofillProfileFromSpecifics(
       ConvertSpecificsToProfileVerificationStatus(
           specifics.address_home_floor_status()));
 
-  // Set birthdate-related fields.
-  profile->SetRawInfoAsInt(BIRTHDATE_DAY, specifics.birthdate_day());
-  profile->SetRawInfoAsInt(BIRTHDATE_MONTH, specifics.birthdate_month());
-  profile->SetRawInfoAsInt(BIRTHDATE_4_DIGIT_YEAR, specifics.birthdate_year());
+  if (base::FeatureList::IsEnabled(features::kAutofillUseINAddressModel)) {
+    profile->SetRawInfoWithVerificationStatus(
+        ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY,
+        UTF8ToUTF16(specifics.address_home_street_location_and_locality()),
+        ConvertSpecificsToProfileVerificationStatus(
+            specifics.address_home_street_location_and_locality_status()));
+  }
 
   // When adding field types, ensure that they don't need to be added here and
   // update the last checked value.

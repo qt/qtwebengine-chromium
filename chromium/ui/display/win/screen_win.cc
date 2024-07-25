@@ -5,11 +5,14 @@
 #include "ui/display/win/screen_win.h"
 
 #include <windows.h>
+
 #include <shellscalingapi.h>
 
 #include <algorithm>
+#include <optional>
 
 #include "base/containers/contains.h"
+#include "base/containers/flat_set.h"
 #include "base/debug/alias.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -20,7 +23,6 @@
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
 #include "components/device_event_log/device_event_log.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/display/display.h"
 #include "ui/display/display_layout.h"
 #include "ui/display/display_layout_builder.h"
@@ -47,11 +49,11 @@ namespace {
 ScreenWin* g_instance = nullptr;
 
 // Gets the DPI for a particular monitor.
-absl::optional<int> GetPerMonitorDPI(HMONITOR monitor) {
+std::optional<int> GetPerMonitorDPI(HMONITOR monitor) {
   UINT dpi_x, dpi_y;
   if (!SUCCEEDED(
           ::GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y))) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   DCHECK_EQ(dpi_x, dpi_y);
@@ -84,7 +86,7 @@ float GetMonitorScaleFactor(HMONITOR monitor,
 // empty string if the provided path is unset/nullopt or EDID data is not
 // available for the device.
 std::string GetFriendlyDeviceName(
-    const absl::optional<DISPLAYCONFIG_PATH_INFO>& path) {
+    const std::optional<DISPLAYCONFIG_PATH_INFO>& path) {
   if (!path)
     return std::string();
   DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
@@ -98,7 +100,7 @@ std::string GetFriendlyDeviceName(
   return std::string();
 }
 
-float GetSDRWhiteLevel(const absl::optional<DISPLAYCONFIG_PATH_INFO>& path) {
+float GetSDRWhiteLevel(const std::optional<DISPLAYCONFIG_PATH_INFO>& path) {
   if (path) {
     DISPLAYCONFIG_SDR_WHITE_LEVEL white_level = {};
     white_level.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL;
@@ -112,7 +114,7 @@ float GetSDRWhiteLevel(const absl::optional<DISPLAYCONFIG_PATH_INFO>& path) {
 }
 
 DISPLAYCONFIG_VIDEO_OUTPUT_TECHNOLOGY GetOutputTechnology(
-    const absl::optional<DISPLAYCONFIG_PATH_INFO>& path) {
+    const std::optional<DISPLAYCONFIG_PATH_INFO>& path) {
   if (path)
     return path->targetInfo.outputTechnology;
   return DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER;
@@ -257,7 +259,7 @@ Display CreateDisplayFromDisplayInfo(
     const internal::DisplayInfo& display_info,
     const ColorProfileReader* color_profile_reader,
     const gfx::mojom::DXGIOutputDesc* dxgi_output_desc,
-    bool hdr_enabled_on_any_display) {
+    bool hdr_enabled) {
   const float scale_factor = display_info.device_scale_factor();
   const gfx::Rect bounds = gfx::ScaleToEnclosingRect(display_info.screen_rect(),
                                                      1.0f / scale_factor);
@@ -275,9 +277,7 @@ Display CreateDisplayFromDisplayInfo(
   gfx::DisplayColorSpaces color_spaces;
   if (HasForceDisplayColorProfile()) {
     color_spaces = GetForcedDisplayColorSpaces();
-  } else if (hdr_enabled_on_any_display) {
-    // TODO(https://crbug.com/1339352): Do not allow non-HDR-enabled displays
-    // to use HDR color spaces.
+  } else if (hdr_enabled) {
     color_spaces = GetDisplayColorSpacesForHdr(display_info.sdr_white_level(),
                                                dxgi_output_desc);
   } else {
@@ -324,7 +324,13 @@ std::vector<ScreenWinDisplay> DisplayInfosToScreenWinDisplays(
       display_infos_remaining, [](const internal::DisplayInfo& display_info) {
         return display_info.screen_rect().origin().IsOrigin();
       });
-  DCHECK(primary_display_iter != display_infos_remaining.end());
+
+  // If we can't find the primary display, we likely witnessed a race condition
+  // when querying the OS for display info. We expect another OS notification to
+  // trigger this lookup again soon, so just return an empty list for now.
+  if (primary_display_iter == display_infos_remaining.end()) {
+    return {};
+  }
 
   // Build the tree and determine DisplayPlacements along the way.
   DisplayLayoutBuilder builder(primary_display_iter->id());
@@ -341,14 +347,21 @@ std::vector<ScreenWinDisplay> DisplayInfosToScreenWinDisplays(
     }
   }
 
-  // Construct a map from display IDs to DXGI output descriptors.
+  // Construct a map from display IDs to DXGI output descriptors, and another
+  // map from display IDs to HDR enabled status.
   std::map<int64_t, const gfx::mojom::DXGIOutputDesc*> dxgi_output_descs;
-  bool hdr_enabled_on_any_display = false;
+  std::map<int64_t, bool> hdr_enabled;
   if (dxgi_info) {
     for (const auto& dxgi_output_desc : dxgi_info->output_descs) {
-      hdr_enabled_on_any_display |= dxgi_output_desc->hdr_enabled;
-      dxgi_output_descs[internal::DisplayInfo::DeviceIdFromDeviceName(
-          dxgi_output_desc->device_name.c_str())] = dxgi_output_desc.get();
+      auto display_info_iter = base::ranges::find_if(
+          display_infos, [&](const internal::DisplayInfo& display_info) {
+            return display_info.device_name() == dxgi_output_desc->device_name;
+          });
+      if (display_info_iter != display_infos.end()) {
+        auto id = display_info_iter->id();
+        dxgi_output_descs[id] = dxgi_output_desc.get();
+        hdr_enabled[id] = dxgi_output_desc->hdr_enabled;
+      }
     }
   }
 
@@ -357,7 +370,7 @@ std::vector<ScreenWinDisplay> DisplayInfosToScreenWinDisplays(
   for (const auto& display_info : display_infos) {
     displays.push_back(CreateDisplayFromDisplayInfo(
         display_info, color_profile_reader,
-        dxgi_output_descs[display_info.id()], hdr_enabled_on_any_display));
+        dxgi_output_descs[display_info.id()], hdr_enabled[display_info.id()]));
   }
   builder.Build()->ApplyToDisplayList(&displays, nullptr, 0);
 
@@ -382,7 +395,7 @@ MONITORINFOEX MonitorInfoFromHMONITOR(HMONITOR monitor) {
   return monitor_info;
 }
 
-absl::optional<gfx::Vector2dF> GetPixelsPerInchForPointerDevice(
+std::optional<gfx::Vector2dF> GetPixelsPerInchForPointerDevice(
     HANDLE source_device) {
   static const auto get_pointer_device_rects =
       reinterpret_cast<decltype(&::GetPointerDeviceRects)>(
@@ -390,7 +403,7 @@ absl::optional<gfx::Vector2dF> GetPixelsPerInchForPointerDevice(
   RECT device_rect, screen_rect;
   if (!get_pointer_device_rects ||
       !get_pointer_device_rects(source_device, &device_rect, &screen_rect))
-    return absl::nullopt;
+    return std::nullopt;
 
   const gfx::RectF device{gfx::Rect(device_rect)};
   const gfx::RectF screen{gfx::Rect(screen_rect)};
@@ -409,26 +422,17 @@ gfx::Vector2dF GetDefaultMonitorPhysicalPixelsPerInch() {
 
 // Retrieves PPI for |monitor| based on touch pointer device handles.  Returns
 // nullopt if a pointer device for |monitor| can't be found.
-absl::optional<gfx::Vector2dF> GetMonitorPixelsPerInch(HMONITOR monitor) {
-  static const auto get_pointer_devices =
-      reinterpret_cast<decltype(&::GetPointerDevices)>(
-          base::win::GetUser32FunctionPointer("GetPointerDevices"));
-  uint32_t pointer_device_count = 0;
-  if (!get_pointer_devices ||
-      !get_pointer_devices(&pointer_device_count, nullptr) ||
-      (pointer_device_count == 0))
-    return absl::nullopt;
-
-  std::vector<POINTER_DEVICE_INFO> pointer_devices(pointer_device_count);
-  if (!get_pointer_devices(&pointer_device_count, pointer_devices.data()))
-    return absl::nullopt;
-
-  for (const auto& device : pointer_devices) {
-    if (device.pointerDeviceType == POINTER_DEVICE_TYPE_TOUCH &&
-        device.monitor == monitor)
-      return GetPixelsPerInchForPointerDevice(device.device);
+std::optional<gfx::Vector2dF> GetMonitorPixelsPerInch(HMONITOR monitor) {
+  if (const std::optional<std::vector<POINTER_DEVICE_INFO>> pointer_devices =
+          base::win::GetPointerDevices()) {
+    for (const auto& device : *pointer_devices) {
+      if (device.pointerDeviceType == POINTER_DEVICE_TYPE_TOUCH &&
+          device.monitor == monitor) {
+        return GetPixelsPerInchForPointerDevice(device.device);
+      }
+    }
   }
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 BOOL CALLBACK EnumMonitorForDisplayInfoCallback(HMONITOR monitor,
@@ -457,6 +461,12 @@ std::vector<internal::DisplayInfo> GetDisplayInfosFromSystem() {
   std::vector<internal::DisplayInfo> display_infos;
   EnumDisplayMonitors(nullptr, nullptr, EnumMonitorForDisplayInfoCallback,
                       reinterpret_cast<LPARAM>(&display_infos));
+  // Check that there are no duplicate display Ids generated.
+  base::flat_set<int64_t> display_ids;
+  for (const auto& display : display_infos) {
+    CHECK(!display_ids.contains(display.id()));
+    display_ids.insert(display.id());
+  }
   return display_infos;
 }
 
@@ -673,9 +683,8 @@ ScreenWinDisplay ScreenWin::GetScreenWinDisplayWithDisplayId(int64_t id) {
 }
 
 // static
-int64_t ScreenWin::DeviceIdFromDeviceName(const wchar_t* device_name) {
-  return display::win::internal::DisplayInfo::DeviceIdFromDeviceName(
-      device_name);
+int64_t ScreenWin::DisplayIdFromMonitorInfo(const MONITORINFOEX& monitor) {
+  return internal::DisplayInfo::DisplayIdFromMonitorInfo(monitor);
 }
 
 // static
@@ -706,10 +715,10 @@ bool ScreenWin::IsNativeWindowOccluded(gfx::NativeWindow window) const {
   return false;
 }
 
-absl::optional<bool> ScreenWin::IsWindowOnCurrentVirtualDesktop(
+std::optional<bool> ScreenWin::IsWindowOnCurrentVirtualDesktop(
     gfx::NativeWindow window) const {
   NOTREACHED();
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 ScreenWin::ScreenWin(bool initialize_from_system)
@@ -983,7 +992,7 @@ ScreenWinDisplay ScreenWin::GetPrimaryScreenWinDisplay() const {
 ScreenWinDisplay ScreenWin::GetScreenWinDisplay(
     const MONITORINFOEX& monitor_info) const {
   const int64_t id =
-      internal::DisplayInfo::DeviceIdFromDeviceName(monitor_info.szDevice);
+      internal::DisplayInfo::DisplayIdFromMonitorInfo(monitor_info);
   const auto it = base::ranges::find(
       screen_win_displays_, id,
       [](const auto& display) { return display.display().id(); });

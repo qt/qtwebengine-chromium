@@ -25,28 +25,32 @@ namespace vvl {
 
 class AccelerationStructureNV : public Bindable {
   public:
-    AccelerationStructureNV(VkDevice device, VkAccelerationStructureNV as, const VkAccelerationStructureCreateInfoNV *ci)
-        : Bindable(as, kVulkanObjectTypeAccelerationStructureNV, false, false, 0),
-          create_infoNV(ci),
-          memory_requirements(GetMemReqs(device, as, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV)),
+    AccelerationStructureNV(VkDevice device, VkAccelerationStructureNV handle,
+                            const VkAccelerationStructureCreateInfoNV *pCreateInfo)
+        : Bindable(handle, kVulkanObjectTypeAccelerationStructureNV, false, false, 0),
+          safe_create_info(pCreateInfo),
+          create_info(*safe_create_info.ptr()),
+          memory_requirements(GetMemReqs(device, handle, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_NV)),
           build_scratch_memory_requirements(
-              GetMemReqs(device, as, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV)),
+              GetMemReqs(device, handle, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_BUILD_SCRATCH_NV)),
           update_scratch_memory_requirements(
-              GetMemReqs(device, as, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_UPDATE_SCRATCH_NV)),
+              GetMemReqs(device, handle, VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_UPDATE_SCRATCH_NV)),
           tracker_(&memory_requirements) {
         Bindable::SetMemoryTracker(&tracker_);
     }
     AccelerationStructureNV(const AccelerationStructureNV &rh_obj) = delete;
 
-    VkAccelerationStructureNV acceleration_structure() const { return handle_.Cast<VkAccelerationStructureNV>(); }
+    VkAccelerationStructureNV VkHandle() const { return handle_.Cast<VkAccelerationStructureNV>(); }
 
     void Build(const VkAccelerationStructureInfoNV *pInfo) {
         built = true;
         build_info.initialize(pInfo);
     };
 
-    const safe_VkAccelerationStructureCreateInfoNV create_infoNV = {};
-    safe_VkAccelerationStructureInfoNV build_info;
+    const vku::safe_VkAccelerationStructureCreateInfoNV safe_create_info;
+    const VkAccelerationStructureCreateInfoNV &create_info;
+
+    vku::safe_VkAccelerationStructureInfoNV build_info;
     const VkMemoryRequirements memory_requirements;
     const VkMemoryRequirements build_scratch_memory_requirements;
     const VkMemoryRequirements update_scratch_memory_requirements;
@@ -71,9 +75,12 @@ class AccelerationStructureNV : public Bindable {
 
 class AccelerationStructureKHR : public StateObject {
   public:
-    AccelerationStructureKHR(VkAccelerationStructureKHR as, const VkAccelerationStructureCreateInfoKHR *ci,
-                             std::shared_ptr<Buffer> &&buf_state, VkDeviceAddress address)
-        : StateObject(as, kVulkanObjectTypeAccelerationStructureKHR), create_infoKHR(ci), buffer_state(buf_state), address(address) {}
+    AccelerationStructureKHR(VkAccelerationStructureKHR handle, const VkAccelerationStructureCreateInfoKHR *pCreateInfo,
+                             std::shared_ptr<Buffer> &&buf_state)
+        : StateObject(handle, kVulkanObjectTypeAccelerationStructureKHR),
+          safe_create_info(pCreateInfo),
+          create_info(*safe_create_info.ptr()),
+          buffer_state(buf_state) {}
     AccelerationStructureKHR(const AccelerationStructureKHR &rh_obj) = delete;
 
     virtual ~AccelerationStructureKHR() {
@@ -82,7 +89,7 @@ class AccelerationStructureKHR : public StateObject {
         }
     }
 
-    VkAccelerationStructureKHR acceleration_structure() const { return handle_.Cast<VkAccelerationStructureKHR>(); }
+    VkAccelerationStructureKHR VkHandle() const { return handle_.Cast<VkAccelerationStructureKHR>(); }
 
     void LinkChildNodes() override {
         // Connect child node(s), which cannot safely be done in the constructor.
@@ -110,70 +117,14 @@ class AccelerationStructureKHR : public StateObject {
         }
     }
 
-    const safe_VkAccelerationStructureCreateInfoKHR create_infoKHR = {};
-    safe_VkAccelerationStructureBuildGeometryInfoKHR build_info_khr;
+    const vku::safe_VkAccelerationStructureCreateInfoKHR safe_create_info;
+    const VkAccelerationStructureCreateInfoKHR &create_info;
+
+    vku::safe_VkAccelerationStructureBuildGeometryInfoKHR build_info_khr{};
     bool built = false;
     uint64_t opaque_handle = 0;
-    std::shared_ptr<vvl::Buffer> buffer_state;
-    VkDeviceAddress address;
-    std::vector<VkAccelerationStructureBuildRangeInfoKHR> build_range_infos;
+    std::shared_ptr<vvl::Buffer> buffer_state{};
+    std::vector<VkAccelerationStructureBuildRangeInfoKHR> build_range_infos{};
 };
 
 }  // namespace vvl
-
-// Safe struct that spans NV and KHR VkRayTracingPipelineCreateInfo structures.
-// It is a safe_VkRayTracingPipelineCreateInfoKHR and supports construction from
-// a VkRayTracingPipelineCreateInfoNV.
-class safe_VkRayTracingPipelineCreateInfoCommon : public safe_VkRayTracingPipelineCreateInfoKHR {
-  public:
-    safe_VkRayTracingPipelineCreateInfoCommon() : safe_VkRayTracingPipelineCreateInfoKHR() {}
-    safe_VkRayTracingPipelineCreateInfoCommon(const VkRayTracingPipelineCreateInfoNV *pCreateInfo)
-        : safe_VkRayTracingPipelineCreateInfoKHR() {
-        initialize(pCreateInfo);
-    }
-    safe_VkRayTracingPipelineCreateInfoCommon(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo)
-        : safe_VkRayTracingPipelineCreateInfoKHR(pCreateInfo) {}
-
-    void initialize(const VkRayTracingPipelineCreateInfoNV *pCreateInfo) {
-        safe_VkRayTracingPipelineCreateInfoNV nvStruct;
-        nvStruct.initialize(pCreateInfo);
-
-        sType = nvStruct.sType;
-
-        // Take ownership of the pointer and null it out in nvStruct
-        pNext = nvStruct.pNext;
-        nvStruct.pNext = nullptr;
-
-        flags = nvStruct.flags;
-        stageCount = nvStruct.stageCount;
-
-        pStages = nvStruct.pStages;
-        nvStruct.pStages = nullptr;
-
-        groupCount = nvStruct.groupCount;
-        maxRecursionDepth = nvStruct.maxRecursionDepth;
-        layout = nvStruct.layout;
-        basePipelineHandle = nvStruct.basePipelineHandle;
-        basePipelineIndex = nvStruct.basePipelineIndex;
-
-        assert(pGroups == nullptr);
-        if (nvStruct.groupCount && nvStruct.pGroups) {
-            pGroups = new safe_VkRayTracingShaderGroupCreateInfoKHR[groupCount];
-            for (uint32_t i = 0; i < groupCount; ++i) {
-                pGroups[i].sType = nvStruct.pGroups[i].sType;
-                pGroups[i].pNext = nvStruct.pGroups[i].pNext;
-                pGroups[i].type = nvStruct.pGroups[i].type;
-                pGroups[i].generalShader = nvStruct.pGroups[i].generalShader;
-                pGroups[i].closestHitShader = nvStruct.pGroups[i].closestHitShader;
-                pGroups[i].anyHitShader = nvStruct.pGroups[i].anyHitShader;
-                pGroups[i].intersectionShader = nvStruct.pGroups[i].intersectionShader;
-                pGroups[i].intersectionShader = nvStruct.pGroups[i].intersectionShader;
-                pGroups[i].pShaderGroupCaptureReplayHandle = nullptr;
-            }
-        }
-    }
-    void initialize(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo) {
-        safe_VkRayTracingPipelineCreateInfoKHR::initialize(pCreateInfo);
-    }
-    uint32_t maxRecursionDepth = 0;  // NV specific
-};

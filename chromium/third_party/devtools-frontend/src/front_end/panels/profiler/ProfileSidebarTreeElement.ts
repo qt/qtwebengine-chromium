@@ -44,6 +44,7 @@ export class ProfileSidebarTreeElement extends UI.TreeOutline.TreeElement {
     this.titlesElement = document.createElement('div');
     this.titlesElement.classList.add('titles');
     this.titlesElement.classList.add('no-subtitle');
+    this.titlesElement.setAttribute('jslog', `${VisualLogging.value('title').track({dblclick: true, change: true})}`);
     this.titleContainer = this.titlesElement.createChild('span', 'title-container');
     this.titleElement = this.titleContainer.createChild('span', 'title');
     this.subtitleElement = this.titlesElement.createChild('span', 'subtitle');
@@ -52,7 +53,7 @@ export class ProfileSidebarTreeElement extends UI.TreeOutline.TreeElement {
     this.menuElement.tabIndex = -1;
     this.menuElement.appendChild(IconButton.Icon.create('dots-vertical'));
     this.menuElement.addEventListener('click', this.handleContextMenuEvent.bind(this));
-    this.menuElement.setAttribute('jslog', `${VisualLogging.action().track({click: true}).context('dots-menu')}`);
+    this.menuElement.setAttribute('jslog', `${VisualLogging.dropDown('profile-options').track({click: true})}`);
     UI.Tooltip.Tooltip.install(this.menuElement, i18nString(UIStrings.profileOptions));
 
     this.titleElement.textContent = profile.title;

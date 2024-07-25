@@ -40,12 +40,8 @@ config("pdfium_common_config") {
     defines += [ "PDF_ENABLE_CLICK_LOGGING" ]
   }
 
-  if (pdf_use_skia) {
-    defines += [ "PDF_USE_SKIA" ]
-
-    if (pdf_enable_fontations) {
-      defines += [ "PDF_ENABLE_FONTATIONS" ]
-    }
+  if (pdf_use_skia && pdf_enable_fontations) {
+    defines += [ "PDF_ENABLE_FONTATIONS" ]
   }
 
   if (pdf_use_partition_alloc) {
@@ -232,63 +228,15 @@ config("pdfium_common_config") {
       "-Wno-return-type",
     ]
   }
-}
 
-config("pdfium_implementation_config") {
-  defines = [ "FPDF_IMPLEMENTATION" ]
-  visibility = [ ":pdfium_public_headers" ]
-}
-
-config("pdfium_public_config") {
-  defines = []
-
-  if (pdf_enable_v8) {
-    defines += [ "PDF_ENABLE_V8" ]
-
-    if (pdf_enable_xfa) {
-      defines += [ "PDF_ENABLE_XFA" ]
-      if (pdf_enable_xfa_bmp) {
-        defines += [ "PDF_ENABLE_XFA_BMP" ]
-      }
-      if (pdf_enable_xfa_gif) {
-        defines += [ "PDF_ENABLE_XFA_GIF" ]
-      }
-      if (pdf_enable_xfa_png) {
-        defines += [ "PDF_ENABLE_XFA_PNG" ]
-      }
-      if (pdf_enable_xfa_tiff) {
-        defines += [ "PDF_ENABLE_XFA_TIFF" ]
-      }
-    }
-  }
-}
-
-config("pdfium_core_config") {
-  cflags = []
-  configs = [
-    ":pdfium_common_config",
-    ":pdfium_public_config",
-    "//build/config/compiler:noshadowing",
-  ]
-  defines = []
-  if (is_win) {
-    cflags += [
-      "/wd4324",
-      "/wd4577",
-    ]
-  }
-  if (is_clang) {
-    cflags += [ "-Wcovered-switch-default" ]
-  }
-}
-
-config("pdfium_plugin_config") {
-  cflags = []
-  defines = []
   if (clang_use_chrome_plugins) {
+    defines += [ "PDF_USE_CHROME_PLUGINS" ]
+
     # Catch misuse of C-style pointers.
+    # TODO(crbug.com/1320670): enable for non-debug builds once this stops
+    # interfering with code generation.
     # TODO(tsepez): enable for windows, too.
-    if (!is_win) {
+    if (is_debug && !is_win) {
       cflags += [
         "-Xclang",
         "-plugin-arg-find-bad-constructs",
@@ -334,10 +282,61 @@ config("pdfium_plugin_config") {
   }
 }
 
+config("pdfium_implementation_config") {
+  defines = [ "FPDF_IMPLEMENTATION" ]
+  visibility = [ ":pdfium_public_headers" ]
+}
+
+config("pdfium_public_config") {
+  defines = []
+
+  if (pdf_enable_v8) {
+    defines += [ "PDF_ENABLE_V8" ]
+
+    if (pdf_enable_xfa) {
+      defines += [ "PDF_ENABLE_XFA" ]
+      if (pdf_enable_xfa_bmp) {
+        defines += [ "PDF_ENABLE_XFA_BMP" ]
+      }
+      if (pdf_enable_xfa_gif) {
+        defines += [ "PDF_ENABLE_XFA_GIF" ]
+      }
+      if (pdf_enable_xfa_png) {
+        defines += [ "PDF_ENABLE_XFA_PNG" ]
+      }
+      if (pdf_enable_xfa_tiff) {
+        defines += [ "PDF_ENABLE_XFA_TIFF" ]
+      }
+    }
+  }
+
+  if (pdf_use_skia) {
+    defines += [ "PDF_USE_SKIA" ]
+  }
+}
+
+config("pdfium_core_config") {
+  cflags = []
+  configs = [
+    ":pdfium_common_config",
+    ":pdfium_public_config",
+    "//build/config/compiler:noshadowing",
+  ]
+  defines = []
+  if (is_win) {
+    cflags += [
+      "/wd4324",
+      "/wd4577",
+    ]
+  }
+  if (is_clang) {
+    cflags += [ "-Wcovered-switch-default" ]
+  }
+}
+
 config("pdfium_strict_config") {
   configs = [
     ":pdfium_core_config",
-    ":pdfium_plugin_config",
     "//build/config/compiler:wexit_time_destructors",
     "//build/config/compiler:wglobal_constructors",
   ]
@@ -403,7 +402,6 @@ component("pdfium") {
     "fpdfsdk",
     "fpdfsdk/formfiller",
     "fxjs",
-    "third_party:pdfium_base",
   ]
 
   public_deps = [
@@ -514,7 +512,6 @@ group("pdfium_embeddertest_deps") {
     ":pdfium_public_headers",
     "core/fxcrt",
     "testing:embedder_test_support",
-    "third_party:pdfium_base_test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
@@ -589,7 +586,7 @@ group("pdfium_all") {
     ":pdfium_diff",
     ":pdfium_embeddertests",
     ":pdfium_unittests",
-    "samples",
+    "testing:pdfium_test",
     "testing/fuzzers",
   ]
 

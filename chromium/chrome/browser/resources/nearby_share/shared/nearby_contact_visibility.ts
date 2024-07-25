@@ -8,31 +8,32 @@
  * embedded in the nearby_visibility_page as well as the settings pop-up dialog.
  */
 
-import 'chrome://resources/cr_elements/cr_shared_style.css.js';
-import 'chrome://resources/cr_elements/cr_radio_group/cr_radio_group.js';
-import 'chrome://resources/cr_elements/cr_radio_button/cr_card_radio_button.js';
-import 'chrome://resources/cr_elements/cr_icons.css.js';
-import 'chrome://resources/cr_elements/cr_toggle/cr_toggle.js';
+import 'chrome://resources/ash/common/cr_elements/cr_shared_style.css.js';
+import 'chrome://resources/ash/common/cr_elements/cr_radio_group/cr_radio_group.js';
+import 'chrome://resources/ash/common/cr_elements/cr_radio_button/cr_card_radio_button.js';
+import 'chrome://resources/ash/common/cr_elements/cr_icons.css.js';
+import 'chrome://resources/ash/common/cr_elements/cr_toggle/cr_toggle.js';
 import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 import 'chrome://resources/polymer/v3_0/iron-media-query/iron-media-query.js';
 import './nearby_page_template.js';
 import './nearby_shared_icons.html.js';
 // <if expr='chromeos_ash'>
-import 'chrome://resources/cr_elements/chromeos/cros_color_overrides.css.js';
+import 'chrome://resources/ash/common/cr_elements/cros_color_overrides.css.js';
 
 // </if>
 
-import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+import {I18nMixin} from 'chrome://resources/ash/common/cr_elements/i18n_mixin.js';
 import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
 import {sendWithPromise} from 'chrome://resources/js/cr.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {sanitizeInnerHtml} from 'chrome://resources/js/parse_html_subset.js';
-import {ContactManagerInterface, ContactRecord, DownloadContactsObserverReceiver, Visibility} from 'chrome://resources/mojo/chromeos/ash/services/nearby/public/mojom/nearby_share_settings.mojom-webui.js';
+import type {ContactManagerInterface, ContactRecord, DownloadContactsObserverReceiver} from 'chrome://resources/mojo/chromeos/ash/services/nearby/public/mojom/nearby_share_settings.mojom-webui.js';
+import {Visibility} from 'chrome://resources/mojo/chromeos/ash/services/nearby/public/mojom/nearby_share_settings.mojom-webui.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getContactManager, observeContactManager} from './nearby_contact_manager.js';
 import {getTemplate} from './nearby_contact_visibility.html.js';
-import {NearbySettings} from './nearby_share_settings_mixin.js';
+import type {NearbySettings} from './nearby_share_settings_mixin.js';
 
 enum ContactsState {
   PENDING = 'pending',
@@ -50,15 +51,6 @@ const DEVICE_VISIBILITY_LIGHT_ICON =
 
 const DEVICE_VISIBILITY_DARK_ICON =
     'nearby-images:nearby-device-visibility-dark';
-
-const CONTACTS_EMPTY_ICON = 'nearby-images:contacts-empty';
-
-const CONTACTS_EMPTY_JELLY_ICON = 'nearby-images:contacts-empty-jelly';
-
-const CONTACTS_FAILED_ICON = 'nearby-images:contacts-download-failed';
-
-const CONTACTS_FAILED_JELLY_ICON =
-    'nearby-images:contacts-download-failed-jelly';
 
 export interface NearbyVisibilityContact {
   id: string;
@@ -143,18 +135,6 @@ export class NearbyContactVisibilityElement extends
       },
 
       /**
-       * Return true if the Jelly feature flag is enabled.
-       */
-      isJellyEnabled_: {
-        type: Boolean,
-        readOnly: true,
-        value() {
-          return loadTimeData.valueExists('isJellyEnabled') &&
-              loadTimeData.getBoolean('isJellyEnabled');
-        },
-      },
-
-      /**
        * Return true if the Self Share feature flag is enabled.
        */
       isSelfShareEnabled_: {
@@ -205,7 +185,6 @@ export class NearbyContactVisibilityElement extends
       null;
   private downloadTimeoutId_: number|null;
   private isDarkModeActive_: boolean;
-  private isJellyEnabled_: boolean;
   private isAllContactsToggledOn_: boolean;
   private isSelfShareEnabled_: boolean;
   private numUnreachable_: number;
@@ -729,22 +708,6 @@ export class NearbyContactVisibilityElement extends
   private getDeviceVisibilityIcon_(): string {
     return this.isDarkModeActive_ ? DEVICE_VISIBILITY_DARK_ICON :
                                     DEVICE_VISIBILITY_LIGHT_ICON;
-  }
-
-  /**
-   * Returns the contacts empty icon based on Jelly enablement.
-   */
-  private getContactsEmptyIcon_(): string {
-    return this.isJellyEnabled_ ? CONTACTS_EMPTY_JELLY_ICON :
-                                  CONTACTS_EMPTY_ICON;
-  }
-
-  /**
-   * Returns the contacts failed icon based on Jelly enablement.
-   */
-  private getContactsFailedIcon_(): string {
-    return this.isJellyEnabled_ ? CONTACTS_FAILED_JELLY_ICON :
-                                  CONTACTS_FAILED_ICON;
   }
 
   /**

@@ -17,8 +17,8 @@
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/driver_utils.h"
 #include "libANGLE/renderer/vulkan/DisplayVk.h"
-#include "libANGLE/renderer/vulkan/RendererVk.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
+#include "libANGLE/renderer/vulkan/vk_renderer.h"
 #include "vk_format_utils.h"
 
 namespace
@@ -37,15 +37,15 @@ namespace
 // colorspace. If all supported formats can be reinterpreted, it returns true. Formats which are not
 // supported at all are ignored and not counted as failures.
 bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFormats,
-                                     const RendererVk *rendererVk,
+                                     const Renderer *renderer,
                                      bool checkLinearColorspace)
 {
     for (GLenum glFormat : optionalSizedFormats)
     {
-        const gl::TextureCaps &baseCaps = rendererVk->getNativeTextureCaps().get(glFormat);
+        const gl::TextureCaps &baseCaps = renderer->getNativeTextureCaps().get(glFormat);
         if (baseCaps.texturable && baseCaps.filterable)
         {
-            const Format &vkFormat = rendererVk->getFormat(glFormat);
+            const Format &vkFormat = renderer->getFormat(glFormat);
             // For capability query, we use the renderable format since that is what we are capable
             // of when we fallback.
             angle::FormatID imageFormatID = vkFormat.getActualRenderableImageFormatID();
@@ -54,14 +54,14 @@ bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFor
                                                         ? ConvertToLinear(imageFormatID)
                                                         : ConvertToSRGB(imageFormatID);
 
-            const Format &reinterpretedVkFormat = rendererVk->getFormat(reinterpretedFormatID);
+            const Format &reinterpretedVkFormat = renderer->getFormat(reinterpretedFormatID);
 
             if (reinterpretedVkFormat.getActualRenderableImageFormatID() != reinterpretedFormatID)
             {
                 return false;
             }
 
-            if (!rendererVk->haveSameFormatFeatureBits(imageFormatID, reinterpretedFormatID))
+            if (!renderer->haveSameFormatFeatureBits(imageFormatID, reinterpretedFormatID))
             {
                 return false;
             }
@@ -71,7 +71,7 @@ bool FormatReinterpretationSupported(const std::vector<GLenum> &optionalSizedFor
     return true;
 }
 
-bool GetTextureSRGBDecodeSupport(const RendererVk *rendererVk)
+bool GetTextureSRGBDecodeSupport(const Renderer *renderer)
 {
     static constexpr bool kLinearColorspace = true;
 
@@ -87,7 +87,7 @@ bool GetTextureSRGBDecodeSupport(const RendererVk *rendererVk)
         GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT,
     };
 
-    if (!FormatReinterpretationSupported(optionalSizedSRGBFormats, rendererVk, kLinearColorspace))
+    if (!FormatReinterpretationSupported(optionalSizedSRGBFormats, renderer, kLinearColorspace))
     {
         return false;
     }
@@ -95,7 +95,7 @@ bool GetTextureSRGBDecodeSupport(const RendererVk *rendererVk)
     return true;
 }
 
-bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
+bool GetTextureSRGBOverrideSupport(const Renderer *renderer,
                                    const gl::Extensions &supportedExtensions)
 {
     static constexpr bool kNonLinearColorspace = false;
@@ -129,14 +129,14 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
     std::vector<GLenum> optionalRG8LinearFormats  = {GL_RG8};
     std::vector<GLenum> optionalBPTCLinearFormats = {GL_COMPRESSED_RGBA_BPTC_UNORM_EXT};
 
-    if (!FormatReinterpretationSupported(optionalLinearFormats, rendererVk, kNonLinearColorspace))
+    if (!FormatReinterpretationSupported(optionalLinearFormats, renderer, kNonLinearColorspace))
     {
         return false;
     }
 
     if (supportedExtensions.textureCompressionS3tcSrgbEXT)
     {
-        if (!FormatReinterpretationSupported(optionalS3TCLinearFormats, rendererVk,
+        if (!FormatReinterpretationSupported(optionalS3TCLinearFormats, renderer,
                                              kNonLinearColorspace))
         {
             return false;
@@ -145,7 +145,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     if (supportedExtensions.textureSRGBR8EXT)
     {
-        if (!FormatReinterpretationSupported(optionalR8LinearFormats, rendererVk,
+        if (!FormatReinterpretationSupported(optionalR8LinearFormats, renderer,
                                              kNonLinearColorspace))
         {
             return false;
@@ -154,7 +154,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     if (supportedExtensions.textureSRGBRG8EXT)
     {
-        if (!FormatReinterpretationSupported(optionalRG8LinearFormats, rendererVk,
+        if (!FormatReinterpretationSupported(optionalRG8LinearFormats, renderer,
                                              kNonLinearColorspace))
         {
             return false;
@@ -163,7 +163,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
 
     if (supportedExtensions.textureCompressionBptcEXT)
     {
-        if (!FormatReinterpretationSupported(optionalBPTCLinearFormats, rendererVk,
+        if (!FormatReinterpretationSupported(optionalBPTCLinearFormats, renderer,
                                              kNonLinearColorspace))
         {
             return false;
@@ -173,7 +173,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
     return true;
 }
 
-bool CanSupportYuvInternalFormat(const RendererVk *rendererVk)
+bool CanSupportYuvInternalFormat(const Renderer *renderer)
 {
     // The following formats are not mandatory in Vulkan, even when VK_KHR_sampler_ycbcr_conversion
     // is supported. GL_ANGLE_yuv_internal_format requires support for sampling only the
@@ -183,14 +183,13 @@ bool CanSupportYuvInternalFormat(const RendererVk *rendererVk)
     // Various test cases need multiple YUV formats. It would be preferrable to have support for the
     // 3 plane 8 bit YUV format (VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) as well.
 
-    const Format &twoPlane8bitYuvFormat = rendererVk->getFormat(GL_G8_B8R8_2PLANE_420_UNORM_ANGLE);
-    bool twoPlane8bitYuvFormatSupported = rendererVk->hasImageFormatFeatureBits(
+    const Format &twoPlane8bitYuvFormat = renderer->getFormat(GL_G8_B8R8_2PLANE_420_UNORM_ANGLE);
+    bool twoPlane8bitYuvFormatSupported = renderer->hasImageFormatFeatureBits(
         twoPlane8bitYuvFormat.getActualImageFormatID(vk::ImageAccess::SampleOnly),
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
 
-    const Format &threePlane8bitYuvFormat =
-        rendererVk->getFormat(GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE);
-    bool threePlane8bitYuvFormatSupported = rendererVk->hasImageFormatFeatureBits(
+    const Format &threePlane8bitYuvFormat = renderer->getFormat(GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE);
+    bool threePlane8bitYuvFormatSupported = renderer->hasImageFormatFeatureBits(
         threePlane8bitYuvFormat.getActualImageFormatID(vk::ImageAccess::SampleOnly),
         VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
 
@@ -222,18 +221,7 @@ uint32_t GetTimestampValidBits(const std::vector<VkQueueFamilyProperties> &queue
 }  // namespace
 }  // namespace vk
 
-template <typename LargerInt>
-GLint LimitToInt(const LargerInt physicalDeviceValue)
-{
-    static_assert(sizeof(LargerInt) >= sizeof(int32_t), "Incorrect usage of LimitToInt");
-
-    // Limit to INT_MAX / 2 instead of INT_MAX.  If the limit is queried as float, the imprecision
-    // in floating point can cause the value to exceed INT_MAX.  This trips dEQP up.
-    return static_cast<GLint>(std::min(
-        physicalDeviceValue, static_cast<LargerInt>(std::numeric_limits<int32_t>::max() / 2)));
-}
-
-void RendererVk::ensureCapsInitialized() const
+void vk::Renderer::ensureCapsInitialized() const
 {
     if (mCapsInitialized)
         return;
@@ -301,6 +289,7 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.copyCompressedTextureCHROMIUM = true;
     mNativeExtensions.debugMarkerEXT                = true;
     mNativeExtensions.robustnessEXT                 = true;
+    mNativeExtensions.translatedShaderSourceANGLE   = true;
     mNativeExtensions.discardFramebufferEXT         = true;
     mNativeExtensions.stencilTexturingANGLE         = true;
     mNativeExtensions.packReverseRowOrderANGLE      = true;
@@ -534,12 +523,12 @@ void RendererVk::ensureCapsInitialized() const
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
-    mNativeCaps.max3DTextureSize = LimitToInt(limitsVk.maxImageDimension3D);
+    mNativeCaps.max3DTextureSize = rx::LimitToInt(limitsVk.maxImageDimension3D);
     mNativeCaps.max2DTextureSize =
         std::min(limitsVk.maxFramebufferWidth, limitsVk.maxImageDimension2D);
-    mNativeCaps.maxArrayTextureLayers = LimitToInt(limitsVk.maxImageArrayLayers);
+    mNativeCaps.maxArrayTextureLayers = rx::LimitToInt(limitsVk.maxImageArrayLayers);
     mNativeCaps.maxLODBias            = limitsVk.maxSamplerLodBias;
-    mNativeCaps.maxCubeMapTextureSize = LimitToInt(limitsVk.maxImageDimensionCube);
+    mNativeCaps.maxCubeMapTextureSize = rx::LimitToInt(limitsVk.maxImageDimensionCube);
     mNativeCaps.maxRenderbufferSize =
         std::min({limitsVk.maxImageDimension2D, limitsVk.maxFramebufferWidth,
                   limitsVk.maxFramebufferHeight});
@@ -559,12 +548,12 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeCaps.maxDrawBuffers =
         std::min(limitsVk.maxColorAttachments, limitsVk.maxFragmentOutputAttachments);
-    mNativeCaps.maxFramebufferWidth  = LimitToInt(limitsVk.maxFramebufferWidth);
-    mNativeCaps.maxFramebufferHeight = LimitToInt(limitsVk.maxFramebufferHeight);
-    mNativeCaps.maxColorAttachments  = LimitToInt(limitsVk.maxColorAttachments);
-    mNativeCaps.maxViewportWidth     = LimitToInt(limitsVk.maxViewportDimensions[0]);
-    mNativeCaps.maxViewportHeight    = LimitToInt(limitsVk.maxViewportDimensions[1]);
-    mNativeCaps.maxSampleMaskWords   = LimitToInt(limitsVk.maxSampleMaskWords);
+    mNativeCaps.maxFramebufferWidth  = rx::LimitToInt(limitsVk.maxFramebufferWidth);
+    mNativeCaps.maxFramebufferHeight = rx::LimitToInt(limitsVk.maxFramebufferHeight);
+    mNativeCaps.maxColorAttachments  = rx::LimitToInt(limitsVk.maxColorAttachments);
+    mNativeCaps.maxViewportWidth     = rx::LimitToInt(limitsVk.maxViewportDimensions[0]);
+    mNativeCaps.maxViewportHeight    = rx::LimitToInt(limitsVk.maxViewportDimensions[1]);
+    mNativeCaps.maxSampleMaskWords   = rx::LimitToInt(limitsVk.maxSampleMaskWords);
     mNativeCaps.maxColorTextureSamples =
         vk_gl::GetMaxSampleCount(limitsVk.sampledImageColorSampleCounts);
     mNativeCaps.maxDepthTextureSamples =
@@ -572,8 +561,8 @@ void RendererVk::ensureCapsInitialized() const
     mNativeCaps.maxIntegerSamples =
         vk_gl::GetMaxSampleCount(limitsVk.sampledImageIntegerSampleCounts);
 
-    mNativeCaps.maxVertexAttributes     = LimitToInt(limitsVk.maxVertexInputAttributes);
-    mNativeCaps.maxVertexAttribBindings = LimitToInt(limitsVk.maxVertexInputBindings);
+    mNativeCaps.maxVertexAttributes     = rx::LimitToInt(limitsVk.maxVertexInputAttributes);
+    mNativeCaps.maxVertexAttribBindings = rx::LimitToInt(limitsVk.maxVertexInputBindings);
     // Offset and stride are stored as uint16_t in PackedAttribDesc.
     mNativeCaps.maxVertexAttribRelativeOffset =
         std::min((1u << kAttributeOffsetMaxBits) - 1, limitsVk.maxVertexInputAttributeOffset);
@@ -602,15 +591,15 @@ void RendererVk::ensureCapsInitialized() const
     mNativeCaps.fragmentLowpInt.setTwosComplementInt(16);
 
     // Compute shader limits.
-    mNativeCaps.maxComputeWorkGroupCount[0] = LimitToInt(limitsVk.maxComputeWorkGroupCount[0]);
-    mNativeCaps.maxComputeWorkGroupCount[1] = LimitToInt(limitsVk.maxComputeWorkGroupCount[1]);
-    mNativeCaps.maxComputeWorkGroupCount[2] = LimitToInt(limitsVk.maxComputeWorkGroupCount[2]);
-    mNativeCaps.maxComputeWorkGroupSize[0]  = LimitToInt(limitsVk.maxComputeWorkGroupSize[0]);
-    mNativeCaps.maxComputeWorkGroupSize[1]  = LimitToInt(limitsVk.maxComputeWorkGroupSize[1]);
-    mNativeCaps.maxComputeWorkGroupSize[2]  = LimitToInt(limitsVk.maxComputeWorkGroupSize[2]);
+    mNativeCaps.maxComputeWorkGroupCount[0] = rx::LimitToInt(limitsVk.maxComputeWorkGroupCount[0]);
+    mNativeCaps.maxComputeWorkGroupCount[1] = rx::LimitToInt(limitsVk.maxComputeWorkGroupCount[1]);
+    mNativeCaps.maxComputeWorkGroupCount[2] = rx::LimitToInt(limitsVk.maxComputeWorkGroupCount[2]);
+    mNativeCaps.maxComputeWorkGroupSize[0]  = rx::LimitToInt(limitsVk.maxComputeWorkGroupSize[0]);
+    mNativeCaps.maxComputeWorkGroupSize[1]  = rx::LimitToInt(limitsVk.maxComputeWorkGroupSize[1]);
+    mNativeCaps.maxComputeWorkGroupSize[2]  = rx::LimitToInt(limitsVk.maxComputeWorkGroupSize[2]);
     mNativeCaps.maxComputeWorkGroupInvocations =
-        LimitToInt(limitsVk.maxComputeWorkGroupInvocations);
-    mNativeCaps.maxComputeSharedMemorySize = LimitToInt(limitsVk.maxComputeSharedMemorySize);
+        rx::LimitToInt(limitsVk.maxComputeWorkGroupInvocations);
+    mNativeCaps.maxComputeSharedMemorySize = rx::LimitToInt(limitsVk.maxComputeSharedMemorySize);
 
     GLuint maxUniformBlockSize = limitsVk.maxUniformBufferRange;
 
@@ -631,7 +620,7 @@ void RendererVk::ensureCapsInitialized() const
     }
     mNativeCaps.maxUniformLocations = maxUniformVectors;
 
-    const int32_t maxPerStageUniformBuffers = LimitToInt(
+    const int32_t maxPerStageUniformBuffers = rx::LimitToInt(
         limitsVk.maxPerStageDescriptorUniformBuffers - kReservedPerStageDefaultUniformBindingCount);
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
@@ -641,7 +630,7 @@ void RendererVk::ensureCapsInitialized() const
     // Reserved uniform buffer count depends on number of stages.  Vertex and fragment shaders are
     // always supported.  The limit needs to be adjusted based on whether geometry and tessellation
     // is supported.
-    int32_t maxCombinedUniformBuffers = LimitToInt(limitsVk.maxDescriptorSetUniformBuffers) -
+    int32_t maxCombinedUniformBuffers = rx::LimitToInt(limitsVk.maxDescriptorSetUniformBuffers) -
                                         2 * kReservedPerStageDefaultUniformBindingCount;
 
     mNativeCaps.maxUniformBlockSize = maxUniformBlockSize;
@@ -656,9 +645,9 @@ void RendererVk::ensureCapsInitialized() const
         std::min(limitsVk.maxDescriptorSetSamplers, limitsVk.maxDescriptorSetSampledImages);
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
-        mNativeCaps.maxShaderTextureImageUnits[shaderType] = LimitToInt(maxPerStageTextures);
+        mNativeCaps.maxShaderTextureImageUnits[shaderType] = rx::LimitToInt(maxPerStageTextures);
     }
-    mNativeCaps.maxCombinedTextureImageUnits = LimitToInt(maxCombinedTextures);
+    mNativeCaps.maxCombinedTextureImageUnits = rx::LimitToInt(maxCombinedTextures);
 
     uint32_t maxPerStageStorageBuffers    = limitsVk.maxPerStageDescriptorStorageBuffers;
     uint32_t maxVertexStageStorageBuffers = maxPerStageStorageBuffers;
@@ -721,36 +710,36 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Vertex] =
         mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics
-            ? LimitToInt(maxVertexStageStorageBuffers)
+            ? rx::LimitToInt(maxVertexStageStorageBuffers)
             : 0;
     mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Fragment] =
-        mPhysicalDeviceFeatures.fragmentStoresAndAtomics ? LimitToInt(maxPerStageStorageBuffers)
+        mPhysicalDeviceFeatures.fragmentStoresAndAtomics ? rx::LimitToInt(maxPerStageStorageBuffers)
                                                          : 0;
     mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Compute] =
-        LimitToInt(maxPerStageStorageBuffers);
-    mNativeCaps.maxCombinedShaderStorageBlocks = LimitToInt(maxCombinedStorageBuffers);
+        rx::LimitToInt(maxPerStageStorageBuffers);
+    mNativeCaps.maxCombinedShaderStorageBlocks = rx::LimitToInt(maxCombinedStorageBuffers);
 
-    mNativeCaps.maxShaderStorageBufferBindings = LimitToInt(maxCombinedStorageBuffers);
+    mNativeCaps.maxShaderStorageBufferBindings = rx::LimitToInt(maxCombinedStorageBuffers);
     mNativeCaps.maxShaderStorageBlockSize      = limitsVk.maxStorageBufferRange;
     mNativeCaps.shaderStorageBufferOffsetAlignment =
-        LimitToInt(static_cast<uint32_t>(limitsVk.minStorageBufferOffsetAlignment));
+        rx::LimitToInt(static_cast<uint32_t>(limitsVk.minStorageBufferOffsetAlignment));
 
     mNativeCaps.maxShaderAtomicCounterBuffers[gl::ShaderType::Vertex] =
         mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics
-            ? LimitToInt(maxVertexStageAtomicCounterBuffers)
+            ? rx::LimitToInt(maxVertexStageAtomicCounterBuffers)
             : 0;
     mNativeCaps.maxShaderAtomicCounterBuffers[gl::ShaderType::Fragment] =
         mPhysicalDeviceFeatures.fragmentStoresAndAtomics
-            ? LimitToInt(maxPerStageAtomicCounterBuffers)
+            ? rx::LimitToInt(maxPerStageAtomicCounterBuffers)
             : 0;
     mNativeCaps.maxShaderAtomicCounterBuffers[gl::ShaderType::Compute] =
-        LimitToInt(maxPerStageAtomicCounterBuffers);
-    mNativeCaps.maxCombinedAtomicCounterBuffers = LimitToInt(maxCombinedAtomicCounterBuffers);
+        rx::LimitToInt(maxPerStageAtomicCounterBuffers);
+    mNativeCaps.maxCombinedAtomicCounterBuffers = rx::LimitToInt(maxCombinedAtomicCounterBuffers);
 
-    mNativeCaps.maxAtomicCounterBufferBindings = LimitToInt(maxCombinedAtomicCounterBuffers);
+    mNativeCaps.maxAtomicCounterBufferBindings = rx::LimitToInt(maxCombinedAtomicCounterBuffers);
     // Emulated as storage buffers, atomic counter buffers have the same size limit.  However, the
     // limit is a signed integer and values above int max will end up as a negative size.
-    mNativeCaps.maxAtomicCounterBufferSize = LimitToInt(limitsVk.maxStorageBufferRange);
+    mNativeCaps.maxAtomicCounterBufferSize = rx::LimitToInt(limitsVk.maxStorageBufferRange);
 
     // There is no particular limit to how many atomic counters there can be, other than the size of
     // a storage buffer.  We nevertheless limit this to something reasonable (4096 arbitrarily).
@@ -777,8 +766,8 @@ void RendererVk::ensureCapsInitialized() const
     mNativeCaps.maxCombinedAtomicCounters = maxAtomicCounters;
 
     // GL Images correspond to Vulkan Storage Images.
-    const int32_t maxPerStageImages = LimitToInt(limitsVk.maxPerStageDescriptorStorageImages);
-    const int32_t maxCombinedImages = LimitToInt(limitsVk.maxDescriptorSetStorageImages);
+    const int32_t maxPerStageImages = rx::LimitToInt(limitsVk.maxPerStageDescriptorStorageImages);
+    const int32_t maxCombinedImages = rx::LimitToInt(limitsVk.maxDescriptorSetStorageImages);
     const int32_t maxVertexPipelineImages =
         mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics ? maxPerStageImages : 0;
 
@@ -828,7 +817,7 @@ void RendererVk::ensureCapsInitialized() const
     // in applications that take the value as signed int (including dEQP).
     const uint32_t maxPerStageResources = limitsVk.maxPerStageResources;
     mNativeCaps.maxCombinedShaderOutputResources =
-        LimitToInt(maxPerStageResources - kReservedPerStageBindingCount);
+        rx::LimitToInt(maxPerStageResources - kReservedPerStageBindingCount);
 
     // Reserve 1 extra varying for transform feedback capture of gl_Position.
     constexpr GLint kReservedVaryingComponentsForTransformFeedbackExtension = 4;
@@ -860,10 +849,10 @@ void RendererVk::ensureCapsInitialized() const
     const GLint maxVaryingCount =
         std::min(limitsVk.maxVertexOutputComponents, limitsVk.maxFragmentInputComponents);
     mNativeCaps.maxVaryingVectors =
-        LimitToInt((maxVaryingCount / kComponentsPerVector) - reservedVaryingVectorCount);
+        rx::LimitToInt((maxVaryingCount / kComponentsPerVector) - reservedVaryingVectorCount);
     mNativeCaps.maxVertexOutputComponents =
-        LimitToInt(limitsVk.maxVertexOutputComponents) - reservedVaryingComponentCount;
-    mNativeCaps.maxFragmentInputComponents = LimitToInt(limitsVk.maxFragmentInputComponents);
+        rx::LimitToInt(limitsVk.maxVertexOutputComponents) - reservedVaryingComponentCount;
+    mNativeCaps.maxFragmentInputComponents = rx::LimitToInt(limitsVk.maxFragmentInputComponents);
 
     mNativeCaps.maxTransformFeedbackInterleavedComponents =
         gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_INTERLEAVED_COMPONENTS;
@@ -873,13 +862,13 @@ void RendererVk::ensureCapsInitialized() const
         gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS;
 
     mNativeCaps.minProgramTexelOffset = limitsVk.minTexelOffset;
-    mNativeCaps.maxProgramTexelOffset = LimitToInt(limitsVk.maxTexelOffset);
+    mNativeCaps.maxProgramTexelOffset = rx::LimitToInt(limitsVk.maxTexelOffset);
 
     const uint32_t sampleCounts =
         limitsVk.framebufferColorSampleCounts & limitsVk.framebufferDepthSampleCounts &
         limitsVk.framebufferStencilSampleCounts & vk_gl::kSupportedSampleCounts;
 
-    mNativeCaps.maxSamples            = LimitToInt(vk_gl::GetMaxSampleCount(sampleCounts));
+    mNativeCaps.maxSamples            = rx::LimitToInt(vk_gl::GetMaxSampleCount(sampleCounts));
     mNativeCaps.maxFramebufferSamples = mNativeCaps.maxSamples;
 
     mNativeCaps.subPixelBits = limitsVk.subPixelPrecisionBits;
@@ -975,10 +964,11 @@ void RendererVk::ensureCapsInitialized() const
     //    GL_RGBA32F                   Y                           Y
     //    GL_RGBA32I                   Y                           Y
     //    GL_RGBA32UI                  Y                           Y
-    mNativeExtensions.textureBufferOES       = true;
-    mNativeExtensions.textureBufferEXT       = true;
-    mNativeCaps.maxTextureBufferSize         = LimitToInt(limitsVk.maxTexelBufferElements);
-    mNativeCaps.textureBufferOffsetAlignment = LimitToInt(limitsVk.minTexelBufferOffsetAlignment);
+    mNativeExtensions.textureBufferOES = true;
+    mNativeExtensions.textureBufferEXT = true;
+    mNativeCaps.maxTextureBufferSize   = rx::LimitToInt(limitsVk.maxTexelBufferElements);
+    mNativeCaps.textureBufferOffsetAlignment =
+        rx::LimitToInt(limitsVk.minTexelBufferOffsetAlignment);
 
     // Atomic image operations in the vertex and fragment shaders require the
     // vertexPipelineStoresAndAtomics and fragmentStoresAndAtomics Vulkan features respectively.
@@ -1002,27 +992,27 @@ void RendererVk::ensureCapsInitialized() const
             (mFeatures.supportsPrimitivesGeneratedQuery.enabled ||
              mFeatures.exposeNonConformantExtensionsAndVersions.enabled);
         mNativeExtensions.tessellationShaderEXT = tessellationShaderEnabled;
-        mNativeCaps.maxPatchVertices            = LimitToInt(limitsVk.maxTessellationPatchSize);
+        mNativeCaps.maxPatchVertices            = rx::LimitToInt(limitsVk.maxTessellationPatchSize);
         mNativeCaps.maxTessPatchComponents =
-            LimitToInt(limitsVk.maxTessellationControlPerPatchOutputComponents);
-        mNativeCaps.maxTessGenLevel = LimitToInt(limitsVk.maxTessellationGenerationLevel);
+            rx::LimitToInt(limitsVk.maxTessellationControlPerPatchOutputComponents);
+        mNativeCaps.maxTessGenLevel = rx::LimitToInt(limitsVk.maxTessellationGenerationLevel);
 
         mNativeCaps.maxTessControlInputComponents =
-            LimitToInt(limitsVk.maxTessellationControlPerVertexInputComponents);
+            rx::LimitToInt(limitsVk.maxTessellationControlPerVertexInputComponents);
         mNativeCaps.maxTessControlOutputComponents =
-            LimitToInt(limitsVk.maxTessellationControlPerVertexOutputComponents);
+            rx::LimitToInt(limitsVk.maxTessellationControlPerVertexOutputComponents);
         mNativeCaps.maxTessControlTotalOutputComponents =
-            LimitToInt(limitsVk.maxTessellationControlTotalOutputComponents);
+            rx::LimitToInt(limitsVk.maxTessellationControlTotalOutputComponents);
         mNativeCaps.maxTessEvaluationInputComponents =
-            LimitToInt(limitsVk.maxTessellationEvaluationInputComponents);
+            rx::LimitToInt(limitsVk.maxTessellationEvaluationInputComponents);
         mNativeCaps.maxTessEvaluationOutputComponents =
-            LimitToInt(limitsVk.maxTessellationEvaluationOutputComponents) -
+            rx::LimitToInt(limitsVk.maxTessellationEvaluationOutputComponents) -
             reservedVaryingComponentCount;
 
         // There is 1 default uniform binding used per tessellation stages.
-        mNativeCaps.maxCombinedUniformBlocks = LimitToInt(
+        mNativeCaps.maxCombinedUniformBlocks = rx::LimitToInt(
             mNativeCaps.maxCombinedUniformBlocks + kReservedTessellationDefaultUniformBindingCount);
-        mNativeCaps.maxUniformBufferBindings = LimitToInt(
+        mNativeCaps.maxUniformBufferBindings = rx::LimitToInt(
             mNativeCaps.maxUniformBufferBindings + kReservedTessellationDefaultUniformBindingCount);
 
         if (mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics)
@@ -1053,17 +1043,18 @@ void RendererVk::ensureCapsInitialized() const
                                       mFeatures.exposeNonConformantExtensionsAndVersions.enabled);
         mNativeExtensions.geometryShaderEXT = geometryShaderEnabled;
         mNativeExtensions.geometryShaderOES = geometryShaderEnabled;
-        mNativeCaps.maxFramebufferLayers    = LimitToInt(limitsVk.maxFramebufferLayers);
+        mNativeCaps.maxFramebufferLayers    = rx::LimitToInt(limitsVk.maxFramebufferLayers);
 
         // Use "undefined" which means APP would have to set gl_Layer identically.
         mNativeCaps.layerProvokingVertex = GL_UNDEFINED_VERTEX_EXT;
 
-        mNativeCaps.maxGeometryInputComponents = LimitToInt(limitsVk.maxGeometryInputComponents);
+        mNativeCaps.maxGeometryInputComponents =
+            rx::LimitToInt(limitsVk.maxGeometryInputComponents);
         mNativeCaps.maxGeometryOutputComponents =
-            LimitToInt(limitsVk.maxGeometryOutputComponents) - reservedVaryingComponentCount;
-        mNativeCaps.maxGeometryOutputVertices = LimitToInt(limitsVk.maxGeometryOutputVertices);
+            rx::LimitToInt(limitsVk.maxGeometryOutputComponents) - reservedVaryingComponentCount;
+        mNativeCaps.maxGeometryOutputVertices = rx::LimitToInt(limitsVk.maxGeometryOutputVertices);
         mNativeCaps.maxGeometryTotalOutputComponents =
-            LimitToInt(limitsVk.maxGeometryTotalOutputComponents);
+            rx::LimitToInt(limitsVk.maxGeometryTotalOutputComponents);
         if (mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics)
         {
             mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Geometry] =
@@ -1072,7 +1063,7 @@ void RendererVk::ensureCapsInitialized() const
                 maxCombinedAtomicCounterBuffers;
         }
         mNativeCaps.maxGeometryShaderInvocations =
-            LimitToInt(limitsVk.maxGeometryShaderInvocations);
+            rx::LimitToInt(limitsVk.maxGeometryShaderInvocations);
 
         // Cap maxGeometryInputComponents by maxVertexOutputComponents and
         // maxTessellationEvaluationOutputComponents; there can't be more inputs than there are
@@ -1127,7 +1118,7 @@ void RendererVk::ensureCapsInitialized() const
 
     // GL_EXT_blend_func_extended
     mNativeExtensions.blendFuncExtendedEXT = mPhysicalDeviceFeatures.dualSrcBlend == VK_TRUE;
-    mNativeCaps.maxDualSourceDrawBuffers   = LimitToInt(limitsVk.maxFragmentDualSrcAttachments);
+    mNativeCaps.maxDualSourceDrawBuffers   = rx::LimitToInt(limitsVk.maxFragmentDualSrcAttachments);
 
     // GL_ANGLE_relaxed_vertex_attribute_type
     mNativeExtensions.relaxedVertexAttributeTypeANGLE = true;
@@ -1137,7 +1128,10 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.multiviewOVR =
         mFeatures.supportsMultiview.enabled && mFeatures.bresenhamLineRasterization.enabled;
     mNativeExtensions.multiview2OVR = mNativeExtensions.multiviewOVR;
-    mNativeCaps.maxViews            = mMultiviewProperties.maxMultiviewViewCount;
+    // Max views affects the number of Vulkan queries per GL query in render pass, and
+    // SecondaryCommandBuffer's ResetQueryPoolParams would like this to have an upper limit (of
+    // 255).
+    mNativeCaps.maxViews = std::min(mMultiviewProperties.maxMultiviewViewCount, 8u);
 
     // GL_ANGLE_yuv_internal_format
     mNativeExtensions.yuvInternalFormatANGLE =
@@ -1168,6 +1162,11 @@ void RendererVk::ensureCapsInitialized() const
 
     // GL_QCOM_shading_rate
     mNativeExtensions.shadingRateQCOM = mFeatures.supportsFragmentShadingRate.enabled;
+
+    // GL_QCOM_framebuffer_foveated
+    mNativeExtensions.framebufferFoveatedQCOM = mFeatures.supportsFoveatedRendering.enabled;
+    // GL_QCOM_texture_foveated
+    mNativeExtensions.textureFoveatedQCOM = mFeatures.supportsFoveatedRendering.enabled;
 
     // GL_ANGLE_shader_pixel_local_storage
     mNativeExtensions.shaderPixelLocalStorageANGLE = true;
@@ -1279,7 +1278,7 @@ egl::Config GenerateDefaultConfig(DisplayVk *display,
                                   const gl::InternalFormat &depthStencilFormat,
                                   EGLint sampleCount)
 {
-    const RendererVk *renderer = display->getRenderer();
+    const vk::Renderer *renderer = display->getRenderer();
 
     const VkPhysicalDeviceProperties &physicalDeviceProperties =
         renderer->getPhysicalDeviceProperties();

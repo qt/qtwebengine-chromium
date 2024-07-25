@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "fxbarcode/pdf417/BC_PDF417HighLevelEncoder.h"
 
 #include <vector>
@@ -43,7 +48,7 @@ TEST(PDF417HighLevelEncoderTest, EncodeHighLevel) {
     const EncodeHighLevelCase& testcase = kEncodeHighLevelCases[i];
     WideStringView input(testcase.input);
     WideString expected(testcase.expected, testcase.expected_length);
-    absl::optional<WideString> result =
+    std::optional<WideString> result =
         CBC_PDF417HighLevelEncoder::EncodeHighLevel(input);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(expected, result.value()) << " for case number " << i;

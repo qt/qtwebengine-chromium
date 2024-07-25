@@ -43,32 +43,32 @@ class MemoryTransferService;
 DAWN_WIRE_EXPORT const DawnProcTable& GetProcs();
 }  // namespace client
 
+struct ReservedBuffer {
+    WGPUBuffer buffer;
+    Handle handle;
+    Handle deviceHandle;
+};
+
 struct ReservedTexture {
     WGPUTexture texture;
-    uint32_t id;
-    uint32_t generation;
-    uint32_t deviceId;
-    uint32_t deviceGeneration;
+    Handle handle;
+    Handle deviceHandle;
 };
 
 struct ReservedSwapChain {
     WGPUSwapChain swapchain;
-    uint32_t id;
-    uint32_t generation;
-    uint32_t deviceId;
-    uint32_t deviceGeneration;
+    Handle deviceHandle;
+    Handle handle;
 };
 
 struct ReservedDevice {
     WGPUDevice device;
-    uint32_t id;
-    uint32_t generation;
+    Handle handle;
 };
 
 struct ReservedInstance {
     WGPUInstance instance;
-    uint32_t id;
-    uint32_t generation;
+    Handle handle;
 };
 
 struct DAWN_WIRE_EXPORT WireClientDescriptor {
@@ -83,12 +83,13 @@ class DAWN_WIRE_EXPORT WireClient : public CommandHandler {
 
     const volatile char* HandleCommands(const volatile char* commands, size_t size) override;
 
+    ReservedBuffer ReserveBuffer(WGPUDevice device, const WGPUBufferDescriptor* descriptor);
     ReservedTexture ReserveTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device,
                                        const WGPUSwapChainDescriptor* descriptor);
-    ReservedDevice ReserveDevice(WGPUInstance instance);
     ReservedInstance ReserveInstance(const WGPUInstanceDescriptor* descriptor = nullptr);
 
+    void ReclaimBufferReservation(const ReservedBuffer& reservation);
     void ReclaimTextureReservation(const ReservedTexture& reservation);
     void ReclaimSwapChainReservation(const ReservedSwapChain& reservation);
     void ReclaimDeviceReservation(const ReservedDevice& reservation);

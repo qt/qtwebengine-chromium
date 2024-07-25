@@ -71,10 +71,6 @@ class Client : public ClientBase {
         return object;
     }
 
-    template <typename T>
-    void Free(T* obj) {
-        Free(obj, ObjectTypeToTypeEnum<T>);
-    }
     void Free(ObjectBase* obj, ObjectType type);
 
     template <typename T>
@@ -87,12 +83,13 @@ class Client : public ClientBase {
 
     MemoryTransferService* GetMemoryTransferService() const { return mMemoryTransferService; }
 
+    ReservedBuffer ReserveBuffer(WGPUDevice device, const WGPUBufferDescriptor* descriptor);
     ReservedTexture ReserveTexture(WGPUDevice device, const WGPUTextureDescriptor* descriptor);
     ReservedSwapChain ReserveSwapChain(WGPUDevice device,
                                        const WGPUSwapChainDescriptor* descriptor);
-    ReservedDevice ReserveDevice(WGPUInstance instance);
     ReservedInstance ReserveInstance(const WGPUInstanceDescriptor* descriptor);
 
+    void ReclaimBufferReservation(const ReservedBuffer& reservation);
     void ReclaimTextureReservation(const ReservedTexture& reservation);
     void ReclaimSwapChainReservation(const ReservedSwapChain& reservation);
     void ReclaimDeviceReservation(const ReservedDevice& reservation);
@@ -116,14 +113,18 @@ class Client : public ClientBase {
   private:
     void DestroyAllObjects();
 
+    template <typename T>
+    void Free(T* obj) {
+        Free(obj, ObjectTypeToTypeEnum<T>);
+    }
+
 #include "dawn/wire/client/ClientPrototypes_autogen.inc"
 
     ChunkedCommandSerializer mSerializer;
     WireDeserializeAllocator mWireCommandAllocator;
     PerObjectType<ObjectStore> mObjectStores;
-    // TODO(https://crbug.com/dawn/2345): Investigate `DanglingUntriaged` in dawn/wire.
-    raw_ptr<MemoryTransferService, DanglingUntriaged> mMemoryTransferService = nullptr;
     std::unique_ptr<MemoryTransferService> mOwnedMemoryTransferService = nullptr;
+    raw_ptr<MemoryTransferService> mMemoryTransferService = nullptr;
     PerObjectType<LinkedList<ObjectBase>> mObjects;
     // Map of instance object handles to a corresponding event manager. Note that for now because we
     // do not have an internal refcount on the instances, i.e. we don't know when the last object

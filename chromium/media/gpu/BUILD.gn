@@ -49,10 +49,10 @@ component("gpu") {
     "//media/mojo/*",
     "//remoting/codec:encoder",
     "//third_party/blink/renderer/modules:unit_tests",
-    "//third_party/blink/renderer/modules:unit_tests_v2",
+    "//third_party/blink/renderer/modules/mediarecorder",
     "//ui/gl:gl_unittests",
 
-    # TODO(crbug.com/1184041): Remove //remoting/host:common when the usage is removed.
+    # TODO(crbug.com/40752360): Remove //remoting/host:common when the usage is removed.
     "//remoting/host:common",
   ]
 
@@ -175,7 +175,7 @@ component("gpu") {
       "mediandk",
     ]
     deps += [
-      # TODO(crbug.com/789435): This can be removed once CdmManager is removed.
+      # TODO(crbug.com/40552063): This can be removed once CdmManager is removed.
       "//gpu/ipc/common",
       "//media/mojo:buildflags",
       "//services/service_manager/public/cpp:cpp",
@@ -235,10 +235,16 @@ component("gpu") {
       "windows/d3d11_vp9_accelerator.h",
       "windows/d3d11_vp9_picture.cc",
       "windows/d3d11_vp9_picture.h",
+      "windows/d3d12_helpers.cc",
+      "windows/d3d12_helpers.h",
+      "windows/d3d12_video_decoder_wrapper.cc",
+      "windows/d3d12_video_decoder_wrapper.h",
       "windows/d3d_accelerator.cc",
       "windows/d3d_accelerator.h",
       "windows/d3d_video_decoder_wrapper.cc",
       "windows/d3d_video_decoder_wrapper.h",
+      "windows/format_utils.cc",
+      "windows/format_utils.h",
       "windows/init_guid.cc",
       "windows/media_foundation_video_encode_accelerator_win.cc",
       "windows/media_foundation_video_encode_accelerator_win.h",
@@ -263,13 +269,9 @@ component("gpu") {
         "windows/av1_video_rate_control_wrapper.cc",
         "windows/av1_video_rate_control_wrapper.h",
       ]
-      configs += [ "//third_party/libaom:libaom_config" ]
       deps += [ "//third_party/libaom:libaomrc" ]
     }
-    configs += [
-      "//third_party/khronos:khronos_headers",
-      "//third_party/libvpx:libvpx_config",
-    ]
+    configs += [ "//third_party/khronos:khronos_headers" ]
     deps += [
       "//gpu/ipc/common:common",
       "//media/base/win:color_space_util_win",
@@ -281,6 +283,7 @@ component("gpu") {
     libs += [
       "d3d9.lib",
       "d3d11.lib",
+      "d3d12.lib",
       "dxva2.lib",
       "strmiids.lib",
       "mf.lib",
@@ -290,6 +293,7 @@ component("gpu") {
     ldflags += [
       "/DELAYLOAD:d3d9.dll",
       "/DELAYLOAD:d3d11.dll",
+      "/DELAYLOAD:d3d12.dll",
       "/DELAYLOAD:dxva2.dll",
       "/DELAYLOAD:mf.dll",
       "/DELAYLOAD:mfplat.dll",
@@ -375,14 +379,17 @@ source_set("common") {
 
   if (is_win || use_vaapi) {
     sources += [
+      "h264_builder.cc",
+      "h264_builder.h",
       "vp9_svc_layers.cc",
       "vp9_svc_layers.h",
     ]
-    configs += [ "//third_party/libvpx:libvpx_config" ]
-    deps += [
-      "//third_party/libaom:libaomrc",
-      "//third_party/libvpx:libvpxrc",
-    ]
+    if (enable_hevc_parser_and_hw_decoder) {
+      sources += [
+        "h265_builder.cc",
+        "h265_builder.h",
+      ]
+    }
   }
 
   if (use_av1_hw_decoder) {
@@ -472,6 +479,7 @@ if (use_v4l2_codec || use_vaapi) {
   source_set("video_frame_mapper_common") {
     defines = [ "MEDIA_GPU_IMPLEMENTATION" ]
     sources = [
+      "video_frame_mapper.cc",
       "video_frame_mapper.h",
       "video_frame_mapper_factory.h",
     ]
@@ -481,6 +489,8 @@ if (use_v4l2_codec || use_vaapi) {
       "//base",
       "//media",
     ]
+
+    deps = [ "//media/gpu/chromeos:video_frame_resource" ]
   }
 }
 
@@ -644,6 +654,8 @@ source_set("unit_tests") {
       "windows/d3d11_video_decoder_unittest.cc",
       "windows/d3d11_video_device_format_support_unittest.cc",
       "windows/d3d11_video_processor_proxy_unittest.cc",
+      "windows/d3d12_helpers_unittest.cc",
+      "windows/mf_audio_encoder_unittest.cc",
       "windows/scoped_d3d_buffers_unittest.cc",
       "windows/supported_profile_helpers_unittest.cc",
     ]
@@ -655,18 +667,45 @@ source_set("unit_tests") {
   }
 
   if (is_win || use_vaapi) {
-    sources += [ "vp9_svc_layers_unittest.cc" ]
+    sources += [
+      "h264_builder_unittest.cc",
+      "vp9_svc_layers_unittest.cc",
+    ]
   }
 }
 
 if (enable_hevc_parser_and_hw_decoder) {
   fuzzer_test("media_h265_decoder_fuzzer") {
-    sources = [ "h265_decoder_fuzzertest.cc" ]
+    sources = [ "h265_decoder_fuzzer.cc" ]
     deps = [
       ":gpu",
       "//base",
       "//media",
     ]
+  }
+}
+
+fuzzer_test("media_h264_decoder_fuzzer") {
+  sources = [ "h264_decoder_fuzzer.cc" ]
+  deps = [
+    ":gpu",
+    "//base",
+    "//media",
+  ]
+  seed_corpuses = [ "//media/test/data" ]
+}
+
+# TODO(crbug.com/1006266): consider using |use_chromeos_video_acceleration|.
+if (use_v4l2_codec || use_vaapi) {
+  fuzzer_test("media_vp8_decoder_fuzzer") {
+    sources = [ "vp8_decoder_fuzzer.cc" ]
+    deps = [
+      ":common",
+      ":gpu",
+      "//base",
+      "//media",
+    ]
+    seed_corpuses = [ "//media/test/data" ]
   }
 }
 
@@ -679,4 +718,14 @@ if (use_av1_hw_decoder) {
       "//media",
     ]
   }
+}
+
+fuzzer_test("media_vp9_decoder_fuzzer") {
+  sources = [ "vp9_decoder_fuzzer.cc" ]
+  deps = [
+    ":gpu",
+    "//base",
+    "//media",
+  ]
+  seed_corpuses = [ "//media/test/data" ]
 }

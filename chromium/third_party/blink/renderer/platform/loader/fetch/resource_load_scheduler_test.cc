@@ -67,7 +67,7 @@ class MockClient final : public GarbageCollected<MockClient>,
  private:
   Member<DetachableConsoleLogger> console_logger_ =
       MakeGarbageCollected<DetachableConsoleLogger>();
-  raw_ptr<MockClientDelegate, ExperimentalRenderer> delegate_;
+  MockClientDelegate* delegate_;
   bool was_run_ = false;
 };
 
@@ -98,7 +98,7 @@ class ResourceLoadSchedulerTest : public testing::Test {
         mojom::ConsoleMessageLevel,
         const String&,
         bool discard_duplicates,
-        absl::optional<mojom::ConsoleMessageCategory> category) override {
+        std::optional<mojom::ConsoleMessageCategory> category) override {
       has_message_ = true;
     }
     void AddConsoleMessageImpl(ConsoleMessage*,
@@ -718,7 +718,10 @@ TEST_F(ResourceLoadSchedulerTest, LoosenThrottlingPolicy) {
 
 TEST_F(ResourceLoadSchedulerTest, ConsoleMessage) {
   auto test_task_runner = base::MakeRefCounted<base::TestMockTimeTaskRunner>();
+
+  // Use a mock clock to control the time.
   Scheduler()->SetClockForTesting(test_task_runner->GetMockClock());
+
   Scheduler()->SetOutstandingLimitForTesting(0, 0);
   Scheduler()->OnLifecycleStateChanged(
       scheduler::SchedulingLifecycleState::kThrottled);
@@ -759,6 +762,10 @@ TEST_F(ResourceLoadSchedulerTest, ConsoleMessage) {
       scheduler::SchedulingLifecycleState::kNotThrottled);
   EXPECT_TRUE(GetConsoleLogger()->HasMessage());
   EXPECT_TRUE(Release(id2));
+
+  // Reset the reference to ensure scheduler won't keep a reference to the
+  // destroyed clock.
+  Scheduler()->SetClockForTesting(nullptr);
 }
 
 TEST_F(ResourceLoadSchedulerTest, ConsiderNetworkStateInTigtMode) {

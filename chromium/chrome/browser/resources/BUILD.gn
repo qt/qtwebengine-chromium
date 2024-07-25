@@ -13,9 +13,13 @@ import("//tools/grit/grit_rule.gni")
 import("//tools/grit/repack.gni")
 
 assert(!is_ios, "Chromium/iOS shouldn't use anything in //chrome")
+assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
 group("resources") {
-  public_deps = [ "segmentation_internals:resources" ]
+  public_deps = [
+    "data_sharing_internals:resources",
+    "segmentation_internals:resources",
+  ]
 
   if (!is_android) {
     public_deps += [
@@ -26,14 +30,16 @@ group("resources") {
       "access_code_cast:resources",
       "app_service_internals:resources",
       "bookmarks:resources",
-      "commander:resources",
+      "commerce/product_specifications:resources",
       "downloads:resources",
-      "feed:resources",
       "feedback:resources",
       "gaia_auth_host:resources",
       "hats:resources",
       "history:resources",
       "identity_internals:resources",
+      "key_value_pair_viewer_shared:resources",
+      "lens/overlay:resources",
+      "lens/overlay/search_bubble:resources",
       "management:resources",
       "new_tab_page:resources",
       "new_tab_page_instant:resources",
@@ -67,7 +73,6 @@ group("resources") {
     if (is_chrome_branded) {
       public_deps += [
         "lens:resources",
-        "lens:untrusted_resources",
         "media_router/cast_feedback:resources",
       ]
     }
@@ -75,6 +80,7 @@ group("resources") {
 
   if (is_chromeos_ash) {
     public_deps += [
+      "ash/extended_updates:resources",
       "ash/inline_login:resources",
       "ash/settings:resources",
       "chromeos:resources",
@@ -87,6 +93,10 @@ group("resources") {
     public_deps += [ "accessibility:extension_resources" ]
   }
 
+  if (!is_chromeos_lacros && enable_extensions) {
+    public_deps += [ "accessibility:reading_mode_gdocs_extension_resources" ]
+  }
+
   if (is_win || is_mac || is_linux || is_chromeos_ash) {
     public_deps += [ "connectors_internals:resources" ]
   }
@@ -95,15 +105,15 @@ group("resources") {
     public_deps += [ "dlp_internals:resources" ]
   }
 
-  if (is_win || is_mac || is_linux || is_chromeos_lacros || is_fuchsia) {
+  if (is_win || is_mac || is_linux || is_chromeos_lacros) {
     public_deps += [ "browser_switch:resources" ]
   }
 
-  if (is_win || is_mac || is_linux || is_chromeos || is_fuchsia) {
+  if (is_win || is_mac || is_linux || is_chromeos) {
     public_deps += [ "discards:resources" ]
   }
 
-  if (is_win || is_mac || is_linux || is_fuchsia) {
+  if (is_win || is_mac || is_linux) {
     public_deps += [
       "app_home:resources",
       "app_settings:resources",
@@ -199,6 +209,20 @@ if (!is_android) {
       "app_icon_resources_200_percent.pak",
     ]
     output_dir = "$root_gen_dir/chrome"
+  }
+
+  if (is_chromeos) {
+    grit("office_web_app_resources") {
+      source = "office_web_app/resources.grd"
+      defines = chrome_grit_defines
+      outputs = [
+        "grit/office_web_app_resources.h",
+        "grit/office_web_app_resources_map.cc",
+        "grit/office_web_app_resources_map.h",
+        "office_web_app_resources.pak",
+      ]
+      output_dir = "$root_gen_dir/chrome"
+    }
   }
 
   if (is_chrome_branded) {

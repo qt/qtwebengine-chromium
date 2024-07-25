@@ -28,10 +28,10 @@
 
 namespace quic {
 
-MasqueServerBackend::MasqueServerBackend(MasqueMode masque_mode,
+MasqueServerBackend::MasqueServerBackend(MasqueMode /*masque_mode*/,
                                          const std::string& server_authority,
                                          const std::string& cache_directory)
-    : masque_mode_(masque_mode), server_authority_(server_authority) {
+    : server_authority_(server_authority) {
   // Start with client IP 10.1.1.2.
   connect_ip_next_client_ip_[0] = 10;
   connect_ip_next_client_ip_[1] = 1;
@@ -41,6 +41,11 @@ MasqueServerBackend::MasqueServerBackend(MasqueMode masque_mode,
   if (!cache_directory.empty()) {
     QuicMemoryCacheBackend::InitializeBackend(cache_directory);
   }
+
+  // We don't currently use `masque_mode_` but will in the future. To silence
+  // clang's `-Wunused-private-field` warning for this when building QUICHE for
+  // Chrome, add a use of it here.
+  (void)masque_mode_;
 }
 
 bool MasqueServerBackend::MaybeHandleMasqueRequest(
@@ -188,7 +193,10 @@ void MasqueServerBackend::SetSignatureAuth(absl::string_view signature_auth) {
     quiche::QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&kv[1]);
     SignatureAuthCredential credential;
     credential.key_id = std::string(kv[0]);
-    std::string public_key = absl::HexStringToBytes(kv[1]);
+    std::string public_key;
+    if (!absl::HexStringToBytes(kv[1], &public_key)) {
+      QUIC_LOG(FATAL) << "Invalid signature auth public key hex " << kv[1];
+    }
     if (public_key.size() != sizeof(credential.public_key)) {
       QUIC_LOG(FATAL) << "Invalid signature auth public key length "
                       << public_key.size();

@@ -5,6 +5,7 @@
 from __future__ import annotations
 import argparse
 import dataclasses
+import pathlib
 import re
 
 from typing import TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional, TextIO, Type
@@ -87,9 +88,13 @@ class ProbeListConfig:
   def from_cli_args(cls, args: argparse.Namespace) -> ProbeListConfig:
     with exception.annotate_argparsing():
       if args.probe_config:
-        with args.probe_config.open(encoding="utf-8") as f:
-          return cls.load(f)
+        return cls.load_path(args.probe_config)
       return cls(args.probe)
+
+  @classmethod
+  def load_path(cls, path: pathlib.Path) -> ProbeListConfig:
+    with path.open(encoding="utf-8") as f:
+      return cls.load(f)
 
   @classmethod
   def load(cls, file: TextIO) -> ProbeListConfig:

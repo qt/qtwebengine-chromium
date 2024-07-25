@@ -28,6 +28,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include "libavcodec/avcodec.h"
+#include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/pixfmt.h"
@@ -255,7 +256,6 @@ static void v4l2_m2m_destroy_context(void *opaque, uint8_t *context)
 
     if (s->fd >= 0)
         close(s->fd);
-    av_frame_unref(s->frame);
     av_frame_free(&s->frame);
     av_packet_unref(&s->buf_pkt);
 

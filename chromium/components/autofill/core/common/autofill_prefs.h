@@ -59,6 +59,9 @@ inline constexpr char kAutofillOrphanRowsRemoved[] =
 // Boolean that is true, when users can save their CVCs.
 inline constexpr char kAutofillPaymentCvcStorage[] =
     "autofill.payment_cvc_storage";
+// Boolean that is true when users can see the card benefits with the card.
+inline constexpr char kAutofillPaymentCardBenefits[] =
+    "autofill.payment_card_benefits";
 // Boolean that is true if Autofill is enabled and allowed to save profile data.
 // Do not get/set the value of this pref directly. Use provided getter/setter.
 inline constexpr char kAutofillProfileEnabled[] = "autofill.profile_enabled";
@@ -110,6 +113,10 @@ inline constexpr char
 // filling.
 inline constexpr char kAutofillUsingVirtualViewStructure[] =
     "autofill.using_virtual_view_structure";
+#endif  // BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_ANDROID)
+inline constexpr char kFacilitatedPaymentsPix[] = "facilitated_payments.pix";
 #endif  // BUILDFLAG(IS_ANDROID)
 
 // The maximum value for the
@@ -176,6 +183,10 @@ bool IsPaymentCvcStorageEnabled(const PrefService* prefs);
 
 void SetPaymentCvcStorage(PrefService* prefs, bool value);
 
+bool IsPaymentCardBenefitsEnabled(const PrefService* prefs);
+
+void SetPaymentCardBenefits(PrefService* prefs, bool value);
+
 void SetUserOptedInWalletSyncTransport(PrefService* prefs,
                                        const CoreAccountId& account_id,
                                        bool opted_in);
@@ -186,6 +197,10 @@ bool IsUserOptedInWalletSyncTransport(const PrefService* prefs,
 void ClearSyncTransportOptIns(PrefService* prefs);
 
 bool UsesVirtualViewStructureForAutofill(const PrefService* prefs);
+
+void SetFacilitatedPaymentsPix(PrefService* prefs, bool value);
+
+bool IsFacilitatedPaymentsPixEnabled(const PrefService* prefs);
 
 }  // namespace autofill::prefs
 

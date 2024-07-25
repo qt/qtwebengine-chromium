@@ -1,6 +1,6 @@
-// Copyright (c) 2021-2022 The Khronos Group Inc.
-// Copyright (c) 2021-2023 Valve Corporation
-// Copyright (c) 2021-2023 LunarG, Inc.
+// Copyright (c) 2021-2024 The Khronos Group Inc.
+// Copyright (c) 2021-2024 Valve Corporation
+// Copyright (c) 2021-2024 LunarG, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,143 +32,41 @@ const uint kDebugInputBindlessMaxDescriptors = 1024u*1024u*4u;
 
 #endif
 
-// Common Stream Record Offsets
-//
-// The following are offsets to fields which are common to all records written
-// to the output stream.
-//
-// Each record first contains the size of the record in 32-bit words, including
-// the size word.
-const int kInstCommonOutSize = 0;
+// Maximum errors a cmd is allowed to log
+const uint kMaxErrorsPerCmd = 6;
 
-// This is the shader id passed by the layer when the instrumentation pass is
-// created.
-const int kInstCommonOutShaderId = 1;
+// Instrumentation
+// ---
 
-// This is the ordinal position of the instruction within the SPIR-V shader
-// which generated the validation error.
-const int kInstCommonOutInstructionIdx = 2;
+// Instead of having to create a variable and pass it in each time for every function call made, we use these values to map
+// constants in the GLSL to be updated with constant values known when we are doing the linking at GPU-AV runtime. (Similar to
+// Specialization Constant)
+const uint kLinkShaderId = 0x0DEAD001;
 
-// This is the stage which generated the validation error. This word is used
-// to determine the contents of the next two words in the record.
-// 0:Vert, 1:TessCtrl, 2:TessEval, 3:Geom, 4:Frag, 5:Compute
-const int kInstCommonOutStageIdx = 3;
-const int kInstCommonOutCnt = 4;
+// This is just a placeholder, honestly could be anything, will be replaced when linking to the runtime descriptor set choosen
+const int kInstDefaultDescriptorSet = 7;
 
-// Stage-specific Stream Record Offsets
-//
-// Each stage will contain different values in the next set of words of the
-// record used to identify which instantiation of the shader generated the
-// validation error.
-//
-// Vertex Shader Output Record Offsets
-const int kInstVertOutVertexIndex = kInstCommonOutCnt;
-const int kInstVertOutInstanceIndex = kInstCommonOutCnt + 1;
-const int kInstVertOutUnused = kInstCommonOutCnt + 2;
+// Inside the descriptor set used by instrumentation validation,
+// binding #0 is reserved for the output, but each check that requires additional input
+// must reserve its own binding slot
+const int kBindingInstErrorBuffer = 0;
+const int kBindingInstBindlessDescriptor = 1;
+const int kBindingInstBufferDeviceAddress = 2;
+const int kBindingInstActionIndex = 3;
+const int kBindingInstCmdResourceIndex = 4;
+const int kBindingInstCmdErrorsCount = 5;
 
-// Frag Shader Output Record Offsets
-const int kInstFragOutFragCoordX = kInstCommonOutCnt;
-const int kInstFragOutFragCoordY = kInstCommonOutCnt + 1;
-const int kInstFragOutUnused = kInstCommonOutCnt + 2;
+// Diagnostic calls
+// ---
 
-// Compute Shader Output Record Offsets
-const int kInstCompOutGlobalInvocationIdX = kInstCommonOutCnt;
-const int kInstCompOutGlobalInvocationIdY = kInstCommonOutCnt + 1;
-const int kInstCompOutGlobalInvocationIdZ = kInstCommonOutCnt + 2;
+const int kDiagCommonDescriptorSet = 0;
+const int kDiagPerCmdDescriptorSet = 1;
 
-// Tessellation Control Shader Output Record Offsets
-const int kInstTessCtlOutInvocationId = kInstCommonOutCnt;
-const int kInstTessCtlOutPrimitiveId = kInstCommonOutCnt + 1;
-const int kInstTessCtlOutUnused = kInstCommonOutCnt + 2;
-
-// Tessellation Eval Shader Output Record Offsets
-const int kInstTessEvalOutPrimitiveId = kInstCommonOutCnt;
-const int kInstTessEvalOutTessCoordU = kInstCommonOutCnt + 1;
-const int kInstTessEvalOutTessCoordV = kInstCommonOutCnt + 2;
-
-// Geometry Shader Output Record Offsets
-const int kInstGeomOutPrimitiveId = kInstCommonOutCnt;
-const int kInstGeomOutInvocationId = kInstCommonOutCnt + 1;
-const int kInstGeomOutUnused = kInstCommonOutCnt + 2;
-
-// Ray Tracing Shader Output Record Offsets
-const int kInstRayTracingOutLaunchIdX = kInstCommonOutCnt;
-const int kInstRayTracingOutLaunchIdY = kInstCommonOutCnt + 1;
-const int kInstRayTracingOutLaunchIdZ = kInstCommonOutCnt + 2;
-
-// Mesh Shader Output Record Offsets
-const int kInstMeshOutGlobalInvocationIdX = kInstCommonOutCnt;
-const int kInstMeshOutGlobalInvocationIdY = kInstCommonOutCnt + 1;
-const int kInstMeshOutGlobalInvocationIdZ = kInstCommonOutCnt + 2;
-
-// Task Shader Output Record Offsets
-const int kInstTaskOutGlobalInvocationIdX = kInstCommonOutCnt;
-const int kInstTaskOutGlobalInvocationIdY = kInstCommonOutCnt + 1;
-const int kInstTaskOutGlobalInvocationIdZ = kInstCommonOutCnt + 2;
-
-// Size of Common and Stage-specific Members
-const int kInstStageOutCnt = kInstCommonOutCnt + 3;
-
-// Validation Error Code Offset
-//
-// This identifies the validation error. It also helps to identify
-// how many words follow in the record and their meaning.
-const int kInstValidationOutError = kInstStageOutCnt;
-
-// Validation-specific Output Record Offsets
-//
-// Each different validation will generate a potentially different
-// number of words at the end of the record giving more specifics
-// about the validation error.
-//
-// A bindless bounds error will output the index and the bound.
-const int kInstBindlessBoundsOutDescSet = kInstStageOutCnt + 1;
-const int kInstBindlessBoundsOutDescBinding = kInstStageOutCnt + 2;
-const int kInstBindlessBoundsOutDescIndex = kInstStageOutCnt + 3;
-const int kInstBindlessBoundsOutDescBound = kInstStageOutCnt + 4;
-const int kInstBindlessBoundsOutUnused = kInstStageOutCnt + 5;
-const int kInstBindlessBoundsOutCnt = kInstStageOutCnt + 6;
-
-// A descriptor uninitialized error will output the index.
-const int kInstBindlessUninitOutDescSet = kInstStageOutCnt + 1;
-const int kInstBindlessUninitOutBinding = kInstStageOutCnt + 2;
-const int kInstBindlessUninitOutDescIndex = kInstStageOutCnt + 3;
-const int kInstBindlessUninitOutUnused = kInstStageOutCnt + 4;
-const int kInstBindlessUninitOutUnused2 = kInstStageOutCnt + 5;
-const int kInstBindlessUninitOutCnt = kInstStageOutCnt + 6;
-
-// A buffer out-of-bounds error will output the descriptor
-// index, the buffer offset and the buffer size
-const int kInstBindlessBuffOOBOutDescSet = kInstStageOutCnt + 1;
-const int kInstBindlessBuffOOBOutDescBinding = kInstStageOutCnt + 2;
-const int kInstBindlessBuffOOBOutDescIndex = kInstStageOutCnt + 3;
-const int kInstBindlessBuffOOBOutBuffOff = kInstStageOutCnt + 4;
-const int kInstBindlessBuffOOBOutBuffSize = kInstStageOutCnt + 5;
-const int kInstBindlessBuffOOBOutCnt = kInstStageOutCnt + 6;
-
-// A buffer address unalloc error will output the 64-bit pointer in
-// two 32-bit pieces, lower bits first.
-const int kInstBuffAddrUnallocOutDescPtrLo = kInstStageOutCnt + 1;
-const int kInstBuffAddrUnallocOutDescPtrHi = kInstStageOutCnt + 2;
-const int kInstBuffAddrUnallocOutCnt = kInstStageOutCnt + 3;
-
-// Maximum Output Record Member Count
-const int kInstMaxOutCnt = kInstStageOutCnt + 6;
-
-const int kPreValidateSubError = kInstValidationOutError + 1;
-
-// Validation Error Codes
-//
-// These are the possible validation error codes.
-const int kInstErrorBindlessBounds = 1;
-const int kInstErrorBindlessUninit = 2;
-const int kInstErrorBuffAddrUnallocRef = 3;
-const int kInstErrorOOB = 4;
-const int kInstErrorPreDrawValidate = 5;
-const int kInstErrorPreDispatchValidate = 6;
-const int kInstErrorBindlessDestroyed = 7;
-const int kInstErrorPreTraceRaysKhrValidate = 8;
-const int kInstErrorMax = 8;
+// Diagnostic calls bindings in common descriptor set
+const int kBindingDiagErrorBuffer = 0;
+const int kBindingDiagActionIndex = 1;
+const int kBindingDiagCmdResourceIndex = 2;
+const int kBindingDiagCmdErrorsCount = 3;
 
 // Direct Input Buffer Offsets
 //
@@ -222,28 +120,9 @@ const int kDebugInputBuffAddrPtrOffset = 1;
 // not a valid buffer, the length associated with the 0x0 address is zero.
 const int kDebugInputBuffAddrLengthOffset = 0;
 
-// These values all share the byte at (_kPreValidateSubError + 1) location since only
-// one will be used at a time. Also equivalent to (kInstStageOutCnt + 1)
-// debug buffer is memset to 0 so need to start at index 1
-const int pre_draw_count_exceeds_bufsize_error = 1;
-const int pre_draw_count_exceeds_limit_error = 2;
-const int pre_draw_first_instance_error = 3;
-const int pre_dispatch_count_exceeds_limit_x_error = 1;
-const int pre_dispatch_count_exceeds_limit_y_error = 2;
-const int pre_dispatch_count_exceeds_limit_z_error = 3;
-const int pre_trace_rays_query_dimensions_exceeds_width_limit = 1;
-const int pre_trace_rays_query_dimensions_exceeds_height_limit = 2;
-const int pre_trace_rays_query_dimensions_exceeds_depth_limit = 3;
-const int pre_draw_group_count_exceeds_limit_x_error = 4;
-const int pre_draw_group_count_exceeds_limit_y_error = 5;
-const int pre_draw_group_count_exceeds_limit_z_error = 6;
-const int pre_draw_group_count_exceeds_total_error = 7;
-
-// These values select which pre-draw validation will be performed
-const int pre_draw_select_count_buffer = 1;
-const int pre_draw_select_draw_buffer = 2;
-const int pre_draw_select_mesh_count_buffer = 3;
-const int pre_draw_select_mesh_no_count = 4;
+// We use "0" as an initialization value, but the set could be "0" in SPIR-V
+// This mask lets know the descriptor was written to while saving the set value used.
+const uint kDescriptorSetWrittenMask = 1u << 31;
 
 #ifdef __cplusplus
 }  // namespace glsl

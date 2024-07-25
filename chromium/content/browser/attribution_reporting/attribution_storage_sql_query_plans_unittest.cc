@@ -15,6 +15,7 @@
 #include "content/browser/attribution_reporting/attribution_test_utils.h"
 #include "content/browser/attribution_reporting/sql_queries.h"
 #include "content/browser/attribution_reporting/sql_query_plan_test_util.h"
+#include "content/browser/attribution_reporting/storable_source.h"
 #include "content/browser/attribution_reporting/store_source_result.h"
 #include "content/browser/attribution_reporting/test/configurable_storage_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -32,15 +33,19 @@ class AttributionSqlQueryPlanTest : public testing::Test {
 
   void SetUp() override {
     ASSERT_TRUE(temp_directory_.CreateUniqueTempDir());
-    std::unique_ptr<AttributionStorage> storage =
-        std::make_unique<AttributionStorageSql>(
-            temp_directory_.GetPath(),
-            std::make_unique<ConfigurableStorageDelegate>());
 
-    // Make sure lazy initialization happens by adding a record to the db, but
-    // then ensure the database is closed so the sqlite_dev_shell can read it.
-    storage->StoreSource(SourceBuilder().Build());
-    storage.reset();
+    {
+      std::unique_ptr<AttributionStorage> storage =
+          std::make_unique<AttributionStorageSql>(
+              temp_directory_.GetPath(),
+              std::make_unique<ConfigurableStorageDelegate>());
+
+      // Make sure lazy initialization happens by adding a record to the db, but
+      // then ensure the database is closed so the sqlite_dev_shell can read it.
+      auto result = storage->StoreSource(SourceBuilder().Build());
+      ASSERT_EQ(result.status(), StorableSource::Result::kSuccess);
+    }
+
     explainer_ = std::make_unique<SqlQueryPlanExplainer>(
         temp_directory_.GetPath().Append(FILE_PATH_LITERAL("Conversions")));
   }
@@ -195,10 +200,20 @@ TEST_F(AttributionSqlQueryPlanTest, kRateLimitSourceReportingOriginsBySiteSql) {
                         {"scope", "source_site"})));
 }
 
-TEST_F(AttributionSqlQueryPlanTest, kRateLimitSelectReportingOriginsSql) {
-  EXPECT_THAT(GetPlan(attribution_queries::kRateLimitSelectReportingOriginsSql),
-              ValueIs(UsesIndex("rate_limit_reporting_origin_idx",
-                                {"scope", "destination_site", "source_site"})));
+TEST_F(AttributionSqlQueryPlanTest, kRateLimitSelectSourceReportingOriginsSql) {
+  EXPECT_THAT(
+      GetPlan(attribution_queries::kRateLimitSelectSourceReportingOriginsSql),
+      ValueIs(UsesIndex("rate_limit_reporting_origin_idx",
+                        {"scope", "destination_site", "source_site"})));
+}
+
+TEST_F(AttributionSqlQueryPlanTest,
+       kRateLimitSelectAttributionReportingOriginsSql) {
+  EXPECT_THAT(
+      GetPlan(
+          attribution_queries::kRateLimitSelectAttributionReportingOriginsSql),
+      ValueIs(UsesIndex("rate_limit_reporting_origin_idx",
+                        {"scope", "destination_site", "source_site"})));
 }
 
 TEST_F(AttributionSqlQueryPlanTest, kDeleteRateLimitRangeSql) {
@@ -221,6 +236,12 @@ TEST_F(AttributionSqlQueryPlanTest, kDeleteExpiredRateLimitsSql) {
 TEST_F(AttributionSqlQueryPlanTest, kDeleteRateLimitsBySourceIdSql) {
   EXPECT_THAT(GetPlan(attribution_queries::kDeleteRateLimitsBySourceIdSql),
               ValueIs(UsesIndex("rate_limit_source_id_idx")));
+}
+
+TEST_F(AttributionSqlQueryPlanTest, kDeleteAttributionRateLimitByReportIdSql) {
+  EXPECT_THAT(
+      GetPlan(attribution_queries::kDeleteAttributionRateLimitByReportIdSql),
+      ValueIs(UsesIndex("rate_limit_report_id_idx")));
 }
 
 }  // namespace

@@ -31,6 +31,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
+#include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/inspect/ax_api_type.h"
 #include "ui/accessibility/platform/inspect/ax_tree_formatter.h"
 #if BUILDFLAG(IS_WIN)
@@ -212,7 +213,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-busy-changed.html"));
 }
 
-// TODO(crbug.com/1052397): Revisit once build flag switch of lacros-chrome is
+// TODO(crbug.com/40118868): Revisit once build flag switch of lacros-chrome is
 // complete.
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
 #define DISABLED_ON_LINUX_TSAN_MSAN(name) DISABLED_##name
@@ -231,8 +232,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-combo-box-collapse.html"));
 }
 
+// TODO(crbug.com/40844027): Flaky on win
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsAriaComboBoxExpand \
+  DISABLED_AccessibilityEventsAriaComboBoxExpand
+#else
+#define MAYBE_AccessibilityEventsAriaComboBoxExpand \
+  AccessibilityEventsAriaComboBoxExpand
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAriaComboBoxExpand) {
+                       MAYBE_AccessibilityEventsAriaComboBoxExpand) {
   RunEventTest(FILE_PATH_LITERAL("aria-combo-box-expand.html"));
 }
 
@@ -285,9 +294,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-live-changed.html"));
 }
 
-// TODO(crbug.com/983709): Flaky.
+// TODO(crbug.com/338217303): Very flaky on Mac.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_AccessibilityEventsAriaMenuItemFocus \
+  DISABLED_AccessibilityEventsAriaMenuItemFocus
+#else
+#define MAYBE_AccessibilityEventsAriaMenuItemFocus \
+  AccessibilityEventsAriaMenuItemFocus
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAriaMenuItemFocus) {
+                       MAYBE_AccessibilityEventsAriaMenuItemFocus) {
   RunEventTest(FILE_PATH_LITERAL("aria-menuitem-focus.html"));
 }
 
@@ -369,13 +385,21 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-treeitem-focus.html"));
 }
 
+// TODO(crbug.com/40844027): Flaky on win & mac
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#define MAYBE_AccessibilityEventsAriaComboBoxFocus \
+  DISABLED_AccessibilityEventsAriaComboBoxFocus
+#else
+#define MAYBE_AccessibilityEventsAriaComboBoxFocus \
+  AccessibilityEventsAriaComboBoxFocus
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAriaComboBoxFocus) {
+                       MAYBE_AccessibilityEventsAriaComboBoxFocus) {
   RunEventTest(FILE_PATH_LITERAL("aria-combo-box-focus.html"));
 }
 
-// TODO(crbug.com/835455): Fails on Windows.
-// TODO(crbug.com/945193): Flaky on Mac.
+// TODO(crbug.com/41384724): Fails on Windows.
+// TODO(crbug.com/41448628): Flaky on Mac.
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #define MAYBE_AccessibilityEventsAriaComboBoxDelayAddList \
   DISABLED_AccessibilityEventsAriaComboBoxDelayAddList
@@ -393,8 +417,16 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("aria-combo-box-delay-show-list.html"));
 }
 
+// TODO(crbug.com/40844027): Flaky on win
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsAriaComboBoxNext \
+  DISABLED_AccessibilityEventsAriaComboBoxNext
+#else
+#define MAYBE_AccessibilityEventsAriaComboBoxNext \
+  AccessibilityEventsAriaComboBoxNext
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsAriaComboBoxNext) {
+                       MAYBE_AccessibilityEventsAriaComboBoxNext) {
   RunEventTest(FILE_PATH_LITERAL("aria-combo-box-next.html"));
 }
 
@@ -454,7 +486,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("add-child-of-body.html"));
 }
 
-// TODO(crbug.com/1299885): Flaky on Win7.
+// TODO(crbug.com/40823869): Flaky on Win7.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityEventsAddDialog DISABLED_AccessibilityEventsAddDialog
 #else
@@ -465,7 +497,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("add-dialog.html"));
 }
 
-// TODO(crbug.com/1299885): Flaky on Win7.
+// TODO(crbug.com/40823869): Flaky on Win7.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityEventsAddDialogDescribedBy \
   DISABLED_AccessibilityEventsAddDialogDescribedBy
@@ -478,7 +510,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("add-dialog-described-by.html"));
 }
 
-// TODO(crbug.com/1299885): Flaky on Win7.
+// TODO(crbug.com/40823869): Flaky on Win7.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityEventsAddDialogNoInfo \
   DISABLED_AccessibilityEventsAddDialogNoInfo
@@ -571,7 +603,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   GetWebContents()->GetMutableRendererPrefs()->caret_browsing_enabled = true;
   // This notifies accessibility that caret browsing is on so that it sends
   // accessibility events when the caret moves.
-  BrowserAccessibilityStateImpl::GetInstance()->SetCaretBrowsingState(true);
+  ui::AXPlatform::GetInstance().SetCaretBrowsingState(true);
 
   RunEventTest(FILE_PATH_LITERAL("caret-browsing-enabled.html"));
 }
@@ -687,9 +719,9 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("expanded-changed.html"));
 }
 
-// TODO(crbug.com/1423530): disabled on UIA.
-// TODO(crbug.com/1423845): Failing on Mac.
-// TODO(crbug.com/1423845): Actually failing everywhere. Disabled.
+// TODO(crbug.com/40897549): disabled on UIA.
+// TODO(crbug.com/40897744): Failing on Mac.
+// TODO(crbug.com/40897744): Actually failing everywhere. Disabled.
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTestExceptUIA,
                        DISABLED_AccessibilityEventsPopoverExpandedChanged) {
   RunEventTest(FILE_PATH_LITERAL("popover-expanded-changed.html"));
@@ -717,7 +749,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("focus-listbox-multiselect.html"));
 }
 
-// TODO(crbug.com/1298770): Flaky on Linux.
+// TODO(crbug.com/40823137): Flaky on Linux.
 #if BUILDFLAG(IS_LINUX)
 #define MAYBE_AccessibilityEventsIframeSrcChanged \
   DISABLED_AccessibilityEventsIframeSrcChanged
@@ -764,12 +796,19 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("listbox-focus.html"));
 }
 
+// TODO(crbug.com/40844027): Flaky on win
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsListboxNext \
+  DISABLED_AccessibilityEventsListboxNext
+#else
+#define MAYBE_AccessibilityEventsListboxNext AccessibilityEventsListboxNext
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsListboxNext) {
+                       MAYBE_AccessibilityEventsListboxNext) {
   RunEventTest(FILE_PATH_LITERAL("listbox-next.html"));
 }
 
-// TODO(https://crbug.com/1123394): This is failing on Windows.
+// TODO(crbug.com/40716698): This is failing on Windows.
 #if BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityEventsLiveRegionAdd \
   DISABLED_AccessibilityEventsLiveRegionAdd
@@ -833,19 +872,27 @@ IN_PROC_BROWSER_TEST_P(
       FILE_PATH_LITERAL("live-region-change-on-freshly-unignored-node.html"));
 }
 
+// TODO(crbug.com/40844027): Flaky on win
+#if BUILDFLAG(IS_WIN)
+#define MAYBE_AccessibilityEventsMenuListCollapse \
+  DISABLED_AccessibilityEventsMenuListCollapse
+#else
+#define MAYBE_AccessibilityEventsMenuListCollapse \
+  AccessibilityEventsMenuListCollapse
+#endif
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       AccessibilityEventsMenuListCollapse) {
+                       MAYBE_AccessibilityEventsMenuListCollapse) {
   RunEventTest(FILE_PATH_LITERAL("menulist-collapse.html"));
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
-                       // TODO(crbug.com/1466801): Re-enable this test
+                       // TODO(crbug.com/40924143): Re-enable this test
                        DISABLED_AccessibilityEventsMenuListCollapseNext) {
   RunEventTest(FILE_PATH_LITERAL("menulist-collapse-next.html"));
 }
 
-// TODO(crbug/1232295): Flaky on Linux and Win.
-// TODO(crbug.com/1230894): locks up with popup open, only on Mac
+// TODO(crbug.com/40780161): Flaky on Linux and Win.
+// TODO(crbug.com/40779330): locks up with popup open, only on Mac
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #define MAYBE_AccessibilityEventsMenuListExpand \
   DISABLED_AccessibilityEventsMenuListExpand
@@ -854,7 +901,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   AccessibilityEventsMenuListExpand
 #endif
 
-// TODO(crbug.com/1230894): locks up with popup open, only on Mac. Default
+// TODO(crbug.com/40779330): locks up with popup open, only on Mac. Default
 // action on selected HTML:option doesn't work, so no events are fired, and
 // the test times out.
 #if BUILDFLAG(IS_MAC)
@@ -875,9 +922,9 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("menulist-focus.html"));
 }
 
-// TODO(crbug.com/1327652): disabled on UIA
+// TODO(crbug.com/40841326): disabled on UIA
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTestExceptUIA,
-                       // TODO(crbug.com/1446550): Re-enable this test
+                       // TODO(crbug.com/40913066): Re-enable this test
                        DISABLED_AccessibilityEventsMenuListNext) {
   RunEventTest(FILE_PATH_LITERAL("menulist-next.html"));
 }
@@ -921,7 +968,7 @@ class NavigationApiDumpAccessibilityEventsTest
   }
 };
 
-// TODO(crbug.com/1327652): disabled on UIA.
+// TODO(crbug.com/40841326): disabled on UIA.
 INSTANTIATE_TEST_SUITE_P(
     All,
     NavigationApiDumpAccessibilityEventsTest,
@@ -937,7 +984,7 @@ IN_PROC_BROWSER_TEST_P(NavigationApiDumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("navigation-api.html"));
 }
 
-// TODO(crbug.com/1369754): Failing on linux/mac/win multiple builders.
+// TODO(crbug.com/40869309): Failing on linux/mac/win multiple builders.
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 #define MAYBE_AccessibilityEventsImmediateRefresh \
   DISABLED_AccessibilityEventsImmediateRefresh
@@ -1028,7 +1075,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("subtree-reparented-ignored-changed.html"));
 }
 
-// TODO(crbug.com/1201313): Fix flakiness.
+// TODO(crbug.com/40762297): Fix flakiness.
 IN_PROC_BROWSER_TEST_P(
     DumpAccessibilityEventsTest,
     DISABLED_AccessibilityEventsSubtreeReparentedViaAppendChild) {
@@ -1141,7 +1188,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
 }
 
 #if BUILDFLAG(IS_WIN)
-// TODO(crbug.com/1084871) Flaky on Windows https://crbug.com/1084871#c33
+// TODO(crbug.com/40693330) Flaky on Windows https://crbug.com/1084871#c33
 #define MAYBE_AccessibilityEventsVisibilityHiddenChanged \
   DISABLED_AccessibilityEventsVisibilityHiddenChanged
 #else
@@ -1207,8 +1254,8 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityEventsTest,
   RunEventTest(FILE_PATH_LITERAL("menu-opened-closed.html"));
 }
 
-#if BUILDFLAG(IS_WIN) && defined(ADDRESS_SANITIZER)
-// TODO(crbug.com/1198056#c16): Test is flaky on Windows ASAN.
+#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_WIN) && defined(ADDRESS_SANITIZER))
+// TODO(crbug.com/40868032): Test is flaky on Windows ASAN and Mac.
 #define MAYBE_AccessibilityEventsMenubarShowHideMenus \
   DISABLED_AccessibilityEventsMenubarShowHideMenus
 #else

@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/layout/table/layout_table_column.h"
 
 #include "third_party/blink/renderer/core/html/html_table_col_element.h"
+#include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/table/layout_table.h"
 #include "third_party/blink/renderer/core/layout/table/table_borders.h"
@@ -19,7 +20,7 @@ namespace {
 // `LayoutTable::HasBackgroundForPaint`). Used to know whether the table
 // background should be invalidated when some column span changes.
 bool TableHasColumnsWithBackground(LayoutTable* table) {
-  TableGroupedChildren grouped_children(BlockNode(To<LayoutBox>(table)));
+  TableGroupedChildren grouped_children(BlockNode{table});
   for (const auto& column : grouped_children.columns) {
     if (column.Style().HasBackground()) {
       return true;
@@ -69,10 +70,10 @@ void LayoutTableColumn::StyleDidChange(StyleDifference diff,
         table->SetIntrinsicLogicalWidthsDirty();
         if (old_style &&
             TableTypes::CreateColumn(*old_style,
-                                     /* default_inline_size */ absl::nullopt,
+                                     /* default_inline_size */ std::nullopt,
                                      table->StyleRef().IsFixedTableLayout()) !=
                 TableTypes::CreateColumn(
-                    StyleRef(), /* default_inline_size */ absl::nullopt,
+                    StyleRef(), /* default_inline_size */ std::nullopt,
                     table->StyleRef().IsFixedTableLayout())) {
           table->GridBordersChanged();
         }

@@ -212,8 +212,11 @@ to send commands to Chromium.
 `${prefix}.chrome.ios.dev` and
 `${prefix}.chrome.ios.dev.CredentialProviderExtension` need the AutoFill
 Credential Provider Entitlement, which corresponds to the key
-`com.apple.developer.authentication-services.autofill-credential-provider`
-Please refer to Apple's documentation on how to set this up.
+`com.apple.developer.authentication-services.autofill-credential-provider`.
+
+`${prefix}.chrome.ios.dev` additionally needs the
+`com.apple.developer.kernel.extended-virtual-addressing` entitlement when
+running on a real device.
 
 ### Mobile provisioning profiles for tests
 
@@ -285,9 +288,6 @@ most useful.
 ```shell
 $ autoninja -C out/Debug-iphonesimulator content_shell
 ```
-
-To run on a live device you will need to set the
-`com.apple.developer.kernel.extended-virtual-addressing` entitlement.
 
 ## Running apps from the command line
 

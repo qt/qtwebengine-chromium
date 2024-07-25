@@ -636,7 +636,7 @@ class DeskSyncBridgeTest : public testing::Test {
     store_->CommitWriteBatch(
         std::move(batch),
         base::BindOnce(
-            [](base::RunLoop* loop, const absl::optional<ModelError>& result) {
+            [](base::RunLoop* loop, const std::optional<ModelError>& result) {
               EXPECT_FALSE(result.has_value()) << result->ToString();
               loop->Quit();
             },
@@ -1705,7 +1705,7 @@ TEST_F(DeskSyncBridgeTest, ApplyIncrementalSyncChangesDeleteNonexistent) {
   std::unique_ptr<MetadataChangeList> metadata_changes =
       bridge()->CreateMetadataChangeList();
 
-  EXPECT_CALL(*processor(), Delete(_, _)).Times(0);
+  EXPECT_CALL(*processor(), Delete).Times(0);
 
   EntityChangeList entity_change_list;
   entity_change_list.push_back(EntityChange::CreateDelete("no-such-uuid"));

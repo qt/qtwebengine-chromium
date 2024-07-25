@@ -23,7 +23,6 @@
 #include "sql/test/test_helpers.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/sqlite/sqlite3.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -74,8 +73,8 @@ void VerifyTablesAndColumns(sql::Database* db) {
   EXPECT_EQ(3u, sql::test::CountTableColumns(db, "icon_mapping"));
 }
 
-// Adds a favicon at |icon_url| with |icon_type| with default bitmap data and
-// maps |page_url| to |icon_url|.
+// Adds a favicon at `icon_url` with `icon_type` with default bitmap data and
+// maps `page_url` to `icon_url`.
 void AddAndMapFaviconSimple(FaviconDatabase* db,
                             const GURL& page_url,
                             const GURL& icon_url,
@@ -120,7 +119,7 @@ void VerifyDatabaseEmpty(sql::Database* db) {
       break;
   }
   if (iter == icon_mappings.end()) {
-    ADD_FAILURE() << "failed to find |expected_icon_type|";
+    ADD_FAILURE() << "failed to find `expected_icon_type`";
     return false;
   }
 
@@ -153,7 +152,7 @@ void VerifyDatabaseEmpty(sql::Database* db) {
 
   if (memcmp(favicon_bitmaps[0].bitmap_data->front(), expected_icon_contents,
              expected_icon_contents_size)) {
-    ADD_FAILURE() << "failed to match |expected_icon_contents|";
+    ADD_FAILURE() << "failed to match `expected_icon_contents`";
     return false;
   }
   return true;
@@ -181,7 +180,7 @@ class FaviconDatabaseTest : public testing::Test {
   ~FaviconDatabaseTest() override = default;
 
   // Initialize a favicon database instance from the SQL file at
-  // |golden_path| in the "History/" subdirectory of test data.
+  // `golden_path` in the "History/" subdirectory of test data.
   std::unique_ptr<FaviconDatabase> LoadFromGolden(const char* golden_path) {
     if (!history::CreateDatabaseFromSQL(file_name_, golden_path)) {
       ADD_FAILURE() << "Failed loading " << golden_path;
@@ -866,7 +865,7 @@ TEST_F(FaviconDatabaseTest, FindFirstPageURLForHost) {
                                           {favicon_base::IconType::kFavicon}));
 
   // Expect a match when we search for a TouchIcon.
-  absl::optional<GURL> result = db.FindFirstPageURLForHost(
+  std::optional<GURL> result = db.FindFirstPageURLForHost(
       kPageUrlHttps,
       {favicon_base::IconType::kFavicon, favicon_base::IconType::kTouchIcon});
 
@@ -1054,7 +1053,7 @@ TEST_F(FaviconDatabaseTest, Recovery) {
 
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       // Accessing the index will throw SQLITE_CORRUPT. The corruption handler
       // will recover the database and poison the handle, so the outer call
       // fails.
@@ -1095,7 +1094,7 @@ TEST_F(FaviconDatabaseTest, Recovery) {
     sql::Database raw_db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       EXPECT_FALSE(raw_db.Open(file_name_));
       EXPECT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1107,7 +1106,7 @@ TEST_F(FaviconDatabaseTest, Recovery) {
     FaviconDatabase db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
       ASSERT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1149,7 +1148,7 @@ TEST_F(FaviconDatabaseTest, Recovery7) {
     ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       // Accessing the index will throw SQLITE_CORRUPT. The corruption handler
       // will recover the database and poison the handle, so the outer call
       // fails.
@@ -1190,7 +1189,7 @@ TEST_F(FaviconDatabaseTest, Recovery7) {
     sql::Database raw_db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       ASSERT_FALSE(raw_db.Open(file_name_));
       EXPECT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1202,7 +1201,7 @@ TEST_F(FaviconDatabaseTest, Recovery7) {
     FaviconDatabase db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
       EXPECT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1231,7 +1230,7 @@ TEST_F(FaviconDatabaseTest, Recovery6) {
     sql::Database raw_db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       EXPECT_FALSE(raw_db.Open(file_name_));
       EXPECT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1242,7 +1241,7 @@ TEST_F(FaviconDatabaseTest, Recovery6) {
   {
     FaviconDatabase db;
     sql::test::ScopedErrorExpecter expecter;
-    expecter.ExpectError(SQLITE_CORRUPT);
+    expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
     ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
     EXPECT_TRUE(expecter.SawExpectedErrors());
   }
@@ -1277,7 +1276,7 @@ TEST_F(FaviconDatabaseTest, Recovery5) {
     sql::Database raw_db;
     {
       sql::test::ScopedErrorExpecter expecter;
-      expecter.ExpectError(SQLITE_CORRUPT);
+      expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
       EXPECT_FALSE(raw_db.Open(file_name_));
       EXPECT_TRUE(expecter.SawExpectedErrors());
     }
@@ -1287,7 +1286,7 @@ TEST_F(FaviconDatabaseTest, Recovery5) {
   // Database open should succeed.
   {
     sql::test::ScopedErrorExpecter expecter;
-    expecter.ExpectError(SQLITE_CORRUPT);
+    expecter.ExpectError(sql::SqliteResultCode::kCorrupt);
     FaviconDatabase db;
     ASSERT_EQ(sql::INIT_OK, db.Init(file_name_));
     ASSERT_TRUE(expecter.SawExpectedErrors());
@@ -1371,7 +1370,7 @@ TEST_F(FaviconDatabaseTest, GetFaviconsLastUpdatedBefore) {
   std::vector<unsigned char> data(kBlob1, kBlob1 + sizeof(kBlob1));
   scoped_refptr<base::RefCountedBytes> favicon(new base::RefCountedBytes(data));
 
-  // Add two favicons, 10 seconds apart. |time1| is after |time2|.
+  // Add two favicons, 10 seconds apart. `time1` is after `time2`.
   GURL url("http://google.com");
   const base::Time time1 = base::Time::Now();
   favicon_base::FaviconID id1 =
@@ -1386,26 +1385,26 @@ TEST_F(FaviconDatabaseTest, GetFaviconsLastUpdatedBefore) {
   EXPECT_NE(0u, id2);
   EXPECT_NE(id1, id2);
 
-  // There should be no favicons before |time2|.
+  // There should be no favicons before `time2`.
   EXPECT_TRUE(
       db.GetFaviconsLastUpdatedBefore(time2 - base::Seconds(1), 10).empty());
 
-  // Requesting a time after |time2| should return |id2|.
+  // Requesting a time after `time2` should return `id2`.
   auto ids = db.GetFaviconsLastUpdatedBefore(time2 + base::Seconds(1), 10);
   ASSERT_EQ(1u, ids.size());
   EXPECT_EQ(id2, ids[0]);
 
-  // There should two favicons when using a time after |time1|.
+  // There should two favicons when using a time after `time1`.
   ids = db.GetFaviconsLastUpdatedBefore(time1 + base::Seconds(1), 10);
   ASSERT_EQ(2u, ids.size());
-  // |id2| is before |id1|, so it should be returned first.
+  // `id2` is before `id1`, so it should be returned first.
   EXPECT_EQ(id2, ids[0]);
   EXPECT_EQ(id1, ids[1]);
 
   // Repeat previous, but cap the max at 1.
   ids = db.GetFaviconsLastUpdatedBefore(time1 + base::Seconds(1), 1);
   ASSERT_EQ(1u, ids.size());
-  // |id2| is before |id1|, so it should be returned first.
+  // `id2` is before `id1`, so it should be returned first.
   EXPECT_EQ(id2, ids[0]);
 }
 

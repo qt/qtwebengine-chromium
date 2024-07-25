@@ -572,7 +572,7 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
   IF_WASM(V, I32x4RelaxedTruncF64x2SZero, Operator::kNoProperties, 1, 0, 1)    \
   IF_WASM(V, I32x4RelaxedTruncF64x2UZero, Operator::kNoProperties, 1, 0, 1)    \
   IF_WASM(V, I16x8RelaxedQ15MulRS, Operator::kCommutative, 2, 0, 1)            \
-  IF_WASM(V, I16x8DotI8x16I7x16S, Operator::kCommutative, 2, 0, 1)             \
+  IF_WASM(V, I16x8DotI8x16I7x16S, Operator::kNoProperties, 2, 0, 1)            \
   IF_WASM(V, I32x4DotI8x16I7x16AddS, Operator::kNoProperties, 3, 0, 1)         \
   IF_WASM(V, F64x4Min, Operator::kAssociative | Operator::kCommutative, 2, 0,  \
           1)                                                                   \
@@ -657,6 +657,7 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
   IF_WASM(V, I8x32GtU, Operator::kNoProperties, 2, 0, 1)                       \
   IF_WASM(V, I8x32GeS, Operator::kNoProperties, 2, 0, 1)                       \
   IF_WASM(V, I8x32GeU, Operator::kNoProperties, 2, 0, 1)                       \
+  IF_WASM(V, I32x8SConvertF32x8, Operator::kNoProperties, 1, 0, 1)             \
   IF_WASM(V, I32x8UConvertF32x8, Operator::kNoProperties, 1, 0, 1)             \
   IF_WASM(V, F64x4ConvertI32x4S, Operator::kNoProperties, 1, 0, 1)             \
   IF_WASM(V, F32x8SConvertI32x8, Operator::kNoProperties, 1, 0, 1)             \
@@ -709,7 +710,17 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
           1)                                                                   \
   IF_WASM(V, S256Not, Operator::kNoProperties, 1, 0, 1)                        \
   IF_WASM(V, S256Select, Operator::kNoProperties, 3, 0, 1)                     \
-  IF_WASM(V, S256AndNot, Operator::kNoProperties, 2, 0, 1)
+  IF_WASM(V, S256AndNot, Operator::kNoProperties, 2, 0, 1)                     \
+  IF_WASM(V, F32x8Qfma, Operator::kNoProperties, 3, 0, 1)                      \
+  IF_WASM(V, F32x8Qfms, Operator::kNoProperties, 3, 0, 1)                      \
+  IF_WASM(V, F64x4Qfma, Operator::kNoProperties, 3, 0, 1)                      \
+  IF_WASM(V, F64x4Qfms, Operator::kNoProperties, 3, 0, 1)                      \
+  IF_WASM(V, I64x4RelaxedLaneSelect, Operator::kNoProperties, 3, 0, 1)         \
+  IF_WASM(V, I32x8RelaxedLaneSelect, Operator::kNoProperties, 3, 0, 1)         \
+  IF_WASM(V, I16x16RelaxedLaneSelect, Operator::kNoProperties, 3, 0, 1)        \
+  IF_WASM(V, I8x32RelaxedLaneSelect, Operator::kNoProperties, 3, 0, 1)         \
+  IF_WASM(V, I32x8DotI8x32I7x32AddS, Operator::kNoProperties, 3, 0, 1)         \
+  IF_WASM(V, I16x16DotI8x32I7x32S, Operator::kNoProperties, 2, 0, 1)
 
 // The format is:
 // V(Name, properties, value_input_count, control_input_count, output_count)
@@ -881,6 +892,7 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
   V(MapInHeader)             \
   V(AnyTagged)               \
   V(CompressedPointer)       \
+  V(ProtectedPointer)        \
   V(SandboxedPointer)        \
   V(AnyCompressed)           \
   V(Simd256)
@@ -1094,14 +1106,15 @@ std::ostream& operator<<(std::ostream& os, TruncateKind kind) {
   SIMD_I16x8_LANES(V) V(8) V(9) V(10) V(11) V(12) V(13) V(14) V(15)
 
 #define STACK_SLOT_CACHED_SIZES_ALIGNMENTS_LIST(V) \
-  V(4, 0) V(8, 0) V(16, 0) V(4, 4) V(8, 8) V(16, 16)
+  V(4, 0, false)                                   \
+  V(8, 0, false) V(16, 0, false) V(4, 4, false) V(8, 8, false) V(16, 16, false)
 
 struct StackSlotOperator : public Operator1<StackSlotRepresentation> {
-  explicit StackSlotOperator(int size, int alignment)
+  explicit StackSlotOperator(int size, int alignment, bool is_tagged)
       : Operator1<StackSlotRepresentation>(
             IrOpcode::kStackSlot, Operator::kNoDeopt | Operator::kNoThrow,
             "StackSlot", 0, 0, 0, 1, 0, 0,
-            StackSlotRepresentation(size, alignment)) {}
+            StackSlotRepresentation(size, alignment, is_tagged)) {}
 };
 
 struct MachineOperatorGlobalCache {
@@ -1291,14 +1304,14 @@ struct MachineOperatorGlobalCache {
 #undef LOAD_TRANSFORM_KIND
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-#define STACKSLOT(Size, Alignment)                                     \
-  struct StackSlotOfSize##Size##OfAlignment##Alignment##Operator final \
-      : public StackSlotOperator {                                     \
-    StackSlotOfSize##Size##OfAlignment##Alignment##Operator()          \
-        : StackSlotOperator(Size, Alignment) {}                        \
-  };                                                                   \
-  StackSlotOfSize##Size##OfAlignment##Alignment##Operator              \
-      kStackSlotOfSize##Size##OfAlignment##Alignment;
+#define STACKSLOT(Size, Alignment, IsTagged)                               \
+  struct StackSlotOfSize##Size##OfAlignment##Alignment##IsTagged##Operator \
+      final : public StackSlotOperator {                                   \
+    StackSlotOfSize##Size##OfAlignment##Alignment##IsTagged##Operator()    \
+        : StackSlotOperator(Size, Alignment, IsTagged) {}                  \
+  };                                                                       \
+  StackSlotOfSize##Size##OfAlignment##Alignment##IsTagged##Operator        \
+      kStackSlotOfSize##Size##OfAlignment##Alignment##IsTagged;
   STACK_SLOT_CACHED_SIZES_ALIGNMENTS_LIST(STACKSLOT)
 #undef STACKSLOT
 
@@ -1794,11 +1807,11 @@ const Operator* MachineOperatorBuilder::UnalignedStore(
     MACHINE_REPRESENTATION_LIST(STORE)
 #undef STORE
     case MachineRepresentation::kBit:
+    case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
-      break;
+      UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 #define PURE(Name, properties, value_input_count, control_input_count, \
@@ -2017,18 +2030,19 @@ const Operator* MachineOperatorBuilder::StoreLane(MemoryAccessKind kind,
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
-const Operator* MachineOperatorBuilder::StackSlot(int size, int alignment) {
+const Operator* MachineOperatorBuilder::StackSlot(int size, int alignment,
+                                                  bool is_tagged) {
   DCHECK_LE(0, size);
   DCHECK(alignment == 0 || alignment == 4 || alignment == 8 || alignment == 16);
-#define CASE_CACHED_SIZE(Size, Alignment)                          \
-  if (size == Size && alignment == Alignment) {                    \
-    return &cache_.kStackSlotOfSize##Size##OfAlignment##Alignment; \
+#define CASE_CACHED_SIZE(Size, Alignment, IsTagged)                          \
+  if (size == Size && alignment == Alignment && is_tagged == IsTagged) {     \
+    return &cache_.kStackSlotOfSize##Size##OfAlignment##Alignment##IsTagged; \
   }
 
   STACK_SLOT_CACHED_SIZES_ALIGNMENTS_LIST(CASE_CACHED_SIZE)
 
 #undef CASE_CACHED_SIZE
-  return zone_->New<StackSlotOperator>(size, alignment);
+  return zone_->New<StackSlotOperator>(size, alignment, is_tagged);
 }
 
 const Operator* MachineOperatorBuilder::StackSlot(MachineRepresentation rep,
@@ -2063,11 +2077,11 @@ const Operator* MachineOperatorBuilder::Store(StoreRepresentation store_rep) {
     MACHINE_REPRESENTATION_LIST(STORE)
 #undef STORE
     case MachineRepresentation::kBit:
+    case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
-      break;
+      UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 const Operator* MachineOperatorBuilder::StoreIndirectPointer(
@@ -2105,39 +2119,37 @@ base::Optional<const Operator*> MachineOperatorBuilder::TryStorePair(
 const Operator* MachineOperatorBuilder::ProtectedStore(
     MachineRepresentation rep) {
   switch (rep) {
-#define STORE(kRep)                       \
-  case MachineRepresentation::kRep:       \
-    return &cache_.kProtectedStore##kRep; \
-    break;
+#define STORE(kRep)                 \
+  case MachineRepresentation::kRep: \
+    return &cache_.kProtectedStore##kRep;
     MACHINE_REPRESENTATION_LIST(STORE)
 #undef STORE
     case MachineRepresentation::kBit:
+    case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
-      break;
+      UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 const Operator* MachineOperatorBuilder::StoreTrapOnNull(
     StoreRepresentation rep) {
   switch (rep.representation()) {
-#define STORE(kRep)                                             \
-  case MachineRepresentation::kRep:                             \
-    if (rep.write_barrier_kind() == kNoWriteBarrier) {          \
-      return &cache_.kStoreTrapOnNull##kRep##NoWriteBarrier;    \
-    } else if (rep.write_barrier_kind() == kFullWriteBarrier) { \
-      return &cache_.kStoreTrapOnNull##kRep##FullWriteBarrier;  \
-    }                                                           \
-    break;
+#define STORE(kRep)                                          \
+  case MachineRepresentation::kRep:                          \
+    if (rep.write_barrier_kind() == kNoWriteBarrier) {       \
+      return &cache_.kStoreTrapOnNull##kRep##NoWriteBarrier; \
+    }                                                        \
+    DCHECK_EQ(kFullWriteBarrier, rep.write_barrier_kind());  \
+    return &cache_.kStoreTrapOnNull##kRep##FullWriteBarrier;
     MACHINE_REPRESENTATION_LIST(STORE)
 #undef STORE
     case MachineRepresentation::kBit:
+    case MachineRepresentation::kProtectedPointer:
     case MachineRepresentation::kIndirectPointer:
     case MachineRepresentation::kNone:
-      break;
+      UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 const Operator* MachineOperatorBuilder::StackPointerGreaterThan(

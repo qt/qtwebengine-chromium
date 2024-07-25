@@ -355,7 +355,7 @@ void GrDrawOpAtlas::compact(AtlasToken startTokenForNextFlush) {
         // if there are any in the first pages that the last page can safely upload to.
         for (uint32_t pageIndex = 0; pageIndex < lastPageIndex; ++pageIndex) {
             if constexpr (kDumpAtlasData) {
-                SkDebugf("page %d: ", pageIndex);
+                SkDebugf("page %u: ", pageIndex);
             }
 
             plotIter.init(fPages[pageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
@@ -392,7 +392,7 @@ void GrDrawOpAtlas::compact(AtlasToken startTokenForNextFlush) {
         plotIter.init(fPages[lastPageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
         unsigned int usedPlots = 0;
         if constexpr (kDumpAtlasData) {
-            SkDebugf("page %d: ", lastPageIndex);
+            SkDebugf("page %u: ", lastPageIndex);
         }
 
         while (Plot* plot = plotIter.get()) {
@@ -423,7 +423,7 @@ void GrDrawOpAtlas::compact(AtlasToken startTokenForNextFlush) {
         // to evict them if there's available space in earlier pages. Since we prioritize uploading
         // to the first pages, this will eventually clear out usage of this page unless we have a
         // large need.
-        if (availablePlots.size() && usedPlots && usedPlots <= fNumPlots / 4) {
+        if (!availablePlots.empty() && usedPlots && usedPlots <= fNumPlots / 4) {
             plotIter.init(fPages[lastPageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
             while (Plot* plot = plotIter.get()) {
                 // If this plot was used recently
@@ -431,13 +431,13 @@ void GrDrawOpAtlas::compact(AtlasToken startTokenForNextFlush) {
                     // See if there's room in an earlier page and if so evict.
                     // We need to be somewhat harsh here so that a handful of plots that are
                     // consistently in use don't end up locking the page in memory.
-                    if (availablePlots.size() > 0) {
+                    if (!availablePlots.empty()) {
                         this->processEvictionAndResetRects(plot);
                         this->processEvictionAndResetRects(availablePlots.back());
                         availablePlots.pop_back();
                         --usedPlots;
                     }
-                    if (!usedPlots || !availablePlots.size()) {
+                    if (!usedPlots || availablePlots.empty()) {
                         break;
                     }
                 }
@@ -448,7 +448,7 @@ void GrDrawOpAtlas::compact(AtlasToken startTokenForNextFlush) {
         // If none of the plots in the last page have been used recently, delete it.
         if (!usedPlots) {
             if constexpr (kDumpAtlasData) {
-                SkDebugf("delete %d\n", fNumActivePages-1);
+                SkDebugf("delete %u\n", fNumActivePages - 1);
             }
 
             this->deactivateLastPage();
@@ -521,7 +521,7 @@ bool GrDrawOpAtlas::activateNewPage(GrResourceProvider* resourceProvider) {
     }
 
     if constexpr (kDumpAtlasData) {
-        SkDebugf("activated page#: %d\n", fNumActivePages);
+        SkDebugf("activated page#: %u\n", fNumActivePages);
     }
 
     ++fNumActivePages;

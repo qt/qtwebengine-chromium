@@ -31,11 +31,13 @@
 
 #include "absl/container/flat_hash_map.h"
 #include "dawn/common/BitSetIterator.h"
+#include "dawn/common/MatchVariant.h"
 #include "dawn/common/ityp_vector.h"
 #include "dawn/native/CacheKey.h"
 #include "dawn/native/vulkan/DescriptorSetAllocator.h"
 #include "dawn/native/vulkan/DeviceVk.h"
 #include "dawn/native/vulkan/FencedDeleter.h"
+#include "dawn/native/vulkan/SamplerVk.h"
 #include "dawn/native/vulkan/UtilsVulkan.h"
 #include "dawn/native/vulkan/VulkanError.h"
 
@@ -62,33 +64,31 @@ VkShaderStageFlags VulkanShaderStageFlags(wgpu::ShaderStage stages) {
 }  // anonymous namespace
 
 VkDescriptorType VulkanDescriptorType(const BindingInfo& bindingInfo) {
-    switch (bindingInfo.bindingType) {
-        case BindingInfoType::Buffer:
-            switch (bindingInfo.buffer.type) {
+    return MatchVariant(
+        bindingInfo.bindingLayout,
+        [](const BufferBindingInfo& layout) -> VkDescriptorType {
+            switch (layout.type) {
                 case wgpu::BufferBindingType::Uniform:
-                    if (bindingInfo.buffer.hasDynamicOffset) {
+                    if (layout.hasDynamicOffset) {
                         return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
                     }
                     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                 case wgpu::BufferBindingType::Storage:
                 case kInternalStorageBufferBinding:
                 case wgpu::BufferBindingType::ReadOnlyStorage:
-                    if (bindingInfo.buffer.hasDynamicOffset) {
+                    if (layout.hasDynamicOffset) {
                         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
                     }
                     return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 case wgpu::BufferBindingType::Undefined:
                     DAWN_UNREACHABLE();
+                    return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             }
-        case BindingInfoType::Sampler:
-            return VK_DESCRIPTOR_TYPE_SAMPLER;
-        case BindingInfoType::Texture:
-        case BindingInfoType::ExternalTexture:
-            return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-        case BindingInfoType::StorageTexture:
-            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    }
-    DAWN_UNREACHABLE();
+        },
+        [](const SamplerBindingInfo&) { return VK_DESCRIPTOR_TYPE_SAMPLER; },
+        [](const StaticSamplerBindingInfo&) { return VK_DESCRIPTOR_TYPE_SAMPLER; },
+        [](const TextureBindingInfo&) { return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE; },
+        [](const StorageTextureBindingInfo&) { return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; });
 }
 
 // static
@@ -115,7 +115,14 @@ MaybeError BindGroupLayout::Initialize() {
         vkBinding.descriptorType = VulkanDescriptorType(bindingInfo);
         vkBinding.descriptorCount = 1;
         vkBinding.stageFlags = VulkanShaderStageFlags(bindingInfo.visibility);
-        vkBinding.pImmutableSamplers = nullptr;
+
+        if (std::holds_alternative<StaticSamplerBindingInfo>(bindingInfo.bindingLayout)) {
+            auto samplerLayout = std::get<StaticSamplerBindingInfo>(bindingInfo.bindingLayout);
+            auto sampler = ToBackend(samplerLayout.sampler);
+            vkBinding.pImmutableSamplers = &sampler->GetHandle().GetHandle();
+        } else {
+            vkBinding.pImmutableSamplers = nullptr;
+        }
 
         bindings.emplace_back(vkBinding);
     }
@@ -148,7 +155,7 @@ MaybeError BindGroupLayout::Initialize() {
     // TODO(enga): Consider deduping allocators for layouts with the same descriptor type
     // counts.
     mDescriptorSetAllocator =
-        DescriptorSetAllocator::Create(this, std::move(descriptorCountPerType));
+        DescriptorSetAllocator::Create(device, std::move(descriptorCountPerType));
 
     SetLabelImpl();
 
@@ -187,7 +194,7 @@ ResultOrError<Ref<BindGroup>> BindGroupLayout::AllocateBindGroup(
     Device* device,
     const BindGroupDescriptor* descriptor) {
     DescriptorSetAllocation descriptorSetAllocation;
-    DAWN_TRY_ASSIGN(descriptorSetAllocation, mDescriptorSetAllocator->Allocate());
+    DAWN_TRY_ASSIGN(descriptorSetAllocation, mDescriptorSetAllocator->Allocate(this));
 
     return AcquireRef(mBindGroupAllocator->Allocate(device, descriptor, descriptorSetAllocation));
 }

@@ -17,7 +17,6 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/browser/preloading.h"
-#include "third_party/skia/include/core/SkDrawLooper.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_delegate.h"
@@ -575,15 +574,16 @@ void GestureNavSimple::OnOverscrollModeChange(OverscrollMode old_mode,
   const float start_threshold =
       is_touchpad ? OverscrollConfig::kStartTouchpadThresholdDips
                   : OverscrollConfig::kStartTouchscreenThresholdDips;
+  const float complete_percent =
+      is_touchpad ? OverscrollConfig::kCompleteTouchpadThresholdPercent
+                  : OverscrollConfig::kCompleteTouchscreenThresholdPercent;
+
   const gfx::Size size = GetDisplaySize();
   const int max_size = std::max(size.width(), size.height());
-  completion_threshold_ =
-      max_size *
-          (is_touchpad
-               ? OverscrollConfig::kCompleteTouchpadThresholdPercent
-               : OverscrollConfig::kCompleteTouchscreenThresholdPercent) -
-      start_threshold;
-  DCHECK_LE(0, completion_threshold_);
+
+  completion_threshold_ = max_size * complete_percent - start_threshold;
+  DCHECK_LE(0, completion_threshold_) << " for display size " << size.ToString()
+                                      << " and is_touchpad=" << is_touchpad;
 
   max_delta_ = max_size - start_threshold;
   DCHECK_LE(0, max_delta_);

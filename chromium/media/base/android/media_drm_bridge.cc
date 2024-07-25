@@ -23,7 +23,6 @@
 #include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "base/sys_byteorder.h"
 #include "base/system/sys_info.h"
 #include "base/task/single_thread_task_runner.h"
 #include "media/base/android/android_util.h"
@@ -407,7 +406,7 @@ scoped_refptr<MediaDrmBridge> MediaDrmBridge::CreateInternal(
   // All paths requires the MediaDrmApis.
   DCHECK(!scheme_uuid.empty());
 
-  // TODO(crbug.com/917527): Check that |origin_id| is specified on devices
+  // TODO(crbug.com/41433110): Check that |origin_id| is specified on devices
   // that support it.
 
   scoped_refptr<MediaDrmBridge> media_drm_bridge(new MediaDrmBridge(
@@ -456,8 +455,8 @@ void MediaDrmBridge::SetServerCertificate(
       cdm_promise_adapter_.SavePromise(std::move(promise), __func__);
 
   JNIEnv* env = AttachCurrentThread();
-  ScopedJavaLocalRef<jbyteArray> j_certificate = base::android::ToJavaByteArray(
-      env, certificate.data(), certificate.size());
+  ScopedJavaLocalRef<jbyteArray> j_certificate =
+      base::android::ToJavaByteArray(env, certificate);
   if (Java_MediaDrmBridge_setServerCertificate(env, j_media_drm_,
                                                j_certificate)) {
     ResolvePromise(promise_id);
@@ -517,8 +516,7 @@ void MediaDrmBridge::CreateSessionAndGenerateRequest(
       }
       if (!init_data_from_delegate.empty()) {
         j_init_data =
-            base::android::ToJavaByteArray(env, init_data_from_delegate.data(),
-                                           init_data_from_delegate.size());
+            base::android::ToJavaByteArray(env, init_data_from_delegate);
       }
       if (!optional_parameters_from_delegate.empty()) {
         j_optional_parameters = base::android::ToJavaArrayOfStrings(
@@ -528,8 +526,7 @@ void MediaDrmBridge::CreateSessionAndGenerateRequest(
   }
 
   if (!j_init_data) {
-    j_init_data =
-        base::android::ToJavaByteArray(env, init_data.data(), init_data.size());
+    j_init_data = base::android::ToJavaByteArray(env, init_data);
   }
 
   ScopedJavaLocalRef<jstring> j_mime =
@@ -576,7 +573,7 @@ void MediaDrmBridge::UpdateSession(const std::string& session_id,
 
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jbyteArray> j_response =
-      base::android::ToJavaByteArray(env, response.data(), response.size());
+      base::android::ToJavaByteArray(env, response);
   ScopedJavaLocalRef<jbyteArray> j_session_id =
       ToJavaByteArray(env, session_id);
   uint32_t promise_id =
@@ -847,7 +844,7 @@ void MediaDrmBridge::OnSessionClosed(
   DVLOG(2) << __func__;
   std::string session_id;
   JavaByteArrayToString(env, j_session_id, &session_id);
-  // TODO(crbug.com/1208618): Support other closed reasons.
+  // TODO(crbug.com/40181810): Support other closed reasons.
   task_runner_->PostTask(
       FROM_HERE, base::BindOnce(session_closed_cb_, std::move(session_id),
                                 CdmSessionClosedReason::kClose));
@@ -878,9 +875,8 @@ void MediaDrmBridge::OnSessionKeysChange(
     CdmKeyInformation::KeyStatus key_status =
         ConvertKeyStatus(static_cast<KeyStatus>(j_status_code), is_key_release);
 
-    DVLOG(2) << __func__ << "Key status change: "
-             << base::HexEncode(&key_id[0], key_id.size()) << ", "
-             << key_status;
+    DVLOG(2) << __func__ << "Key status change: " << base::HexEncode(key_id)
+             << ", " << key_status;
 
     cdm_keys_info.push_back(
         std::make_unique<CdmKeyInformation>(key_id, key_status, 0));

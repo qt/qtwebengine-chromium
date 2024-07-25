@@ -16,6 +16,7 @@
 #include "components/safe_browsing/content/browser/unsafe_resource_util.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#include "components/safe_browsing/core/common/utils.h"
 #include "components/security_interstitials/content/security_interstitial_controller_client.h"
 #include "components/security_interstitials/content/settings_page_helper.h"
 #include "components/security_interstitials/core/metrics_helper.h"
@@ -177,36 +178,12 @@ std::string BaseBlockingPage::GetMetricPrefix(
   return "unkown_metric_prefix";
 }
 
-// We populate a parallel set of metrics to differentiate some threat sources.
-// static
-std::string BaseBlockingPage::GetExtraMetricsSuffix(
-    const UnsafeResourceList& unsafe_resources) {
-  switch (unsafe_resources[0].threat_source) {
-    case safe_browsing::ThreatSource::REMOTE:
-      return "from_device";
-    case safe_browsing::ThreatSource::LOCAL_PVER4:
-      return "from_device_v4";
-    case safe_browsing::ThreatSource::CLIENT_SIDE_DETECTION:
-      return "from_client_side_detection";
-    case safe_browsing::ThreatSource::URL_REAL_TIME_CHECK:
-      return "from_real_time_check";
-    case safe_browsing::ThreatSource::NATIVE_PVER5_REAL_TIME:
-      return "from_hash_prefix_real_time_check_v5";
-    case safe_browsing::ThreatSource::ANDROID_SAFEBROWSING_REAL_TIME:
-      return "from_android_safebrowsing_real_time";
-    case safe_browsing::ThreatSource::ANDROID_SAFEBROWSING:
-      return "from_android_safebrowsing";
-    case safe_browsing::ThreatSource::UNKNOWN:
-      break;
-  }
-  NOTREACHED();
-  return std::string();
-}
-
 // static
 security_interstitials::BaseSafeBrowsingErrorUI::SBInterstitialReason
 BaseBlockingPage::GetInterstitialReason(
     const UnsafeResourceList& unsafe_resources) {
+  using enum SBThreatType;
+
   bool harmful = false;
   for (auto iter = unsafe_resources.begin(); iter != unsafe_resources.end();
        ++iter) {
@@ -263,14 +240,18 @@ void BaseBlockingPage::set_proceeded(bool proceeded) {
 
 // static
 security_interstitials::MetricsHelper::ReportDetails
-BaseBlockingPage::GetReportingInfo(const UnsafeResourceList& unsafe_resources) {
+BaseBlockingPage::GetReportingInfo(
+    const UnsafeResourceList& unsafe_resources,
+    std::optional<base::TimeTicks> blocked_page_shown_timestamp) {
   BaseSafeBrowsingErrorUI::SBInterstitialReason interstitial_reason =
       GetInterstitialReason(unsafe_resources);
 
   security_interstitials::MetricsHelper::ReportDetails reporting_info;
   reporting_info.metric_prefix =
       GetMetricPrefix(unsafe_resources, interstitial_reason);
-  reporting_info.extra_suffix = GetExtraMetricsSuffix(unsafe_resources);
+  CHECK_GE(unsafe_resources.size(), 1u);
+  reporting_info.extra_suffix = GetExtraMetricsSuffix(unsafe_resources[0]);
+  reporting_info.blocked_page_shown_timestamp = blocked_page_shown_timestamp;
   return reporting_info;
 }
 
@@ -282,13 +263,15 @@ BaseBlockingPage::CreateControllerClient(
     BaseUIManager* ui_manager,
     PrefService* pref_service,
     std::unique_ptr<security_interstitials::SettingsPageHelper>
-        settings_page_helper) {
+        settings_page_helper,
+    std::optional<base::TimeTicks> blocked_page_shown_timestamp) {
   history::HistoryService* history_service =
       ui_manager->history_service(web_contents);
 
   std::unique_ptr<security_interstitials::MetricsHelper> metrics_helper =
       std::make_unique<security_interstitials::MetricsHelper>(
-          unsafe_resources[0].url, GetReportingInfo(unsafe_resources),
+          unsafe_resources[0].url,
+          GetReportingInfo(unsafe_resources, blocked_page_shown_timestamp),
           history_service);
 
   return std::make_unique<SafeBrowsingControllerClient>(
@@ -344,6 +327,7 @@ void BaseBlockingPage::OnDontProceedDone() {
 
 // static
 bool BaseBlockingPage::ShouldReportThreatDetails(SBThreatType threat_type) {
+  using enum SBThreatType;
   return threat_type == SB_THREAT_TYPE_BILLING ||
          threat_type == SB_THREAT_TYPE_URL_CLIENT_SIDE_PHISHING ||
          threat_type == SB_THREAT_TYPE_URL_MALWARE ||

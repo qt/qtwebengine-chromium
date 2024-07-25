@@ -7,11 +7,11 @@
 #include <cstdint>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "base/barrier_closure.h"
 #include "base/check_op.h"
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
 #include "base/functional/bind.h"
@@ -33,15 +33,14 @@
 #include "extensions/common/extension_features.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 
-namespace extensions {
-namespace declarative_net_request {
+namespace extensions::declarative_net_request {
 
 namespace {
 
 namespace dnr_api = extensions::api::declarative_net_request;
 
 // A class to help in indexing multiple rulesets.
-// TODO(crbug.com/1254680): Look into unifying this with the InstallIndexHelper
+// TODO(crbug.com/40794487): Look into unifying this with the InstallIndexHelper
 //                          class, moving any differing logic to the clients.
 class IndexHelper : public base::RefCountedThreadSafe<IndexHelper> {
  public:
@@ -202,7 +201,7 @@ bool GetNewDynamicRules(const FileBackedRulesetSource& source,
 
   // Remove old rules
   std::set<int> ids_to_remove(rule_ids_to_remove.begin(), rule_ids_to_remove.end());
-  base::EraseIf(*new_rules, [&ids_to_remove](const dnr_api::Rule& rule) {
+  std::erase_if(*new_rules, [&ids_to_remove](const dnr_api::Rule& rule) {
     return base::Contains(ids_to_remove, rule.id);
   });
 
@@ -294,7 +293,7 @@ bool UpdateAndIndexDynamicRules(const FileBackedRulesetSource& source,
     if (!base::Contains(rule_ids_to_add, warning.rule_id)) {
       // Any rule added earlier which is ignored now (say due to exceeding the
       // regex memory limit), will be silently ignored.
-      // TODO(crbug.com/1050780): Notify the extension about the same.
+      // TODO(crbug.com/40118204): Notify the extension about the same.
       continue;
     }
 
@@ -509,5 +508,4 @@ void FileSequenceHelper::OnRulesetsIndexed(LoadRulesetsUICallback ui_callback,
                  base::BindOnce(std::move(ui_callback), std::move(load_data)));
 }
 
-}  // namespace declarative_net_request
-}  // namespace extensions
+}  // namespace extensions::declarative_net_request

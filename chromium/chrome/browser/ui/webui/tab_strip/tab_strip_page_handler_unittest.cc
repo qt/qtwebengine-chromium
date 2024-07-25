@@ -15,7 +15,7 @@
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui.h"
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_embedder.h"
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_layout.h"
-#include "chrome/browser/ui/webui/webui_util.h"
+#include "chrome/browser/ui/webui/webui_util_desktop.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile_manager.h"
 #include "components/tab_groups/tab_group_color.h"
@@ -325,9 +325,19 @@ TEST_F(TabStripPageHandlerTest, ValidateTabGroupEventStream) {
   tab_groups::TabGroupId group_id =
       tab_strip_model->AddToNewGroup(tab_group_indicies);
 
-  // Moving tabs {0, 1, 2} to index 4 will result in the first tab in the group
-  // being at index 2 after the move.
-  constexpr int kMoveIndex = 4;
+  // Moving tabs {0, 1, 2} to index 2 will result in the first tab in the group
+  // being at index 2 after the move. This is how the index is calculdated,
+  // however, we process the group move operation one tab at a time. So if we
+  // want to move a group to the end of this particular array the to_index will
+  // be (length of tabstrip - 1). Ex:
+  // Indices:  0 1 2   3 4
+  // Before: { 0 1 2 } 3 4
+  // Indices:  0 1 2
+  // Middle:   3 4 (Specifying 2 puts the group at the end)
+  // Indices:  0 1   2 3 4
+  // After:    3 4 { 0 1 2 }
+  constexpr int kMoveIndex = 2;
+  constexpr int kIndexMovedTo = 4;
   constexpr int kNewGroupStartIndex = 2;
   {
     InSequence s;
@@ -336,7 +346,7 @@ TEST_F(TabStripPageHandlerTest, ValidateTabGroupEventStream) {
                     _, Truly([&](const TabStripModelChange& change) {
                       auto* move = change.GetMove();
                       return change.type() == TabStripModelChange::kMoved &&
-                             move->to_index == kMoveIndex;
+                             move->to_index == kIndexMovedTo;
                     }),
                     _))
         .Times(3);
@@ -550,7 +560,7 @@ TEST_F(TabStripPageHandlerTest, TabReplaced) {
       browser()->tab_strip_model()->GetWebContentsAt(0));
 
   web_ui()->ClearTrackedCalls();
-  browser()->tab_strip_model()->ReplaceWebContentsAt(
+  browser()->tab_strip_model()->DiscardWebContentsAt(
       0, content::WebContentsTester::CreateTestWebContents(profile(), nullptr));
   int expected_new_id = extensions::ExtensionTabUtil::GetTabId(
       browser()->tab_strip_model()->GetWebContentsAt(0));
@@ -692,7 +702,7 @@ TEST_F(TabStripPageHandlerTest, PreventsInvalidGroupDrags) {
 }
 
 TEST_F(TabStripPageHandlerTest, OnThemeChanged) {
-  webui::GetNativeTheme(web_ui()->GetWebContents())
+  webui::GetNativeThemeDeprecated(web_ui()->GetWebContents())
       ->NotifyOnNativeThemeUpdated();
   EXPECT_CALL(page_, ThemeChanged());
 }

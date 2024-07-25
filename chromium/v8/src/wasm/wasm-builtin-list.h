@@ -58,6 +58,7 @@ namespace v8::internal::wasm {
   V(BigIntToI32Pair)                                                           \
   V(BigIntToI64)                                                               \
   V(CallRefIC)                                                                 \
+  V(CallIndirectIC)                                                            \
   V(DoubleToI)                                                                 \
   V(I32PairToBigInt)                                                           \
   V(I64ToBigInt)                                                               \
@@ -116,6 +117,7 @@ namespace v8::internal::wasm {
   V(WasmStringNewWtf8Array)                                                    \
   V(WasmStringNewWtf16Array)                                                   \
   V(WasmStringEncodeWtf8Array)                                                 \
+  V(WasmStringToUtf8Array)                                                     \
   V(WasmStringEncodeWtf16Array)                                                \
   V(WasmStringAsWtf8)                                                          \
   V(WasmStringViewWtf8Advance)                                                 \
@@ -138,7 +140,10 @@ namespace v8::internal::wasm {
   V(WasmAllocateInYoungGeneration)                                             \
   V(WasmAllocateInOldGeneration)                                               \
   V(IterableToFixedArrayForWasm)                                               \
-  V(WasmAllocateZeroedFixedArray)
+  V(WasmAllocateZeroedFixedArray)                                              \
+  V(WasmFastApiCallTypeCheckAndUpdateIC)                                       \
+  V(DeoptimizationEntry_Eager)                                                 \
+  V(WasmPropagateException)
 
 namespace detail {
 constexpr std::array<uint8_t, static_cast<int>(Builtin::kFirstBytecodeHandler)>

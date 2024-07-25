@@ -374,10 +374,8 @@ TEST_F(TabGroupsApiUnitTest, TabGroupsUpdateError) {
             error);
 }
 
-// Test that tabGroups.update() fails on a saved group.
-TEST_F(TabGroupsApiUnitTest, TabGroupsUpdateSavedTabGroupsError) {
-  base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures({features::kTabGroupsSave}, {});
+// Test that tabGroups.update() passes on a saved group.
+TEST_F(TabGroupsApiUnitTest, TabGroupsUpdateSavedTab) {
   TabStripModel* tab_strip_model = browser()->tab_strip_model();
   ASSERT_TRUE(tab_strip_model->SupportsTabGroups());
 
@@ -389,8 +387,8 @@ TEST_F(TabGroupsApiUnitTest, TabGroupsUpdateSavedTabGroupsError) {
       u"Initial title", tab_groups::TabGroupColorId::kBlue);
   tab_group_model->GetTabGroup(group)->SetVisualData(visual_data);
 
-  SavedTabGroupKeyedService* saved_service =
-      SavedTabGroupServiceFactory::GetInstance()->GetForProfile(
+  tab_groups::SavedTabGroupKeyedService* saved_service =
+      tab_groups::SavedTabGroupServiceFactory::GetInstance()->GetForProfile(
           browser()->profile());
   ASSERT_NE(saved_service, nullptr);
   saved_service->SaveGroup(group);
@@ -399,15 +397,18 @@ TEST_F(TabGroupsApiUnitTest, TabGroupsUpdateSavedTabGroupsError) {
 
   scoped_refptr<const Extension> extension = CreateTabGroupsExtension();
 
-  // Try to update a non-existent group and expect an error.
+  // Update the group, visual metadata, it should pass.
   auto function = base::MakeRefCounted<TabGroupsUpdateFunction>();
   function->set_extension(extension);
   constexpr char kFormatArgs[] =
       R"([%d, {"title": "another title", "color": "red"}])";
   const std::string args = base::StringPrintf(kFormatArgs, group_id);
-  std::string error = api_test_utils::RunFunctionAndReturnError(
-      function.get(), args, profile(), api_test_utils::FunctionMode::kNone);
-  EXPECT_EQ(tabs_constants::kSavedTabGroupNotEditableError, error);
+  EXPECT_TRUE(api_test_utils::RunFunction(function.get(), args, profile(),
+                                          api_test_utils::FunctionMode::kNone));
+
+  // Check that values were updated.
+  ASSERT_TRUE(tab_group_model->GetTabGroup(group)->visual_data()->title() ==
+              u"another title");
 }
 
 // Test that moving a group to the right results in the correct tab order.
@@ -440,6 +441,80 @@ TEST_F(TabGroupsApiUnitTest, TabGroupsMoveRight) {
   EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(2).value());
   EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(3).value());
   EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(4).value());
+}
+
+// Test that moving a group to the right of another group results in the correct
+// tab order.
+TEST_F(TabGroupsApiUnitTest, TabGroupsMoveAdjacentGroupRight) {
+  ASSERT_TRUE(browser()->tab_strip_model()->SupportsTabGroups());
+
+  scoped_refptr<const Extension> extension = CreateTabGroupsExtension();
+
+  TabStripModel* tab_strip_model = browser()->tab_strip_model();
+
+  // Create a group with multiple tabs.
+  tab_groups::TabGroupId group = tab_strip_model->AddToNewGroup({1, 2, 3});
+  tab_groups::TabGroupId group_2 = tab_strip_model->AddToNewGroup({4, 5});
+
+  int group_id = tab_groups_util::GetGroupId(group);
+
+  // Use the TabGroupsMoveFunction to move the group to index 3.
+  auto function = base::MakeRefCounted<TabGroupsMoveFunction>();
+  function->set_extension(extension);
+  constexpr char kFormatArgs[] = R"([%d, {"index": 3}])";
+  const std::string args = base::StringPrintf(kFormatArgs, group_id);
+  ASSERT_TRUE(api_test_utils::RunFunction(function.get(), args, profile(),
+                                          api_test_utils::FunctionMode::kNone));
+
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(0), web_contents(0));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(1), web_contents(4));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(2), web_contents(5));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(3), web_contents(1));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(4), web_contents(2));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(5), web_contents(3));
+
+  EXPECT_EQ(group_2, tab_strip_model->GetTabGroupForTab(1).value());
+  EXPECT_EQ(group_2, tab_strip_model->GetTabGroupForTab(2).value());
+
+  EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(3).value());
+  EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(4).value());
+  EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(5).value());
+}
+
+// Test that moving a group to the right of another group results in the correct
+// tab order.
+TEST_F(TabGroupsApiUnitTest, TabGroupsMoveGroupCannotMoveToTheMiddleOfAGroup) {
+  ASSERT_TRUE(browser()->tab_strip_model()->SupportsTabGroups());
+
+  scoped_refptr<const Extension> extension = CreateTabGroupsExtension();
+
+  TabStripModel* tab_strip_model = browser()->tab_strip_model();
+
+  // Create a group with multiple tabs.
+  tab_groups::TabGroupId group = tab_strip_model->AddToNewGroup({1, 2});
+  tab_groups::TabGroupId group_2 = tab_strip_model->AddToNewGroup({4, 5});
+
+  int group_id = tab_groups_util::GetGroupId(group);
+
+  // Use the TabGroupsMoveFunction to move the group to index 3.
+  auto function = base::MakeRefCounted<TabGroupsMoveFunction>();
+  function->set_extension(extension);
+  constexpr char kFormatArgs[] = R"([%d, {"index": 3}])";
+  const std::string args = base::StringPrintf(kFormatArgs, group_id);
+  EXPECT_FALSE(api_test_utils::RunFunction(
+      function.get(), args, profile(), api_test_utils::FunctionMode::kNone));
+
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(0), web_contents(0));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(1), web_contents(1));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(2), web_contents(2));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(3), web_contents(3));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(4), web_contents(4));
+  EXPECT_EQ(tab_strip_model->GetWebContentsAt(5), web_contents(5));
+
+  EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(1).value());
+  EXPECT_EQ(group, tab_strip_model->GetTabGroupForTab(2).value());
+  EXPECT_EQ(group_2, tab_strip_model->GetTabGroupForTab(4).value());
+  EXPECT_EQ(group_2, tab_strip_model->GetTabGroupForTab(5).value());
 }
 
 // Test that moving a group to the left results in the correct tab order.

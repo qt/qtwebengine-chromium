@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2023 Valve Corporation
- * Copyright (c) 2015-2023 LunarG, Inc.
- * Copyright (C) 2015-2023 Google Inc.
+/* Copyright (c) 2015-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2024 Valve Corporation
+ * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,7 @@
  */
 #pragma once
 #include "state_tracker/state_object.h"
+#include <vulkan/utility/vk_safe_struct.hpp>
 
 // Note: some of the types in this header are needed by both the DescriptorSet and Pipeline
 // state objects. It is helpful to have a separate header to avoid circular #include madness.
@@ -58,26 +59,29 @@ namespace vvl {
 
 class Sampler : public StateObject {
   public:
-    const VkSamplerCreateInfo createInfo;
+    const vku::safe_VkSamplerCreateInfo safe_create_info;
+    const VkSamplerCreateInfo &create_info;
+
     const VkSamplerYcbcrConversion samplerConversion;
     const VkSamplerCustomBorderColorCreateInfoEXT customCreateInfo;
 
-    Sampler(const VkSampler s, const VkSamplerCreateInfo *pci)
-        : StateObject(s, kVulkanObjectTypeSampler),
-          createInfo(*pci),
-          samplerConversion(GetConversion(pci)),
-          customCreateInfo(GetCustomCreateInfo(pci)) {}
+    Sampler(const VkSampler handle, const VkSamplerCreateInfo *pCreateInfo)
+        : StateObject(handle, kVulkanObjectTypeSampler),
+          safe_create_info(pCreateInfo),
+          create_info(*safe_create_info.ptr()),
+          samplerConversion(GetConversion(pCreateInfo)),
+          customCreateInfo(GetCustomCreateInfo(pCreateInfo)) {}
 
-    VkSampler sampler() const { return handle_.Cast<VkSampler>(); }
+    VkSampler VkHandle() const { return handle_.Cast<VkSampler>(); }
 
   private:
-    static inline VkSamplerYcbcrConversion GetConversion(const VkSamplerCreateInfo *pci) {
-        auto *conversionInfo = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(pci->pNext);
+    static inline VkSamplerYcbcrConversion GetConversion(const VkSamplerCreateInfo *pCreateInfo) {
+        auto *conversionInfo = vku::FindStructInPNextChain<VkSamplerYcbcrConversionInfo>(pCreateInfo->pNext);
         return conversionInfo ? conversionInfo->conversion : VK_NULL_HANDLE;
     }
-    static inline VkSamplerCustomBorderColorCreateInfoEXT GetCustomCreateInfo(const VkSamplerCreateInfo *pci) {
+    static inline VkSamplerCustomBorderColorCreateInfoEXT GetCustomCreateInfo(const VkSamplerCreateInfo *pCreateInfo) {
         VkSamplerCustomBorderColorCreateInfoEXT result{};
-        auto cbci = vku::FindStructInPNextChain<VkSamplerCustomBorderColorCreateInfoEXT>(pci->pNext);
+        auto cbci = vku::FindStructInPNextChain<VkSamplerCustomBorderColorCreateInfoEXT>(pCreateInfo->pNext);
         if (cbci) result = *cbci;
         return result;
     }
@@ -90,15 +94,15 @@ class SamplerYcbcrConversion : public StateObject {
     const VkFilter chromaFilter;
     const uint64_t external_format;
 
-    SamplerYcbcrConversion(VkSamplerYcbcrConversion ycbcr, const VkSamplerYcbcrConversionCreateInfo *info,
+    SamplerYcbcrConversion(VkSamplerYcbcrConversion handle, const VkSamplerYcbcrConversionCreateInfo *info,
                            VkFormatFeatureFlags2KHR features)
-        : StateObject(ycbcr, kVulkanObjectTypeSamplerYcbcrConversion),
+        : StateObject(handle, kVulkanObjectTypeSamplerYcbcrConversion),
           format_features(features),
           format(info->format),
           chromaFilter(info->chromaFilter),
           external_format(GetExternalFormat(info->pNext)) {}
 
-    VkSamplerYcbcrConversion ycbcr_conversion() const { return handle_.Cast<VkSamplerYcbcrConversion>(); }
+    VkSamplerYcbcrConversion VkHandle() const { return handle_.Cast<VkSamplerYcbcrConversion>(); }
 };
 
 }  // namespace vvl

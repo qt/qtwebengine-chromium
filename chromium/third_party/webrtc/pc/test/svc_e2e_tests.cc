@@ -27,7 +27,6 @@
 #include "api/test/simulated_network.h"
 #include "api/test/time_controller.h"
 #include "api/video_codecs/vp9_profile.h"
-#include "call/simulated_network.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/containers/flat_map.h"
@@ -35,6 +34,7 @@
 #include "test/field_trial.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/network/simulated_network.h"
 #include "test/pc/e2e/analyzer/video/default_video_quality_analyzer.h"
 #include "test/pc/e2e/network_quality_metrics_reporter.h"
 #include "test/testsupport/file_utils.h"
@@ -316,7 +316,7 @@ TEST_P(SvcTest, ScalabilityModeSupported) {
   }
   test::ScopedFieldTrials override_trials(AppendFieldTrials(trials));
   std::unique_ptr<NetworkEmulationManager> network_emulation_manager =
-      CreateNetworkEmulationManager(TimeMode::kSimulated);
+      CreateNetworkEmulationManager({.time_mode = TimeMode::kSimulated});
   auto analyzer = std::make_unique<SvcVideoQualityAnalyzer>(
       network_emulation_manager->time_controller()->GetClock());
   SvcVideoQualityAnalyzer* analyzer_ptr = analyzer.get();
@@ -454,6 +454,7 @@ INSTANTIATE_TEST_SUITE_P(
         Values(UseDependencyDescriptor::Disabled,
                UseDependencyDescriptor::Enabled)),
     SvcTestNameGenerator);
+#endif
 
 INSTANTIATE_TEST_SUITE_P(
     SvcTestAV1,
@@ -502,7 +503,5 @@ INSTANTIATE_TEST_SUITE_P(
             }),
             Values(UseDependencyDescriptor::Enabled)),
     SvcTestNameGenerator);
-
-#endif
 
 }  // namespace webrtc

@@ -43,7 +43,7 @@ void WebSocketFactory::CreateWebSocket(
         url_loader_network_observer,
     mojo::PendingRemote<mojom::WebSocketAuthenticationHandler> auth_handler,
     mojo::PendingRemote<mojom::TrustedHeaderClient> header_client,
-    const absl::optional<base::UnguessableToken>& throttling_profile_id) {
+    const std::optional<base::UnguessableToken>& throttling_profile_id) {
   if (isolation_info.request_type() !=
       net::IsolationInfo::RequestType::kOther) {
     mojo::ReportBadMessage(
@@ -63,6 +63,15 @@ void WebSocketFactory::CreateWebSocket(
         std::move(handshake_client));
     handshake_client_remote->OnFailure("Insufficient resources",
                                        net::ERR_INSUFFICIENT_RESOURCES, -1);
+    handshake_client_remote.reset();
+    return;
+  }
+  if (isolation_info.nonce().has_value() &&
+      !context_->IsNetworkForNonceAndUrlAllowed(*isolation_info.nonce(), url)) {
+    mojo::Remote<mojom::WebSocketHandshakeClient> handshake_client_remote(
+        std::move(handshake_client));
+    handshake_client_remote->OnFailure("Network access revoked",
+                                       net::ERR_NETWORK_ACCESS_REVOKED, -1);
     handshake_client_remote.reset();
     return;
   }
@@ -91,6 +100,13 @@ void WebSocketFactory::Remove(WebSocket* impl) {
     return;
   }
   connections_.erase(it);
+}
+
+void WebSocketFactory::RemoveIfNonceMatches(
+    const base::UnguessableToken& nonce) {
+  std::erase_if(connections_, [&nonce](const auto& connection) {
+    return connection->RevokeIfNonceMatches(nonce);
+  });
 }
 
 }  // namespace network

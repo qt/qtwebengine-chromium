@@ -8,6 +8,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -171,7 +172,7 @@ class ParseContext {
 
   // Ensures that the string represents an origin that is non-opaque and HTTPS.
   // Returns the registered domain.
-  ValidateSiteResult Canonicalize(base::StringPiece origin_string) const {
+  ValidateSiteResult Canonicalize(std::string_view origin_string) const {
     const url::Origin origin(url::Origin::Create(GURL(origin_string)));
     if (origin.opaque()) {
       if (emit_errors_) {
@@ -348,14 +349,14 @@ class ParseContext {
 
     // Erase invalid members/primaries, and collect primary sites that might
     // become singletons.
-    base::EraseIf(
+    std::erase_if(
         sets,
         [&](const std::pair<net::SchemefulSite, net::FirstPartySetEntry>& pair)
             -> bool { return IsInvalidEntry(pair, &possible_singletons); });
 
     // Erase invalid aliases, and collect canonical sites that are primaries and
     // might become singletons.
-    base::EraseIf(
+    std::erase_if(
         aliases,
         [&](const std::pair<net::SchemefulSite, net::SchemefulSite>& pair)
             -> bool {
@@ -390,7 +391,7 @@ class ParseContext {
       return;
     }
 
-    base::EraseIf(
+    std::erase_if(
         sets,
         [&](const std::pair<net::SchemefulSite, net::FirstPartySetEntry>& pair)
             -> bool { return possible_singletons.contains(pair.first); });
@@ -425,8 +426,8 @@ class ParseContext {
     const auto is_singleton = [](const SingleSet& set) {
       return set.size() <= 1;
     };
-    base::EraseIf(lists.additions, is_singleton);
-    base::EraseIf(lists.replacements, is_singleton);
+    std::erase_if(lists.additions, is_singleton);
+    std::erase_if(lists.replacements, is_singleton);
   }
 
   std::vector<ParseWarning>& warnings() { return warnings_; }
@@ -682,7 +683,7 @@ SetsAndAliases ParseSetsFromStreamInternal(std::istream& input,
   int successfully_parsed_sets = 0;
   int nonfatal_errors = 0;
   for (std::string line; std::getline(input, line);) {
-    base::StringPiece trimmed = base::TrimWhitespaceASCII(line, base::TRIM_ALL);
+    std::string_view trimmed = base::TrimWhitespaceASCII(line, base::TRIM_ALL);
     if (trimmed.empty()) {
       continue;
     }
@@ -736,7 +737,7 @@ SetsAndAliases ParseSetsFromStreamInternal(std::istream& input,
 
 std::optional<net::SchemefulSite>
 FirstPartySetParser::CanonicalizeRegisteredDomain(
-    const base::StringPiece origin_string,
+    const std::string_view origin_string,
     bool emit_errors) {
   ValidateSiteResult result =
       ParseContext(emit_errors, /*exempt_from_limits=*/false)

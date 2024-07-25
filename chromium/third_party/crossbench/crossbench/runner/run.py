@@ -34,12 +34,12 @@ if TYPE_CHECKING:
 
 
 @enum.unique
-class RunState(enum.IntEnum):
-  INITIAL = enum.auto()
-  SETUP = enum.auto()
-  READY = enum.auto()
-  RUN = enum.auto()
-  DONE = enum.auto()
+class RunState(compat.StrEnum):
+  INITIAL = "INITIAL"
+  SETUP = "SETUP"
+  READY = "READY"
+  RUN = "RUN"
+  DONE = "DONE"
 
 
 @enum.unique
@@ -360,6 +360,7 @@ class Run:
 
   def _handle_setup_error(self, setup_exception: BaseException) -> None:
     self._advance_state(RunState.SETUP, RunState.DONE)
+    logging.debug("Handling setup error")
     self._exceptions.append(setup_exception)
     assert self._state == RunState.DONE
     assert not self._exceptions.is_success
@@ -368,7 +369,7 @@ class Run:
         context for context in self._probe_contexts
         if isinstance(context.probe, internal_probe.InternalProbe)
     ]
-    self._tear_down_probe_contexts(internal_probe_contexts)
+    self._tear_down_probe_contexts(internal_probe_contexts, setup_error=True)
 
   def run(self, is_dry_run: bool = False) -> None:
     self._advance_state(RunState.SETUP, RunState.READY)
@@ -462,9 +463,11 @@ class Run:
           self._browser.quit(self._runner)  # pytype: disable=wrong-arg-types
 
   def _tear_down_probe_contexts(self,
-                                probe_contexts: List[ProbeContext]) -> None:
+                                probe_contexts: List[ProbeContext],
+                                setup_error: bool = False) -> None:
     assert self._state == RunState.DONE
-    assert probe_contexts, "Expected non-empty probe_contexts list."
+    if not setup_error:
+      assert probe_contexts, "Expected non-empty probe_contexts list."
     logging.debug("PROBE SCOPE TEARDOWN")
     for probe_context in reversed(probe_contexts):
       with self.exceptions.capture(f"Probe {probe_context.name} teardown"):

@@ -372,8 +372,11 @@ int SpdyProxyClientSocket::DoSendRequest() {
 
   if (proxy_delegate_) {
     HttpRequestHeaders proxy_delegate_headers;
-    proxy_delegate_->OnBeforeTunnelRequest(proxy_chain_, proxy_chain_index_,
-                                           &proxy_delegate_headers);
+    int result = proxy_delegate_->OnBeforeTunnelRequest(
+        proxy_chain_, proxy_chain_index_, &proxy_delegate_headers);
+    if (result < 0) {
+      return result;
+    }
     request_.extra_headers.MergeFrom(proxy_delegate_headers);
   }
 
@@ -386,7 +389,7 @@ int SpdyProxyClientSocket::DoSendRequest() {
                        request_line, &request_.extra_headers);
 
   spdy::Http2HeaderBlock headers;
-  CreateSpdyHeadersFromHttpRequest(request_, absl::nullopt,
+  CreateSpdyHeadersFromHttpRequest(request_, std::nullopt,
                                    request_.extra_headers, &headers);
 
   return spdy_stream_->SendRequestHeaders(std::move(headers),

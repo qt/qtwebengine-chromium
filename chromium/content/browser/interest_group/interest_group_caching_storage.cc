@@ -15,6 +15,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
+#include "content/browser/interest_group/bidding_and_auction_server_key_fetcher.h"
 #include "content/browser/interest_group/interest_group_manager_impl.h"
 #include "content/browser/interest_group/interest_group_storage.h"
 #include "content/browser/interest_group/storage_interest_group.h"
@@ -24,10 +25,7 @@
 
 namespace {
 bool CacheIsEnabled() {
-  // Do not use cache for the testing population.
-  return !base::FeatureList::IsEnabled(
-             features::kCookieDeprecationFacilitatedTesting) &&
-         base::FeatureList::IsEnabled(features::kFledgeUseInterestGroupCache);
+  return base::FeatureList::IsEnabled(features::kFledgeUseInterestGroupCache);
 }
 
 std::optional<content::SingleStorageInterestGroup>
@@ -214,6 +212,14 @@ void InterestGroupCachingStorage::UpdateInterestGroup(
       .Then(std::move(notify_callback));
 }
 
+void InterestGroupCachingStorage::AllowUpdateIfOlderThan(
+    const blink::InterestGroupKey& group_key,
+    base::TimeDelta update_if_older_than) {
+  interest_group_storage_
+      .AsyncCall(&InterestGroupStorage::AllowUpdateIfOlderThan)
+      .WithArgs(group_key, update_if_older_than);
+}
+
 void InterestGroupCachingStorage::ReportUpdateFailed(
     const blink::InterestGroupKey& group_key,
     bool parse_failure) {
@@ -287,21 +293,21 @@ void InterestGroupCachingStorage::UpdateKAnonymity(
 }
 
 void InterestGroupCachingStorage::GetLastKAnonymityReported(
-    const std::string& key,
+    const std::string& hashed_key,
     base::OnceCallback<void(std::optional<base::Time>)> callback) {
   interest_group_storage_
       .AsyncCall(&InterestGroupStorage::GetLastKAnonymityReported)
-      .WithArgs(key)
+      .WithArgs(hashed_key)
       .Then(std::move(callback));
 }
 
 void InterestGroupCachingStorage::UpdateLastKAnonymityReported(
-    const std::string& key) {
+    const std::string& hashed_key) {
   // We don't need to invalidate any cached objects here because this value is
   // not loaded in GetInterestGroupsForOwner.
   interest_group_storage_
       .AsyncCall(&InterestGroupStorage::UpdateLastKAnonymityReported)
-      .WithArgs(key);
+      .WithArgs(hashed_key);
 }
 
 void InterestGroupCachingStorage::GetInterestGroup(
@@ -437,6 +443,25 @@ void InterestGroupCachingStorage::UpdateInterestGroupPriorityOverrides(
   interest_group_storage_
       .AsyncCall(&InterestGroupStorage::UpdateInterestGroupPriorityOverrides)
       .WithArgs(group_key, std::move(update_priority_signals_overrides));
+}
+
+void InterestGroupCachingStorage::SetBiddingAndAuctionServerKeys(
+    const url::Origin& coordinator,
+    const std::vector<BiddingAndAuctionServerKey>& keys,
+    base::Time expiration) {
+  interest_group_storage_
+      .AsyncCall(&InterestGroupStorage::SetBiddingAndAuctionServerKeys)
+      .WithArgs(coordinator, keys, expiration);
+}
+void InterestGroupCachingStorage::GetBiddingAndAuctionServerKeys(
+    const url::Origin& coordinator,
+    base::OnceCallback<
+        void(std::pair<base::Time, std::vector<BiddingAndAuctionServerKey>>)>
+        callback) {
+  interest_group_storage_
+      .AsyncCall(&InterestGroupStorage::GetBiddingAndAuctionServerKeys)
+      .WithArgs(coordinator)
+      .Then(std::move(callback));
 }
 
 void InterestGroupCachingStorage::GetLastMaintenanceTimeForTesting(

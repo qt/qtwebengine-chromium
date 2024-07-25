@@ -6,6 +6,7 @@
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
+#include "llvm/Support/TimeProfiler.h"
 
 #include "FindBadConstructsConsumer.h"
 
@@ -50,6 +51,8 @@ class PluginConsumer : public ASTConsumer {
       : visitor_(*instance, options) {}
 
   void HandleTranslationUnit(clang::ASTContext& context) override {
+    llvm::TimeTraceScope TimeScope(
+        "HandleTranslationUnit for find-bad-constructs plugin");
     visitor_.Traverse(context);
   }
 
@@ -71,18 +74,20 @@ std::unique_ptr<ASTConsumer> FindBadConstructsAction::CreateASTConsumer(
 bool FindBadConstructsAction::ParseArgs(const CompilerInstance& instance,
                                         const std::vector<std::string>& args) {
   for (llvm::StringRef arg : args) {
-    if (arg.startswith(kExcludeFieldsArgPrefix)) {
+    if (arg.starts_with(kExcludeFieldsArgPrefix)) {
       options_.exclude_fields_file =
           arg.substr(strlen(kExcludeFieldsArgPrefix)).str();
-    } else if (arg.startswith(kRawPtrExcludePathArgPrefix)) {
+    } else if (arg.starts_with(kRawPtrExcludePathArgPrefix)) {
       options_.raw_ptr_paths_to_exclude_lines.push_back(
           arg.substr(strlen(kRawPtrExcludePathArgPrefix)).str());
-    } else if (arg.startswith(kCheckBadRawPtrCastExcludeFuncArgPrefix)) {
+    } else if (arg.starts_with(kCheckBadRawPtrCastExcludeFuncArgPrefix)) {
       options_.check_bad_raw_ptr_cast_exclude_funcs.push_back(
           arg.substr(strlen(kCheckBadRawPtrCastExcludeFuncArgPrefix)).str());
-    } else if (arg.startswith(kBadRawPtrCastExcludePathArgPrefix)) {
+    } else if (arg.starts_with(kBadRawPtrCastExcludePathArgPrefix)) {
       options_.check_bad_raw_ptr_cast_exclude_paths.push_back(
           arg.substr(strlen(kBadRawPtrCastExcludePathArgPrefix)).str());
+    } else if (arg == "check-allow-auto-typedefs-better-nested") {
+      // This flag to be removed once clang rolls.
     } else if (arg == "check-base-classes") {
       // TODO(rsleevi): Remove this once http://crbug.com/123295 is fixed.
       options_.check_base_classes = true;
@@ -106,6 +111,24 @@ bool FindBadConstructsAction::ParseArgs(const CompilerInstance& instance,
       options_.check_stack_allocated = true;
     } else if (arg == "check-raw-ref-fields") {
       options_.check_raw_ref_fields = true;
+    } else if (arg == "check-ptrs-to-non-string-literals") {
+      // Rewriting const char pointers was skipped for performance as they are
+      // likely to point to string literals.
+      //
+      // This exclusion mechanism also wrongly excluded some non-string-literals
+      // like `const uint8_t*` and `const int8*`.
+      //
+      // This flag is added to gradually re-include these types in the
+      // enforcement plugin.
+      //
+      // TODO(https://crbug.com/331840473) Remove this flag
+      // once the necessary members are rewritten and the raw_ptr enforcement
+      // plugin is up to date.
+      options_.check_ptrs_to_non_string_literals = true;
+    } else if (arg == "check-span-fields") {
+      options_.check_span_fields = true;
+    } else if (arg == "enable-match-profiling") {
+      options_.enable_match_profiling = true;
     } else {
       llvm::errs() << "Unknown clang plugin argument: " << arg << "\n";
       return false;

@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "fxjs/xfa/cfxjse_formcalc_context.h"
 
 #include <ctype.h>
@@ -12,17 +17,23 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "core/fxcrt/cfx_datetime.h"
+#include "core/fxcrt/check_op.h"
 #include "core/fxcrt/code_point_view.h"
+#include "core/fxcrt/containers/contains.h"
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_random.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/span_util.h"
 #include "core/fxcrt/widetext_buffer.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_class.h"
@@ -30,9 +41,6 @@
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
 #include "fxjs/xfa/cjx_object.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/numerics/safe_conversions.h"
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-function-callback.h"
 #include "v8/include/v8-local-handle.h"
@@ -60,7 +68,9 @@ constexpr int kMaxCharCount = 15654908;
 
 const double kFinancialPrecision = 0.00000001;
 
-const wchar_t kStrCode[] = L"0123456789abcdef";
+constexpr std::array<wchar_t, 16> kStrCode = {
+    {L'0', L'1', L'2', L'3', L'4', L'5', L'6', L'7', L'8', L'9', L'a', L'b',
+     L'c', L'd', L'e', L'f'}};
 
 struct XFA_FMHtmlReserveCode {
   uint16_t m_uCode;
@@ -346,27 +356,35 @@ void AlternateDateTimeSymbols(WideString* pPattern,
 std::pair<bool, CXFA_LocaleValue::ValueType> PatternStringType(
     ByteStringView bsPattern) {
   WideString wsPattern = WideString::FromUTF8(bsPattern);
-  if (L"datetime" == wsPattern.First(8))
+  if (wsPattern.First(8).EqualsASCII("datetime")) {
     return {true, CXFA_LocaleValue::ValueType::kDateTime};
-  if (L"date" == wsPattern.First(4)) {
+  }
+  if (wsPattern.First(4).EqualsASCII("date")) {
     auto pos = wsPattern.Find(L"time");
-    if (pos.has_value() && pos.value() != 0)
+    if (pos.has_value() && pos.value() != 0) {
       return {true, CXFA_LocaleValue::ValueType::kDateTime};
+    }
     return {true, CXFA_LocaleValue::ValueType::kDate};
   }
-  if (L"time" == wsPattern.First(4))
+  if (wsPattern.First(4).EqualsASCII("time")) {
     return {true, CXFA_LocaleValue::ValueType::kTime};
-  if (L"text" == wsPattern.First(4))
+  }
+  if (wsPattern.First(4).EqualsASCII("text")) {
     return {true, CXFA_LocaleValue::ValueType::kText};
-  if (L"num" == wsPattern.First(3)) {
-    if (L"integer" == wsPattern.Substr(4, 7))
+  }
+  if (wsPattern.First(3).EqualsASCII("num")) {
+    if (wsPattern.Substr(4, 7).EqualsASCII("integer")) {
       return {true, CXFA_LocaleValue::ValueType::kInteger};
-    if (L"decimal" == wsPattern.Substr(4, 7))
+    }
+    if (wsPattern.Substr(4, 7).EqualsASCII("decimal")) {
       return {true, CXFA_LocaleValue::ValueType::kDecimal};
-    if (L"currency" == wsPattern.Substr(4, 8))
+    }
+    if (wsPattern.Substr(4, 8).EqualsASCII("currency")) {
       return {true, CXFA_LocaleValue::ValueType::kFloat};
-    if (L"percent" == wsPattern.Substr(4, 7))
+    }
+    if (wsPattern.Substr(4, 7).EqualsASCII("percent")) {
       return {true, CXFA_LocaleValue::ValueType::kFloat};
+    }
     return {true, CXFA_LocaleValue::ValueType::kFloat};
   }
 
@@ -492,7 +510,8 @@ bool IsPartOfNumberW(wchar_t ch) {
 
 ByteString GUIDString(bool bSeparator) {
   uint8_t data[16];
-  FX_Random_GenerateMT(reinterpret_cast<uint32_t*>(data), 4);
+  auto random_span = pdfium::make_span(data);
+  FX_Random_GenerateMT(fxcrt::reinterpret_span<uint32_t>(random_span));
   data[6] = (data[6] & 0x0F) | 0x40;
 
   ByteString bsGUID;
@@ -564,12 +583,12 @@ WideString DecodeURL(const WideString& wsURL) {
       wsResultBuf.AppendChar(ch);
       continue;
     }
-
     wchar_t chTemp = 0;
     int32_t iCount = 0;
     while (iCount < 2) {
-      if (++i >= iLen)
-        break;
+      if (++i >= iLen) {
+        return WideString();
+      }
       chTemp *= 16;
       ch = pData[i];
       if (!FXSYS_IsWideHexDigit(ch))
@@ -663,93 +682,53 @@ WideString EncodeURL(const ByteString& bsURL) {
                                             '^', '~', '[', ']', '`'};
   static constexpr char32_t kStrReserved[] = {';', '/', '?', ':',
                                               '@', '=', '&'};
-  static constexpr char32_t kStrSpecial[] = {'$',  '-', '+', '!', '*',
-                                             '\'', '(', ')', ','};
 
   WideString wsURL = WideString::FromUTF8(bsURL.AsStringView());
   WideTextBuffer wsResultBuf;
-  wchar_t encode_buffer[3];
-  encode_buffer[0] = '%';
+  std::array<wchar_t, 3> encode_buffer = {L'%'};  // Starts with %.
   for (char32_t ch : pdfium::CodePointView(wsURL.AsStringView())) {
-    size_t i = 0;
-    size_t iCount = std::size(kStrUnsafe);
-    while (i < iCount) {
-      if (ch == kStrUnsafe[i]) {
-        int32_t iIndex = ch / 16;
-        encode_buffer[1] = kStrCode[iIndex];
-        encode_buffer[2] = kStrCode[ch - iIndex * 16];
-        wsResultBuf << WideStringView(encode_buffer, 3);
-        break;
-      }
-      ++i;
-    }
-    if (i < iCount)
-      continue;
-
-    i = 0;
-    iCount = std::size(kStrReserved);
-    while (i < iCount) {
-      if (ch == kStrReserved[i]) {
-        int32_t iIndex = ch / 16;
-        encode_buffer[1] = kStrCode[iIndex];
-        encode_buffer[2] = kStrCode[ch - iIndex * 16];
-        wsResultBuf << WideStringView(encode_buffer, 3);
-        break;
-      }
-      ++i;
-    }
-    if (i < iCount)
-      continue;
-
-    i = 0;
-    iCount = std::size(kStrSpecial);
-    while (i < iCount) {
-      if (ch == kStrSpecial[i]) {
-        wsResultBuf.AppendChar(ch);
-        break;
-      }
-      ++i;
-    }
-    if (i < iCount)
-      continue;
-
-    if ((ch >= 0x80 && ch <= 0xff) || ch <= 0x1f || ch == 0x7f) {
+    if (ch <= 0x1f || (ch >= 0x7f && ch <= 0xff) ||
+        pdfium::Contains(kStrUnsafe, ch) ||
+        pdfium::Contains(kStrReserved, ch)) {
       int32_t iIndex = ch / 16;
       encode_buffer[1] = kStrCode[iIndex];
       encode_buffer[2] = kStrCode[ch - iIndex * 16];
-      wsResultBuf << WideStringView(encode_buffer, 3);
-    } else if (ch >= 0x20 && ch <= 0x7e) {
+      wsResultBuf << WideStringView(encode_buffer);
+      continue;
+    }
+    if (ch >= 0x20 && ch <= 0x7e) {
       wsResultBuf.AppendChar(ch);
-    } else {
-      const wchar_t iRadix = 16;
-      WideString wsBuffer;
-      while (ch >= iRadix) {
-        wchar_t tmp = kStrCode[ch % iRadix];
-        ch /= iRadix;
-        wsBuffer += tmp;
-      }
-      wsBuffer += kStrCode[ch];
-      int32_t iLen = wsBuffer.GetLength();
-      if (iLen < 2)
-        break;
+      continue;
+    }
+    const wchar_t iRadix = 16;
+    WideString wsBuffer;
+    while (ch >= iRadix) {
+      wchar_t tmp = kStrCode[ch % iRadix];
+      ch /= iRadix;
+      wsBuffer += tmp;
+    }
+    wsBuffer += kStrCode[ch];
+    int32_t iLen = wsBuffer.GetLength();
+    if (iLen < 2) {
+      break;
+    }
 
-      int32_t iIndex = 0;
-      if (iLen % 2 != 0) {
-        encode_buffer[1] = '0';
-        encode_buffer[2] = wsBuffer[iLen - 1];
-        iIndex = iLen - 2;
-      } else {
-        encode_buffer[1] = wsBuffer[iLen - 1];
-        encode_buffer[2] = wsBuffer[iLen - 2];
-        iIndex = iLen - 3;
-      }
-      wsResultBuf << WideStringView(encode_buffer, 3);
-      while (iIndex > 0) {
-        encode_buffer[1] = wsBuffer[iIndex];
-        encode_buffer[2] = wsBuffer[iIndex - 1];
-        iIndex -= 2;
-        wsResultBuf << WideStringView(encode_buffer, 3);
-      }
+    int32_t iIndex = 0;
+    if (iLen % 2 != 0) {
+      encode_buffer[1] = '0';
+      encode_buffer[2] = wsBuffer[iLen - 1];
+      iIndex = iLen - 2;
+    } else {
+      encode_buffer[1] = wsBuffer[iLen - 1];
+      encode_buffer[2] = wsBuffer[iLen - 2];
+      iIndex = iLen - 3;
+    }
+    wsResultBuf << WideStringView(encode_buffer);
+    while (iIndex > 0) {
+      encode_buffer[1] = wsBuffer[iIndex];
+      encode_buffer[2] = wsBuffer[iIndex - 1];
+      iIndex -= 2;
+      wsResultBuf << WideStringView(encode_buffer);
     }
   }
   return wsResultBuf.MakeString();
@@ -1123,8 +1102,8 @@ double ValueToDouble(v8::Isolate* pIsolate, v8::Local<v8::Value> arg) {
   return fxv8::ReentrantToDoubleHelper(pIsolate, extracted);
 }
 
-absl::optional<double> ExtractDouble(v8::Isolate* pIsolate,
-                                     v8::Local<v8::Value> src) {
+std::optional<double> ExtractDouble(v8::Isolate* pIsolate,
+                                    v8::Local<v8::Value> src) {
   if (src.IsEmpty())
     return 0.0;
 
@@ -1134,7 +1113,7 @@ absl::optional<double> ExtractDouble(v8::Isolate* pIsolate,
   v8::Local<v8::Array> arr = src.As<v8::Array>();
   uint32_t iLength = fxv8::GetArrayLengthHelper(arr);
   if (iLength < 3)
-    return absl::nullopt;
+    return std::nullopt;
 
   v8::Local<v8::Value> propertyValue =
       fxv8::ReentrantGetArrayElementHelper(pIsolate, arr, 1);
@@ -1235,7 +1214,7 @@ v8::Local<v8::Value> GetObjectForName(CFXJSE_HostObject* pHostObject,
     return v8::Local<v8::Value>();
 
   CFXJSE_Engine* pScriptContext = pDoc->GetScriptContext();
-  absl::optional<CFXJSE_Engine::ResolveResult> maybeResult =
+  std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
       pScriptContext->ResolveObjects(
           pScriptContext->GetThisObject(),
           WideString::FromUTF8(bsAccessorName).AsStringView(),
@@ -1251,7 +1230,7 @@ v8::Local<v8::Value> GetObjectForName(CFXJSE_HostObject* pHostObject,
       maybeResult.value().objects.front().Get());
 }
 
-absl::optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
+std::optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     CFXJSE_HostObject* pHostObject,
     v8::Local<v8::Value> pRefValue,
     ByteStringView bsSomExp,
@@ -1259,7 +1238,7 @@ absl::optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     bool bHasNoResolveName) {
   CXFA_Document* pDoc = ToFormCalcContext(pHostObject)->GetDocument();
   if (!pDoc)
-    return absl::nullopt;
+    return std::nullopt;
 
   v8::Isolate* pIsolate = ToFormCalcContext(pHostObject)->GetIsolate();
   WideString wsSomExpression = WideString::FromUTF8(bsSomExp);
@@ -1273,12 +1252,12 @@ absl::optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     } else {
       pNode = CFXJSE_Engine::ToObject(pIsolate, pRefValue);
       if (!pNode)
-        return absl::nullopt;
+        return std::nullopt;
 
       if (bHasNoResolveName) {
         WideString wsName;
         if (CXFA_Node* pXFANode = pNode->AsNode()) {
-          absl::optional<WideString> ret =
+          std::optional<WideString> ret =
               pXFANode->JSObject()->TryAttribute(XFA_Attribute::Name, false);
           if (ret.has_value())
             wsName = ret.value();
@@ -1359,7 +1338,6 @@ const FXJSE_CLASS_DESCRIPTOR kFormCalcDescriptor = {
     kClassTag,                      // tag
     "XFA_FormCalcClass",            // name
     kFormCalcFunctions,             // methods
-    std::size(kFormCalcFunctions),  // number of methods
     nullptr,                        // dynamic prop type
     nullptr,                        // dynamic prop getter
     nullptr,                        // dynamic prop setter
@@ -1516,9 +1494,9 @@ void CFXJSE_FormCalcContext::Mod(
     return;
   }
 
-  absl::optional<double> maybe_dividend =
+  std::optional<double> maybe_dividend =
       ExtractDouble(info.GetIsolate(), info[0]);
-  absl::optional<double> maybe_divisor =
+  std::optional<double> maybe_divisor =
       ExtractDouble(info.GetIsolate(), info[1]);
   if (!maybe_dividend.has_value() || !maybe_divisor.has_value()) {
     pContext->ThrowArgumentMismatchException();
@@ -1552,8 +1530,7 @@ void CFXJSE_FormCalcContext::Round(
     return;
   }
 
-  absl::optional<double> maybe_value =
-      ExtractDouble(info.GetIsolate(), info[0]);
+  std::optional<double> maybe_value = ExtractDouble(info.GetIsolate(), info[0]);
   if (!maybe_value.has_value()) {
     pContext->ThrowArgumentMismatchException();
     return;
@@ -1566,7 +1543,7 @@ void CFXJSE_FormCalcContext::Round(
       info.GetReturnValue().SetNull();
       return;
     }
-    absl::optional<double> maybe_precision =
+    std::optional<double> maybe_precision =
         ExtractDouble(info.GetIsolate(), info[1]);
     if (!maybe_precision.has_value()) {
       pContext->ThrowArgumentMismatchException();
@@ -2891,7 +2868,7 @@ void CFXJSE_FormCalcContext::HasValue(
 
   ByteString bsValue =
       fxv8::ReentrantToByteStringHelper(info.GetIsolate(), argOne);
-  bsValue.TrimLeft();
+  bsValue.TrimWhitespaceFront();
   info.GetReturnValue().Set(static_cast<int>(!bsValue.IsEmpty()));
 }
 
@@ -2982,7 +2959,7 @@ void CFXJSE_FormCalcContext::Eval(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsUtf8Script.AsStringView());
-  absl::optional<WideTextBuffer> wsJavaScriptBuf =
+  std::optional<WideTextBuffer> wsJavaScriptBuf =
       CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
@@ -3481,10 +3458,10 @@ void CFXJSE_FormCalcContext::Format(
           info.GetReturnValue().SetEmptyString();
           return;
         }
-        WideString wsDatePattern(L"date{");
+        auto wsDatePattern = WideString::FromASCII("date{");
         wsDatePattern += wsPattern.First(iTChar.value()) + L"} ";
 
-        WideString wsTimePattern(L"time{");
+        auto wsTimePattern = WideString::FromASCII("time{");
         wsTimePattern +=
             wsPattern.Last(wsPattern.GetLength() - (iTChar.value() + 1)) + L"}";
         wsPattern = wsDatePattern + wsTimePattern;
@@ -3616,7 +3593,7 @@ void CFXJSE_FormCalcContext::Ltrim(
   }
 
   ByteString bsSource = ValueToUTF8String(info.GetIsolate(), argOne);
-  bsSource.TrimLeft();
+  bsSource.TrimWhitespaceFront();
   info.GetReturnValue().Set(
       fxv8::NewStringHelper(info.GetIsolate(), bsSource.AsStringView()));
 }
@@ -3835,7 +3812,7 @@ void CFXJSE_FormCalcContext::Rtrim(
   }
 
   ByteString bsSource = ValueToUTF8String(info.GetIsolate(), argOne);
-  bsSource.TrimRight();
+  bsSource.TrimWhitespaceBack();
   info.GetReturnValue().Set(
       fxv8::NewStringHelper(info.GetIsolate(), bsSource.AsStringView()));
 }
@@ -4006,7 +3983,7 @@ void CFXJSE_FormCalcContext::Stuff(
   int32_t iStart = 1;  // one-based character indexing.
   int32_t iDelete = 0;
   ByteString bsSource = ValueToUTF8String(info.GetIsolate(), sourceValue);
-  int32_t iLength = pdfium::base::checked_cast<int32_t>(bsSource.GetLength());
+  int32_t iLength = pdfium::checked_cast<int32_t>(bsSource.GetLength());
   if (iLength) {
     iStart = std::clamp(
         static_cast<int32_t>(ValueToFloat(info.GetIsolate(), startValue)), 1,
@@ -4783,7 +4760,7 @@ void CFXJSE_FormCalcContext::eval_translation(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsArg.AsStringView());
-  absl::optional<WideTextBuffer> wsJavaScriptBuf =
+  std::optional<WideTextBuffer> wsJavaScriptBuf =
       CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
                                         wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
@@ -4972,7 +4949,7 @@ ByteString CFXJSE_FormCalcContext::GenerateSomExpression(ByteStringView bsName,
   return bsSomExp;
 }
 
-absl::optional<WideTextBuffer> CFXJSE_FormCalcContext::Translate(
+std::optional<WideTextBuffer> CFXJSE_FormCalcContext::Translate(
     cppgc::Heap* pHeap,
     WideStringView wsFormcalc) {
   if (wsFormcalc.IsEmpty())
@@ -4982,15 +4959,15 @@ absl::optional<WideTextBuffer> CFXJSE_FormCalcContext::Translate(
   CXFA_FMParser parser(pHeap, &lexer);
   CXFA_FMAST* ast = parser.Parse();
   if (!ast || parser.HasError())
-    return absl::nullopt;
+    return std::nullopt;
 
   CXFA_FMToJavaScriptDepth::Reset();
-  absl::optional<WideTextBuffer> wsJavaScript = ast->ToJavaScript();
+  std::optional<WideTextBuffer> wsJavaScript = ast->ToJavaScript();
   if (!wsJavaScript.has_value())
-    return absl::nullopt;
+    return std::nullopt;
 
   if (CXFA_IsTooBig(wsJavaScript.value()))
-    return absl::nullopt;
+    return std::nullopt;
 
   return wsJavaScript;
 }
@@ -5062,7 +5039,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     for (uint32_t i = 2; i < iLength; i++) {
       v8::Local<v8::Value> hJSObjValue =
           fxv8::ReentrantGetArrayElementHelper(info.GetIsolate(), arr, i);
-      absl::optional<CFXJSE_Engine::ResolveResult> maybeResult =
+      std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
           ResolveObjects(pThis, hJSObjValue, bsSomExp.AsStringView(),
                          bDotAccessor, bHasNoResolveName);
       if (maybeResult.has_value()) {
@@ -5091,7 +5068,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     return;
   }
 
-  absl::optional<CFXJSE_Engine::ResolveResult> maybeResult;
+  std::optional<CFXJSE_Engine::ResolveResult> maybeResult;
   ByteString bsAccessorName =
       fxv8::ReentrantToByteStringHelper(info.GetIsolate(), info[1]);
   if (fxv8::IsObject(argAccessor) ||

@@ -631,6 +631,9 @@ class PreParserFactory {
                                    int pos) {
     return PreParserExpression::Default();
   }
+  PreParserExpression NewConditionalChain(size_t initial_size, int pos) {
+    return PreParserExpression::Default();
+  }
   PreParserExpression NewConditional(const PreParserExpression& condition,
                                      const PreParserExpression& then_expression,
                                      const PreParserExpression& else_expression,
@@ -794,7 +797,7 @@ class PreParserFactory {
 
   PreParserExpression NewImportCallExpression(
       const PreParserExpression& specifier,
-      const PreParserExpression& import_assertions, int pos) {
+      const PreParserExpression& import_options, int pos) {
     return PreParserExpression::Default();
   }
 
@@ -1077,7 +1080,7 @@ class PreParser : public ParserBase<PreParser> {
                                        ClassScope* scope, VariableMode mode,
                                        IsStaticFlag is_static_flag,
                                        bool* was_added) {
-    DCHECK(IsConstVariableMode(mode));
+    DCHECK(IsImmutableLexicalOrPrivateVariableMode(mode));
     return scope->DeclarePrivateName(name, mode, is_static_flag, was_added);
   }
 
@@ -1126,11 +1129,11 @@ class PreParser : public ParserBase<PreParser> {
   }
   V8_INLINE void ParseAndRewriteGeneratorFunctionBody(
       int pos, FunctionKind kind, PreParserScopedStatementList* body) {
-    ParseStatementList(body, Token::RBRACE);
+    ParseStatementList(body, Token::kRightBrace);
   }
   V8_INLINE void ParseAndRewriteAsyncGeneratorFunctionBody(
       int pos, FunctionKind kind, PreParserScopedStatementList* body) {
-    ParseStatementList(body, Token::RBRACE);
+    ParseStatementList(body, Token::kRightBrace);
   }
   V8_INLINE void DeclareFunctionNameVar(const AstRawString* function_name,
                                         FunctionSyntaxKind function_syntax_kind,
@@ -1163,7 +1166,7 @@ class PreParser : public ParserBase<PreParser> {
                                         &was_added, beg_pos, kind);
     if (kind == SLOPPY_BLOCK_FUNCTION_VARIABLE) {
       Token::Value init =
-          loop_nesting_depth() > 0 ? Token::ASSIGN : Token::INIT;
+          loop_nesting_depth() > 0 ? Token::kAssign : Token::kInit;
       SloppyBlockFunctionStatement* statement =
           factory()->ast_node_factory()->NewSloppyBlockFunctionStatement(
               end_pos, var, init);
@@ -1187,7 +1190,7 @@ class PreParser : public ParserBase<PreParser> {
                                       const PreParserIdentifier& name,
                                       ClassInfo* class_info,
                                       int class_token_pos) {
-    DCHECK_IMPLIES(IsNull(name), class_info->is_anonymous);
+    DCHECK_IMPLIES(IsEmptyIdentifier(name), class_info->is_anonymous);
     // Declare a special class variable for anonymous classes with the dot
     // if we need to save it for static private method access.
     scope->DeclareClassVariable(ast_value_factory(), name.string_,
@@ -1369,6 +1372,18 @@ class PreParser : public ParserBase<PreParser> {
     return false;
   }
 
+  V8_INLINE bool CollapseConditionalChain(PreParserExpression* x,
+                                          PreParserExpression cond,
+                                          PreParserExpression then_expression,
+                                          PreParserExpression else_expression,
+                                          int pos,
+                                          const SourceRange& then_range) {
+    return false;
+  }
+
+  V8_INLINE void AppendConditionalChainElse(PreParserExpression* x,
+                                            const SourceRange& else_range) {}
+
   V8_INLINE NaryOperation* CollapseNaryExpression(PreParserExpression* x,
                                                   PreParserExpression y,
                                                   Token::Value op, int pos,
@@ -1502,6 +1517,9 @@ class PreParser : public ParserBase<PreParser> {
     result.string_ = ast_value_factory()->empty_string();
     return result;
   }
+  V8_INLINE bool IsEmptyIdentifier(PreParserIdentifier subject) {
+    return subject.string_->IsEmpty();
+  }
 
   // Producing data during the recursive descent.
   PreParserIdentifier GetSymbol() const {
@@ -1556,7 +1574,7 @@ class PreParser : public ParserBase<PreParser> {
 
   V8_INLINE PreParserExpression ExpressionFromLiteral(Token::Value token,
                                                       int pos) {
-    if (token != Token::STRING) return PreParserExpression::Default();
+    if (token != Token::kString) return PreParserExpression::Default();
     return PreParserExpression::StringLiteral();
   }
 

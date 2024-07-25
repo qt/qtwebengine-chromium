@@ -4,11 +4,16 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/cmaps/fpdf_cmaps.h"
 
 #include <algorithm>
 
-#include "third_party/base/check.h"
+#include "core/fxcrt/check.h"
 
 namespace fxcmap {
 

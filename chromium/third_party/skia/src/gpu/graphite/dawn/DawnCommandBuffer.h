@@ -48,7 +48,7 @@ private:
                          const Texture* depthStencilTexture,
                          SkRect viewport,
                          const DrawPassList&) override;
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     // Methods for populating a Dawn RenderPassEncoder:
     bool beginRenderPass(const RenderPassDesc&,
@@ -108,6 +108,7 @@ private:
     void bindComputePipeline(const ComputePipeline*);
     void bindDispatchResources(const DispatchGroup&, const DispatchGroup::Dispatch&);
     void dispatchWorkgroups(const WorkgroupSize& globalSize);
+    void dispatchWorkgroupsIndirect(const Buffer* indirectBuffer, size_t indirectBufferOffset);
     void endComputePass();
 
     // Methods for doing texture/buffer to texture/buffer copying:

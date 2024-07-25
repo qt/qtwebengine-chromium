@@ -69,7 +69,7 @@
       'V8 Linux64 - builder (goma cache silo)': 'release_x64',
       'V8 Linux64 - builder (reclient)': 'release_x64_reclient',
       'V8 Linux64 - builder (reclient compare)': 'release_x64_reclient',
-      'V8 Linux64 - official - builder': 'official_x64',
+      'V8 Linux64 - official - builder': 'official_x64_on_release_branch',
       'V8 Linux64 - debug builder': 'debug_x64',
       'V8 Linux64 - no shared cage - debug builder': 'debug_x64_no_shared_cage',
       'V8 Linux64 - external code space - debug - builder': 'debug_x64_external_code_space',
@@ -82,6 +82,7 @@
       'V8 Linux64 - verify csa - builder': 'release_x64_verify_csa',
       'V8 Linux64 - no wasm - builder': 'release_x64_webassembly_disabled',
       # Windows.
+      'V8 Win - arm64 - debug builder': 'debug_arm64',
       'V8 Win32 - builder': 'release_x86_minimal_symbols',
       'V8 Win32 - builder (goma cache silo)': 'release_x86',
       'V8 Win32 - builder (reclient)': 'release_x86_minimal_symbols_reclient',
@@ -117,6 +118,7 @@
       # FYI.
       'V8 iOS - sim - builder': 'release_x64_ios_simulator',
       'V8 Linux64 - arm64 - builder': 'release_arm64',
+      'V8 Linux64 - arm64 - no pointer compression - builder': 'release_arm64_no_pointer_compression',
       'V8 Linux64 - arm64 - debug builder': 'debug_arm64',
       'V8 Linux64 - arm64 - sim - no pointer compression - builder':
           'release_simulate_arm64_no_pointer_compression',
@@ -183,8 +185,10 @@
       'V8 Clusterfuzz Linux64 TSAN - release builder': 'release_x64_tsan',
       'V8 Clusterfuzz Linux64 UBSan - release builder':
           'release_x64_ubsan_recover',
+      'V8 Clusterfuzz Linux64 sandbox testing - release builder':
+          'release_x64_sandbox_testing',
       'V8 Clusterfuzz Linux64 ASAN sandbox testing - release builder':
-          'release_x64_asan_symbolized_expose_memory_corruption',
+          'release_x64_asan_sandbox_testing',
     },
     'client.v8.perf' : {
       # Arm
@@ -257,6 +261,7 @@
       'v8_linux_vtunejit': 'debug_x86_vtunejit',
       'v8_linux64_arm64_compile_dbg': 'debug_arm64_trybot',
       'v8_linux64_arm64_compile_rel': 'release_arm64_trybot',
+      'v8_linux64_native_arm64_no_pointer_compression_compile_rel': 'release_arm64_no_pointer_compression_trybot',
       'v8_linux64_arm64_no_pointer_compression_compile_rel':
           'release_simulate_arm64_no_pointer_compression',
       'v8_linux64_asan_centipede_compile_dbg': 'debug_x64_asan_centipede',
@@ -284,7 +289,7 @@
       'v8_linux64_no_pointer_compression_compile_rel': 'release_x64_no_pointer_compression',
       'v8_linux64_compile_rel': 'release_x64_test_features_gcmole_trybot',
       'v8_linux64_no_sandbox_compile_rel': 'release_x64_no_sandbox',
-      'v8_linux64_official_compile_rel': 'official_x64',
+      'v8_linux64_official_compile_rel': 'official_x64_on_release_branch',
       'v8_linux64_predictable_compile_rel': 'release_x64_predictable',
       'v8_linux64_pku_compile_rel': 'release_x64',
       'v8_linux64_shared_compile_rel': 'release_x64_shared_verify_heap',
@@ -293,7 +298,8 @@
       'v8_linux64_arm64_no_wasm_compile_dbg': 'debug_arm64_webassembly_disabled',
       'v8_linux64_verify_csa_compile_rel': 'release_x64_verify_csa',
       'v8_linux64_asan_compile_rel': 'release_x64_asan_minimal_symbols',
-      'v8_linux64_asan_sandbox_compile_rel': 'release_x64_asan_symbolized_expose_memory_corruption',
+      'v8_linux64_sandbox_testing_compile_rel': 'release_x64_sandbox_testing',
+      'v8_linux64_asan_sandbox_testing_compile_rel': 'release_x64_asan_sandbox_testing',
       'v8_linux64_cfi_compile_rel': 'release_x64_cfi',
       'v8_linux64_fuzzilli_compile_rel': 'release_x64_fuzzilli',
       'v8_linux64_loong64_compile_rel': 'release_simulate_loong64',
@@ -311,6 +317,7 @@
       'v8_linux64_verify_deterministic_rel': 'release_x64_verify_deterministic',
       'v8_odroid_arm_compile_rel': 'release_arm',
       'v8_linux_torque_compare': 'torque_compare',
+      'v8_win_arm64_compile_dbg': 'debug_arm64',
       # TODO(machenbach): Remove after switching to x64 on infra side.
       'v8_win_compile_dbg': 'debug_x86_trybot',
       'v8_win_compile_rel': 'release_x86_trybot',
@@ -507,10 +514,14 @@
       'release_bot', 'arm', 'hard_float'],
     'release_arm64': [
       'release_bot', 'arm64'],
+    'release_arm64_no_pointer_compression': [
+      'release_bot', 'arm64', 'v8_disable_pointer_compression'],
     'release_arm64_trybot': [
       'release_trybot', 'arm64'],
     'release_arm64_hard_float': [
       'release_bot', 'arm64', 'hard_float'],
+    'release_arm64_no_pointer_compression_trybot': [
+      'release_trybot', 'arm64', 'v8_disable_pointer_compression'],
     'release_android_arm': [
       'release_bot', 'arm', 'android', 'minimal_symbols',
       'android_strip_outputs'],
@@ -562,9 +573,11 @@
     'release_x64_asan_no_lsan_verify_heap_dchecks': [
       'release_bot', 'x64', 'asan', 'dcheck_always_on',
       'v8_enable_slow_dchecks', 'v8_verify_heap'],
-    'release_x64_asan_symbolized_expose_memory_corruption': [
+    'release_x64_sandbox_testing': [
+      'release_bot', 'x64', 'symbolized', 'v8_enable_memory_corruption_api'],
+    'release_x64_asan_sandbox_testing': [
       'release_bot', 'x64', 'asan', 'symbolized',
-      'v8_expose_memory_corruption_api'],
+      'v8_enable_memory_corruption_api'],
     'release_x64_asan_symbolized_verify_heap': [
       'release_bot', 'x64', 'asan', 'lsan', 'symbolized',
       'v8_verify_heap'],
@@ -642,6 +655,9 @@
     'official_x64_pgo': [
       'release_bot', 'x64', 'official', 'disable_chrome_pgo',
       'builtins_optimization'],
+    'official_x64_on_release_branch': [
+      'release_bot', 'x64', 'official', 'disable_chrome_pgo',
+      'v8_is_on_release_branch'],
 
     # Debug configs for x64.
     'debug_x64': [
@@ -875,7 +891,7 @@
     },
 
     'ios_simulator': {
-      'gn_args': 'target_cpu="x64" target_os="ios"',
+      'gn_args': 'target_cpu="x64" target_os="ios" use_blink=true',
     },
 
     'lld': {
@@ -1042,8 +1058,8 @@
       'gn_args': 'v8_enable_verify_heap=false',
     },
 
-    'v8_expose_memory_corruption_api': {
-      'gn_args': 'v8_expose_memory_corruption_api=true',
+    'v8_enable_memory_corruption_api': {
+      'gn_args': 'v8_enable_memory_corruption_api=true',
     },
 
     'v8_enable_lite_mode': {
@@ -1105,6 +1121,10 @@
 
     'v8_full_debug': {
       'gn_args': 'v8_optimized_debug=false',
+    },
+
+    'v8_is_on_release_branch': {
+      'gn_args': 'v8_is_on_release_branch=true',
     },
 
     'v8_optimized_debug': {

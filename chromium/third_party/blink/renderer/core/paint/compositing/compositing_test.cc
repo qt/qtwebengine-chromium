@@ -49,15 +49,9 @@ namespace blink {
     EXPECT_NEAR(expected.fA, actual.fA, error);        \
   } while (false)
 
-enum { kHitTestTransparency = 0x80 };
-
 // Tests the integration between blink and cc where a layer list is sent to cc.
-class CompositingTest : public PaintTestConfigurations,
-                        public testing::Test,
-                        private ScopedHitTestTransparencyForTest {
+class CompositingTest : public PaintTestConfigurations, public testing::Test {
  public:
-  CompositingTest()
-      : ScopedHitTestTransparencyForTest(GetParam() & kHitTestTransparency) {}
   void SetUp() override {
     web_view_helper_ = std::make_unique<frame_test_helpers::WebViewHelper>();
     web_view_helper_->Initialize();
@@ -130,10 +124,7 @@ class CompositingTest : public PaintTestConfigurations,
   test::TaskEnvironment task_environment_;
 };
 
-INSTANTIATE_TEST_SUITE_P(All,
-                         CompositingTest,
-                         ::testing::Values(PAINT_TEST_SUITE_P_VALUES,
-                                           kHitTestTransparency));
+INSTANTIATE_PAINT_TEST_SUITE_P(CompositingTest);
 
 TEST_P(CompositingTest, DisableAndEnableAcceleratedCompositing) {
   UpdateAllLifecyclePhases();
@@ -179,7 +170,6 @@ TEST_P(CompositingTest, DidScrollCallbackAfterScrollableAreaChanges) {
                                 ->property_trees()
                                 ->scroll_tree()
                                 .FindNodeFromElementId(scroll_element_id);
-  EXPECT_TRUE(scroll_node->scrollable);
   EXPECT_EQ(scroll_node->container_bounds, gfx::Size(100, 100));
 
   // Ensure a synthetic impl-side scroll offset propagates to the scrollable
@@ -187,7 +177,7 @@ TEST_P(CompositingTest, DidScrollCallbackAfterScrollableAreaChanges) {
   EXPECT_EQ(ScrollOffset(), scrollable_area->GetScrollOffset());
   cc::CompositorCommitData commit_data;
   commit_data.scrolls.push_back(
-      {scroll_element_id, gfx::Vector2dF(0, 1), absl::nullopt});
+      {scroll_element_id, gfx::Vector2dF(0, 1), std::nullopt});
   overflow_scroll_layer->layer_tree_host()->ApplyCompositorChanges(
       &commit_data);
   UpdateAllLifecyclePhases();
@@ -209,7 +199,7 @@ TEST_P(CompositingTest, DidScrollCallbackAfterScrollableAreaChanges) {
   ASSERT_EQ(overflow_scroll_layer,
             CcLayerByCcElementId(RootCcLayer(), scroll_element_id));
   commit_data.scrolls[0] = {scroll_element_id, gfx::Vector2dF(0, 1),
-                            absl::nullopt};
+                            std::nullopt};
   overflow_scroll_layer->layer_tree_host()->ApplyCompositorChanges(
       &commit_data);
 
@@ -239,14 +229,13 @@ TEST_P(CompositingTest, FrameViewScroll) {
           ->scroll_tree()
           .FindNodeFromElementId(scrollable_area->GetScrollElementId());
   ASSERT_TRUE(scroll_node);
-  EXPECT_TRUE(scroll_node->scrollable);
 
   // Ensure a synthetic impl-side scroll offset propagates to the scrollable
   // area using the DidScroll callback.
   EXPECT_EQ(ScrollOffset(), scrollable_area->GetScrollOffset());
   cc::CompositorCommitData commit_data;
   commit_data.scrolls.push_back({scrollable_area->GetScrollElementId(),
-                                 gfx::Vector2dF(0, 1), absl::nullopt});
+                                 gfx::Vector2dF(0, 1), std::nullopt});
   RootCcLayer()->layer_tree_host()->ApplyCompositorChanges(&commit_data);
   UpdateAllLifecyclePhases();
   EXPECT_EQ(ScrollOffset(0, 1), scrollable_area->GetScrollOffset());
@@ -612,9 +601,11 @@ TEST_P(CompositingTest, CompositedOverlayScrollbarUnderNonNonFastBorderRadius) {
 }
 
 // https://crbug.com/1459318
-TEST_P(CompositingTest, FullPACUpdateOnScrollWithSyntheticClipAcrossScroller) {
+TEST_P(CompositingTest,
+       FullPACUpdateOnScrollWithSyntheticClipAcrossScrollerSimpleRadius) {
   InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(), R"HTML(
-    <div id="scroll" style="width: 200px; height: 200px; border-radius: 2px;
+    <div id="scroll" style="width: 200px; height: 200px;
+                            border-radius: 2px;
                             overflow: scroll; background: white">
       <div id="masked" style="width: 100px; height: 100px;
                               backdrop-filter: blur(1px)"></div>
@@ -627,6 +618,28 @@ TEST_P(CompositingTest, FullPACUpdateOnScrollWithSyntheticClipAcrossScroller) {
   GetLocalFrameView()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_TRUE(paint_artifact_compositor()->NeedsUpdate());
+  UpdateAllLifecyclePhases();
+}
+
+// https://crbug.com/1459318
+TEST_P(CompositingTest,
+       FullPACUpdateOnScrollWithSyntheticClipAcrossScrollerComplexRadius) {
+  InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(), R"HTML(
+    <div id="scroll" style="width: 200px; height: 200px;
+                            border-radius: 2px / 4px;
+                            overflow: scroll; background: white">
+      <div id="masked" style="width: 100px; height: 100px;
+                              backdrop-filter: blur(1px)"></div>
+      <div style="height: 200px"></div>
+    </div>
+  )HTML");
+
+  EXPECT_FALSE(paint_artifact_compositor()->NeedsUpdate());
+  GetElementById("scroll")->scrollTo(0, 2);
+  GetLocalFrameView()->UpdateAllLifecyclePhasesExceptPaint(
+      DocumentUpdateReason::kTest);
+  EXPECT_TRUE(paint_artifact_compositor()->NeedsUpdate());
+  UpdateAllLifecyclePhases();
 }
 
 TEST_P(CompositingTest, HitTestOpaqueness) {
@@ -685,7 +698,7 @@ TEST_P(CompositingTest, HitTestOpaqueness) {
   )HTML");
 
   const auto hit_test_transparent =
-      RuntimeEnabledFeatures::HitTestTransparencyEnabled()
+      RuntimeEnabledFeatures::HitTestOpaquenessEnabled()
           ? cc::HitTestOpaqueness::kTransparent
           : cc::HitTestOpaqueness::kMixed;
   EXPECT_EQ(hit_test_transparent,
@@ -747,7 +760,7 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   )HTML");
 
   const auto hit_test_transparent =
-      RuntimeEnabledFeatures::HitTestTransparencyEnabled()
+      RuntimeEnabledFeatures::HitTestOpaquenessEnabled()
           ? cc::HitTestOpaqueness::kTransparent
           : cc::HitTestOpaqueness::kMixed;
   const auto hit_test_opaque =
@@ -772,7 +785,7 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   // Change of PointerEvents should not invalidate the painting layer, but not
   // the display item client.
   EXPECT_EQ(EPointerEvents::kNone, target_box->StyleRef().UsedPointerEvents());
-  if (RuntimeEnabledFeatures::HitTestTransparencyEnabled()) {
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
     EXPECT_TRUE(target_box->Layer()->SelfNeedsRepaint());
   }
   EXPECT_TRUE(display_item_client->IsValid());
@@ -783,7 +796,7 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   GetLocalFrameView()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_EQ(EPointerEvents::kAuto, target_box->StyleRef().UsedPointerEvents());
-  if (RuntimeEnabledFeatures::HitTestTransparencyEnabled()) {
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
     EXPECT_TRUE(target_box->Layer()->SelfNeedsRepaint());
   }
   EXPECT_TRUE(display_item_client->IsValid());
@@ -796,7 +809,7 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   EXPECT_EQ(EPointerEvents::kNone, target_box->StyleRef().UsedPointerEvents());
   // Change of parent inert attribute (affecting target's used pointer events)
   // should invalidate the painting layer but not the display item client.
-  if (RuntimeEnabledFeatures::HitTestTransparencyEnabled()) {
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
     EXPECT_TRUE(target_box->Layer()->SelfNeedsRepaint());
   }
   EXPECT_TRUE(display_item_client->IsValid());
@@ -807,7 +820,7 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   GetLocalFrameView()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_EQ(EPointerEvents::kAuto, target_box->StyleRef().UsedPointerEvents());
-  if (RuntimeEnabledFeatures::HitTestTransparencyEnabled()) {
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
     EXPECT_TRUE(target_box->Layer()->SelfNeedsRepaint());
   }
   EXPECT_TRUE(display_item_client->IsValid());
@@ -815,8 +828,96 @@ TEST_P(CompositingTest, HitTestOpaquenessOnChangeOfUsedPointerEvents) {
   EXPECT_EQ(hit_test_opaque, target_layer->hit_test_opaqueness());
 }
 
-class CompositingSimTest : public PaintTestConfigurations, public SimTest {
+// Based on the minimized test case of https://crbug.com/343198769.
+TEST_P(CompositingTest,
+       NonStackedScrollerWithRelativeChildAboveFixedAndAbsolute) {
+  GetLocalFrameView()
+      ->GetFrame()
+      .GetSettings()
+      ->SetPreferCompositingToLCDTextForTesting(false);
+
+  InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(), R"HTML(
+    <!doctype html>
+    <style>
+      div { width: 100px; height: 100px; }
+      ::-webkit-scrollbar { display: none; }
+    </style>
+    <div id="fixed" style="position: fixed"></div>
+    <div id="absolute" style="position: absolute"></div>
+    <div style="overflow: scroll">
+      <div id="relative" style="position: relative; height: 2000px">
+        Contents
+      </div>
+    </div>
+  )HTML");
+
+  EXPECT_TRUE(CcLayerByDOMElementId("fixed"));     // Directly composited.
+  EXPECT_TRUE(CcLayerByDOMElementId("absolute"));  // Overlaps with #fixed.
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
+    // Not merged because that would miss #relative's scroll state without a
+    // NonFastScrollableRegion.
+    EXPECT_TRUE(CcLayerByDOMElementId("relative"));
+  } else {
+    // Merged into #absolute.
+    EXPECT_FALSE(CcLayerByDOMElementId("relative"));
+  }
+
+  GetElementById("fixed")->SetInlineStyleProperty(CSSPropertyID::kPosition,
+                                                  "absolute");
+  UpdateAllLifecyclePhases();
+  // All layers are merged together.
+  EXPECT_FALSE(CcLayerByDOMElementId("fixed"));
+  EXPECT_FALSE(CcLayerByDOMElementId("absolute"));
+  EXPECT_FALSE(CcLayerByDOMElementId("relative"));
+}
+
+TEST_P(CompositingTest, AnchorPositionAdjustmentTransformIdReference) {
+  GetLocalFrameView()
+      ->GetFrame()
+      .GetSettings()
+      ->SetPreferCompositingToLCDTextForTesting(false);
+
+  InitializeWithHTML(*WebView()->MainFrameImpl()->GetFrame(), R"HTML(
+    <div id="anchored1"
+         style="position: absolute; position-anchor: --a; top: anchor(bottom)">
+      anchored
+    </div>
+    <div id="scroller" style="overflow: scroll; width: 200px; height: 200px">
+      <div id="anchor" style="anchor-name: --a">anchor</div>
+      <div style="height: 1000px"></div>
+    </div>
+    <div id="anchored2"
+         style="position: absolute; position-anchor: --a; top: anchor(bottom)">
+      anchored
+    </div>
+  )HTML");
+  UpdateAllLifecyclePhases();
+
+  int scroll_translation_id =
+      GetElementById("scroller")
+          ->GetLayoutObject()
+          ->FirstFragment()
+          .PaintProperties()
+          ->ScrollTranslation()
+          ->CcNodeId(LayerTreeHost()->property_trees()->sequence_number());
+  EXPECT_LT(scroll_translation_id,
+            CcLayersByDOMElementId(RootCcLayer(), "anchored1")[0]
+                ->transform_tree_index());
+  EXPECT_LT(scroll_translation_id,
+            CcLayersByDOMElementId(RootCcLayer(), "anchored2")[0]
+                ->transform_tree_index());
+}
+
+constexpr unsigned kFillScrollingContentsLayer = 1 << 10;
+
+class CompositingSimTest : public PaintTestConfigurations,
+                           public SimTest,
+                           private ScopedFillScrollingContentsLayerForTest {
  public:
+  CompositingSimTest()
+      : ScopedFillScrollingContentsLayerForTest(GetParam() &
+                                                kFillScrollingContentsLayer) {}
+
   void InitializeWithHTML(const String& html) {
     SimRequest request("https://example.com/test.html", "text/html");
     LoadURL("https://example.com/test.html");
@@ -834,13 +935,15 @@ class CompositingSimTest : public PaintTestConfigurations, public SimTest {
     return layers.empty() ? nullptr : layers[0];
   }
 
-  const cc::Layer* CcLayerByOwnerNodeId(Node* node) {
-    DOMNodeId id = node->GetDomNodeId();
-    for (auto& layer : RootCcLayer()->children()) {
-      if (layer->debug_info() && layer->debug_info()->owner_node_id == id)
-        return layer.get();
+  const cc::Layer* CcLayerByOwnerNode(Node* node) {
+    return CcLayerByOwnerNodeId(RootCcLayer(), node->GetDomNodeId());
+  }
+
+  const cc::Layer* CcLayerForIFrameContent(Document* iframe_doc) {
+    if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled()) {
+      return CcLayerByOwnerNode(iframe_doc);
     }
-    return nullptr;
+    return CcLayerByOwnerNode(iframe_doc->documentElement());
   }
 
   Element* GetElementById(const char* id) {
@@ -884,7 +987,11 @@ class CompositingSimTest : public PaintTestConfigurations, public SimTest {
   }
 };
 
-INSTANTIATE_PAINT_TEST_SUITE_P(CompositingSimTest);
+INSTANTIATE_TEST_SUITE_P(All,
+                         CompositingSimTest,
+                         ::testing::Values(PAINT_TEST_SUITE_P_VALUES,
+                                           kHitTestOpaqueness |
+                                               kFillScrollingContentsLayer));
 
 TEST_P(CompositingSimTest, LayerUpdatesDoNotInvalidateEarlierLayers) {
   InitializeWithHTML(R"HTML(
@@ -1966,8 +2073,7 @@ TEST_P(CompositingSimTest, PromoteCrossOriginIframe) {
   Compositor().BeginFrame();
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  auto* layer = CcLayerByOwnerNodeId(owner_node);
+  auto* layer = CcLayerForIFrameContent(iframe_doc);
   EXPECT_TRUE(layer);
   EXPECT_EQ(layer->bounds(), gfx::Size(300, 150));
 }
@@ -1989,8 +2095,7 @@ TEST_P(CompositingSimTest, PromoteCrossOriginIframeAfterLoading) {
 
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_TRUE(CcLayerForIFrameContent(iframe_doc));
 }
 
 // An iframe that is cross-origin to the parent should be composited. This test
@@ -2016,13 +2121,12 @@ TEST_P(CompositingSimTest, PromoteCrossOriginToParent) {
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("main_iframe"))
           ->contentDocument();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(iframe_doc));
+  EXPECT_TRUE(CcLayerByOwnerNode(iframe_doc));
 
   iframe_doc = To<HTMLFrameOwnerElement>(
                    iframe_doc->getElementById(AtomicString("child_iframe")))
                    ->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_TRUE(CcLayerForIFrameContent(iframe_doc));
 }
 
 // Initially the iframe is cross-origin and should be composited. After changing
@@ -2044,8 +2148,7 @@ TEST_P(CompositingSimTest, PromoteCrossOriginIframeAfterDomainChange) {
 
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_TRUE(CcLayerForIFrameContent(iframe_doc));
 
   NonThrowableExceptionState exception_state;
   GetDocument().setDomain(String("origin-a.com"), exception_state);
@@ -2057,8 +2160,7 @@ TEST_P(CompositingSimTest, PromoteCrossOriginIframeAfterDomainChange) {
 
   iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  owner_node = iframe_doc->documentElement();
-  EXPECT_FALSE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_FALSE(CcLayerForIFrameContent(iframe_doc));
 }
 
 // This test sets up nested frames with domains A -> B -> A. Initially, the
@@ -2085,13 +2187,12 @@ TEST_P(CompositingSimTest, PromoteCrossOriginToParentIframeAfterDomainChange) {
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("main_iframe"))
           ->contentDocument();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(iframe_doc));
+  EXPECT_TRUE(CcLayerByOwnerNode(iframe_doc));
 
   iframe_doc = To<HTMLFrameOwnerElement>(
                    iframe_doc->getElementById(AtomicString("child_iframe")))
                    ->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  EXPECT_TRUE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_TRUE(CcLayerForIFrameContent(iframe_doc));
 
   auto* main_iframe_element = To<HTMLIFrameElement>(
       GetDocument().getElementById(AtomicString("main_iframe")));
@@ -2111,13 +2212,12 @@ TEST_P(CompositingSimTest, PromoteCrossOriginToParentIframeAfterDomainChange) {
   UpdateAllLifecyclePhases();
   iframe_doc = To<HTMLFrameOwnerElement>(GetElementById("main_iframe"))
                    ->contentDocument();
-  EXPECT_FALSE(CcLayerByOwnerNodeId(iframe_doc));
+  EXPECT_FALSE(CcLayerByOwnerNode(iframe_doc));
 
   iframe_doc = To<HTMLFrameOwnerElement>(
                    iframe_doc->getElementById(AtomicString("child_iframe")))
                    ->contentDocument();
-  owner_node = iframe_doc->documentElement();
-  EXPECT_FALSE(CcLayerByOwnerNodeId(owner_node));
+  EXPECT_FALSE(CcLayerForIFrameContent(iframe_doc));
 }
 
 // Regression test for https://crbug.com/1095167. Render surfaces require that
@@ -2156,8 +2256,52 @@ TEST_P(CompositingSimTest, ImplSideScrollSkipsCommit) {
 
   // Simulate the scroll update with scroll delta from impl-side.
   cc::CompositorCommitData commit_data;
-  commit_data.scrolls.emplace_back(cc::CompositorCommitData::ScrollUpdateInfo(
-      element_id, gfx::Vector2dF(0, 10), absl::nullopt));
+  commit_data.scrolls.emplace_back(element_id, gfx::Vector2dF(0, 10),
+                                   std::nullopt);
+  Compositor().LayerTreeHost()->ApplyCompositorChanges(&commit_data);
+  EXPECT_EQ(gfx::PointF(0, 10), scrollable_area->ScrollPosition());
+  EXPECT_EQ(
+      gfx::PointF(0, 10),
+      GetPropertyTrees()->scroll_tree().current_scroll_offset(element_id));
+
+  // Update just the blink lifecycle because a full frame would clear the bit
+  // for whether a commit was requested.
+  UpdateAllLifecyclePhases();
+
+  // A main frame is needed to call UpdateLayers which updates property trees,
+  // re-calculating cached to/from-screen transforms.
+  EXPECT_TRUE(Compositor().LayerTreeHost()->RequestedMainFramePending());
+
+  // A full commit is not needed.
+  EXPECT_FALSE(Compositor().LayerTreeHost()->CommitRequested());
+}
+
+TEST_P(CompositingSimTest, ImplSideScrollUnpaintedSkipsCommit) {
+  InitializeWithHTML(R"HTML(
+    <div style='height: 10000px'></div>
+    <div id='scroller' style='overflow: scroll; width: 100px; height: 100px'>
+      <div style='height: 1000px'></div>
+    </div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  auto* scroller = GetDocument().getElementById(AtomicString("scroller"));
+  auto* scrollable_area = scroller->GetLayoutBox()->GetScrollableArea();
+  auto element_id = scrollable_area->GetScrollElementId();
+
+  // The scroller is far away from the viewport so is not painted.
+  // The scroll node always exists.
+  auto* scroll_node =
+      GetPropertyTrees()->scroll_tree().FindNodeFromElementId(element_id);
+  ASSERT_TRUE(scroll_node);
+  EXPECT_EQ(cc::kInvalidPropertyNodeId, scroll_node->transform_id);
+
+  EXPECT_FALSE(Compositor().LayerTreeHost()->CommitRequested());
+
+  // Simulate the scroll update with scroll delta from impl-side.
+  cc::CompositorCommitData commit_data;
+  commit_data.scrolls.emplace_back(element_id, gfx::Vector2dF(0, 10),
+                                   std::nullopt);
   Compositor().LayerTreeHost()->ApplyCompositorChanges(&commit_data);
   EXPECT_EQ(gfx::PointF(0, 10), scrollable_area->ScrollPosition());
   EXPECT_EQ(
@@ -2302,7 +2446,7 @@ TEST_P(CompositingSimTest, ScrollWithMainThreadReasonsNeedsCommit) {
   cc::CompositorCommitData commit_data;
   commit_data.scrolls.emplace_back(
       MainFrame().GetFrameView()->LayoutViewport()->GetScrollElementId(),
-      gfx::Vector2dF(0, 100.f), absl::nullopt);
+      gfx::Vector2dF(0, 100.f), std::nullopt);
   layer_tree_host->ApplyCompositorChanges(&commit_data);
 
   // Due to main thread scrolling reasons (fixed-background element), we need a
@@ -2346,8 +2490,7 @@ TEST_P(CompositingSimTest, FrameAttribution) {
   // containing document.
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  auto* iframe_layer = CcLayerByOwnerNodeId(owner_node);
+  auto* iframe_layer = CcLayerForIFrameContent(iframe_doc);
   ASSERT_TRUE(iframe_layer);
   auto* iframe_transform_node = GetTransformNode(iframe_layer);
   EXPECT_TRUE(iframe_transform_node);
@@ -2371,7 +2514,7 @@ TEST_P(CompositingSimTest, VisibleFrameRootLayers) {
   Compositor().BeginFrame();
 
   // Ensure that the toplevel is marked as a visible root.
-  auto* toplevel_layer = CcLayerByOwnerNodeId(&GetDocument());
+  auto* toplevel_layer = CcLayerByOwnerNode(&GetDocument());
   ASSERT_TRUE(toplevel_layer);
   auto* toplevel_transform_node = GetTransformNode(toplevel_layer);
   ASSERT_TRUE(toplevel_transform_node);
@@ -2381,8 +2524,7 @@ TEST_P(CompositingSimTest, VisibleFrameRootLayers) {
   // Ensure that the iframe is marked as a visible root.
   Document* iframe_doc =
       To<HTMLFrameOwnerElement>(GetElementById("iframe"))->contentDocument();
-  Node* owner_node = iframe_doc->documentElement();
-  auto* iframe_layer = CcLayerByOwnerNodeId(owner_node);
+  auto* iframe_layer = CcLayerForIFrameContent(iframe_doc);
   ASSERT_TRUE(iframe_layer);
   auto* iframe_transform_node = GetTransformNode(iframe_layer);
   ASSERT_TRUE(iframe_transform_node);
@@ -2396,7 +2538,7 @@ TEST_P(CompositingSimTest, VisibleFrameRootLayers) {
 
   UpdateAllLifecyclePhases();
 
-  iframe_layer = CcLayerByOwnerNodeId(owner_node);
+  iframe_layer = CcLayerForIFrameContent(iframe_doc);
   ASSERT_TRUE(iframe_layer);
   iframe_transform_node = GetTransformNode(iframe_layer);
   ASSERT_TRUE(iframe_transform_node);
@@ -3219,7 +3361,9 @@ TEST_P(CompositingSimTest, CompositedImageWithSubpixelOffset) {
       static_cast<const cc::PictureLayer*>(CcLayerByDOMElementId("image"));
   ASSERT_TRUE(image_layer);
   EXPECT_EQ(gfx::Vector2dF(0.25f, 0.0625f),
-            image_layer->DirectlyCompositedImageDefaultRasterScaleForTesting());
+            image_layer->GetRecordingSourceForTesting()
+                ->directly_composited_image_info()
+                ->default_raster_scale);
 }
 
 TEST_P(CompositingSimTest, CompositedImageWithSubpixelOffsetAndOrientation) {
@@ -3233,7 +3377,46 @@ TEST_P(CompositingSimTest, CompositedImageWithSubpixelOffsetAndOrientation) {
       static_cast<const cc::PictureLayer*>(CcLayerByDOMElementId("image"));
   ASSERT_TRUE(image_layer);
   EXPECT_EQ(gfx::Vector2dF(0.0625f, 0.25f),
-            image_layer->DirectlyCompositedImageDefaultRasterScaleForTesting());
+            image_layer->GetRecordingSourceForTesting()
+                ->directly_composited_image_info()
+                ->default_raster_scale);
+}
+
+TEST_P(CompositingSimTest, ScrollingContentsLayerRecordedBounds) {
+  InitializeWithHTML(R"HTML(
+    <!DOCTYPE html>
+    <style>
+      div div { width: 2000px; height: 2000px; margin-top: 2000px; }
+    </style>
+    <div id="scroller" style="overflow: scroll; will-change: scroll-position;
+                              width: 200px; height: 200px">
+      <div>1</div>
+      <div>2</div>
+      <div>3</div>
+      <div>4</div>
+    </div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  auto* layer = static_cast<const cc::PictureLayer*>(
+      ScrollingContentsCcLayerByScrollElementId(RootCcLayer(),
+                                                GetElementById("scroller")
+                                                    ->GetLayoutBox()
+                                                    ->GetScrollableArea()
+                                                    ->GetScrollElementId()));
+  ASSERT_TRUE(layer);
+  if (RuntimeEnabledFeatures::HitTestOpaquenessEnabled() ||
+      // This will make a difference when UseRecordedBoundsForTiling is enabled
+      // by default.
+      RuntimeEnabledFeatures::FillScrollingContentsLayerEnabled()) {
+    EXPECT_EQ(gfx::Size(2000, 16000), layer->bounds());
+    EXPECT_EQ(gfx::Rect(0, 0, 2000, 16000),
+              layer->GetRecordingSourceForTesting()->recorded_bounds());
+  } else {
+    EXPECT_EQ(gfx::Size(2000, 2000), layer->bounds());
+    EXPECT_EQ(gfx::Rect(0, 0, 2000, 2000),
+              layer->GetRecordingSourceForTesting()->recorded_bounds());
+  }
 }
 
 }  // namespace blink

@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/platform/peerconnection/resolution_monitor.h"
 
+#include <bitset>
+
 #include "base/containers/span.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -26,7 +28,7 @@ namespace {
 class Vp8ResolutionMonitor : public ResolutionMonitor {
  public:
   Vp8ResolutionMonitor() = default;
-  absl::optional<gfx::Size> GetResolution(
+  std::optional<gfx::Size> GetResolution(
       const media::DecoderBuffer& buffer) override {
     if (!buffer.is_key_frame()) {
       return current_resolution_;
@@ -34,9 +36,9 @@ class Vp8ResolutionMonitor : public ResolutionMonitor {
 
     media::Vp8Parser parser;
     media::Vp8FrameHeader frame_header;
-    if (!parser.ParseFrame(buffer.data(), buffer.data_size(), &frame_header)) {
+    if (!parser.ParseFrame(buffer.data(), buffer.size(), &frame_header)) {
       DLOG(ERROR) << "Failed to parse vp8 stream";
-      current_resolution_ = absl::nullopt;
+      current_resolution_ = std::nullopt;
     } else {
       current_resolution_ =
           gfx::Size(base::saturated_cast<int>(frame_header.width),
@@ -48,7 +50,7 @@ class Vp8ResolutionMonitor : public ResolutionMonitor {
   media::VideoCodec codec() const override { return media::VideoCodec::kVP8; }
 
  private:
-  absl::optional<gfx::Size> current_resolution_;
+  std::optional<gfx::Size> current_resolution_;
 };
 
 class Vp9ResolutionMonitor : public ResolutionMonitor {
@@ -57,20 +59,19 @@ class Vp9ResolutionMonitor : public ResolutionMonitor {
 
   ~Vp9ResolutionMonitor() override = default;
 
-  absl::optional<gfx::Size> GetResolution(
+  std::optional<gfx::Size> GetResolution(
       const media::DecoderBuffer& buffer) override {
     std::vector<uint32_t> frame_sizes;
     if (buffer.has_side_data()) {
       frame_sizes = buffer.side_data()->spatial_layers;
     }
-    parser_.SetStream(buffer.data(),
-                      base::checked_cast<off_t>(buffer.data_size()),
+    parser_.SetStream(buffer.data(), base::checked_cast<off_t>(buffer.size()),
                       frame_sizes, /*stream_config=*/nullptr);
 
     gfx::Size frame_size;
     bool parse_error = false;
     // Get the maximum resolution in spatial layers.
-    absl::optional<gfx::Size> max_resolution;
+    std::optional<gfx::Size> max_resolution;
     while (GetNextFrameSize(frame_size, parse_error)) {
       if (max_resolution.value_or(gfx::Size()).GetArea() <
           frame_size.GetArea()) {
@@ -78,7 +79,7 @@ class Vp9ResolutionMonitor : public ResolutionMonitor {
       }
     }
 
-    return parse_error ? absl::nullopt : max_resolution;
+    return parse_error ? std::nullopt : max_resolution;
   }
 
   media::VideoCodec codec() const override { return media::VideoCodec::kVP9; }
@@ -118,23 +119,23 @@ class Av1ResolutionMonitor : public ResolutionMonitor {
 
   ~Av1ResolutionMonitor() override = default;
 
-  absl::optional<gfx::Size> GetResolution(
+  std::optional<gfx::Size> GetResolution(
       const media::DecoderBuffer& buffer) override {
     auto parser = base::WrapUnique(new (std::nothrow) libgav1::ObuParser(
-        buffer.data(), buffer.data_size(), kDefaultOperatingPoint,
-        &buffer_pool_, &decoder_state_));
+        buffer.data(), buffer.size(), kDefaultOperatingPoint, &buffer_pool_,
+        &decoder_state_));
     if (current_sequence_header_) {
       parser->set_sequence_header(*current_sequence_header_);
     }
 
-    absl::optional<gfx::Size> max_resolution;
+    std::optional<gfx::Size> max_resolution;
     while (parser->HasData()) {
       libgav1::RefCountedBufferPtr current_frame;
       libgav1::StatusCode status_code = parser->ParseOneFrame(&current_frame);
       if (status_code != libgav1::kStatusOk) {
         DLOG(ERROR) << "Failed parsing av1 frame: "
                     << static_cast<int>(status_code);
-        return absl::nullopt;
+        return std::nullopt;
       }
       if (!current_frame) {
         // No frame is found. Finish the stream.
@@ -143,13 +144,13 @@ class Av1ResolutionMonitor : public ResolutionMonitor {
 
       if (parser->sequence_header_changed() &&
           !UpdateCurrentSequenceHeader(parser->sequence_header())) {
-        return absl::nullopt;
+        return std::nullopt;
       }
 
       std::optional<gfx::Size> frame_size =
           GetFrameSizeFromHeader(parser->frame_header());
       if (!frame_size) {
-        return absl::nullopt;
+        return std::nullopt;
       }
       if (max_resolution.value_or(gfx::Size()).GetArea() <
           frame_size->GetArea()) {
@@ -207,12 +208,12 @@ class Av1ResolutionMonitor : public ResolutionMonitor {
         decoder_state_.reference_frame[frame_to_show];
     if (!show_frame) {
       DLOG(ERROR) << "Show existing frame references an invalid frame";
-      return absl::nullopt;
+      return std::nullopt;
     }
     return gfx::Size(show_frame->frame_width(), show_frame->frame_height());
   }
 
-  absl::optional<libgav1::ObuSequenceHeader> current_sequence_header_;
+  std::optional<libgav1::ObuSequenceHeader> current_sequence_header_;
   libgav1::BufferPool buffer_pool_;
   libgav1::DecoderState decoder_state_;
 };
@@ -226,15 +227,15 @@ class H264ResolutionMonitor : public ResolutionMonitor {
   H264ResolutionMonitor() = default;
   ~H264ResolutionMonitor() override = default;
 
-  absl::optional<gfx::Size> GetResolution(
+  std::optional<gfx::Size> GetResolution(
       const media::DecoderBuffer& buffer) override {
     if (!buffer.is_key_frame()) {
       return current_resolution_;
     }
 
-    absl::optional<gfx::Size> resolution;
+    std::optional<gfx::Size> resolution;
     std::vector<webrtc::H264::NaluIndex> nalu_indices =
-        webrtc::H264::FindNaluIndices(buffer.data(), buffer.data_size());
+        webrtc::H264::FindNaluIndices(buffer.data(), buffer.size());
     for (const auto& nalu_index : nalu_indices) {
       base::span<const uint8_t> nalu_payload(
           buffer.data() + nalu_index.payload_start_offset,
@@ -243,16 +244,16 @@ class H264ResolutionMonitor : public ResolutionMonitor {
           webrtc::H264::NaluType::kSps) {
         if (nalu_payload.size() < webrtc::H264::kNaluTypeSize + 1) {
           DLOG(ERROR) << "H.264 SPS NALU size too small for parsing.";
-          return absl::nullopt;
+          return std::nullopt;
         }
         // Parse without NALU header.
-        absl::optional<webrtc::SpsParser::SpsState> sps =
+        std::optional<webrtc::SpsParser::SpsState> sps =
             webrtc::SpsParser::ParseSps(
                 nalu_payload.data() + webrtc::H264::kNaluTypeSize,
                 nalu_payload.size() - webrtc::H264::kNaluTypeSize);
         if (!sps || !sps->width || !sps->height) {
           DLOG(ERROR) << "Failed parsing H.264 SPS.";
-          return absl::nullopt;
+          return std::nullopt;
         }
         resolution = gfx::Size(sps->width, sps->height);
         break;
@@ -266,7 +267,7 @@ class H264ResolutionMonitor : public ResolutionMonitor {
   media::VideoCodec codec() const override { return media::VideoCodec::kH264; }
 
  private:
-  absl::optional<gfx::Size> current_resolution_;
+  std::optional<gfx::Size> current_resolution_;
 };
 }  // namespace
 

@@ -85,8 +85,12 @@ class SimpleMainThreadScheduler : public MainThreadScheduler {
   // Idle tasks are dropped in `PostIdleTask()` and friends, so this is a no-op.
   void StartIdlePeriodForTesting() override;
 
+  // Do nothing. This class does not differentiate between foregrounded and
+  // backgrounded renderers.
+  void SetRendererBackgroundedForTesting(bool) override;
+
  private:
-  raw_ptr<v8::Isolate, ExperimentalRenderer> isolate_ = nullptr;
+  raw_ptr<v8::Isolate> isolate_ = nullptr;
 };
 
 }  // namespace scheduler

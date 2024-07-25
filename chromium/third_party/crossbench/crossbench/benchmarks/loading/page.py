@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
 from crossbench.stories.story import Story
 
 from .action import Action
+from .action_runner.base import ActionRunner
+from .action_runner.basic_action_runner import BasicActionRunner
 from .playback_controller import PlaybackController
 
 if TYPE_CHECKING:
@@ -104,8 +106,10 @@ class InteractivePage(Page):
   def __init__(self,
                actions: List[Action],
                name: str,
-               playback: Optional[PlaybackController] = None):
-    self._name = name
+               playback: Optional[PlaybackController] = None,
+               action_runner: Optional[ActionRunner] = None):
+    self._name: str = name
+    self._action_runner: ActionRunner = action_runner or BasicActionRunner()
     assert isinstance(actions, list)
     self._actions = actions
     assert self._actions, "Must have at least 1 valid action"
@@ -116,10 +120,18 @@ class InteractivePage(Page):
   def actions(self) -> List[Action]:
     return self._actions
 
+  @property
+  def action_runner(self) -> ActionRunner:
+    return self._action_runner
+
+  @action_runner.setter
+  def action_runner(self, action_runner: ActionRunner) -> None:
+    assert isinstance(self._action_runner, BasicActionRunner)
+    self._action_runner = action_runner
+
   def run(self, run: Run) -> None:
     for _ in self._playback:
-      for action in self._actions:
-        action.run(run)
+      self.action_runner.runAll(run, self._actions)
 
   def details_json(self) -> JsonDict:
     result = super().details_json()

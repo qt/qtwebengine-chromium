@@ -31,7 +31,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_FLOAT_ROUNDED_RECT_H_
 
 #include <iosfwd>
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include <optional>
+
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
@@ -39,6 +40,7 @@
 #include "ui/gfx/geometry/insets_f.h"
 #include "ui/gfx/geometry/outsets_f.h"
 #include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/rrect_f.h"
 #include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 
@@ -49,7 +51,7 @@ class QuadF;
 namespace blink {
 
 // Represents a rect with rounded corners.
-// We don't use gfx::RRect in blink because gfx::RRect is based on SkRRect
+// We don't use gfx::RRectF in blink because gfx::RRectF is based on SkRRect
 // which always keeps the radii constrained within the size of the rect, but
 // in blink sometimes we need to keep the unconstrained status of a rounded
 // rect. See ConstrainRadii(). This class also provides functions that are
@@ -91,7 +93,7 @@ class PLATFORM_EXPORT FloatRoundedRect {
     constexpr const gfx::SizeF& BottomRight() const { return bottom_right_; }
 
     void SetMinimumRadius(float);
-    absl::optional<float> UniformRadius() const;
+    std::optional<float> UniformRadius() const;
 
     constexpr bool IsZero() const {
       return top_left_.IsZero() && top_right_.IsZero() &&
@@ -116,6 +118,9 @@ class PLATFORM_EXPORT FloatRoundedRect {
   constexpr FloatRoundedRect() = default;
   explicit FloatRoundedRect(const gfx::RectF&, const Radii& radii = Radii());
   explicit FloatRoundedRect(const gfx::Rect&, const Radii& radii = Radii());
+  explicit FloatRoundedRect(const SkRRect& r)
+      : FloatRoundedRect(gfx::RRectF(r)) {}
+  explicit FloatRoundedRect(const gfx::RRectF&);
   FloatRoundedRect(float x, float y, float width, float height);
   FloatRoundedRect(const gfx::RectF& rect,
                    const gfx::SizeF& top_left,
@@ -209,6 +214,7 @@ class PLATFORM_EXPORT FloatRoundedRect {
   void ConstrainRadii();
 
   explicit operator SkRRect() const;
+  explicit operator gfx::RRectF() const { return gfx::RRectF(SkRRect(*this)); }
 
   String ToString() const;
 

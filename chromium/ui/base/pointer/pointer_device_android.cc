@@ -8,7 +8,7 @@
 #include "base/check_op.h"
 #include "ui/base/ui_base_jni_headers/TouchDevice_jni.h"
 
-using base::android::AttachCurrentThread;
+using jni_zero::AttachCurrentThread;
 
 namespace ui {
 
@@ -52,6 +52,14 @@ HoverType GetPrimaryHoverType(int available_hover_types) {
     return HOVER_TYPE_NONE;
   DCHECK_EQ(available_hover_types, HOVER_TYPE_HOVER);
   return HOVER_TYPE_HOVER;
+}
+
+std::optional<PointerDevice> GetPointerDevice(PointerDevice::Key key) {
+  return std::nullopt;
+}
+
+std::vector<PointerDevice> GetPointerDevices() {
+  return {};
 }
 
 }  // namespace ui

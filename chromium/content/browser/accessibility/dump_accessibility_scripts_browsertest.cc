@@ -146,6 +146,10 @@ class DumpAccessibilityScriptTest : public DumpAccessibilityTestBase {
         }
         actual_contents += "press " + dom_key_string + '\n';
         RunUntilInputProcessed(GetWidgetHost());
+
+        // Input presses could create a11y events. Wait for those to clear
+        // before procceding.
+        WaitForEndOfTest(mode);
       }
       if (printTree) {
         actual_contents += DumpTreeAsString() + '\n';
@@ -279,20 +283,12 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXEditableAncestor) {
   RunTypedTest<kMacAttributes>("ax-editable-ancestor.html");
 }
 
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXDropEffects) {
-  RunTypedTest<kMacAttributes>("ax-drop-effects.html");
-}
-
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXElementBusy) {
   RunTypedTest<kMacAttributes>("ax-element-busy.html");
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXFocusableAncestor) {
   RunTypedTest<kMacAttributes>("ax-focusable-ancestor.html");
-}
-
-IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXGrabbed) {
-  RunTypedTest<kMacAttributes>("ax-grabbed.html");
 }
 
 IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXHasPopup) {
@@ -307,7 +303,7 @@ IN_PROC_BROWSER_TEST_P(DumpAccessibilityScriptTest, AXHighestEditableAncestor) {
   RunTypedTest<kMacAttributes>("ax-highest-editable-ancestor.html");
 }
 
-// TODO(crbug.com/1480429): Flaky
+// TODO(crbug.com/40930250): Flaky
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_AXInsertionPointLineNumber DISABLED_AXInsertionPointLineNumber
 #else

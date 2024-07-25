@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/containers/flat_set.h"
-#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
@@ -26,7 +25,6 @@
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/cursor/platform_cursor.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ui_base_features.h"
 #include "ui/base/win/event_creation_utils.h"
 #include "ui/base/win/win_cursor.h"
 #include "ui/compositor/compositor.h"
@@ -43,7 +41,6 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/path_win.h"
 #include "ui/views/corewm/tooltip_aura.h"
-#include "ui/views/views_features.h"
 #include "ui/views/views_switches.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_win.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
@@ -134,6 +131,11 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
   desktop_native_widget_aura_->OnDesktopWindowTreeHostDestroyed(this);
+  // Normally HandleDestroying() destroys the compositor (which is called
+  // from WM_DESTROY) but it appears in some situations we can get
+  // WM_NCDESTROY (which calls this function) without a WM_DESTROY. As a result
+  // DestroyCompositor() is called from both places.
+  DestroyCompositor();
   DestroyDispatcher();
 }
 
@@ -197,15 +199,11 @@ void DesktopWindowTreeHostWin::Init(const Widget::InitParams& params) {
   InitHost();
   window()->Show();
 
-  if (base::FeatureList::IsEnabled(views::features::kWidgetLayering)) {
-    // Stack immedately above its parent so that it does not cover other
-    // root-level windows.
-    //
-    // With the exception of menus, to allow them to be displayed on
-    // top of other windows.
-    if (params.parent && params.type != views::Widget::InitParams::TYPE_MENU) {
-      StackAbove(params.parent);
-    }
+  // Stack immediately above its parent so that it does not cover other
+  // root-level windows, with the exception of menus, to allow them to be
+  // displayed on top of other windows.
+  if (params.parent && params.type != views::Widget::InitParams::TYPE_MENU) {
+    StackAbove(params.parent);
   }
 }
 
@@ -524,7 +522,11 @@ void DesktopWindowTreeHostWin::EndMoveLoop() {
 void DesktopWindowTreeHostWin::SetVisibilityChangedAnimationsEnabled(
     bool value) {
   message_handler_->SetVisibilityChangedAnimationsEnabled(value);
-  content_window()->SetProperty(aura::client::kAnimationsDisabledKey, !value);
+  if (desktop_native_widget_aura_->widget_type() !=
+          Widget::InitParams::TYPE_WINDOW ||
+      remove_standard_frame_) {
+    content_window()->SetProperty(aura::client::kAnimationsDisabledKey, !value);
+  }
 }
 
 std::unique_ptr<NonClientFrameView>
@@ -708,7 +710,7 @@ void DesktopWindowTreeHostWin::ReleaseCapture() {
 }
 
 bool DesktopWindowTreeHostWin::CaptureSystemKeyEventsImpl(
-    absl::optional<base::flat_set<ui::DomCode>> dom_codes) {
+    std::optional<base::flat_set<ui::DomCode>> dom_codes) {
   // Only one KeyboardHook should be active at a time, otherwise there will be
   // problems with event routing (i.e. which Hook takes precedence) and
   // destruction ordering.
@@ -1095,7 +1097,7 @@ void DesktopWindowTreeHostWin::HandleTouchEvent(ui::TouchEvent* event) {
       FinishTouchDrag(screen_point);
     }
   }
-  // TODO(crbug.com/229301) Calling ::SetCursorPos for ui::ET_TOUCH_PRESSED
+  // TODO(crbug.com/40312079) Calling ::SetCursorPos for ui::ET_TOUCH_PRESSED
   // events here would fix web ui tab strip drags when the cursor is not over
   // the Chrome window - The TODO is to figure out if that's reasonable, since
   // it would change the cursor pos on every touch event. Or figure out if there

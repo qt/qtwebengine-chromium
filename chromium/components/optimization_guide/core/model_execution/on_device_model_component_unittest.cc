@@ -169,6 +169,26 @@ TEST_F(OnDeviceModelComponentTest, DoesNotInstallWhenFeatureNotEnabled) {
   }
 }
 
+TEST_F(OnDeviceModelComponentTest,
+       DoesNotInstallWhenDisabledByEnterprisePolicy) {
+  // It should not install when disabled by enterprise policy.
+  base::HistogramTester histogram_tester;
+  local_state_.SetInteger(
+      prefs::localstate::kGenAILocalFoundationalModelEnterprisePolicySettings,
+      static_cast<int>(
+          prefs::GenAILocalFoundationalModelEnterprisePolicySettings::
+              kDisallowed));
+
+  on_device_component_state_manager_.Reset();
+  manager()->OnStartup();
+  WaitForStartup();
+  EXPECT_FALSE(on_device_component_state_manager_.IsInstallerRegistered());
+  histogram_tester.ExpectUniqueSample(
+      "OptimizationGuide.ModelExecution.OnDeviceModelInstallCriteria."
+      "AtRegistration.EnabledByEnterprisePolicy",
+      false, 1);
+}
+
 TEST_F(OnDeviceModelComponentTest, NotEnoughDiskSpaceToInstall) {
   // 20gb is the default in `IsFreeDiskSpaceSufficientForOnDeviceModelInstall`.
   on_device_component_state_manager_.SetFreeDiskSpace(
@@ -348,7 +368,7 @@ TEST_F(OnDeviceModelComponentTest, SetReady) {
 
   EXPECT_EQ(state->GetInstallDirectory(),
             base::FilePath(FILE_PATH_LITERAL("/some/path")));
-  EXPECT_EQ(state->GetVersion(), base::Version("0.1.1"));
+  EXPECT_EQ(state->GetComponentVersion(), base::Version("0.1.1"));
   ASSERT_EQ(observer.GetState(), state);
 }
 
@@ -474,5 +494,36 @@ TEST_F(OnDeviceModelComponentTest, LogsStatusOnUse) {
       true, 1);
 }
 
+TEST_F(OnDeviceModelComponentTest, SetPrefsWhenManifestContainsBaseModelSpec) {
+  manager()->OnStartup();
+  WaitForStartup();
+  base::Value::Dict manifest = base::Value::Dict().Set(
+      "BaseModelSpec",
+      base::Value::Dict().Set("version", "0.0.0.0").Set("name", "TestXS"));
+  manager()->SetReady(base::Version("0.1.1"),
+                      base::FilePath(FILE_PATH_LITERAL("/some/path")),
+                      manifest);  // manifest is populated with test data.
+  EXPECT_EQ(manager()->GetCachedBaseModelSpec().value().model_name, "TestXS");
+  EXPECT_EQ(manager()->GetCachedBaseModelSpec().value().model_version,
+            "0.0.0.0");
+}
+
+TEST_F(OnDeviceModelComponentTest, UninstallClearsCachedBaseModelSpec) {
+  // This pref records that the model was eligible for download previously,
+  // and hasn't been cleaned up yet.
+  local_state_.SetTime(
+      prefs::localstate::kLastTimeEligibleForOnDeviceModelDownload,
+      base::Time::Now() - base::Minutes(1) -
+          features::GetOnDeviceModelRetentionTime());
+  local_state_.ClearPref(
+      prefs::localstate::kLastTimeOnDeviceEligibleFeatureWasUsed);
+  // Should uninstall on next startup.
+  manager()->OnStartup();
+  WaitForStartup();
+
+  EXPECT_TRUE(on_device_component_state_manager_.WasComponentUninstalled());
+  EXPECT_EQ(manager()->GetCachedBaseModelSpec().value().model_name, "");
+  EXPECT_EQ(manager()->GetCachedBaseModelSpec().value().model_version, "");
+}
 }  // namespace
 }  // namespace optimization_guide

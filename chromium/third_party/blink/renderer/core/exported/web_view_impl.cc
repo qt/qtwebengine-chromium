@@ -56,10 +56,10 @@
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/frame/frame_replication_state.mojom-blink.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
+#include "third_party/blink/public/mojom/page/draggable_region.mojom-blink.h"
 #include "third_party/blink/public/mojom/window_features/window_features.mojom-blink.h"
 #include "third_party/blink/public/platform/interface_registry.h"
 #include "third_party/blink/public/platform/platform.h"
-#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_media_player.h"
 #include "third_party/blink/public/platform/web_network_state_notifier.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
@@ -469,7 +469,7 @@ WebView* WebView::Create(
     bool is_hidden,
     bool is_prerendering,
     bool is_inside_portal,
-    absl::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
+    std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
         fenced_frame_mode,
     bool compositing_enabled,
     bool widgets_never_composited,
@@ -478,8 +478,9 @@ WebView* WebView::Create(
         page_handle,
     scheduler::WebAgentGroupScheduler& agent_group_scheduler,
     const SessionStorageNamespaceId& session_storage_namespace_id,
-    absl::optional<SkColor> page_base_background_color,
-    const BrowsingContextGroupInfo& browsing_context_group_info) {
+    std::optional<SkColor> page_base_background_color,
+    const BrowsingContextGroupInfo& browsing_context_group_info,
+    const ColorProviderColorMaps* color_provider_colors) {
   return WebViewImpl::Create(
       client,
       is_hidden ? mojom::blink::PageVisibilityState::kHidden
@@ -487,7 +488,8 @@ WebView* WebView::Create(
       is_prerendering, is_inside_portal, fenced_frame_mode, compositing_enabled,
       widgets_never_composited, To<WebViewImpl>(opener), std::move(page_handle),
       agent_group_scheduler, session_storage_namespace_id,
-      std::move(page_base_background_color), browsing_context_group_info);
+      std::move(page_base_background_color), browsing_context_group_info,
+      color_provider_colors);
 }
 
 WebViewImpl* WebViewImpl::Create(
@@ -495,7 +497,7 @@ WebViewImpl* WebViewImpl::Create(
     mojom::blink::PageVisibilityState visibility,
     bool is_prerendering,
     bool is_inside_portal,
-    absl::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
+    std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
         fenced_frame_mode,
     bool compositing_enabled,
     bool widgets_never_composited,
@@ -503,18 +505,15 @@ WebViewImpl* WebViewImpl::Create(
     mojo::PendingAssociatedReceiver<mojom::blink::PageBroadcast> page_handle,
     blink::scheduler::WebAgentGroupScheduler& agent_group_scheduler,
     const SessionStorageNamespaceId& session_storage_namespace_id,
-    absl::optional<SkColor> page_base_background_color,
-    const BrowsingContextGroupInfo& browsing_context_group_info) {
-  // Take a self-reference for WebViewImpl that is released by calling Close(),
-  // then return a raw pointer to the caller.
-  auto web_view = base::AdoptRef(new WebViewImpl(
+    std::optional<SkColor> page_base_background_color,
+    const BrowsingContextGroupInfo& browsing_context_group_info,
+    const ColorProviderColorMaps* color_provider_colors) {
+  return new WebViewImpl(
       client, visibility, is_prerendering, is_inside_portal, fenced_frame_mode,
       compositing_enabled, widgets_never_composited, opener,
       std::move(page_handle), agent_group_scheduler,
       session_storage_namespace_id, std::move(page_base_background_color),
-      browsing_context_group_info));
-  web_view->AddRef();
-  return web_view.get();
+      browsing_context_group_info, color_provider_colors);
 }
 
 size_t WebView::GetWebViewCount() {
@@ -569,7 +568,7 @@ WebViewImpl::WebViewImpl(
     mojom::blink::PageVisibilityState visibility,
     bool is_prerendering,
     bool is_inside_portal,
-    absl::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
+    std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
         fenced_frame_mode,
     bool does_composite,
     bool widgets_never_composited,
@@ -577,8 +576,9 @@ WebViewImpl::WebViewImpl(
     mojo::PendingAssociatedReceiver<mojom::blink::PageBroadcast> page_handle,
     blink::scheduler::WebAgentGroupScheduler& agent_group_scheduler,
     const SessionStorageNamespaceId& session_storage_namespace_id,
-    absl::optional<SkColor> page_base_background_color,
-    const BrowsingContextGroupInfo& browsing_context_group_info)
+    std::optional<SkColor> page_base_background_color,
+    const BrowsingContextGroupInfo& browsing_context_group_info,
+    const ColorProviderColorMaps* color_provider_colors)
     : widgets_never_composited_(widgets_never_composited),
       web_view_client_(client),
       chrome_client_(MakeGarbageCollected<ChromeClientImpl>(this)),
@@ -604,17 +604,17 @@ WebViewImpl::WebViewImpl(
   }
   if (!web_view_client_)
     DCHECK(!does_composite_);
-  page_ = Page::CreateOrdinary(*chrome_client_,
-                               opener ? opener->GetPage() : nullptr,
-                               agent_group_scheduler.GetAgentGroupScheduler(),
-                               browsing_context_group_info);
+  page_ = Page::CreateOrdinary(
+      *chrome_client_, opener ? opener->GetPage() : nullptr,
+      agent_group_scheduler.GetAgentGroupScheduler(),
+      browsing_context_group_info, color_provider_colors);
   CoreInitializer::GetInstance().ProvideModulesToPage(
       *page_, session_storage_namespace_id_);
 
   SetVisibilityState(visibility, /*is_initial_state=*/true);
   page_->SetIsPrerendering(is_prerendering);
 
-  // TODO(crbug.com/1498140): Remove the in_inside_portal parameter.
+  // TODO(crbug.com/40287334): Remove the is_inside_portal parameter.
 
   if (fenced_frame_mode && features::IsFencedFramesEnabled()) {
     page_->SetIsMainFrameFencedFrameRoot();
@@ -1166,7 +1166,7 @@ void WebViewImpl::Close() {
   for (auto& observer : observers_)
     observer.WebViewDestroyed();
 
-  Release();  // Balances a reference acquired in WebView::Create
+  delete this;
 }
 
 gfx::Size WebViewImpl::Size() {
@@ -1408,7 +1408,7 @@ void WebViewImpl::Resize(const gfx::Size& new_size) {
 }
 
 void WebViewImpl::SetScreenOrientationOverrideForTesting(
-    absl::optional<display::mojom::blink::ScreenOrientation> orientation) {
+    std::optional<display::mojom::blink::ScreenOrientation> orientation) {
   screen_orientation_override_ = orientation;
 
   // Since we updated the override value, notify all widgets.
@@ -1424,10 +1424,14 @@ void WebViewImpl::SetScreenOrientationOverrideForTesting(
 
 void WebViewImpl::SetWindowRectSynchronouslyForTesting(
     const gfx::Rect& new_window_rect) {
+  // We need to call UpdateScreenRects to ensure the 'move' event is enqueued.
+  // TODO(jfernandez): Ideally updating the window rect should do that
+  // automatically.
+  web_widget_->UpdateScreenRects(new_window_rect, new_window_rect);
   web_widget_->SetWindowRectSynchronouslyForTesting(new_window_rect);
 }
 
-absl::optional<display::mojom::blink::ScreenOrientation>
+std::optional<display::mojom::blink::ScreenOrientation>
 WebViewImpl::ScreenOrientationOverride() {
   return screen_orientation_override_;
 }
@@ -1479,16 +1483,16 @@ void WebViewImpl::PaintContent(cc::PaintCanvas* canvas, const gfx::Rect& rect) {
   DCHECK_EQ(main_view.GetLayoutView()->GetDocument().Lifecycle().GetState(),
             DocumentLifecycle::kPaintClean);
 
-  auto* builder = MakeGarbageCollected<PaintRecordBuilder>();
+  PaintRecordBuilder builder;
   main_view.PaintOutsideOfLifecycleWithThrottlingAllowed(
-      builder->Context(), PaintFlag::kNoFlag, CullRect(rect));
+      builder.Context(), PaintFlag::kNoFlag, CullRect(rect));
   // Don't bother to save/restore here as the caller is expecting the canvas
   // to be modified and take care of it.
   canvas->clipRect(gfx::RectToSkRect(rect));
-  builder->EndRecording(*canvas, main_view.GetLayoutView()
-                                     ->FirstFragment()
-                                     .LocalBorderBoxProperties()
-                                     .Unalias());
+  builder.EndRecording(*canvas, main_view.GetLayoutView()
+                                    ->FirstFragment()
+                                    .LocalBorderBoxProperties()
+                                    .Unalias());
 }
 
 // static
@@ -1558,8 +1562,8 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
 
   settings->SetHideScrollbars(prefs.hide_scrollbars);
 
-  RuntimeEnabledFeatures::SetWebKitScrollbarStylingEnabled(
-      prefs.enable_webkit_scrollbar_styling);
+  settings->SetPrefersDefaultScrollbarStyles(
+      prefs.prefers_default_scrollbar_styles);
 
   // Enable gpu-accelerated 2d canvas if requested on the command line.
   RuntimeEnabledFeatures::SetAccelerated2dCanvasEnabled(
@@ -1637,9 +1641,6 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
     RuntimeEnabledFeatures::SetKeyboardFocusableScrollersEnabled(true);
 
   settings->SetSelectionIncludesAltImageText(true);
-
-  RuntimeEnabledFeatures::SetFakeNoAllocDirectCallForTestingEnabled(
-      prefs.fake_no_alloc_direct_call_for_testing_enabled);
 
   settings->SetV8CacheOptions(prefs.v8_cache_options);
 
@@ -1756,6 +1757,8 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
       prefs.require_transient_activation_for_get_display_media);
   settings->SetRequireTransientActivationForShowFileOrDirectoryPicker(
       prefs.require_transient_activation_for_show_file_or_directory_picker);
+  settings->SetRequireTransientActivationForHtmlFullscreen(
+      prefs.require_transient_activation_for_html_fullscreen);
   settings->SetViewportEnabled(prefs.viewport_enabled);
   settings->SetViewportMetaEnabled(prefs.viewport_meta_enabled);
   settings->SetViewportStyle(prefs.viewport_style);
@@ -1785,6 +1788,9 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
                                        ::features::UseSurfaceLayerForVideo());
 
   settings->SetLazyLoadEnabled(prefs.lazy_load_enabled);
+  settings->SetInForcedColors(prefs.in_forced_colors);
+  settings->SetPreferredRootScrollbarColorScheme(
+      prefs.preferred_root_scrollbar_color_scheme);
   settings->SetPreferredColorScheme(prefs.preferred_color_scheme);
   settings->SetPreferredContrast(prefs.preferred_contrast);
 
@@ -1792,6 +1798,8 @@ void WebView::ApplyWebPreferences(const web_pref::WebPreferences& prefs,
   settings->SetTouchDragEndContextMenu(prefs.touch_dragend_context_menu);
   settings->SetWebXRImmersiveArAllowed(prefs.webxr_immersive_ar_allowed);
   settings->SetModalContextMenu(prefs.modal_context_menu);
+  settings->SetRequireTransientActivationAndAuthorizationForSubAppsAPIs(
+      prefs.subapps_apis_require_user_gesture_and_authorization);
 
 #if BUILDFLAG(IS_MAC)
   web_view_impl->SetMaximumLegibleScale(
@@ -1891,8 +1899,9 @@ void WebViewImpl::SetPageFocus(bool enable) {
           // instead. Note that this has the side effect of moving the
           // caret back to the beginning of the text.
           Position position(element, 0);
-          focused_frame->Selection().SetSelectionAndEndTyping(
-              SelectionInDOMTree::Builder().Collapse(position).Build());
+          focused_frame->Selection().SetSelection(
+              SelectionInDOMTree::Builder().Collapse(position).Build(),
+              SetSelectionOptions());
         }
       }
     }
@@ -2555,7 +2564,8 @@ void WebViewImpl::SetPageLifecycleStateInternal(
   // Notify all local frames that we've updated the page lifecycle state.
   for (WebFrame* frame = MainFrame(); frame; frame = frame->TraverseNext()) {
     if (frame->IsWebLocalFrame()) {
-      frame->ToWebLocalFrame()->Client()->DidSetPageLifecycleState();
+      frame->ToWebLocalFrame()->Client()->DidSetPageLifecycleState(
+          restoring_from_bfcache);
     }
   }
 
@@ -2564,8 +2574,12 @@ void WebViewImpl::SetPageLifecycleStateInternal(
 
   if (RuntimeEnabledFeatures::PageRevealEventEnabled()) {
     if (restoring_from_bfcache) {
-      if (auto* main_frame = DynamicTo<LocalFrame>(GetPage()->MainFrame())) {
-        main_frame->GetDocument()->EnqueuePageRevealEvent();
+      for (Frame* frame = GetPage()->MainFrame(); frame;
+           frame = frame->Tree().TraverseNext()) {
+        if (auto* local_frame = DynamicTo<LocalFrame>(frame)) {
+          CHECK(local_frame->GetDocument());
+          local_frame->GetDocument()->EnqueuePageRevealEvent();
+        }
       }
     }
   }
@@ -3288,7 +3302,7 @@ Color WebViewImpl::BaseBackgroundColor() const {
   return Color::kWhite;
 }
 
-void WebViewImpl::SetPageBaseBackgroundColor(absl::optional<SkColor> color) {
+void WebViewImpl::SetPageBaseBackgroundColor(std::optional<SkColor> color) {
   SkColor new_color = color.value_or(SK_ColorWHITE);
   if (page_base_background_color_ == new_color)
     return;
@@ -3298,7 +3312,12 @@ void WebViewImpl::SetPageBaseBackgroundColor(absl::optional<SkColor> color) {
 
 void WebViewImpl::UpdateColorProviders(
     const ColorProviderColorMaps& color_provider_colors) {
-  page_->UpdateColorProviders(color_provider_colors);
+  bool color_providers_did_change =
+      page_->UpdateColorProviders(color_provider_colors);
+  if (color_providers_did_change) {
+    Page::PlatformColorsChanged();
+    Page::ColorSchemeChanged();
+  }
 }
 
 void WebViewImpl::SetBaseBackgroundColorOverrideTransparent(
@@ -3311,7 +3330,7 @@ void WebViewImpl::SetBaseBackgroundColorOverrideTransparent(
 }
 
 void WebViewImpl::SetBaseBackgroundColorOverrideForInspector(
-    absl::optional<SkColor> optional_color) {
+    std::optional<SkColor> optional_color) {
   if (base_background_color_override_for_inspector_ == optional_color)
     return;
   base_background_color_override_for_inspector_ = optional_color;
@@ -3335,9 +3354,10 @@ void WebViewImpl::UpdateBaseBackgroundColor() {
 
 void WebViewImpl::UpdateFontRenderingFromRendererPrefs() {
 #if !BUILDFLAG(IS_MAC)
-  skia::LegacyDisplayGlobals::SetCachedPixelGeometry(
+  skia::LegacyDisplayGlobals::SetCachedParams(
       gfx::FontRenderParams::SubpixelRenderingToSkiaPixelGeometry(
-          renderer_preferences_.subpixel_rendering));
+          renderer_preferences_.subpixel_rendering),
+      renderer_preferences_.text_contrast, renderer_preferences_.text_gamma);
 #if BUILDFLAG(IS_WIN)
   // Cache the system font metrics in blink.
   WebFontRendering::SetMenuFontMetrics(
@@ -3497,6 +3517,14 @@ void WebViewImpl::UpdateRendererPreferences(
 
   SetExplicitlyAllowedPorts(
       renderer_preferences_.explicitly_allowed_network_ports);
+
+  if (renderer_preferences_.prefixed_fullscreen_video_api_availability
+          .has_value()) {
+    WebRuntimeFeatures::EnableFeatureFromString(
+        "PrefixedVideoFullscreen",
+        renderer_preferences_.prefixed_fullscreen_video_api_availability
+            .value());
+  }
 }
 
 void WebViewImpl::SetHistoryOffsetAndLength(int32_t history_offset,
@@ -3512,7 +3540,7 @@ void WebViewImpl::SetHistoryOffsetAndLength(int32_t history_offset,
 
 void WebViewImpl::SetHistoryListFromNavigation(
     int32_t history_offset,
-    absl::optional<int32_t> history_length) {
+    std::optional<int32_t> history_length) {
   if (!history_length.has_value()) {
     history_list_offset_ = history_offset;
     return;
@@ -3732,7 +3760,7 @@ void WebViewImpl::TextAutosizerPageInfoChanged(
 }
 
 void WebViewImpl::SetBackgroundColorOverrideForFullscreenController(
-    absl::optional<SkColor> optional_color) {
+    std::optional<SkColor> optional_color) {
   DCHECK(does_composite_);
 
   background_color_override_for_fullscreen_controller_ = optional_color;
@@ -3982,11 +4010,6 @@ void WebViewImpl::SetDeviceColorSpaceForTesting(
   web_widget_->SetDeviceColorSpaceForTesting(color_space);
 }
 
-void WebViewImpl::SetColorProviders(
-    const ColorProviderColorMaps& color_provider_colors) {
-  UpdateColorProviders(color_provider_colors);
-}
-
 const SessionStorageNamespaceId& WebViewImpl::GetSessionStorageNamespaceId() {
   CHECK(!session_storage_namespace_id_.empty());
   return session_storage_namespace_id_;
@@ -3996,25 +4019,47 @@ bool WebViewImpl::IsFencedFrameRoot() const {
   return GetPage()->IsMainFrameFencedFrameRoot();
 }
 
-void WebViewImpl::SetSupportsAppRegion(bool supports_app_region) {
-  supports_app_region_ = supports_app_region;
+void WebViewImpl::SetSupportsDraggableRegions(bool supports_draggable_regions) {
+  supports_draggable_regions_ = supports_draggable_regions;
   if (!MainFrameImpl() || !MainFrameImpl()->GetFrame()) {
     return;
   }
 
   LocalFrame* local_frame = MainFrameImpl()->GetFrame();
 
-  if (supports_app_region_) {
-    local_frame->View()->UpdateDocumentAnnotatedRegions();
+  if (supports_draggable_regions_) {
+    local_frame->View()->UpdateDocumentDraggableRegions();
   } else {
-    local_frame->GetDocument()->SetAnnotatedRegions(
-        Vector<AnnotatedRegionValue>());
-    local_frame->Client()->AnnotatedRegionsChanged();
+    local_frame->GetDocument()->SetDraggableRegions(
+        Vector<DraggableRegionValue>());
+    chrome_client_->DraggableRegionsChanged();
   }
 }
 
-bool WebViewImpl::SupportsAppRegion() {
-  return supports_app_region_;
+bool WebViewImpl::SupportsDraggableRegions() {
+  return supports_draggable_regions_;
+}
+
+void WebViewImpl::DraggableRegionsChanged() {
+  WebVector<WebDraggableRegion> web_regions =
+      MainFrameImpl()->GetDocument().DraggableRegions();
+
+  // If |supports_draggable_regions_| is false, the web view should only send
+  // empty regions to reset a previously set draggable regions.
+  DCHECK(supports_draggable_regions_ || web_regions.empty());
+
+  auto regions = Vector<mojom::blink::DraggableRegionPtr>();
+  for (WebDraggableRegion& web_region : web_regions) {
+    auto converted_bounds =
+        MainFrame()->ToWebLocalFrame()->FrameWidget()->BlinkSpaceToEnclosedDIPs(
+            web_region.bounds);
+
+    auto region = mojom::blink::DraggableRegion::New(converted_bounds,
+                                                     web_region.draggable);
+    regions.emplace_back(std::move(region));
+  }
+
+  local_main_frame_host_remote_->DraggableRegionsChanged(std::move(regions));
 }
 
 void WebViewImpl::MojoDisconnected() {
@@ -4041,7 +4086,7 @@ void WebViewImpl::MojoDisconnected() {
 
 void WebViewImpl::CreateRemoteMainFrame(
     const RemoteFrameToken& frame_token,
-    const absl::optional<FrameToken>& opener_frame_token,
+    const std::optional<FrameToken>& opener_frame_token,
     mojom::blink::FrameReplicationStatePtr replicated_state,
     bool is_loading,
     const base::UnguessableToken& devtools_frame_token,

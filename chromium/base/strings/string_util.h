@@ -4,6 +4,11 @@
 //
 // This file defines utility functions for working with strings.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef BASE_STRINGS_STRING_UTIL_H_
 #define BASE_STRINGS_STRING_UTIL_H_
 
@@ -24,6 +29,7 @@
 #include "base/containers/span.h"
 #include "base/strings/string_piece.h"  // For implicit conversions.
 #include "base/strings/string_util_internal.h"
+#include "base/types/to_address.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -94,7 +100,7 @@ template <typename CharT, typename Iter>
 constexpr std::basic_string_view<CharT> MakeBasicStringPiece(Iter begin,
                                                              Iter end) {
   DCHECK_GE(end - begin, 0);
-  return {std::to_address(begin), static_cast<size_t>(end - begin)};
+  return {base::to_address(begin), static_cast<size_t>(end - begin)};
 }
 
 // Explicit instantiations of MakeBasicStringPiece for the BasicStringPiece

@@ -5,9 +5,12 @@
 #include "third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
+#include <optional>
 #include <type_traits>
 
 #include "base/check_deref.h"
@@ -19,27 +22,33 @@
 #include "base/numerics/checked_math.h"
 #include "base/ranges/algorithm.h"
 #include "base/task/single_thread_task_runner.h"
+#include "cc/paint/paint_filter.h"
+#include "cc/paint/paint_flags.h"
 #include "cc/paint/refcounted_buffer.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metrics.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_object_objectarray_string.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_begin_layer_options.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_webgpu_access_option.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texture_format.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_canvasfilter_string.h"
 #include "third_party/blink/renderer/core/css/cssom/css_color_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser.h"
 #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
+#include "third_party/blink/renderer/core/css/resolver/style_builder_converter.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/text_link_colors.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_font_cache.h"
+#include "third_party/blink/renderer/core/html/canvas/canvas_image_source.h"
+#include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/canvas/text_metrics.h"
 #include "third_party/blink/renderer/core/html/media/html_video_element.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/paint/filter_effect_builder.h"
-#include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_color_cache.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_filter.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_filter_operation_resolver.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_pattern.h"
@@ -51,21 +60,33 @@
 #include "third_party/blink/renderer/modules/canvas/canvas2d/path_2d.h"
 #include "third_party/blink/renderer/modules/canvas/canvas2d/v8_canvas_style.h"
 #include "third_party/blink/renderer/modules/webcodecs/video_frame.h"
+#include "third_party/blink/renderer/modules/webgpu/dawn_conversions.h"
+#include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu_device.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu_texture.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu_texture_usage.h"
 #include "third_party/blink/renderer/platform/bindings/string_resource.h"
 #include "third_party/blink/renderer/platform/fonts/text_run_paint_info.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_2d_layer_bridge.h"
 #include "third_party/blink/renderer/platform/graphics/filters/paint_filter_builder.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/shared_gpu_context.h"
+#include "third_party/blink/renderer/platform/graphics/gpu/webgpu_mailbox_texture.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_types.h"
 #include "third_party/blink/renderer/platform/graphics/image_data_buffer.h"
 #include "third_party/blink/renderer/platform/graphics/memory_managed_paint_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+#include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/stroke_data.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
-#include "third_party/skia/include/core/SkPathBuilder.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/gfx/geometry/quad_f.h"
 #include "ui/gfx/geometry/skia_conversions.h"
 
@@ -125,13 +146,11 @@ BaseRenderingContext2D::BaseRenderingContext2D(
           this,
           &BaseRenderingContext2D::TryRestoreContextEvent),
       clip_antialiasing_(kNotAntiAliased),
-      origin_tainted_by_content_(false),
       path2d_use_paint_cache_(
           base::FeatureList::IsEnabled(features::kPath2DPaintCache)
               ? UsePaintCache::kEnabled
               : UsePaintCache::kDisabled) {
   state_stack_.push_back(MakeGarbageCollected<CanvasRenderingContext2DState>());
-  color_cache_ = CanvasColorCache::Create();
 }
 
 BaseRenderingContext2D::~BaseRenderingContext2D() {
@@ -188,7 +207,12 @@ void BaseRenderingContext2D::restore(ExceptionState& exception_state) {
     return;
   }
 
-  PopAndRestore();
+  cc::PaintCanvas* canvas = GetOrCreatePaintCanvas();
+  if (!canvas) {
+    return;
+  }
+
+  PopAndRestore(*canvas);
   ValidateStateStack();
 }
 
@@ -201,18 +225,23 @@ void BaseRenderingContext2D::beginLayer(ScriptState* script_state,
   // TODO(crbug.com/1234113): Instrument new canvas APIs.
   identifiability_study_helper_.set_encountered_skipped_ops();
 
+  // Make sure we have a recorder and paint canvas.
+  if (!GetOrCreatePaintCanvas()) {
+    return;
+  }
+
+  MemoryManagedPaintRecorder* recorder = Recorder();
+  if (!recorder) {
+    return;
+  }
+
   ValidateStateStack();
 
-  // GetOrCreatePaintCanvas() can call RestoreMatrixClipStack which syncs
-  // canvas to state_stack_. Get the canvas before adjusting state_stack_ to
-  // ensure canvas is synced prior to adjusting state_stack_.
-  cc::PaintCanvas* canvas = GetOrCreatePaintCanvas();
-  if (!canvas)
-    return;
-
-  CanvasRenderingContext2DState& state = GetState();
+  sk_sp<PaintFilter> filter;
   if (const V8CanvasFilterInput* filter_input = CHECK_DEREF(options).filter();
       filter_input != nullptr) {
+    AddLayerFilterUserCount(filter_input);
+
     HTMLCanvasElement* canvas_for_filter = HostAsHTMLCanvasElement();
     FilterOperations filter_operations = CanvasFilter::CreateFilterOperations(
         *filter_input, AccessFont(canvas_for_filter), canvas_for_filter,
@@ -226,23 +255,29 @@ void BaseRenderingContext2D::beginLayer(ScriptState* script_state,
         1.0f,  // Deliberately ignore zoom on the canvas element.
         Color::kBlack, mojom::blink::ColorScheme::kLight);
 
-    // Save the layer's filter in the parent state, along with all the other
-    // render states impacting the layer. Technically, this is only required so
-    // that we could restore the `cc::PaintCanvas` matrix stack (in
-    // `RestoreMatrixClipStack`) if a frame is rendered while the layer is
-    // opened. The filter can be discarded from the parent state as soon as the
-    // layer is closed.
-    state.SetLayerFilter(paint_filter_builder::Build(
+    filter = paint_filter_builder::Build(
         filter_effect_builder.BuildFilterEffect(std::move(filter_operations),
                                                 !OriginClean()),
-        kInterpolationSpaceSRGB));
+        kInterpolationSpaceSRGB);
+  }
+
+  if (layer_count_ == 0) {
+    recorder->BeginSideRecording();
   }
 
   ++layer_count_;
 
+  // Layers are recorded on a side canvas to allow flushes with unclosed layers.
+  // When calling `BeginSideRecording()` for the top level layer,
+  // `getRecordingCanvas()` goes from returning the main canvas to returning the
+  // side canvas storing layer content.
+  cc::PaintCanvas& layer_canvas = recorder->getRecordingCanvas();
+
+  const CanvasRenderingContext2DState& state = GetState();
+  CanvasRenderingContext2DState::SaveType save_type =
+      SaveLayerForState(state, filter, layer_canvas);
   state_stack_.push_back(MakeGarbageCollected<CanvasRenderingContext2DState>(
-      state, CanvasRenderingContext2DState::kDontCopyClipList,
-      SaveLayerForState(state, *canvas)));
+      state, CanvasRenderingContext2DState::kDontCopyClipList, save_type));
   max_state_stack_depth_ =
       std::max(state_stack_.size(), max_state_stack_depth_);
 
@@ -259,32 +294,103 @@ void BaseRenderingContext2D::beginLayer(ScriptState* script_state,
   setGlobalCompositeOperation("source-over");
 }
 
+void BaseRenderingContext2D::AddLayerFilterUserCount(
+    const V8CanvasFilterInput* filter_input) {
+  UseCounter::Count(GetTopExecutionContext(),
+                    WebFeature::kCanvas2DLayersFilters);
+  if (filter_input->GetContentType() ==
+      V8CanvasFilterInput::ContentType::kString) {
+    UseCounter::Count(GetTopExecutionContext(),
+                      WebFeature::kCanvas2DLayersCSSFilters);
+  } else {
+    UseCounter::Count(GetTopExecutionContext(),
+                      WebFeature::kCanvas2DLayersFilterObjects);
+  }
+}
+
+class ScopedResetCtm {
+ public:
+  ScopedResetCtm(const CanvasRenderingContext2DState& state,
+                 cc::PaintCanvas& canvas) : canvas_(canvas) {
+    if (!state.GetTransform().IsIdentity()) {
+      ctm_to_restore_ = canvas_.getLocalToDevice();
+      ctm_to_restore_->dump();
+      canvas_.save();
+      canvas_.setMatrix(SkM44());
+    }
+  }
+  ~ScopedResetCtm() {
+    if (ctm_to_restore_.has_value()) {
+      canvas_.setMatrix(*ctm_to_restore_);
+    }
+  }
+
+ private:
+  cc::PaintCanvas& canvas_;
+  std::optional<SkM44> ctm_to_restore_;
+};
+
 CanvasRenderingContext2DState::SaveType
 BaseRenderingContext2D::SaveLayerForState(
     const CanvasRenderingContext2DState& state,
+    sk_sp<PaintFilter> filter,
     cc::PaintCanvas& canvas) const {
   const int initial_save_count = canvas.getSaveCount();
   bool needs_compositing = state.GlobalComposite() != SkBlendMode::kSrcOver;
 
-  // Global states must be applied on the result of the layer's filter.
-  // For alpha + shadows or compositing, we must use two nested layers. The
+  // The "copy" globalCompositeOperation replaces everything that was in the
+  // canvas. We therefore have to clear the canvas before proceeding. Since the
+  // shadow and foreground are composited one after the other, the foreground
+  // gets composited over the shadow itself. This means that in "copy"
+  // compositing mode, drawing the foreground will clear the shadow. There's
+  // therefore no need to draw the shadow at all.
+  //
+  // Global states must be applied on the result of the layer's filter, so the
+  // filter has to go in a nested layer.
+  //
+  // For alpha + (shadows or compositing), we must use two nested layers. The
   // inner one applies the alpha and the outer one applies the shadow and/or
   // compositing. This is needed to to get a transparent foreground, as the
   // alpha would otherwise be applied to the result of foreground+background.
-  if (state.ShouldDrawShadows() || BlendModeRequiresCompositedDraw(state)) {
-    cc::PaintFlags flags;
-    flags.setBlendMode(state.GlobalComposite());
+  if (state.GlobalComposite() == SkBlendMode::kSrc) {
+    canvas.clear(HasAlpha() ? SkColors::kTransparent : SkColors::kBlack);
     needs_compositing = false;
-    if (state.ShouldDrawShadows()) {
+  } else if (bool should_draw_shadow = state.ShouldDrawShadows(),
+             needs_composited_draw = BlendModeRequiresCompositedDraw(state);
+             should_draw_shadow || needs_composited_draw) {
+    if (should_draw_shadow && needs_composited_draw) {
+      ScopedResetCtm scoped_reset_ctm(state, canvas);
+      // According to the WHATWG spec, the shadow and foreground need to be
+      // composited independently to the canvas, one after the other
+      // (https://html.spec.whatwg.org/multipage/canvas.html#drawing-model).
+      // This is done by drawing twice, once for the background and once more
+      // for the foreground. For layers, we can do this by passing two filters
+      // that will each do a composite pass of the input to the destination.
+      // Passing `nullptr` for the second pass means no filter is applied to the
+      // foreground.
+      cc::PaintFlags flags;
+      flags.setBlendMode(state.GlobalComposite());
+      sk_sp<PaintFilter> foreground_filter;  // nullptr means no filter.
+      canvas.saveLayerFilters(
+          std::array{state.ShadowOnlyImageFilter(), foreground_filter}, flags);
+    } else if (should_draw_shadow) {
+      ScopedResetCtm scoped_reset_ctm(state, canvas);
+      cc::PaintFlags flags;
       flags.setImageFilter(state.ShadowAndForegroundImageFilter());
+      flags.setBlendMode(state.GlobalComposite());
+      canvas.saveLayer(flags);
+    } else {
+      cc::PaintFlags flags;
+      flags.setBlendMode(state.GlobalComposite());
+      canvas.saveLayer(flags);
     }
-    canvas.saveLayer(flags);
+    needs_compositing = false;
   }
 
-  if (state.HasLayerFilter() || needs_compositing) {
+  if (filter || needs_compositing) {
     cc::PaintFlags flags;
     flags.setAlphaf(static_cast<float>(state.GlobalAlpha()));
-    flags.setImageFilter(state.GetLayerFilter());
+    flags.setImageFilter(filter);
     if (needs_compositing) {
       flags.setBlendMode(state.GlobalComposite());
     }
@@ -295,10 +401,7 @@ BaseRenderingContext2D::SaveLayerForState(
   }
 
   const int save_diff = canvas.getSaveCount() - initial_save_count;
-  CHECK(save_diff == 1 || save_diff == 2);
-  using SaveType = CanvasRenderingContext2DState::SaveType;
-  return save_diff == 2 ? SaveType::kBeginEndLayerTwoSaves
-                        : SaveType::kBeginEndLayerOneSave;
+  return CanvasRenderingContext2DState::LayerSaveCountToSaveType(save_diff);
 }
 
 void BaseRenderingContext2D::endLayer(ExceptionState& exception_state) {
@@ -325,47 +428,63 @@ void BaseRenderingContext2D::endLayer(ExceptionState& exception_state) {
     return;
   }
 
-  PopAndRestore();
+  // Make sure we have a recorder and paint canvas.
+  if (!GetOrCreatePaintCanvas()) {
+    return;
+  }
+
+  MemoryManagedPaintRecorder* recorder = Recorder();
+  if (!recorder) {
+    return;
+  }
+
+  cc::PaintCanvas& layer_canvas = recorder->getRecordingCanvas();
+  PopAndRestore(layer_canvas);
 
   --layer_count_;
+  if (layer_count_ == 0) {
+    recorder->EndSideRecording();
+  }
+
+  // Layers are recorded on a side canvas to allow flushes with unclosed layers.
+  // When calling `EndSideRecording()` for the lop layer, `getRecordingCanvas()`
+  // goes from returning the side canvas storing the layers content to returning
+  // the main canvas.
+  cc::PaintCanvas& parent_canvas = recorder->getRecordingCanvas();
+  SkIRect clip_bounds;
+  if (parent_canvas.getDeviceClipBounds(&clip_bounds)) {
+    WillDraw(clip_bounds, CanvasPerformanceMonitor::DrawType::kOther);
+  }
+
   ValidateStateStack();
 }
 
-void BaseRenderingContext2D::PopAndRestore() {
-  cc::PaintCanvas* canvas = GetOrCreatePaintCanvas();
-  if (!canvas)
-    return;
-
-  if (state_stack_.back()->GetSaveType() ==
-      CanvasRenderingContext2DState::SaveType::kBeginEndLayerTwoSaves) {
-    canvas->restore();
-  }
-
-  if (IsTransformInvertible()) {
+void BaseRenderingContext2D::PopAndRestore(cc::PaintCanvas& canvas) {
+  if (IsTransformInvertible() && !GetState().GetTransform().IsIdentity()) {
     GetModifiablePath().Transform(GetState().GetTransform());
   }
 
-  canvas->restore();
+  for (int i = 0, to_restore = state_stack_.back()->LayerSaveCount() - 1;
+       i < to_restore; ++i) {
+    canvas.restore();
+  }
+
+  canvas.restore();
   state_stack_.pop_back();
   CanvasRenderingContext2DState& state = GetState();
   state.ClearResolvedFilter();
-  // If we popped a layer, we can clear its filter as it's no longer needed.
-  state.SetLayerFilter(nullptr);
 
   SetIsTransformInvertible(state.IsTransformInvertible());
-  if (IsTransformInvertible()) {
+  if (IsTransformInvertible() && !GetState().GetTransform().IsIdentity()) {
     GetModifiablePath().Transform(state.GetTransform().Inverse());
   }
 }
 
 void BaseRenderingContext2D::ValidateStateStackImpl(
     const cc::PaintCanvas* canvas) const {
-  if (canvas == nullptr) {
-    canvas = GetPaintCanvas();
-  }
-
   DCHECK_GE(state_stack_.size(), 1u);
-  DCHECK_GT(state_stack_.size(), static_cast<WTF::wtf_size_t>(layer_count_));
+  DCHECK_GT(state_stack_.size(),
+            base::checked_cast<WTF::wtf_size_t>(layer_count_));
 
   using SaveType = CanvasRenderingContext2DState::SaveType;
   DCHECK_EQ(state_stack_[0]->GetSaveType(), SaveType::kInitial);
@@ -381,21 +500,32 @@ void BaseRenderingContext2D::ValidateStateStackImpl(
 
     if (state_stack_[i]->IsLayerSaveType()) {
       ++actual_layer_count;
-    }
-    if (state_stack_[i]->GetSaveType() == SaveType::kBeginEndLayerTwoSaves) {
-      ++extra_layer_saves;
+      extra_layer_saves += state_stack_[i]->LayerSaveCount() - 1;
     }
   }
   DCHECK_EQ(layer_count_, actual_layer_count);
 
-  if (canvas) {
+  if (const MemoryManagedPaintRecorder* recorder = Recorder();
+      recorder != nullptr) {
+    if (canvas == nullptr) {
+      canvas = &recorder->GetMainCanvas();
+    }
+    const cc::PaintCanvas* layer_canvas = recorder->GetSideCanvas();
+
     // The canvas should always have an initial save frame, to support
     // resetting the top level matrix and clip.
     DCHECK_GT(canvas->getSaveCount(), 1);
 
     if (context_lost_mode_ == CanvasRenderingContext::kNotLostContext) {
-      DCHECK_EQ(static_cast<size_t>(canvas->getSaveCount()),
-                state_stack_.size() + extra_layer_saves + 1);
+      // Recording canvases always starts with a baseline save that we have to
+      // account for here.
+      int main_saves = canvas->getSaveCount() - 1;
+      int layer_saves = layer_canvas ? layer_canvas->getSaveCount() - 1 : 0;
+
+      // The state stack depth should match the number of saves in the
+      // recording (taking in to account that some layers require two saves).
+      DCHECK_EQ(base::checked_cast<WTF::wtf_size_t>(main_saves + layer_saves),
+                state_stack_.size() + extra_layer_saves);
     }
   }
 }
@@ -403,20 +533,16 @@ void BaseRenderingContext2D::ValidateStateStackImpl(
 void BaseRenderingContext2D::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
   if (!c)
     return;
-  CanvasRenderingContext2DState* prev_state = nullptr;
+  AffineTransform prev_transform;
   for (Member<CanvasRenderingContext2DState> curr_state : state_stack_) {
     if (curr_state->IsLayerSaveType()) {
-      // Layers are rendered with the render states of their parent.
-      CanvasRenderingContext2DState::SaveType save_type =
-          SaveLayerForState(CHECK_DEREF(prev_state), *c);
-      CHECK_EQ(save_type, curr_state->GetSaveType());
-    } else {
-      c->save();
+      // Layers are stored in a separate recording that never gets flushed, so
+      // we are done restoring the main recording.
+      break;
     }
 
-    AffineTransform prev_transform =
-        (prev_state != nullptr ? prev_state->GetTransform()
-                               : AffineTransform());
+    c->save();
+
     if (curr_state->HasClip()) {
       if (!prev_transform.IsIdentity()) {
         c->setMatrix(SkM44());
@@ -428,9 +554,8 @@ void BaseRenderingContext2D::RestoreMatrixClipStack(cc::PaintCanvas* c) const {
     if (AffineTransform curr_transform = curr_state->GetTransform();
         prev_transform != curr_transform) {
       c->setMatrix(AffineTransformToSkM44(curr_transform));
+      prev_transform = curr_transform;
     }
-
-    prev_state = curr_state.Get();
   }
   ValidateStateStack(c);
 }
@@ -448,6 +573,13 @@ void BaseRenderingContext2D::ResetInternal() {
   if (MemoryManagedPaintRecorder* recorder = Recorder(); recorder != nullptr) {
     recorder->RestartRecording();
   }
+
+  // If we are in WebGPU access, orphan the texture. The canvas no longer needs
+  // it, but the Javascript program can continue using the texture indefinitely.
+  // The texture will eventually be garbage collected when there are no more
+  // Javascript references. From the canvas' perspective, nulling out this
+  // texture effectively ends the WebGPU access session.
+  webgpu_access_texture_ = nullptr;
 
   // Clear the frame in case a flush previously drew to the canvas surface.
   if (cc::PaintCanvas* c = GetPaintCanvas()) {
@@ -512,32 +644,26 @@ void BaseRenderingContext2D::
   }
 }
 
-bool BaseRenderingContext2D::ExtractColorFromV8ValueAndUpdateCache(
-    const V8CanvasStyle& v8_style,
+bool BaseRenderingContext2D::ExtractColorFromStringAndUpdateCache(
+    const AtomicString& string,
     Color& color) {
   // This should only be called for string styles.
-  DCHECK_EQ(v8_style.type, V8CanvasStyleType::kString);
-  if (color_cache_) {
-    const CachedColor* cached_color =
-        color_cache_->GetCachedColor(v8_style.string);
-    if (cached_color) {
-      if (cached_color->parse_result == ColorParseResult::kColor) {
-        color = cached_color->color;
-        return true;
-      }
-      if (cached_color->parse_result == ColorParseResult::kCurrentColor) {
-        color = GetCurrentColor();
-        return true;
-      }
-      DCHECK_EQ(cached_color->parse_result, ColorParseResult::kParseFailed);
-      return false;
+  auto iter = color_cache_.Get(string);
+  if (iter != color_cache_.end()) {
+    const CachedColor& cached_color = iter->second;
+    if (cached_color.parse_result == ColorParseResult::kColor) {
+      color = cached_color.color;
+      return true;
     }
+    if (cached_color.parse_result == ColorParseResult::kCurrentColor) {
+      color = GetCurrentColor();
+      return true;
+    }
+    DCHECK_EQ(cached_color.parse_result, ColorParseResult::kParseFailed);
+    return false;
   }
-  const ColorParseResult parse_result =
-      ParseColorOrCurrentColor(v8_style.string, color);
-  if (color_cache_) {
-    color_cache_->SetCachedColor(v8_style.string, color, parse_result);
-  }
+  const ColorParseResult parse_result = ParseColorOrCurrentColor(string, color);
+  color_cache_.Put(string, CachedColor(color, parse_result));
   return parse_result != ColorParseResult::kParseFailed;
 }
 
@@ -569,7 +695,8 @@ void BaseRenderingContext2D::setStrokeStyle(v8::Isolate* isolate,
         return;
       }
       Color parsed_color = Color::kTransparent;
-      if (!ExtractColorFromV8ValueAndUpdateCache(v8_style, parsed_color)) {
+      if (!ExtractColorFromStringAndUpdateCache(v8_style.string,
+                                                parsed_color)) {
         return;
       }
       if (state.StrokeStyle().IsEquivalentColor(parsed_color)) {
@@ -599,15 +726,14 @@ ColorParseResult BaseRenderingContext2D::ParseColorOrCurrentColor(
         CSSPropertyID::kColor, color_string,
         StrictCSSParserContext(SecureContextMode::kInsecureContext));
 
-    if (auto* window = DynamicTo<LocalDOMWindow>(GetTopExecutionContext())) {
-      color = window->document()->GetTextLinkColors().ColorFromCSSValue(
-          *color_mix_value, GetCurrentColor(), color_scheme_);
-    } else {
-      TextLinkColors text_link_colors = TextLinkColors();
-      color = text_link_colors.ColorFromCSSValue(
-          *color_mix_value, GetCurrentColor(), color_scheme_);
-    }
-
+    static const TextLinkColors kDefaultTextLinkColors{};
+    auto* window = DynamicTo<LocalDOMWindow>(GetTopExecutionContext());
+    const TextLinkColors& text_link_colors =
+        window ? window->document()->GetTextLinkColors()
+               : kDefaultTextLinkColors;
+    const StyleColor style_color = ResolveColorValue(
+        *color_mix_value, text_link_colors, color_scheme_, GetColorProvider());
+    color = style_color.Resolve(GetCurrentColor(), color_scheme_);
     return ColorParseResult::kColor;
   }
   return parse_result;
@@ -656,7 +782,8 @@ void BaseRenderingContext2D::setFillStyle(v8::Isolate* isolate,
         return;
       }
       Color parsed_color = Color::kTransparent;
-      if (!ExtractColorFromV8ValueAndUpdateCache(v8_style, parsed_color)) {
+      if (!ExtractColorFromStringAndUpdateCache(v8_style.string,
+                                                parsed_color)) {
         return;
       }
       if (state.FillStyle().IsEquivalentColor(parsed_color)) {
@@ -1208,6 +1335,38 @@ void BaseRenderingContext2D::DrawPathInternal(
     return;
   }
 
+  if (path.IsArc()) {
+    const auto& arc = path.arc();
+    const SkScalar x = WebCoreFloatToSkScalar(arc.x);
+    const SkScalar y = WebCoreFloatToSkScalar(arc.y);
+    const SkScalar radius = WebCoreFloatToSkScalar(arc.radius);
+    const SkScalar diameter = radius + radius;
+    const SkRect oval =
+        SkRect::MakeXYWH(x - radius, y - radius, diameter, diameter);
+    const SkScalar start_degrees =
+        WebCoreFloatToSkScalar(arc.start_angle_radians * 180 / kPiFloat);
+    const SkScalar sweep_degrees =
+        WebCoreFloatToSkScalar(arc.sweep_angle_radians * 180 / kPiFloat);
+    const bool closed = arc.closed;
+    Draw<OverdrawOp::kNone>(
+        [oval, start_degrees, sweep_degrees, closed](
+            cc::PaintCanvas* c,
+            const cc::PaintFlags* flags)  // draw lambda
+        {
+          cc::PaintFlags arc_paint_flags(*flags);
+          arc_paint_flags.setArcClosed(closed);
+          c->drawArc(oval, start_degrees, sweep_degrees, arc_paint_flags);
+        },
+        [](const SkIRect& rect)  // overdraw test lambda
+        { return false; },
+        bounds, paint_type,
+        GetState().HasPattern(paint_type)
+            ? CanvasRenderingContext2DState::kNonOpaqueImage
+            : CanvasRenderingContext2DState::kNoImage,
+        CanvasPerformanceMonitor::DrawType::kPath);
+    return;
+  }
+
   SkPath sk_path = path.GetPath().GetSkPath();
   sk_path.setFillType(fill_type);
 
@@ -1324,11 +1483,11 @@ static void StrokeRectOnCanvas(const gfx::RectF& rect,
   DCHECK_EQ(flags->getStyle(), cc::PaintFlags::kStroke_Style);
   if ((rect.width() > 0) != (rect.height() > 0)) {
     // When stroking, we must skip the zero-dimension segments
-    SkPathBuilder path;
+    SkPath path;
     path.moveTo(rect.x(), rect.y());
     path.lineTo(rect.right(), rect.bottom());
     path.close();
-    canvas->drawPath(path.detach(), *flags);
+    canvas->drawPath(path, *flags);
     return;
   }
   canvas->drawRect(gfx::RectFToSkRect(rect), *flags);
@@ -1810,7 +1969,16 @@ void BaseRenderingContext2D::drawImage(CanvasImageSource* image_source,
   scoped_refptr<Image> image;
   gfx::SizeF default_object_size(Width(), Height());
   SourceImageStatus source_image_status = kInvalidSourceImageStatus;
-  if (!image_source->IsVideoElement()) {
+  if (image_source->IsVideoElement()) {
+    if (!static_cast<HTMLVideoElement*>(image_source)
+             ->HasAvailableVideoFrame()) {
+      return;
+    }
+  } else if (image_source->IsVideoFrame()) {
+    if (!static_cast<VideoFrame*>(image_source)->frame()) {
+      return;
+    }
+  } else {
     image = image_source->GetSourceImageForCanvas(
         FlushReason::kDrawImage, &source_image_status, default_object_size);
     if (source_image_status == kUndecodableSourceImageStatus) {
@@ -1818,10 +1986,14 @@ void BaseRenderingContext2D::drawImage(CanvasImageSource* image_source,
           DOMExceptionCode::kInvalidStateError,
           "The HTMLImageElement provided is in the 'broken' state.");
     }
-    if (!image || !image->width() || !image->height())
+    if (source_image_status == kLayersOpenInCanvasSource) {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidStateError,
+          "`drawImage()` with a canvas as a source cannot be called while "
+          "layers are open in the the source canvas.");
       return;
-  } else {
-    if (!static_cast<HTMLVideoElement*>(image_source)->HasAvailableVideoFrame())
+    }
+    if (!image || !image->width() || !image->height())
       return;
   }
 
@@ -2038,6 +2210,12 @@ CanvasPattern* BaseRenderingContext2D::createPattern(
       break;
     case kIncompleteSourceImageStatus:
       return nullptr;
+    case kLayersOpenInCanvasSource:
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidStateError,
+          "`createPattern()` with a canvas as a source cannot be called while "
+          "layers are open in the source canvas.");
+      return nullptr;
     default:
       NOTREACHED();
       return nullptr;
@@ -2117,11 +2295,42 @@ Mesh2DIndexBuffer* BaseRenderingContext2D::createMesh2DIndexBuffer(
                                 array->Data() + array->length())));
 }
 
-void BaseRenderingContext2D::drawMesh(const Mesh2DVertexBuffer* vertex_buffer,
-                                      const Mesh2DUVBuffer* uv_buffer,
-                                      const Mesh2DIndexBuffer* index_buffer,
-                                      const V8CanvasImageSource* image,
-                                      ExceptionState& exception_state) {
+void BaseRenderingContext2D::drawMesh(
+    const Mesh2DVertexBuffer* vertex_buffer,
+    const Mesh2DUVBuffer* uv_buffer,
+    const Mesh2DIndexBuffer* index_buffer,
+    const V8CanvasImageSource* v8_image_source,
+    ExceptionState& exception_state) {
+  CanvasImageSource* image_source =
+      ToCanvasImageSource(v8_image_source, exception_state);
+  if (!image_source) {
+    return;
+  }
+
+  SourceImageStatus source_image_status = kInvalidSourceImageStatus;
+  scoped_refptr<Image> image = image_source->GetSourceImageForCanvas(
+      FlushReason::kDrawMesh, &source_image_status,
+      gfx::SizeF(Width(), Height()));
+  switch (source_image_status) {
+    case kUndecodableSourceImageStatus:
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidStateError,
+          "The HTMLImageElement provided is in the 'broken' state.");
+      return;
+    case kLayersOpenInCanvasSource:
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kInvalidStateError,
+          "`drawMesh()` with a canvas as a source cannot be called while "
+          "layers are open in the the source canvas.");
+      return;
+    default:
+      break;
+  }
+
+  if (!image || image->IsNull()) {
+    return;
+  }
+
   scoped_refptr<cc::RefCountedBuffer<SkPoint>> vertex_data =
       vertex_buffer->GetBuffer();
   CHECK_NE(vertex_data, nullptr);
@@ -2131,7 +2340,35 @@ void BaseRenderingContext2D::drawMesh(const Mesh2DVertexBuffer* vertex_buffer,
       index_buffer->GetBuffer();
   CHECK_NE(index_data, nullptr);
 
-  // TODO(fmalita): impl
+  WillDrawImage(image_source);
+
+  if (!origin_tainted_by_content_ && WouldTaintCanvasOrigin(image_source)) {
+    SetOriginTaintedByContent();
+  }
+
+  SkRect bounds;
+  bounds.setBounds(vertex_data->data().data(),
+                   SkToInt(vertex_data->data().size()));
+
+  Draw<OverdrawOp::kNone>(
+      /*draw_func=*/
+      [&image, &vertex_data, &uv_data, &index_data](
+          cc::PaintCanvas* c, const cc::PaintFlags* flags) {
+        const gfx::RectF src(image->width(), image->height());
+        // UV coordinates are normalized, relative to the texture size.
+        const SkMatrix local_matrix =
+            SkMatrix::Scale(1.0f / image->width(), 1.0f / image->height());
+
+        cc::PaintFlags scoped_flags(*flags);
+        image->ApplyShader(scoped_flags, local_matrix, src, ImageDrawOptions());
+        c->drawVertices(vertex_data, uv_data, index_data, scoped_flags);
+      },
+      kNoOverdraw,
+      gfx::RectF(bounds.x(), bounds.y(), bounds.width(), bounds.height()),
+      CanvasRenderingContext2DState::PaintType::kFillPaintType,
+      image_source->IsOpaque() ? CanvasRenderingContext2DState::kOpaqueImage
+                               : CanvasRenderingContext2DState::kNonOpaqueImage,
+      CanvasPerformanceMonitor::DrawType::kOther);
 }
 
 bool BaseRenderingContext2D::ComputeDirtyRect(const gfx::RectF& local_rect,
@@ -2149,7 +2386,7 @@ ImageData* BaseRenderingContext2D::createImageData(
   ImageData::ValidateAndCreateParams params;
   params.context_2d_error_mode = true;
   return ImageData::ValidateAndCreate(
-      image_data->Size().width(), image_data->Size().height(), absl::nullopt,
+      image_data->Size().width(), image_data->Size().height(), std::nullopt,
       image_data->getSettings(), params, exception_state);
 }
 
@@ -2160,7 +2397,7 @@ ImageData* BaseRenderingContext2D::createImageData(
   ImageData::ValidateAndCreateParams params;
   params.context_2d_error_mode = true;
   params.default_color_space = GetDefaultImageDataColorSpace();
-  return ImageData::ValidateAndCreate(std::abs(sw), std::abs(sh), absl::nullopt,
+  return ImageData::ValidateAndCreate(std::abs(sw), std::abs(sh), std::nullopt,
                                       /*settings=*/nullptr, params,
                                       exception_state);
 }
@@ -2173,7 +2410,7 @@ ImageData* BaseRenderingContext2D::createImageData(
   ImageData::ValidateAndCreateParams params;
   params.context_2d_error_mode = true;
   params.default_color_space = GetDefaultImageDataColorSpace();
-  return ImageData::ValidateAndCreate(std::abs(sw), std::abs(sh), absl::nullopt,
+  return ImageData::ValidateAndCreate(std::abs(sw), std::abs(sh), std::nullopt,
                                       image_data_settings, params,
                                       exception_state);
 }
@@ -2208,6 +2445,13 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
     ExceptionState& exception_state) {
   if (!base::CheckMul(sw, sh).IsValid<int>()) {
     exception_state.ThrowRangeError("Out of memory at ImageData creation");
+    return nullptr;
+  }
+
+  if (layer_count_ != 0) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "`getImageData()` cannot be called with open layers.");
     return nullptr;
   }
 
@@ -2255,7 +2499,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
 
   if (UNLIKELY(isContextLost() || !CanCreateCanvas2dResourceProvider())) {
     return ImageData::ValidateAndCreate(
-        sw, sh, absl::nullopt, image_data_settings, validate_and_create_params,
+        sw, sh, std::nullopt, image_data_settings, validate_and_create_params,
         exception_state);
   }
 
@@ -2340,7 +2584,7 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
   }
 
   ImageData* image_data =
-      ImageData::ValidateAndCreate(sw, sh, absl::nullopt, image_data_settings,
+      ImageData::ValidateAndCreate(sw, sh, std::nullopt, image_data_settings,
                                    validate_and_create_params, exception_state);
   if (!image_data)
     return nullptr;
@@ -2391,7 +2635,7 @@ void BaseRenderingContext2D::putImageData(ImageData* data,
   if (layer_count_ != 0) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidStateError,
-        "`putImageData()` cannot be called while layers are opened.");
+        "`putImageData()` cannot be called with open layers.");
     return;
   }
 
@@ -2627,6 +2871,7 @@ void BaseRenderingContext2D::Trace(Visitor* visitor) const {
   visitor->Trace(dispatch_context_lost_event_timer_);
   visitor->Trace(dispatch_context_restored_event_timer_);
   visitor->Trace(try_restore_context_event_timer_);
+  visitor->Trace(webgpu_access_texture_);
   CanvasPath::Trace(visitor);
 }
 
@@ -2689,7 +2934,7 @@ void BaseRenderingContext2D::WillOverwriteCanvas(
   }
 
   if (MemoryManagedPaintRecorder* recorder = Recorder(); recorder != nullptr) {
-    recorder->SkipQueuedDrawCommands();
+    recorder->RestartCurrentLayer();
   }
 }
 
@@ -2936,7 +3181,7 @@ void BaseRenderingContext2D::DrawTextInternal(
   gfx::PointF location(ClampTo<float>(x),
                        ClampTo<float>(y + GetFontBaseline(*font_data)));
   gfx::RectF bounds;
-  double font_width = font.Width(text_run, &bounds);
+  double font_width = font.BidiWidth(text_run, &bounds);
 
   bool use_max_width = (max_width && *max_width < font_width);
   double width = use_max_width ? *max_width : font_width;
@@ -3003,11 +3248,13 @@ void BaseRenderingContext2D::DrawTextInternal(
       CanvasPerformanceMonitor::DrawType::kText);
 
   if (use_max_width) {
-    // Cannot use `paint_canvas` in case recording canvas was substituted or
-    // destroyed during draw call.
-    cc::PaintCanvas* c = GetPaintCanvas();
-    if (c) {
-      c->restore();
+    // Make sure that `paint_canvas` is still valid and active. Calling `Draw`
+    // might reset `paint_canvas`. If that happens, `GetOrCreatePaintCanvas`
+    // will create a new `paint_canvas` and return a new address. This new
+    // canvas won't have the `save()` added above, so it would be invalid to
+    // call `restore()` here.
+    if (paint_canvas == GetOrCreatePaintCanvas()) {
+      paint_canvas->restore();
     }
   }
   ValidateStateStack();
@@ -3026,6 +3273,7 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
     canvas->GetDocument().UpdateStyleAndLayoutTreeForElement(
         canvas, DocumentUpdateReason::kCanvas);
   }
+
   const Font& font = AccessFont(canvas);
 
   const CanvasRenderingContext2DState& state = GetState();
@@ -3084,7 +3332,7 @@ void BaseRenderingContext2D::setTextRendering(
     setFont(font());
   }
 
-  absl::optional<blink::V8CanvasTextRendering> text_value =
+  std::optional<blink::V8CanvasTextRendering> text_value =
       V8CanvasTextRendering::Create(text_rendering_string);
 
   if (!text_value.has_value()) {
@@ -3134,7 +3382,7 @@ void BaseRenderingContext2D::setFontStretch(const String& font_stretch) {
     setFont(font());
   }
 
-  absl::optional<blink::V8CanvasFontStretch> font_value =
+  std::optional<blink::V8CanvasFontStretch> font_value =
       V8CanvasFontStretch::Create(font_stretch);
 
   if (!font_value.has_value()) {
@@ -3192,6 +3440,183 @@ bool BaseRenderingContext2D::IsAccelerated() const {
     return host->GetRasterMode() == RasterMode::kGPU;
   }
   return false;
+}
+
+V8GPUTextureFormat BaseRenderingContext2D::getTextureFormat() const {
+  // Query the canvas and return its actual texture format.
+  std::optional<V8GPUTextureFormat> format;
+  if (const CanvasRenderingContextHost* host =
+          GetCanvasRenderingContextHost()) {
+    format = V8GPUTextureFormat::Create(FromDawnEnum(
+        AsDawnType(host->GetRenderingContextSkColorInfo().colorType())));
+  }
+
+  // If that did not work (e.g., the canvas host does not yet exist), we can
+  // return the preferred canvas format.
+  if (!format.has_value()) {
+    format = V8GPUTextureFormat::Create(
+        FromDawnEnum(GPU::preferred_canvas_format()));
+  }
+
+  // If the preferred canvas format cannot be represented as a GPUTextureFormat,
+  // something is wrong; we need to investigate.
+  CHECK(format.has_value()) << "GPU::preferred_canvas_format() returned an "
+                               "unrecognized texture format";
+  return *format;
+}
+
+GPUTexture* BaseRenderingContext2D::beginWebGPUAccess(
+    const CanvasWebGPUAccessOption* access_options,
+    ExceptionState& exception_state) {
+  if (!OriginClean()) {
+    exception_state.ThrowSecurityError(
+        "The canvas has been tainted by cross-origin data.");
+    return nullptr;
+  }
+
+  blink::GPUDevice* blink_device = access_options->getDeviceOr(nullptr);
+  if (!blink_device) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "GPUDevice cannot be null.");
+    return nullptr;
+  }
+
+  // Prevent unbalanced calls to beginWebGPUAccess without a later call to
+  // endWebGPUAccess.
+  if (webgpu_access_texture_) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "This canvas is already in use by WebGPU.");
+    return nullptr;
+  }
+
+  // Verify that the usage flags are supported.
+  constexpr wgpu::TextureUsage kSupportedUsageFlags =
+      wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst |
+      wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::RenderAttachment;
+  wgpu::TextureUsage tex_usage =
+      AsDawnFlags<wgpu::TextureUsage>(access_options->usage());
+  if (tex_usage & ~kSupportedUsageFlags) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "Usage flags are not supported.");
+    return nullptr;
+  }
+
+  // We can't rely on the HTMLCanvasElement, because the canvas may not actually
+  // exist in the HTML. (e.g. `new OffscreenCanvas` has no HTML element.)
+  // We also can't use GetImage() here, because that will return null if the
+  // canvas is brand new. We always want an image, even if the canvas doesn't
+  // have a bridge yet.
+  FinalizeFrame(FlushReason::kWebGPUTexture);
+  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
+  scoped_refptr<StaticBitmapImage> image =
+      host->GetOrCreateCanvasResourceProvider(RasterModeHint::kPreferGPU)
+          ->Snapshot(FlushReason::kWebGPUTexture);
+  if (!image) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "Unable to access canvas image.");
+    return nullptr;
+  }
+
+  SkImageInfo image_info = image->GetSkImageInfo();
+  scoped_refptr<WebGPUMailboxTexture> texture =
+      WebGPUMailboxTexture::FromStaticBitmapImage(
+          blink_device->GetDawnControlClient(), blink_device->GetHandle(),
+          tex_usage, image, image_info,
+          gfx::Rect(image_info.width(), image_info.height()),
+          /*is_dummy_mailbox_texture=*/false);
+  if (!texture) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "Unable to access canvas texture.");
+    return nullptr;
+  }
+
+  webgpu_access_texture_ = MakeGarbageCollected<GPUTexture>(
+      blink_device, AsDawnType(image_info.colorType()), tex_usage,
+      std::move(texture), access_options->getLabelOr(String()));
+
+  return webgpu_access_texture_;
+}
+
+bool BaseRenderingContext2D::CopyGPUTextureToResourceProvider(
+    GPUTexture& texture,
+    CanvasResourceProvider& resource_provider) {
+  // Get the GPU mailbox associated with the WebGPU access texture. This texture
+  // always originates from `beginWebGPUAccess`, so we should always find a
+  // shared-image mailbox here.
+  scoped_refptr<WebGPUMailboxTexture> mailbox_texture =
+      texture.GetMailboxTexture();
+  CHECK(mailbox_texture);
+
+  const gpu::Mailbox& mailbox = mailbox_texture->GetMailbox();
+
+  // Dissociating the mailbox texture from WebGPU forces the GPU queue to drain,
+  // and yields a sync token for OverwriteImage.
+  gpu::SyncToken ready_sync_token = mailbox_texture->Dissociate();
+  if (!ready_sync_token.HasData()) {
+    return false;
+  }
+
+  // Overwrite the resource provider's shared image with the WebGPU texture.
+  const bool unpack_flip_y = !resource_provider.IsOriginTopLeft();
+  gfx::Rect copy_rect(texture.width(), texture.height());
+
+  gpu::SyncToken completion_sync_token;
+  if (!resource_provider.OverwriteImage(mailbox, copy_rect, unpack_flip_y,
+                                        /*unpack_premultiply_alpha=*/false,
+                                        ready_sync_token,
+                                        completion_sync_token)) {
+    return false;
+  }
+
+  // Ensure that the mailbox texture lives until OverwriteImage fully completes.
+  // Note that `mailbox_texture->Dissociate` above has already set a completion
+  // sync token on the mailbox texture (our `ready_sync_token`), but we are
+  // deliberately replacing it here with a newer sync token that also includes
+  // completion of the image overwrite operation.
+  mailbox_texture->SetCompletionSyncToken(completion_sync_token);
+  return true;
+}
+
+void BaseRenderingContext2D::endWebGPUAccess(ExceptionState& exception_state) {
+  // If the context is lost or doesn't exist, this call should be a no-op.
+  // We don't want to throw an exception or attempt any changes if
+  // `endWebGPUAccess` is called during teardown.
+  CanvasRenderingContextHost* host = GetCanvasRenderingContextHost();
+  if (UNLIKELY(!host) || UNLIKELY(isContextLost())) {
+    return;
+  }
+
+  // Get the CanvasResourceProvider of this canvas. As above, if the canvas
+  // resource provider doesn't exist, this call becomes a no-op.
+  CanvasResourceProvider* resource_provider =
+      host->GetOrCreateCanvasResourceProvider(RasterModeHint::kPreferGPU);
+  if (UNLIKELY(!resource_provider)) {
+    return;
+  }
+
+  // Prevent unbalanced calls to endWebGPUAccess without an earlier call to
+  // beginWebGPUAccess.
+  if (!webgpu_access_texture_) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "This canvas is not currently in use by WebGPU.");
+    return;
+  }
+
+  // Copy the contents of the GPUTexture into this ResourceProvider.
+  if (!CopyGPUTextureToResourceProvider(*webgpu_access_texture_,
+                                        *resource_provider)) {
+    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
+                                      "Unable to replace canvas image.");
+  }
+
+  // Destroy the WebGPU texture to prevent it from being used after
+  // endWebGPUAccess.
+  webgpu_access_texture_->destroy();
+
+  // We are finished with the WebGPU texture and its associated device.
+  webgpu_access_texture_ = nullptr;
 }
 
 }  // namespace blink

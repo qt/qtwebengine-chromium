@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/base64.h"
@@ -448,7 +449,7 @@ void ContextualSearchDelegateImpl::DecodeSearchTermFromJsonResponse(
   const std::string& proper_json =
       contains_xssi_escape ? response.substr(sizeof(kXssiEscape) - 1)
                            : response;
-  absl::optional<base::Value> root = base::JSONReader::Read(proper_json);
+  std::optional<base::Value> root = base::JSONReader::Read(proper_json);
   if (!root) {
     return;
   }
@@ -458,7 +459,7 @@ void ContextualSearchDelegateImpl::DecodeSearchTermFromJsonResponse(
     return;
   }
 
-  auto extract_string = [&dict](base::StringPiece key, std::string* out) {
+  auto extract_string = [&dict](std::string_view key, std::string* out) {
     const std::string* string_pointer = dict->FindString(key);
     if (string_pointer)
       *out = *string_pointer;
@@ -535,7 +536,7 @@ void ContextualSearchDelegateImpl::DecodeSearchTermFromJsonResponse(
   // Contextual Cards V5+ integration can provide the primary card tag, so
   // clients can tell what kind of card they have received.
   // TODO(donnd): make sure this works with a non-integer or missing value!
-  absl::optional<int> maybe_coca_card_tag =
+  std::optional<int> maybe_coca_card_tag =
       dict->FindInt(kContextualSearchCardTag);
   if (coca_card_tag && maybe_coca_card_tag)
     *coca_card_tag = *maybe_coca_card_tag;

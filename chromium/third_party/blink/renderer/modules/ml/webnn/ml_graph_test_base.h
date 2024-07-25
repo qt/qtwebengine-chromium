@@ -19,55 +19,50 @@
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/testing/task_environment.h"
 
-#if BUILDFLAG(BUILD_WEBNN_WITH_TFLITE_MODEL_LOADER)
-#include "third_party/blink/renderer/modules/ml/webnn/ml_graph_test_model_loader.h"
-#endif
-
 namespace blink {
 
 class MLGraphBuilder;
 class V8TestingScope;
 
 // The utility methods for graph test.
-enum class ExecutionMode { kAsync, kSync };
 // The backends share the unit tests in the MLGraphTest.
-enum class BackendType { kFake, kXnnpack, kModelLoader, kWebNNService };
+enum class BackendType { kFake, kXnnpack, kWebNNService };
 
-struct TestVariety {
-  BackendType backend_type;
-  ExecutionMode execution_mode;
-};
+std::string TestParamInfoToString(
+    const ::testing::TestParamInfo<BackendType>& backend_type);
 
-std::string TestVarietyToString(
-    const ::testing::TestParamInfo<TestVariety>& info);
+std::pair<String, String> GetErrorNameAndMessage(V8TestingScope* scope,
+                                                 ScriptValue value);
 
 class MLGraphTestBase : public ::testing::Test,
-                        public ::testing::WithParamInterface<TestVariety> {
+                        public ::testing::WithParamInterface<BackendType> {
  public:
-  // BuildResult is returned by Build() method. Only one member of BuildResult
-  // is valid. If the graph building is successful, graph points to the MLGraph
-  // and exception is a nullptr. Otherwise, exception points to the DOMException
-  // and graph is a nullptr.
+  // BuildResult is returned by Build() method. If the graph building is
+  // successful, `graph` points to the MLGraph and `error_name` and
+  // `error_message` are null. Otherwise, `graph` is a nullptr and
+  // `error_name` and `error_message` are populated from the JS error or
+  // DOMException.
   struct BuildResult {
     Persistent<MLGraph> graph;
-    Persistent<DOMException> exception;
+    String error_name;
+    String error_message;
   };
 
-  // Helper method for testing both BuildAsyncImpl() and BuildSyncImpl() with
-  // the same named operands and expected results.
+  // Helper method for testing BuildImpl() with the same named operands and
+  // expected results.
   BuildResult BuildGraph(V8TestingScope& scope,
                          MLGraphBuilder* builder,
                          const MLNamedOperands& named_operands);
 
-  // Helper method for testing both ComputeAsync() and ComputeSync() with the
-  // same input/output buffers and expected results. If the graph computes
-  // successfully, it returns nullptr and the results are produced into the
-  // output buffers. Otherwise, it returns the pointer to the DOMException
-  // thrown by the graph computing.
-  DOMException* ComputeGraph(V8TestingScope& scope,
-                             MLGraph* graph,
-                             MLNamedArrayBufferViews& inputs,
-                             MLNamedArrayBufferViews& outputs);
+  // Helper method for testing Compute() with the same input/output buffers and
+  // expected results. If the graph computes successfully, both Strings returned
+  // are null and the results are produced into the output buffers. Otherwise,
+  // it returns the name and message from the error thrown by the graph
+  // computation.
+  std::pair<String, String> ComputeGraph(V8TestingScope& scope,
+                                         MLGraph* graph,
+                                         MLNamedArrayBufferViews& inputs,
+                                         MLNamedArrayBufferViews& outputs);
 
   // Helper method for testing both context and ML graph builder creation.
   // If the context cannot be created for the graph, returns nullptr.
@@ -75,35 +70,12 @@ class MLGraphTestBase : public ::testing::Test,
                                             MLContextOptions* options);
 
   // Helper method for testing only context creation.
-  static ScriptPromise CreateContext(
+  static ScriptPromiseUntyped CreateContext(
       V8TestingScope& scope,
       MLContextOptions* options = MLContextOptions::Create());
 
-  // The backend type for testing MLGraphTest (e.g. Xnnpack, ModelLoader).
-  BackendType GetBackendType();
-
  private:
-  // The execution mode for testing build and compute graph (e.g. async, sync.).
-  ExecutionMode GetExecutionMode();
   test::TaskEnvironment task_environment_;
-};
-
-// This class performs backend specific setup.
-class MLGraphV8TestingScope : public V8TestingScope {
-  STACK_ALLOCATED();
-
- public:
-  MLGraphV8TestingScope() {
-#if BUILDFLAG(BUILD_WEBNN_WITH_TFLITE_MODEL_LOADER)
-    scoped_ml_service_.SetUpMLService(*this);
-#endif
-  }
-  ~MLGraphV8TestingScope() = default;
-
- private:
-#if BUILDFLAG(BUILD_WEBNN_WITH_TFLITE_MODEL_LOADER)
-  ScopedMLService scoped_ml_service_;
-#endif
 };
 
 template <typename T>
@@ -157,6 +129,13 @@ MLOperand* BuildConstant(MLGraphBuilder* builder,
   memcpy(buffer->BaseAddress(), values.data(), buffer->byteLength());
   return BuildConstant(builder, dimensions, data_type, exception_state, buffer);
 }
+
+// This method is especially for checking the floating-point output data of some
+// ops like the element wise binary pow, unary operator softmax, etc. The output
+// data is compared with the expected output data per element by macros
+// EXPECT_FLOAT_EQ.
+void ExpectFloatArrayEqual(const Vector<float>& data,
+                           const Vector<float>& expected_data);
 
 }  // namespace blink
 

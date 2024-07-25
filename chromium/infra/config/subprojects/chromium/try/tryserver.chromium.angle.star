@@ -18,8 +18,9 @@ try_.defaults.set(
     os = os.LINUX_DEFAULT,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     reclient_instance = reclient.instance.DEFAULT_UNTRUSTED,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
     service_account = try_.gpu.SERVICE_ACCOUNT,
+    siso_enabled = True,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
 )
 
 consoles.list_view(
@@ -33,7 +34,7 @@ try_.builder(
         "ci/android-angle-chromium-arm64-builder",
         "ci/android-angle-chromium-arm64-nexus5x",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,
     ),
     gn_args = gn_args.config(
@@ -50,7 +51,7 @@ try_.builder(
     mirrors = [
         "ci/fuchsia-angle-builder",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         include_all_triggered_testers = True,
         is_compile_only = True,
     ),
@@ -70,7 +71,7 @@ try_.builder(
         "ci/linux-angle-chromium-intel",
         "ci/linux-angle-chromium-nvidia",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,
     ),
     gn_args = gn_args.config(
@@ -89,7 +90,7 @@ try_.builder(
         "ci/mac-angle-chromium-builder",
         "ci/mac-angle-chromium-intel",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,
     ),
     gn_args = gn_args.config(
@@ -111,7 +112,7 @@ try_.builder(
         "ci/win10-angle-chromium-x64-intel",
         "ci/win10-angle-chromium-x64-nvidia",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         retry_failed_shards = False,
     ),
     gn_args = gn_args.config(
@@ -129,7 +130,7 @@ try_.builder(
     mirrors = [
         "ci/win-angle-chromium-x86-builder",
     ],
-    try_settings = builder_config.try_settings(
+    builder_config_settings = builder_config.try_settings(
         include_all_triggered_testers = True,
         is_compile_only = True,
         retry_failed_shards = False,

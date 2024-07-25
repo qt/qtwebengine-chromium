@@ -22,7 +22,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/profiles/profile_colors_util.h"
@@ -150,6 +149,11 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
       profile_, chrome::kChromeUISyncConfirmationHost);
   webui::SetJSModuleDefaults(source);
   webui::EnableTrustedTypesCSP(source);
+  // Per https//issues.chromium.org/issues/40091019 this WebUI issues direct
+  // network requests for images, so allow them from anywhere for this UI only.
+  source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::ImgSrc,
+      "img-src * data: blob: 'self';");
 
   static constexpr webui::ResourcePath kResources[] = {
       {"icons.html.js", IDR_SIGNIN_ICONS_HTML_JS},
@@ -168,7 +172,6 @@ SyncConfirmationUI::SyncConfirmationUI(content::WebUI* web_ui)
 
   AddStringResource(source, "syncLoadingConfirmationTitle",
                     IDS_SYNC_LOADING_CONFIRMATION_TITLE);
-  webui::SetupChromeRefresh2023(source);
 
   if (is_sync_allowed) {
     InitializeForSyncConfirmation(source, GetSyncConfirmationStyle(url));
@@ -225,7 +228,7 @@ void SyncConfirmationUI::InitializeForSyncConfirmation(
   source->SetDefaultResource(
       IDR_SIGNIN_SYNC_CONFIRMATION_SYNC_CONFIRMATION_HTML);
 
-  // TODO(crbug.com/1374702): Refactor SyncConfirmationStyle based on the
+  // TODO(crbug.com/40242558): Refactor SyncConfirmationStyle based on the
   // purpose instead of what kind of container the page is displayed in.
   bool is_modal_dialog;
   bool is_promo;

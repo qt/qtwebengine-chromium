@@ -7,12 +7,13 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase_vector.h"
 #include "base/logging.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
@@ -453,7 +454,7 @@ std::string DisplayPlacement::PositionToString(Position position) {
 }
 
 // static
-bool DisplayPlacement::StringToPosition(const base::StringPiece& string,
+bool DisplayPlacement::StringToPosition(std::string_view string,
                                         Position* position) {
   if (string == kTop) {
     *position = TOP;
@@ -621,7 +622,7 @@ bool DisplayLayout::HasSamePlacementList(const DisplayLayout& layout) const {
 }
 
 void DisplayLayout::RemoveDisplayPlacements(const DisplayIdList& list) {
-  base::EraseIf(placement_list, [&list](const DisplayPlacement& placement) {
+  std::erase_if(placement_list, [&list](const DisplayPlacement& placement) {
     return base::Contains(list, placement.display_id);
   });
   for (DisplayPlacement& placement : placement_list) {

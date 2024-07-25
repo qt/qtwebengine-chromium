@@ -31,6 +31,7 @@ component("linux_ui") {
   deps = [
     "//base",
     "//ui/base:types",
+    "//ui/display/types",
     "//ui/gfx/geometry",
   ]
   public_deps = [ "//printing/buildflags" ]
@@ -67,6 +68,18 @@ component("linux_ui_factory") {
   if (use_qt) {
     deps += [ "//ui/qt" ]
   }
+}
+
+source_set("display_server_utils") {
+  sources = [
+    "display_server_utils.cc",
+    "display_server_utils.h",
+  ]
+  deps = [
+    "//base",
+    "//ui/base:ozone_buildflags",
+    "//ui/ozone",
+  ]
 }
 
 source_set("test_support") {

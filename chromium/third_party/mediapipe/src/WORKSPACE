@@ -21,20 +21,18 @@ bazel_skylib_workspace()
 load("@bazel_skylib//lib:versions.bzl", "versions")
 versions.check(minimum_bazel_version = "3.7.2")
 
-# ABSL cpp library lts_2023_01_25.
+# ABSL on 2023-10-18
 http_archive(
     name = "com_google_absl",
-    urls = [
-        "https://github.com/abseil/abseil-cpp/archive/refs/tags/20230125.0.tar.gz",
-    ],
+    urls = ["https://github.com/abseil/abseil-cpp/archive//9687a8ea750bfcddf790372093245a1d041b21a3.tar.gz"],
     patches = [
         "@//third_party:com_google_absl_windows_patch.diff"
     ],
     patch_args = [
         "-p1",
     ],
-    strip_prefix = "abseil-cpp-20230125.0",
-    sha256 = "3ea49a7d97421b88a8c48a0de16c16048e17725c7ec0f1d3ea2683a2a75adc21"
+    strip_prefix = "abseil-cpp-9687a8ea750bfcddf790372093245a1d041b21a3",
+    sha256 = "f841f78243f179326f2a80b719f2887c38fe226d288ecdc46e2aa091e6aa43bc",
 )
 
 http_archive(
@@ -66,6 +64,32 @@ http_archive(
     patch_args = [
         "-p1",
     ],
+)
+
+http_archive(
+    name = "cpuinfo",
+    sha256 = "a615cac78fad03952cc3e1fd231ce789a8df6e81a5957b64350cb8200364b385",
+    strip_prefix = "cpuinfo-d6860c477c99f1fce9e28eb206891af3c0e1a1d7",
+    urls = [
+        "https://github.com/pytorch/cpuinfo/archive/d6860c477c99f1fce9e28eb206891af3c0e1a1d7.zip"
+    ],
+)
+
+# XNNPACK on 2024-03-20.
+http_archive(
+    name = "XNNPACK",
+    # `curl -L <url> | shasum -a 256`
+    sha256 = "70cb1852aa33ddeff2f3cdcb6d7ac009850917a6778fdc7769a19660b97c0c40",
+    strip_prefix = "XNNPACK-5ecf0769c54cd224bd0026fe2c8d2ad6f3c4368a",
+    url = "https://github.com/google/XNNPACK/archive/5ecf0769c54cd224bd0026fe2c8d2ad6f3c4368a.zip",
+)
+
+# TODO: This is an are indirect depedency. We should factor it out.
+http_archive(
+    name = "pthreadpool",
+    sha256 = "a4cf06de57bfdf8d7b537c61f1c3071bce74e57524fe053e0bbd2332feca7f95",
+    strip_prefix = "pthreadpool-4fe0e1e183925bf8cfa6aae24237e724a96479b8",
+    urls = ["https://github.com/Maratyszcza/pthreadpool/archive/4fe0e1e183925bf8cfa6aae24237e724a96479b8.zip"],
 )
 
 # Load Zlib before initializing TensorFlow and the iOS build rules to guarantee
@@ -499,17 +523,16 @@ http_archive(
 )
 
 # TensorFlow repo should always go after the other external dependencies.
-# TF on 2023-07-26.
-_TENSORFLOW_GIT_COMMIT = "e92261fd4cec0b726692081c4d2966b75abf31dd"
+# TF on 2024-03-21.
+_TENSORFLOW_GIT_COMMIT = "75bb98bd9d3998431aca05afd4be03e233b14425"
 # curl -L https://github.com/tensorflow/tensorflow/archive/<TENSORFLOW_GIT_COMMIT>.tar.gz | shasum -a 256
-_TENSORFLOW_SHA256 = "478a229bd4ec70a5b568ac23b5ea013d9fca46a47d6c43e30365a0412b9febf4"
+_TENSORFLOW_SHA256 = "1f44df2b487ba0a2cea20f1ca6980c25746618340cc098d1a987037c8069d4e6"
 http_archive(
     name = "org_tensorflow",
     urls = [
       "https://github.com/tensorflow/tensorflow/archive/%s.tar.gz" % _TENSORFLOW_GIT_COMMIT,
     ],
     patches = [
-        "@//third_party:org_tensorflow_compatibility_fixes.diff",
         "@//third_party:org_tensorflow_system_python.diff",
         # Diff is generated with a script, don't update it manually.
         "@//third_party:org_tensorflow_custom_ops.diff",
@@ -632,3 +655,18 @@ http_archive(
     urls = ["https://github.com/halide/Halide/releases/download/v15.0.1/Halide-15.0.1-x86-64-windows-4c63f1befa1063184c5982b11b6a2cc17d4e5815.zip"],
     build_file = "@//third_party:halide.BUILD",
 )
+
+http_archive(
+    name = "pybind11_abseil",
+    sha256 = "0223b647b8cc817336a51e787980ebc299c8d5e64c069829bf34b69d72337449",
+    strip_prefix = "pybind11_abseil-2c4932ed6f6204f1656e245838f4f5eae69d2e29",
+    urls = ["https://github.com/pybind/pybind11_abseil/archive/2c4932ed6f6204f1656e245838f4f5eae69d2e29.tar.gz"],
+)
+
+http_archive(
+    name = "com_github_nlohmann_json",
+    sha256 = "6bea5877b1541d353bd77bdfbdb2696333ae5ed8f9e8cc22df657192218cad91",
+    urls = ["https://github.com/nlohmann/json/releases/download/v3.9.1/include.zip"],
+    build_file = "@//third_party:nlohmann.BUILD",
+)
+

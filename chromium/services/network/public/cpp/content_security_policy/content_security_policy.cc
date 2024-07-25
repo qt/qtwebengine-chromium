@@ -6,6 +6,7 @@
 
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "base/base64url.h"
 #include "base/containers/contains.h"
@@ -423,7 +424,8 @@ bool ParseScheme(std::string_view scheme, mojom::CSPSource* csp_source) {
   if (!std::all_of(scheme.begin() + 1, scheme.end(), is_scheme_character))
     return false;
 
-  csp_source->scheme = std::string(scheme);
+  csp_source->scheme = base::ToLowerASCII(scheme);
+
 
   return true;
 }
@@ -450,14 +452,19 @@ bool ParseHost(std::string_view host, mojom::CSPSource* csp_source) {
   if (host.empty())
     return false;
 
-  for (const std::string_view& piece : base::SplitStringPiece(
-           host, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL)) {
-    if (piece.empty() || !base::ranges::all_of(piece, [](auto c) {
+  std::vector<std::string_view> host_pieces = base::SplitStringPiece(
+      host, ".", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
+  for (int i = 0; std::string_view piece : host_pieces) {
+    // Only a trailing dot is allowed.
+    if ((piece.empty() && i + 1 < std::ssize(host_pieces)) ||
+        !base::ranges::all_of(piece, [](auto c) {
           return base::IsAsciiAlpha(c) || base::IsAsciiDigit(c) || c == '-';
-        }))
+        })) {
       return false;
+    }
+    ++i;
   }
-  csp_source->host = std::string(host);
+  csp_source->host = base::ToLowerASCII(host);
 
   return true;
 }
@@ -499,7 +506,9 @@ bool IsBase64Char(char c) {
          c == '-' || c == '_' || c == '/';
 }
 
-int EatChar(const char** it, const char* end, bool (*predicate)(char)) {
+int EatChar(std::string_view::const_iterator* it,
+            std::string_view::const_iterator end,
+            bool (*predicate)(char)) {
   int count = 0;
   while (*it != end) {
     if (!predicate(**it))
@@ -516,8 +525,8 @@ bool IsBase64(std::string_view expression) {
   if (expression.empty())
     return false;
 
-  auto* it = expression.begin();
-  auto* end = expression.end();
+  std::string_view::const_iterator it = expression.begin();
+  std::string_view::const_iterator end = expression.end();
 
   int count_1 = EatChar(&it, end, IsBase64Char);
   int count_2 = EatChar(&it, end, [](char c) -> bool { return c == '='; });

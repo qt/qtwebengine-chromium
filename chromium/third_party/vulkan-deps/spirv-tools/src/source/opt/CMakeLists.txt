@@ -64,8 +64,6 @@ set(SPIRV_TOOLS_OPT_SOURCES
   inline_exhaustive_pass.h
   inline_opaque_pass.h
   inline_pass.h
-  inst_bindless_check_pass.h
-  inst_buff_addr_check_pass.h
   inst_debug_printf_pass.h
   instruction.h
   instruction_list.h
@@ -94,6 +92,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   loop_unswitch_pass.h
   mem_pass.h
   merge_return_pass.h
+  modify_maximal_reconvergence.h
   module.h
   null_pass.h
   passes.h
@@ -185,8 +184,6 @@ set(SPIRV_TOOLS_OPT_SOURCES
   inline_exhaustive_pass.cpp
   inline_opaque_pass.cpp
   inline_pass.cpp
-  inst_bindless_check_pass.cpp
-  inst_buff_addr_check_pass.cpp
   inst_debug_printf_pass.cpp
   instruction.cpp
   instruction_list.cpp
@@ -214,6 +211,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   loop_unswitch_pass.cpp
   mem_pass.cpp
   merge_return_pass.cpp
+  modify_maximal_reconvergence.cpp
   module.cpp
   optimizer.cpp
   pass.cpp

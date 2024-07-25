@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/inspector/devtools_agent.h"
 
 #include <v8-inspector.h>
+
 #include <memory>
 
 #include "base/feature_list.h"
@@ -28,8 +29,11 @@
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
 #include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
+#include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
+#include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_mojo.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/wtf.h"
 
 namespace WTF {
 
@@ -163,14 +167,6 @@ class DevToolsAgent::IOAgent : public mojom::blink::DevToolsAgent {
     }
   }
 
-  void GetUniqueFormControlId(
-      int nodeId,
-      GetUniqueFormControlIdCallback callback) override {
-    // GetUniqueFormControlId on a worker doesn't make sense because there is no
-    // DOM.
-    NOTREACHED();
-  }
-
  private:
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   scoped_refptr<InspectorTaskRunner> inspector_task_runner_;
@@ -250,7 +246,18 @@ void DevToolsAgent::AttachDevToolsSessionImpl(
       std::move(io_session_receiver), std::move(reattach_session_state),
       client_expects_binary_responses, client_is_trusted, session_id,
       session_waits_for_debugger,
-      inspector_task_runner_->isolate_task_runner());
+      // crbug.com/333093232: Mojo ignores the task runner passed to Bind for
+      // channel associated interfaces but uses it for disconnect. Since
+      // devtools relies on a disconnect handler for detaching and is sensitive
+      // to reordering of detach and attach, there's a dependency between task
+      // queues, which is not allowed. To get around this, use the same task
+      // runner that mojo uses for incoming channel associated messages.
+      base::FeatureList::IsEnabled(
+          features::kBlinkSchedulerPrioritizeNavigationIPCs) &&
+              IsMainThread()
+          ? Thread::MainThread()->GetTaskRunner(
+                MainThreadTaskRunnerRestricted{})
+          : inspector_task_runner_->isolate_task_runner());
   sessions_.insert(session);
   client_->DebuggerTaskFinished();
 }
@@ -355,27 +362,13 @@ void DevToolsAgent::ReportChildTargets(bool report,
   }
 }
 
-void DevToolsAgent::GetUniqueFormControlId(
-    int nodeId,
-    GetUniqueFormControlIdCallback callback) {
-  auto* node = blink::DOMNodeIds::NodeForId(nodeId);
-  if (auto* form_control = DynamicTo<HTMLFormControlElement>(node)) {
-    std::move(callback).Run(base::FeatureList::IsEnabled(
-                                features::kAutofillUseDomNodeIdForRendererId)
-                                ? form_control->GetDomNodeId()
-                                : form_control->UniqueRendererFormControlId());
-    return;
-  }
-  std::move(callback).Run(0);  // invalid ID.
-}
-
 // static
 std::unique_ptr<WorkerDevToolsParams> DevToolsAgent::WorkerThreadCreated(
     ExecutionContext* parent_context,
     WorkerThread* worker_thread,
     const KURL& url,
     const String& global_scope_name,
-    const absl::optional<const blink::DedicatedWorkerToken>& token) {
+    const std::optional<const blink::DedicatedWorkerToken>& token) {
   auto result = std::make_unique<WorkerDevToolsParams>();
   base::UnguessableToken devtools_worker_token =
       token.has_value() ? token.value().value()
@@ -444,6 +437,12 @@ void DevToolsAgent::CleanupConnection() {
   associated_host_remote_.reset();
   report_child_workers_ = false;
   pause_child_workers_on_start_ = false;
+}
+
+void DevToolsAgent::BringDevToolsWindowToFocus() {
+  if (associated_host_remote_.is_bound()) {
+    associated_host_remote_->BringToForeground();
+  }
 }
 
 }  // namespace blink

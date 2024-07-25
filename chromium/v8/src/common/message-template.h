@@ -115,6 +115,9 @@ namespace internal {
   T(IllegalInvocation, "Illegal invocation")                                   \
   T(ImmutablePrototypeSet,                                                     \
     "Immutable prototype object '%' cannot have their prototype set")          \
+  T(ImportAssertDeprecated,                                                    \
+    "'assert' is deprecated in import statements and support will be removed " \
+    "in %; use 'with' instead")                                                \
   T(ImportAssertionDuplicateKey, "Import assertion has duplicate key '%'")     \
   T(ImportCallNotNewExpression, "Cannot use new with import")                  \
   T(ImportOutsideModule, "Cannot use import statement outside a module")       \
@@ -356,6 +359,7 @@ namespace internal {
   T(ThrowMethodMissing, "The iterator does not provide a 'throw' method.")     \
   T(TopLevelAwaitStalled, "Top-level await promise never resolved")            \
   T(UndefinedOrNullToObject, "Cannot convert undefined or null to object")     \
+  T(UsingAssign, "Assignment to using variable.")                              \
   T(ValueAndAccessor,                                                          \
     "Invalid property descriptor. Cannot both specify accessors and a value "  \
     "or writable attribute, %")                                                \
@@ -370,6 +374,8 @@ namespace internal {
   T(AccessedUninitializedVariable, "Cannot access '%' before initialization")  \
   T(UnsupportedSuper, "Unsupported reference to 'super'")                      \
   T(AccessedUnavailableVariable, "Cannot access '%' from debugger")            \
+  T(DisposableStackIsDisposed,                                                 \
+    "Cannot add resources to an already-disposed DisposableStack")             \
   /* RangeError */                                                             \
   T(BigIntDivZero, "Division by zero")                                         \
   T(BigIntTooBig, "Maximum BigInt size exceeded")                              \
@@ -508,8 +514,10 @@ namespace internal {
   T(InvalidPrivateMethodWrite, "Private method '%' is not writable")           \
   T(InvalidPrivateGetterAccess, "'%' was defined without a getter")            \
   T(InvalidPrivateSetterAccess, "'%' was defined without a setter")            \
+  T(InvalidSizeValue, "'%' is an invalid size")                                \
   T(InvalidUnusedPrivateStaticMethodAccessedByDebugger,                        \
     "Unused static private method '%' cannot be accessed at debug time")       \
+  T(InvalidUsingInForInLoop, "Invalid 'using' in for-in loop")                 \
   T(JsonParseUnexpectedEOS, "Unexpected end of JSON input")                    \
   T(JsonParseUnexpectedTokenNumber,                                            \
     "Unexpected number in JSON at position % (line % column %)")               \
@@ -733,7 +741,12 @@ namespace internal {
   /* AggregateError */                                                         \
   T(AllPromisesRejected, "All promises were rejected")                         \
   T(CannotDeepFreezeObject, "Cannot DeepFreeze object of type %")              \
-  T(CannotDeepFreezeValue, "Cannot DeepFreeze non-const value %")
+  T(CannotDeepFreezeValue, "Cannot DeepFreeze non-const value %")              \
+  /* SuppressedError */                                                        \
+  T(SuppressedErrorDuringDisposal, "An error was suppressed during disposal")  \
+  T(ExpectAnObjectWithUsing,                                                   \
+    "An object is expected with `using` "                                      \
+    "declarations")
 
 enum class MessageTemplate {
 #define TEMPLATE(NAME, STRING) k##NAME,

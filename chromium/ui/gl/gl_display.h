@@ -117,6 +117,8 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
 
   static GLDisplayEGL* GetDisplayForCurrentContext();
 
+  static void EnableANGLEDebugLayer();
+
   EGLDisplay GetDisplay() const override;
   void Shutdown() override;
   bool IsInitialized() const override;
@@ -140,7 +142,6 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
   std::unique_ptr<DisplayExtensionsEGL> ext;
 
 #if BUILDFLAG(IS_APPLE)
-  bool IsANGLEMetalSharedEventSyncSupported();
 #if __OBJC__
   bool CreateMetalSharedEvent(id<MTLSharedEvent>* shared_event_out,
                               uint64_t* signal_value_out);
@@ -151,8 +152,10 @@ class GL_EXPORT GLDisplayEGL : public GLDisplay {
   // Call periodically to clean up resources.
   void CleanupTempEGLSyncObjects();
 
-  // Call once upon shutdown of the display.
-  void CleanupMetalSharedEvent();
+  // Call during Initialize/Shutdown to clean initialize/delete the objective C
+  // shared event storage
+  void InitMetalSharedEventStorage();
+  void CleanupMetalSharedEventStorage();
 #endif
 
  private:

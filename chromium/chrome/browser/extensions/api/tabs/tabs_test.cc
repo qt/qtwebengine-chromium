@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
@@ -17,7 +18,11 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/gmock_expected_support.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
+#include "base/test/test_future.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -33,6 +38,7 @@
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_source.h"
 #include "chrome/browser/resource_coordinator/tab_manager.h"
@@ -40,16 +46,31 @@
 #include "chrome/browser/resource_coordinator/utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/web_applications/test/isolated_web_app_test_utils.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
+#include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_install_source.h"
+#include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_trust_checker.h"
+#include "chrome/browser/web_applications/isolated_web_apps/isolated_web_app_url_info.h"
+#include "chrome/browser/web_applications/isolated_web_apps/test/isolated_web_app_builder.h"
+#include "chrome/browser/web_applications/isolated_web_apps/test/test_signed_web_bundle_builder.h"
+#include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
+#include "chrome/browser/web_applications/web_app_command_scheduler.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_provider_factory.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/webui_url_constants.h"
+#include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -66,6 +87,8 @@
 #include "extensions/test/result_catcher.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "pdf/buildflags.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "ui/base/ozone_buildflags.h"
 #include "ui/base/window_open_disposition.h"
@@ -957,7 +980,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, MAYBE_AcceptState) {
       ChromeExtensionFunctionDetails(function.get()), window_id, &error);
   EXPECT_TRUE(error.empty());
 
-// TODO(crbug.com/1410400): Remove this workaround if this wait is no longer
+// TODO(crbug.com/40254339): Remove this workaround if this wait is no longer
 // needed.
 // These builds flags are limiting the check for IsMinimized() for Linux
 // and Lacros. For Linux and Lacros we only check X11 window manager and not
@@ -973,7 +996,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, MAYBE_AcceptState) {
       true);
   EXPECT_TRUE(minimize_waiter.Wait());
 #elif BUILDFLAG(IS_OZONE_WAYLAND)
-  // TODO(crbug.com/1406188): Find a fix/workaround for wayland and add
+  // TODO(crbug.com/40252593): Find a fix/workaround for wayland and add
   // verification of IsMinimized() for as well.
 #endif
 #else
@@ -1111,11 +1134,193 @@ IN_PROC_BROWSER_TEST_F(ExtensionWindowCreateTest, CreatePopupWindowFromWebUI) {
   EXPECT_TRUE(error.empty());
 }
 
+struct ExtensionWindowCreateIwaParam {
+  std::string test_name;
+  bool want_success;
+  std::string args;
+};
+
+// Test that `windows.create` functions correctly for Isolated Web Apps.
+class ExtensionWindowCreateIwaTest
+    : public InProcessBrowserTest,
+      public testing::WithParamInterface<ExtensionWindowCreateIwaParam> {
+ public:
+  ExtensionWindowCreateIwaTest() {
+    scoped_feature_list_.InitAndEnableFeature(features::kIsolatedWebApps);
+    set_open_about_blank_on_browser_launch(false);
+  }
+
+  void SetUpOnMainThread() override {
+    InProcessBrowserTest::SetUpOnMainThread();
+
+    web_app::test::WaitUntilReady(
+        web_app::WebAppProvider::GetForTest(profile()));
+    ASSERT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
+  }
+
+  void SetUpDefaultCommandLine(base::CommandLine* command_line) override {
+    // Suppress "Welcome to Google Chrome" window
+    command_line->AppendSwitch(switches::kNoFirstRun);
+    command_line->AppendSwitch(switches::kNoStartupWindow);
+    command_line->AppendSwitch(switches::kKeepAliveForTest);
+  }
+
+  void TearDownOnMainThread() override {
+    if (BrowserList::GetInstance()->empty()) {
+      // Tests crash during teardown if no browser has opened combined with the
+      // command line switches above. Open a browser to avoid the crash.
+      CreateBrowser(profile());
+    }
+    InProcessBrowserTest::TearDownOnMainThread();
+  }
+
+  Profile* profile() {
+    // We cannot use `browser()->profile()` here, because `browser()` is
+    // `nullptr` due to the command line switches above.
+    return ProfileManager::GetLastUsedProfile();
+  }
+
+ protected:
+  void InstallAndTrustBundle() {
+    auto bundle = web_app::TestSignedWebBundleBuilder::BuildDefault(
+        web_app::TestSignedWebBundleBuilder::BuildOptions()
+            .SetKeyPair(web_package::WebBundleSigner::Ed25519KeyPair(
+                web_app::kTestPublicKey, web_app::kTestPrivateKey))
+            .SetIndexHTMLContent("Hello Extensions!"));
+
+    base::FilePath bundle_path =
+        scoped_temp_dir_.GetPath().AppendASCII("bundle.swbn");
+    {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      ASSERT_TRUE(base::WriteFile(bundle_path, bundle.data));
+    }
+
+    web_app::SetTrustedWebBundleIdsForTesting({bundle.id});
+
+    base::test::TestFuture<
+        base::expected<web_app::InstallIsolatedWebAppCommandSuccess,
+                       web_app::InstallIsolatedWebAppCommandError>>
+        future;
+    web_app::WebAppProvider::GetForTest(profile())
+        ->scheduler()
+        .InstallIsolatedWebApp(
+            web_app::IsolatedWebAppUrlInfo::CreateFromSignedWebBundleId(
+                bundle.id),
+            web_app::IsolatedWebAppInstallSource::FromGraphicalInstaller(
+                web_app::IwaSourceBundleProdModeWithFileOp(
+                    bundle_path, web_app::IwaSourceBundleProdFileOp::kCopy)),
+            /*expected_version=*/std::nullopt,
+            /*optional_keep_alive=*/nullptr,
+            /*optional_profile_keep_alive=*/nullptr, future.GetCallback());
+    EXPECT_THAT(future.Take(), base::test::HasValue());
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+  web_app::OsIntegrationManager::ScopedSuppressForTesting os_hooks_suppress_;
+  base::ScopedTempDir scoped_temp_dir_;
+};
+
+IN_PROC_BROWSER_TEST_P(ExtensionWindowCreateIwaTest, CreateWindowForIwa) {
+  EXPECT_NO_FATAL_FAILURE(InstallAndTrustBundle());
+
+  EXPECT_EQ(BrowserList::GetInstance()->size(), 0ul);
+
+  scoped_refptr<const Extension> extension =
+      ExtensionBuilder("ExtensionWindowCreateIwaTest").Build();
+  auto function = base::MakeRefCounted<WindowsCreateFunction>();
+  function->set_extension(extension);
+  bool result =
+      api_test_utils::RunFunction(function.get(), GetParam().args, profile(),
+                                  api_test_utils::FunctionMode::kNone);
+  if (GetParam().want_success) {
+    EXPECT_TRUE(result) << function->GetError();
+
+    // A single browser for the IWA should now be open.
+    ASSERT_EQ(BrowserList::GetInstance()->size(), 1ul);
+    Browser* iwa_browser = *BrowserList::GetInstance()->begin();
+    ASSERT_EQ(iwa_browser->tab_strip_model()->count(), 1);
+    EXPECT_EQ(iwa_browser->tab_strip_model()->GetWebContentsAt(0)->GetURL(),
+              GURL("isolated-app://"
+                   "4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/"
+                   "index.html"));
+  } else {
+    EXPECT_FALSE(result);
+    // No browser should have opened.
+    EXPECT_EQ(BrowserList::GetInstance()->size(), 0ul);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    /* no prefix */,
+    ExtensionWindowCreateIwaTest,
+    testing::Values(
+        ExtensionWindowCreateIwaParam{.test_name = "iwa_and_https",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url": [
+              "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+              "https://example.com"
+            ]
+          }])"},
+        ExtensionWindowCreateIwaParam{.test_name = "https_and_iwa_and_https",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url": [
+              "https://example.com",
+              "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+              "https://example.com"
+            ]
+          }])"},
+        // If we ever support tabbed IWAs, then this test must be updated to
+        // `.want_success true`.
+        ExtensionWindowCreateIwaParam{.test_name = "iwa_and_iwa",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url": [
+              "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+              "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html"
+            ]
+          }])"},
+        ExtensionWindowCreateIwaParam{.test_name = "iwa_and_different_iwa",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url": [
+              "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+              "isolated-app://5dp4lo5h6tpc4vuokowxmlqs5gpbainu2nqvuddccx5mqsnje7fqaaic/index.html"
+            ]
+          }])"},
+        ExtensionWindowCreateIwaParam{.test_name = "invalid_iwa_url",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url": [
+              "isolated-app://invalid-iwa-url"
+            ]
+          }])"},
+        // If we ever support tabbed IWAs, this test must be updated: If `tabId`
+        // refers to the tab of the same IWA origin that is specified in `url`,
+        // it should be allowed.
+        ExtensionWindowCreateIwaParam{.test_name = "iwa_and_tab_id",
+                                      .want_success = false,
+                                      .args = R"([{
+            "url":
+            "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+            "tabId": 1
+          }])"},
+        ExtensionWindowCreateIwaParam{.test_name = "iwa",
+                                      .want_success = true,
+                                      .args = R"([{
+            "url": "isolated-app://4tkrnsmftl4ggvvdkfth3piainqragus2qbhf7rlz2a3wo3rh4wqaaic/index.html",
+          }])"}),
+    [](const testing::TestParamInfo<ExtensionWindowCreateIwaTest::ParamType>&
+           info) { return info.param.test_name; });
+
 IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DuplicateTab) {
   content::OpenURLParams params(GURL(url::kAboutBlankURL), content::Referrer(),
                                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  content::WebContents* web_contents = browser()->OpenURL(params);
+  content::WebContents* web_contents =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
   int window_id = ExtensionTabUtil::GetWindowIdOfTab(web_contents);
   int tab_index = -1;
@@ -1152,7 +1357,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DuplicateTabNoPermission) {
   content::OpenURLParams params(GURL(url::kAboutBlankURL), content::Referrer(),
                                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  content::WebContents* web_contents = browser()->OpenURL(params);
+  content::WebContents* web_contents =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
   int tab_id = ExtensionTabUtil::GetTabId(web_contents);
   int window_id = ExtensionTabUtil::GetWindowIdOfTab(web_contents);
   int tab_index = -1;
@@ -1326,8 +1532,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, DiscardedProperty) {
   content::OpenURLParams params(GURL(url::kAboutBlankURL), content::Referrer(),
                                 WindowOpenDisposition::NEW_BACKGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  content::WebContents* web_contents_a = browser()->OpenURL(params);
-  content::WebContents* web_contents_b = browser()->OpenURL(params);
+  content::WebContents* web_contents_a =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
+  content::WebContents* web_contents_b =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
 
   // Set up query function with an extension.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
@@ -1550,8 +1758,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, AutoDiscardableProperty) {
   content::OpenURLParams params(GURL(url::kAboutBlankURL), content::Referrer(),
                                 WindowOpenDisposition::NEW_BACKGROUND_TAB,
                                 ui::PAGE_TRANSITION_LINK, false);
-  content::WebContents* web_contents_a = browser()->OpenURL(params);
-  content::WebContents* web_contents_b = browser()->OpenURL(params);
+  content::WebContents* web_contents_a =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
+  content::WebContents* web_contents_b =
+      browser()->OpenURL(params, /*navigation_handle_callback=*/{});
 
   // Creates Tab object to ensure the property is correct for the extension.
   TabStripModel* tab_strip_model = browser()->tab_strip_model();
@@ -2070,7 +2280,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsZoomTest, CannotZoomInvalidTab) {
 
   const char kNewTestTabArgs[] = "chrome://version";
   params = GetOpenParams(kNewTestTabArgs);
-  web_contents = browser()->OpenURL(params);
+  web_contents = browser()->OpenURL(params, /*navigation_handle_callback=*/{});
   tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
   // Test chrome.tabs.setZoom().
@@ -2094,7 +2304,7 @@ class ExtensionApiPdfTest : public base::test::WithFeatureOverride,
 
 // Regression test for crbug.com/660498.
 IN_PROC_BROWSER_TEST_P(ExtensionApiPdfTest, TemporaryAddressSpoof) {
-  // TODO(crbug.com/1445746): Remove this once the test passes for OOPIF PDF.
+  // TODO(crbug.com/40268279): Remove this once the test passes for OOPIF PDF.
   if (IsParamFeatureEnabled()) {
     GTEST_SKIP();
   }
@@ -2153,7 +2363,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionApiPdfTest, TemporaryAddressSpoof) {
   ASSERT_TRUE(navigation_manager.WaitForNavigationFinished());
 }
 
-// TODO(crbug.com/1445746): Stop testing both modes after OOPIF PDF viewer
+// TODO(crbug.com/40268279): Stop testing both modes after OOPIF PDF viewer
 // launches.
 INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(ExtensionApiPdfTest);
 #endif  // BUILDFLAG(ENABLE_PDF)

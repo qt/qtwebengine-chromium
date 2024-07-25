@@ -17,15 +17,9 @@ RUNTIME_FUNCTION(Runtime_PromiseRejectEventFromStack) {
   Handle<JSPromise> promise = args.at<JSPromise>(0);
   Handle<Object> value = args.at(1);
 
-  Handle<Object> rejected_promise = promise;
-  if (isolate->debug()->is_active()) {
-    // If the Promise.reject() call is caught, then this will return
-    // undefined, which we interpret as being a caught exception event.
-    rejected_promise = isolate->GetPromiseOnStackOnThrow();
-  }
   isolate->RunAllPromiseHooks(PromiseHookType::kResolve, promise,
                               isolate->factory()->undefined_value());
-  isolate->debug()->OnPromiseReject(rejected_promise, value);
+  isolate->debug()->OnPromiseReject(promise, value);
 
   // Report only if we don't actually have a handler.
   if (!promise->has_handler()) {
@@ -185,7 +179,7 @@ RUNTIME_FUNCTION(Runtime_ConstructInternalAggregateErrorHelper) {
   int message_template_index = args.smi_value_at(0);
 
   constexpr int kMaxMessageArgs = 3;
-  Handle<Object> message_args[kMaxMessageArgs];
+  DirectHandle<Object> message_args[kMaxMessageArgs];
   int num_message_args = 0;
 
   while (num_message_args < kMaxMessageArgs &&
@@ -196,7 +190,7 @@ RUNTIME_FUNCTION(Runtime_ConstructInternalAggregateErrorHelper) {
   Handle<Object> options =
       args.length() >= 5 ? args.at(4) : isolate->factory()->undefined_value();
 
-  Handle<Object> message_string =
+  DirectHandle<Object> message_string =
       MessageFormatter::Format(isolate, MessageTemplate(message_template_index),
                                base::VectorOf(message_args, num_message_args));
 

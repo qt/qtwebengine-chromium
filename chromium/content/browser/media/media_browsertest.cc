@@ -5,6 +5,7 @@
 #include "content/browser/media/media_browsertest.h"
 
 #include <memory>
+#include <string_view>
 
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
@@ -154,7 +155,7 @@ class MediaTest : public testing::WithParamInterface<bool>,
     MediaBrowserTest::SetUpCommandLine(command_line);
   }
 
-  void MaybePlayVideo(base::StringPiece codec_string,
+  void MaybePlayVideo(std::string_view codec_string,
                       const std::string& file_name) {
     constexpr char kTestVideoPlaybackScript[] = R"({
       const video = document.createElement('video');
@@ -212,25 +213,6 @@ class MediaTest : public testing::WithParamInterface<bool>,
   }
 };
 
-// Android doesn't support Theora.
-#if BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearTheora) {
-  if (base::FeatureList::IsEnabled(media::kTheoraVideoCodec)) {
-    PlayVideo("bear.ogv");
-  } else {
-    GTEST_SKIP() << "Theora isn't supported";
-  }
-}
-
-IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentTheora) {
-  if (base::FeatureList::IsEnabled(media::kTheoraVideoCodec)) {
-    PlayVideo("bear_silent.ogv");
-  } else {
-    GTEST_SKIP() << "Theora isn't supported";
-  }
-}
-#endif  // !BUILDFLAG(IS_ANDROID)
-
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearWebm) {
   PlayVideo("bear.webm");
 }
@@ -262,7 +244,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearSilentWebm) {
 // We don't expect android devices to support highbit yet.
 #if !BUILDFLAG(IS_ANDROID)
 
-// TODO(https://crbug.com/1373513): DEMUXER_ERROR_NO_SUPPORTED_STREAMS error on
+// TODO(crbug.com/40242077): DEMUXER_ERROR_NO_SUPPORTED_STREAMS error on
 // Fuchsia Arm64.
 #if BUILDFLAG(IS_FUCHSIA) && defined(ARCH_CPU_ARM64)
 #define MAYBE_VideoBearHighBitDepthVP9 DISABLED_VideoBearHighBitDepthVP9
@@ -273,7 +255,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, MAYBE_VideoBearHighBitDepthVP9) {
   PlayVideo("bear-320x180-hi10p-vp9.webm");
 }
 
-// TODO(https://crbug.com/1373513): DEMUXER_ERROR_NO_SUPPORTED_STREAMS error on
+// TODO(crbug.com/40242077): DEMUXER_ERROR_NO_SUPPORTED_STREAMS error on
 // Fuchsia Arm64.
 #if BUILDFLAG(IS_FUCHSIA) && defined(ARCH_CPU_ARM64)
 #define MAYBE_VideoBear12DepthVP9 DISABLED_VideoBear12DepthVP9
@@ -373,7 +355,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMp4Hevc10bit444) {
 
 // HEVC video stream with 8-bit main profile
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMp4Hevc8bit) {
-  // TODO(crbug.com/1449878) : For Android, the `canPlayType()` test in
+  // TODO(crbug.com/40269930) : For Android, the `canPlayType()` test in
   // `MaybePlayVideo` should be reporting the correct status for HEVC. The below
   // `REQUIRE_ACCELERATION_ON_ANDROID` flag is a temporary fix.
   REQUIRE_ACCELERATION_ON_ANDROID();
@@ -382,7 +364,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMp4Hevc8bit) {
 
 // HEVC video stream with 10-bit main10 profile
 IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearMp4Hevc10bit) {
-  // TODO(crbug.com/1449878) : For Android, the `canPlayType()` test in
+  // TODO(crbug.com/40269930) : For Android, the `canPlayType()` test in
   // `MaybePlayVideo` should be reporting the correct status for HEVC. The below
   // `REQUIRE_ACCELERATION_ON_ANDROID` flag is a temporary fix.
   REQUIRE_ACCELERATION_ON_ANDROID();
@@ -398,7 +380,7 @@ IN_PROC_BROWSER_TEST_P(MediaTest, VideoBearHighBitDepthMp4) {
 
 // Android can't reliably load lots of videos on a page.
 // See http://crbug.com/749265
-// TODO(crbug.com/1222852): Flaky on Mac.
+// TODO(crbug.com/40774322): Flaky on Mac.
 #if BUILDFLAG(IS_MAC)
 #define MAYBE_LoadManyVideos DISABLED_LoadManyVideos
 #else

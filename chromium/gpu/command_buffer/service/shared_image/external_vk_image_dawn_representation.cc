@@ -15,6 +15,7 @@
 #include "third_party/skia/include/gpu/MutableTextureState.h"
 #include "third_party/skia/include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "third_party/skia/include/gpu/vk/GrVkTypes.h"
+#include "third_party/skia/include/gpu/vk/VulkanMutableTextureState.h"
 
 namespace gpu {
 
@@ -95,6 +96,16 @@ wgpu::Texture ExternalVkImageDawnImageRepresentation::BeginAccess(
 
   texture_ = wgpu::Texture::Acquire(
       dawn::native::vulkan::WrapVulkanImage(device_.Get(), &descriptor));
+  if (!texture_) {
+    backing_impl()->EndAccess(false, ExternalSemaphore(), /*is_gl=*/false);
+    // In this case we didn't submit anything, so we can't reuse them.
+    // Release them immediately.
+    backing_impl()->ReleaseSemaphoresWithFenceHelper(
+        std::move(begin_access_semaphores_));
+    begin_access_semaphores_.clear();
+    return nullptr;
+  }
+
   return texture_.Get();
 }
 
@@ -120,7 +131,7 @@ void ExternalVkImageDawnImageRepresentation::EndAccess() {
     // Save the layout on the GrBackendTexture. Other shared image
     // representations read it from here.
     GrBackendTexture backend_texture = backing_impl()->backend_texture();
-    backend_texture.setMutableState(skgpu::MutableTextureState(
+    backend_texture.setMutableState(skgpu::MutableTextureStates::MakeVulkan(
         export_info.releasedNewLayout, VK_QUEUE_FAMILY_EXTERNAL));
 
     // TODO(enga): Handle waiting on multiple semaphores from dawn

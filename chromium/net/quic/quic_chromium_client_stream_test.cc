@@ -5,6 +5,7 @@
 #include "net/quic/quic_chromium_client_stream.h"
 
 #include <string>
+#include <string_view>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -12,6 +13,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -37,6 +39,13 @@ using testing::Return;
 namespace net::test {
 namespace {
 
+class EstablishedCryptoStream : public quic::test::MockQuicCryptoStream {
+ public:
+  using quic::test::MockQuicCryptoStream::MockQuicCryptoStream;
+
+  bool encryption_established() const override { return true; }
+};
+
 class MockQuicClientSessionBase : public quic::QuicSpdyClientSessionBase {
  public:
   explicit MockQuicClientSessionBase(quic::QuicConnection* connection);
@@ -53,6 +62,10 @@ class MockQuicClientSessionBase : public quic::QuicSpdyClientSessionBase {
 
   quic::QuicCryptoStream* GetMutableCryptoStream() override {
     return crypto_stream_.get();
+  }
+
+  void SetCryptoStream(quic::QuicCryptoStream* crypto_stream) {
+    crypto_stream_.reset(crypto_stream);
   }
 
   // From quic::QuicSession.
@@ -178,6 +191,7 @@ class QuicChromiumClientStreamTest
     session_.ActivateStream(base::WrapUnique(stream_.get()));
     handle_ = stream_->CreateHandle();
     helper_.AdvanceTime(quic::QuicTime::Delta::FromSeconds(1));
+    session_.SetCryptoStream(new EstablishedCryptoStream(&session_));
     session_.connection()->SetEncrypter(
         quic::ENCRYPTION_FORWARD_SECURE,
         std::make_unique<quic::test::TaggingEncrypter>(
@@ -283,6 +297,7 @@ class QuicChromiumClientStreamTest
   raw_ptr<QuicChromiumClientStream> stream_;
   spdy::Http2HeaderBlock headers_;
   spdy::Http2HeaderBlock trailers_;
+  base::HistogramTester histogram_tester_;
 };
 
 INSTANTIATE_TEST_SUITE_P(Version,
@@ -329,7 +344,7 @@ TEST_P(QuicChromiumClientStreamTest, Handle) {
               WritevData(stream_->id(), _, _, _, quic::NOT_RETRANSMISSION, _))
       .WillOnce(Return(quic::QuicConsumedData(kDataLen, true)));
   TestCompletionCallback callback;
-  EXPECT_EQ(OK, handle_->WriteStreamData(base::StringPiece(kData1, kDataLen),
+  EXPECT_EQ(OK, handle_->WriteStreamData(std::string_view(kData1, kDataLen),
                                          true, callback.callback()));
 
   EXPECT_FALSE(handle_->IsOpen());
@@ -347,7 +362,7 @@ TEST_P(QuicChromiumClientStreamTest, Handle) {
   EXPECT_EQ(0u, handle_->NumBytesConsumed());
 
   EXPECT_EQ(ERR_CONNECTION_CLOSED,
-            handle_->WriteStreamData(base::StringPiece(kData1, kDataLen), true,
+            handle_->WriteStreamData(std::string_view(kData1, kDataLen), true,
                                      callback.callback()));
 
   std::vector<scoped_refptr<IOBuffer>> buffers = {
@@ -705,7 +720,7 @@ TEST_P(QuicChromiumClientStreamTest, WriteStreamData) {
               WritevData(stream_->id(), _, _, _, quic::NOT_RETRANSMISSION, _))
       .WillOnce(Return(quic::QuicConsumedData(kDataLen, true)));
   TestCompletionCallback callback;
-  EXPECT_EQ(OK, handle_->WriteStreamData(base::StringPiece(kData1, kDataLen),
+  EXPECT_EQ(OK, handle_->WriteStreamData(std::string_view(kData1, kDataLen),
                                          true, callback.callback()));
 }
 
@@ -720,7 +735,7 @@ TEST_P(QuicChromiumClientStreamTest, WriteStreamDataAsync) {
       .WillOnce(Return(quic::QuicConsumedData(0, false)));
   TestCompletionCallback callback;
   EXPECT_EQ(ERR_IO_PENDING,
-            handle_->WriteStreamData(base::StringPiece(kData1, kDataLen), true,
+            handle_->WriteStreamData(std::string_view(kData1, kDataLen), true,
                                      callback.callback()));
   ASSERT_FALSE(callback.have_result());
 
@@ -806,6 +821,30 @@ TEST_P(QuicChromiumClientStreamTest, WritevStreamDataAsync) {
   stream_->OnCanWrite();
   ASSERT_TRUE(callback.have_result());
   EXPECT_THAT(callback.WaitForResult(), IsOk());
+}
+
+TEST_P(QuicChromiumClientStreamTest, WriteConnectUdpPayload) {
+  testing::InSequence seq;
+  std::string packet = {1, 2, 3, 4, 5, 6};
+
+  quic::test::QuicSpdySessionPeer::SetHttpDatagramSupport(
+      &session_, quic::HttpDatagramSupport::kRfc);
+  EXPECT_CALL(
+      *static_cast<quic::test::MockQuicConnection*>(session_.connection()),
+      SendMessage(1, _, false))
+      .WillOnce(Return(quic::MESSAGE_STATUS_SUCCESS));
+  EXPECT_EQ(OK, handle_->WriteConnectUdpPayload(packet));
+  histogram_tester_.ExpectBucketCount(
+      QuicChromiumClientStream::kHttp3DatagramDroppedHistogram, false, 1);
+
+  // Packet is dropped if session does not have HTTP3 Datagram support.
+  quic::test::QuicSpdySessionPeer::SetHttpDatagramSupport(
+      &session_, quic::HttpDatagramSupport::kNone);
+  EXPECT_EQ(OK, handle_->WriteConnectUdpPayload(packet));
+  histogram_tester_.ExpectBucketCount(
+      QuicChromiumClientStream::kHttp3DatagramDroppedHistogram, true, 1);
+  histogram_tester_.ExpectTotalCount(
+      QuicChromiumClientStream::kHttp3DatagramDroppedHistogram, 2);
 }
 
 TEST_P(QuicChromiumClientStreamTest, HeadersBeforeHandle) {

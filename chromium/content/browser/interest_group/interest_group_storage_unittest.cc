@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 
+#include "base/base64.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
@@ -23,9 +24,11 @@
 #include "base/test/simple_test_clock.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "content/browser/interest_group/bidding_and_auction_server_key_fetcher.h"
 #include "content/browser/interest_group/interest_group_update.h"
 #include "content/browser/interest_group/storage_interest_group.h"
 #include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom.h"
+#include "crypto/sha2.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
 #include "sql/test/scoped_error_expecter.h"
@@ -137,8 +140,9 @@ class InterestGroupStorageTest : public testing::Test {
             .SetSellerCapabilities(
                 {{{full_origin, {SellerCapabilities::kInterestGroupCounts}},
                   {partial_origin, {SellerCapabilities::kLatencyStats}}}})
-            .SetAllSellerCapabilities({SellerCapabilities::kInterestGroupCounts,
-                                       SellerCapabilities::kLatencyStats})
+            .SetAllSellersCapabilities(
+                {SellerCapabilities::kInterestGroupCounts,
+                 SellerCapabilities::kLatencyStats})
             .SetBiddingUrl(GURL("https://full.example.com/bid"))
             .SetBiddingWasmHelperUrl(GURL("https://full.example.com/bid_wasm"))
             .SetUpdateUrl(GURL("https://full.example.com/update"))
@@ -286,8 +290,8 @@ TEST_F(InterestGroupStorageTest, DatabaseInitialized_CreateDatabase) {
 
     // [interest_groups], [join_history], [bid_history], [win_history],
     // [k_anon], [meta], [lockout_debugging_only_report],
-    // [cooldown_debugging_only_report].
-    EXPECT_EQ(8u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
+    // [cooldown_debugging_only_report], [bidding_and_auction_server_keys].
+    EXPECT_EQ(9u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
   }
 }
 
@@ -323,8 +327,8 @@ TEST_F(InterestGroupStorageTest, DatabaseRazesOldVersion) {
 
     // [interest_groups], [join_history], [bid_history], [win_history],
     // [k_anon], [meta], [lockout_debugging_only_report],
-    // [cooldown_debugging_only_report].
-    EXPECT_EQ(8u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
+    // [cooldown_debugging_only_report], [bidding_and_auction_server_keys].
+    EXPECT_EQ(9u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
   }
 }
 
@@ -360,8 +364,8 @@ TEST_F(InterestGroupStorageTest, DatabaseRazesNewVersion) {
 
     // [interest_groups], [join_history], [bid_history], [win_history],
     // [k_anon], [meta], [lockout_debugging_only_report],
-    // [cooldown_debugging_only_report].
-    EXPECT_EQ(8u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
+    // [cooldown_debugging_only_report], [bidding_and_auction_server_keys].
+    EXPECT_EQ(9u, sql::test::CountSQLTables(&raw_db)) << raw_db.GetSchema();
   }
 }
 
@@ -890,9 +894,9 @@ TEST_F(InterestGroupStorageTest, UpdatesAdKAnonymity) {
 
   base::Time update_time = base::Time::Now();
   StorageInterestGroup::KAnonymityData kanon_bid{
-      blink::KAnonKeyForAdBid(g, ad1_url), true, update_time};
+      blink::HashedKAnonKeyForAdBid(g, ad1_url.spec()), true, update_time};
   StorageInterestGroup::KAnonymityData kanon_report{
-      blink::KAnonKeyForAdNameReporting(g, g.ads.value()[0]), true,
+      blink::HashedKAnonKeyForAdNameReporting(g, g.ads.value()[0]), true,
       update_time};
   storage->UpdateKAnonymity(kanon_bid);
   storage->UpdateKAnonymity(kanon_report);
@@ -913,11 +917,11 @@ TEST_F(InterestGroupStorageTest, UpdatesAdKAnonymity) {
 
   update_time = base::Time::Now();
   kanon_bid = StorageInterestGroup::KAnonymityData{
-      blink::KAnonKeyForAdBid(g, ad2_url), true, update_time};
+      blink::HashedKAnonKeyForAdBid(g, ad2_url.spec()), true, update_time};
   StorageInterestGroup::KAnonymityData kanon_component{
-      blink::KAnonKeyForAdComponentBid(ad3_url), true, update_time};
+      blink::HashedKAnonKeyForAdComponentBid(ad3_url), true, update_time};
   kanon_report = StorageInterestGroup::KAnonymityData{
-      blink::KAnonKeyForAdNameReporting(g, g.ads.value()[1]), true,
+      blink::HashedKAnonKeyForAdNameReporting(g, g.ads.value()[1]), true,
       update_time};
   storage->UpdateKAnonymity(kanon_bid);
   storage->UpdateKAnonymity(kanon_component);
@@ -965,12 +969,14 @@ TEST_F(InterestGroupStorageTest,
   g3.expiry =
       base::Time::Now() + InterestGroupStorage::kHistoryLength + base::Hours(2);
 
-  std::string k_anon_bid_key_1 = blink::KAnonKeyForAdBid(g1, ad1_url);
-  std::string k_anon_bid_key_2 = blink::KAnonKeyForAdBid(g2, ad2_url);
+  std::string k_anon_bid_key_1 =
+      blink::HashedKAnonKeyForAdBid(g1, ad1_url.spec());
+  std::string k_anon_bid_key_2 =
+      blink::HashedKAnonKeyForAdBid(g2, ad2_url.spec());
   std::string k_anon_component_key_1 =
-      blink::KAnonKeyForAdComponentBid(ad1_url);
+      blink::HashedKAnonKeyForAdComponentBid(ad1_url);
   std::string k_anon_component_key_3 =
-      blink::KAnonKeyForAdComponentBid(ad3_url);
+      blink::HashedKAnonKeyForAdComponentBid(ad3_url);
 
   std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
 
@@ -1169,12 +1175,13 @@ TEST_F(InterestGroupStorageTest, KAnonDataExpires) {
   // Update the k-anonymity data.
   base::Time update_kanon_time = base::Time::Now();
   StorageInterestGroup::KAnonymityData ad1_bid_kanon{
-      blink::KAnonKeyForAdBid(g, ad1_url), true, update_kanon_time};
+      blink::HashedKAnonKeyForAdBid(g, ad1_url.spec()), true,
+      update_kanon_time};
   StorageInterestGroup::KAnonymityData ad1_report_kanon{
-      blink::KAnonKeyForAdNameReporting(g, g.ads.value()[0]), true,
+      blink::HashedKAnonKeyForAdNameReporting(g, g.ads.value()[0]), true,
       update_kanon_time};
   StorageInterestGroup::KAnonymityData ad2_bid_kanon{
-      blink::KAnonKeyForAdComponentBid(ad2_url), true, update_kanon_time};
+      blink::HashedKAnonKeyForAdComponentBid(ad2_url), true, update_kanon_time};
   storage->UpdateKAnonymity(ad1_bid_kanon);
   storage->UpdateKAnonymity(ad1_report_kanon);
   storage->UpdateKAnonymity(ad2_bid_kanon);
@@ -1269,7 +1276,7 @@ TEST_F(InterestGroupStorageTest, DeleteOriginDeleteAll) {
   g1.ads.emplace();
   g1.ads->push_back(blink::InterestGroup::Ad(ad1_url, "metadata1"));
 
-  std::string k_anon_key = blink::KAnonKeyForAdBid(g1, ad1_url);
+  std::string k_anon_key = blink::HashedKAnonKeyForAdBid(g1, ad1_url.spec());
 
   std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
   storage->JoinInterestGroup(g1, joining_originA.GetURL());
@@ -2279,17 +2286,19 @@ TEST_F(InterestGroupStorageTest, UpgradeFromV6) {
       EXPECT_THAT(kanon_data,
                   testing::UnorderedElementsAre(
                       StorageInterestGroup::KAnonymityData{
-                          "AdBid\n"
-                          "https://owner.example.com/\n"
-                          "https://owner.example.com/bidder.js\n"
-                          "https://ads.example.com/1",
+                          crypto::SHA256HashString(
+                              "AdBid\n"
+                              "https://owner.example.com/\n"
+                              "https://owner.example.com/bidder.js\n"
+                              "https://ads.example.com/1"),
                           false, base::Time::Min()},
                       StorageInterestGroup::KAnonymityData{
-                          base::StrCat({"NameReport\n"
-                                        "https://owner.example.com/\n"
-                                        "https://owner.example.com/bidder.js\n"
-                                        "https://ads.example.com/1\n",
-                                        ig.interest_group.name}),
+                          crypto::SHA256HashString(base::StrCat(
+                              {"NameReport\n"
+                               "https://owner.example.com/\n"
+                               "https://owner.example.com/bidder.js\n"
+                               "https://ads.example.com/1\n",
+                               ig.interest_group.name})),
                           false, base::Time::Min()}));
     }
   }
@@ -2312,17 +2321,19 @@ TEST_F(InterestGroupStorageTest, UpgradeFromV6) {
       EXPECT_THAT(kanon_data,
                   testing::UnorderedElementsAre(
                       StorageInterestGroup::KAnonymityData{
-                          "AdBid\n"
-                          "https://owner.example.com/\n"
-                          "https://owner.example.com/bidder.js\n"
-                          "https://ads.example.com/1",
+                          crypto::SHA256HashString(
+                              "AdBid\n"
+                              "https://owner.example.com/\n"
+                              "https://owner.example.com/bidder.js\n"
+                              "https://ads.example.com/1"),
                           false, base::Time::Min()},
                       StorageInterestGroup::KAnonymityData{
-                          base::StrCat({"NameReport\n"
-                                        "https://owner.example.com/\n"
-                                        "https://owner.example.com/bidder.js\n"
-                                        "https://ads.example.com/1\n",
-                                        ig.interest_group.name}),
+                          crypto::SHA256HashString(base::StrCat(
+                              {"NameReport\n"
+                               "https://owner.example.com/\n"
+                               "https://owner.example.com/bidder.js\n"
+                               "https://ads.example.com/1\n",
+                               ig.interest_group.name})),
                           false, base::Time::Min()}));
     }
   }
@@ -2369,10 +2380,10 @@ TEST_F(InterestGroupStorageTest, UpgradeFromV16) {
   ASSERT_TRUE(sql::test::CreateDatabaseFromSQL(db_path(), file_path));
 
   StorageInterestGroup::KAnonymityData k_anon_bid{
-      "AdBid\n"
-      "https://owner.example.com/\n"
-      "https://owner.example.com/bidder.js\n"
-      "https://ads.example.com/1",
+      crypto::SHA256HashString("AdBid\n"
+                               "https://owner.example.com/\n"
+                               "https://owner.example.com/bidder.js\n"
+                               "https://ads.example.com/1"),
       true, base::Time::Min()};
   auto expected_interest_group_matcher = testing::UnorderedElementsAre(
       testing::AllOf(
@@ -2412,9 +2423,9 @@ TEST_F(InterestGroupStorageTest, UpgradeFromV16) {
   // In the v16 table, there was a k-anon key that doesn't correspond with an
   // interest group in the interest group table -- make sure this was migrated
   // as well.
-  std::string key_without_ig_in_ig_table =
+  std::string key_without_ig_in_ig_table = crypto::SHA256HashString(
       "AdBid\nhttps://owner.example2.com/\nhttps://owner.example2.com/"
-      "bidder.js\nhttps://ads.example2.com/1";
+      "bidder.js\nhttps://ads.example2.com/1");
   std::optional<base::Time> last_reported =
       storage->GetLastKAnonymityReported(key_without_ig_in_ig_table);
   EXPECT_EQ(last_reported, base::Time::Min() + base::Microseconds(8));
@@ -2633,9 +2644,9 @@ TEST_F(InterestGroupStorageTest, SetGetLastKAnonReported) {
       blink::InterestGroup::Ad(ad3_url, "component_metadata3"));
   std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
 
-  std::string k_anon_key_1 = blink::KAnonKeyForAdBid(g, ad1_url);
-  std::string k_anon_key_2 = blink::KAnonKeyForAdBid(g, ad2_url);
-  std::string k_anon_key_3 = blink::KAnonKeyForAdComponentBid(ad3_url);
+  std::string k_anon_key_1 = blink::HashedKAnonKeyForAdBid(g, ad1_url.spec());
+  std::string k_anon_key_2 = blink::HashedKAnonKeyForAdBid(g, ad2_url.spec());
+  std::string k_anon_key_3 = blink::HashedKAnonKeyForAdComponentBid(ad3_url);
 
   std::optional<base::Time> last_report =
       storage->GetLastKAnonymityReported(k_anon_key_1);
@@ -2691,7 +2702,7 @@ TEST_F(InterestGroupStorageTest, SetGetLastKAnonReported) {
   task_environment().FastForwardBy(base::Seconds(1));
 
   std::string group_name_key =
-      blink::KAnonKeyForAdNameReporting(g, g.ads->at(0));
+      blink::HashedKAnonKeyForAdNameReporting(g, g.ads->at(0));
   last_report = storage->GetLastKAnonymityReported(group_name_key);
   EXPECT_EQ(last_report, base::Time::Min());
   storage->UpdateLastKAnonymityReported(group_name_key);
@@ -2812,8 +2823,8 @@ TEST_F(InterestGroupStorageTest, OnlyDeletesExpiredKAnon) {
   g.ads->push_back(blink::InterestGroup::Ad(ad2_url, "metadata2"));
   std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
 
-  std::string k_anon_key_1 = blink::KAnonKeyForAdBid(g, ad1_url);
-  std::string k_anon_key_2 = blink::KAnonKeyForAdBid(g, ad2_url);
+  std::string k_anon_key_1 = blink::HashedKAnonKeyForAdBid(g, ad1_url.spec());
+  std::string k_anon_key_2 = blink::HashedKAnonKeyForAdBid(g, ad2_url.spec());
 
   storage->JoinInterestGroup(g, GURL("https://owner.example.com/join"));
 
@@ -2906,6 +2917,120 @@ TEST_F(InterestGroupStorageTest, OnlyDeletesExpiredKAnon) {
             storage->GetLastKAnonymityReported(k_anon_key_1));
   EXPECT_EQ(base::Time::Min(),
             storage->GetLastKAnonymityReported(k_anon_key_2));
+}
+
+TEST_F(InterestGroupStorageTest, SetGetBiddingAndAuctionKeys) {
+  const url::Origin origin_a =
+      url::Origin::Create(GURL("https://a.example.com"));
+  const url::Origin origin_b =
+      url::Origin::Create(GURL("https://b.example.com"));
+  std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
+  // No keys should be returned before any values are set.
+  std::vector<BiddingAndAuctionServerKey> a_loaded_keys, b_loaded_keys;
+  base::Time a_expiration, b_expiration;
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_TRUE(a_loaded_keys.empty());
+  EXPECT_TRUE(b_loaded_keys.empty());
+
+  // The set values should be returned.
+  std::vector<BiddingAndAuctionServerKey> a_keys{{"1", 1}, {"2", 2}};
+  base::Time expiration = base::Time::Now() + base::Seconds(5);
+  storage->SetBiddingAndAuctionServerKeys(origin_a, a_keys, expiration);
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_EQ(a_loaded_keys.size(), 2u);
+  EXPECT_NE(a_loaded_keys[0].id, a_loaded_keys[1].id);
+  for (const BiddingAndAuctionServerKey& key : a_loaded_keys) {
+    EXPECT_TRUE((key.id == 1 && key.key == "1") ||
+                (key.id == 2 && key.key == "2"));
+  }
+  EXPECT_TRUE(b_loaded_keys.empty());
+  EXPECT_EQ(expiration, a_expiration);
+
+  // Setting values for a different origin shouldn't affect the previously
+  // set values.
+  std::vector<BiddingAndAuctionServerKey> b_keys{{"3", 3}};
+  storage->SetBiddingAndAuctionServerKeys(origin_b, b_keys, expiration);
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_EQ(a_loaded_keys.size(), 2u);
+  EXPECT_NE(a_loaded_keys[0].id, a_loaded_keys[1].id);
+  for (const BiddingAndAuctionServerKey& key : a_loaded_keys) {
+    EXPECT_TRUE((key.id == 1 && key.key == "1") ||
+                (key.id == 2 && key.key == "2"));
+  }
+  EXPECT_EQ(b_loaded_keys.size(), 1u);
+  EXPECT_EQ("3", b_loaded_keys[0].key);
+  EXPECT_EQ(3, b_loaded_keys[0].id);
+  EXPECT_EQ(expiration, a_expiration);
+  EXPECT_EQ(expiration, b_expiration);
+
+  // Resetting the keys should overwrite the previous keys.
+  a_keys = {{"1", 1}};
+  task_environment().FastForwardBy(base::Seconds(2));
+  expiration = base::Time::Now() + base::Days(7);
+  storage->SetBiddingAndAuctionServerKeys(origin_a, a_keys, expiration);
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_EQ(a_loaded_keys.size(), 1u);
+  EXPECT_EQ("1", a_loaded_keys[0].key);
+  EXPECT_EQ(1, a_loaded_keys[0].id);
+  EXPECT_EQ(b_loaded_keys.size(), 1u);
+  EXPECT_EQ("3", b_loaded_keys[0].key);
+  EXPECT_EQ(3, b_loaded_keys[0].id);
+  EXPECT_EQ(expiration, a_expiration);
+  EXPECT_NE(expiration, b_expiration);
+
+  // Only get unexpired values.
+  task_environment().FastForwardBy(base::Seconds(3));
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_EQ(a_loaded_keys.size(), 1u);
+  EXPECT_EQ("1", a_loaded_keys[0].key);
+  EXPECT_EQ(1, a_loaded_keys[0].id);
+  EXPECT_TRUE(b_loaded_keys.empty());
+  EXPECT_EQ(expiration, a_expiration);
+
+  // DB maintenance should not delete unexpired values.
+  EXPECT_EQ(base::Time::Min(), storage->GetLastMaintenanceTimeForTesting());
+  task_environment().FastForwardBy(InterestGroupStorage::kIdlePeriod);
+  EXPECT_NE(base::Time::Min(), storage->GetLastMaintenanceTimeForTesting());
+  std::tie(a_expiration, a_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_a);
+  std::tie(b_expiration, b_loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin_b);
+  EXPECT_EQ(a_loaded_keys.size(), 1u);
+  EXPECT_EQ("1", a_loaded_keys[0].key);
+  EXPECT_EQ(1, a_loaded_keys[0].id);
+  EXPECT_EQ(expiration, a_expiration);
+  EXPECT_TRUE(b_loaded_keys.empty());
+}
+
+TEST_F(InterestGroupStorageTest, SetGetBiddingAndAuctionKeysNonUtf8) {
+  const url::Origin origin = url::Origin::Create(GURL("https://b.example.com"));
+  std::unique_ptr<InterestGroupStorage> storage = CreateStorage();
+  std::string key(32, 0x00);
+  std::vector<BiddingAndAuctionServerKey> keys{{key, 2}};
+  storage->SetBiddingAndAuctionServerKeys(origin, keys,
+                                          base::Time::Now() + base::Days(1));
+  std::vector<BiddingAndAuctionServerKey> loaded_keys;
+  base::Time expiration;
+  std::tie(expiration, loaded_keys) =
+      storage->GetBiddingAndAuctionServerKeys(origin);
+  EXPECT_EQ(loaded_keys.size(), 1u);
+  EXPECT_EQ(loaded_keys[0].key, key);
+  EXPECT_EQ(loaded_keys[0].id, 2);
 }
 
 }  // namespace

@@ -138,8 +138,7 @@ LOADER_EXPORT VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDev
     // sufficient
     if (!strcmp(name, "GetDeviceQueue2")) {
         struct loader_device *dev = NULL;
-        uint32_t index = 0;
-        struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev, &index);
+        struct loader_icd_term *icd_term = loader_get_icd_and_device(device, &dev);
         if (NULL != icd_term && dev != NULL) {
             const struct loader_instance *inst = icd_term->this_instance;
             uint32_t api_version =
@@ -178,7 +177,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionPropert
                 .version = VK_CURRENT_CHAIN_VERSION,
                 .size = sizeof(chain_tail),
             },
-        .pfnNextLayer = &terminator_EnumerateInstanceExtensionProperties,
+        .pfnNextLayer = &terminator_pre_instance_EnumerateInstanceExtensionProperties,
         .pNextLink = NULL,
     };
     VkEnumerateInstanceExtensionPropertiesChain *chain_head = &chain_tail;
@@ -284,7 +283,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(
                 .version = VK_CURRENT_CHAIN_VERSION,
                 .size = sizeof(chain_tail),
             },
-        .pfnNextLayer = &terminator_EnumerateInstanceLayerProperties,
+        .pfnNextLayer = &terminator_pre_instance_EnumerateInstanceLayerProperties,
         .pNextLink = NULL,
     };
     VkEnumerateInstanceLayerPropertiesChain *chain_head = &chain_tail;
@@ -397,7 +396,7 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceVersion(uint32_t
                 .version = VK_CURRENT_CHAIN_VERSION,
                 .size = sizeof(chain_tail),
             },
-        .pfnNextLayer = &terminator_EnumerateInstanceVersion,
+        .pfnNextLayer = &terminator_pre_instance_EnumerateInstanceVersion,
         .pNextLink = NULL,
     };
     VkEnumerateInstanceVersionChain *chain_head = &chain_tail;
@@ -598,7 +597,8 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCr
     }
 
     // Providing an apiVersion less than VK_API_VERSION_1_0 but greater than zero prevents the validation layers from starting
-    if (pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->apiVersion < VK_API_VERSION_1_0) {
+    if (pCreateInfo->pApplicationInfo && pCreateInfo->pApplicationInfo->apiVersion != 0u &&
+        pCreateInfo->pApplicationInfo->apiVersion < VK_API_VERSION_1_0) {
         loader_log(ptr_instance, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT, 0,
                    "VkInstanceCreateInfo::pApplicationInfo::apiVersion has value of %u which is not permitted. If apiVersion is "
                    "not 0, then it must be "
@@ -768,6 +768,10 @@ out:
 
             free_loader_settings(ptr_instance, &ptr_instance->settings);
 
+            loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->surfaces_list);
+            loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->debug_utils_messengers_list);
+            loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->debug_report_callbacks_list);
+
             loader_instance_heap_free(ptr_instance, ptr_instance->disp);
             // Remove any created VK_EXT_debug_report or VK_EXT_debug_utils items
             destroy_debug_callbacks_chain(ptr_instance, pAllocator);
@@ -776,7 +780,7 @@ out:
             loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->app_activated_layer_list);
 
             loader_delete_layer_list_and_properties(ptr_instance, &ptr_instance->instance_layer_list);
-            loader_scanned_icd_clear(ptr_instance, &ptr_instance->icd_tramp_list);
+            loader_clear_scanned_icd_list(ptr_instance, &ptr_instance->icd_tramp_list);
             loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->ext_list);
 
             // Free any icd_terms that were created.
@@ -788,6 +792,7 @@ out:
                 // Call destroy Instance on each driver in case we successfully called down the chain but failed on
                 // our way back out of it.
                 if (icd_term->instance) {
+                    loader_icd_close_objects(ptr_instance, icd_term);
                     icd_term->dispatch.DestroyInstance(icd_term->instance, pAllocator);
                 }
                 icd_term->instance = VK_NULL_HANDLE;
@@ -840,6 +845,10 @@ LOADER_EXPORT VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance instance, 
     disp->DestroyInstance(ptr_instance->instance, pAllocator);
 
     free_loader_settings(ptr_instance, &ptr_instance->settings);
+
+    loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->surfaces_list);
+    loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->debug_utils_messengers_list);
+    loader_destroy_generic_list(ptr_instance, (struct loader_generic_list *)&ptr_instance->debug_report_callbacks_list);
 
     loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->expanded_activated_layer_list);
     loader_destroy_pointer_layer_list(ptr_instance, &ptr_instance->app_activated_layer_list);
@@ -898,11 +907,15 @@ LOADER_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vkEnumeratePhysicalDevices(VkInstan
         if (VK_SUCCESS != update_res) {
             res = update_res;
         }
+
+        // Unloads any drivers that do not expose any physical devices - should save some address space
+        unload_drivers_without_physical_devices(inst);
     }
 
 out:
 
     loader_platform_thread_unlock_mutex(&loader_lock);
+
     return res;
 }
 

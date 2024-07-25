@@ -280,9 +280,15 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase,
   // See Assembler::CheckConstPool for more info.
   void EmitPoolGuard();
 
+#if defined(V8_TARGET_ARCH_RISCV64)
   static void set_target_value_at(
-      Address pc, uintptr_t target,
+      Address pc, uint64_t target,
       ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
+#elif defined(V8_TARGET_ARCH_RISCV32)
+  static void set_target_value_at(
+      Address pc, uint32_t target,
+      ICacheFlushMode icache_flush_mode = FLUSH_ICACHE_IF_NEEDED);
+#endif
 
   static void JumpLabelToJumpRegister(Address pc);
 
@@ -377,24 +383,27 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase,
   // Assembler Pseudo Instructions (Tables 25.2, 25.3, RISC-V Unprivileged ISA)
   void nop();
 #if defined(V8_TARGET_ARCH_RISCV64)
-  void RecursiveLiImpl(Register rd, intptr_t imm);
-  void RecursiveLi(Register rd, intptr_t imm);
-  static int RecursiveLiCount(intptr_t imm);
-  static int RecursiveLiImplCount(intptr_t imm);
-  void RV_li(Register rd, intptr_t imm);
+  void RecursiveLiImpl(Register rd, int64_t imm);
+  void RecursiveLi(Register rd, int64_t imm);
+  static int RecursiveLiCount(int64_t imm);
+  static int RecursiveLiImplCount(int64_t imm);
+  void RV_li(Register rd, int64_t imm);
   static int RV_li_count(int64_t imm, bool is_get_temp_reg = false);
   // Returns the number of instructions required to load the immediate
   void GeneralLi(Register rd, int64_t imm);
-  static int GeneralLiCount(intptr_t imm, bool is_get_temp_reg = false);
+  static int GeneralLiCount(int64_t imm, bool is_get_temp_reg = false);
+  // Loads an immediate, always using 8 instructions, regardless of the value,
+  // so that it can be modified later.
+  void li_constant(Register rd, int64_t imm);
+  void li_ptr(Register rd, int64_t imm);
 #endif
 #if defined(V8_TARGET_ARCH_RISCV32)
   void RV_li(Register rd, int32_t imm);
   static int RV_li_count(int32_t imm, bool is_get_temp_reg = false);
+
+  void li_constant(Register rd, int32_t imm);
+  void li_ptr(Register rd, int32_t imm);
 #endif
-  // Loads an immediate, always using 8 instructions, regardless of the value,
-  // so that it can be modified later.
-  void li_constant(Register rd, intptr_t imm);
-  void li_ptr(Register rd, intptr_t imm);
 
   void break_(uint32_t code, bool break_as_stop = false);
   void stop(uint32_t code = kMaxStopCode);
@@ -427,6 +436,24 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase,
    private:
     Assembler* assem_;
     DISALLOW_IMPLICIT_CONSTRUCTORS(BlockTrampolinePoolScope);
+  };
+
+  class V8_NODISCARD BlockPoolsScope {
+   public:
+    // Block Trampoline Pool and Constant Pool. Emits pools if necessary to
+    // ensure that {margin} more bytes can be emitted without triggering pool
+    // emission.
+    explicit BlockPoolsScope(Assembler* assem, size_t margin = 0)
+        : block_const_pool_(assem, margin), block_trampoline_pool_(assem) {}
+
+    BlockPoolsScope(Assembler* assem, PoolEmissionCheck check)
+        : block_const_pool_(assem, check), block_trampoline_pool_(assem) {}
+    ~BlockPoolsScope() {}
+
+   private:
+    BlockConstPoolScope block_const_pool_;
+    BlockTrampolinePoolScope block_trampoline_pool_;
+    DISALLOW_IMPLICIT_CONSTRUCTORS(BlockPoolsScope);
   };
 
   // Class for postponing the assembly buffer growth. Typically used for
@@ -511,8 +538,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase,
       Address pc_) const;
 
   inline int UnboundLabelsCount() { return unbound_labels_count_; }
-
-  using BlockPoolsScope = BlockTrampolinePoolScope;
 
   void RecordConstPool(int size);
 

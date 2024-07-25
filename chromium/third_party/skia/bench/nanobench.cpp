@@ -58,6 +58,7 @@
 #include "tools/trace/SkDebugfTracer.h"
 
 #if defined(SK_ENABLE_SVG)
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGNode.h"
 #endif
@@ -87,8 +88,7 @@ extern bool gSkForceRasterPipelineBlitter;
 extern bool gForceHighPrecisionRasterPipeline;
 
 #ifndef SK_BUILD_FOR_WIN
-    #include <unistd.h>
-
+#include <unistd.h>
 #endif
 
 #include "include/gpu/GrDirectContext.h"
@@ -209,6 +209,8 @@ static DEFINE_bool(splitPerfettoTracesByBenchmark, true,
                   "Create separate perfetto trace files for each benchmark?\n"
                   "Will only take effect if perfetto tracing is enabled. See --trace.");
 
+static DEFINE_bool(runtimeCPUDetection, true, "Skip runtime CPU detection and optimization");
+
 static double now_ms() { return SkTime::GetNSecs() * 1e-6; }
 
 static SkString humanize(double ms) {
@@ -218,7 +220,7 @@ static SkString humanize(double ms) {
 #define HUMANIZE(ms) humanize(ms).c_str()
 
 bool Target::init(SkImageInfo info, Benchmark* bench) {
-    if (Benchmark::kRaster_Backend == config.backend) {
+    if (Benchmark::Backend::kRaster == config.backend) {
         this->surface = SkSurfaces::Raster(info);
         if (!this->surface) {
             return false;
@@ -251,17 +253,19 @@ struct GPUTarget : public Target {
         surface.reset();
     }
 
-    void setup() override {
+    void onSetup() override {
         this->contextInfo.testContext()->makeCurrent();
-        // Make sure we're done with whatever came before.
-        this->contextInfo.testContext()->finish();
     }
     void endTiming() override {
         if (this->contextInfo.testContext()) {
             this->contextInfo.testContext()->flushAndWaitOnSync(contextInfo.directContext());
         }
     }
-    void syncCPU() override { this->contextInfo.testContext()->finish(); }
+    void submitWorkAndSyncCPU() override {
+        if (this->contextInfo.testContext()) {
+            this->contextInfo.testContext()->flushAndSyncCpu(contextInfo.directContext());
+        }
+    }
 
     bool needsFrameTiming(int* maxFrameLag) const override {
         if (!this->contextInfo.testContext()->getMaxGpuFrameLag(maxFrameLag)) {
@@ -314,9 +318,12 @@ struct GraphiteTarget : public Target {
     skgpu::graphite::Context* context;
     std::unique_ptr<skgpu::graphite::Recorder> recorder;
 
-    ~GraphiteTarget() override {}
-
-    void setup() override {}
+    ~GraphiteTarget() override {
+        // For Vulkan we need to release all our refs before we destroy the vulkan context which
+        // happens at the end of this destructor. Thus we need to release the surface here which
+        // holds a ref to the Graphite device
+        surface.reset();
+    }
 
     void endTiming() override {
         if (context && recorder) {
@@ -326,7 +333,7 @@ struct GraphiteTarget : public Target {
             }
         }
     }
-    void syncCPU() override {
+    void submitWorkAndSyncCPU() override {
         if (context && recorder) {
             // TODO: have a way to sync work with out submitting a Recording which is currently
             // required. Probably need to get to the point where the backend command buffers are
@@ -534,7 +541,7 @@ static int setup_gpu_bench(Target* target, Benchmark* bench, int maxGpuFrameLag)
         loops = clamp_loops(loops);
 
         // Make sure we're not still timing our calibration.
-        target->syncCPU();
+        target->submitWorkAndSyncCPU();
     } else {
         loops = detect_forever_loops(loops);
     }
@@ -583,7 +590,7 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
         }
 
         return Config{gpuConfig->getTag(),
-                      Benchmark::kGPU_Backend,
+                      Benchmark::Backend::kGanesh,
                       colorType,
                       kPremul_SkAlphaType,
                       config->refColorSpace(),
@@ -634,7 +641,7 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
         }
 
         return Config{gpuConfig->getTag(),
-                      Benchmark::kGraphite_Backend,
+                      Benchmark::Backend::kGraphite,
                       colorType,
                       kPremul_SkAlphaType,
                       config->refColorSpace(),
@@ -662,15 +669,15 @@ static std::optional<Config> create_config(const SkCommandLineConfig* config) {
                       0};                                                               \
     }
 
-    CPU_CONFIG("nonrendering", kNonRendering_Backend, kUnknown_SkColorType, kUnpremul_SkAlphaType)
+    CPU_CONFIG("nonrendering", Backend::kNonRendering, kUnknown_SkColorType, kUnpremul_SkAlphaType)
 
-    CPU_CONFIG("a8",    kRaster_Backend,    kAlpha_8_SkColorType, kPremul_SkAlphaType)
-    CPU_CONFIG("565",   kRaster_Backend,    kRGB_565_SkColorType, kOpaque_SkAlphaType)
-    CPU_CONFIG("8888",  kRaster_Backend,        kN32_SkColorType, kPremul_SkAlphaType)
-    CPU_CONFIG("rgba",  kRaster_Backend,  kRGBA_8888_SkColorType, kPremul_SkAlphaType)
-    CPU_CONFIG("bgra",  kRaster_Backend,  kBGRA_8888_SkColorType, kPremul_SkAlphaType)
-    CPU_CONFIG("f16",   kRaster_Backend,   kRGBA_F16_SkColorType, kPremul_SkAlphaType)
-    CPU_CONFIG("srgba", kRaster_Backend, kSRGBA_8888_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("a8",    Backend::kRaster,    kAlpha_8_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("565",   Backend::kRaster,    kRGB_565_SkColorType, kOpaque_SkAlphaType)
+    CPU_CONFIG("8888",  Backend::kRaster,        kN32_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("rgba",  Backend::kRaster,  kRGBA_8888_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("bgra",  Backend::kRaster,  kBGRA_8888_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("f16",   Backend::kRaster,   kRGBA_F16_SkColorType, kPremul_SkAlphaType)
+    CPU_CONFIG("srgba", Backend::kRaster, kSRGBA_8888_SkColorType, kPremul_SkAlphaType)
 
 #undef CPU_CONFIG
 
@@ -715,11 +722,11 @@ static Target* is_enabled(Benchmark* bench, const Config& config) {
     Target* target = nullptr;
 
     switch (config.backend) {
-    case Benchmark::kGPU_Backend:
+    case Benchmark::Backend::kGanesh:
         target = new GPUTarget(config);
         break;
 #if defined(SK_GRAPHITE)
-    case Benchmark::kGraphite_Backend:
+    case Benchmark::Backend::kGraphite:
         target = new GraphiteTarget(config);
         break;
 #endif
@@ -867,8 +874,10 @@ public:
 
 #if defined(SK_ENABLE_SVG)
         SkMemoryStream stream(std::move(data));
-        sk_sp<SkSVGDOM> svgDom =
-                SkSVGDOM::Builder().setFontManager(ToolUtils::TestFontMgr()).make(stream);
+        sk_sp<SkSVGDOM> svgDom = SkSVGDOM::Builder()
+                                         .setFontManager(ToolUtils::TestFontMgr())
+                                         .setTextShapingFactory(SkShapers::BestAvailable())
+                                         .make(stream);
         if (!svgDom) {
             SkDebugf("Could not parse %s.\n", path);
             return nullptr;
@@ -1346,7 +1355,9 @@ int main(int argc, char** argv) {
     cd_Documents();
 #endif
     SetupCrashHandler();
-    SkGraphics::Init();
+    if (FLAGS_runtimeCPUDetection) {
+        SkGraphics::Init();
+    }
 
     // Our benchmarks only currently decode .png or .jpg files
     SkCodecs::Register(SkPngDecoder::Decoder());
@@ -1433,8 +1444,6 @@ int main(int argc, char** argv) {
     if (FLAGS_keepAlive) {
         start_keepalive();
     }
-
-    CommonFlags::SetAnalyticAA();
 
     gSkForceRasterPipelineBlitter     = FLAGS_forceRasterPipelineHP || FLAGS_forceRasterPipeline;
     gForceHighPrecisionRasterPipeline = FLAGS_forceRasterPipelineHP;
@@ -1535,7 +1544,7 @@ int main(int argc, char** argv) {
 
             TArray<SkString> keys;
             TArray<double> values;
-            if (configs[i].backend == Benchmark::kGPU_Backend) {
+            if (configs[i].backend == Benchmark::Backend::kGanesh) {
                 if (FLAGS_gpuStatsDump) {
                     // TODO cache stats
                     bench->getGpuStats(canvas, &keys, &values);
@@ -1550,7 +1559,7 @@ int main(int argc, char** argv) {
 
             bench->perCanvasPostDraw(canvas);
 
-            if (Benchmark::kNonRendering_Backend != target->config.backend &&
+            if (Benchmark::Backend::kNonRendering != target->config.backend &&
                 !FLAGS_writePath.isEmpty() && FLAGS_writePath[0]) {
                 SkString pngFilename = SkOSPath::Join(FLAGS_writePath[0], config);
                 pngFilename = SkOSPath::Join(pngFilename.c_str(), bench->getUniqueName());
@@ -1642,7 +1651,7 @@ int main(int argc, char** argv) {
                         );
             }
 
-            if (FLAGS_gpuStats && Benchmark::kGPU_Backend == configs[i].backend) {
+            if (FLAGS_gpuStats && Benchmark::Backend::kGanesh == configs[i].backend) {
                 target->dumpStats();
             }
 

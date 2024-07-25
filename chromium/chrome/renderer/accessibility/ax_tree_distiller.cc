@@ -17,6 +17,7 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "ui/accessibility/accessibility_features.h"
+#include "ui/accessibility/ax_enums.mojom-shared.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_tree.h"
 
@@ -24,10 +25,9 @@ namespace {
 
 // TODO: Consider moving this to AXNodeProperties.
 static const ax::mojom::Role kContentRoles[]{
-    ax::mojom::Role::kHeading,
-    ax::mojom::Role::kParagraph,
-    ax::mojom::Role::kNote,
-};
+    ax::mojom::Role::kHeading, ax::mojom::Role::kParagraph,
+    ax::mojom::Role::kNote, ax::mojom::Role::kImage,
+    ax::mojom::Role::kFigcaption};
 
 // TODO: Consider moving this to AXNodeProperties.
 static const ax::mojom::Role kRolesToSkip[]{
@@ -38,14 +38,13 @@ static const ax::mojom::Role kRolesToSkip[]{
     ax::mojom::Role::kContentInfo,
     ax::mojom::Role::kFooter,
     ax::mojom::Role::kFooterAsNonLandmark,
-    ax::mojom::Role::kImage,
     ax::mojom::Role::kLabelText,
     ax::mojom::Role::kNavigation,
 };
 
 // Find all of the main and article nodes. Also, include unignored heading nodes
 // which lie outside of the main and article node.
-// TODO(crbug.com/1266555): Replace this with a call to
+// TODO(crbug.com/40802192): Replace this with a call to
 // OneShotAccessibilityTreeSearch.
 void GetContentRootNodes(const ui::AXNode* root,
                          std::vector<const ui::AXNode*>* content_root_nodes) {
@@ -89,7 +88,15 @@ void GetContentRootNodes(const ui::AXNode* root,
 // |content_node_ids|, whose pointer is passed through the recursion.
 void AddContentNodesToVector(const ui::AXNode* node,
                              std::vector<ui::AXNodeID>* content_node_ids) {
-  if (base::Contains(kContentRoles, node->GetRole())) {
+  const auto& role = node->GetRole();
+  if (base::Contains(kContentRoles, role)) {
+    // TODO(crbug.com/40922922): Remove when flag is no longer necessary. Skip
+    // these roles if the flag is not enabled.
+    if (!features::IsReadAnythingImagesViaAlgorithmEnabled() &&
+        (role == ax::mojom::Role::kFigcaption ||
+         role == ax::mojom::Role::kImage)) {
+      return;
+    }
     content_node_ids->emplace_back(node->id());
     return;
   }
@@ -106,7 +113,7 @@ void AddContentNodesToVector(const ui::AXNode* node,
 AXTreeDistiller::AXTreeDistiller(
     OnAXTreeDistilledCallback on_ax_tree_distilled_callback)
     : on_ax_tree_distilled_callback_(on_ax_tree_distilled_callback) {
-  // TODO(crbug.com/1450930): Use a global ukm recorder instance instead.
+  // TODO(crbug.com/40915547): Use a global ukm recorder instance instead.
   mojo::Remote<ukm::mojom::UkmRecorderFactory> factory;
   content::RenderThread::Get()->BindHostReceiver(
       factory.BindNewPipeAndPassReceiver());
@@ -118,9 +125,7 @@ AXTreeDistiller::~AXTreeDistiller() = default;
 void AXTreeDistiller::Distill(const ui::AXTree& tree,
                               const ui::AXTreeUpdate& snapshot,
                               const ukm::SourceId ukm_source_id) {
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   base::TimeTicks start_time = base::TimeTicks::Now();
-#endif
 
   std::vector<ui::AXNodeID> content_node_ids;
   if (features::IsReadAnythingWithAlgorithmEnabled()) {
@@ -131,14 +136,12 @@ void AXTreeDistiller::Distill(const ui::AXTree& tree,
   // If Read Anything with Screen 2x is enabled and the main content extractor
   // is bound, kick off Screen 2x run, which distills the AXTree in the
   // utility process using ML.
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   if (features::IsReadAnythingWithScreen2xEnabled() &&
       main_content_extractor_.is_bound()) {
     DistillViaScreen2x(tree, snapshot, ukm_source_id, start_time,
                        &content_node_ids);
     return;
   }
-#endif
 
   // Ensure we still callback if Screen2x is not available.
   on_ax_tree_distilled_callback_.Run(tree.GetAXTreeID(), content_node_ids);
@@ -178,7 +181,6 @@ void AXTreeDistiller::RecordRulesMetrics(ukm::SourceId ukm_source_id,
   }
 }
 
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 void AXTreeDistiller::DistillViaScreen2x(
     const ui::AXTree& tree,
     const ui::AXTreeUpdate& snapshot,
@@ -210,7 +212,7 @@ void AXTreeDistiller::ProcessScreen2xResult(
                       !content_node_ids_algorithm.empty());
   on_ax_tree_distilled_callback_.Run(tree_id, content_node_ids_algorithm);
 
-  // TODO(crbug.com/1266555): If no content nodes were identified, and
+  // TODO(crbug.com/40802192): If no content nodes were identified, and
   // there is a selection, try sending Screen2x a partial tree just containing
   // the selected nodes.
 }
@@ -250,4 +252,3 @@ void AXTreeDistiller::RecordMergedMetrics(ukm::SourceId ukm_source_id,
         .Record(ukm_recorder_.get());
   }
 }
-#endif

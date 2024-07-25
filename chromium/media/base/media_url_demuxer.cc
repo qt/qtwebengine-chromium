@@ -28,8 +28,7 @@ MediaUrlDemuxer::MediaUrlDemuxer(
 MediaUrlDemuxer::~MediaUrlDemuxer() = default;
 
 // Should never be called since MediaResource::Type is URL.
-std::vector<raw_ptr<DemuxerStream, VectorExperimental>>
-MediaUrlDemuxer::GetAllStreams() {
+std::vector<DemuxerStream*> MediaUrlDemuxer::GetAllStreams() {
   NOTREACHED_NORETURN();
 }
 
@@ -101,9 +100,9 @@ int64_t MediaUrlDemuxer::GetMemoryUsage() const {
   return 0;
 }
 
-absl::optional<container_names::MediaContainerName>
+std::optional<container_names::MediaContainerName>
 MediaUrlDemuxer::GetContainerForMetrics() const {
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 void MediaUrlDemuxer::OnEnabledAudioTracksChanged(

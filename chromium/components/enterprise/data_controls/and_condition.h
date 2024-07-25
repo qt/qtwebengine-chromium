@@ -18,17 +18,19 @@ class AndCondition : public Condition {
  public:
   // Returns nullptr if the passed vector is empty.
   static std::unique_ptr<Condition> Create(
-      std::vector<std::unique_ptr<Condition>> conditions);
+      std::vector<std::unique_ptr<const Condition>> conditions);
 
   ~AndCondition() override;
 
   // Condition:
+  bool CanBeEvaluated(const ActionContext& action_context) const override;
   bool IsTriggered(const ActionContext& action_context) const override;
 
  private:
-  explicit AndCondition(std::vector<std::unique_ptr<Condition>> conditions);
+  explicit AndCondition(
+      std::vector<std::unique_ptr<const Condition>> conditions);
 
-  const std::vector<std::unique_ptr<Condition>> conditions_;
+  const std::vector<std::unique_ptr<const Condition>> conditions_;
 };
 
 }  // namespace data_controls

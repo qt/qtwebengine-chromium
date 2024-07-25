@@ -91,6 +91,8 @@ class WebContentsViewMac : public WebContentsView,
   void OnCapturerCountChanged() override;
   void FullscreenStateChanged(bool is_fullscreen) override;
   void UpdateWindowControlsOverlay(const gfx::Rect& bounding_rect) override;
+  BackForwardTransitionAnimationManager*
+  GetBackForwardTransitionAnimationManager() override;
 
   // RenderViewHostDelegateView:
   void StartDragging(const DropData& drop_data,
@@ -152,7 +154,7 @@ class WebContentsViewMac : public WebContentsView,
   WebContentsViewCocoa* GetInProcessNSView() const;
 
   // remote_cocoa::mojom::WebContentsNSViewHost:
-  void OnMouseEvent(bool motion, bool exited) override;
+  void OnMouseEvent(std::unique_ptr<ui::Event> event) override;
   void OnBecameFirstResponder(
       remote_cocoa::mojom::SelectionDirection direction) override;
   void OnWindowVisibilityChanged(

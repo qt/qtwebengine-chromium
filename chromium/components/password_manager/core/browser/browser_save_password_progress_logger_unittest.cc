@@ -60,20 +60,20 @@ class BrowserSavePasswordProgressLoggerTest : public testing::Test {
 
     // Add a password field.
     autofill::FormFieldData field;
-    field.name = u"password";
-    field.form_control_type = autofill::FormControlType::kInputPassword;
-    field.is_focusable = true;
-    field.autocomplete_attribute = "new-password";
-    field.unique_renderer_id = autofill::FieldRendererId(10);
+    field.set_name(u"password");
+    field.set_form_control_type(autofill::FormControlType::kInputPassword);
+    field.set_is_focusable(true);
+    field.set_autocomplete_attribute("new-password");
+    field.set_renderer_id(autofill::FieldRendererId(10));
     form_.fields.push_back(field);
 
     // Add a text field.
-    field.name = u"email";
-    field.form_control_type = autofill::FormControlType::kInputText;
-    field.is_focusable = false;
-    field.unique_renderer_id = autofill::FieldRendererId(42);
-    field.value = u"a@example.com";
-    field.autocomplete_attribute.clear();
+    field.set_name(u"email");
+    field.set_form_control_type(autofill::FormControlType::kInputText);
+    field.set_is_focusable(false);
+    field.set_renderer_id(autofill::FieldRendererId(42));
+    field.set_value(u"a@example.com");
+    field.set_autocomplete_attribute({});
     form_.fields.push_back(field);
   }
 
@@ -92,7 +92,6 @@ TEST_F(BrowserSavePasswordProgressLoggerTest, LogFormData) {
   EXPECT_TRUE(logger.LogsContainSubstring("Origin: http://myform.com"));
   EXPECT_TRUE(logger.LogsContainSubstring("Action: http://m.myform.com"));
   EXPECT_TRUE(logger.LogsContainSubstring("Form name: form_name"));
-  EXPECT_TRUE(logger.LogsContainSubstring("Form with form tag: true"));
   EXPECT_TRUE(logger.LogsContainSubstring("Form fields:"));
   EXPECT_TRUE(logger.LogsContainSubstring(
       "password: signature=2051817934, type=password, renderer_id=10, "

@@ -39,6 +39,7 @@ class Element;
 class GraphicsContext;
 class LocalFrame;
 class Node;
+class PropertyTreeStateOrAlias;
 
 class CORE_EXPORT PrintContext : public GarbageCollected<PrintContext> {
  public:
@@ -66,9 +67,6 @@ class CORE_EXPORT PrintContext : public GarbageCollected<PrintContext> {
   // Returns -1 if page isn't found.
   static int PageNumberForElement(Element*,
                                   const gfx::SizeF& page_size_in_pixels);
-  static String PageProperty(LocalFrame*,
-                             const char* property_name,
-                             uint32_t page_number);
   static int NumberOfPages(LocalFrame*, const gfx::SizeF& page_size_in_pixels);
 
   virtual void Trace(Visitor*) const;
@@ -78,7 +76,9 @@ class CORE_EXPORT PrintContext : public GarbageCollected<PrintContext> {
  protected:
   friend class PrintContextTest;
 
-  void OutputLinkedDestinations(GraphicsContext&, const gfx::Rect& page_rect);
+  void OutputLinkedDestinations(GraphicsContext&,
+                                const PropertyTreeStateOrAlias&,
+                                const gfx::Rect& page_rect);
   bool IsFrameValid() const;
 
   Member<LocalFrame> frame_;

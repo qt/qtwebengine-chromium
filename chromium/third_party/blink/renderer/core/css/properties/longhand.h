@@ -24,9 +24,17 @@ class Longhand : public CSSProperty {
  public:
   // Parses and consumes a longhand property value from the token range.
   // Returns nullptr if the input is invalid.
-  virtual const CSSValue* ParseSingleValue(CSSParserTokenRange&,
-                                           const CSSParserContext&,
-                                           const CSSParserLocalContext&) const {
+  //
+  // NOTE: This function must accept arbitrary tokens after the value,
+  // without returning error. In particular, it must not check for
+  // end-of-stream, since it may be called as part of parsing a shorthand, or
+  // there may be “!important” after the value that the caller is responsible
+  // the caller is responsible for consuming. End-of-stream is checked
+  // by the caller (after potentially consuming “!important”).
+  virtual const CSSValue* ParseSingleValueFromRange(
+      CSSParserTokenRange&,
+      const CSSParserContext&,
+      const CSSParserLocalContext&) const {
     return nullptr;
   }
   virtual void ApplyInitial(StyleResolverState&) const { NOTREACHED(); }
@@ -57,6 +65,15 @@ class Longhand : public CSSProperty {
  protected:
   constexpr Longhand(CSSPropertyID id, Flags flags, char repetition_separator)
       : CSSProperty(id, flags | kLonghand, repetition_separator) {}
+  // Applies the computed CSSValue of the parent style using ApplyValue.
+  // This generally achieves the same as ApplyInherit, but effectively
+  // "rezooms" the value.
+  //
+  // https://github.com/w3c/csswg-drafts/issues/9397
+  void ApplyParentValue(StyleResolverState&) const;
+  // If our zoom is different from the parent zoom, calls ApplyParentValue
+  // and returns true. Otherwise does nothing and returns false.
+  bool ApplyParentValueIfZoomChanged(StyleResolverState&) const;
 };
 
 template <>

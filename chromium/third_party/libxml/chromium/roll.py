@@ -73,6 +73,7 @@ import tempfile
 
 PATCHES = [
     'undo-sax-deprecation.patch',
+    'remove-getentropy.patch',
 ]
 
 
@@ -180,10 +181,12 @@ FILES_TO_REMOVE = [
     'src/genChRanges.py',
     'src/global.data',
     'src/include/libxml/Makefile.in',
+    'src/include/libxml/meson.build',
     'src/include/libxml/xmlversion.h',
     'src/include/libxml/xmlwin32version.h',
     'src/include/libxml/xmlwin32version.h.in',
     'src/include/Makefile.in',
+    'src/include/meson.build',
     'src/install-sh',
     'src/legacy.c',
     'src/libxml2.doap',
@@ -191,6 +194,8 @@ FILES_TO_REMOVE = [
     'src/ltmain.sh',
     'src/m4',
     'src/macos/libxml2.mcp.xml.sit.hqx',
+    'src/meson.build',
+    'src/meson_options.txt',
     'src/missing',
     'src/optim',
     'src/os400',

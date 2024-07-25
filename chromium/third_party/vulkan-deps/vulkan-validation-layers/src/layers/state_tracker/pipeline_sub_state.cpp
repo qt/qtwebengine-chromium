@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2017, 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2015-2017, 2019-2023 Valve Corporation
- * Copyright (c) 2015-2017, 2019-2023 LunarG, Inc.
+/* Copyright (c) 2015-2017, 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2015-2017, 2019-2024 Valve Corporation
+ * Copyright (c) 2015-2017, 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,58 +17,53 @@
 
 #include "state_tracker/pipeline_sub_state.h"
 #include "state_tracker/pipeline_state.h"
+#include "state_tracker/shader_module.h"
 
 VkPipelineLayoutCreateFlags PipelineSubState::PipelineLayoutCreateFlags() const {
     const auto layout_state = parent.PipelineLayoutState();
     return (layout_state) ? layout_state->CreateFlags() : static_cast<VkPipelineLayoutCreateFlags>(0);
 }
 
-VertexInputState::VertexInputState(const vvl::Pipeline &p, const safe_VkGraphicsPipelineCreateInfo &create_info)
-    : PipelineSubState(p), input_state(create_info.pVertexInputState), input_assembly_state(create_info.pInputAssemblyState) {
-    if (create_info.pVertexInputState) {
-        const auto *vici = create_info.pVertexInputState;
-        if (vici->vertexBindingDescriptionCount) {
-            const auto count = vici->vertexBindingDescriptionCount;
+VertexInputState::VertexInputState(const vvl::Pipeline &p, const vku::safe_VkGraphicsPipelineCreateInfo &create_info)
+    : PipelineSubState(p) {
+    for (uint32_t i = 0; i < create_info.stageCount; i++) {
+        if (create_info.pStages && create_info.pStages[i].stage == VK_SHADER_STAGE_MESH_BIT_EXT) {
+            return;  // if mesh shaders are used, all vertex input state is ignored
+        }
+    }
+    input_state = create_info.pVertexInputState;
+    input_assembly_state = create_info.pInputAssemblyState;
+
+    if (input_state) {
+        if (input_state->vertexBindingDescriptionCount) {
+            const uint32_t count = input_state->vertexBindingDescriptionCount;
             binding_descriptions.reserve(count);
             binding_to_index_map.reserve(count);
 
             for (uint32_t i = 0; i < count; i++) {
-                binding_descriptions.emplace_back(vici->pVertexBindingDescriptions[i]);
+                binding_descriptions.emplace_back(input_state->pVertexBindingDescriptions[i]);
                 binding_to_index_map[binding_descriptions.back().binding] = i;
             }
         }
 
-        if (vici->vertexAttributeDescriptionCount) {
-            vertex_attribute_descriptions.reserve(vici->vertexAttributeDescriptionCount);
-            std::copy(vici->pVertexAttributeDescriptions,
-                      vici->pVertexAttributeDescriptions + vici->vertexAttributeDescriptionCount,
-                      std::back_inserter(vertex_attribute_descriptions));
-        }
-
-        vertex_attribute_alignments.reserve(vertex_attribute_descriptions.size());
-        for (const auto &attr : vertex_attribute_descriptions) {
-            VkDeviceSize vtx_attrib_req_alignment = vkuFormatElementSize(attr.format);
-            if (vkuFormatElementIsTexel(attr.format)) {
-                vtx_attrib_req_alignment = SafeDivision(vtx_attrib_req_alignment, vkuFormatComponentCount(attr.format));
-            }
-            vertex_attribute_alignments.push_back(vtx_attrib_req_alignment);
+        vertex_attribute_descriptions.reserve(input_state->vertexAttributeDescriptionCount);
+        for (const auto [i, description] :
+             vvl::enumerate(input_state->pVertexAttributeDescriptions, input_state->vertexAttributeDescriptionCount)) {
+            vertex_attribute_descriptions.emplace_back(vku::InitStruct<VkVertexInputAttributeDescription2EXT>(
+                nullptr, description->location, description->binding, description->format, description->offset));
         }
     }
 }
 
 PreRasterState::PreRasterState(const vvl::Pipeline &p, const ValidationStateTracker &state_data,
-                               const safe_VkGraphicsPipelineCreateInfo &create_info, std::shared_ptr<const vvl::RenderPass> rp)
-    : PipelineSubState(p), rp_state(rp), subpass(create_info.subpass) {
-    pipeline_layout = state_data.Get<vvl::PipelineLayout>(create_info.layout);
-
-    viewport_state = create_info.pViewportState;
-
-    rp_state = state_data.Get<vvl::RenderPass>(create_info.renderPass);
-
-    raster_state = create_info.pRasterizationState;
-
-    tess_create_info = create_info.pTessellationState;
-
+                               const vku::safe_VkGraphicsPipelineCreateInfo &create_info, std::shared_ptr<const vvl::RenderPass> rp)
+    : PipelineSubState(p),
+      pipeline_layout(state_data.Get<vvl::PipelineLayout>(create_info.layout)),
+      viewport_state(create_info.pViewportState),
+      raster_state(create_info.pRasterizationState),
+      tessellation_state(create_info.pTessellationState),
+      rp_state(rp),
+      subpass(create_info.subpass) {
     VkShaderStageFlags all_stages = 0;
 
     for (uint32_t i = 0; i < create_info.stageCount; ++i) {
@@ -148,39 +143,40 @@ PreRasterState::PreRasterState(const vvl::Pipeline &p, const ValidationStateTrac
     }
 }
 
-std::unique_ptr<const safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
-    const safe_VkPipelineColorBlendStateCreateInfo &cbs) {
+std::unique_ptr<const vku::safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
+    const vku::safe_VkPipelineColorBlendStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return std::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(cbs);
+    return std::make_unique<const vku::safe_VkPipelineColorBlendStateCreateInfo>(cbs);
 }
-std::unique_ptr<const safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
+std::unique_ptr<const vku::safe_VkPipelineColorBlendStateCreateInfo> ToSafeColorBlendState(
     const VkPipelineColorBlendStateCreateInfo &cbs) {
-    return std::make_unique<const safe_VkPipelineColorBlendStateCreateInfo>(&cbs);
+    return std::make_unique<const vku::safe_VkPipelineColorBlendStateCreateInfo>(&cbs);
 }
-std::unique_ptr<const safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
-    const safe_VkPipelineMultisampleStateCreateInfo &cbs) {
+std::unique_ptr<const vku::safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
+    const vku::safe_VkPipelineMultisampleStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return std::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(cbs);
+    return std::make_unique<const vku::safe_VkPipelineMultisampleStateCreateInfo>(cbs);
 }
-std::unique_ptr<const safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
+std::unique_ptr<const vku::safe_VkPipelineMultisampleStateCreateInfo> ToSafeMultisampleState(
     const VkPipelineMultisampleStateCreateInfo &cbs) {
-    return std::make_unique<const safe_VkPipelineMultisampleStateCreateInfo>(&cbs);
+    return std::make_unique<const vku::safe_VkPipelineMultisampleStateCreateInfo>(&cbs);
 }
-std::unique_ptr<const safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
-    const safe_VkPipelineDepthStencilStateCreateInfo &cbs) {
+std::unique_ptr<const vku::safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
+    const vku::safe_VkPipelineDepthStencilStateCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return std::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(cbs);
+    return std::make_unique<const vku::safe_VkPipelineDepthStencilStateCreateInfo>(cbs);
 }
-std::unique_ptr<const safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
+std::unique_ptr<const vku::safe_VkPipelineDepthStencilStateCreateInfo> ToSafeDepthStencilState(
     const VkPipelineDepthStencilStateCreateInfo &cbs) {
-    return std::make_unique<const safe_VkPipelineDepthStencilStateCreateInfo>(&cbs);
+    return std::make_unique<const vku::safe_VkPipelineDepthStencilStateCreateInfo>(&cbs);
 }
-std::unique_ptr<const safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(const safe_VkPipelineShaderStageCreateInfo &cbs) {
+std::unique_ptr<const vku::safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(
+    const vku::safe_VkPipelineShaderStageCreateInfo &cbs) {
     // This is needlessly copied here. Might better to make this a plain pointer, with an optional "backing unique_ptr"
-    return std::make_unique<const safe_VkPipelineShaderStageCreateInfo>(cbs);
+    return std::make_unique<const vku::safe_VkPipelineShaderStageCreateInfo>(cbs);
 }
-std::unique_ptr<const safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(const VkPipelineShaderStageCreateInfo &cbs) {
-    return std::make_unique<const safe_VkPipelineShaderStageCreateInfo>(&cbs);
+std::unique_ptr<const vku::safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI(const VkPipelineShaderStageCreateInfo &cbs) {
+    return std::make_unique<const vku::safe_VkPipelineShaderStageCreateInfo>(&cbs);
 }
 
 template <typename CreateInfo>
@@ -230,7 +226,7 @@ void FragmentShaderState::SetFragmentShaderInfo(FragmentShaderState &fs_state, c
 
 // static
 void FragmentShaderState::SetFragmentShaderInfo(FragmentShaderState &fs_state, const ValidationStateTracker &state_data,
-                                                const safe_VkGraphicsPipelineCreateInfo &create_info) {
+                                                const vku::safe_VkGraphicsPipelineCreateInfo &create_info) {
     SetFragmentShaderInfoPrivate(fs_state, state_data, create_info);
 }
 
@@ -242,9 +238,9 @@ FragmentOutputState::FragmentOutputState(const vvl::Pipeline &p, std::shared_ptr
     : PipelineSubState(p), rp_state(rp), subpass(sp) {}
 
 // static
-bool FragmentOutputState::IsBlendConstantsEnabled(const AttachmentVector &attachments) {
+bool FragmentOutputState::IsBlendConstantsEnabled(const AttachmentStateVector &attachment_states) {
     bool result = false;
-    for (const auto &attachment : attachments) {
+    for (const auto &attachment : attachment_states) {
         if (VK_TRUE == attachment.blendEnable) {
             if (((attachment.dstAlphaBlendFactor >= VK_BLEND_FACTOR_CONSTANT_COLOR) &&
                  (attachment.dstAlphaBlendFactor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA)) ||
@@ -263,7 +259,7 @@ bool FragmentOutputState::IsBlendConstantsEnabled(const AttachmentVector &attach
 }
 
 // static
-bool FragmentOutputState::GetDualSourceBlending(const safe_VkPipelineColorBlendStateCreateInfo *color_blend_state) {
+bool FragmentOutputState::GetDualSourceBlending(const vku::safe_VkPipelineColorBlendStateCreateInfo *color_blend_state) {
     if (!color_blend_state) {
         return false;
     }

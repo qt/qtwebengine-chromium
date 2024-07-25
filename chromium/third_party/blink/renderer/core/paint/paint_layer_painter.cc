@@ -4,9 +4,10 @@
 
 #include "third_party/blink/renderer/core/paint/paint_layer_painter.h"
 
+#include <optional>
+
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
@@ -139,6 +140,18 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
       !paint_layer_.HasSelfPaintingLayerDescendant())
     return kFullyPainted;
 
+  std::optional<CheckAncestorPositionVisibilityScope>
+      check_position_visibility_scope;
+  if (RuntimeEnabledFeatures::CSSPositionVisibilityEnabled()) {
+    if (paint_layer_.InvisibleForPositionVisibility() ||
+        paint_layer_.HasAncestorInvisibleForPositionVisibility()) {
+      return kFullyPainted;
+    }
+    if (paint_layer_.GetLayoutObject().IsStackingContext()) {
+      check_position_visibility_scope.emplace(paint_layer_);
+    }
+  }
+
   // A paint layer should always have LocalBorderBoxProperties when it's ready
   // for paint.
   if (!object.FirstFragment().HasLocalBorderBoxProperties()) {
@@ -220,7 +233,7 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
   bool should_create_subsequence =
       should_paint_content &&
       ShouldCreateSubsequence(paint_layer_, context, paint_flags);
-  absl::optional<SubsequenceRecorder> subsequence_recorder;
+  std::optional<SubsequenceRecorder> subsequence_recorder;
   if (should_create_subsequence) {
     if (!paint_layer_.SelfOrDescendantNeedsRepaint() &&
         SubsequenceRecorder::UseCachedSubsequenceIfPossible(context,
@@ -231,11 +244,11 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
     subsequence_recorder.emplace(context, paint_layer_);
   }
 
-  absl::optional<ScopedEffectivelyInvisible> effectively_invisible;
+  std::optional<ScopedEffectivelyInvisible> effectively_invisible;
   if (PaintedOutputInvisible(object.StyleRef()))
     effectively_invisible.emplace(context.GetPaintController());
 
-  absl::optional<ScopedPaintChunkProperties> layer_chunk_properties;
+  std::optional<ScopedPaintChunkProperties> layer_chunk_properties;
   if (should_paint_content) {
     // If we will create a new paint chunk for this layer, this gives the chunk
     // a stable id.
@@ -302,8 +315,7 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
   if (should_paint_content && !selection_drag_image_only) {
     if (const auto* properties = object.FirstFragment().PaintProperties()) {
       if (properties->Mask()) {
-        if (RuntimeEnabledFeatures::CSSMaskingInteropEnabled() &&
-            object.IsSVGForeignObject()) {
+        if (object.IsSVGForeignObject()) {
           SVGMaskPainter::Paint(context, object, object);
         } else {
           PaintWithPhase(PaintPhase::kMask, context, paint_flags);
@@ -392,9 +404,10 @@ void PaintLayerPainter::PaintFragmentWithPhase(
       context.GetPaintController(), chunk_properties, paint_layer_,
       DisplayItem::PaintPhaseToDrawingType(phase));
 
-  PaintInfo paint_info(context, cull_rect, phase, paint_flags);
-  if (paint_layer_.GetLayoutObject().ChildPaintBlockedByDisplayLock())
-    paint_info.SetDescendantPaintingBlocked(true);
+  PaintInfo paint_info(
+      context, cull_rect, phase,
+      paint_layer_.GetLayoutObject().ChildPaintBlockedByDisplayLock(),
+      paint_flags);
 
   if (physical_fragment) {
     BoxFragmentPainter(*physical_fragment).Paint(paint_info);
@@ -433,7 +446,7 @@ void PaintLayerPainter::PaintWithPhase(PaintPhase phase,
       DCHECK(physical_fragment);
     }
 
-    absl::optional<ScopedDisplayItemFragment> scoped_display_item_fragment;
+    std::optional<ScopedDisplayItemFragment> scoped_display_item_fragment;
     if (fragment_idx)
       scoped_display_item_fragment.emplace(context, fragment_idx);
 

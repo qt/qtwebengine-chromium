@@ -35,10 +35,12 @@
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/web/web_link_preview_triggerer.h"
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/events/keyboard_event.h"
 #include "third_party/blink/renderer/core/events/mouse_event.h"
 #include "third_party/blink/renderer/core/events/pointer_event.h"
+#include "third_party/blink/renderer/core/events/web_input_event_conversion.h"
 #include "third_party/blink/renderer/core/frame/ad_tracker.h"
 #include "third_party/blink/renderer/core/frame/attribution_src_loader.h"
 #include "third_party/blink/renderer/core/frame/deprecation/deprecation.h"
@@ -54,9 +56,11 @@
 #include "third_party/blink/renderer/core/input/event_handler.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
+#include "third_party/blink/renderer/core/loader/anchor_element_interaction_tracker.h"
 #include "third_party/blink/renderer/core/loader/frame_load_request.h"
 #include "third_party/blink/renderer/core/loader/navigation_policy.h"
 #include "third_party/blink/renderer/core/loader/ping_loader.h"
+#include "third_party/blink/renderer/core/loader/render_blocking_resource_manager.h"
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -98,10 +102,7 @@ bool ShouldInterveneDownloadByFramePolicy(LocalFrame* frame) {
     if (!has_gesture) {
       UseCounter::Count(document,
                         WebFeature::kDownloadInAdFrameWithoutUserGesture);
-      if (base::FeatureList::IsEnabled(
-              blink::features::
-                  kBlockingDownloadsInAdFrameWithoutUserActivation))
-        should_intervene_download = true;
+      should_intervene_download = true;
     }
   }
   if (frame->DomWindow()->IsSandboxed(
@@ -112,6 +113,33 @@ bool ShouldInterveneDownloadByFramePolicy(LocalFrame* frame) {
   if (!should_intervene_download)
     UseCounter::Count(document, WebFeature::kDownloadPostPolicyCheck);
   return should_intervene_download;
+}
+
+void EmitDidAnchorElementReceiveMouseEvent(HTMLAnchorElement& anchor_element,
+                                           Event& event) {
+  if (!event.IsMouseEvent()) {
+    return;
+  }
+  auto* mev = To<MouseEvent>(&event);
+  LocalFrame* local_frame = anchor_element.GetDocument().GetFrame();
+  if (!local_frame) {
+    return;
+  }
+
+  WebLinkPreviewTriggerer* triggerer =
+      local_frame->GetOrCreateLinkPreviewTriggerer();
+  if (!triggerer) {
+    return;
+  }
+
+  auto button = WebMouseEvent::Button(mev->button());
+  if (event.type() == event_type_names::kMousedown) {
+    triggerer->DidAnchorElementReceiveMouseDownEvent(
+        WebElement(&anchor_element), button, mev->ClickCount());
+  } else if (event.type() == event_type_names::kMouseup) {
+    triggerer->DidAnchorElementReceiveMouseUpEvent(WebElement(&anchor_element),
+                                                   button, mev->ClickCount());
+  }
 }
 
 }  // namespace
@@ -210,6 +238,8 @@ static void AppendServerMapMousePosition(StringBuilder& url, Event* event) {
 
 void HTMLAnchorElement::DefaultEventHandler(Event& event) {
   if (IsLink()) {
+    EmitDidAnchorElementReceiveMouseEvent(*this, event);
+
     if (isConnected() && base::FeatureList::IsEnabled(
                              features::kSpeculativeServiceWorkerWarmUp)) {
       Document& top_document = GetDocument().TopDocument();
@@ -236,7 +266,8 @@ void HTMLAnchorElement::DefaultEventHandler(Event& event) {
     }
 
     if (IsLinkClick(event) && IsLiveLink()) {
-      HandleClick(event);
+      // IsLinkClick validates that |event| is a MouseEvent.
+      HandleClick(To<MouseEvent>(event));
       return;
     }
   }
@@ -292,8 +323,15 @@ void HTMLAnchorElement::ParseAttribute(
     }
     InvalidateCachedVisitedLinkHash();
     LogUpdateAttributeIfIsolatedWorldAndInDocument("a", params);
-  } else if (params.name == html_names::kNameAttr ||
-             params.name == html_names::kTitleAttr) {
+  } else if (params.name == html_names::kNameAttr) {
+    if (GetDocument().HasRenderBlockingExpectLinkElements() && isConnected() &&
+        IsFinishedParsingChildren() && !params.new_value.empty()) {
+      DCHECK(GetDocument().GetRenderBlockingResourceManager());
+      GetDocument()
+          .GetRenderBlockingResourceManager()
+          ->RemovePendingParsingElement(params.new_value, this);
+    }
+  } else if (params.name == html_names::kTitleAttr) {
     // Do nothing.
   } else if (params.name == html_names::kRelAttr) {
     SetRel(params.new_value);
@@ -331,6 +369,16 @@ bool HTMLAnchorElement::IsURLAttribute(const Attribute& attribute) const {
 bool HTMLAnchorElement::HasLegalLinkAttribute(const QualifiedName& name) const {
   return name == html_names::kHrefAttr ||
          HTMLElement::HasLegalLinkAttribute(name);
+}
+
+void HTMLAnchorElement::FinishParsingChildren() {
+  Element::FinishParsingChildren();
+  if (GetDocument().HasRenderBlockingExpectLinkElements()) {
+    DCHECK(GetDocument().GetRenderBlockingResourceManager());
+    GetDocument()
+        .GetRenderBlockingResourceManager()
+        ->RemovePendingParsingElement(GetNameAttribute(), this);
+  }
 }
 
 bool HTMLAnchorElement::CanStartSelection() const {
@@ -524,7 +572,8 @@ void HTMLAnchorElement::NavigateToHyperlink(ResourceRequest request,
     frame_request.SetImpression(
         frame->GetAttributionSrcLoader()->RegisterNavigation(
             /*navigation_url=*/completed_url, attribution_src,
-            /*element=*/this, request.HasUserGesture()));
+            /*element=*/this, request.HasUserGesture(),
+            request.GetReferrerPolicy()));
   }
 
   Frame* target_frame =
@@ -559,7 +608,28 @@ void HTMLAnchorElement::SetHovered(bool hovered) {
   HTMLElement::SetHovered(hovered);
 }
 
-void HTMLAnchorElement::HandleClick(Event& event) {
+Element* HTMLAnchorElement::interestTargetElement() {
+  CHECK(RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled());
+
+  if (!IsInTreeScope()) {
+    return nullptr;
+  }
+
+  return GetElementAttribute(html_names::kInteresttargetAttr);
+}
+
+AtomicString HTMLAnchorElement::interestAction() const {
+  CHECK(RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled());
+  const AtomicString& attribute_value =
+      FastGetAttribute(html_names::kInterestactionAttr);
+  if (attribute_value && !attribute_value.IsNull() &&
+      !attribute_value.empty()) {
+    return attribute_value;
+  }
+  return g_empty_atom;
+}
+
+void HTMLAnchorElement::HandleClick(MouseEvent& event) {
   event.SetDefaultHandled();
 
   LocalDOMWindow* window = GetDocument().domWindow();
@@ -571,9 +641,8 @@ void HTMLAnchorElement::HandleClick(Event& event) {
                       WebFeature::kAnchorClickDispatchForNonConnectedNode);
   }
 
-  if (auto* sender =
-          AnchorElementMetricsSender::GetForFrame(GetDocument().GetFrame())) {
-    sender->MaybeReportClickedMetricsOnClick(*this);
+  if (auto* tracker = GetDocument().GetAnchorElementInteractionTracker()) {
+    tracker->OnClickEvent(*this, event);
   }
 
   StringBuilder url;
@@ -615,15 +684,12 @@ void HTMLAnchorElement::HandleClick(Event& event) {
     String download_attr =
         static_cast<String>(FastGetAttribute(html_names::kDownloadAttr));
     if (download_attr.length() > kMaxDownloadAttrLength) {
-      ConsoleMessage* console_message = MakeGarbageCollected<ConsoleMessage>(
+      AddConsoleMessage(
           mojom::blink::ConsoleMessageSource::kRendering,
           mojom::blink::ConsoleMessageLevel::kError,
           String::Format("Download attribute for anchor element is too long. "
                          "Max: %d, given: %d",
                          kMaxDownloadAttrLength, download_attr.length()));
-      console_message->SetNodes(GetDocument().GetFrame(),
-                                {this->GetDomNodeId()});
-      GetDocument().AddConsoleMessage(console_message);
       return;
     }
 
@@ -712,9 +778,11 @@ Node::InsertionNotificationRequest HTMLAnchorElement::InsertedInto(
       HTMLElement::InsertedInto(insertion_point);
   LogAddElementIfIsolatedWorldAndInDocument("a", html_names::kHrefAttr);
 
-  if (auto* sender =
-          AnchorElementMetricsSender::GetForFrame(GetDocument().GetFrame())) {
-    sender->AddAnchorElement(*this);
+  if (isConnected()) {
+    if (auto* sender =
+            AnchorElementMetricsSender::GetForFrame(GetDocument().GetFrame())) {
+      sender->AddAnchorElement(*this);
+    }
   }
 
   if (isConnected() && IsLink()) {
@@ -750,6 +818,13 @@ Node::InsertionNotificationRequest HTMLAnchorElement::InsertedInto(
 
 void HTMLAnchorElement::RemovedFrom(ContainerNode& insertion_point) {
   HTMLElement::RemovedFrom(insertion_point);
+
+  if (insertion_point.isConnected()) {
+    if (auto* sender =
+            AnchorElementMetricsSender::GetForFrame(GetDocument().GetFrame())) {
+      sender->RemoveAnchorElement(*this);
+    }
+  }
 
   if (insertion_point.isConnected() && IsLink()) {
     if (auto* document_rules =

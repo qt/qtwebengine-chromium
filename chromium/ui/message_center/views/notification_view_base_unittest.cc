@@ -107,8 +107,8 @@ class NotificationTestDelegate : public NotificationDelegate {
   NotificationTestDelegate(const NotificationTestDelegate&) = delete;
   NotificationTestDelegate& operator=(const NotificationTestDelegate&) = delete;
 
-  void Click(const absl::optional<int>& button_index,
-             const absl::optional<std::u16string>& reply) override {
+  void Click(const std::optional<int>& button_index,
+             const std::optional<std::u16string>& reply) override {
     if (!button_index && !reply && !expecting_click_)
       ADD_FAILURE() << "Click should not be invoked with a button index.";
     if (button_index && !reply && !expecting_button_click_)
@@ -226,8 +226,8 @@ NotificationViewBaseTest::CreateSimpleNotificationWithRichData(
       ui::ImageModel::FromImage(gfx::test::CreateImage(/*size=*/80)),
       u"display source", GURL(),
       NotifierId(NotifierType::APPLICATION, "extension_id"), data, delegate_);
-  notification->set_small_image(gfx::test::CreateImage(/*size=*/16));
-  notification->set_image(gfx::test::CreateImage(320, 240));
+  notification->SetSmallImage(gfx::test::CreateImage(/*size=*/16));
+  notification->SetImage(gfx::test::CreateImage(320, 240));
 
   return notification;
 }
@@ -264,7 +264,7 @@ void NotificationViewBaseTest::OnViewPreferredSizeChanged(
     return;
   }
   notification_view_->GetWidget()->SetSize(
-      notification_view()->GetPreferredSize());
+      notification_view()->GetPreferredSize({}));
 }
 
 std::vector<ButtonInfo> NotificationViewBaseTest::CreateButtons(int number) {
@@ -293,7 +293,7 @@ void NotificationViewBaseTest::UpdateNotificationViews(
     auto* widget = new views::Widget();
     widget->Init(std::move(init_params));
     notification_view_ = widget->SetContentsView(std::move(notification_view));
-    widget->SetSize(notification_view_->GetPreferredSize());
+    widget->SetSize(notification_view_->GetPreferredSize({}));
     widget->Show();
     widget->widget_delegate()->SetCanActivate(true);
     widget->Activate();
@@ -362,7 +362,7 @@ TEST_F(NotificationViewBaseTest, CreateOrUpdateTest) {
   EXPECT_NE(nullptr, notification_view()->image_container_view_);
 
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
-  notification->set_image(gfx::Image());
+  notification->SetImage(gfx::Image());
   notification->set_title(std::u16string());
   notification->set_message(std::u16string());
   notification->set_icon(ui::ImageModel());
@@ -500,7 +500,7 @@ TEST_F(NotificationViewBaseTest, TestActionButtonClick) {
   EXPECT_EQ(1, delegate_->clicked_button_index());
 }
 
-// TODO(crbug.com/1232197): Test failing on linux-lacros-tester-rel and ozone.
+// TODO(crbug.com/40780100): Test failing on linux-lacros-tester-rel and ozone.
 #if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_OZONE)
 #define MAYBE_TestInlineReply DISABLED_TestInlineReply
 #else
@@ -627,7 +627,7 @@ TEST_F(NotificationViewBaseTest, TestInlineReplyRemovedByUpdate) {
   EXPECT_TRUE(notification_view()->inline_reply_->GetVisible());
   EXPECT_FALSE(notification_view()->action_buttons_row_->GetVisible());
 
-  buttons[1].placeholder = absl::nullopt;
+  buttons[1].placeholder = std::nullopt;
   notification->set_buttons(buttons);
   UpdateNotificationViews(*notification);
 
@@ -887,7 +887,7 @@ TEST_F(NotificationViewBaseTest, UseImageAsIcon) {
 TEST_F(NotificationViewBaseTest, NotificationWithoutIcon) {
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   notification->set_icon(ui::ImageModel());
-  notification->set_image(gfx::Image());
+  notification->SetImage(gfx::Image());
   UpdateNotificationViews(*notification);
 
   // If the notification has no icon, |icon_view_| shouldn't be created.
@@ -906,7 +906,7 @@ TEST_F(NotificationViewBaseTest, UpdateAddingIcon) {
   // Create a notification without an icon.
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   notification->set_icon(ui::ImageModel());
-  notification->set_image(gfx::Image());
+  notification->SetImage(gfx::Image());
   UpdateNotificationViews(*notification);
 
   // Update the notification, adding an icon.
@@ -1123,7 +1123,7 @@ TEST_F(NotificationViewBaseTest, AppNameWebAppNotification) {
   const GURL web_app_url("http://example.com");
 
   NotifierId notifier_id(web_app_url, /*title=*/u"web app title",
-                         /*web_app_id=*/absl::nullopt);
+                         /*web_app_id=*/std::nullopt);
 
   SkBitmap small_bitmap = gfx::test::CreateBitmap(/*size=*/16, SK_ColorYELLOW);
   // Makes the center area transparent.
@@ -1137,8 +1137,8 @@ TEST_F(NotificationViewBaseTest, AppNameWebAppNotification) {
       u"message",
       ui::ImageModel::FromImage(gfx::test::CreateImage(/*size=*/80)),
       u"display source", GURL(), notifier_id, data, delegate_);
-  notification->set_small_image(gfx::Image::CreateFrom1xBitmap(small_bitmap));
-  notification->set_image(gfx::test::CreateImage(320, 240));
+  notification->SetSmallImage(gfx::Image::CreateFrom1xBitmap(small_bitmap));
+  notification->SetImage(gfx::test::CreateImage(320, 240));
 
   notification->set_origin_url(web_app_url);
 

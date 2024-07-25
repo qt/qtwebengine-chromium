@@ -11,6 +11,7 @@ import type { WaitTimeoutOptions } from '../api/Page.js';
 import { disposeSymbol } from '../util/disposable.js';
 import type { DeviceRequestPrompt } from './DeviceRequestPrompt.js';
 import type { FrameManager } from './FrameManager.js';
+import type { IsolatedWorldChart } from './IsolatedWorld.js';
 import { IsolatedWorld } from './IsolatedWorld.js';
 import { type PuppeteerLifeCycleEvent } from './LifecycleWatcher.js';
 import type { CdpPage } from './Page.js';
@@ -19,6 +20,7 @@ import type { CdpPage } from './Page.js';
  */
 export declare class CdpFrame extends Frame {
     #private;
+    worlds: IsolatedWorldChart;
     _frameManager: FrameManager;
     _id: string;
     _loaderId: string;
@@ -48,6 +50,7 @@ export declare class CdpFrame extends Frame {
     waitForNavigation(options?: {
         timeout?: number;
         waitUntil?: PuppeteerLifeCycleEvent | PuppeteerLifeCycleEvent[];
+        ignoreSameDocumentNavigation?: boolean;
     }): Promise<HTTPResponse | null>;
     get client(): CDPSession;
     mainRealm(): IsolatedWorld;

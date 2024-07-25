@@ -6,6 +6,7 @@
 
 #include "core/fpdfdoc/cpdf_action.h"
 
+#include <array>
 #include <iterator>
 #include <utility>
 
@@ -19,11 +20,26 @@
 
 namespace {
 
-const char* const kActionTypeStrings[] = {
-    "GoTo",       "GoToR",     "GoToE",      "Launch",     "Thread",
-    "URI",        "Sound",     "Movie",      "Hide",       "Named",
-    "SubmitForm", "ResetForm", "ImportData", "JavaScript", "SetOCGState",
-    "Rendition",  "Trans",     "GoTo3DView"};
+const std::array<const char*, 18> kActionTypeStrings = {{
+    "GoTo",
+    "GoToR",
+    "GoToE",
+    "Launch",
+    "Thread",
+    "URI",
+    "Sound",
+    "Movie",
+    "Hide",
+    "Named",
+    "SubmitForm",
+    "ResetForm",
+    "ImportData",
+    "JavaScript",
+    "SetOCGState",
+    "Rendition",
+    "Trans",
+    "GoTo3DView",
+}};
 
 }  // namespace
 
@@ -146,10 +162,10 @@ std::vector<RetainPtr<const CPDF_Object>> CPDF_Action::GetAllFields() const {
   return result;
 }
 
-absl::optional<WideString> CPDF_Action::MaybeGetJavaScript() const {
+std::optional<WideString> CPDF_Action::MaybeGetJavaScript() const {
   RetainPtr<const CPDF_Object> pObject = GetJavaScriptObject();
   if (!pObject)
-    return absl::nullopt;
+    return std::nullopt;
   return pObject->GetUnicodeText();
 }
 

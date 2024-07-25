@@ -470,29 +470,6 @@ wheel: <
   version: "version:5.5.chromium.3"
 >
 
-# Used by:
-#   //content/test/gpu
-wheel: <
-  name: "infra/python/wheels/pathos/${vpython_platform}"
-  version: "version:0.2.7.chromium.5"
-  not_match_tag <
-    abi: "cp27mu"
-    platform: "manylinux1_i686"
-  >
-  not_match_tag <
-    abi: "cp27mu"
-    platform: "linux_mips64"
-  >
-  not_match_tag <
-    abi: "cp27mu"
-    platform: "linux_armv6l"
-  >
-  not_match_tag <
-    abi: "cp27mu"
-    platform: "linux_armv7l"
-  >
->
-
 wheel: <
   name: "infra/python/wheels/websockets-py3"
   version: "version:11.0.3"
@@ -633,4 +610,10 @@ wheel: <
 wheel: <
   name: "infra/python/wheels/zipp-py3"
   version: "version:3.1.0"
+>
+
+# Used by //components/optimization_guide/internal/testing/run_model_validation_test.py
+wheel: <
+  name: "infra/python/wheels/google-cloud-secret-manager-py2_py3"
+  version: "version:2.10.0"
 >

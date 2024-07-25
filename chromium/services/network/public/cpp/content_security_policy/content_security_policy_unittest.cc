@@ -196,9 +196,12 @@ TEST(ContentSecurityPolicy, ParseFrameAncestors) {
       // Dot separation.
       {"a", {{{"", "a"}}}},
       {"a.b.c", {{{"", "a.b.c"}}}},
-      {"a.b."},
       {".b.c"},
       {"a..c"},
+
+      // Trailing dots
+      {"a.", {{{"", "a."}}}},
+      {"a.b.", {{{"", "a.b."}}}},
 
       // Valid/Invalid characters.
       {"az09-", {{{"", "az09-"}}}},
@@ -1149,18 +1152,6 @@ TEST(ContentSecurityPolicy, RequestsAllowedWhenBypassingCSP) {
       policy, CSPDirectiveName::FrameSrc, GURL("https://example.com/"), GURL(),
       false, false, &context, SourceLocation(), false));
   EXPECT_TRUE(CheckContentSecurityPolicy(
-      policy, CSPDirectiveName::FrameSrc, GURL("https://not-example.com/"),
-      GURL(), false, false, &context, SourceLocation(), false));
-}
-
-TEST(ContentSecurityPolicy, RequestsAllowedWhenHostMixedCase) {
-  CSPContextTest context;
-  auto policy = DefaultSrc("https", "ExAmPle.com");
-
-  EXPECT_TRUE(CheckContentSecurityPolicy(
-      policy, CSPDirectiveName::FrameSrc, GURL("https://example.com/"), GURL(),
-      false, false, &context, SourceLocation(), false));
-  EXPECT_FALSE(CheckContentSecurityPolicy(
       policy, CSPDirectiveName::FrameSrc, GURL("https://not-example.com/"),
       GURL(), false, false, &context, SourceLocation(), false));
 }

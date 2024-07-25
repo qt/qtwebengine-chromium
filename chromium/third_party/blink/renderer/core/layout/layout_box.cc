@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 
 #include <math.h>
+
 #include <algorithm>
 #include <utility>
 
@@ -47,13 +48,18 @@
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/html/forms/html_button_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_legend_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_opt_group_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 #include "third_party/blink/renderer/core/html/html_div_element.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
+#include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_utils.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
@@ -135,9 +141,7 @@ struct SameSizeAsLayoutBox : public LayoutBoxModelObject {
   DeprecatedLayoutRect frame_rect;
   PhysicalSize previous_size;
   MinMaxSizes intrinsic_logical_widths;
-  LayoutUnit intrinsic_logical_widths_initial_block_size;
   Member<void*> min_max_sizes_cache;
-  Member<void*> result;
   Member<void*> cache;
   HeapVector<Member<const LayoutResult>, 1> layout_results;
   wtf_size_t first_fragment_item_index_;
@@ -349,7 +353,8 @@ LayoutUnit MenuListIntrinsicBlockSize(const HTMLSelectElement& select,
     return kIndefiniteSize;
   const SimpleFontData* font_data = box.StyleRef().GetFont().PrimaryFont();
   DCHECK(font_data);
-  const LayoutBox* inner_box = select.InnerElement().GetLayoutBox();
+  const LayoutBox* inner_box =
+      select.InnerElementForAppearanceAuto().GetLayoutBox();
   return (font_data ? font_data->GetFontMetrics().Height() : 0) +
          (inner_box ? inner_box->BorderAndPaddingLogicalHeight()
                     : LayoutUnit());
@@ -419,7 +424,7 @@ int HypotheticalScrollbarThickness(const LayoutBox& box,
       float scale_from_dip =
           chrome_client.WindowToViewportScalar(document.GetFrame(), 1.0f);
       return theme.ScrollbarThickness(scale_from_dip,
-                                      box.StyleRef().ScrollbarWidth());
+                                      box.StyleRef().UsedScrollbarWidth());
     }
   }
 }
@@ -463,16 +468,13 @@ void LayoutBoxRareData::Trace(Visitor* visitor) const {
   visitor->Trace(layout_child_);
 }
 
-LayoutBox::LayoutBox(ContainerNode* node)
-    : LayoutBoxModelObject(node),
-      intrinsic_logical_widths_initial_block_size_(LayoutUnit::Min()) {
+LayoutBox::LayoutBox(ContainerNode* node) : LayoutBoxModelObject(node) {
   if (blink::IsA<HTMLLegendElement>(node))
     SetIsHTMLLegendElement();
 }
 
 void LayoutBox::Trace(Visitor* visitor) const {
   visitor->Trace(min_max_sizes_cache_);
-  visitor->Trace(measure_result_);
   visitor->Trace(measure_cache_);
   visitor->Trace(layout_results_);
   visitor->Trace(overflow_);
@@ -513,8 +515,6 @@ void LayoutBox::DisassociatePhysicalFragments() {
     FragmentItems::LayoutObjectWillBeDestroyed(*this);
     ClearFirstInlineFragmentItemIndex();
   }
-  if (measure_result_)
-    measure_result_->GetPhysicalFragment().LayoutObjectWillBeDestroyed();
   if (measure_cache_) {
     measure_cache_->LayoutObjectWillBeDestroyed();
   }
@@ -621,11 +621,13 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
   if (HasReflection() && !HasLayer())
     SetHasReflection(false);
 
-  auto* parent_flow_block = DynamicTo<LayoutBlockFlow>(Parent());
-  if (IsFloatingOrOutOfFlowPositioned() && old_style &&
-      !old_style->IsFloating() && !old_style->HasOutOfFlowPosition() &&
-      parent_flow_block)
-    parent_flow_block->ChildBecameFloatingOrOutOfFlow(this);
+  if (auto* parent_flow_block = DynamicTo<LayoutBlockFlow>(Parent())) {
+    if (IsFloatingOrOutOfFlowPositioned() && old_style &&
+        !old_style->IsFloating() && !old_style->HasOutOfFlowPosition()) {
+      // Note that |parent_flow_block| may have been destroyed after this call.
+      parent_flow_block->ChildBecameFloatingOrOutOfFlow(this);
+    }
+  }
 
   SetOverflowClipAxes(ComputeOverflowClipAxes());
 
@@ -681,7 +683,7 @@ void LayoutBox::StyleDidChange(StyleDifference diff,
       //
       // For some controls, it depends on paddings.
       if (!old_style->BorderSizeEquals(new_style) ||
-          !old_style->RadiiEqual(new_style) ||
+          !old_style->BorderRadiusEqual(new_style) ||
           (HasControlClip() && !old_style->PaddingEqual(new_style))) {
         SetNeedsPaintPropertyUpdate();
       }
@@ -730,7 +732,7 @@ void LayoutBox::UpdateShapeOutsideInfoAfterStyleChange(
                 : ComputedStyleInitialValues::InitialShapeOutside();
 
   const Length& shape_margin = style.ShapeMargin();
-  Length old_shape_margin =
+  const Length& old_shape_margin =
       old_style ? old_style->ShapeMargin()
                 : ComputedStyleInitialValues::InitialShapeMargin();
 
@@ -1039,8 +1041,9 @@ LayoutUnit LayoutBox::ClientHeightWithTableSpecialBehavior() const {
 
 bool LayoutBox::UsesOverlayScrollbars() const {
   NOT_DESTROYED();
-  if (StyleRef().HasCustomScrollbarStyle())
+  if (StyleRef().HasCustomScrollbarStyle(DynamicTo<Element>(GetNode()))) {
     return false;
+  }
   if (GetFrame()->GetPage()->GetScrollbarTheme().UsesOverlayScrollbars())
     return true;
   return false;
@@ -1209,7 +1212,7 @@ LayoutUnit LayoutBox::OverrideIntrinsicContentWidth() const {
   DCHECK(!intrinsic_length.IsNoOp());
   if (intrinsic_length.HasAuto() && ShouldUseAutoIntrinsicSize()) {
     if (const Element* elem = DynamicTo<Element>(GetNode())) {
-      const absl::optional<LayoutUnit> width =
+      const std::optional<LayoutUnit> width =
           StyleRef().IsHorizontalWritingMode()
               ? elem->LastRememberedInlineSize()
               : elem->LastRememberedBlockSize();
@@ -1234,7 +1237,7 @@ LayoutUnit LayoutBox::OverrideIntrinsicContentHeight() const {
   DCHECK(!intrinsic_length.IsNoOp());
   if (intrinsic_length.HasAuto() && ShouldUseAutoIntrinsicSize()) {
     if (const Element* elem = DynamicTo<Element>(GetNode())) {
-      const absl::optional<LayoutUnit> height =
+      const std::optional<LayoutUnit> height =
           StyleRef().IsHorizontalWritingMode()
               ? elem->LastRememberedBlockSize()
               : elem->LastRememberedInlineSize();
@@ -1263,7 +1266,8 @@ LayoutUnit LayoutBox::DefaultIntrinsicContentInlineSize() const {
 
   const bool apply_fixed_size = StyleRef().ApplyControlFixedSize(&element);
   const auto* select = DynamicTo<HTMLSelectElement>(element);
-  if (UNLIKELY(select && select->UsesMenuList())) {
+  if (UNLIKELY(select && select->UsesMenuList() &&
+               !select->IsAppearanceBaseSelect())) {
     return apply_fixed_size ? MenuListIntrinsicInlineSize(*select, *this)
                             : kIndefiniteSize;
   }
@@ -1319,10 +1323,13 @@ LayoutUnit LayoutBox::DefaultIntrinsicContentBlockSize() const {
     return kIndefiniteSize;
   }
   if (const auto* select = DynamicTo<HTMLSelectElement>(GetNode())) {
-    if (select->UsesMenuList())
-      return MenuListIntrinsicBlockSize(*select, *this);
-    return ListBoxItemBlockSize(*select, *this) * select->ListBoxSize() -
-           ComputeLogicalScrollbars().BlockSum();
+    if (!select->IsAppearanceBaseSelect()) {
+      if (select->UsesMenuList()) {
+        return MenuListIntrinsicBlockSize(*select, *this);
+      }
+      return ListBoxItemBlockSize(*select, *this) * select->ListBoxSize() -
+             ComputeLogicalScrollbars().BlockSum();
+    }
   }
   if (IsTextField()) {
     return TextFieldIntrinsicBlockSize(*To<HTMLInputElement>(GetNode()), *this);
@@ -1367,7 +1374,7 @@ PhysicalRect LayoutBox::PhysicalBackgroundRect(
   if (rect_type == kBackgroundKnownOpaqueRect && BackgroundTransfersToView())
     return PhysicalRect();
 
-  absl::optional<EFillBox> background_box;
+  std::optional<EFillBox> background_box;
   Color background_color = ResolveColor(GetCSSPropertyBackgroundColor());
   // Find the largest background rect of the given opaqueness.
   for (const FillLayer* cur = &(StyleRef().BackgroundLayers()); cur;
@@ -2397,17 +2404,15 @@ PhysicalRect LayoutBox::OverflowClipRect(
                       kExcludeScrollbarGutter);
   }
 
-  auto* input = DynamicTo<HTMLInputElement>(GetNode());
-  if (UNLIKELY(input)) {
-    // As for LayoutButton, ControlClip is to for not BUTTONs but INPUT
-    // buttons for IE/Firefox compatibility.
-    if (IsTextField() || IsButton()) {
+  if (UNLIKELY(IsA<HTMLInputElement>(GetNode()))) {
+    // We only apply a clip to <input> buttons, and not regular <button>s.
+    if (IsTextField() || IsInputButton()) {
       DCHECK(HasControlClip());
       PhysicalRect control_clip = PhysicalPaddingBoxRect();
       control_clip.Move(location);
       clip_rect.Intersect(control_clip);
     }
-  } else if (UNLIKELY(IsMenuList(this))) {
+  } else if (UNLIKELY(IsMenuList())) {
     DCHECK(HasControlClip());
     PhysicalRect control_clip = PhysicalContentBoxRect();
     control_clip.Move(location);
@@ -2421,8 +2426,7 @@ PhysicalRect LayoutBox::OverflowClipRect(
 
 bool LayoutBox::HasControlClip() const {
   NOT_DESTROYED();
-  return UNLIKELY(IsTextField() || IsMenuList(this) ||
-                  (IsButton() && IsA<HTMLInputElement>(GetNode())));
+  return UNLIKELY(IsTextField() || IsMenuList() || IsInputButton());
 }
 
 void LayoutBox::ExcludeScrollbars(
@@ -2572,8 +2576,6 @@ bool LayoutBox::PhysicalFragmentList::Contains(
 }
 
 void LayoutBox::AddMeasureLayoutResult(const LayoutResult* result) {
-  DCHECK(RuntimeEnabledFeatures::LayoutNewMeasureCacheEnabled());
-
   // Ensure the given result is valid for the measure cache.
   if (result->Status() != LayoutResult::kSuccess) {
     return;
@@ -2606,17 +2608,10 @@ void LayoutBox::SetCachedLayoutResult(const LayoutResult* result,
     DCHECK_EQ(index, 0u);
     // We don't early return here, when setting the "measure" result we also
     // set the "layout" result.
-    if (measure_result_) {
-      InvalidateItems(*measure_result_);
-    }
     if (measure_cache_) {
       measure_cache_->InvalidateItems();
     }
-    if (RuntimeEnabledFeatures::LayoutNewMeasureCacheEnabled()) {
-      AddMeasureLayoutResult(result);
-    } else {
-      measure_result_ = result;
-    }
+    AddMeasureLayoutResult(result);
     if (IsTableCell()) {
       To<LayoutTableCell>(this)->InvalidateLayoutResultCacheAfterMeasure();
     }
@@ -2624,10 +2619,6 @@ void LayoutBox::SetCachedLayoutResult(const LayoutResult* result,
     // We have a "layout" result, and we may need to clear the old "measure"
     // result if we needed non-simplified layout.
     if (NeedsLayout() && !NeedsSimplifiedLayoutOnly()) {
-      if (measure_result_) {
-        InvalidateItems(*measure_result_);
-        measure_result_ = nullptr;
-      }
       if (measure_cache_) {
         measure_cache_->Clear();
       }
@@ -2639,10 +2630,6 @@ void LayoutBox::SetCachedLayoutResult(const LayoutResult* result,
   // children. It can still be used to query information about this box's
   // fragment from the measure pass, but children might be out of sync with the
   // latest version of the tree.
-  if (measure_result_ && measure_result_ != result) {
-    measure_result_->GetMutableForLayoutBoxCachedResults()
-        .SetFragmentChildrenInvalid();
-  }
   if (measure_cache_) {
     measure_cache_->SetFragmentChildrenInvalid(result);
   }
@@ -2848,9 +2835,9 @@ const LayoutResult* LayoutBox::GetCachedLayoutResult(
 
 const LayoutResult* LayoutBox::GetCachedMeasureResult(
     const ConstraintSpace& space,
-    absl::optional<FragmentGeometry>* fragment_geometry) const {
+    std::optional<FragmentGeometry>* fragment_geometry) const {
   NOT_DESTROYED();
-  if (!measure_result_ && !measure_cache_) {
+  if (!measure_cache_) {
     return nullptr;
   }
 
@@ -2868,13 +2855,10 @@ const LayoutResult* LayoutBox::GetCachedMeasureResult(
     }
   }
 
-  if (measure_cache_) {
-    DCHECK(!measure_result_);
-    return measure_cache_->Find(BlockNode(const_cast<LayoutBox*>(this)), space,
-                                fragment_geometry);
-  }
-
-  return measure_result_.Get();
+  return measure_cache_
+             ? measure_cache_->Find(BlockNode(const_cast<LayoutBox*>(this)),
+                                    space, fragment_geometry)
+             : nullptr;
 }
 
 const LayoutResult* LayoutBox::GetSingleCachedLayoutResult() const {
@@ -2883,10 +2867,7 @@ const LayoutResult* LayoutBox::GetSingleCachedLayoutResult() const {
 }
 
 const LayoutResult* LayoutBox::GetSingleCachedMeasureResultForTesting() const {
-  if (measure_cache_) {
-    return measure_cache_->GetLastForTesting();
-  }
-  return measure_result_.Get();
+  return measure_cache_ ? measure_cache_->GetLastForTesting() : nullptr;
 }
 
 const LayoutResult* LayoutBox::GetLayoutResult(wtf_size_t i) const {
@@ -3066,8 +3047,10 @@ bool LayoutBox::SkipContainingBlockForPercentHeightCalculation(
 
   // For quirks mode, we skip most auto-height containing blocks when computing
   // percentages.
-  if (!in_quirks_mode || !containing_block->StyleRef().LogicalHeight().IsAuto())
+  if (!in_quirks_mode ||
+      !containing_block->StyleRef().LogicalHeight().HasAuto()) {
     return false;
+  }
 
   const Node* node = containing_block->GetNode();
   if (UNLIKELY(node->IsInUserAgentShadowRoot())) {
@@ -3082,7 +3065,8 @@ bool LayoutBox::SkipContainingBlockForPercentHeightCalculation(
     }
   }
 
-  return !containing_block->IsTableCell() &&
+  return !containing_block->IsLayoutReplaced() &&
+         !containing_block->IsTableCell() &&
          !containing_block->IsOutOfFlowPositioned() &&
          !containing_block->IsLayoutGrid() &&
          !containing_block->IsFlexibleBox() &&
@@ -3309,10 +3293,16 @@ void LayoutBox::SetScrollableOverflowFromLayoutResults() {
   NOT_DESTROYED();
   ClearSelfNeedsScrollableOverflowRecalc();
   ClearChildNeedsScrollableOverflowRecalc();
-  ClearScrollableOverflow();
+  if (overflow_) {
+    overflow_->scrollable_overflow.reset();
+  }
+
+  if (IsLayoutReplaced()) {
+    return;
+  }
 
   const WritingMode writing_mode = StyleRef().GetWritingMode();
-  absl::optional<PhysicalRect> scrollable_overflow;
+  std::optional<PhysicalRect> scrollable_overflow;
   LayoutUnit consumed_block_size;
   LayoutUnit fragment_width_sum;
 
@@ -3410,7 +3400,7 @@ RecalcScrollableOverflowResult LayoutBox::RecalcScrollableOverflowNG() {
     for (auto& layout_result : layout_results_) {
       const auto& fragment =
           To<PhysicalBoxFragment>(layout_result->GetPhysicalFragment());
-      absl::optional<PhysicalRect> scrollable_overflow;
+      std::optional<PhysicalRect> scrollable_overflow;
 
       // Recalculate our scrollable-overflow if a child had its
       // scrollable-overflow changed, or if we are marked as dirty.
@@ -3568,14 +3558,6 @@ void LayoutBox::SetVisualOverflow(const PhysicalRect& self,
         outsets.top != outline_extent || outsets.right != outline_extent ||
         outsets.bottom != outline_extent || outsets.left != outline_extent);
   }
-}
-
-void LayoutBox::ClearScrollableOverflow() {
-  NOT_DESTROYED();
-  if (overflow_)
-    overflow_->scrollable_overflow.reset();
-  // overflow_ will be reset by MutableForPainting::ClearPreviousOverflowData()
-  // if we don't need it to store previous overflow data.
 }
 
 void LayoutBox::ClearVisualOverflow() {
@@ -4025,18 +4007,6 @@ TextDirection LayoutBox::ResolvedDirection() const {
   return StyleRef().Direction();
 }
 
-bool LayoutBox::NeedsScrollNode(
-    CompositingReasons direct_compositing_reasons) const {
-  NOT_DESTROYED();
-  if (!IsScrollContainer())
-    return false;
-
-  if (direct_compositing_reasons & CompositingReason::kRootScroller)
-    return true;
-
-  return GetScrollableArea()->ScrollsOverflow();
-}
-
 bool LayoutBox::UsesCompositedScrolling() const {
   NOT_DESTROYED();
   const auto* properties = FirstFragment().PaintProperties();
@@ -4265,32 +4235,32 @@ PhysicalRect LayoutBox::ComputeStickyConstrainingRect() const {
   return constraining_rect;
 }
 
-bool LayoutBox::NeedsAnchorPositionScrollAdjustment() const {
+AnchorPositionScrollData* LayoutBox::GetAnchorPositionScrollData() const {
   if (Element* element = DynamicTo<Element>(GetNode())) {
-    return element->GetAnchorPositionScrollData() &&
-           element->GetAnchorPositionScrollData()->NeedsScrollAdjustment();
+    return element->GetAnchorPositionScrollData();
+  }
+  return nullptr;
+}
+
+bool LayoutBox::NeedsAnchorPositionScrollAdjustment() const {
+  if (auto* data = GetAnchorPositionScrollData()) {
+    return data->NeedsScrollAdjustment();
   }
   return false;
 }
 
 bool LayoutBox::AnchorPositionScrollAdjustmentAfectedByViewportScrolling()
     const {
-  if (Element* element = DynamicTo<Element>(GetNode())) {
-    if (AnchorPositionScrollData* data =
-            element->GetAnchorPositionScrollData()) {
-      return data->NeedsScrollAdjustment() &&
-             data->IsAffectedByViewportScrolling();
-    }
+  if (auto* data = GetAnchorPositionScrollData()) {
+    return data->NeedsScrollAdjustment() &&
+           data->IsAffectedByViewportScrolling();
   }
   return false;
 }
 
 PhysicalOffset LayoutBox::AnchorPositionScrollTranslationOffset() const {
-  if (Element* element = DynamicTo<Element>(GetNode())) {
-    if (AnchorPositionScrollData* data =
-            element->GetAnchorPositionScrollData()) {
-      return data->TranslationAsPhysicalOffset();
-    }
+  if (auto* data = GetAnchorPositionScrollData()) {
+    return data->TranslationAsPhysicalOffset();
   }
   return PhysicalOffset();
 }
@@ -4387,23 +4357,8 @@ const LayoutObject* LayoutBox::AcceptableImplicitAnchor() const {
   return is_acceptable_anchor ? anchor_layout_object : nullptr;
 }
 
-absl::optional<wtf_size_t> LayoutBox::PositionFallbackIndex() const {
-  const auto& layout_results = GetLayoutResults();
-  if (layout_results.empty()) {
-    return absl::nullopt;
-  }
-  // We only need to check the first fragment, because when the box is
-  // fragmented, position fallback results are duplicated on all fragments.
-#if EXPENSIVE_DCHECKS_ARE_ON()
-  AssertSameDataOnLayoutResults(layout_results, [](const auto& result) {
-    return result->PositionFallbackIndex();
-  });
-#endif
-  return layout_results.front()->PositionFallbackIndex();
-}
-
-const Vector<NonOverflowingScrollRange>*
-LayoutBox::PositionFallbackNonOverflowingRanges() const {
+const Vector<NonOverflowingScrollRange>* LayoutBox::NonOverflowingScrollRanges()
+    const {
   const auto& layout_results = GetLayoutResults();
   if (layout_results.empty()) {
     return nullptr;
@@ -4413,11 +4368,11 @@ LayoutBox::PositionFallbackNonOverflowingRanges() const {
 #if EXPENSIVE_DCHECKS_ARE_ON()
   for (wtf_size_t i = 1; i < layout_results.size(); ++i) {
     DCHECK(base::ValuesEquivalent(
-        layout_results[i]->PositionFallbackNonOverflowingRanges(),
-        layout_results[i - 1]->PositionFallbackNonOverflowingRanges()));
+        layout_results[i]->NonOverflowingScrollRanges(),
+        layout_results[i - 1]->NonOverflowingScrollRanges()));
   }
 #endif
-  return layout_results.front()->PositionFallbackNonOverflowingRanges();
+  return layout_results.front()->NonOverflowingScrollRanges();
 }
 
 const BoxStrut& LayoutBox::OutOfFlowInsetsForGetComputedStyle() const {
@@ -4467,6 +4422,42 @@ bool LayoutBox::NeedsAnchorPositionScrollAdjustmentInY() const {
 WritingModeConverter LayoutBox::CreateWritingModeConverter() const {
   return WritingModeConverter({Style()->GetWritingMode(), TextDirection::kLtr},
                               Size());
+}
+
+bool LayoutBox::IsReadingOrderContainer() const {
+  if (!RuntimeEnabledFeatures::CSSReadingOrderItemsEnabled()) {
+    return false;
+  }
+  const ComputedStyle& style = StyleRef();
+  switch (style.ReadingOrderItems()) {
+    case EReadingOrderItems::kNormal:
+      return false;
+    case EReadingOrderItems::kFlexVisual:
+    case EReadingOrderItems::kFlexFlow:
+      return IsFlexibleBox();
+    case EReadingOrderItems::kGridRows:
+    case EReadingOrderItems::kGridColumns:
+    case EReadingOrderItems::kGridOrder:
+      return IsLayoutGrid();
+  }
+  return false;
+}
+
+HeapVector<Member<Element>> LayoutBox::ReadingOrderElements() const {
+  HeapVector<Member<Element>> reading_order_elements;
+  if (!IsReadingOrderContainer()) {
+    return reading_order_elements;
+  }
+  DCHECK_EQ(PhysicalFragmentCount(), 1u);
+  auto children = GetPhysicalFragment(0)->Children();
+  reading_order_elements.ReserveInitialCapacity(
+      base::checked_cast<wtf_size_t>(children.size()));
+  for (const PhysicalFragmentLink& fragment : children) {
+    if (Element* child = DynamicTo<Element>(fragment->GetNode())) {
+      reading_order_elements.push_back(child);
+    }
+  }
+  return reading_order_elements;
 }
 
 }  // namespace blink

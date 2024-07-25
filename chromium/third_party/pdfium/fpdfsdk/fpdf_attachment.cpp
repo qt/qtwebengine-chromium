@@ -26,8 +26,8 @@
 #include "core/fxcrt/data_vector.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 namespace {
 
@@ -36,17 +36,25 @@ constexpr char kChecksumKey[] = "CheckSum";
 ByteString CFXByteStringHexDecode(const ByteString& bsHex) {
   std::unique_ptr<uint8_t, FxFreeDeleter> result;
   uint32_t size = 0;
-  HexDecode(bsHex.raw_span(), &result, &size);
+  HexDecode(bsHex.unsigned_span(), &result, &size);
   return ByteString(result.get(), size);
 }
 
+// TODO(tsepez): should be UNSAFE_BUFFER_USAGE.
 ByteString GenerateMD5Base16(const void* contents, const unsigned long len) {
   uint8_t digest[16];
-  CRYPT_MD5Generate({static_cast<const uint8_t*>(contents), len}, digest);
-  char buf[32];
-  for (int i = 0; i < 16; ++i)
-    FXSYS_IntToTwoHexChars(digest[i], &buf[i * 2]);
 
+  // SAFETY: caller ensures `contents` points to at least `len` bytes.
+  CRYPT_MD5Generate(UNSAFE_BUFFERS(pdfium::make_span(
+                        static_cast<const uint8_t*>(contents), len)),
+                    digest);
+
+  char buf[32];
+  for (int i = 0; i < 16; ++i) {
+    // TODO(crbug.com/pdfium/2155): resolve safety issues.
+    FXSYS_IntToTwoHexChars(UNSAFE_BUFFERS(digest[i]),
+                           UNSAFE_BUFFERS(&buf[i * 2]));
+  }
   return ByteString(buf, 32);
 }
 
@@ -59,7 +67,7 @@ FPDFDoc_GetAttachmentCount(FPDF_DOCUMENT document) {
     return 0;
 
   auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
-  return name_tree ? pdfium::base::checked_cast<int>(name_tree->GetCount()) : 0;
+  return name_tree ? pdfium::checked_cast<int>(name_tree->GetCount()) : 0;
 }
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
@@ -68,7 +76,8 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
   if (!pDoc)
     return nullptr;
 
-  WideString wsName = WideStringFromFPDFWideString(name);
+  // SAFETY: required from caller.
+  WideString wsName = UNSAFE_BUFFERS(WideStringFromFPDFWideString(name));
   if (wsName.IsEmpty())
     return nullptr;
 
@@ -130,8 +139,9 @@ FPDFAttachment_GetName(FPDF_ATTACHMENT attachment,
     return 0;
 
   CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
-  return Utf16EncodeMaybeCopyAndReturnLength(spec.GetFileName(), buffer,
-                                             buflen);
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      spec.GetFileName(), UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -169,12 +179,13 @@ FPDFAttachment_SetStringValue(FPDF_ATTACHMENT attachment,
   if (!pParamsDict)
     return false;
 
+  // SAFETY: required from caller.
+  ByteString bsValue = UNSAFE_BUFFERS(ByteStringFromFPDFWideString(value));
   ByteString bsKey = key;
-  ByteString bsValue = ByteStringFromFPDFWideString(value);
   bool bEncodedAsHex = bsKey == kChecksumKey;
-  if (bEncodedAsHex)
+  if (bEncodedAsHex) {
     bsValue = CFXByteStringHexDecode(bsValue);
-
+  }
   pParamsDict->SetNewFor<CPDF_String>(bsKey, bsValue, bEncodedAsHex);
   return true;
 }
@@ -205,8 +216,9 @@ FPDFAttachment_GetStringValue(FPDF_ATTACHMENT attachment,
                   ->GetUnicodeText();
     }
   }
-
-  return Utf16EncodeMaybeCopyAndReturnLength(value, buffer, buflen);
+  // SAFETY: required from caller.
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      value, UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -249,9 +261,13 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
 
   // Create the file stream and have the filespec dictionary link to it.
   const uint8_t* contents_as_bytes = static_cast<const uint8_t*>(contents);
+
+  // TODO(crbug.com/pdfium/2155): resolve safety issues.
   auto pFileStream = pDoc->NewIndirect<CPDF_Stream>(
-      DataVector<uint8_t>(contents_as_bytes, contents_as_bytes + len),
+      DataVector<uint8_t>(contents_as_bytes,
+                          UNSAFE_BUFFERS(contents_as_bytes + len)),
       std::move(pFileStreamDict));
+
   auto pEFDict = pFile->AsMutableDictionary()->SetNewFor<CPDF_Dictionary>("EF");
   pEFDict->SetNewFor<CPDF_Reference>("F", pDoc, pFileStream->GetObjNum());
   return true;
@@ -274,8 +290,10 @@ FPDFAttachment_GetFile(FPDF_ATTACHMENT attachment,
   if (!pFileStream)
     return false;
 
+  // SAFETY: required from caller.
   *out_buflen = DecodeStreamMaybeCopyAndReturnLength(
       std::move(pFileStream),
-      {static_cast<uint8_t*>(buffer), static_cast<size_t>(buflen)});
+      UNSAFE_BUFFERS(pdfium::make_span(static_cast<uint8_t*>(buffer),
+                                       static_cast<size_t>(buflen))));
   return true;
 }

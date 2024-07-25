@@ -7,13 +7,12 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
-#include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "components/enterprise/data_controls/action_context.h"
 #include "components/enterprise/data_controls/condition.h"
 #include "components/policy/core/common/schema.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace policy {
 class PolicyErrorMap;
@@ -103,7 +102,7 @@ class Rule {
   // relevant context to `errors. It is assumed `value` has had its schema
   // validated by SchemaValidatingPolicyHandler.
   static bool ValidateRuleValue(const char* policy_name,
-                                const base::Value::Dict& value,
+                                const base::Value::Dict& root_value,
                                 policy::PolicyErrorPath error_path,
                                 policy::PolicyErrorMap* errors);
 
@@ -125,9 +124,19 @@ class Rule {
        base::flat_map<Restriction, Level> restrictions);
 
   // Helper to parse sub-fields controlling conditions and combine them into a
-  // single `Condition` object.
+  // single `Condition` object. This is called on the "root" level of the
+  // condition and recursively as needed.
   static std::unique_ptr<const Condition> GetCondition(
       const base::Value::Dict& value);
+
+  // Helper to parse sub-fields controlling conditions under "sources" and/or
+  // "destinations" and combine them into a single `Condition` object.
+  static std::unique_ptr<const Condition> GetSourcesAndDestinationsCondition(
+      const base::Value::Dict& value);
+
+  // Helper to parse the JSON list of conditions under a "and" or "or" key.
+  static std::vector<std::unique_ptr<const Condition>> GetListConditions(
+      const base::Value::List& value);
 
   // Helper to parse the following JSON schema:
   // {
@@ -139,12 +148,41 @@ class Rule {
   static base::flat_map<Rule::Restriction, Rule::Level> GetRestrictions(
       const base::Value::Dict& value);
 
-  // Helper called by `ValidateRuleValue` to populate errors related to mutually
-  // exclusive fields being used in a rule.
-  static void AddMutuallyExclusiveErrors(
-      const std::vector<base::StringPiece>& oneof_conditions,
-      const std::vector<base::StringPiece>& anyof_conditions,
+  // Helper used to recursively validate a rule. This should only be called by
+  // itself and `ValidateRuleValue`.
+  static bool ValidateRuleSubValues(
       const char* policy_name,
+      const base::Value::Dict& value,
+      const base::flat_map<Rule::Restriction, Rule::Level>& restrictions,
+      policy::PolicyErrorPath error_path,
+      policy::PolicyErrorMap* errors);
+
+  // Helper called by `ValidateRuleSubValues` to populate errors related to
+  // mutually exclusive fields being used in a rule.
+  static void AddMutuallyExclusiveErrors(
+      const std::vector<std::string_view>& oneof_conditions,
+      const std::vector<std::string_view>& anyof_conditions,
+      const char* policy_name,
+      policy::PolicyErrorPath error_path,
+      policy::PolicyErrorMap* errors);
+
+  // Helper called by `ValidateRuleSubValues` to check that all attributes
+  // included in a rule are meaningful to the restrictions included in that
+  // rule. Returns false if at least one error was added.
+  static bool AddUnsupportedAttributeErrors(
+      const std::vector<std::string_view>& oneof_conditions,
+      const std::vector<std::string_view>& anyof_conditions,
+      base::flat_map<Rule::Restriction, Rule::Level> restrictions,
+      const char* policy_name,
+      policy::PolicyErrorPath error_path,
+      policy::PolicyErrorMap* errors);
+
+  // Helper called by `ValidateRuleSubValues` to check that all given
+  // restrictions are applicable to the rule provided in `value`. Returns false
+  // if at least one error was added.
+  static bool AddUnsupportedRestrictionErrors(
+      const char* policy_name,
+      const base::flat_map<Rule::Restriction, Rule::Level>& restrictions,
       policy::PolicyErrorPath error_path,
       policy::PolicyErrorMap* errors);
 

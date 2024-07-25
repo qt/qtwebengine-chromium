@@ -9,6 +9,7 @@
 
 #include <array>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -28,7 +29,6 @@
 #include "net/cert/signed_certificate_timestamp_and_status.h"
 #include "net/http/transport_security_state_source.h"
 #include "net/log/net_log_with_source.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -39,11 +39,6 @@ enum class CTPolicyCompliance;
 
 class HostPortPair;
 class X509Certificate;
-
-// Feature that controls whether Certificate Transparency is enforced. This
-// feature is default enabled and meant only as an emergency killswitch. It
-// will not enable enforcement in platforms that otherwise have it disabled.
-NET_EXPORT BASE_DECLARE_FEATURE(kCertificateTransparencyEnforcement);
 
 void NET_EXPORT_PRIVATE SetTransportSecurityStateSourceForTesting(
     const TransportSecurityStateSource* source);
@@ -432,10 +427,6 @@ class NET_EXPORT TransportSecurityState {
     DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   }
 
-  // For unit tests only. Forces CheckCTRequirements() to unconditionally
-  // check compliance.
-  static void SetRequireCTForTesting(bool required);
-
   // For unit tests only.
   void EnableStaticPinsForTesting() { enable_static_pins_ = true; }
   bool has_dynamic_pkp_state() const { return !enabled_pkp_hosts_.empty(); }
@@ -522,7 +513,7 @@ class NET_EXPORT TransportSecurityState {
 
   // The values in host_pins_ maps are references to PinSet objects in the
   // pinsets_ vector.
-  absl::optional<
+  std::optional<
       std::map<std::string, std::pair<const PinSet*, bool>, std::less<>>>
       host_pins_;
   base::Time key_pins_list_last_update_time_;

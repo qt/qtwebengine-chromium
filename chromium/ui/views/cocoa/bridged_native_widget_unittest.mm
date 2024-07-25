@@ -487,6 +487,7 @@ class BridgedNativeWidgetTestBase : public ui::CocoaTest {
     // ui::CocoaTest::TearDown will wait until all NSWindows are destroyed, so
     // be sure to destroy the widget (which will destroy its NSWindow)
     // beforehand.
+    native_widget_mac_ = nullptr;
     widget_.reset();
     ui::CocoaTest::TearDown();
   }
@@ -504,8 +505,7 @@ class BridgedNativeWidgetTestBase : public ui::CocoaTest {
 
  protected:
   std::unique_ptr<Widget> widget_;
-  raw_ptr<MockNativeWidgetMac, DanglingUntriaged>
-      native_widget_mac_;  // Weak. Owned by |widget_|.
+  raw_ptr<MockNativeWidgetMac> native_widget_mac_;  // Owned by `widget_`.
 
   // Use a frameless window, otherwise Widget will try to center the window
   // before the tests covering the Init() flow are ready to do that.
@@ -975,6 +975,7 @@ class BridgedNativeWidgetInitTest : public BridgedNativeWidgetTestBase {
 
   // Prepares a new |window_| and |widget_| for a call to PerformInit().
   void CreateNewWidgetToInit() {
+    native_widget_mac_ = nullptr;
     widget_ = std::make_unique<Widget>();
     native_widget_mac_ = new MockNativeWidgetMac(widget_.get());
   }
@@ -1002,6 +1003,7 @@ TEST_F(BridgedNativeWidgetInitTest, InitNotCalled) {
   native_widget_mac_ = native_widget.get();
   EXPECT_FALSE(bridge());
   EXPECT_FALSE(GetNSWindowHost()->GetInProcessNSWindow());
+  native_widget_mac_ = nullptr;
 }
 
 // Tests the shadow type given in InitParams.
@@ -1034,8 +1036,6 @@ TEST_F(BridgedNativeWidgetInitTest, ShadowType) {
   CreateNewWidgetToInit();
   PerformInit();
   EXPECT_TRUE(BridgeWindowHasShadow());  // Preserves shadow.
-
-  widget_.reset();
 }
 
 // Ensure a nil NSTextInputContext is returned when the ui::TextInputClient is
@@ -1805,7 +1805,7 @@ TEST_F(BridgedNativeWidgetTest, TextInput_NoAcceleratorEnterComposition) {
   // Note 0 is the actual keyCode for 'a', not a placeholder.
   NSEvent* a_in_ime = UnicodeKeyDown(0, @"a");
   InterpretKeyEventsCallback handle_a_in_ime = base::BindRepeating([](id view) {
-    // TODO(crbug/612675): |text| should be an NSAttributedString.
+    // TODO(crbug.com/41254370): |text| should be an NSAttributedString.
     [view setMarkedText:@"あ"
            selectedRange:NSMakeRange(1, 0)
         replacementRange:NSMakeRange(NSNotFound, 0)];
@@ -1854,7 +1854,7 @@ TEST_F(BridgedNativeWidgetTest, TextInput_NoAcceleratorTabEnterComposition) {
   // with Hiragana IME and pressing 'a', Tab, then Enter on the keyboard.
   NSEvent* a_in_ime = UnicodeKeyDown(0, @"a");
   InterpretKeyEventsCallback handle_a_in_ime = base::BindRepeating([](id view) {
-    // TODO(crbug/612675): |text| should have an underline.
+    // TODO(crbug.com/41254370): |text| should have an underline.
     [view setMarkedText:@"あ"
            selectedRange:NSMakeRange(1, 0)
         replacementRange:NSMakeRange(NSNotFound, 0)];
@@ -1862,8 +1862,8 @@ TEST_F(BridgedNativeWidgetTest, TextInput_NoAcceleratorTabEnterComposition) {
 
   InterpretKeyEventsCallback handle_tab_in_ime =
       base::BindRepeating([](id view) {
-        // TODO(crbug/612675): |text| should be an NSAttributedString (now with
-        // a different underline color).
+        // TODO(crbug.com/41254370): |text| should be an NSAttributedString (now
+        // with a different underline color).
         [view setMarkedText:@"a"
                selectedRange:NSMakeRange(0, 1)
             replacementRange:NSMakeRange(NSNotFound, 0)];

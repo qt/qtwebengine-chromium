@@ -1937,10 +1937,8 @@ RefTestData ref_scope_equal_test_data[] = {
 
 class RuleFeatureSetScopeRefTest
     : public RuleFeatureSetRefTest,
-      public testing::WithParamInterface<RefTestData>,
-      private ScopedCSSScopeForTest {
+      public testing::WithParamInterface<RefTestData> {
  public:
-  RuleFeatureSetScopeRefTest() : ScopedCSSScopeForTest(true) {}
 
   void CollectTo(const char* text,
                  RuleFeatureSet& set,
@@ -1957,7 +1955,7 @@ class RuleFeatureSetScopeRefTest
     while (IsA<StyleRuleScope>(rule)) {
       auto& scope_rule = To<StyleRuleScope>(*rule);
       scope = scope_rule.GetStyleScope().CopyWithParent(scope);
-      const HeapVector<Member<StyleRuleBase>>& child_rules =
+      const StyleRuleBase::ChildRuleVector& child_rules =
           scope_rule.ChildRules();
       ASSERT_EQ(1u, child_rules.size());
       rule = child_rules[0].Get();

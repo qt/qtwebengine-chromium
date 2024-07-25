@@ -47,8 +47,7 @@ namespace {
 
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
 bool ExpectChromeAppsDefaultEnabled() {
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   return false;
 #else
   return true;
@@ -72,7 +71,7 @@ class ExtensionManagementApiBrowserTest : public ExtensionBrowserTest {
       const ExtensionManagementApiBrowserTest&) = delete;
 
  protected:
-  bool CrashEnabledExtension(const std::string& extension_id) {
+  bool CrashEnabledExtension(const ExtensionId& extension_id) {
     ExtensionHost* background_host =
         ProcessManager::Get(browser()->profile())
             ->GetBackgroundHostForExtension(extension_id);
@@ -132,7 +131,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTestWithBackgroundType,
 }
 
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
-// TODO(crbug.com/1288199): Run these tests on Chrome OS with both Ash and
+// TODO(crbug.com/40211465): Run these tests on Chrome OS with both Ash and
 // Lacros processes active.
 
 IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTestWithBackgroundType,
@@ -221,7 +220,7 @@ IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTestWithBackgroundType,
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
-// TODO(crbug.com/1288199): Run these tests on Chrome OS with both Ash and
+// TODO(crbug.com/40211465): Run these tests on Chrome OS with both Ash and
 // Lacros processes active.
 IN_PROC_BROWSER_TEST_P(ExtensionManagementApiTestWithBackgroundType,
                        LaunchAppFromBackground) {
@@ -315,7 +314,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
       test_data_dir_.AppendASCII("api_test/management/packaged_app"), 1);
   ASSERT_TRUE(app);
 
-  const std::string app_id = app->id();
+  const extensions::ExtensionId app_id = app->id();
 
   scoped_refptr<ManagementCreateAppShortcutFunction> create_shortcut_function(
       new ManagementCreateAppShortcutFunction());

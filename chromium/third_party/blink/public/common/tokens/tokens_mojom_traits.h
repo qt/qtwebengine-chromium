@@ -330,9 +330,24 @@ struct BLINK_COMMON_EXPORT
 };
 
 template <>
+struct StructTraits<
+    blink::mojom::SameDocNavigationScreenshotDestinationTokenDataView,
+    blink::SameDocNavigationScreenshotDestinationToken>
+    : public blink::TokenMojomTraitsHelper<
+          blink::mojom::SameDocNavigationScreenshotDestinationTokenDataView,
+          blink::SameDocNavigationScreenshotDestinationToken> {};
+
+template <>
 struct StructTraits<blink::mojom::V8ContextTokenDataView, blink::V8ContextToken>
     : public blink::TokenMojomTraitsHelper<blink::mojom::V8ContextTokenDataView,
                                            blink::V8ContextToken> {};
+
+template <>
+struct StructTraits<blink::mojom::ViewTransitionTokenDataView,
+                    blink::ViewTransitionToken>
+    : public blink::TokenMojomTraitsHelper<
+          blink::mojom::ViewTransitionTokenDataView,
+          blink::ViewTransitionToken> {};
 
 template <>
 struct BLINK_COMMON_EXPORT
@@ -351,6 +366,12 @@ struct BLINK_COMMON_EXPORT
       case blink::WebGPUExecutionContextToken::IndexOf<
           blink::DedicatedWorkerToken>():
         return DataView::Tag::kDedicatedWorkerToken;
+      case blink::WebGPUExecutionContextToken::IndexOf<
+          blink::SharedWorkerToken>():
+        return DataView::Tag::kSharedWorkerToken;
+      case blink::WebGPUExecutionContextToken::IndexOf<
+          blink::ServiceWorkerToken>():
+        return DataView::Tag::kServiceWorkerToken;
     }
     base::ImmediateCrash();
   }
@@ -362,6 +383,14 @@ struct BLINK_COMMON_EXPORT
   static const blink::DedicatedWorkerToken& dedicated_worker_token(
       const blink::WebGPUExecutionContextToken& token) {
     return token.GetAs<blink::DedicatedWorkerToken>();
+  }
+  static const blink::SharedWorkerToken& shared_worker_token(
+      const blink::WebGPUExecutionContextToken& token) {
+    return token.GetAs<blink::SharedWorkerToken>();
+  }
+  static const blink::ServiceWorkerToken& service_worker_token(
+      const blink::WebGPUExecutionContextToken& token) {
+    return token.GetAs<blink::ServiceWorkerToken>();
   }
 };
 

@@ -7,6 +7,7 @@ import { existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Browser as InstalledBrowser, CDP_WEBSOCKET_ENDPOINT_REGEX, launch, TimeoutError as BrowsersTimeoutError, WEBDRIVER_BIDI_WEBSOCKET_ENDPOINT_REGEX, computeExecutablePath, } from '@puppeteer/browsers';
+import { firstValueFrom, from, map, race, timer, } from '../../third_party/rxjs/rxjs.js';
 import { CdpBrowser } from '../cdp/Browser.js';
 import { Connection } from '../cdp/Connection.js';
 import { TimeoutError } from '../common/Errors.js';
@@ -41,12 +42,22 @@ export class ProductLauncher {
     async launch(options = {}) {
         const { dumpio = false, env = process.env, handleSIGINT = true, handleSIGTERM = true, handleSIGHUP = true, ignoreHTTPSErrors = false, defaultViewport = DEFAULT_VIEWPORT, slowMo = 0, timeout = 30000, waitForInitialPage = true, protocolTimeout, protocol, } = options;
         const launchArgs = await this.computeLaunchArguments(options);
+        if (!existsSync(launchArgs.executablePath)) {
+            throw new Error(`Browser was not found at the configured executablePath (${launchArgs.executablePath})`);
+        }
         const usePipe = launchArgs.args.includes('--remote-debugging-pipe');
         const onProcessExit = async () => {
             await this.cleanUserDataDir(launchArgs.userDataDir, {
                 isTemp: launchArgs.isTempUserDataDir,
             });
         };
+        if (this.#product === 'firefox' &&
+            protocol !== 'webDriverBiDi' &&
+            this.puppeteer.configuration.logLevel === 'warn') {
+            console.warn(`Chrome DevTools Protocol (CDP) support for Firefox is deprecated in Puppeteer ` +
+                `and it will be eventually removed. ` +
+                `Use WebDriver BiDi instead (see https://pptr.dev/webdriver-bidi#get-started).`);
+        }
         const browserProcess = launch({
             executablePath: launchArgs.executablePath,
             args: launchArgs.args,
@@ -143,7 +154,10 @@ export class ProductLauncher {
             }
         }
         else {
-            await browserProcess.close();
+            // Wait for a possible graceful shutdown.
+            await firstValueFrom(race(from(browserProcess.hasClosed()), timer(5000).pipe(map(() => {
+                return from(browserProcess.close());
+            }))));
         }
     }
     /**
@@ -221,7 +235,7 @@ export class ProductLauncher {
     /**
      * @internal
      */
-    resolveExecutablePath() {
+    resolveExecutablePath(headless) {
         let executablePath = this.puppeteer.configuration.executablePath;
         if (executablePath) {
             if (!existsSync(executablePath)) {
@@ -229,9 +243,12 @@ export class ProductLauncher {
             }
             return executablePath;
         }
-        function productToBrowser(product) {
+        function productToBrowser(product, headless) {
             switch (product) {
                 case 'chrome':
+                    if (headless === 'shell') {
+                        return InstalledBrowser.CHROMEHEADLESSSHELL;
+                    }
                     return InstalledBrowser.CHROME;
                 case 'firefox':
                     return InstalledBrowser.FIREFOX;
@@ -240,7 +257,7 @@ export class ProductLauncher {
         }
         executablePath = computeExecutablePath({
             cacheDir: this.puppeteer.defaultDownloadPath,
-            browser: productToBrowser(this.product),
+            browser: productToBrowser(this.product, headless),
             buildId: this.puppeteer.browserRevision,
         });
         if (!existsSync(executablePath)) {

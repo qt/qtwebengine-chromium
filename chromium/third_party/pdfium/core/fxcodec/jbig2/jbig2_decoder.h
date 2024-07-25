@@ -7,11 +7,14 @@
 #ifndef CORE_FXCODEC_JBIG2_JBIG2_DECODER_H_
 #define CORE_FXCODEC_JBIG2_JBIG2_DECODER_H_
 
+#include <stdint.h>
+
 #include <memory>
 
 #include "core/fxcodec/fx_codec_def.h"
+#include "core/fxcrt/raw_span.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/unowned_ptr_exclusion.h"
-#include "third_party/base/containers/span.h"
 
 class CJBig2_Context;
 class JBig2_DocumentContext;
@@ -28,8 +31,8 @@ class Jbig2Context {
   uint32_t m_height = 0;
   uint64_t m_nGlobalKey = 0;
   uint64_t m_nSrcKey = 0;
-  pdfium::span<const uint8_t> m_pGlobalSpan;
-  pdfium::span<const uint8_t> m_pSrcSpan;
+  pdfium::raw_span<const uint8_t> m_pGlobalSpan;
+  pdfium::raw_span<const uint8_t> m_pSrcSpan;
   UNOWNED_PTR_EXCLUSION uint8_t* m_dest_buf = nullptr;
   uint32_t m_dest_pitch = 0;
   std::unique_ptr<CJBig2_Context> m_pContext;

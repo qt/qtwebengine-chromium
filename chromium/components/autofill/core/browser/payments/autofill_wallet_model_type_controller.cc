@@ -8,12 +8,9 @@
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "build/build_config.h"
 #include "components/autofill/core/common/autofill_prefs.h"
 #include "components/prefs/pref_service.h"
-#include "components/sync/base/features.h"
 #include "components/sync/service/sync_service.h"
-#include "components/sync/service/sync_user_settings.h"
 
 namespace browser_sync {
 
@@ -52,23 +49,13 @@ void AutofillWalletModelTypeController::Stop(syncer::SyncStopMetadataFate fate,
                             std::move(callback));
 }
 
-syncer::DataTypeController::PreconditionState
+syncer::ModelTypeController::PreconditionState
 AutofillWalletModelTypeController::GetPreconditionState() const {
   DCHECK(CalledOnValidThread());
   bool preconditions_met =
       pref_service_->GetBoolean(autofill::prefs::kAutofillCreditCardEnabled);
   return preconditions_met ? PreconditionState::kPreconditionsMet
                            : PreconditionState::kMustStopAndClearData;
-}
-
-bool AutofillWalletModelTypeController::ShouldRunInTransportOnlyMode() const {
-  if (!base::FeatureList::IsEnabled(
-          syncer::kReplaceSyncPromosWithSignInPromos)) {
-    if (sync_service_->GetUserSettings()->IsUsingExplicitPassphrase()) {
-      return false;
-    }
-  }
-  return ModelTypeController::ShouldRunInTransportOnlyMode();
 }
 
 void AutofillWalletModelTypeController::OnUserPrefChanged() {

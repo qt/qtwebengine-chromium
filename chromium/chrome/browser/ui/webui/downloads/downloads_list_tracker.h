@@ -13,6 +13,7 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "build/buildflag.h"
 #include "chrome/browser/ui/webui/downloads/downloads.mojom.h"
 #include "components/download/content/public/all_download_item_notifier.h"
@@ -54,6 +55,18 @@ class DownloadsListTracker
   // Stops sending updates to the page.
   void Stop();
 
+  // Returns the number of dangerous download items that have been sent to the
+  // page. Does not count those which we know about but are not yet displayed
+  // on the page, e.g. due to not having scrolled far enough yet.
+  // Note this includes items that have been cancelled; they still display a
+  // warning in grayed out text.
+  int NumDangerousItemsSent() const;
+
+  // Returns the first dangerous item that is not cancelled, i.e. it is the
+  // first (topmost) item to be shown on the page with an active warning.
+  // Returns nullptr if none are found.
+  download::DownloadItem* GetFirstActiveWarningItem();
+
   content::DownloadManager* GetMainNotifierManager() const;
   content::DownloadManager* GetOriginalNotifierManager() const;
 
@@ -89,6 +102,8 @@ class DownloadsListTracker
   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
                            CreateDownloadData_UrlFormatting_Idn);
   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
+                           CreateDownloadData_UrlFormatting_Long);
+  FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
                            CreateDownloadData_UrlFormatting_VeryLong);
 #if BUILDFLAG(FULL_SAFE_BROWSING)
   FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
@@ -99,7 +114,8 @@ class DownloadsListTracker
     bool operator()(const download::DownloadItem* a,
                     const download::DownloadItem* b) const;
   };
-  using SortedSet = std::set<download::DownloadItem*, StartTimeComparator>;
+  using SortedSet = std::set<raw_ptr<download::DownloadItem, SetExperimental>,
+                             StartTimeComparator>;
 
   // Called by both constructors to initialize common state.
   void Init();

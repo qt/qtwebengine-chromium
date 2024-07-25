@@ -1,8 +1,8 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2023 The Khronos Group Inc.
-# Copyright (c) 2015-2023 Valve Corporation
-# Copyright (c) 2015-2023 LunarG, Inc.
+# Copyright (c) 2015-2024 The Khronos Group Inc.
+# Copyright (c) 2015-2024 Valve Corporation
+# Copyright (c) 2015-2024 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +17,17 @@
 # limitations under the License.
 
 import os
+from collections import defaultdict
 from generators.base_generator import BaseGenerator
 from generators.generator_utils import PlatformGuardHelper
 
 class ValidEnumValuesOutputGenerator(BaseGenerator):
     def __init__(self):
         BaseGenerator.__init__(self)
+        self.ignoreList = [
+            'VkStructureType', # Structs are checked as there own thing
+            'VkResult' # The spots it is used (VkBindMemoryStatusKHR, VkPresentInfoKHR) are really returrn values
+        ]
 
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
@@ -30,9 +35,9 @@ class ValidEnumValuesOutputGenerator(BaseGenerator):
 
             /***************************************************************************
             *
-            * Copyright (c) 2015-2023 The Khronos Group Inc.
-            * Copyright (c) 2015-2023 Valve Corporation
-            * Copyright (c) 2015-2023 LunarG, Inc.
+            * Copyright (c) 2015-2024 The Khronos Group Inc.
+            * Copyright (c) 2015-2024 Valve Corporation
+            * Copyright (c) 2015-2024 LunarG, Inc.
             *
             * Licensed under the Apache License, Version 2.0 (the "License");
             * you may not use this file except in compliance with the License.
@@ -59,57 +64,100 @@ class ValidEnumValuesOutputGenerator(BaseGenerator):
 
     def generateHeader(self):
         out = []
-        out.append("// clang-format off\n")
         guard_helper = PlatformGuardHelper()
-        for enum in [x for x in self.vk.enums.values() if x.name != 'VkStructureType' and not x.returnedOnly]:
+        for enum in [x for x in self.vk.enums.values() if x.name not in self.ignoreList and not x.returnedOnly]:
             out.extend(guard_helper.add_guard(enum.protect))
-            out.append(f'template<> std::vector<{enum.name}> ValidationObject::ValidParamValues() const;\n')
+            out.append(f'template<> ValidValue StatelessValidation::IsValidEnumValue({enum.name} value) const;\n')
         out.extend(guard_helper.add_guard(None))
-        out.append("// clang-format on\n")
 
         self.write("".join(out))
 
     def generateSource(self):
         out = []
         out.append('''
-            #include "chassis.h"
-            #include "utils/hash_vk_types.h"
+            #include "stateless/stateless_validation.h"
 
-            // TODO (ncesario) This is not ideal as we compute the enabled extensions every time this function is called.
-            //      Ideally "values" would be something like a static variable that is built once and this function returns
-            //      a span of the container. This does not work for applications which create and destroy many instances and
-            //      devices over the lifespan of the project (e.g., VLT).
+            //  Checking for values is a 2 part process
+            //    1. Check if is valid at all
+            //    2. If invalid, spend more time to figure out how and what info to report to the user
+            //
+            //  While this might not seem ideal to compute the enabled extensions every time this function is called, the
+            //  other solution would be to build a list at vkCreateDevice time of all the valid values. This adds much higher
+            //  memory overhead.
+            //
+            //  Another key point to consider is being able to tell the user a value is invalid because it "doesn't exist" vs
+            //  "forgot to enable an extension" is VERY important
 
             ''')
         guard_helper = PlatformGuardHelper()
-        out.append("// clang-format off\n")
-        for enum in [x for x in self.vk.enums.values() if x.name != 'VkStructureType' and not x.returnedOnly]:
+
+        for enum in [x for x in self.vk.enums.values() if x.name not in self.ignoreList and not x.returnedOnly]:
             out.extend(guard_helper.add_guard(enum.protect, extra_newline=True))
-            out.append(f'template<>\nstd::vector<{enum.name}> ValidationObject::ValidParamValues() const {{\n')
-
+            out.append(f'template<> ValidValue StatelessValidation::IsValidEnumValue({enum.name} value) const {{\n')
+            out.append('    switch (value) {\n')
             # If the field has same/subset extensions as enum, we count it as "core" for the struct
-            coreEnums = [x.name for x in enum.fields if not x.extensions or (x.extensions and all(e in enum.extensions for e in x.extensions))]
-            out.extend([f'    constexpr std::array Core{enum.name}Enums = {{{", ".join(coreEnums)}}};\n'] if coreEnums else [])
+            coreEnums = [x for x in enum.fields if not x.extensions or (x.extensions and all(e in enum.extensions for e in x.extensions))]
+            for coreEnum in coreEnums:
+                out.append(f'    case {coreEnum.name}:\n')
+            out.append('    return ValidValue::Valid;\n')
 
-            out.append(f'    static const vvl::unordered_map<const ExtEnabled DeviceExtensions::*, std::vector<{enum.name}>> Extended{enum.name}Enums = {{\n')
+            # Build up list of expressions so case statements with same expression can have fallthrough
+            expressionMap = defaultdict(list)
+            for field in [x for x in enum.fields if len(x.extensions) > 0]:
+                expression = []
+                # Ignore the base extensions needed to use the enum, only focus on the field specific extensions
+                for extension in [x for x in field.extensions if x not in enum.extensions]:
+                    expression.append(f'IsExtEnabled(device_extensions.{extension.name.lower()})')
+                if (len(expression) == 0):
+                    continue
+                expression = " || ".join(expression)
+                expressionMap[expression].append(field.name)
 
-            for extension in [x for x in enum.fieldExtensions if x not in enum.extensions]:
-                out.append(f'        {{ &DeviceExtensions::{extension.name.lower()}, {{ {", ".join([x.name for x in extension.enumFields[enum.name]])} }} }},\n')
-            out.append('    };')
+            for expression, names in expressionMap.items():
+                for name in names:
+                    out.append(f'    case {name}:\n')
+                out.append(f'return {expression} ? ValidValue::Valid : ValidValue::NoExtension;\n')
 
-            startValue = f'values(Core{enum.name}Enums.cbegin(), Core{enum.name}Enums.cend())' if coreEnums else 'values'
-            out.append(f'''
-    std::vector<{enum.name}> {startValue};
-    std::set<{enum.name}> unique_exts;
-    for (const auto& [extension, enums]: Extended{enum.name}Enums) {{
-        if (IsExtEnabled(device_extensions.*extension)) {{
-            unique_exts.insert(enums.cbegin(), enums.cend());
-        }}
-    }}
-    std::copy(unique_exts.cbegin(), unique_exts.cend(), std::back_inserter(values));
-    return values;
-}}\n''')
-        out.extend(guard_helper.add_guard(None, extra_newline=True))
+            out.append('''default:
+                            return ValidValue::NotFound;
+                        };
+                    }
+                ''')
+            out.extend(guard_helper.add_guard(None, extra_newline=True))
 
-        out.append("// clang-format on\n")
+        # For those that had an extension on field, provide a way to get it to print a useful error message out
+        for enum in [x for x in self.vk.enums.values() if x.name not in self.ignoreList and not x.returnedOnly]:
+            out.extend(guard_helper.add_guard(enum.protect, extra_newline=True))
+
+            # Need empty functions to resolve all template variations
+            if len(enum.fieldExtensions) <= len(enum.extensions):
+                out.append(f'template<> vvl::Extensions StatelessValidation::GetEnumExtensions({enum.name} value) const {{ return {{}}; }}\n')
+                out.extend(guard_helper.add_guard(None, extra_newline=True))
+                continue
+
+            out.append(f'template<> vvl::Extensions StatelessValidation::GetEnumExtensions({enum.name} value) const {{\n')
+            out.append('    switch (value) {\n')
+
+            expressionMap = defaultdict(list)
+            for field in [x for x in enum.fields if len(x.extensions) > 0]:
+                expression = []
+                for extension in [x for x in field.extensions if x not in enum.extensions]:
+                    expression.append(f'vvl::Extension::_{extension.name}')
+                if (len(expression) == 0):
+                    continue
+                expression = ", ".join(expression)
+                expressionMap[expression].append(field.name)
+
+            for expression, names in expressionMap.items():
+                for name in names:
+                    out.append(f'    case {name}:\n')
+                out.append(f'return {{{expression}}};\n')
+
+            out.append('''default:
+                            return {};
+                        };
+                    }
+                ''')
+            out.extend(guard_helper.add_guard(None, extra_newline=True))
+
         self.write(''.join(out))

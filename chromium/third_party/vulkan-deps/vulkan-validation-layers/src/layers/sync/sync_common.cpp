@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  */
 
 #include "state_tracker/buffer_state.h"
+#include "state_tracker/image_state.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "sync/sync_common.h"
 
@@ -65,10 +66,18 @@ ResourceAccessRange MakeRange(VkDeviceSize offset, uint32_t first_index, uint32_
     return MakeRange(range_start, range_size);
 }
 
-ResourceAccessRange MakeRange(const BufferBinding& binding, uint32_t first_index, const std::optional<uint32_t>& count,
+ResourceAccessRange MakeRange(const vvl::VertexBufferBinding& binding, uint32_t first_index, const std::optional<uint32_t>& count,
                               uint32_t stride) {
     if (count) {
         return MakeRange(binding.offset, first_index, count.value(), stride);
+    }
+    return MakeRange(binding);
+}
+
+ResourceAccessRange MakeRange(const vvl::IndexBufferBinding& binding, uint32_t first_index, const std::optional<uint32_t>& count,
+                              uint32_t index_size) {
+    if (count) {
+        return MakeRange(binding.offset, first_index, count.value(), index_size);
     }
     return MakeRange(binding);
 }

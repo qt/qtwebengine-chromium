@@ -5,10 +5,6 @@
 #include "base/allocator/partition_alloc_features.h"
 
 #include "base/allocator/miracle_parameter.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/time/time.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_buildflags.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_root.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/thread_cache.h"
 #include "base/base_export.h"
 #include "base/feature_list.h"
 #include "base/features.h"
@@ -17,6 +13,11 @@
 #include "build/build_config.h"
 #include "build/chromecast_buildflags.h"
 #include "build/chromeos_buildflags.h"
+#include "partition_alloc/partition_alloc_base/time/time.h"
+#include "partition_alloc/partition_alloc_buildflags.h"
+#include "partition_alloc/partition_root.h"
+#include "partition_alloc/shim/allocator_shim_dispatch_to_noop_on_free.h"
+#include "partition_alloc/thread_cache.h"
 
 namespace base {
 namespace features {
@@ -35,15 +36,18 @@ const base::FeatureParam<UnretainedDanglingPtrMode>
     kUnretainedDanglingPtrModeParam = {
         &kPartitionAllocUnretainedDanglingPtr,
         "mode",
-        UnretainedDanglingPtrMode::kDumpWithoutCrashing,
+        UnretainedDanglingPtrMode::kCrash,
         &kUnretainedDanglingPtrModeOption,
 };
 
-// TODO(crbug.com/324994233): Re-enable DPD once we annotate all
-// `DanglingUntriaged`.
 BASE_FEATURE(kPartitionAllocDanglingPtr,
              "PartitionAllocDanglingPtr",
-             FEATURE_DISABLED_BY_DEFAULT);
+#if PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_FEATURE_FLAG)
+             FEATURE_ENABLED_BY_DEFAULT
+#else
+             FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 constexpr FeatureParam<DanglingPtrMode>::Option kDanglingPtrModeOption[] = {
     {DanglingPtrMode::kCrash, "crash"},
@@ -66,15 +70,15 @@ const base::FeatureParam<DanglingPtrType> kDanglingPtrTypeParam{
     &kDanglingPtrTypeOption,
 };
 
-#if BUILDFLAG(USE_STARSCAN)
+#if PA_BUILDFLAG(USE_STARSCAN)
 // If enabled, PCScan is turned on by default for all partitions that don't
 // disable it explicitly.
 BASE_FEATURE(kPartitionAllocPCScan,
              "PartitionAllocPCScan",
              FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(USE_STARSCAN)
+#endif  // PA_BUILDFLAG(USE_STARSCAN)
 
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 // If enabled, PCScan is turned on only for the browser's malloc partition.
 BASE_FEATURE(kPartitionAllocPCScanBrowserOnly,
              "PartitionAllocPCScanBrowserOnly",
@@ -109,27 +113,23 @@ BASE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing,
 BASE_FEATURE(kPartitionAllocSchedulerLoopQuarantine,
              "PartitionAllocSchedulerLoopQuarantine",
              FEATURE_DISABLED_BY_DEFAULT);
-// Scheduler Loop Quarantine's capacity in bytes.
-const base::FeatureParam<int> kPartitionAllocSchedulerLoopQuarantineCapacity{
-    &kPartitionAllocSchedulerLoopQuarantine,
-    "PartitionAllocSchedulerLoopQuarantineCapacity", 0};
-// Scheduler Loop Quarantine's capacity count.
+// Scheduler Loop Quarantine's per-branch capacity in bytes.
 const base::FeatureParam<int>
-    kPartitionAllocSchedulerLoopQuarantineCapacityCount{
+    kPartitionAllocSchedulerLoopQuarantineBranchCapacity{
         &kPartitionAllocSchedulerLoopQuarantine,
-        "PartitionAllocSchedulerLoopQuarantineCapacityCount", 1024};
+        "PartitionAllocSchedulerLoopQuarantineBranchCapacity", 0};
 
 BASE_FEATURE(kPartitionAllocZappingByFreeFlags,
              "PartitionAllocZappingByFreeFlags",
              FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
 BASE_FEATURE(kPartitionAllocBackupRefPtr,
              "PartitionAllocBackupRefPtr",
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS) ||     \
     (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS)) ||                  \
-    BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
+    PA_BUILDFLAG(ENABLE_BACKUP_REF_PTR_FEATURE_FLAG)
              FEATURE_ENABLED_BY_DEFAULT
 #else
              FEATURE_DISABLED_BY_DEFAULT
@@ -150,26 +150,9 @@ const base::FeatureParam<BackupRefPtrEnabledProcesses>
         BackupRefPtrEnabledProcesses::kNonRenderer,
         &kBackupRefPtrEnabledProcessesOptions};
 
-// Map *-with-memory-reclaimer modes onto their counterpars without the suffix.
-// They are the same, as memory reclaimer is now controlled independently.
-//
-// Similarly, map disabled-but-*-way-split onto plain disabled, as we are done
-// experimenting with partition split.
-//
-// We need to keep those option strings, as there is a long tail of clients that
-// may have an old field trial config, which used these modes.
-//
-// DO NOT USE *-with-memory-reclaimer and disabled-but-*-way-split modes in new
-// configs!
 constexpr FeatureParam<BackupRefPtrMode>::Option kBackupRefPtrModeOptions[] = {
     {BackupRefPtrMode::kDisabled, "disabled"},
     {BackupRefPtrMode::kEnabled, "enabled"},
-    {BackupRefPtrMode::kEnabled, "enabled-with-memory-reclaimer"},
-    {BackupRefPtrMode::kEnabledInSameSlotMode, "enabled-in-same-slot-mode"},
-    {BackupRefPtrMode::kDisabled, "disabled-but-2-way-split"},
-    {BackupRefPtrMode::kDisabled,
-     "disabled-but-2-way-split-with-memory-reclaimer"},
-    {BackupRefPtrMode::kDisabled, "disabled-but-3-way-split"},
 };
 
 const base::FeatureParam<BackupRefPtrMode> kBackupRefPtrModeParam{
@@ -178,14 +161,24 @@ const base::FeatureParam<BackupRefPtrMode> kBackupRefPtrModeParam{
 
 BASE_FEATURE(kPartitionAllocMemoryTagging,
              "PartitionAllocMemoryTagging",
-             FEATURE_DISABLED_BY_DEFAULT);
+#if PA_BUILDFLAG(USE_FULL_MTE)
+             FEATURE_ENABLED_BY_DEFAULT
+#else
+             FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 constexpr FeatureParam<MemtagMode>::Option kMemtagModeOptions[] = {
     {MemtagMode::kSync, "sync"},
     {MemtagMode::kAsync, "async"}};
 
 const base::FeatureParam<MemtagMode> kMemtagModeParam{
-    &kPartitionAllocMemoryTagging, "memtag-mode", MemtagMode::kAsync,
+    &kPartitionAllocMemoryTagging, "memtag-mode",
+#if PA_BUILDFLAG(USE_FULL_MTE)
+    MemtagMode::kSync,
+#else
+    MemtagMode::kAsync,
+#endif
     &kMemtagModeOptions};
 
 constexpr FeatureParam<MemoryTaggingEnabledProcesses>::Option
@@ -197,7 +190,11 @@ constexpr FeatureParam<MemoryTaggingEnabledProcesses>::Option
 const base::FeatureParam<MemoryTaggingEnabledProcesses>
     kMemoryTaggingEnabledProcessesParam{
         &kPartitionAllocMemoryTagging, "enabled-processes",
+#if PA_BUILDFLAG(USE_FULL_MTE)
+        MemoryTaggingEnabledProcesses::kAllProcesses,
+#else
         MemoryTaggingEnabledProcesses::kBrowserOnly,
+#endif
         &kMemoryTaggingEnabledProcessesOptions};
 
 BASE_FEATURE(kKillPartitionAllocMemoryTagging,
@@ -207,7 +204,13 @@ BASE_FEATURE(kKillPartitionAllocMemoryTagging,
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPermissiveMte);
 BASE_FEATURE(kPartitionAllocPermissiveMte,
              "PartitionAllocPermissiveMte",
-             FEATURE_ENABLED_BY_DEFAULT);
+#if PA_BUILDFLAG(USE_FULL_MTE)
+             // We want to actually crash if USE_FULL_MTE is enabled.
+             FEATURE_DISABLED_BY_DEFAULT
+#else
+             FEATURE_ENABLED_BY_DEFAULT
+#endif
+);
 
 const base::FeatureParam<bool> kBackupRefPtrAsanEnableDereferenceCheckParam{
     &kPartitionAllocBackupRefPtr, "asan-enable-dereference-check", true};
@@ -279,11 +282,11 @@ BASE_FEATURE(kPartitionAllocPCScanEagerClearing,
 // In addition to heap, scan also the stack of the current mutator.
 BASE_FEATURE(kPartitionAllocPCScanStackScanning,
              "PartitionAllocPCScanStackScanning",
-#if BUILDFLAG(PCSCAN_STACK_SUPPORTED)
+#if PA_BUILDFLAG(STACK_SCAN_SUPPORTED)
              FEATURE_ENABLED_BY_DEFAULT
 #else
              FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(PCSCAN_STACK_SUPPORTED)
+#endif  // PA_BUILDFLAG(STACK_SCAN_SUPPORTED)
 );
 
 BASE_FEATURE(kPartitionAllocDCScan,
@@ -420,17 +423,70 @@ MIRACLE_PARAMETER_FOR_INT(
 // abundance of caution, we provide this toggle that allows us to
 // wholly disable MiraclePtr in the buffer partition, if necessary.
 //
-// TODO(crbug.com/1444624): this is unneeded once
+// TODO(crbug.com/40064499): this is unneeded once
 // MiraclePtr-for-Renderer launches.
 BASE_FEATURE(kPartitionAllocDisableBRPInBufferPartition,
              "PartitionAllocDisableBRPInBufferPartition",
              FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(USE_FREELIST_POOL_OFFSETS)
+#if PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
 BASE_FEATURE(kUsePoolOffsetFreelists,
              "PartitionAllocUsePoolOffsetFreelists",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
+
+BASE_FEATURE(kPartitionAllocMakeFreeNoOpOnShutdown,
+             "PartitionAllocMakeFreeNoOpOnShutdown",
+             FEATURE_DISABLED_BY_DEFAULT);
+
+constexpr FeatureParam<WhenFreeBecomesNoOp>::Option
+    kPartitionAllocMakeFreeNoOpOnShutdownOptions[] = {
+        {WhenFreeBecomesNoOp::kBeforePreShutdown, "before-preshutdown"},
+        {WhenFreeBecomesNoOp::kBeforeHaltingStartupTracingController,
+         "before-halting-startup-tracing-controller"},
+        {
+            WhenFreeBecomesNoOp::kBeforeShutDownThreads,
+            "before-shutdown-threads",
+        },
+        {
+            WhenFreeBecomesNoOp::kInShutDownThreads,
+            "in-shutdown-threads",
+        },
+        {
+            WhenFreeBecomesNoOp::kAfterShutDownThreads,
+            "after-shutdown-threads",
+        },
+};
+
+const base::FeatureParam<WhenFreeBecomesNoOp>
+    kPartitionAllocMakeFreeNoOpOnShutdownParam{
+        &kPartitionAllocMakeFreeNoOpOnShutdown, "callsite",
+        WhenFreeBecomesNoOp::kBeforeShutDownThreads,
+        &kPartitionAllocMakeFreeNoOpOnShutdownOptions};
+
+void MakeFreeNoOp(WhenFreeBecomesNoOp callsite) {
+  CHECK(base::FeatureList::GetInstance());
+  // Ignoring `free()` during Shutdown would allow developers to introduce new
+  // dangling pointers. So we want to avoid ignoring free when it is enabled.
+  // Note: For now, the DanglingPointerDetector is only enabled on 5 bots, and
+  // on linux non-official configuration.
+  // TODO(b/40802063): Reconsider this decision after the experiment.
+#if PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
+  if (base::FeatureList::IsEnabled(features::kPartitionAllocDanglingPtr)) {
+    return;
+  }
+#endif  // PA_BUILDFLAG(ENABLE_DANGLING_RAW_PTR_CHECKS)
+#if PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
+  if (base::FeatureList::IsEnabled(kPartitionAllocMakeFreeNoOpOnShutdown) &&
+      kPartitionAllocMakeFreeNoOpOnShutdownParam.Get() == callsite) {
+    allocator_shim::InsertNoOpOnFreeAllocatorShimOnShutDown();
+  }
+#endif  // PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
+}
+
+BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
+             "PartitionAllocAdjustSizeWhenInForeground",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features
 }  // namespace base

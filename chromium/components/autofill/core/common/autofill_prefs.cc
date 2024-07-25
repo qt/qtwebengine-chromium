@@ -53,6 +53,9 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(
       prefs::kAutofillPaymentCvcStorage, true,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      kAutofillPaymentCardBenefits, true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
   // Non-synced prefs. Used for per-device choices, e.g., signin promo.
   registry->RegisterBooleanPref(prefs::kAutofillCreditCardFidoAuthEnabled,
@@ -102,6 +105,12 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 #if BUILDFLAG(IS_ANDROID)
   registry->RegisterBooleanPref(prefs::kAutofillUsingVirtualViewStructure,
                                 false);
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+  registry->RegisterBooleanPref(
+      prefs::kFacilitatedPaymentsPix, /*default_value=*/true,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 #endif
 }
 
@@ -170,15 +179,7 @@ void SetAutofillProfileEnabled(PrefService* prefs, bool enabled) {
 bool IsPaymentMethodsMandatoryReauthEnabled(const PrefService* prefs) {
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_IOS)
-  bool featureEnabled = base::FeatureList::IsEnabled(
-      features::kAutofillEnablePaymentsMandatoryReauth);
-#if BUILDFLAG(IS_ANDROID)
-  if (base::android::BuildInfo::GetInstance()->is_automotive()) {
-    featureEnabled = true;
-  }
-#endif  // BUILDFLAG(IS_ANDROID)
-  return featureEnabled &&
-         prefs->GetBoolean(kAutofillPaymentMethodsMandatoryReauth);
+  return prefs->GetBoolean(kAutofillPaymentMethodsMandatoryReauth);
 #else
   return false;
 #endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) ||
@@ -243,6 +244,14 @@ void SetPaymentCvcStorage(PrefService* prefs, bool value) {
   prefs->SetBoolean(kAutofillPaymentCvcStorage, value);
 }
 
+bool IsPaymentCardBenefitsEnabled(const PrefService* prefs) {
+  return prefs->GetBoolean(kAutofillPaymentCardBenefits);
+}
+
+void SetPaymentCardBenefits(PrefService* prefs, bool value) {
+  prefs->SetBoolean(kAutofillPaymentCardBenefits, value);
+}
+
 void SetUserOptedInWalletSyncTransport(PrefService* prefs,
                                        const CoreAccountId& account_id,
                                        bool opted_in) {
@@ -288,19 +297,6 @@ bool IsUserOptedInWalletSyncTransport(const PrefService* prefs,
 
 void ClearSyncTransportOptIns(PrefService* prefs) {
   prefs->SetDict(prefs::kAutofillSyncTransportOptIn, base::Value::Dict());
-}
-
-bool UsesVirtualViewStructureForAutofill(const PrefService* prefs) {
-#if BUILDFLAG(IS_ANDROID)
-  if (!base::FeatureList::IsEnabled(
-          features::kAutofillVirtualViewStructureAndroid)) {
-    return false;
-  }
-
-  return prefs->GetBoolean(kAutofillUsingVirtualViewStructure);
-#else
-  return false;
-#endif  // BUILDFLAG(IS_ANDROID)
 }
 
 }  // namespace prefs

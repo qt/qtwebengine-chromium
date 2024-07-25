@@ -5,8 +5,7 @@
 import * as Common from '../../core/common/common.js';
 
 import {EmulationModel} from './EmulationModel.js';
-
-import {TargetManager, type SDKModelObserver} from './TargetManager.js';
+import {type SDKModelObserver, TargetManager} from './TargetManager.js';
 
 let throttlingManagerInstance: CPUThrottlingManager;
 
@@ -70,7 +69,7 @@ export class CPUThrottlingManager extends Common.ObjectWrapper.ObjectWrapper<Eve
     if (!target) {
       if (existingCallback) {
         return new Promise(r => {
-          this.#pendingMainTargetPromise = (result: number): void => {
+          this.#pendingMainTargetPromise = (result: number) => {
             r(result);
             existingCallback(result);
           };
@@ -133,4 +132,5 @@ export enum CPUThrottlingRates {
   NoThrottling = 1,
   MidTierMobile = 4,
   LowEndMobile = 6,
+  ExtraSlow = 20,
 }

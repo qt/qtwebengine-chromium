@@ -30,6 +30,10 @@ void WebTestFedCmManager::GetDialogType(
   std::string type_string;
   switch (auth_request->GetDialogType()) {
     case FederatedAuthRequestImpl::kNone:
+    // We do not expose these three types to browser automation currently.
+    case FederatedAuthRequestImpl::kLoginToIdpPopup:
+    case FederatedAuthRequestImpl::kContinueOnPopup:
+    case FederatedAuthRequestImpl::kErrorUrlPopup:
       std::move(callback).Run(std::nullopt);
       return;
     case FederatedAuthRequestImpl::kSelectAccount:
@@ -103,6 +107,10 @@ void WebTestFedCmManager::DismissFedCmDialog(
   }
   switch (auth_request->GetDialogType()) {
     case FederatedAuthRequestImpl::kNone:
+    // We do not expose these three types to browser automation currently.
+    case FederatedAuthRequestImpl::kLoginToIdpPopup:
+    case FederatedAuthRequestImpl::kContinueOnPopup:
+    case FederatedAuthRequestImpl::kErrorUrlPopup:
       std::move(callback).Run(false);
       return;
     case FederatedAuthRequestImpl::kSelectAccount:
@@ -131,14 +139,25 @@ void WebTestFedCmManager::ClickFedCmDialogButton(
   }
   switch (button) {
     case blink::test::mojom::DialogButton::kConfirmIdpLoginContinue:
-      if (auth_request->GetDialogType() !=
-          FederatedAuthRequestImpl::kConfirmIdpLogin) {
-        std::move(callback).Run(false);
-        return;
-      }
-      auth_request->AcceptConfirmIdpLoginDialogForDevtools();
-      std::move(callback).Run(true);
-      return;
+      switch (auth_request->GetDialogType()) {
+        case FederatedAuthRequestImpl::kConfirmIdpLogin:
+          auth_request->AcceptConfirmIdpLoginDialogForDevtools();
+          std::move(callback).Run(true);
+          return;
+        case FederatedAuthRequestImpl::kSelectAccount: {
+          const auto& data = auth_request->GetSortedIdpData();
+          if (data.size() != 1) {
+            std::move(callback).Run(false);
+            return;
+          }
+          std::move(callback).Run(
+              auth_request->UseAnotherAccountForDevtools(data[0]));
+          return;
+        }
+        default:
+          std::move(callback).Run(false);
+          return;
+      };
     case blink::test::mojom::DialogButton::kErrorGotIt:
       if (auth_request->GetDialogType() != FederatedAuthRequestImpl::kError) {
         std::move(callback).Run(false);

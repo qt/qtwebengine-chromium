@@ -167,6 +167,7 @@ Optimizer& Optimizer::RegisterLegalizationPasses(bool preserve_interface) {
           .RegisterPass(CreateDeadInsertElimPass())
           .RegisterPass(CreateReduceLoadSizePass())
           .RegisterPass(CreateAggressiveDCEPass(preserve_interface))
+          .RegisterPass(CreateRemoveUnusedInterfaceVariablesPass())
           .RegisterPass(CreateInterpolateFixupPass())
           .RegisterPass(CreateInvocationInterlockPlacementPass());
 }
@@ -450,16 +451,6 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag,
     RegisterPass(CreateWorkaround1209Pass());
   } else if (pass_name == "replace-invalid-opcode") {
     RegisterPass(CreateReplaceInvalidOpcodePass());
-  } else if (pass_name == "inst-bindless-check" ||
-             pass_name == "inst-desc-idx-check" ||
-             pass_name == "inst-buff-oob-check") {
-    // preserve legacy names
-    RegisterPass(CreateInstBindlessCheckPass(23));
-    RegisterPass(CreateSimplificationPass());
-    RegisterPass(CreateDeadBranchElimPass());
-    RegisterPass(CreateBlockMergePass());
-  } else if (pass_name == "inst-buff-addr-check") {
-    RegisterPass(CreateInstBuffAddrCheckPass(23));
   } else if (pass_name == "convert-relaxed-to-half") {
     RegisterPass(CreateConvertRelaxedToHalfPass());
   } else if (pass_name == "relax-float-ops") {
@@ -606,6 +597,25 @@ bool Optimizer::RegisterPassFromFlag(const std::string& flag,
       return false;
     }
     RegisterPass(CreateSwitchDescriptorSetPass(from_set, to_set));
+  } else if (pass_name == "modify-maximal-reconvergence") {
+    if (pass_args.size() == 0) {
+      Error(consumer(), nullptr, {},
+            "--modify-maximal-reconvergence requires an argument");
+      return false;
+    }
+    if (pass_args == "add") {
+      RegisterPass(CreateModifyMaximalReconvergencePass(true));
+    } else if (pass_args == "remove") {
+      RegisterPass(CreateModifyMaximalReconvergencePass(false));
+    } else {
+      Errorf(consumer(), nullptr, {},
+             "Invalid argument for --modify-maximal-reconvergence: %s (must be "
+             "'add' or 'remove')",
+             pass_args.c_str());
+      return false;
+    }
+  } else if (pass_name == "trim-capabilities") {
+    RegisterPass(CreateTrimCapabilitiesPass());
   } else {
     Errorf(consumer(), nullptr, {},
            "Unknown flag '--%s'. Use --help for a list of valid flags",
@@ -1003,20 +1013,10 @@ Optimizer::PassToken CreateUpgradeMemoryModelPass() {
       MakeUnique<opt::UpgradeMemoryModel>());
 }
 
-Optimizer::PassToken CreateInstBindlessCheckPass(uint32_t shader_id) {
-  return MakeUnique<Optimizer::PassToken::Impl>(
-      MakeUnique<opt::InstBindlessCheckPass>(shader_id));
-}
-
 Optimizer::PassToken CreateInstDebugPrintfPass(uint32_t desc_set,
                                                uint32_t shader_id) {
   return MakeUnique<Optimizer::PassToken::Impl>(
       MakeUnique<opt::InstDebugPrintfPass>(desc_set, shader_id));
-}
-
-Optimizer::PassToken CreateInstBuffAddrCheckPass(uint32_t shader_id) {
-  return MakeUnique<Optimizer::PassToken::Impl>(
-      MakeUnique<opt::InstBuffAddrCheckPass>(shader_id));
 }
 
 Optimizer::PassToken CreateConvertRelaxedToHalfPass() {
@@ -1140,6 +1140,11 @@ Optimizer::PassToken CreateSwitchDescriptorSetPass(uint32_t from, uint32_t to) {
 Optimizer::PassToken CreateInvocationInterlockPlacementPass() {
   return MakeUnique<Optimizer::PassToken::Impl>(
       MakeUnique<opt::InvocationInterlockPlacementPass>());
+}
+
+Optimizer::PassToken CreateModifyMaximalReconvergencePass(bool add) {
+  return MakeUnique<Optimizer::PassToken::Impl>(
+      MakeUnique<opt::ModifyMaximalReconvergence>(add));
 }
 }  // namespace spvtools
 

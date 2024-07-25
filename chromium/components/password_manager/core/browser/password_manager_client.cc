@@ -36,11 +36,16 @@ void PasswordManagerClient::ShowPasswordManagerErrorMessage(
 
 bool PasswordManagerClient::ShowKeyboardReplacingSurface(
     PasswordManagerDriver* driver,
-    const SubmissionReadinessParams& submission_readiness_params,
+    const PasswordFillingParams& password_filling_params,
     bool is_webauthn_form) {
   return false;
 }
 #endif
+
+bool PasswordManagerClient::CanUseBiometricAuthForFilling(
+    device_reauth::DeviceAuthenticator*) {
+  return false;
+}
 
 std::unique_ptr<device_reauth::DeviceAuthenticator>
 PasswordManagerClient::GetDeviceAuthenticator() {
@@ -52,13 +57,11 @@ void PasswordManagerClient::GeneratePassword(
 
 void PasswordManagerClient::UpdateCredentialCache(
     const url::Origin& origin,
-    const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-        best_matches,
+    base::span<const PasswordForm> best_matches,
     bool is_blocklisted) {}
 
 void PasswordManagerClient::PasswordWasAutofilled(
-    const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>&
-        best_matches,
+    base::span<const PasswordForm> best_matches,
     const url::Origin& origin,
     const std::vector<raw_ptr<const PasswordForm, VectorExperimental>>*
         federated_matches,
@@ -81,10 +84,6 @@ void PasswordManagerClient::TriggerReauthForPrimaryAccount(
 }
 
 void PasswordManagerClient::TriggerSignIn(signin_metrics::AccessPoint) {}
-
-SyncState PasswordManagerClient::GetPasswordSyncState() const {
-  return SyncState::kNotSyncing;
-}
 
 bool PasswordManagerClient::WasLastNavigationHTTPError() const {
   return false;

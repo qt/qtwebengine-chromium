@@ -16,6 +16,7 @@
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/browser/test_autofill_manager_waiter.h"
+#include "components/autofill/core/browser/test_form_filler.h"
 #include "components/autofill/core/browser/test_personal_data_manager.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -24,9 +25,11 @@
 
 namespace autofill {
 
-TestBrowserAutofillManager::TestBrowserAutofillManager(AutofillDriver* driver,
-                                                       AutofillClient* client)
-    : BrowserAutofillManager(driver, client, "en-US") {}
+TestBrowserAutofillManager::TestBrowserAutofillManager(AutofillDriver* driver)
+    : BrowserAutofillManager(driver, "en-US") {
+  test_api(*this).set_form_filler(
+      std::make_unique<TestFormFiller>(*this, log_manager(), "en-US"));
+}
 
 TestBrowserAutofillManager::~TestBrowserAutofillManager() = default;
 
@@ -49,11 +52,10 @@ void TestBrowserAutofillManager::OnFormsSeen(
 void TestBrowserAutofillManager::OnTextFieldDidChange(
     const FormData& form,
     const FormFieldData& field,
-    const gfx::RectF& bounding_box,
     const base::TimeTicks timestamp) {
   TestAutofillManagerWaiter waiter(*this,
                                    {AutofillManagerEvent::kTextFieldDidChange});
-  AutofillManager::OnTextFieldDidChange(form, field, bounding_box, timestamp);
+  AutofillManager::OnTextFieldDidChange(form, field, timestamp);
   ASSERT_TRUE(waiter.Wait());
 }
 
@@ -69,11 +71,11 @@ void TestBrowserAutofillManager::OnDidFillAutofillFormData(
 void TestBrowserAutofillManager::OnAskForValuesToFill(
     const FormData& form,
     const FormFieldData& field,
-    const gfx::RectF& bounding_box,
+    const gfx::Rect& caret_bounds,
     AutofillSuggestionTriggerSource trigger_source) {
   TestAutofillManagerWaiter waiter(*this,
                                    {AutofillManagerEvent::kAskForValuesToFill});
-  AutofillManager::OnAskForValuesToFill(form, field, bounding_box,
+  AutofillManager::OnAskForValuesToFill(form, field, caret_bounds,
                                         trigger_source);
   ASSERT_TRUE(waiter.Wait());
 }
@@ -81,10 +83,12 @@ void TestBrowserAutofillManager::OnAskForValuesToFill(
 void TestBrowserAutofillManager::OnJavaScriptChangedAutofilledValue(
     const FormData& form,
     const FormFieldData& field,
-    const std::u16string& old_value) {
+    const std::u16string& old_value,
+    bool formatting_only) {
   TestAutofillManagerWaiter waiter(
       *this, {AutofillManagerEvent::kJavaScriptChangedAutofilledValue});
-  AutofillManager::OnJavaScriptChangedAutofilledValue(form, field, old_value);
+  AutofillManager::OnJavaScriptChangedAutofilledValue(form, field, old_value,
+                                                      formatting_only);
   ASSERT_TRUE(waiter.Wait());
 }
 
@@ -130,7 +134,7 @@ void TestBrowserAutofillManager::UploadVotesAndLogQuality(
     for (size_t i = 0; i < expected_submitted_field_types_.size(); ++i) {
       SCOPED_TRACE(base::StringPrintf(
           "Field %d with value %s", static_cast<int>(i),
-          base::UTF16ToUTF8(submitted_form->field(i)->value).c_str()));
+          base::UTF16ToUTF8(submitted_form->field(i)->value()).c_str()));
       const FieldTypeSet& possible_types =
           submitted_form->field(i)->possible_types();
       EXPECT_EQ(expected_submitted_field_types_[i].size(),
@@ -158,13 +162,6 @@ void TestBrowserAutofillManager::StoreUploadVotesAndLogQualityCallback(
 const gfx::Image& TestBrowserAutofillManager::GetCardImage(
     const CreditCard& credit_card) {
   return card_image_;
-}
-
-void TestBrowserAutofillManager::ScheduleRefill(
-    const FormData& form,
-    const FormStructure& form_structure,
-    const AutofillTriggerDetails& trigger_details) {
-  test_api(*this).TriggerRefill(form, trigger_details);
 }
 
 bool TestBrowserAutofillManager::MaybeStartVoteUploadProcess(
@@ -206,7 +203,7 @@ void TestBrowserAutofillManager::AddSeenForm(
   auto form_structure = std::make_unique<FormStructure>(
       preserve_values_in_form_structure ? form : test::WithoutValues(form));
   test_api(*form_structure).SetFieldTypes(heuristic_types, server_types);
-  test_api(*form_structure).IdentifySections(/*ignore_autocomplete=*/false);
+  test_api(*form_structure).AssignSections();
   AddSeenFormStructure(std::move(form_structure));
   form_interactions_ukm_logger()->OnFormsParsed(client().GetUkmSourceId());
 }
@@ -228,11 +225,12 @@ const std::string TestBrowserAutofillManager::GetSubmittedFormSignature() {
 void TestBrowserAutofillManager::OnAskForValuesToFillTest(
     const FormData& form,
     const FormFieldData& field,
-    const gfx::RectF& bounding_box,
     AutofillSuggestionTriggerSource trigger_source) {
   TestAutofillManagerWaiter waiter(*this,
                                    {AutofillManagerEvent::kAskForValuesToFill});
-  BrowserAutofillManager::OnAskForValuesToFill(form, field, bounding_box,
+  gfx::PointF p = field.bounds().origin();
+  gfx::Rect caret_bounds(gfx::Point(p.x(), p.y()), gfx::Size(0, 10));
+  BrowserAutofillManager::OnAskForValuesToFill(form, field, caret_bounds,
                                                trigger_source);
   ASSERT_TRUE(waiter.Wait());
 }
@@ -253,7 +251,9 @@ void TestBrowserAutofillManager::SetAutofillPaymentMethodsEnabled(
   autofill_payment_methods_enabled_ = autofill_payment_methods_enabled;
   if (!autofill_payment_methods_enabled) {
     // Credit card data is refreshed when this pref is changed.
-    client.GetPersonalDataManager()->ClearCreditCards();
+    client.GetPersonalDataManager()
+        ->test_payments_data_manager()
+        .ClearCreditCards();
   }
 }
 

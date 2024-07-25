@@ -194,6 +194,45 @@ dbus::ObjectPath FlossDBusClient::GenerateLoggingPath(int adapter_index) {
       base::StringPrintf(kAdapterLoggingObjectFormat, adapter_index));
 }
 
+device::BluetoothDevice::ConnectErrorCode
+FlossDBusClient::BtifStatusToConnectErrorCode(
+    FlossDBusClient::BtifStatus status) {
+  switch (status) {
+    case BtifStatus::kSuccess:
+      NOTREACHED_NORETURN();
+    case BtifStatus::kFail:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_FAILED;
+    case BtifStatus::kNotReady:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_DEVICE_NOT_READY;
+    case BtifStatus::kAuthFailure:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_FAILED;
+    case BtifStatus::kAuthRejected:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_AUTH_REJECTED;
+    case BtifStatus::kDone:
+    case BtifStatus::kBusy:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_INPROGRESS;
+    case BtifStatus::kUnsupported:
+      return device::BluetoothDevice::ConnectErrorCode::
+          ERROR_UNSUPPORTED_DEVICE;
+    case BtifStatus::kNomem:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_NO_MEMORY;
+    case BtifStatus::kParmInvalid:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_INVALID_ARGS;
+    case BtifStatus::kUnhandled:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_UNKNOWN;
+    case BtifStatus::kRmtDevDown:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_DOES_NOT_EXIST;
+    case BtifStatus::kJniEnvironmentError:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_JNI_ENVIRONMENT;
+    case BtifStatus::kJniThreadAttachError:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_JNI_THREAD_ATTACH;
+    case BtifStatus::kWakelockError:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_WAKELOCK;
+    case BtifStatus::kTimeout:
+      return device::BluetoothDevice::ConnectErrorCode::ERROR_NON_AUTH_TIMEOUT;
+  }
+}
+
 // Default error handler for dbus clients is to just print the error right now.
 // TODO(abps) - Deprecate this once error handling is implemented in the upper
 //              layers.
@@ -290,7 +329,7 @@ bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
 // static
 template bool FlossDBusClient::ReadDBusParam<int32_t>(
     dbus::MessageReader* reader,
-    absl::optional<int32_t>* value);
+    std::optional<int32_t>* value);
 
 // static
 template <>
@@ -302,7 +341,7 @@ bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
 // static
 template bool FlossDBusClient::ReadDBusParam<std::string>(
     dbus::MessageReader* reader,
-    absl::optional<std::string>* value);
+    std::optional<std::string>* value);
 
 // static
 template <>
@@ -345,7 +384,7 @@ bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
 // static
 template bool FlossDBusClient::ReadDBusParam<device::BluetoothUUID>(
     dbus::MessageReader* reader,
-    absl::optional<device::BluetoothUUID>* uuid);
+    std::optional<device::BluetoothUUID>* uuid);
 
 // static
 template <>
@@ -371,7 +410,7 @@ bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
 // static
 template bool FlossDBusClient::ReadDBusParam<base::ScopedFD>(
     dbus::MessageReader* reader,
-    absl::optional<base::ScopedFD>* fd);
+    std::optional<base::ScopedFD>* fd);
 
 // static
 template <>
@@ -402,6 +441,31 @@ bool FlossDBusClient::ReadDBusParam(
   });
 
   return struct_reader.ReadDBusParam(reader, vpi);
+}
+
+// static
+template <>
+bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
+                                    FlossAdapterClient::BtAddressType* type) {
+  uint32_t val;
+  bool success;
+
+  success = reader->PopUint32(&val);
+  *type = static_cast<FlossAdapterClient::BtAddressType>(val);
+
+  return success;
+}
+
+template <>
+bool FlossDBusClient::ReadDBusParam(dbus::MessageReader* reader,
+                                    FlossAdapterClient::BtAdapterRole* type) {
+  uint32_t val;
+  bool success;
+
+  success = reader->PopUint32(&val);
+  *type = static_cast<FlossAdapterClient::BtAdapterRole>(val);
+
+  return success;
 }
 
 template <>
@@ -456,7 +520,7 @@ void FlossDBusClient::WriteDBusParam(dbus::MessageWriter* writer,
 
 template void FlossDBusClient::WriteDBusParam<uint32_t>(
     dbus::MessageWriter* writer,
-    const absl::optional<uint32_t>& data);
+    const std::optional<uint32_t>& data);
 
 template <>
 void FlossDBusClient::WriteDBusParam(dbus::MessageWriter* writer,
@@ -546,6 +610,11 @@ template void FlossDBusClient::DefaultResponseWithCallback(
 
 template void FlossDBusClient::DefaultResponseWithCallback(
     ResponseCallback<FlossAdapterClient::VendorProductInfo> callback,
+    dbus::Response* response,
+    dbus::ErrorResponse* error_response);
+
+template void FlossDBusClient::DefaultResponseWithCallback(
+    ResponseCallback<FlossAdapterClient::BtAddressType> callback,
     dbus::Response* response,
     dbus::ErrorResponse* error_response);
 

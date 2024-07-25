@@ -29,11 +29,11 @@
 
 #include "third_party/blink/renderer/core/css/media_query_exp.h"
 
-#include "third_party/blink/renderer/core/css/css_custom_property_declaration.h"
 #include "third_party/blink/renderer/core/css/css_math_expression_node.h"
 #include "third_party/blink/renderer/core/css/css_math_function_value.h"
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
+#include "third_party/blink/renderer/core/css/css_unparsed_declaration_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_impl.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
@@ -53,14 +53,17 @@ using media_feature_names::kMaxDevicePixelRatioMediaFeature;
 using media_feature_names::kMinDeviceAspectRatioMediaFeature;
 
 static inline bool FeatureWithValidIdent(const String& media_feature,
-                                         CSSValueID ident) {
+                                         CSSValueID ident,
+                                         const CSSParserContext& context) {
   if (media_feature == media_feature_names::kDisplayModeMediaFeature) {
     return ident == CSSValueID::kFullscreen ||
            ident == CSSValueID::kBorderless ||
            ident == CSSValueID::kStandalone ||
            ident == CSSValueID::kMinimalUi ||
            ident == CSSValueID::kWindowControlsOverlay ||
-           ident == CSSValueID::kBrowser || ident == CSSValueID::kTabbed;
+           ident == CSSValueID::kBrowser || ident == CSSValueID::kTabbed ||
+           (RuntimeEnabledFeatures::CSSDisplayModePictureInPictureEnabled() &&
+            ident == CSSValueID::kPictureInPicture);
   }
 
   if (RuntimeEnabledFeatures::DesktopPWAsAdditionalWindowingControlsEnabled() &&
@@ -148,30 +151,25 @@ static inline bool FeatureWithValidIdent(const String& media_feature,
     }
   }
 
-  if (RuntimeEnabledFeatures::DevicePostureEnabled()) {
+  if (RuntimeEnabledFeatures::DevicePostureEnabled(
+          context.GetExecutionContext())) {
     if (media_feature == media_feature_names::kDevicePostureMediaFeature) {
       return ident == CSSValueID::kContinuous || ident == CSSValueID::kFolded;
     }
   }
 
-  if (RuntimeEnabledFeatures::CSSOverflowMediaFeaturesEnabled()) {
-    if (media_feature == media_feature_names::kOverflowInlineMediaFeature) {
-      return ident == CSSValueID::kNone || ident == CSSValueID::kScroll;
-    }
+  if (media_feature == media_feature_names::kOverflowInlineMediaFeature) {
+    return ident == CSSValueID::kNone || ident == CSSValueID::kScroll;
   }
 
-  if (RuntimeEnabledFeatures::CSSOverflowMediaFeaturesEnabled()) {
-    if (media_feature == media_feature_names::kOverflowBlockMediaFeature) {
-      return ident == CSSValueID::kNone || ident == CSSValueID::kScroll ||
-             ident == CSSValueID::kPaged;
-    }
+  if (media_feature == media_feature_names::kOverflowBlockMediaFeature) {
+    return ident == CSSValueID::kNone || ident == CSSValueID::kScroll ||
+           ident == CSSValueID::kPaged;
   }
 
-  if (RuntimeEnabledFeatures::CSSUpdateMediaFeatureEnabled()) {
-    if (media_feature == media_feature_names::kUpdateMediaFeature) {
-      return ident == CSSValueID::kNone || ident == CSSValueID::kFast ||
-             ident == CSSValueID::kSlow;
-    }
+  if (media_feature == media_feature_names::kUpdateMediaFeature) {
+    return ident == CSSValueID::kNone || ident == CSSValueID::kFast ||
+           ident == CSSValueID::kSlow;
   }
 
   if (RuntimeEnabledFeatures::CSSStickyContainerQueriesEnabled()) {
@@ -255,7 +253,8 @@ static inline bool FeatureWithValidDensity(const String& media_feature,
          media_feature == media_feature_names::kMaxResolutionMediaFeature;
 }
 
-static inline bool FeatureExpectingInteger(const String& media_feature) {
+static inline bool FeatureExpectingInteger(const String& media_feature,
+                                           const CSSParserContext& context) {
   if (media_feature == media_feature_names::kColorMediaFeature ||
       media_feature == media_feature_names::kMaxColorMediaFeature ||
       media_feature == media_feature_names::kMinColorMediaFeature ||
@@ -268,7 +267,8 @@ static inline bool FeatureExpectingInteger(const String& media_feature) {
     return true;
   }
 
-  if (RuntimeEnabledFeatures::ViewportSegmentsEnabled()) {
+  if (RuntimeEnabledFeatures::ViewportSegmentsEnabled(
+          context.GetExecutionContext())) {
     if (media_feature ==
             media_feature_names::kHorizontalViewportSegmentsMediaFeature ||
         media_feature ==
@@ -281,11 +281,12 @@ static inline bool FeatureExpectingInteger(const String& media_feature) {
 }
 
 static inline bool FeatureWithInteger(const String& media_feature,
-                                      const CSSPrimitiveValue* value) {
+                                      const CSSPrimitiveValue* value,
+                                      const CSSParserContext& context) {
   if (!value->IsInteger()) {
     return false;
   }
-  return FeatureExpectingInteger(media_feature);
+  return FeatureExpectingInteger(media_feature, context);
 }
 
 static inline bool FeatureWithNumber(const String& media_feature,
@@ -447,7 +448,7 @@ CSSPrimitiveValue::UnitType MediaQueryExpValue::Unit() const {
   return numeric_.unit;
 }
 
-absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
+std::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
     const String& media_feature,
     CSSParserTokenRange& range,
     const CSSParserTokenOffsets& offsets,
@@ -468,7 +469,7 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
       }
       return MediaQueryExpValue(*value);
     }
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   DCHECK_EQ(media_feature, media_feature.LowerASCII())
@@ -477,7 +478,7 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
 
   CSSPrimitiveValue* value = css_parsing_utils::ConsumeInteger(
       range, context, -std::numeric_limits<double>::max() /* minimum_value */);
-  if (!value && !FeatureExpectingInteger(media_feature)) {
+  if (!value && !FeatureExpectingInteger(media_feature, context)) {
     value = css_parsing_utils::ConsumeNumber(
         range, context, CSSPrimitiveValue::ValueRange::kAll);
   }
@@ -492,19 +493,19 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
   if (!value) {
     if (CSSIdentifierValue* ident = css_parsing_utils::ConsumeIdent(range)) {
       CSSValueID ident_id = ident->GetValueID();
-      if (!FeatureWithValidIdent(media_feature, ident_id)) {
-        return absl::nullopt;
+      if (!FeatureWithValidIdent(media_feature, ident_id, context)) {
+        return std::nullopt;
       }
       return MediaQueryExpValue(ident_id);
     }
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   // Now we have |value| as a number, length or resolution
   // Create value for media query expression that must have 1 or more values.
   if (FeatureWithAspectRatio(media_feature)) {
     if (value->GetDoubleValue() < 0) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     if (!css_parsing_utils::ConsumeSlashIncludingWhitespace(range)) {
       return MediaQueryExpValue(value->GetDoubleValue(), 1);
@@ -512,7 +513,7 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
     CSSPrimitiveValue* denominator = css_parsing_utils::ConsumeNumber(
         range, context, CSSPrimitiveValue::ValueRange::kNonNegative);
     if (!denominator) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     if (value->GetDoubleValue() == 0 && denominator->GetDoubleValue() == 0) {
       return MediaQueryExpValue(1, 0);
@@ -533,7 +534,7 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
                               numeric_literal->GetType());
   }
 
-  if (FeatureWithInteger(media_feature, value) ||
+  if (FeatureWithInteger(media_feature, value, context) ||
       FeatureWithNumber(media_feature, value) ||
       FeatureWithZeroOrOne(media_feature, value)) {
     return MediaQueryExpValue(value->GetDoubleValue(),
@@ -556,7 +557,7 @@ absl::optional<MediaQueryExpValue> MediaQueryExpValue::Consume(
     return MediaQueryExpValue(*value);
   }
 
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 namespace {

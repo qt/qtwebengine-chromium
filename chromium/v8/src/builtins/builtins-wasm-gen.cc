@@ -68,16 +68,25 @@ TNode<NativeContext> WasmBuiltinsAssembler::LoadContextFromInstanceData(
                           kHeapObjectTag)));
 }
 
+TNode<WasmTrustedInstanceData>
+WasmBuiltinsAssembler::LoadSharedPartFromInstanceData(
+    TNode<WasmTrustedInstanceData> trusted_data) {
+  return CAST(LoadProtectedPointerFromObject(
+      trusted_data,
+      IntPtrConstant(WasmTrustedInstanceData::kProtectedSharedPartOffset -
+                     kHeapObjectTag)));
+}
+
 TNode<FixedArray> WasmBuiltinsAssembler::LoadTablesFromInstanceData(
     TNode<WasmTrustedInstanceData> trusted_data) {
   return LoadObjectField<FixedArray>(trusted_data,
                                      WasmTrustedInstanceData::kTablesOffset);
 }
 
-TNode<FixedArray> WasmBuiltinsAssembler::LoadInternalFunctionsFromInstanceData(
+TNode<FixedArray> WasmBuiltinsAssembler::LoadFuncRefsFromInstanceData(
     TNode<WasmTrustedInstanceData> trusted_data) {
-  return LoadObjectField<FixedArray>(
-      trusted_data, WasmTrustedInstanceData::kWasmInternalFunctionsOffset);
+  return LoadObjectField<FixedArray>(trusted_data,
+                                     WasmTrustedInstanceData::kFuncRefsOffset);
 }
 
 TNode<FixedArray> WasmBuiltinsAssembler::LoadManagedObjectMapsFromInstanceData(

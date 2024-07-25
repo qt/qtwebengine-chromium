@@ -188,6 +188,10 @@ class IdlSchemaTest(unittest.TestCase):
                        'items': {'$ref': 'idl_other_namespace.SomeType'}},
                       getReturns(schema, 'function30'))
 
+  def testIgnoresAdditionalPropertiesOnType(self):
+    self.assertTrue(getType(self.idl_basics, 'IgnoreAdditionalPropertiesType')
+                        ['ignoreAdditionalProperties'])
+
   def testChromeOSPlatformsNamespace(self):
     schema = idl_schema.Load('test/idl_namespace_chromeos.idl')[0]
     self.assertEqual('idl_namespace_chromeos', schema['namespace'])
@@ -447,32 +451,37 @@ class IdlSchemaTest(unittest.TestCase):
   def testFunctionWithoutPromiseSupport(self):
     schema = idl_schema.Load('test/idl_function_types.idl')[0]
 
+    expected_params = []
+    expected_returns_async = {
+        'name': 'callback',
+        'parameters': [{'name': 'x', 'type': 'integer'}],
+        'does_not_support_promises': 'Test'
+    }
     params = getParams(schema, 'non_promise_supporting')
-    expected = [{
-            'name': 'callback',
-            'type': 'function',
-            'parameters': [{'name': 'x', 'type': 'integer'}]
-    }]
-    self.assertEqual(expected, params)
-    self.assertFalse(getReturnsAsync(schema, 'non_promise_supporting'))
+    returns_async = getReturnsAsync(schema, 'non_promise_supporting')
+
+    self.assertEqual(expected_params, params)
+    self.assertEqual(expected_returns_async, returns_async)
 
   def testFunctionWithoutPromiseSupportAndParams(self):
     schema = idl_schema.Load('test/idl_function_types.idl')[0]
 
-    params = getParams(schema, 'non_promise_supporting_with_params')
-    expected = [
+    expected_params = [
         {'name': 'z', 'type': 'integer'},
-        {'name': 'y', 'choices': [{'type': 'integer'}, {'type': 'string'}]},
-        {
-            'name': 'callback',
-            'type': 'function',
-            'parameters': [{'name': 'x', 'type': 'integer'}],
-        }
+        {'name': 'y', 'choices': [{'type': 'integer'}, {'type': 'string'}]}
     ]
-    self.assertEqual(expected, params)
-    self.assertFalse(
-        getReturnsAsync(schema, 'non_promise_supporting_with_params')
+    expected_returns_async = {
+        'name': 'callback',
+        'parameters': [{'name': 'x', 'type': 'integer'}],
+        'does_not_support_promises': 'Test'
+    }
+    params = getParams(schema, 'non_promise_supporting_with_params')
+    returns_async = getReturnsAsync(
+        schema, 'non_promise_supporting_with_params'
     )
+
+    self.assertEqual(expected_params, params)
+    self.assertEqual(expected_returns_async, returns_async)
 
   def testProperties(self):
     schema = idl_schema.Load('test/idl_properties.idl')[0]

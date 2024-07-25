@@ -79,6 +79,8 @@ static void resolveAlias(
   assert( iCol>=0 && iCol<pEList->nExpr );
   pOrig = pEList->a[iCol].pExpr;
   assert( pOrig!=0 );
+  assert( !ExprHasProperty(pExpr, EP_Reduced|EP_TokenOnly) );
+  if( pExpr->pAggInfo ) return;
   db = pParse->db;
   pDup = sqlite3ExprDup(db, pOrig, 0);
   if( db->mallocFailed ){
@@ -182,6 +184,7 @@ Bitmask sqlite3ExprColUsed(Expr *pExpr){
   assert( ExprUseYTab(pExpr) );
   pExTab = pExpr->y.pTab;
   assert( pExTab!=0 );
+  assert( n < pExTab->nCol );
   if( (pExTab->tabFlags & TF_HasGenerated)!=0
    && (pExTab->aCol[n].colFlags & COLFLAG_GENERATED)!=0
   ){
@@ -758,6 +761,7 @@ static int lookupName(
     sqlite3RecordErrorOffsetOfExpr(pParse->db, pExpr);
     pParse->checkSchema = 1;
     pTopNC->nNcErr++;
+    eNewExprOp = TK_NULL;
   }
   assert( pFJMatch==0 );
 
@@ -784,7 +788,7 @@ static int lookupName(
   ** If a generated column is referenced, set bits for every column
   ** of the table.
   */
-  if( pExpr->iColumn>=0 && pMatch!=0 ){
+  if( pExpr->iColumn>=0 && cnt==1 && pMatch!=0 ){
     pMatch->colUsed |= sqlite3ExprColUsed(pExpr);
   }
 
@@ -962,6 +966,19 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr){
     ** resolved.  This prevents "column" from being counted as having been
     ** referenced, which might prevent a SELECT from being erroneously
     ** marked as correlated.
+    **
+    ** 2024-03-28: Beware of aggregates.  A bare column of aggregated table
+    ** can still evaluate to NULL even though it is marked as NOT NULL.
+    ** Example:
+    **
+    **       CREATE TABLE t1(a INT NOT NULL);
+    **       SELECT a, a IS NULL, a IS NOT NULL, count(*) FROM t1;
+    **
+    ** The "a IS NULL" and "a IS NOT NULL" expressions cannot be optimized
+    ** here because at the time this case is hit, we do not yet know whether
+    ** or not t1 is being aggregated.  We have to assume the worst and omit
+    ** the optimization.  The only time it is safe to apply this optimization
+    ** is within the WHERE clause.
     */
     case TK_NOTNULL:
     case TK_ISNULL: {
@@ -972,19 +989,36 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr){
         anRef[i] = p->nRef;
       }
       sqlite3WalkExpr(pWalker, pExpr->pLeft);
-      if( 0==sqlite3ExprCanBeNull(pExpr->pLeft) && !IN_RENAME_OBJECT ){
-        testcase( ExprHasProperty(pExpr, EP_OuterON) );
-        assert( !ExprHasProperty(pExpr, EP_IntValue) );
-        pExpr->u.iValue = (pExpr->op==TK_NOTNULL);
-        pExpr->flags |= EP_IntValue;
-        pExpr->op = TK_INTEGER;
-
-        for(i=0, p=pNC; p && i<ArraySize(anRef); p=p->pNext, i++){
-          p->nRef = anRef[i];
-        }
-        sqlite3ExprDelete(pParse->db, pExpr->pLeft);
-        pExpr->pLeft = 0;
+      if( IN_RENAME_OBJECT ) return WRC_Prune;
+      if( sqlite3ExprCanBeNull(pExpr->pLeft) ){
+        /* The expression can be NULL.  So the optimization does not apply */
+        return WRC_Prune;
       }
+
+      for(i=0, p=pNC; p; p=p->pNext, i++){
+        if( (p->ncFlags & NC_Where)==0 ){
+          return WRC_Prune;  /* Not in a WHERE clause.  Unsafe to optimize. */
+        }
+      }
+      testcase( ExprHasProperty(pExpr, EP_OuterON) );
+      assert( !ExprHasProperty(pExpr, EP_IntValue) );
+#if TREETRACE_ENABLED
+      if( sqlite3TreeTrace & 0x80000 ){
+        sqlite3DebugPrintf(
+           "NOT NULL strength reduction converts the following to %d:\n",
+           pExpr->op==TK_NOTNULL
+        );
+        sqlite3ShowExpr(pExpr);
+      }
+#endif /* TREETRACE_ENABLED */
+      pExpr->u.iValue = (pExpr->op==TK_NOTNULL);
+      pExpr->flags |= EP_IntValue;
+      pExpr->op = TK_INTEGER;
+      for(i=0, p=pNC; p && i<ArraySize(anRef); p=p->pNext, i++){
+        p->nRef = anRef[i];
+      }
+      sqlite3ExprDelete(pParse->db, pExpr->pLeft);
+      pExpr->pLeft = 0;
       return WRC_Prune;
     }
 
@@ -1249,11 +1283,12 @@ static int resolveExprStep(Walker *pWalker, Expr *pExpr){
           while( pNC2
               && sqlite3ReferencesSrcList(pParse, pExpr, pNC2->pSrcList)==0
           ){
-            pExpr->op2++;
+            pExpr->op2 += (1 + pNC2->nNestedSelect);
             pNC2 = pNC2->pNext;
           }
           assert( pDef!=0 || IN_RENAME_OBJECT );
           if( pNC2 && pDef ){
+            pExpr->op2 += pNC2->nNestedSelect;
             assert( SQLITE_FUNC_MINMAX==NC_MinMaxAgg );
             assert( SQLITE_FUNC_ANYORDER==NC_OrderAgg );
             testcase( (pDef->funcFlags & SQLITE_FUNC_MINMAX)!=0 );
@@ -1812,6 +1847,7 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
  
     /* Recursively resolve names in all subqueries in the FROM clause
     */
+    if( pOuterNC ) pOuterNC->nNestedSelect++;
     for(i=0; i<p->pSrc->nSrc; i++){
       SrcItem *pItem = &p->pSrc->a[i];
       if( pItem->pSelect && (pItem->pSelect->selFlags & SF_Resolved)==0 ){
@@ -1835,6 +1871,9 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
           pItem->fg.isCorrelated = (pOuterNC->nRef>nRef);
         }
       }
+    }
+    if( pOuterNC && ALWAYS(pOuterNC->nNestedSelect>0) ){
+      pOuterNC->nNestedSelect--;
     }
  
     /* Set up the local name-context to pass to sqlite3ResolveExprNames() to
@@ -1879,7 +1918,9 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
       }
       if( sqlite3ResolveExprNames(&sNC, p->pHaving) ) return WRC_Abort;
     }
+    sNC.ncFlags |= NC_Where;
     if( sqlite3ResolveExprNames(&sNC, p->pWhere) ) return WRC_Abort;
+    sNC.ncFlags &= ~NC_Where;
 
     /* Resolve names in table-valued-function arguments */
     for(i=0; i<p->pSrc->nSrc; i++){

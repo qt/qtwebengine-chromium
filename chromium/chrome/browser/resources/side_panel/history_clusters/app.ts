@@ -10,7 +10,7 @@ import 'chrome://resources/cr_elements/cr_toolbar/cr_toolbar_search_field.js';
 
 import {ColorChangeUpdater} from 'chrome://resources/cr_components/color_change_listener/colors_css_updater.js';
 import {BrowserProxyImpl} from 'chrome://resources/cr_components/history_clusters/browser_proxy.js';
-import {CrToolbarSearchFieldElement} from 'chrome://resources/cr_elements/cr_toolbar/cr_toolbar_search_field.js';
+import type {CrToolbarSearchFieldElement} from 'chrome://resources/cr_elements/cr_toolbar/cr_toolbar_search_field.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getTemplate} from './app.html.js';
@@ -18,6 +18,7 @@ import {getTemplate} from './app.html.js';
 export interface HistoryClustersAppElement {
   $: {
     searchbox: CrToolbarSearchFieldElement,
+    historyClusters: HTMLElement,
   };
 }
 
@@ -39,6 +40,8 @@ export class HistoryClustersAppElement extends PolymerElement {
         type: String,
         value: '',
       },
+
+      scrollContainer: HTMLElement,
     };
   }
 
@@ -52,6 +55,7 @@ export class HistoryClustersAppElement extends PolymerElement {
   //============================================================================
 
   query: string;
+  private scrollTarget_: HTMLElement;
 
   //============================================================================
   // Event Handlers
@@ -68,6 +72,7 @@ export class HistoryClustersAppElement extends PolymerElement {
 
   override connectedCallback() {
     super.connectedCallback();
+    this.scrollTarget_ = this.$.historyClusters;
 
     // Populate the initial query from the URL parameter. Other methods are
     // mostly racy.

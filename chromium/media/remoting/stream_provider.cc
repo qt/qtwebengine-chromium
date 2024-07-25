@@ -180,7 +180,7 @@ void StreamProvider::MediaStream::OnReceivedRpc(
       OnReadUntilCallback(std::move(message));
       break;
     default:
-      VLOG(3) << __func__ << "Unknow RPC message.";
+      VLOG(3) << __func__ << "Unknown RPC message.";
   }
 }
 
@@ -498,9 +498,9 @@ int64_t StreamProvider::GetMemoryUsage() const {
   return 0;
 }
 
-absl::optional<container_names::MediaContainerName>
+std::optional<container_names::MediaContainerName>
 StreamProvider::GetContainerForMetrics() const {
-  return absl::optional<container_names::MediaContainerName>();
+  return std::optional<container_names::MediaContainerName>();
 }
 
 void StreamProvider::OnEnabledAudioTracksChanged(
@@ -639,13 +639,14 @@ void StreamProvider::CompleteInitialize() {
   std::move(init_done_callback_).Run(PIPELINE_OK);
 }
 
-std::vector<raw_ptr<DemuxerStream, VectorExperimental>>
-StreamProvider::GetAllStreams() {
-  std::vector<raw_ptr<DemuxerStream, VectorExperimental>> streams;
-  if (audio_stream_)
+std::vector<DemuxerStream*> StreamProvider::GetAllStreams() {
+  std::vector<DemuxerStream*> streams;
+  if (audio_stream_) {
     streams.push_back(audio_stream_.get());
-  if (video_stream_)
+  }
+  if (video_stream_) {
     streams.push_back(video_stream_.get());
+  }
   return streams;
 }
 

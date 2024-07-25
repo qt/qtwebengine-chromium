@@ -6,6 +6,7 @@
 #define SERVICES_NETWORK_CORS_CORS_URL_LOADER_FACTORY_H_
 
 #include <memory>
+#include <optional>
 #include <set>
 
 #include "base/containers/flat_set.h"
@@ -15,7 +16,6 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
-#include "services/network/masked_domain_list/network_service_resource_block_list.h"
 #include "services/network/network_context.h"
 #include "services/network/public/cpp/cors/origin_access_list.h"
 #include "services/network/public/cpp/cross_origin_embedder_policy.h"
@@ -24,7 +24,6 @@
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/shared_dictionary_access_observer.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace network {
 
@@ -55,16 +54,13 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
       const net::HttpRequestHeaders& headers);
 
   // `origin_access_list` should always outlive this factory instance.
-  // `resource_block_list` should always outlive this factory instance because
-  // it is owned by the Network Service.
   // Used by network::NetworkContext.
   CorsURLLoaderFactory(
       NetworkContext* context,
       mojom::URLLoaderFactoryParamsPtr params,
       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
       mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
-      const OriginAccessList* origin_access_list,
-      NetworkServiceResourceBlockList* resource_block_list);
+      const OriginAccessList* origin_access_list);
 
   CorsURLLoaderFactory(const CorsURLLoaderFactory&) = delete;
   CorsURLLoaderFactory& operator=(const CorsURLLoaderFactory&) = delete;
@@ -97,6 +93,27 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   mojom::SharedDictionaryAccessObserver* GetSharedDictionaryAccessObserver()
       const;
 
+  // Returns the network that URLLoaders, created out of this factory, will
+  // target. If == net::handles::kInvalidNetworkHandle, then no network is being
+  // targeted and the system default network will be used (see
+  // network.mojom.NetworkContextParams::bound_network for more info).
+  // Note: this is not supported for factories that received a
+  // `factory_override_` (via
+  // network.mojo.URLLoaderFactoryParams::factory_override). In this case, the
+  // factory will use the remote specified within that construct, instead of
+  // `network_loader_factory_`. Supporting this would mean exposing this API via
+  // network.mojom.URLLoaderFactory, instead of CorsURLLoaderFactory, which is a
+  // lot more work for very little benefit (network::URLLoaderFactory's tests
+  // guarantee that the overriding factory behaves correctly).
+  net::handles::NetworkHandle GetBoundNetworkForTesting() const;
+
+  // Cancels all requests matching `nonce` associated with this factory, unless
+  // exempted by a url in `exemptions`. Used to cancel in-progress requests
+  // when network revocation is triggered.
+  void CancelRequestsIfNonceMatchesAndUrlNotExempted(
+      const base::UnguessableToken& nonce,
+      const std::set<GURL>& exemptions);
+
  private:
   class FactoryOverride;
 
@@ -113,13 +130,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   void DeleteIfNeeded();
 
   bool IsValidRequest(const ResourceRequest& request, uint32_t options);
-
-  // If enabled, checks request destination and IsolationInfo against the
-  // NetworkServiceResourceBlockList.
-  // TODO(crbug.com/1478868): This is an interim method only for AFP block list
-  // experiment. This method should not be used for other use cases. This will
-  // be removed when AFP block list logic is migrated to subresource filter.
-  bool ShouldBlockRequestForAfpExperiment(const ResourceRequest& request);
 
   bool GetAllowAnyCorsExemptHeaderForBrowser() const;
 
@@ -158,7 +168,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   // Retained from URLLoaderFactoryParams:
   const bool disable_web_security_;
   const int32_t process_id_ = mojom::kInvalidProcessId;
-  const absl::optional<url::Origin> request_initiator_origin_lock_;
+  const std::optional<url::Origin> request_initiator_origin_lock_;
   const bool ignore_isolated_world_origin_;
   const mojom::TrustTokenOperationPolicyVerdict trust_token_issuance_policy_;
   const mojom::TrustTokenOperationPolicyVerdict trust_token_redemption_policy_;
@@ -172,6 +182,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
       url_loader_network_service_observer_;
   mojo::Remote<mojom::SharedDictionaryAccessObserver>
       shared_dictionary_observer_;
+  const bool require_cross_site_request_for_cookies_;
 
   // Relative order of `network_loader_factory_` and `loaders_` matters -
   // URLLoaderFactory needs to live longer than URLLoaders created using the
@@ -188,8 +199,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   // Accessed by instances in `loaders_` too. Since the factory outlives them,
   // it's safe.
   const raw_ptr<const OriginAccessList> origin_access_list_;
-
-  const raw_ptr<NetworkServiceResourceBlockList> resource_block_list_;
 
   scoped_refptr<SharedDictionaryStorage> shared_dictionary_storage_;
 

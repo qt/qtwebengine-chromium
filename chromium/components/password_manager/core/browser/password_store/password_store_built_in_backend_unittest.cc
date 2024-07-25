@@ -14,22 +14,26 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/location.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "components/affiliations/core/browser/fake_affiliation_service.h"
 #include "components/os_crypt/sync/os_crypt_mocker.h"
 #include "components/password_manager/core/browser/affiliation/affiliated_match_helper.h"
-#include "components/password_manager/core/browser/affiliation/fake_affiliation_service.h"
 #include "components/password_manager/core/browser/affiliation/mock_affiliated_match_helper.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_manager_buildflags.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/password_store/login_database.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend.h"
 #include "components/password_manager/core/browser/password_store/password_store_change.h"
 #include "components/password_manager/core/browser/password_store/password_store_consumer.h"
+#include "components/prefs/pref_registry_simple.h"
+#include "components/prefs/testing_pref_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -134,7 +138,8 @@ class PasswordStoreBuiltInBackendTest : public testing::Test {
     }
 
     store_ = std::make_unique<PasswordStoreBuiltInBackend>(
-        std::move(database), syncer::WipeModelUponSyncDisabledBehavior::kNever);
+        std::move(database), syncer::WipeModelUponSyncDisabledBehavior::kNever,
+        &pref_service_);
     PasswordStoreBackend* backend = store_.get();
     backend->InitBackend(affiliated_match_helper,
                          /*remote_form_changes_received=*/base::DoNothing(),
@@ -147,6 +152,10 @@ class PasswordStoreBuiltInBackendTest : public testing::Test {
   void SetUp() override {
     OSCryptMocker::SetUp();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+#if !BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
+    pref_service_.registry()->RegisterBooleanPref(
+        password_manager::prefs::kEmptyProfileStoreLoginDatabase, false);
+#endif
   }
 
   void TearDown() override {
@@ -169,6 +178,8 @@ class PasswordStoreBuiltInBackendTest : public testing::Test {
     task_environment_.AdvanceClock(millis);
   }
 
+  TestingPrefServiceSimple* pref_service() { return &pref_service_; }
+
  private:
   void SetupTempDir();
 
@@ -184,6 +195,7 @@ class PasswordStoreBuiltInBackendTest : public testing::Test {
 
   base::ScopedTempDir temp_dir_;
   std::unique_ptr<PasswordStoreBuiltInBackend> store_;
+  TestingPrefServiceSimple pref_service_;
 };
 
 TEST_F(PasswordStoreBuiltInBackendTest, NonASCIIData) {
@@ -261,7 +273,7 @@ TEST_F(PasswordStoreBuiltInBackendTest, TestRemoveLoginAsync) {
   EXPECT_CALL(
       mock_reply,
       Run(VariantWith<PasswordChanges>(Optional(ElementsAre(remove_change)))));
-  backend->RemoveLoginAsync(form, mock_reply.Get());
+  backend->RemoveLoginAsync(FROM_HERE, form, mock_reply.Get());
   RunUntilIdle();
 }
 
@@ -503,7 +515,7 @@ TEST_F(PasswordStoreBuiltInBackendTest, RemoveLoginAsyncMetrics) {
   PasswordStoreChange remove_change =
       PasswordStoreChange(PasswordStoreChange::REMOVE, form);
 
-  backend->RemoveLoginAsync(form, base::DoNothing());
+  backend->RemoveLoginAsync(FROM_HERE, form, base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -529,7 +541,7 @@ TEST_F(PasswordStoreBuiltInBackendTest, RemoveLoginAsyncFailsMetrics) {
   PasswordStoreChange remove_change =
       PasswordStoreChange(PasswordStoreChange::REMOVE, form);
 
-  bad_backend->RemoveLoginAsync(form, base::DoNothing());
+  bad_backend->RemoveLoginAsync(FROM_HERE, form, base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -556,7 +568,8 @@ TEST_F(PasswordStoreBuiltInBackendTest,
   backend->AddLoginAsync(form, base::DoNothing());
   RunUntilIdle();
 
-  backend->RemoveLoginsCreatedBetweenAsync(kStart, kEnd, base::DoNothing());
+  backend->RemoveLoginsCreatedBetweenAsync(FROM_HERE, kStart, kEnd,
+                                           base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -585,7 +598,8 @@ TEST_F(PasswordStoreBuiltInBackendTest,
   backend->AddLoginAsync(form, base::DoNothing());
   RunUntilIdle();
 
-  backend->RemoveLoginsCreatedBetweenAsync(kStart, kEnd, base::DoNothing());
+  backend->RemoveLoginsCreatedBetweenAsync(FROM_HERE, kStart, kEnd,
+                                           base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -611,7 +625,8 @@ TEST_F(PasswordStoreBuiltInBackendTest,
   PasswordStoreBackend* bad_backend =
       Initialize(std::make_unique<BadLoginDatabase>());
 
-  bad_backend->RemoveLoginsCreatedBetweenAsync(kStart, kEnd, base::DoNothing());
+  bad_backend->RemoveLoginsCreatedBetweenAsync(FROM_HERE, kStart, kEnd,
+                                               base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -640,9 +655,9 @@ TEST_F(PasswordStoreBuiltInBackendTest, RemoveLoginsByURLAndTimeAsyncMetrics) {
   backend->AddLoginAsync(form, base::DoNothing());
   RunUntilIdle();
 
-  backend->RemoveLoginsByURLAndTimeAsync(base::BindRepeating(&AnyUrl), kStart,
-                                         kEnd, base::DoNothing(),
-                                         base::DoNothing());
+  backend->RemoveLoginsByURLAndTimeAsync(
+      FROM_HERE, base::BindRepeating(&AnyUrl), kStart, kEnd, base::DoNothing(),
+      base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -671,9 +686,9 @@ TEST_F(PasswordStoreBuiltInBackendTest,
   backend->AddLoginAsync(form, base::DoNothing());
   RunUntilIdle();
 
-  backend->RemoveLoginsByURLAndTimeAsync(base::BindRepeating(&AnyUrl), kStart,
-                                         kEnd, base::DoNothing(),
-                                         base::DoNothing());
+  backend->RemoveLoginsByURLAndTimeAsync(
+      FROM_HERE, base::BindRepeating(&AnyUrl), kStart, kEnd, base::DoNothing(),
+      base::DoNothing());
 
   AdvanceClock(kLatencyDelta);
   RunUntilIdle();
@@ -749,7 +764,7 @@ TEST_F(PasswordStoreBuiltInBackendTest,
 }
 
 TEST_F(PasswordStoreBuiltInBackendTest, GetLoginsWithAffiliations) {
-  FakeAffiliationService fake_affiliation_service;
+  affiliations::FakeAffiliationService fake_affiliation_service;
   MockAffiliatedMatchHelper mock_affiliated_match_helper(
       &fake_affiliation_service);
   PasswordStoreBackend* backend =
@@ -795,7 +810,7 @@ TEST_F(PasswordStoreBuiltInBackendTest, GetLoginsWithAffiliations) {
 
 TEST_F(PasswordStoreBuiltInBackendTest,
        GetAllLoginsWithAffiliationAndBrandingInformation) {
-  FakeAffiliationService fake_affiliation_service;
+  affiliations::FakeAffiliationService fake_affiliation_service;
   MockAffiliatedMatchHelper mock_affiliated_match_helper(
       &fake_affiliation_service);
   PasswordStoreBackend* backend =
@@ -841,6 +856,43 @@ TEST_F(PasswordStoreBuiltInBackendTest,
 
   backend->GetAllLoginsWithAffiliationAndBrandingAsync(mock_reply.Get());
   RunUntilIdle();
+}
+
+#if !BUILDFLAG(USE_LOGIN_DATABASE_AS_BACKEND)
+TEST_F(PasswordStoreBuiltInBackendTest, NotAbleToSavePasswordsEmptyDB) {
+  base::test::ScopedFeatureList features(
+      password_manager::features::kUnifiedPasswordManagerSyncOnlyInGMSCore);
+  pref_service()->SetBoolean(
+      password_manager::prefs::kEmptyProfileStoreLoginDatabase, true);
+  PasswordStoreBackend* backend = Initialize();
+  EXPECT_FALSE(backend->IsAbleToSavePasswords());
+}
+
+TEST_F(PasswordStoreBuiltInBackendTest, IsAbleToSavePasswords) {
+  base::test::ScopedFeatureList features(
+      password_manager::features::kUnifiedPasswordManagerSyncOnlyInGMSCore);
+  pref_service()->SetBoolean(
+      password_manager::prefs::kEmptyProfileStoreLoginDatabase, false);
+  PasswordStoreBackend* backend = Initialize();
+  EXPECT_TRUE(backend->IsAbleToSavePasswords());
+}
+
+TEST_F(PasswordStoreBuiltInBackendTest, AbleToSavePasswordsFeatureDisabled) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(
+      password_manager::features::kUnifiedPasswordManagerSyncOnlyInGMSCore);
+  pref_service()->SetBoolean(
+      password_manager::prefs::kEmptyProfileStoreLoginDatabase, false);
+  PasswordStoreBackend* backend = Initialize();
+  EXPECT_TRUE(backend->IsAbleToSavePasswords());
+}
+#endif
+
+TEST_F(PasswordStoreBuiltInBackendTest, NotAbleSavePasswordsWhenDatabaseIsBad) {
+  PasswordStoreBackend* bad_backend =
+      Initialize(std::make_unique<BadLoginDatabase>());
+
+  EXPECT_FALSE(bad_backend->IsAbleToSavePasswords());
 }
 
 }  // namespace password_manager

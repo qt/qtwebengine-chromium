@@ -179,15 +179,6 @@ using Window = XID;
 // GL_CHROMIUM_sync_query
 #define GL_COMMANDS_COMPLETED_CHROMIUM                   0x84F7
 
-// GL_CHROMIUM_ycrcb_420_image
-#define GL_RGB_YCRCB_420_CHROMIUM                        0x78FA
-
-// GL_CHROMIUM_ycbcr_420v_image
-#define GL_RGB_YCBCR_420V_CHROMIUM 0x78FC
-
-// GL_CHROMIUM_ycbcr_p010_image
-#define GL_RGB_YCBCR_P010_CHROMIUM 0x78FD
-
 // GL_CHROMIUM_subscribe_uniforms
 #define GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM             0x924B
 #define GL_MOUSE_POSITION_CHROMIUM                       0x924C
@@ -489,6 +480,9 @@ using Window = XID;
 #define GL_FRAMEBUFFER_INCOMPLETE_VIEW_TARGETS_OVR 0x9633
 
 #define GL_QUERY_RESULT_AVAILABLE_NO_FLUSH_CHROMIUM_EXT 0x8868
+
+// EGL_ANGLE_global_fence_sync
+#define EGL_SYNC_GLOBAL_FENCE_ANGLE 0x34DE
 
 // Forward declare EGL types.
 typedef uint64_t EGLuint64CHROMIUM;

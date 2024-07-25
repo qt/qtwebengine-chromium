@@ -89,7 +89,7 @@ class RedirectURLLoader : public network::mojom::URLLoader {
         net::RedirectInfo::ComputeRedirectInfo(
             request_.method, request_.url, request_.site_for_cookies,
             first_party_url_policy, request_.referrer_policy,
-            request_.referrer.spec(), response_code, *url, absl::nullopt,
+            request_.referrer.spec(), response_code, *url, std::nullopt,
             /*insecure_scheme_was_upgraded=*/false,
             /*copy_fragment=*/false),
         std::move(response_head));
@@ -110,7 +110,7 @@ class RedirectURLLoader : public network::mojom::URLLoader {
       const std::vector<std::string>& removed_headers,
       const net::HttpRequestHeaders& modified_headers,
       const net::HttpRequestHeaders& modified_cors_exempt_headers,
-      const absl::optional<GURL>& new_url) override {
+      const std::optional<GURL>& new_url) override {
     NOTREACHED();
   }
   void SetPriority(net::RequestPriority priority,
@@ -226,7 +226,7 @@ void InterceptNavigationDelegate::HandleSubframeExternalProtocol(
     const GURL& url,
     ui::PageTransition page_transition,
     bool has_user_gesture,
-    const absl::optional<url::Origin>& initiating_origin,
+    const std::optional<url::Origin>& initiating_origin,
     mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory) {
   // If there's a pending async subframe action, don't consider external
   // navigation for the current navigation.
@@ -252,7 +252,8 @@ void InterceptNavigationDelegate::HandleSubframeExternalProtocol(
           initiating_origin ? initiating_origin->ToJavaObject() : nullptr);
   if (j_gurl.is_null())
     return;
-  subframe_redirect_url_ = url::GURLAndroid::ToNativeGURL(env, j_gurl);
+  subframe_redirect_url_ =
+      std::make_unique<GURL>(url::GURLAndroid::ToNativeGURL(env, j_gurl));
 
   mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver =
       out_factory->InitWithNewPipeAndPassReceiver();
@@ -304,7 +305,9 @@ void InterceptNavigationDelegate::OnSubframeAsyncActionTaken(
   // subframe_redirect_url_ no longer empty indicates the async action has been
   // taken.
   subframe_redirect_url_ =
-      j_gurl.is_null() ? nullptr : url::GURLAndroid::ToNativeGURL(env, j_gurl);
+      j_gurl.is_null()
+          ? nullptr
+          : std::make_unique<GURL>(url::GURLAndroid::ToNativeGURL(env, j_gurl));
   MaybeHandleSubframeAction();
 }
 

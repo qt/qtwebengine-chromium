@@ -18,13 +18,13 @@ namespace {
 // Returns a 16x16 red NSImage to visually show when a NSImage cannot be
 // created from PNG data.
 NSImage* GetErrorNSImage() {
-  NSRect rect = NSMakeRect(0, 0, 16, 16);
-  NSImage* image = [[NSImage alloc] initWithSize:rect.size];
-  [image lockFocus];
-  [[NSColor colorWithDeviceRed:1.0 green:0.0 blue:0.0 alpha:1.0] set];
-  NSRectFill(rect);
-  [image unlockFocus];
-  return image;
+  return [NSImage imageWithSize:NSMakeSize(16, 16)
+                        flipped:NO
+                 drawingHandler:^(NSRect rect) {
+                   [NSColor.redColor set];
+                   NSRectFill(rect);
+                   return YES;
+                 }];
 }
 
 }  // namespace
@@ -82,7 +82,7 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromNSImage(
                                                 context:nil
                                                   hints:hints];
   if (!cg_image) {
-    // TODO(crbug.com/1271762): Look at DumpWithoutCrashing() reports to figure
+    // TODO(crbug.com/40805758): Look at DumpWithoutCrashing() reports to figure
     // out what's going on here.
     return scoped_refptr<base::RefCountedMemory>();
   }
@@ -90,10 +90,10 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromNSImage(
       [[NSBitmapImageRep alloc] initWithCGImage:cg_image];
   NSData* ns_data = [ns_bitmap representationUsingType:NSBitmapImageFileTypePNG
                                             properties:@{}];
-  const unsigned char* bytes = static_cast<const unsigned char*>(ns_data.bytes);
+  auto* bytes = static_cast<const uint8_t*>(ns_data.bytes);
   scoped_refptr<base::RefCountedBytes> refcounted_bytes(
       new base::RefCountedBytes());
-  refcounted_bytes->data().assign(bytes, bytes + ns_data.length);
+  refcounted_bytes->as_vector().assign(bytes, bytes + ns_data.length);
   return refcounted_bytes;
 }
 

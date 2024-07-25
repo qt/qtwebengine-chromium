@@ -12,6 +12,7 @@
 #ifndef V8_OBJECTS_OBJECTS_INL_H_
 #define V8_OBJECTS_OBJECTS_INL_H_
 
+#include "include/v8-internal.h"
 #include "src/base/bits.h"
 #include "src/base/memory.h"
 #include "src/base/numbers/double.h"
@@ -29,6 +30,7 @@
 #include "src/objects/heap-number-inl.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/hole-inl.h"
+#include "src/objects/instance-type-checker.h"
 #include "src/objects/js-proxy-inl.h"  // TODO(jkummerow): Drop.
 #include "src/objects/keys.h"
 #include "src/objects/literal-objects.h"
@@ -40,6 +42,7 @@
 #include "src/objects/regexp-match-info-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/slots-inl.h"
+#include "src/objects/slots.h"
 #include "src/objects/smi-inl.h"
 #include "src/objects/tagged-field-inl.h"
 #include "src/objects/tagged-impl-inl.h"
@@ -51,6 +54,7 @@
 #include "src/sandbox/external-pointer-inl.h"
 #include "src/sandbox/indirect-pointer-inl.h"
 #include "src/sandbox/isolate-inl.h"
+#include "src/sandbox/isolate.h"
 #include "src/sandbox/sandboxed-pointer-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -108,6 +112,7 @@ bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<Object> obj) {
 HEAP_OBJECT_TYPE_LIST(IS_TYPE_FUNCTION_DEF)
 IS_TYPE_FUNCTION_DEF(HashTableBase)
 IS_TYPE_FUNCTION_DEF(SmallOrderedHashTable)
+IS_TYPE_FUNCTION_DEF(PropertyDictionary)
 #undef IS_TYPE_FUNCTION_DEF
 
 bool IsAnyHole(Tagged<Object> obj, PtrComprCageBase cage_base) {
@@ -251,11 +256,32 @@ bool InAnySharedSpace(Tagged<HeapObject> obj) {
 }
 
 bool InWritableSharedSpace(Tagged<HeapObject> obj) {
-  return BasicMemoryChunk::FromHeapObject(obj)->InWritableSharedSpace();
+  return MemoryChunk::FromHeapObject(obj)->InWritableSharedSpace();
 }
 
 bool InReadOnlySpace(Tagged<HeapObject> obj) {
   return IsReadOnlyHeapObject(obj);
+}
+
+constexpr bool FastInReadOnlySpaceOrSmallSmi(Tagged_t obj) {
+#if V8_STATIC_ROOTS_BOOL
+  // The following assert ensures that the page size check covers all our static
+  // roots. This is not strictly necessary and can be relaxed in future as the
+  // most prominent static roots are anyways allocated at the beginning of the
+  // first page.
+  static_assert(StaticReadOnlyRoot::kLastAllocatedRoot < kRegularPageSize);
+  return obj < kRegularPageSize;
+#else   // !V8_STATIC_ROOTS_BOOL
+  return false;
+#endif  // !V8_STATIC_ROOTS_BOOL
+}
+
+bool OutsideSandboxOrInReadonlySpace(Tagged<HeapObject> obj) {
+#ifdef V8_ENABLE_SANDBOX
+  return !InsideSandbox(obj.address()) || InReadOnlySpace(obj);
+#else
+  return true;
+#endif
 }
 
 bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<HeapObject> obj) {
@@ -263,6 +289,16 @@ bool IsJSObjectThatCanBeTrackedAsPrototype(Tagged<HeapObject> obj) {
   // threadsafe. Objects in the shared heap have fixed layouts and their maps
   // never change.
   return IsJSObject(obj) && !InWritableSharedSpace(*obj);
+}
+
+bool IsJSApiWrapperObject(Tagged<Map> map) {
+  const InstanceType instance_type = map->instance_type();
+  return InstanceTypeChecker::IsJSAPIObjectWithEmbedderSlots(instance_type) ||
+         InstanceTypeChecker::IsJSSpecialObject(instance_type);
+}
+
+bool IsJSApiWrapperObject(Tagged<HeapObject> js_obj) {
+  return IsJSApiWrapperObject(js_obj->map());
 }
 
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsUniqueName) {
@@ -285,7 +321,7 @@ DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsCallableApiObject) {
 
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsNonNullForeign) {
   return IsForeign(obj, cage_base) &&
-         Foreign::cast(obj)->foreign_address() != kNullAddress;
+         Foreign::cast(obj)->foreign_address_unchecked() != kNullAddress;
 }
 
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsConstructor) {
@@ -363,15 +399,24 @@ DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsTemplateLiteralObject) {
   return IsJSArray(obj, cage_base);
 }
 
+#if V8_INTL_SUPPORT
+DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsJSSegmentDataObject) {
+  return IsJSObject(obj, cage_base);
+}
+DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsJSSegmentDataObjectWithIsWordLike) {
+  return IsJSObject(obj, cage_base);
+}
+#endif  // V8_INTL_SUPPORT
+
 DEF_HEAP_OBJECT_PREDICATE(HeapObject, IsDeoptimizationData) {
-  // Must be a fixed array.
-  if (!IsFixedArray(obj, cage_base)) return false;
+  // Must be a (protected) fixed array.
+  if (!IsProtectedFixedArray(obj, cage_base)) return false;
 
   // There's no sure way to detect the difference between a fixed array and
   // a deoptimization data array.  Since this is used for asserts we can
   // check that the length is zero or else the fixed size plus a multiple of
   // the entry size.
-  int length = FixedArray::cast(obj)->length();
+  int length = ProtectedFixedArray::cast(obj)->length();
   if (length == 0) return true;
 
   length -= DeoptimizationData::kFirstDeoptEntryIndex;
@@ -672,10 +717,22 @@ MaybeHandle<Object> Object::ToUint32(Isolate* isolate, Handle<Object> input) {
 }
 
 // static
-MaybeHandle<String> Object::ToString(Isolate* isolate, Handle<Object> input) {
+template <typename T, typename>
+MaybeHandle<String> Object::ToString(Isolate* isolate, Handle<T> input) {
+  // T should be a subtype of Object, which is enforced by the second template
+  // argument.
   if (IsString(*input)) return Handle<String>::cast(input);
   return ConvertToString(isolate, input);
 }
+
+#ifdef V8_ENABLE_DIRECT_HANDLE
+template <typename T, typename>
+MaybeDirectHandle<String> Object::ToString(Isolate* isolate,
+                                           DirectHandle<T> input) {
+  if (IsString(*input)) return DirectHandle<String>::cast(input);
+  return ConvertToString(isolate, indirect_handle(input, isolate));
+}
+#endif
 
 // static
 MaybeHandle<Object> Object::ToLength(Isolate* isolate, Handle<Object> input) {
@@ -745,13 +802,26 @@ template <ExternalPointerTag tag>
 void HeapObject::InitExternalPointerField(size_t offset,
                                           IsolateForSandbox isolate,
                                           Address value) {
-  i::InitExternalPointerField<tag>(field_address(offset), isolate, value);
+  i::InitExternalPointerField<tag>(address(), field_address(offset), isolate,
+                                   value);
 }
 
 template <ExternalPointerTag tag>
 Address HeapObject::ReadExternalPointerField(size_t offset,
                                              IsolateForSandbox isolate) const {
   return i::ReadExternalPointerField<tag>(field_address(offset), isolate);
+}
+
+template <ExternalPointerTag tag>
+Address HeapObject::TryReadCppHeapPointerField(
+    size_t offset, IsolateForPointerCompression isolate) const {
+  return i::TryReadCppHeapPointerField<tag>(field_address(offset), isolate);
+}
+
+Address HeapObject::TryReadCppHeapPointerField(
+    size_t offset, IsolateForPointerCompression isolate,
+    ExternalPointerTag tag) const {
+  return i::TryReadCppHeapPointerField(field_address(offset), isolate, tag);
 }
 
 template <ExternalPointerTag tag>
@@ -764,12 +834,30 @@ void HeapObject::WriteExternalPointerField(size_t offset,
 template <ExternalPointerTag tag>
 void HeapObject::WriteLazilyInitializedExternalPointerField(
     size_t offset, IsolateForSandbox isolate, Address value) {
-  i::WriteLazilyInitializedExternalPointerField<tag>(field_address(offset),
-                                                     isolate, value);
+  i::WriteLazilyInitializedExternalPointerField<tag>(
+      address(), field_address(offset), isolate, value);
 }
 
-void HeapObject::ResetLazilyInitializedExternalPointerField(size_t offset) {
-  i::ResetLazilyInitializedExternalPointerField(field_address(offset));
+void HeapObject::SetupLazilyInitializedExternalPointerField(size_t offset) {
+  i::SetupLazilyInitializedExternalPointerField(field_address(offset));
+}
+
+void HeapObject::SetupLazilyInitializedCppHeapPointerField(size_t offset) {
+  CppHeapPointerSlot(field_address(offset), kAnyExternalPointerTag).init();
+}
+
+template <ExternalPointerTag tag>
+void HeapObject::WriteLazilyInitializedCppHeapPointerField(
+    size_t offset, IsolateForPointerCompression isolate, Address value) {
+  i::WriteLazilyInitializedCppHeapPointerField<tag>(field_address(offset),
+                                                    isolate, value);
+}
+
+void HeapObject::WriteLazilyInitializedCppHeapPointerField(
+    size_t offset, IsolateForPointerCompression isolate, Address value,
+    ExternalPointerTag tag) {
+  i::WriteLazilyInitializedCppHeapPointerField(field_address(offset), isolate,
+                                               value, tag);
 }
 
 void HeapObject::InitSelfIndirectPointerField(size_t offset,
@@ -883,6 +971,11 @@ ExternalPointerSlot HeapObject::RawExternalPointerField(
   return ExternalPointerSlot(field_address(byte_offset), tag);
 }
 
+CppHeapPointerSlot HeapObject::RawCppHeapPointerField(
+    int byte_offset, ExternalPointerTag tag) const {
+  return CppHeapPointerSlot(field_address(byte_offset), tag);
+}
+
 IndirectPointerSlot HeapObject::RawIndirectPointerField(
     int byte_offset, IndirectPointerTag tag) const {
   return IndirectPointerSlot(field_address(byte_offset), tag);
@@ -959,7 +1052,7 @@ void HeapObject::VerifyObjectField(Isolate* isolate, int offset) {
 }
 
 void HeapObject::VerifyMaybeObjectField(Isolate* isolate, int offset) {
-  MaybeObject::VerifyMaybeObjectPointer(
+  Object::VerifyMaybeObjectPointer(
       isolate, TaggedField<MaybeObject>::load(isolate, *this, offset));
   static_assert(!COMPRESS_POINTERS_BOOL || kTaggedSize == kInt32Size);
 }
@@ -1579,8 +1672,7 @@ Relocatable::~Relocatable() {
 // Predictably converts HeapObject or Address to uint32 by calculating
 // offset of the address in respective MemoryChunk.
 static inline uint32_t ObjectAddressForHashing(Address object) {
-  uint32_t value = static_cast<uint32_t>(object);
-  return value & kPageAlignmentMask;
+  return MemoryChunk::AddressToOffset(object);
 }
 
 static inline Handle<Object> MakeEntryPair(Isolate* isolate, size_t index,

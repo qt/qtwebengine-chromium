@@ -47,26 +47,25 @@ void ReplyIfTimedOut(
 
 }  // namespace
 
-SessionMessenger::SessionMessenger(MessagePort* message_port,
+SessionMessenger::SessionMessenger(MessagePort& message_port,
                                    std::string source_id,
                                    ErrorCallback cb)
     : message_port_(message_port),
       source_id_(source_id),
       error_callback_(std::move(cb)) {
-  OSP_DCHECK(message_port_);
-  OSP_DCHECK(!source_id_.empty());
-  message_port_->SetClient(*this);
+  OSP_CHECK(!source_id_.empty());
+  message_port_.SetClient(*this);
 }
 
 SessionMessenger::~SessionMessenger() {
-  message_port_->ResetClient();
+  message_port_.ResetClient();
 }
 
 Error SessionMessenger::SendMessage(const std::string& destination_id,
                                     const std::string& namespace_,
                                     const Json::Value& message_root) {
-  OSP_DCHECK(namespace_ == kCastRemotingNamespace ||
-             namespace_ == kCastWebrtcNamespace);
+  OSP_CHECK(namespace_ == kCastRemotingNamespace ||
+            namespace_ == kCastWebrtcNamespace);
   auto body_or_error = json::Stringify(message_root);
   if (body_or_error.is_error()) {
     return std::move(body_or_error.error());
@@ -74,15 +73,15 @@ Error SessionMessenger::SendMessage(const std::string& destination_id,
   OSP_VLOG << "Sending message: DESTINATION[" << destination_id
            << "], NAMESPACE[" << namespace_ << "], BODY:\n"
            << body_or_error.value();
-  message_port_->PostMessage(destination_id, namespace_, body_or_error.value());
+  message_port_.PostMessage(destination_id, namespace_, body_or_error.value());
   return Error::None();
 }
 
-void SessionMessenger::ReportError(Error error) {
-  error_callback_(std::move(error));
+void SessionMessenger::ReportError(const Error& error) {
+  error_callback_(error);
 }
 
-SenderSessionMessenger::SenderSessionMessenger(MessagePort* message_port,
+SenderSessionMessenger::SenderSessionMessenger(MessagePort& message_port,
                                                std::string source_id,
                                                std::string receiver_id,
                                                ErrorCallback cb,
@@ -94,12 +93,12 @@ SenderSessionMessenger::SenderSessionMessenger(MessagePort* message_port,
 void SenderSessionMessenger::SetHandler(ReceiverMessage::Type type,
                                         ReplyCallback cb) {
   // Currently the only handler allowed is for RPC messages.
-  OSP_DCHECK(type == ReceiverMessage::Type::kRpc);
+  OSP_CHECK(type == ReceiverMessage::Type::kRpc);
   rpc_callback_ = std::move(cb);
 }
 
 void SenderSessionMessenger::ResetHandler(ReceiverMessage::Type type) {
-  OSP_DCHECK(type == ReceiverMessage::Type::kRpc);
+  OSP_CHECK(type == ReceiverMessage::Type::kRpc);
   rpc_callback_ = {};
 }
 
@@ -126,7 +125,7 @@ Error SenderSessionMessenger::SendRequest(SenderMessage message,
                                           ReceiverMessage::Type reply_type,
                                           ReplyCallback cb) {
   // RPC messages are not meant to be request/reply.
-  OSP_DCHECK(reply_type != ReceiverMessage::Type::kRpc);
+  OSP_CHECK(reply_type != ReceiverMessage::Type::kRpc);
 
   if (!cb) {
     return Error(Error::Code::kParameterInvalid,
@@ -209,12 +208,12 @@ void SenderSessionMessenger::OnMessage(const std::string& source_id,
   }
 }
 
-void SenderSessionMessenger::OnError(Error error) {
+void SenderSessionMessenger::OnError(const Error& error) {
   OSP_DLOG_WARN << "Received an error in the session messenger: " << error;
   ReportError(error);
 }
 
-ReceiverSessionMessenger::ReceiverSessionMessenger(MessagePort* message_port,
+ReceiverSessionMessenger::ReceiverSessionMessenger(MessagePort& message_port,
                                                    std::string source_id,
                                                    ErrorCallback cb)
     : SessionMessenger(message_port, std::move(source_id), std::move(cb)) {}
@@ -291,7 +290,7 @@ void ReceiverSessionMessenger::OnMessage(const std::string& source_id,
   it->second(source_id, sender_message.value());
 }
 
-void ReceiverSessionMessenger::OnError(Error error) {
+void ReceiverSessionMessenger::OnError(const Error& error) {
   OSP_DLOG_WARN << "Received an error in the session messenger: " << error;
   ReportError(error);
 }

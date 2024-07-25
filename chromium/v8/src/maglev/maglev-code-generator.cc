@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "src/base/hashmap.h"
+#include "src/base/logging.h"
 #include "src/codegen/code-desc.h"
 #include "src/codegen/compiler.h"
 #include "src/codegen/interface-descriptors-inl.h"
@@ -537,6 +538,7 @@ class ExceptionHandlerTrampolineBuilder {
     DCHECK(node->properties().can_throw());
 
     ExceptionHandlerInfo* const handler_info = node->exception_handler_info();
+    if (handler_info->ShouldLazyDeopt()) return;
     DCHECK(handler_info->HasExceptionHandler());
     BasicBlock* const catch_block = handler_info->catch_block.block_ptr();
     LazyDeoptInfo* const deopt_info = node->lazy_deopt_info();
@@ -560,13 +562,15 @@ class ExceptionHandlerTrampolineBuilder {
     // values are tagged and b) the stack walk treats unknown stack slots as
     // tagged.
 
-    // TODO(victorgomes): Update this once we support exceptions in inlined
-    // functions. Currently, only the bottom frame can contain a catch block.
-    const DeoptFrame* bottom_frame = &deopt_info->top_frame();
-    while (bottom_frame->parent() != nullptr) {
-      bottom_frame = bottom_frame->parent();
+    const DeoptFrame* target_frame = &deopt_info->top_frame();
+    for (int i = 0;; i++) {
+      while (target_frame->type() != DeoptFrame::FrameType::kInterpretedFrame) {
+        target_frame = target_frame->parent();
+      }
+      if (i == handler_info->depth) break;
+      target_frame = target_frame->parent();
     }
-    const InterpretedDeoptFrame& lazy_frame = bottom_frame->as_interpreted();
+    const InterpretedDeoptFrame& lazy_frame = target_frame->as_interpreted();
 
     // TODO(v8:7700): Handle inlining.
     ParallelMoveResolver<Register, COMPRESS_POINTERS_BOOL> direct_moves(masm_);
@@ -643,7 +647,7 @@ class ExceptionHandlerTrampolineBuilder {
 
   void EmitMaterialisationsAndPushResults(const MoveVector& moves,
                                           bool save_accumulator) const {
-    if (moves.size() == 0) return;
+    if (moves.empty()) return;
 
     // It's possible to optimize this further, at the cost of additional
     // complexity:
@@ -681,7 +685,7 @@ class ExceptionHandlerTrampolineBuilder {
   void EmitPopMaterialisedResults(const MoveVector& moves,
                                   bool save_accumulator,
                                   Register scratch) const {
-    if (moves.size() == 0) return;
+    if (moves.empty()) return;
     __ RecordComment("EmitPopMaterialisedResults");
     for (const Move& move : base::Reversed(moves)) {
       const ValueLocation& target = move.target;
@@ -1012,7 +1016,8 @@ SourcePosition GetSourcePosition(const DeoptFrame& deopt_frame) {
     case DeoptFrame::FrameType::kConstructInvokeStubFrame:
       return deopt_frame.as_construct_stub().source_position();
     case DeoptFrame::FrameType::kBuiltinContinuationFrame:
-      return SourcePosition::Unknown();
+      DCHECK_NOT_NULL(deopt_frame.parent());
+      return GetSourcePosition(*deopt_frame.parent());
   }
 }
 compiler::SharedFunctionInfoRef GetSharedFunctionInfo(
@@ -1039,7 +1044,8 @@ class MaglevFrameTranslationBuilder {
       : local_isolate_(local_isolate),
         masm_(masm),
         translation_array_builder_(translation_array_builder),
-        deopt_literals_(deopt_literals) {}
+        deopt_literals_(deopt_literals),
+        object_ids_(10) {}
 
   void BuildEagerDeopt(EagerDeoptInfo* deopt_info) {
     BuildBeginDeopt(deopt_info);
@@ -1098,6 +1104,7 @@ class MaglevFrameTranslationBuilder {
   }
 
   void BuildBeginDeopt(DeoptInfo* deopt_info) {
+    object_ids_.clear();
     auto [frame_count, jsframe_count] = GetFrameCount(&deopt_info->top_frame());
     deopt_info->set_translation_index(
         translation_array_builder_->BeginTranslation(
@@ -1313,9 +1320,145 @@ class MaglevFrameTranslationBuilder {
     }
   }
 
+  int GetDuplicatedId(int id) {
+    for (int idx = 0; idx < static_cast<int>(object_ids_.size()); idx++) {
+      if (object_ids_[idx] == id) {
+        // Although this is not technically necessary, the translated state
+        // machinery assign ids to duplicates, so we need to push something to
+        // get fresh ids.
+        object_ids_.push_back(id);
+        return idx;
+      }
+    }
+    object_ids_.push_back(id);
+    return kNotDuplicated;
+  }
+
+  bool TryDeduplicateObject(int id) {
+    int dup_id = GetDuplicatedId(id);
+    if (dup_id != kNotDuplicated) {
+      translation_array_builder_->DuplicateObject(dup_id);
+      return false;
+    }
+    return true;
+  }
+
+  template <typename T>
+  bool TryDeduplicateObject(const T& object,
+                            const InputLocation*& input_location) {
+    if (!TryDeduplicateObject(object.id)) {
+      input_location += object.GetInputLocationsArraySize();
+      return false;
+    }
+    return true;
+  }
+
+  void BuildHeapNumber(Float64 number) {
+    Handle<Object> value =
+        local_isolate_->factory()->NewHeapNumberFromBits<AllocationType::kOld>(
+            number.get_bits());
+    translation_array_builder_->StoreLiteral(GetDeoptLiteral(*value));
+  }
+
+  void BuildFixedDoubleArray(CapturedFixedDoubleArray array) {
+    translation_array_builder_->BeginCapturedObject(array.length + 2);
+    translation_array_builder_->StoreLiteral(
+        GetDeoptLiteral(*local_isolate_->factory()->fixed_double_array_map()));
+    translation_array_builder_->StoreLiteral(
+        GetDeoptLiteral(Smi::FromInt(array.length)));
+    for (int i = 0; i < array.length; i++) {
+      Float64 value = array.values[i];
+      if (value.is_hole_nan()) {
+        translation_array_builder_->StoreLiteral(
+            GetDeoptLiteral(ReadOnlyRoots(local_isolate_).the_hole_value()));
+      } else {
+        BuildHeapNumber(value);
+      }
+    }
+  }
+
+  void BuildCapturedValue(CapturedValue value,
+                          const InputLocation*& input_location) {
+    switch (value.type) {
+      case CapturedValue::kUninitalized:
+        translation_array_builder_->StoreLiteral(GetDeoptLiteral(
+            ReadOnlyRoots(local_isolate_).one_pointer_filler_map()));
+        break;
+      case CapturedValue::kRuntimeValue:
+        BuildDeoptFrameSingleValue(value.runtime_value, input_location);
+        break;
+      case CapturedValue::kConstant:
+        translation_array_builder_->StoreLiteral(
+            GetDeoptLiteral(*value.constant.object()));
+        break;
+      case CapturedValue::kRootConstant:
+        translation_array_builder_->StoreLiteral(GetDeoptLiteral(
+            ReadOnlyRoots(local_isolate_).object_at(value.root_constant)));
+        break;
+      case CapturedValue::kSmi:
+        translation_array_builder_->StoreLiteral(
+            GetDeoptLiteral(Smi::FromInt(value.smi)));
+        break;
+      case CapturedValue::kArgumentsElements:
+        translation_array_builder_->ArgumentsElements(
+            value.arguments_elements->type());
+        // We simulate the deoptimizer deduplication machinery, which will give
+        // a fresh id to the ArgumentsElements. For that, we need to push
+        // something object_ids_ We push -1, since no object should have id -1.
+        object_ids_.push_back(-1);
+        break;
+      case CapturedValue::kArgumentsLength:
+        translation_array_builder_->ArgumentsLength();
+        break;
+      case CapturedValue::kRestLength:
+        translation_array_builder_->RestLength();
+        break;
+      case CapturedValue::kCapturedObject:
+      case CapturedValue::kFixedDoubleArray:
+      case CapturedValue::kNumber:
+        UNREACHABLE();
+    }
+  }
+
+  void BuildCapturedObject(CapturedObject object,
+                           const InputLocation*& input_location) {
+    translation_array_builder_->BeginCapturedObject(object.slot_count());
+    for (CapturedValue& value : object) {
+      BuildCapturedValue(value, input_location);
+    }
+  }
+
+  void BuildCapturedAllocation(const CapturedAllocation& alloc,
+                               const InputLocation*& input_location) {
+    if (alloc.type == CapturedAllocation::kHeapNumber) {
+      return BuildHeapNumber(alloc.number);
+    }
+    int dup_id = GetDuplicatedId(alloc.id);
+    if (dup_id != kNotDuplicated) {
+      translation_array_builder_->DuplicateObject(dup_id);
+      input_location += alloc.InputLocationSizeNeeded();
+      return;
+    }
+    if (alloc.type == CapturedAllocation::kFixedDoubleArray) {
+      return BuildFixedDoubleArray(alloc.fixed_double_array);
+    }
+    DCHECK_EQ(alloc.type, CapturedAllocation::kObject);
+    return BuildCapturedObject(alloc.object, input_location);
+  }
+
   void BuildDeoptFrameSingleValue(const ValueNode* value,
                                   const InputLocation*& input_location) {
     DCHECK(!value->Is<Identity>());
+    size_t input_locations_to_advance = 1;
+    if (const InlinedAllocation* alloc = value->TryCast<InlinedAllocation>()) {
+      if (alloc->HasBeenElided()) {
+        input_location++;
+        BuildCapturedAllocation(alloc->captured_allocation(), input_location);
+        return;
+      }
+      input_locations_to_advance +=
+          alloc->captured_allocation().InputLocationSizeNeeded();
+    }
     if (input_location->operand().IsConstant()) {
       translation_array_builder_->StoreLiteral(
           GetDeoptLiteral(*value->Reify(local_isolate_)));
@@ -1329,7 +1472,7 @@ class MaglevFrameTranslationBuilder {
         BuildDeoptStoreStackSlot(operand, repr);
       }
     }
-    input_location++;
+    input_location += input_locations_to_advance;
   }
 
   void BuildDeoptFrameValues(
@@ -1337,9 +1480,10 @@ class MaglevFrameTranslationBuilder {
       const CompactInterpreterFrameState* checkpoint_state,
       const ValueNode* closure, const InputLocation*& input_location,
       interpreter::Register result_location, int result_size) {
-    // TODO(leszeks): The input locations array happens to be in the same order
-    // as closure+parameters+context+locals+accumulator are accessed here. We
-    // should make this clearer and guard against this invariant failing.
+    // TODO(leszeks): The input locations array happens to be in the same
+    // order as closure+parameters+context+locals+accumulator are accessed
+    // here. We should make this clearer and guard against this invariant
+    // failing.
 
     // Closure
     BuildDeoptFrameSingleValue(closure, input_location);
@@ -1414,6 +1558,9 @@ class MaglevFrameTranslationBuilder {
   MaglevAssembler* masm_;
   FrameTranslationBuilder* translation_array_builder_;
   IdentityMap<int, base::DefaultAllocationPolicy>* deopt_literals_;
+
+  static const int kNotDuplicated = -1;
+  std::vector<int> object_ids_;
 };
 
 }  // namespace
@@ -1614,7 +1761,7 @@ bool MaglevCodeGenerator::EmitDeopts() {
 }
 
 void MaglevCodeGenerator::EmitExceptionHandlerTrampolines() {
-  if (code_gen_state_.handlers().size() == 0) return;
+  if (code_gen_state_.handlers().empty()) return;
   __ RecordComment("-- Exception handler trampolines");
   for (NodeBase* node : code_gen_state_.handlers()) {
     ExceptionHandlerTrampolineBuilder::Build(masm(), node);
@@ -1631,8 +1778,10 @@ void MaglevCodeGenerator::EmitMetadata() {
   handler_table_offset_ = HandlerTable::EmitReturnTableStart(masm());
   for (NodeBase* node : code_gen_state_.handlers()) {
     ExceptionHandlerInfo* info = node->exception_handler_info();
-    HandlerTable::EmitReturnEntry(masm(), info->pc_offset,
-                                  info->trampoline_entry.pos());
+    DCHECK_IMPLIES(info->ShouldLazyDeopt(), !info->trampoline_entry.is_bound());
+    int pos = info->ShouldLazyDeopt() ? HandlerTable::kLazyDeopt
+                                      : info->trampoline_entry.pos();
+    HandlerTable::EmitReturnEntry(masm(), info->pc_offset, pos);
   }
 }
 
@@ -1652,7 +1801,9 @@ MaybeHandle<Code> MaglevCodeGenerator::BuildCodeObject(
                   handler_table_offset_);
   return Factory::CodeBuilder{local_isolate, desc, CodeKind::MAGLEV}
       .set_stack_slots(stack_slot_count_with_fixed_frame())
+      .set_parameter_count(parameter_count())
       .set_deoptimization_data(deopt_data)
+      .set_empty_source_position_table()
       .set_osr_offset(code_gen_state_.compilation_info()->toplevel_osr_offset())
       .TryBuild();
 }
@@ -1687,10 +1838,18 @@ Handle<DeoptimizationData> MaglevCodeGenerator::GenerateDeoptimizationData(
     return DeoptimizationData::Empty(local_isolate);
   }
   Handle<DeoptimizationData> data =
-      DeoptimizationData::New(local_isolate, deopt_count, AllocationType::kOld);
+      DeoptimizationData::New(local_isolate, deopt_count);
 
   Handle<DeoptimizationFrameTranslation> translations =
       frame_translation_builder_.ToFrameTranslation(local_isolate->factory());
+
+  Handle<SharedFunctionInfoWrapper> sfi_wrapper =
+      local_isolate->factory()->NewSharedFunctionInfoWrapper(
+          code_gen_state_.compilation_info()
+              ->toplevel_compilation_unit()
+              ->shared_function_info()
+              .object());
+
   {
     DisallowGarbageCollection no_gc;
     Tagged<DeoptimizationData> raw_data = *data;
@@ -1704,11 +1863,7 @@ Handle<DeoptimizationData> MaglevCodeGenerator::GenerateDeoptimizationData(
     raw_data->SetDeoptExitStart(Smi::FromInt(deopt_exit_start_offset_));
     raw_data->SetEagerDeoptCount(Smi::FromInt(eager_deopt_count));
     raw_data->SetLazyDeoptCount(Smi::FromInt(lazy_deopt_count));
-
-    raw_data->SetSharedFunctionInfo(*code_gen_state_.compilation_info()
-                                         ->toplevel_compilation_unit()
-                                         ->shared_function_info()
-                                         .object());
+    raw_data->SetSharedFunctionInfoWrapper(*sfi_wrapper);
   }
 
   int inlined_functions_size =
@@ -1716,9 +1871,9 @@ Handle<DeoptimizationData> MaglevCodeGenerator::GenerateDeoptimizationData(
   Handle<DeoptimizationLiteralArray> literals =
       local_isolate->factory()->NewDeoptimizationLiteralArray(
           deopt_literals_.size() + inlined_functions_size + 1);
-  Handle<PodArray<InliningPosition>> inlining_positions =
-      PodArray<InliningPosition>::New(local_isolate, inlined_functions_size,
-                                      AllocationType::kOld);
+  Handle<TrustedPodArray<InliningPosition>> inlining_positions =
+      TrustedPodArray<InliningPosition>::New(local_isolate,
+                                             inlined_functions_size);
 
   DisallowGarbageCollection no_gc;
 

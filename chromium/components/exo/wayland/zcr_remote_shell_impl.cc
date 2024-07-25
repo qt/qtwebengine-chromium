@@ -280,7 +280,7 @@ uint32_t ResizeDirection(int component) {
       LOG(ERROR) << "Unknown component:" << component;
       break;
   }
-  NOTREACHED();
+  DUMP_WILL_BE_NOTREACHED_NORETURN();
   return ZCR_REMOTE_SURFACE_V1_RESIZE_DIRECTION_NONE;
 }
 
@@ -542,7 +542,8 @@ void WaylandRemoteShell::OnDisplayAdded(const display::Display& new_display) {
   ScheduleSendDisplayMetrics(0);
 }
 
-void WaylandRemoteShell::OnDisplayRemoved(const display::Display& old_display) {
+void WaylandRemoteShell::OnDisplaysRemoved(
+    const display::Displays& removed_displays) {
   ScheduleSendDisplayMetrics(0);
 }
 

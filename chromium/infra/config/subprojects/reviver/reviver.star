@@ -17,7 +17,7 @@ luci.bucket(
         ),
         acl.entry(
             roles = acl.BUILDBUCKET_TRIGGERER,
-            # TODO(crbug/1346396) Switch this to something more sensible once
+            # TODO(crbug.com/40232487) Switch this to something more sensible once
             # the builders are verified
             users = [
                 "gbeaty@google.com",
@@ -180,7 +180,7 @@ polymorphic.launcher(
     target_builders = [
         "ci/fuchsia-fyi-arm64-dbg",
         "ci/fuchsia-fyi-x64-dbg",
-        "ci/fuchsia-x64-rel",
+        "ci/fuchsia-x64-cast-receiver-rel",
     ],
 )
 
@@ -219,7 +219,7 @@ builder(
             bq_table = "chrome-luci-data.chromium.reviver_test_results",
         ),
     ],
-    # TODO(crbug/1346396) Remove this once the reviver service account has
+    # TODO(crbug.com/40232487) Remove this once the reviver service account has
     # necessary permissions
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
 )
@@ -241,7 +241,7 @@ builder(
             bq_table = "chrome-luci-data.chromium.reviver_test_results",
         ),
     ],
-    # TODO(crbug/1346396) Remove this once the reviver service account has
+    # TODO(crbug.com/40232487) Remove this once the reviver service account has
     # necessary permissions
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
 )

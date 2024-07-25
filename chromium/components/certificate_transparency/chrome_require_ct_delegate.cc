@@ -9,11 +9,11 @@
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 #include "base/containers/contains.h"
-#include "base/containers/cxx20_erase.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/location.h"
@@ -205,7 +205,7 @@ void ChromeRequireCTDelegate::UpdateCTPolicies(
   ParseSpkiHashes(excluded_legacy_spkis, &legacy_spkis_);
 
   // Filter out SPKIs that aren't for legacy CAs.
-  base::EraseIf(legacy_spkis_, [](const net::HashValue& hash) {
+  std::erase_if(legacy_spkis_, [](const net::HashValue& hash) {
     if (!net::IsLegacyPubliclyTrustedCA(hash)) {
       LOG(ERROR) << "Non-legacy SPKI configured " << hash.ToString();
       return true;
@@ -319,7 +319,7 @@ void ChromeRequireCTDelegate::AddFilters(
       continue;  // If there is no host to match, can't apply the filter.
 
     std::string lc_host = base::ToLowerASCII(
-        base::StringPiece(pattern).substr(parsed.host.begin, parsed.host.len));
+        std::string_view(pattern).substr(parsed.host.begin, parsed.host.len));
     if (lc_host == "*") {
       // Wildcard hosts are not allowed and ignored.
       continue;

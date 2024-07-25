@@ -5,6 +5,7 @@
 #include "net/url_request/url_request_context_builder.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -49,8 +50,6 @@
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "net/url_request/url_request_throttler_manager.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/url_constants.h"
 
 #if BUILDFLAG(ENABLE_REPORTING)
@@ -63,6 +62,10 @@
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
 #endif  // BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+#include "net/device_bound_sessions/device_bound_session_service.h"
+#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
 
 namespace net {
 
@@ -244,9 +247,16 @@ void URLRequestContextBuilder::SetCreateHttpTransactionFactoryCallback(
       std::move(create_http_network_transaction_factory);
 }
 
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+void URLRequestContextBuilder::set_device_bound_session_service(
+    std::unique_ptr<DeviceBoundSessionService> device_bound_session_service) {
+  device_bound_session_service_ = std::move(device_bound_session_service);
+}
+#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+
 void URLRequestContextBuilder::BindToNetwork(
     handles::NetworkHandle network,
-    absl::optional<HostResolver::ManagerOptions> options) {
+    std::optional<HostResolver::ManagerOptions> options) {
 #if BUILDFLAG(IS_ANDROID)
   DCHECK(NetworkChangeNotifier::AreNetworkHandlesSupported());
   // DNS lookups for this context will need to target `network`. NDK to do that
@@ -428,11 +438,6 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
     context->set_quic_context(std::make_unique<QuicContext>());
   }
 
-  if (throttling_enabled_) {
-    context->set_throttler_manager(
-        std::make_unique<URLRequestThrottlerManager>());
-  }
-
   if (!proxy_resolution_service_) {
 #if !BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
     // TODO(willchan): Switch to using this code when
@@ -497,6 +502,18 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
         context->reporting_service());
   }
 #endif  // BUILDFLAG(ENABLE_REPORTING)
+
+#if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
+  if (has_device_bound_session_service_) {
+    context->set_device_bound_session_service(
+        DeviceBoundSessionService::Create(context.get()));
+  } else {
+    if (device_bound_session_service_) {
+      context->set_device_bound_session_service(
+          std::move(device_bound_session_service_));
+    }
+  }
+#endif  // BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
 
   HttpNetworkSessionContext network_session_context;
   // Unlike the other fields of HttpNetworkSession::Context,

@@ -4,6 +4,8 @@
 
 #include "src/wasm/canonical-types.h"
 
+#include "src/init/v8.h"
+#include "src/utils/utils.h"
 #include "src/wasm/std-object-sizes.h"
 #include "src/wasm/wasm-engine.h"
 
@@ -18,6 +20,19 @@ TypeCanonicalizer* GetTypeCanonicalizer() {
 TypeCanonicalizer::TypeCanonicalizer() {
   AddPredefinedArrayType(kPredefinedArrayI8Index, kWasmI8);
   AddPredefinedArrayType(kPredefinedArrayI16Index, kWasmI16);
+}
+
+// We currently store canonical indices in {ValueType} instances, so they
+// must fit into the range of valid module-relative (non-canonical) type
+// indices.
+// TODO(jkummerow): Raise this limit, to make long-lived WasmEngines scale
+// better. Plan: stop constructing ValueTypes from canonical type indices.
+static constexpr size_t kMaxCanonicalTypes = kV8MaxWasmTypes;
+
+void TypeCanonicalizer::CheckMaxCanonicalIndex() const {
+  if (canonical_supertypes_.size() > kMaxCanonicalTypes) {
+    V8::FatalProcessOutOfMemory(nullptr, "too many canonicalized types");
+  }
 }
 
 void TypeCanonicalizer::AddRecursiveGroup(WasmModule* module, uint32_t size) {
@@ -60,6 +75,7 @@ void TypeCanonicalizer::AddRecursiveGroup(WasmModule* module, uint32_t size,
   uint32_t first_canonical_index =
       static_cast<uint32_t>(canonical_supertypes_.size());
   canonical_supertypes_.resize(first_canonical_index + size);
+  CheckMaxCanonicalIndex();
   for (uint32_t i = 0; i < size; i++) {
     CanonicalType& canonical_type = group.types[i];
     // Compute the canonical index of the supertype: If it is relative, we
@@ -106,6 +122,7 @@ void TypeCanonicalizer::AddRecursiveSingletonGroup(WasmModule* module,
   uint32_t first_canonical_index =
       static_cast<uint32_t>(canonical_supertypes_.size());
   canonical_supertypes_.resize(first_canonical_index + 1);
+  CheckMaxCanonicalIndex();
   CanonicalType& canonical_type = group.type;
   // Compute the canonical index of the supertype: If it is relative, we
   // need to add {first_canonical_index}.
@@ -132,7 +149,8 @@ uint32_t TypeCanonicalizer::AddRecursiveGroup(const FunctionSig* sig) {
 #endif
   CanonicalSingletonGroup group;
   const bool is_final = true;
-  group.type.type_def = TypeDefinition(sig, kNoSuperType, is_final);
+  const bool is_shared = false;
+  group.type.type_def = TypeDefinition(sig, kNoSuperType, is_final, is_shared);
   group.type.is_relative_supertype = false;
   int canonical_index = FindCanonicalGroup(group);
   if (canonical_index >= 0) return canonical_index;
@@ -145,10 +163,12 @@ uint32_t TypeCanonicalizer::AddRecursiveGroup(const FunctionSig* sig) {
   for (auto type : sig->returns()) builder.AddReturn(type);
   for (auto type : sig->parameters()) builder.AddParam(type);
   const FunctionSig* allocated_sig = builder.Build();
-  group.type.type_def = TypeDefinition(allocated_sig, kNoSuperType, is_final);
+  group.type.type_def =
+      TypeDefinition(allocated_sig, kNoSuperType, is_final, is_shared);
   group.type.is_relative_supertype = false;
   canonical_singleton_groups_.emplace(group, canonical_index);
   canonical_supertypes_.emplace_back(kNoSuperType);
+  CheckMaxCanonicalIndex();
   return canonical_index;
 }
 
@@ -159,11 +179,13 @@ void TypeCanonicalizer::AddPredefinedArrayType(uint32_t index,
   static constexpr bool kMutable = true;
   // TODO(jkummerow): Decide whether this should be final or nonfinal.
   static constexpr bool kFinal = true;
+  static constexpr bool kShared = false;  // TODO(14616): Fix this.
   ArrayType* type = zone_.New<ArrayType>(element_type, kMutable);
-  group.type.type_def = TypeDefinition(type, kNoSuperType, kFinal);
+  group.type.type_def = TypeDefinition(type, kNoSuperType, kFinal, kShared);
   group.type.is_relative_supertype = false;
   canonical_singleton_groups_.emplace(group, index);
   canonical_supertypes_.emplace_back(kNoSuperType);
+  DCHECK_LE(canonical_supertypes_.size(), kMaxCanonicalTypes);
 }
 
 ValueType TypeCanonicalizer::CanonicalizeValueType(
@@ -202,6 +224,14 @@ bool TypeCanonicalizer::IsCanonicalSubtype(uint32_t sub_index,
   return IsCanonicalSubtype(canonical_sub, canonical_super);
 }
 
+void TypeCanonicalizer::EmptyStorageForTesting() {
+  base::MutexGuard mutex_guard(&mutex_);
+  canonical_supertypes_.clear();
+  canonical_groups_.clear();
+  canonical_singleton_groups_.clear();
+  zone_.Reset();
+}
+
 TypeCanonicalizer::CanonicalType TypeCanonicalizer::CanonicalizeTypeDef(
     const WasmModule* module, TypeDefinition type,
     uint32_t recursive_group_start) {
@@ -228,8 +258,8 @@ TypeCanonicalizer::CanonicalType TypeCanonicalizer::CanonicalizeTypeDef(
         builder.AddParam(
             CanonicalizeValueType(module, param, recursive_group_start));
       }
-      result =
-          TypeDefinition(builder.Build(), canonical_supertype, type.is_final);
+      result = TypeDefinition(builder.Build(), canonical_supertype,
+                              type.is_final, type.is_shared);
       break;
     }
     case TypeDefinition::kStruct: {
@@ -244,7 +274,7 @@ TypeCanonicalizer::CanonicalType TypeCanonicalizer::CanonicalizeTypeDef(
       builder.set_total_fields_size(original_type->total_fields_size());
       result = TypeDefinition(
           builder.Build(StructType::Builder::kUseProvidedOffsets),
-          canonical_supertype, type.is_final);
+          canonical_supertype, type.is_final, type.is_shared);
       break;
     }
     case TypeDefinition::kArray: {
@@ -252,7 +282,7 @@ TypeCanonicalizer::CanonicalType TypeCanonicalizer::CanonicalizeTypeDef(
           module, type.array_type->element_type(), recursive_group_start);
       result = TypeDefinition(
           zone_.New<ArrayType>(element_type, type.array_type->mutability()),
-          canonical_supertype, type.is_final);
+          canonical_supertype, type.is_final, type.is_shared);
       break;
     }
   }

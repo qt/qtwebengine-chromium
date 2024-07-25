@@ -453,6 +453,41 @@ inline CSSValueID PlatformEnumToCSSValueID(WhiteSpaceCollapse v) {
 }
 
 template <>
+inline TextBoxEdge::Type CssValueIDToPlatformEnum(CSSValueID id) {
+  switch (id) {
+    case CSSValueID::kLeading:
+      return TextBoxEdge::Type::kLeading;
+    case CSSValueID::kText:
+      return TextBoxEdge::Type::kText;
+    case CSSValueID::kCap:
+      return TextBoxEdge::Type::kCap;
+    case CSSValueID::kEx:
+      return TextBoxEdge::Type::kEx;
+    case CSSValueID::kAlphabetic:
+      return TextBoxEdge::Type::kAlphabetic;
+    default:
+      NOTREACHED_NORETURN();
+  }
+}
+
+template <>
+inline CSSValueID PlatformEnumToCSSValueID(TextBoxEdge::Type type) {
+  using enum TextBoxEdge::Type;
+  switch (type) {
+    case kLeading:
+      return CSSValueID::kLeading;
+    case kText:
+      return CSSValueID::kText;
+    case kCap:
+      return CSSValueID::kCap;
+    case kEx:
+      return CSSValueID::kEx;
+    case kAlphabetic:
+      return CSSValueID::kAlphabetic;
+  }
+}
+
+template <>
 inline TextSpacingTrim CssValueIDToPlatformEnum(CSSValueID v) {
   switch (v) {
     case CSSValueID::kNormal:
@@ -495,7 +530,6 @@ inline TextWrap CssValueIDToPlatformEnum(CSSValueID v) {
     case CSSValueID::kBalance:
       return TextWrap::kBalance;
     case CSSValueID::kPretty:
-      DCHECK(RuntimeEnabledFeatures::CSSTextWrapPrettyEnabled());
       return TextWrap::kPretty;
     default:
       NOTREACHED();
@@ -513,11 +547,40 @@ inline CSSValueID PlatformEnumToCSSValueID(TextWrap v) {
     case TextWrap::kBalance:
       return CSSValueID::kBalance;
     case TextWrap::kPretty:
-      DCHECK(RuntimeEnabledFeatures::CSSTextWrapPrettyEnabled());
       return CSSValueID::kPretty;
   }
   NOTREACHED();
   return CSSValueID::kNone;
+}
+
+template <>
+inline TryTactic CssValueIDToPlatformEnum(CSSValueID v) {
+  switch (v) {
+    case CSSValueID::kFlipBlock:
+      return TryTactic::kFlipBlock;
+    case CSSValueID::kFlipInline:
+      return TryTactic::kFlipInline;
+    case CSSValueID::kFlipStart:
+      return TryTactic::kFlipStart;
+    default:
+      NOTREACHED();
+      return TryTactic::kNone;
+  }
+}
+
+template <>
+inline CSSValueID PlatformEnumToCSSValueID(TryTactic v) {
+  switch (v) {
+    case TryTactic::kNone:
+      NOTREACHED();
+      return CSSValueID::kNone;
+    case TryTactic::kFlipBlock:
+      return CSSValueID::kFlipBlock;
+    case TryTactic::kFlipInline:
+      return CSSValueID::kFlipInline;
+    case TryTactic::kFlipStart:
+      return CSSValueID::kFlipStart;
+  }
 }
 
 }  // namespace blink

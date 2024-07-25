@@ -95,9 +95,10 @@ class GuestViewBase::OwnerContentsObserver : public WebContentsObserver {
   }
 
   void DidUpdateAudioMutingState(bool muted) override {
-    if (IsGuestInitialized()) {
-      guest_->web_contents()->SetAudioMuted(muted);
+    if (!IsGuestInitialized()) {
+      return;
     }
+    guest_->OnOwnerAudioMutedStateUpdated(muted);
   }
 
  private:
@@ -214,7 +215,7 @@ void GuestViewBase::InitWithWebContents(const base::Value::Dict& create_params,
   DidInitialize(create_params);
 }
 
-const absl::optional<
+const std::optional<
     std::pair<base::Value::Dict, content::WebContents::CreateParams>>&
 GuestViewBase::GetCreateParams() const {
   return create_params_;
@@ -377,7 +378,7 @@ bool GuestViewBase::ZoomPropagatesFromEmbedderToGuest() const {
 }
 
 content::NavigationController& GuestViewBase::GetController() {
-  // TODO(crbug/1261928): Migrate the implementation for MPArch.
+  // TODO(crbug.com/40202416): Migrate the implementation for MPArch.
   return web_contents()->GetController();
 }
 
@@ -448,7 +449,7 @@ void GuestViewBase::AttachToOuterWebContentsFrame(
     GuestViewMessageHandler::AttachToEmbedderFrameCallback
         attachment_callback) {
   // Stop tracking the old embedder's zoom level.
-  // TODO(crbug.com/533069): We should assert that we're not tracking the
+  // TODO(crbug.com/40436245): We should assert that we're not tracking the
   // embedder at this point, since guest reattachment is no longer possible.
   StopTrackingEmbedderZoomLevel();
 
@@ -482,7 +483,7 @@ void GuestViewBase::AttachToOuterWebContentsFrame(
       std::move(owned_guest_contents_);
   DCHECK_EQ(owned_guest_contents.get(), web_contents());
   if (owned_guest_contents) {
-    owned_guest_contents->SetOwnerLocationForDebug(absl::nullopt);
+    owned_guest_contents->SetOwnerLocationForDebug(std::nullopt);
   }
 
   // Since this inner WebContents is created from the browser side we do
@@ -506,6 +507,11 @@ void GuestViewBase::AttachToOuterWebContentsFrame(
   // queued events.
   SignalWhenReady(base::BindOnce(&GuestViewBase::DidAttach,
                                  weak_ptr_factory_.GetWeakPtr()));
+}
+
+void GuestViewBase::OnOwnerAudioMutedStateUpdated(bool muted) {
+  CHECK(web_contents());
+  web_contents()->SetAudioMuted(muted);
 }
 
 void GuestViewBase::SignalWhenReady(base::OnceClosure callback) {
@@ -548,7 +554,7 @@ void GuestViewBase::WebContentsDestroyed() {
 
 void GuestViewBase::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  // TODO(crbug.com/1261928): Due to the use of inner WebContents, a
+  // TODO(crbug.com/40202416): Due to the use of inner WebContents, a
   // GuestViewBase's main frame is considered primary. This will no
   // longer be the case once we migrate guest views to MPArch.
   if (!navigation_handle->IsInPrimaryMainFrame() ||
@@ -568,13 +574,12 @@ void GuestViewBase::ActivateContents(WebContents* web_contents) {
 }
 
 void GuestViewBase::ContentsMouseEvent(WebContents* source,
-                                       bool motion,
-                                       bool exited) {
+                                       const ui::Event& event) {
   if (!attached() || !embedder_web_contents()->GetDelegate())
     return;
 
   embedder_web_contents()->GetDelegate()->ContentsMouseEvent(
-      embedder_web_contents(), motion, exited);
+      embedder_web_contents(), event);
 }
 
 void GuestViewBase::ContentsZoomChange(bool zoom_in) {
@@ -764,7 +769,7 @@ double GuestViewBase::GetEmbedderZoomFactor() const {
 
 void GuestViewBase::SetUpSizing(const base::Value::Dict& params) {
   // Read the autosize parameters passed in from the embedder.
-  absl::optional<bool> auto_size_enabled_opt =
+  std::optional<bool> auto_size_enabled_opt =
       params.FindBool(kAttributeAutoSize);
   bool auto_size_enabled = auto_size_enabled_opt.value_or(auto_size_enabled_);
 
@@ -787,7 +792,7 @@ void GuestViewBase::SetUpSizing(const base::Value::Dict& params) {
   int normal_width = normal_size_.width();
   // If the element size was provided in logical units (versus physical), then
   // it will be converted to physical units.
-  absl::optional<bool> element_size_is_logical_opt =
+  std::optional<bool> element_size_is_logical_opt =
       params.FindBool(kElementSizeIsLogical);
   bool element_size_is_logical = element_size_is_logical_opt.value_or(false);
   if (element_size_is_logical) {
@@ -900,7 +905,7 @@ bool GuestViewBase::IsPermissionRequestable(ContentSettingsType type) const {
 }
 
 content::RenderFrameHost* GuestViewBase::GetGuestMainFrame() const {
-  // TODO(crbug/1261928): Migrate the implementation for MPArch.
+  // TODO(crbug.com/40202416): Migrate the implementation for MPArch.
   return web_contents()->GetPrimaryMainFrame();
 }
 

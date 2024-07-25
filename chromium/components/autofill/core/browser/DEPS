@@ -1,5 +1,7 @@
 include_rules = [
   "+components/browser_ui/device_lock/android",
+  # TODO(crbug.com/40260352): Remove once the cause of the bug is understood.
+  "+components/crash/core/common/crash_key.h",
   "+components/device_reauth/device_authenticator.h",
   "+components/feature_engagement",
   "+components/google/core/common/google_util.h",
@@ -12,7 +14,6 @@ include_rules = [
   "+components/metrics",
   "+components/optimization_guide",
   "+components/optimization_guide/core",
-  "+components/plus_addresses",
   "+components/profile_metrics",
   "+components/policy",
   "+components/resources",

@@ -20,6 +20,7 @@
 #include "components/unexportable_keys/unexportable_key_id.h"
 #include "components/unexportable_keys/unexportable_key_service.h"
 #include "crypto/signature_verifier.h"
+#include "crypto/unexportable_key.h"
 
 namespace unexportable_keys {
 
@@ -29,7 +30,8 @@ class MaybePendingUnexportableKeyId;
 
 class UnexportableKeyTaskManager;
 
-class UnexportableKeyServiceImpl : public UnexportableKeyService {
+class COMPONENT_EXPORT(UNEXPORTABLE_KEYS) UnexportableKeyServiceImpl
+    : public UnexportableKeyService {
  public:
   // `task_manager` must outlive `UnexportableKeyServiceImpl`.
   explicit UnexportableKeyServiceImpl(UnexportableKeyTaskManager& task_manager);
@@ -39,7 +41,8 @@ class UnexportableKeyServiceImpl : public UnexportableKeyService {
   // Returns whether the current platform has a support for unexportable signing
   // keys. If this returns false, all service methods will return
   // `ServiceError::kNoKeyProvider`.
-  static bool IsUnexportableKeyProviderSupported();
+  static bool IsUnexportableKeyProviderSupported(
+      crypto::UnexportableKeyProvider::Config config);
 
   // UnexportableKeyService:
   void GenerateSigningKeySlowlyAsync(

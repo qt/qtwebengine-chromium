@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_
-#define BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_
+#ifndef PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_
+#define PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_
 
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
 #include "partition_alloc/starscan/stats_collector.h"
@@ -12,7 +12,7 @@ namespace partition_alloc {
 
 // StatsReporter is a wrapper to invoke TRACE_EVENT_BEGIN/END, TRACE_COUNTER1,
 // and UmaHistogramTimes. It is used to just remove trace_log and uma
-// dependencies from partition allocator.
+// dependencies from PartitionAlloc.
 class StatsReporter {
  public:
   virtual void ReportTraceEvent(internal::StatsCollector::ScannerId id,
@@ -33,4 +33,4 @@ class StatsReporter {
 
 }  // namespace partition_alloc
 
-#endif  // BASE_ALLOCATOR_PARTITION_ALLOCATOR_SRC_PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_
+#endif  // PARTITION_ALLOC_STARSCAN_STATS_REPORTER_H_

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
+import 'chrome://resources/ash/common/cr_elements/cr_shared_vars.css.js';
 import './shared_style.css.js';
 import 'chrome://resources/polymer/v3_0/iron-location/iron-location.js';
 import 'chrome://resources/polymer/v3_0/iron-pages/iron-pages.js';
@@ -29,8 +29,7 @@ export class LogTypesElement extends PolymerElement {
         type: FeatureValues,
         value: [
           FeatureValues.NEARBY_SHARE,
-          FeatureValues.NEARBY_CONNECTIONS,
-          FeatureValues.NEARBY_PRESENCE,
+          FeatureValues.NEARBY_INFRA,
           FeatureValues.FAST_PAIR,
         ],
       },
@@ -40,22 +39,20 @@ export class LogTypesElement extends PolymerElement {
 
   currentLogTypes: FeatureValues[];
 
-  private nearbyPresenceCheckboxClicked_(): void {
+  private nearbyInfraCheckboxClicked_(): void {
     const checkbox: HTMLInputElement|null =
-        this.shadowRoot!.querySelector('#nearbyPresenceCheckbox');
+        this.shadowRoot!.querySelector('#nearbyInfraCheckbox');
     let checked: boolean = true;
     if (checkbox) {
       checked = checkbox.checked;
     }
 
-    if (checked &&
-        !this.currentLogTypes.includes(FeatureValues.NEARBY_PRESENCE)) {
-      this.currentLogTypes.push(FeatureValues.NEARBY_PRESENCE);
+    if (checked && !this.currentLogTypes.includes(FeatureValues.NEARBY_INFRA)) {
+      this.currentLogTypes.push(FeatureValues.NEARBY_INFRA);
     }
-    if (!checked &&
-        this.currentLogTypes.includes(FeatureValues.NEARBY_PRESENCE)) {
+    if (!checked && this.currentLogTypes.includes(FeatureValues.NEARBY_INFRA)) {
       this.currentLogTypes.splice(
-          this.currentLogTypes.lastIndexOf(FeatureValues.NEARBY_PRESENCE), 1);
+          this.currentLogTypes.lastIndexOf(FeatureValues.NEARBY_INFRA), 1);
     }
   }
 
@@ -73,26 +70,6 @@ export class LogTypesElement extends PolymerElement {
     if (!checked && this.currentLogTypes.includes(FeatureValues.NEARBY_SHARE)) {
       this.currentLogTypes.splice(
           this.currentLogTypes.lastIndexOf(FeatureValues.NEARBY_SHARE), 1);
-    }
-  }
-
-  private nearbyConnectionsCheckboxClicked_(): void {
-    const checkbox: HTMLInputElement|null =
-        this.shadowRoot!.querySelector('#nearbyConnectionsCheckbox');
-    let checked: boolean = true;
-    if (checkbox) {
-      checked = checkbox.checked;
-    }
-
-    if (checked &&
-        !this.currentLogTypes.includes(FeatureValues.NEARBY_CONNECTIONS)) {
-      this.currentLogTypes.push(FeatureValues.NEARBY_CONNECTIONS);
-    }
-    if (!checked &&
-        this.currentLogTypes.includes(FeatureValues.NEARBY_CONNECTIONS)) {
-      this.currentLogTypes.splice(
-          this.currentLogTypes.lastIndexOf(FeatureValues.NEARBY_CONNECTIONS),
-          1);
     }
   }
 

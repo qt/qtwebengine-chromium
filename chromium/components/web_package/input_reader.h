@@ -5,10 +5,11 @@
 #ifndef COMPONENTS_WEB_PACKAGE_INPUT_READER_H_
 #define COMPONENTS_WEB_PACKAGE_INPUT_READER_H_
 
-#include "base/big_endian.h"
+#include <optional>
+#include <string_view>
+
 #include "base/containers/span.h"
-#include "base/strings/string_piece.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "base/containers/span_reader.h"
 
 namespace web_package {
 
@@ -36,37 +37,39 @@ class InputReader {
   InputReader(const InputReader&) = delete;
   InputReader& operator=(const InputReader&) = delete;
 
-  uint64_t CurrentOffset() const { return current_offset_; }
-  size_t Size() const { return buf_.size(); }
+  size_t CurrentOffset() const { return buf_.num_read(); }
+  size_t Size() const { return buf_.remaining(); }
 
-  absl::optional<uint8_t> ReadByte();
+  std::optional<uint8_t> ReadByte();
 
   template <typename T>
+    requires(std::is_integral_v<T> && std::is_unsigned_v<T>)
   bool ReadBigEndian(T* out) {
-    auto bytes = ReadBytes(sizeof(T));
-    if (!bytes) {
-      return false;
+    if constexpr (sizeof(T) == 1) {
+      return buf_.ReadU8BigEndian(*out);
+    } else if constexpr (sizeof(T) == 2) {
+      return buf_.ReadU16BigEndian(*out);
+    } else if constexpr (sizeof(T) == 4) {
+      return buf_.ReadU32BigEndian(*out);
+    } else {
+      static_assert(sizeof(T) == 8);
+      return buf_.ReadU64BigEndian(*out);
     }
-    base::ReadBigEndian(bytes->data(), out);
-    return true;
   }
 
-  absl::optional<base::span<const uint8_t>> ReadBytes(size_t n);
+  std::optional<base::span<const uint8_t>> ReadBytes(size_t n);
 
-  absl::optional<base::StringPiece> ReadString(size_t n);
+  std::optional<std::string_view> ReadString(size_t n);
 
   // Parses the type and argument of a CBOR item from the input head. If parsed
   // successfully and the type matches |expected_type|, returns the argument.
   // Otherwise returns nullopt.
-  absl::optional<uint64_t> ReadCBORHeader(CBORType expected_type);
+  std::optional<uint64_t> ReadCBORHeader(CBORType expected_type);
 
  private:
-  absl::optional<std::pair<CBORType, uint64_t>> ReadTypeAndArgument();
+  std::optional<std::pair<CBORType, uint64_t>> ReadTypeAndArgument();
 
-  void Advance(size_t n);
-
-  base::span<const uint8_t> buf_;
-  uint64_t current_offset_ = 0;
+  base::SpanReader<const uint8_t> buf_;
 };
 
 }  // namespace web_package

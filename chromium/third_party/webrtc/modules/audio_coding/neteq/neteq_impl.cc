@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "api/audio_codecs/audio_decoder.h"
+#include "api/neteq/neteq_controller.h"
 #include "api/neteq/tick_timer.h"
 #include "common_audio/signal_processing/include/signal_processing_library.h"
 #include "modules/audio_coding/codecs/cng/webrtc_cng.h"
@@ -36,7 +37,6 @@
 #include "modules/audio_coding/neteq/normal.h"
 #include "modules/audio_coding/neteq/packet.h"
 #include "modules/audio_coding/neteq/packet_buffer.h"
-#include "modules/audio_coding/neteq/post_decode_vad.h"
 #include "modules/audio_coding/neteq/preemptive_expand.h"
 #include "modules/audio_coding/neteq/red_payload_splitter.h"
 #include "modules/audio_coding/neteq/statistics_calculator.h"
@@ -50,6 +50,7 @@
 #include "rtc_base/strings/audio_format_to_string.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
+#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 namespace {
@@ -70,49 +71,26 @@ std::unique_ptr<NetEqController> CreateNetEqController(
   return controller_factory.CreateNetEqController(config);
 }
 
-void SetAudioFrameActivityAndType(bool vad_enabled,
-                                  NetEqImpl::OutputType type,
-                                  AudioFrame::VADActivity last_vad_activity,
-                                  AudioFrame* audio_frame) {
+AudioFrame::SpeechType ToSpeechType(NetEqImpl::OutputType type) {
   switch (type) {
     case NetEqImpl::OutputType::kNormalSpeech: {
-      audio_frame->speech_type_ = AudioFrame::kNormalSpeech;
-      audio_frame->vad_activity_ = AudioFrame::kVadActive;
-      break;
-    }
-    case NetEqImpl::OutputType::kVadPassive: {
-      // This should only be reached if the VAD is enabled.
-      RTC_DCHECK(vad_enabled);
-      audio_frame->speech_type_ = AudioFrame::kNormalSpeech;
-      audio_frame->vad_activity_ = AudioFrame::kVadPassive;
-      break;
+      return AudioFrame::kNormalSpeech;
     }
     case NetEqImpl::OutputType::kCNG: {
-      audio_frame->speech_type_ = AudioFrame::kCNG;
-      audio_frame->vad_activity_ = AudioFrame::kVadPassive;
-      break;
+      return AudioFrame::kCNG;
     }
     case NetEqImpl::OutputType::kPLC: {
-      audio_frame->speech_type_ = AudioFrame::kPLC;
-      audio_frame->vad_activity_ = last_vad_activity;
-      break;
+      return AudioFrame::kPLC;
     }
     case NetEqImpl::OutputType::kPLCCNG: {
-      audio_frame->speech_type_ = AudioFrame::kPLCCNG;
-      audio_frame->vad_activity_ = AudioFrame::kVadPassive;
-      break;
+      return AudioFrame::kPLCCNG;
     }
     case NetEqImpl::OutputType::kCodecPLC: {
-      audio_frame->speech_type_ = AudioFrame::kCodecPLC;
-      audio_frame->vad_activity_ = last_vad_activity;
-      break;
+      return AudioFrame::kCodecPLC;
     }
     default:
       RTC_DCHECK_NOTREACHED();
-  }
-  if (!vad_enabled) {
-    // Always set kVadUnknown when receive VAD is inactive.
-    audio_frame->vad_activity_ = AudioFrame::kVadUnknown;
+      return AudioFrame::kUndefined;
   }
 }
 
@@ -169,7 +147,6 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       packet_buffer_(std::move(deps.packet_buffer)),
       red_payload_splitter_(std::move(deps.red_payload_splitter)),
       timestamp_scaler_(std::move(deps.timestamp_scaler)),
-      vad_(new PostDecodeVad()),
       expand_factory_(std::move(deps.expand_factory)),
       accelerate_factory_(std::move(deps.accelerate_factory)),
       preemptive_expand_factory_(std::move(deps.preemptive_expand_factory)),
@@ -211,10 +188,6 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
   if (create_components) {
     SetSampleRateAndChannels(fs, 1);  // Default is 1 channel.
   }
-  RTC_DCHECK(!vad_->enabled());
-  if (config.enable_post_decode_vad) {
-    vad_->Enable();
-  }
 }
 
 NetEqImpl::~NetEqImpl() = default;
@@ -245,16 +218,16 @@ int NetEqImpl::GetAudio(AudioFrame* audio_frame,
                         absl::optional<Operation> action_override) {
   TRACE_EVENT0("webrtc", "NetEqImpl::GetAudio");
   MutexLock lock(&mutex_);
-  if (GetAudioInternal(audio_frame, muted, action_override) != 0) {
+  if (GetAudioInternal(audio_frame, action_override) != 0) {
     return kFail;
   }
   RTC_DCHECK_EQ(
       audio_frame->sample_rate_hz_,
       rtc::dchecked_cast<int>(audio_frame->samples_per_channel_ * 100));
-  RTC_DCHECK_EQ(*muted, audio_frame->muted());
-  SetAudioFrameActivityAndType(vad_->enabled(), LastOutputType(),
-                               last_vad_activity_, audio_frame);
-  last_vad_activity_ = audio_frame->vad_activity_;
+  if (muted != nullptr) {
+    *muted = audio_frame->muted();
+  }
+  audio_frame->speech_type_ = ToSpeechType(LastOutputType());
   last_output_sample_rate_hz_ = audio_frame->sample_rate_hz_;
   RTC_DCHECK(last_output_sample_rate_hz_ == 8000 ||
              last_output_sample_rate_hz_ == 16000 ||
@@ -398,18 +371,6 @@ NetEqOperationsAndState NetEqImpl::GetOperationsAndState() const {
   return result;
 }
 
-void NetEqImpl::EnableVad() {
-  MutexLock lock(&mutex_);
-  RTC_DCHECK(vad_.get());
-  vad_->Enable();
-}
-
-void NetEqImpl::DisableVad() {
-  MutexLock lock(&mutex_);
-  RTC_DCHECK(vad_.get());
-  vad_->Disable();
-}
-
 absl::optional<uint32_t> NetEqImpl::GetPlayoutTimestamp() const {
   MutexLock lock(&mutex_);
   if (first_packet_ || last_mode_ == Mode::kRfc3389Cng ||
@@ -541,7 +502,6 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
   // Store these for later use, since the first packet may very well disappear
   // before we need these values.
   uint32_t main_timestamp = packet_list.front().timestamp;
-  uint8_t main_payload_type = packet_list.front().payload_type;
   uint16_t main_sequence_number = packet_list.front().sequence_number;
 
   // Reinitialize NetEq if it's needed (changed SSRC or first call).
@@ -594,7 +554,6 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
   if (decoder_database_->IsRed(rtp_header.payloadType)) {
     timestamp_scaler_->ToInternal(&packet_list);
     main_timestamp = packet_list.front().timestamp;
-    main_payload_type = packet_list.front().payload_type;
     main_sequence_number = packet_list.front().sequence_number;
   }
 
@@ -695,12 +654,21 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
       packet_buffer_->Flush();
       buffer_flush_occured = true;
     }
+    NetEqController::PacketArrivedInfo info = ToPacketArrivedInfo(packet);
     int return_val = packet_buffer_->InsertPacket(std::move(packet));
     if (return_val == PacketBuffer::kFlushed) {
       buffer_flush_occured = true;
     } else if (return_val != PacketBuffer::kOK) {
       // An error occurred.
       return kOtherError;
+    }
+
+    info.buffer_flush = buffer_flush_occured;
+    const bool should_update_stats = !new_codec_ && !buffer_flush_occured;
+    auto relative_delay =
+        controller_->PacketArrived(fs_hz_, should_update_stats, info);
+    if (relative_delay) {
+      stats_->RelativePacketArrivalDelay(relative_delay.value());
     }
   }
 
@@ -752,25 +720,6 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
     }
   }
 
-  const DecoderDatabase::DecoderInfo* dec_info =
-      decoder_database_->GetDecoderInfo(main_payload_type);
-  RTC_DCHECK(dec_info);  // Already checked that the payload type is known.
-
-  NetEqController::PacketArrivedInfo info;
-  info.is_cng_or_dtmf = dec_info->IsComfortNoise() || dec_info->IsDtmf();
-  info.packet_length_samples =
-      number_of_primary_packets * decoder_frame_length_;
-  info.main_timestamp = main_timestamp;
-  info.main_sequence_number = main_sequence_number;
-  info.is_dtx = is_dtx;
-  info.buffer_flush = buffer_flush_occured;
-
-  const bool should_update_stats = !new_codec_;
-  auto relative_delay =
-      controller_->PacketArrived(fs_hz_, should_update_stats, info);
-  if (relative_delay) {
-    stats_->RelativePacketArrivalDelay(relative_delay.value());
-  }
   return 0;
 }
 
@@ -800,13 +749,11 @@ bool NetEqImpl::MaybeChangePayloadType(uint8_t payload_type) {
 }
 
 int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
-                                bool* muted,
                                 absl::optional<Operation> action_override) {
   PacketList packet_list;
   DtmfEvent dtmf_event;
   Operation operation;
   bool play_dtmf;
-  *muted = false;
   last_decoded_packet_infos_.clear();
   tick_timer_->Increment();
   stats_->IncreaseCounter(output_size_samples_, fs_hz_);
@@ -839,7 +786,6 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
     audio_frame->num_channels_ = sync_buffer_->Channels();
     stats_->ExpandedNoiseSamples(output_size_samples_, false);
     controller_->NotifyMutedState();
-    *muted = true;
     return 0;
   }
   int return_value = GetDecision(&operation, &packet_list, &dtmf_event,
@@ -858,11 +804,8 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
     last_decoded_type_ = speech_type;
   }
 
-  RTC_DCHECK(vad_.get());
   bool sid_frame_available =
       (operation == Operation::kRfc3389Cng && !packet_list.empty());
-  vad_->Update(decoded_buffer_.get(), static_cast<size_t>(length), speech_type,
-               sid_frame_available, fs_hz_);
 
   // This is the criterion that we did decode some data through the speech
   // decoder, and the operation resulted in comfort noise.
@@ -1012,7 +955,7 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
       (last_mode_ == Mode::kPreemptiveExpandFail) ||
       (last_mode_ == Mode::kRfc3389Cng) ||
       (last_mode_ == Mode::kCodecInternalCng)) {
-    background_noise_->Update(*sync_buffer_, *vad_.get());
+    background_noise_->Update(*sync_buffer_);
   }
 
   if (operation == Operation::kDtmf) {
@@ -2088,10 +2031,6 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
   if (cng_decoder)
     cng_decoder->Reset();
 
-  // Reinit post-decode VAD with new sample rate.
-  RTC_DCHECK(vad_.get());  // Cannot be NULL here.
-  vad_->Init();
-
   // Delete algorithm buffer and create a new one.
   algorithm_buffer_.reset(new AudioMultiVector(channels));
 
@@ -2132,7 +2071,6 @@ void NetEqImpl::SetSampleRateAndChannels(int fs_hz, size_t channels) {
 }
 
 NetEqImpl::OutputType NetEqImpl::LastOutputType() {
-  RTC_DCHECK(vad_.get());
   RTC_DCHECK(expand_.get());
   if (last_mode_ == Mode::kCodecInternalCng ||
       last_mode_ == Mode::kRfc3389Cng) {
@@ -2142,12 +2080,27 @@ NetEqImpl::OutputType NetEqImpl::LastOutputType() {
     return OutputType::kPLCCNG;
   } else if (last_mode_ == Mode::kExpand) {
     return OutputType::kPLC;
-  } else if (vad_->running() && !vad_->active_speech()) {
-    return OutputType::kVadPassive;
   } else if (last_mode_ == Mode::kCodecPlc) {
     return OutputType::kCodecPLC;
   } else {
     return OutputType::kNormalSpeech;
   }
 }
+
+NetEqController::PacketArrivedInfo NetEqImpl::ToPacketArrivedInfo(
+    const Packet& packet) const {
+  const DecoderDatabase::DecoderInfo* dec_info =
+      decoder_database_->GetDecoderInfo(packet.payload_type);
+
+  NetEqController::PacketArrivedInfo info;
+  info.is_cng_or_dtmf =
+      dec_info && (dec_info->IsComfortNoise() || dec_info->IsDtmf());
+  info.packet_length_samples =
+      packet.frame ? packet.frame->Duration() : decoder_frame_length_;
+  info.main_timestamp = packet.timestamp;
+  info.main_sequence_number = packet.sequence_number;
+  info.is_dtx = packet.frame && packet.frame->IsDtxPacket();
+  return info;
+}
+
 }  // namespace webrtc

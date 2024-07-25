@@ -58,8 +58,8 @@ compiled with different flags, or linked against a different C++ standard
 library, but do not with the toolchain and configuration that we use to build
 Chrome. We discuss some of these cases elsewhere in this FAQ.
 
-If we become aware of them, these issues may be triaged as `Type=Bug-Security,
-Security_Impact=None` or as `Type=Bug` because they do not affect the production
+If we become aware of them, these issues may be triaged as `Type=Vulnerability,
+Security_Impact-None` or as `Type=Bug` because they do not affect the production
 version of Chrome. They may or may not be immediately visible to the public in
 the bug tracker, and may or may not be identified as security issues. If fixes
 are landed, they may or may not be merged from HEAD to a release branch. Chrome
@@ -299,6 +299,36 @@ would want to dismiss. [Example](https://crbug.com/854455#c11).
 Note that a user navigating to a download will cause a file to be
 [downloaded](https://crbug.com/1114592).
 
+<a name="TOC-security-properties-not-inherited-using-contextual-menu-"></a>
+### Sandbox/CSP/etc... security properties are not inherited when navigating using the middle-click/contextual-menu - is this a security bug?
+
+The security properties of the document providing the URL are not used/inherited
+when the user deliberately opens a link in a popup using one of:
+
+- Ctrl + left-click (Open link in new tab)
+- Shift + left-click (Open link in new window)
+- Middle-click (Open a link in a new tab)
+- Right-click > "Open link in ..."
+
+These methods of following a link have more or less the same implications as the
+user copying the link's URL and pasting it into a newly-opened window. We treat
+them as user-initiated top-level navigations, and as such will not apply or
+inherit policy restrictions into the new context
+
+Example of security related properties:
+
+- Content-Security-Policy
+- Cross-Origin-Embedder-Policy
+- Cross-Origin-Opener-Policy
+- Origin
+- Referrer
+- Sandbox
+- etc...
+
+These browser's actions/shortcuts are specific to Chrome. They are different
+from the behavior specified by the web-platform, such as using executing
+`window.open()` or opening a link with the `target=_blank` attribute.
+
 ## Areas outside Chrome's Threat Model
 
 <a name="TOC-Are-privacy-issues-considered-security-bugs-"></a>
@@ -342,11 +372,11 @@ X-XSS-Protection header.
 No. Denial of Service (DoS) issues are treated as **abuse** or **stability**
 issues rather than security vulnerabilities.
 
-*    If you find a reproducible crash, we encourage you to [report
-     it](https://bugs.chromium.org/p/chromium/issues/entry?template=Crash%20Report).
+*    If you find a reproducible crash (e.g. a way to hit a `CHECK`),
+     we encourage you to [report it](https://issues.chromium.org/new).
 *    If you find a site that is abusing the user experience (e.g. preventing you
      from leaving a site), we encourage you to [report
-     it](https://crbug.com/new).
+     it](https://issues.chromium.org/new).
 
 DoS issues are not considered under the security vulnerability rewards program;
 the [severity guidelines](severity-guidelines.md) outline the types of bugs that
@@ -577,6 +607,29 @@ important security benefits are redundant with or superseded by built-in attack
 mitigations within the browser. For users, the very marginal security benefit is
 not usually a good trade-off for the compatibility issues and performance
 degradation the toolkit can cause.
+
+<a name="TOC-dangling-pointers"></a>
+### Dangling pointers
+
+Chromium can be instrumented to detect [dangling
+pointers](https://chromium.googlesource.com/chromium/src/+/main/docs/dangling_ptr.md):
+
+Notable build flags are:
+- `enable_dangling_raw_ptr_checks=true`
+- `use_asan_unowned_ptr=true`
+
+Notable runtime flags are:
+- `--enable-features=PartitionAllocDanglingPtr`
+
+It is important to note that detecting a dangling pointer alone does not
+necessarily indicate a security vulnerability. A dangling pointer becomes a
+security vulnerability only when it is dereferenced and used after it becomes
+dangling.
+
+In general, dangling pointer issues should be assigned to feature teams as
+ordinary bugs and be fixed by them. However, they can be considered only if
+there is a demonstrable way to show a memory corruption. e.g. with a POC causing
+crash with ASAN **without the flags above**.
 
 ## Certificates & Connection Indicators
 
@@ -899,22 +952,21 @@ specific:
      (DPAPI)](https://msdn.microsoft.com/en-us/library/ms995355.aspx) to bind
      your passwords to your user account and store them on disk encrypted with
      a key only accessible to processes running as the same logged on user.
-*    On macOS, Chrome previously stored credentials directly in the user's
+*    On macOS and iOS, Chrome previously stored credentials directly in the user's
      Keychain, but for technical reasons, it has switched to storing the
      credentials in "Login Data" in the Chrome users profile directory, but
      encrypted on disk with a key that is then stored in the user's Keychain.
-     See [Issue 466638](https://crbug.com/466638) for further explanation.
+     See [Issue 466638](https://crbug.com/466638) and [Issue 520437](https://crbug.com/520437) for further explanation.
 *    On Linux, Chrome previously stored credentials directly in the user's
      Gnome Secret Service or KWallet, but for technical reasons, it has switched to
      storing the credentials in "Login Data" in the Chrome user's profile directory,
      but encrypted on disk with a key that is then stored in the user's Gnome
      Secret Service or KWallet. If there is no available Secret Service or KWallet,
      the data is not encrypted when stored.
-*    On iOS, passwords are currently stored directly in the iOS Keychain and
-     referenced from the rest of the metadata stored in a separate DB. The plan
-     there is to just store them in plain text in the DB, because iOS gives
-     strong guarantees about only Chrome being able to access its storage. See
-     [Issue 520437](https://crbug.com/520437) to follow this migration.
+*    On Android, Chrome doesn't store in the profile anymore, instead it uses Google
+     Play Services to access passwords stored on a device.
+*    On ChromeOS passwords are only obfuscated since all profile data is encrypted
+     by the OS.
 
 <a name="TOC-If-theres-a-way-to-see-stored-passwords-without-entering-a-password--is-this-a-security-bug-"></a>
 ### If there's a way to see stored passwords without entering a password, is this a security bug?
@@ -947,6 +999,53 @@ See our dedicated [Extensions Security FAQ](https://chromium.googlesource.com/ch
 ### What's the security model for Chrome Custom Tabs?
 
 See our [Chrome Custom Tabs security FAQ](custom-tabs-faq.md).
+
+<a name="TOC-How-is-security-different-in-Chrome-for-iOS--"></a>
+### How is security different in Chrome for iOS?
+
+Chrome for iOS does not use Chrome's standard rendering engine. Due to Apple's
+iOS platform restrictions, it instead uses Apple's WebKit engine and a more
+restricted process isolation model. This means its security properties are
+different from Chrome on all other platforms.
+
+The differences in security are far too extensive to list exhaustively, but some
+notable points are:
+
+* Chromium's [site
+  isolation](https://www.chromium.org/Home/chromium-security/site-isolation/)
+  isn't used; WebKit has its own alternative implementation with different costs
+  and benefits.
+* WebKit has [historically been slower at shipping security
+  fixes](https://googleprojectzero.blogspot.com/2022/02/a-walk-through-project-zero-metrics.html).
+* Chrome's network stack, [root
+  store](https://www.chromium.org/Home/chromium-security/root-ca-policy/) and
+  associated technology are not used, so
+  the platform will make different decisions about what web servers to trust.
+* Sandboxing APIs are not available for native code.
+
+Given that the fundamentals of the browser are so different, and given these
+limitations, Chrome for iOS has historically not consistently implemented some
+of Chrome's [standard security guidelines](rules.md). This includes the
+important [Rule of Two](rule-of-2.md). Future Chrome for iOS features should
+meet all guidelines except in cases where the lack of platform APIs make it
+unrealistic. (The use of WebAssembly-based sandboxing is currently considered
+unrealistic though this could change in future.)
+
+If the Rule of Two cannot be followed, features for Chrome for iOS should
+nevertheless follow it as closely as possible, and adopt additional mitigations
+where they cannot:
+
+* First consider adding a validation layer between unsafe code and web contents,
+  or adopting memory-safe parsers at the boundary between the renderer and the
+  browser process. Consider changing the design of the feature so the riskiest
+  parsing can happen in javascript injected in the renderer process.
+* Any unsafe unsandboxed code that is exposed to web contents or other
+  untrustworthy data sources must be extensively tested and fuzzed.
+
+The Chrome team is enthusiastic about the future possibility of making a version
+of Chrome for iOS that meets our usual security standards if richer platform
+facilities become widely available: this will require revisiting existing
+features to see if adjustment is required.
 
 <a name="TOC-Are-all-Chrome-updates-important--"></a>
 ### Are all Chrome updates important?

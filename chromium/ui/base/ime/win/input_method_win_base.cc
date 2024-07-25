@@ -12,6 +12,7 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/containers/heap_array.h"
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
@@ -36,8 +37,7 @@ constexpr size_t kExtraNumberOfChars = 20;
 
 std::unique_ptr<VirtualKeyboardController> CreateKeyboardController(
     HWND attached_window_handle) {
-  if (base::FeatureList::IsEnabled(features::kInputPaneOnScreenKeyboard) &&
-      base::win::GetVersion() >= base::win::Version::WIN10_RS4) {
+  if (base::win::GetVersion() >= base::win::Version::WIN10_RS4) {
     return std::make_unique<OnScreenKeyboardDisplayManagerInputPane>(
         attached_window_handle);
   } else {
@@ -83,8 +83,8 @@ bool IsRTLKeyboardLayoutInstalled() {
 
   // Retrieve the keyboard layouts in an array and check if there is an RTL
   // layout in it.
-  std::unique_ptr<HKL[]> layouts(new HKL[size]);
-  ::GetKeyboardLayoutList(size, layouts.get());
+  auto layouts = base::HeapArray<HKL>::Uninit(size);
+  ::GetKeyboardLayoutList(size, layouts.data());
   for (int i = 0; i < size; ++i) {
     if (IsRTLPrimaryLangID(
             PRIMARYLANGID(reinterpret_cast<uintptr_t>(layouts[i])))) {
@@ -268,7 +268,7 @@ bool InputMethodWinBase::IsWindowFocused(const TextInputClient* client) const {
   // true for Chromium-based browser products at least.
   // We need to relax this condition by checking |GetFocus()| so this works fine
   // for embedded Chromium windows.
-  // TODO(crbug/1286880): Check if this can be replaced with |GetFocus()|.
+  // TODO(crbug.com/40815890): Check if this can be replaced with |GetFocus()|.
   return attached_window_handle_ &&
          (GetActiveWindow() == attached_window_handle_ ||
           GetFocus() == attached_window_handle_);

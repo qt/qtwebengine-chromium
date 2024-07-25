@@ -12,6 +12,7 @@ import typing
 from blinkbuild.name_style_converter import NameStyleConverter
 
 from .async_iterator import AsyncIterator
+from .argument import Argument
 from .attribute import Attribute
 from .callback_function import CallbackFunction
 from .callback_interface import CallbackInterface
@@ -173,16 +174,54 @@ class IdlCompiler(object):
                     # https://webidl.spec.whatwg.org/#iterator-result
                     return_type=self._idl_type_factory.promise_type(
                         result_type=self._idl_type_factory.simple_type(
-                            'object')),
+                            'object'),
+                        extended_attributes=ExtendedAttributesMutable([
+                            ExtendedAttribute(
+                                key='IDLTypeImplementedAsV8Promise'),
+                        ])),
                     extended_attributes=ExtendedAttributesMutable([
                         ExtendedAttribute(key="CallWith",
                                           values="ScriptState"),
                         ExtendedAttribute(key="RaisesException"),
                     ]),
                     component=component))
-            # TODO(yukishiino): Define the 'return' property if and only if
-            # an asynchronous iterator return algorithm is defined for the
-            # interface.
+            # Define the 'return' property if and only if an asynchronous
+            # iterator return algorithm is defined for the interface.
+            if ("HasAsyncIteratorReturnAlgorithm"
+                    in iterable.extended_attributes):
+                operations.append(
+                    Operation.IR(
+                        identifier=Identifier('return'),
+                        # Can be called without arguments (e.g.
+                        # AsyncIteratorClose()) or with one argument (e.g.
+                        # yield*).
+                        # https://tc39.es/ecma262/#sec-asynciteratorclose
+                        # https://tc39.es/ecma262/#sec-generator-function-definitions-runtime-semantics-evaluation
+                        arguments=[
+                            Argument.IR(
+                                identifier=Identifier('value'),
+                                index=0,
+                                idl_type=self._idl_type_factory.simple_type(
+                                    'any', is_optional=True))
+                        ],
+                        # The return type is a promise type resolving to an
+                        # iterator result.
+                        # https://webidl.spec.whatwg.org/#iterator-result
+                        return_type=self._idl_type_factory.promise_type(
+                            result_type=self._idl_type_factory.simple_type(
+                                'object'),
+                            extended_attributes=ExtendedAttributesMutable([
+                                ExtendedAttribute(
+                                    key='IDLTypeImplementedAsV8Promise'),
+                            ])),
+                        extended_attributes=ExtendedAttributesMutable([
+                            ExtendedAttribute(key="CallWith",
+                                              values="ScriptState"),
+                            ExtendedAttribute(key="RaisesException"),
+                            ExtendedAttribute(key="ImplementedAs",
+                                              values="returnForBinding"),
+                        ]),
+                        component=component))
 
             iterator_ir = AsyncIterator.IR(
                 interface=self._ref_to_idl_def_factory.create(
@@ -338,6 +377,9 @@ class IdlCompiler(object):
                       default_value=True)
             propagate(('CrossOriginIsolatedOrRuntimeEnabled',
                        'add_only_in_coi_contexts_or_runtime_enabled_feature'))
+            propagate(('InjectionMitigated',
+                       'set_only_in_injection_mitigated_contexts'),
+                      default_value=True)
             propagate(('IsolatedContext', 'set_only_in_isolated_contexts'),
                       default_value=True)
             propagate(('SecureContext', 'set_only_in_secure_contexts'),
@@ -652,9 +694,10 @@ class IdlCompiler(object):
                         OperationGroup.IR, item.operations)
 
     def _propagate_extattrs_to_overload_group(self):
-        ANY_OF = ('CrossOrigin', 'CrossOriginIsolated', 'IsolatedContext',
-                  'LegacyLenientThis', 'LegacyUnforgeable', 'NotEnumerable',
-                  'PerWorldBindings', 'SecureContext', 'Unscopable')
+        ANY_OF = ('CrossOrigin', 'CrossOriginIsolated', 'InjectionMitigated',
+                  'IsolatedContext', 'LegacyLenientThis', 'LegacyUnforgeable',
+                  'NotEnumerable', 'PerWorldBindings', 'SecureContext',
+                  'Unscopable')
 
         old_irs = self._ir_map.irs_of_kinds(IRMap.IR.Kind.ASYNC_ITERATOR,
                                             IRMap.IR.Kind.INTERFACE,
@@ -766,6 +809,14 @@ class IdlCompiler(object):
                     (group.exposure.
                      add_only_in_coi_contexts_or_runtime_enabled_feature
                      )(feature)
+
+                # [InjectionMitigated]
+                if any(not exposure.only_in_injection_mitigated_contexts
+                       for exposure in exposures):
+                    pass  # Exposed by default.
+                else:
+                    group.exposure.set_only_in_injection_mitigated_contexts(
+                        True)
 
                 # [IsolatedContext]
                 if any(not exposure.only_in_isolated_contexts

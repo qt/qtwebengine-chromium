@@ -11,6 +11,7 @@
 
 #include "base/containers/contains.h"
 #include "base/logging.h"
+#include "base/memory/stack_allocated.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
@@ -65,6 +66,8 @@ bool operator<(const std::unique_ptr<SharedImageBacking>& lhs,
 }
 
 class SCOPED_LOCKABLE SharedImageManager::AutoLock {
+  STACK_ALLOCATED();
+
  public:
   explicit AutoLock(SharedImageManager* manager)
       EXCLUSIVE_LOCK_FUNCTION(manager->lock_)
@@ -121,12 +124,12 @@ std::unique_ptr<SharedImageRepresentationFactoryRef>
 SharedImageManager::Register(std::unique_ptr<SharedImageBacking> backing,
                              MemoryTypeTracker* tracker) {
   CALLED_ON_VALID_THREAD();
-  DCHECK(backing->mailbox().IsSharedImage());
 
   AutoLock autolock(this);
   if (base::Contains(images_, backing->mailbox())) {
     LOG(ERROR) << "SharedImageManager::Register: Trying to register an "
                   "already registered mailbox.";
+    backing->MarkForDestruction();
     return nullptr;
   }
 
@@ -146,7 +149,6 @@ std::unique_ptr<SharedImageRepresentationFactoryRef>
 SharedImageManager::AddSecondaryReference(const Mailbox& mailbox,
                                           MemoryTypeTracker* tracker) {
   CALLED_ON_VALID_THREAD();
-  DCHECK(mailbox.IsSharedImage());
 
   AutoLock autolock(this);
   auto found = images_.find(mailbox);
@@ -437,6 +439,19 @@ void SharedImageManager::UpdateExternalFence(
 }
 #endif
 
+std::optional<uint32_t> SharedImageManager::GetUsageForMailbox(
+    const Mailbox& mailbox) {
+  AutoLock autolock(this);
+
+  {
+    auto found = images_.find(mailbox);
+    if (found == images_.end()) {
+      return std::nullopt;
+    }
+    return std::optional<uint32_t>((*found)->usage());
+  }
+}
+
 void SharedImageManager::OnRepresentationDestroyed(
     const Mailbox& mailbox,
     SharedImageRepresentation* representation) {
@@ -493,10 +508,12 @@ bool SharedImageManager::OnMemoryDump(
       base::trace_event::MemoryDumpLevelOfDetail::kBackground) {
     size_t total_size = 0;
     size_t total_purgeable_size = 0;
+    size_t total_non_exo_size = 0;
     for (auto& backing : images_) {
       size_t size = backing->GetEstimatedSizeForMemoryDump();
       total_size += size;
       total_purgeable_size += backing->IsPurgeable() ? size : 0;
+      total_non_exo_size += backing->IsImportedFromExo() ? 0 : size;
     }
 
     base::trace_event::MemoryAllocatorDump* dump =
@@ -507,6 +524,9 @@ bool SharedImageManager::OnMemoryDump(
     dump->AddScalar("purgeable_size",
                     base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                     total_purgeable_size);
+    dump->AddScalar("non_exo_size",
+                    base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                    total_non_exo_size);
 
     // Early out, no need for more detail in a BACKGROUND dump.
     return true;

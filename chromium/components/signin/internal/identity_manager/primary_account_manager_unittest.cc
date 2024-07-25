@@ -5,6 +5,7 @@
 #include "components/signin/internal/identity_manager/primary_account_manager.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,7 +36,6 @@
 #include "components/signin/public/identity_manager/identity_test_utils.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using base::Bucket;
 using signin::ConsentLevel;
@@ -44,11 +44,18 @@ using signin_metrics::ProfileSignout;
 using testing::ElementsAreArray;
 
 namespace {
+
+// Equivalent to the content of `kExplicitBrowserSigninWithoutFeatureEnabled`
+// defined in primary_account_manager.cc that is internal. Recreating it here
+// for testing purposes.
+const char kExplicitBrowserSigninWithoutFeatureEnabledForTesting[] =
+    "signin.explicit_browser_signin";
+
 struct ExpectedAccessPoints {
-  absl::optional<AccessPoint> sign_in = absl::nullopt;
-  absl::optional<AccessPoint> sync_opt_in = absl::nullopt;
-  absl::optional<ProfileSignout> sign_out = absl::nullopt;
-  absl::optional<ProfileSignout> turn_off_sync = absl::nullopt;
+  std::optional<AccessPoint> sign_in = std::nullopt;
+  std::optional<AccessPoint> sync_opt_in = std::nullopt;
+  std::optional<ProfileSignout> sign_out = std::nullopt;
+  std::optional<ProfileSignout> turn_off_sync = std::nullopt;
 };
 }  // namespace
 
@@ -205,8 +212,7 @@ TEST_F(PrimaryAccountManagerTest, SignOut) {
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sync_opt_in = AccessPoint::ACCESS_POINT_UNKNOWN});
 
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(1, num_successful_signouts_);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   EXPECT_TRUE(
@@ -245,8 +251,7 @@ TEST_F(PrimaryAccountManagerTest, SignOutRevoke) {
   EXPECT_EQ(main_account_id,
             manager_->GetPrimaryAccountId(ConsentLevel::kSync));
 
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sync_opt_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sign_out = signin_metrics::ProfileSignout::kTest,
@@ -275,8 +280,7 @@ TEST_F(PrimaryAccountManagerTest, SignOutWhileProhibited) {
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED);
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(0, num_successful_signouts_);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
@@ -284,8 +288,7 @@ TEST_F(PrimaryAccountManagerTest, SignOutWhileProhibited) {
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::REVOKE_SYNC_DISALLOWED);
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(0, num_successful_signouts_);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
@@ -293,8 +296,7 @@ TEST_F(PrimaryAccountManagerTest, SignOutWhileProhibited) {
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::ALLOW);
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(1, num_successful_signouts_);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
@@ -320,15 +322,13 @@ TEST_F(PrimaryAccountManagerTest, UnconsentedSignOutWhileProhibited) {
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED);
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN});
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::ALLOW);
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sign_out = signin_metrics::ProfileSignout::kTest});
@@ -353,8 +353,7 @@ TEST_F(PrimaryAccountManagerTest, RevokeSyncConsentAllowedSignoutProhibited) {
 
   signin_client()->set_is_clear_primary_account_allowed_for_testing(
       SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED);
-  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest,
-                              signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest);
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sync_opt_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .turn_off_sync = signin_metrics::ProfileSignout::kTest});
@@ -367,8 +366,7 @@ TEST_F(PrimaryAccountManagerTest, RevokeSyncConsentAllowedSignoutProhibited) {
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_UNKNOWN,
                       .sync_opt_in = AccessPoint::ACCESS_POINT_UNKNOWN,
@@ -389,8 +387,7 @@ TEST_F(PrimaryAccountManagerTest, NoopSignOutDoesNotNotifyObservers) {
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
 
-  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest,
-                              signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest);
 
   // Since there was no sync consent, observers shouldn't be notified.
   EXPECT_EQ(0, num_successful_signouts_);
@@ -460,6 +457,45 @@ TEST_F(PrimaryAccountManagerTest,
   EXPECT_EQ(account_id, manager_->GetPrimaryAccountId(ConsentLevel::kSync));
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS,
                       .sync_opt_in = AccessPoint::ACCESS_POINT_SETTINGS});
+}
+
+TEST_F(PrimaryAccountManagerTest, BackfillsLastSignedInUsernameIfEmpty) {
+  // Set up a user that enabled sync before kGoogleServicesLastSignedInUsername
+  // was introduced. kGoogleServicesLastSignedInUsername is empty.
+  const char kUsername[] = "foo@gmail.com";
+  user_prefs_.SetString(prefs::kGoogleServicesLastSyncingUsername, kUsername);
+  ASSERT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
+            std::string());
+
+  CreatePrimaryAccountManager();
+
+  // The migration should have set the LastSignedInUsername pref and left
+  // LastSyncingUsername alone.
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
+            kUsername);
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
+            kUsername);
+}
+
+TEST_F(PrimaryAccountManagerTest,
+       DoesNotBackfillLastSignedInUsernameIfNonEmpty) {
+  // Set up the LastSignedInUsername and LastSyncingUsername prefs with
+  // different non-empty values. This is possible if the user enabled sync, then
+  // disabled, then signed-in with a different account.
+  const char kLastSyncingUsername[] = "syncing@gmail.com";
+  const char kLastSignedInUsername[] = "signed-in@gmail.com";
+  user_prefs_.SetString(prefs::kGoogleServicesLastSyncingUsername,
+                        kLastSyncingUsername);
+  user_prefs_.SetString(prefs::kGoogleServicesLastSignedInUsername,
+                        kLastSignedInUsername);
+
+  CreatePrimaryAccountManager();
+
+  // Both prefs should be unchanged.
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
+            kLastSyncingUsername);
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
+            kLastSignedInUsername);
 }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -555,15 +591,17 @@ TEST_F(PrimaryAccountManagerTest, RestoreFromPrefsUnconsented) {
   CheckSigninMetrics({});
 }
 
-TEST_F(PrimaryAccountManagerTest, SetUnconsentedPrimaryAccountInfo) {
+TEST_F(PrimaryAccountManagerTest, SetPrimaryAccountInfoWithSigninConsent) {
   CreatePrimaryAccountManager();
   EXPECT_EQ(CoreAccountInfo(),
             manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
+  EXPECT_EQ(CoreAccountInfo(),
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
   EXPECT_EQ(0, num_unconsented_account_changed_);
   EXPECT_EQ(0, num_successful_signins_);
   CheckSigninMetrics({});
 
-  // Set the unconsented primary account.
+  // Set the primary account with sign-in consent.
   CoreAccountId account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
   CoreAccountInfo account_info = account_tracker()->GetAccountInfo(account_id);
 
@@ -579,6 +617,10 @@ TEST_F(PrimaryAccountManagerTest, SetUnconsentedPrimaryAccountInfo) {
             manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
   EXPECT_EQ(CoreAccountInfo(),
             manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
+            "user@gmail.com");
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
+            std::string());
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS});
 
   // The primary account info and metrics should be changed synchronously, only
@@ -614,6 +656,71 @@ TEST_F(PrimaryAccountManagerTest, SetUnconsentedPrimaryAccountInfo) {
   CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS});
 }
 
+TEST_F(PrimaryAccountManagerTest, SetPrimaryAccountInfoWithSyncConsent) {
+  CreatePrimaryAccountManager();
+  EXPECT_EQ(CoreAccountInfo(),
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
+  EXPECT_EQ(CoreAccountInfo(),
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
+  EXPECT_EQ(0, num_unconsented_account_changed_);
+  EXPECT_EQ(0, num_successful_signins_);
+  CheckSigninMetrics({});
+
+  // Set the primary account with sync consent.
+  CoreAccountId account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
+  CoreAccountInfo account_info = account_tracker()->GetAccountInfo(account_id);
+
+  base::RunLoop loop;
+  manager_->SetPrimaryAccountInfo(account_info, ConsentLevel::kSync,
+                                  AccessPoint::ACCESS_POINT_SETTINGS,
+                                  loop.QuitClosure());
+
+  EXPECT_EQ(1, num_successful_signins_);
+  EXPECT_EQ(0, num_successful_signouts_);
+  EXPECT_EQ(1, num_unconsented_account_changed_);
+  EXPECT_EQ(account_info,
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
+  EXPECT_EQ(account_info, manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSignedInUsername),
+            "user@gmail.com");
+  EXPECT_EQ(user_prefs_.GetString(prefs::kGoogleServicesLastSyncingUsername),
+            "user@gmail.com");
+  CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS,
+                      .sync_opt_in = AccessPoint::ACCESS_POINT_SETTINGS});
+
+  // The primary account info and metrics should be changed synchronously, only
+  // the prefs commit should happen asynchronously and be verified after the
+  // `loop.Run()` here.
+  loop.Run();
+  EXPECT_TRUE(user_prefs_.user_prefs_store()->committed());
+
+  // Set the same account again.
+  manager_->SetPrimaryAccountInfo(account_info, ConsentLevel::kSync,
+                                  AccessPoint::ACCESS_POINT_WEB_SIGNIN);
+  EXPECT_EQ(1, num_successful_signins_);
+  EXPECT_EQ(0, num_successful_signouts_);
+  EXPECT_EQ(1, num_unconsented_account_changed_);
+  EXPECT_EQ(account_info,
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
+  EXPECT_EQ(account_info, manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
+  CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS,
+                      .sync_opt_in = AccessPoint::ACCESS_POINT_SETTINGS});
+
+  // Change the email to another equivalent email. The account is updated but
+  // observers are not notified.
+  account_info.email = "us.er@gmail.com";
+  manager_->SetPrimaryAccountInfo(account_info, ConsentLevel::kSync,
+                                  AccessPoint::ACCESS_POINT_SIGNIN_PROMO);
+  EXPECT_EQ(1, num_successful_signins_);
+  EXPECT_EQ(0, num_successful_signouts_);
+  EXPECT_EQ(1, num_unconsented_account_changed_);
+  EXPECT_EQ(account_info,
+            manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin));
+  EXPECT_EQ(account_info, manager_->GetPrimaryAccountInfo(ConsentLevel::kSync));
+  CheckSigninMetrics({.sign_in = AccessPoint::ACCESS_POINT_SETTINGS,
+                      .sync_opt_in = AccessPoint::ACCESS_POINT_SETTINGS});
+}
+
 TEST_F(PrimaryAccountManagerTest, RevokeSyncConsent) {
   CreatePrimaryAccountManager();
   CoreAccountId account_id = AddToAccountTracker("gaia_id", "user@gmail.com");
@@ -622,8 +729,7 @@ TEST_F(PrimaryAccountManagerTest, RevokeSyncConsent) {
                                   AccessPoint::ACCESS_POINT_UNKNOWN);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
 
-  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest,
-                              signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->RevokeSyncConsent(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(1, num_successful_signouts_);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
@@ -640,8 +746,7 @@ TEST_F(PrimaryAccountManagerTest, ClearPrimaryAccount) {
                                   AccessPoint::ACCESS_POINT_UNKNOWN);
   EXPECT_TRUE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
 
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
   EXPECT_EQ(1, num_successful_signouts_);
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSync));
   EXPECT_FALSE(manager_->HasPrimaryAccount(ConsentLevel::kSignin));
@@ -859,11 +964,16 @@ TEST_F(PrimaryAccountManagerTest, RestoreFailedFeatureNotEnabled) {
 }
 
 TEST_F(PrimaryAccountManagerTest, ExplicitSigninPref) {
+  base::test::ScopedFeatureList feature{
+      switches::kExplicitBrowserSigninUIOnDesktop};
+
   CreatePrimaryAccountManager();
   CoreAccountId account_id =
       AddToAccountTracker("account_id", "user@gmail.com");
 
   ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 
   // Simulate an explicit signin through the Chrome Signin Intercept bubble.
   manager_->SetPrimaryAccountInfo(
@@ -872,22 +982,30 @@ TEST_F(PrimaryAccountManagerTest, ExplicitSigninPref) {
       signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
 
   EXPECT_TRUE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_TRUE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
   // Clearing signin.
-  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest,
-                                signin_metrics::SignoutDelete::kIgnoreMetric);
+  manager_->ClearPrimaryAccount(signin_metrics::ProfileSignout::kTest);
 
   EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 #endif
 }
 
 TEST_F(PrimaryAccountManagerTest, ImplicitSigninDoesNotSetExplicitSigninPref) {
+  base::test::ScopedFeatureList feature{
+      switches::kExplicitBrowserSigninUIOnDesktop};
+
   CreatePrimaryAccountManager();
   CoreAccountId account_id =
       AddToAccountTracker("account_id", "user@gmail.com");
 
   ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 
   // Simulate an implicit signin through a web signin event.
   manager_->SetPrimaryAccountInfo(
@@ -896,14 +1014,21 @@ TEST_F(PrimaryAccountManagerTest, ImplicitSigninDoesNotSetExplicitSigninPref) {
       signin_metrics::AccessPoint::ACCESS_POINT_WEB_SIGNIN);
 
   EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 }
 
 TEST_F(PrimaryAccountManagerTest, ExplicitSigninFollowedByUnknownSignin) {
+  base::test::ScopedFeatureList feature{
+      switches::kExplicitBrowserSigninUIOnDesktop};
+
   CreatePrimaryAccountManager();
   CoreAccountId account_id =
       AddToAccountTracker("account_id", "user@gmail.com");
 
   ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 
   // Simulate an explicit signin through the Chrome Signin Intercept bubble.
   manager_->SetPrimaryAccountInfo(
@@ -912,6 +1037,8 @@ TEST_F(PrimaryAccountManagerTest, ExplicitSigninFollowedByUnknownSignin) {
       signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
 
   EXPECT_TRUE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_TRUE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
 
   // Creating a second account.
   CoreAccountId account_id2 =
@@ -925,4 +1052,124 @@ TEST_F(PrimaryAccountManagerTest, ExplicitSigninFollowedByUnknownSignin) {
 
   // The explicit sign in pref should be cleared.
   EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+}
+
+TEST_F(PrimaryAccountManagerTest, ExplicitSigninFollowedByWebSignin) {
+  // Web signin can trigger automatic sign in if the user previously enabled
+  // automatic sign in. Signing in through WEB_SIGNIN should clear the
+  // `prefs::kExplicitBrowserSignin` pref anyway.
+  base::test::ScopedFeatureList feature{
+      switches::kExplicitBrowserSigninUIOnDesktop};
+
+  CreatePrimaryAccountManager();
+  CoreAccountId account_id =
+      AddToAccountTracker("account_id", "user@gmail.com");
+
+  ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+
+  // Simulate an explicit signin through the Chrome Signin Intercept bubble.
+  manager_->SetPrimaryAccountInfo(
+      account_tracker()->GetAccountInfo(account_id),
+      signin::ConsentLevel::kSignin,
+      signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
+
+  EXPECT_TRUE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_TRUE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+
+  // Creating a second account.
+  CoreAccountId account_id2 =
+      AddToAccountTracker("account_id2", "user2@gmail.com");
+
+  // Simulating an sign in from a web signin access point without prior sign
+  // out.
+  manager_->SetPrimaryAccountInfo(
+      account_tracker()->GetAccountInfo(account_id2),
+      signin::ConsentLevel::kSignin,
+      signin_metrics::AccessPoint::ACCESS_POINT_WEB_SIGNIN);
+
+  // The explicit sign in pref should be reset.
+  EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  EXPECT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+}
+
+TEST_F(
+    PrimaryAccountManagerTest,
+    ExplicitBrowserSigninDoesNotSetPrefWithExplicitBrowserSigninFeatureDisabled) {
+  base::test::ScopedFeatureList feature;
+  feature.InitAndDisableFeature(switches::kExplicitBrowserSigninUIOnDesktop);
+
+  CreatePrimaryAccountManager();
+  CoreAccountId account_id =
+      AddToAccountTracker("account_id", "user@gmail.com");
+
+  ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+
+  // Simulate an explicit signin through the Chrome Signin Intercept bubble.
+  manager_->SetPrimaryAccountInfo(
+      account_tracker()->GetAccountInfo(account_id),
+      signin::ConsentLevel::kSignin,
+      signin_metrics::AccessPoint::ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
+
+  // Explicit pref is not set.
+  EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  // Internal version of the pref is set though.
+  EXPECT_TRUE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+}
+
+TEST_F(PrimaryAccountManagerTest,
+       RollingBackUsersOfExplicitBrowserSigninPrefCheck) {
+  ASSERT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+  ASSERT_FALSE(prefs()->GetBoolean(
+      kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+
+  // Explicit sign in with `switches::kExplicitBrowserSigninUIOnDesktop` on.
+  {
+    base::test::ScopedFeatureList feature{
+        switches::kExplicitBrowserSigninUIOnDesktop};
+
+    CreatePrimaryAccountManager();
+    CoreAccountId account_id =
+        AddToAccountTracker("account_id", "user@gmail.com");
+
+    // Simulate an explicit signin through the Chrome Signin Intercept bubble.
+    manager_->SetPrimaryAccountInfo(
+        account_tracker()->GetAccountInfo(account_id),
+        signin::ConsentLevel::kSignin,
+        signin_metrics::AccessPoint::
+            ACCESS_POINT_CHROME_SIGNIN_INTERCEPT_BUBBLE);
+
+    // The explicit sign in pref should be reset.
+    EXPECT_TRUE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+    EXPECT_TRUE(prefs()->GetBoolean(
+        kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+  }
+
+  // Simulate a restart by shutting down the manager and creating a new one with
+  // `switches::kExplicitBrowserSigninUIOnDesktop` off.
+  ShutDownManager();
+  {
+    ASSERT_TRUE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+    ASSERT_TRUE(prefs()->GetBoolean(
+        kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+
+    base::test::ScopedFeatureList feature;
+    feature.InitAndDisableFeature(switches::kExplicitBrowserSigninUIOnDesktop);
+
+    CreatePrimaryAccountManager();
+
+    // Explicit pref is cleared.
+    EXPECT_FALSE(prefs()->GetBoolean(prefs::kExplicitBrowserSignin));
+    // Internal version of the pref is still set though.
+    EXPECT_TRUE(prefs()->GetBoolean(
+        kExplicitBrowserSigninWithoutFeatureEnabledForTesting));
+  }
 }

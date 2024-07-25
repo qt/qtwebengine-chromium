@@ -17,7 +17,6 @@
 #include "components/password_manager/core/browser/password_store/password_store_interface.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_change_event.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace password_manager {
 
@@ -31,7 +30,7 @@ class PasswordReuseManagerImpl : public PasswordReuseManager,
 
   // Immediately called after |Init()| to retrieve password hash data for
   // reuse detection.
-  // TODO(crbug.com/1469280): This might need to be called from all platforms,
+  // TODO(crbug.com/40925300): This might need to be called from all platforms,
   // including ios.
   void PreparePasswordHashData(
       metrics_util::SignInState sign_in_state_for_metrics);
@@ -41,6 +40,7 @@ class PasswordReuseManagerImpl : public PasswordReuseManager,
 
   // Implements PasswordReuseManager interface.
   void Init(PrefService* prefs,
+            PrefService* local_prefs,
             PasswordStoreInterface* profile_store,
             PasswordStoreInterface* account_store,
             std::unique_ptr<PasswordReuseDetector> password_reuse_detector,

@@ -35,7 +35,12 @@ enum class FeaturePromoClosedReason {
   kOverrideForTesting = 9,           // Promo aborted for tests.
   kOverrideForPrecedence = 10,       // Promo aborted for higher priority Promo.
 
-  kMaxValue = kOverrideForPrecedence,
+  // Additional ways a promo can be aborted.
+  kAbortedByFeature = 11,          // EndPromo() explicitly called.
+  kAbortedByAnchorHidden = 12,     // Anchor element disappeared.
+  kAbortedByBubbleDestroyed = 13,  // HelpBubble object destroyed.
+
+  kMaxValue = kAbortedByBubbleDestroyed,
 };
 
 std::ostream& operator<<(std::ostream& oss,
@@ -53,12 +58,13 @@ struct FeaturePromoData {
   bool is_dismissed = false;
   FeaturePromoClosedReason last_dismissed_by =
       FeaturePromoClosedReason::kCancel;
-  base::Time first_show_time = base::Time();
-  base::Time last_show_time = base::Time();
-  base::Time last_snooze_time = base::Time();
+  base::Time first_show_time;
+  base::Time last_show_time;
+  base::Time last_snooze_time;
   int snooze_count = 0;
   int show_count = 0;
-  std::set<std::string> shown_for_apps;
+  int promo_index = 0;
+  std::set<std::string> shown_for_keys;
 };
 
 // Data about the current session, which can persist across browser restarts.
@@ -89,6 +95,18 @@ struct FeaturePromoPolicyData {
 
   // The time of the last heavyweight promotion the user saw
   base::Time last_heavyweight_promo_time;
+};
+
+// Data about the "New" Badge for a particular feature.
+struct NewBadgeData {
+  // The number of times the "New" Badge has been shown.
+  int show_count = 0;
+
+  // The number of times the promoted entry point has been used.
+  int used_count = 0;
+
+  // The first time the promoted feature is enabled.
+  base::Time feature_enabled_time;
 };
 
 }  // namespace user_education

@@ -28,7 +28,6 @@ import android.webkit.MimeTypeMap;
 
 import androidx.core.content.ContextCompat;
 
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -85,11 +84,6 @@ public class SelectFileDialogTest {
         Map<String, Boolean> featureMap = new HashMap<>();
         featureMap.put(UiAndroidFeatures.DEPRECATED_EXTERNAL_PICKER_FUNCTION, false);
         FeatureList.setTestFeatures(featureMap);
-    }
-
-    @After
-    public void tearDown() {
-        PostTask.resetPrenativeThreadPoolExecutorForTesting();
     }
 
     private void runAllAsyncTasks() {
@@ -567,10 +561,10 @@ public class SelectFileDialogTest {
     @Test
     public void testPhotoPickerLaunchAndMimeTypes() {
         ShadowMimeTypeMap shadowMimeTypeMap = Shadows.shadowOf(MimeTypeMap.getSingleton());
-        shadowMimeTypeMap.addExtensionMimeTypMapping("jpg", "image/jpeg");
-        shadowMimeTypeMap.addExtensionMimeTypMapping("gif", "image/gif");
-        shadowMimeTypeMap.addExtensionMimeTypMapping("txt", "text/plain");
-        shadowMimeTypeMap.addExtensionMimeTypMapping("mpg", "video/mpeg");
+        shadowMimeTypeMap.addExtensionMimeTypeMapping("jpg", "image/jpeg");
+        shadowMimeTypeMap.addExtensionMimeTypeMapping("gif", "image/gif");
+        shadowMimeTypeMap.addExtensionMimeTypeMapping("txt", "text/plain");
+        shadowMimeTypeMap.addExtensionMimeTypeMapping("mpg", "video/mpeg");
 
         assertEquals("", SelectFileDialog.ensureMimeType(""));
         assertEquals("image/jpeg", SelectFileDialog.ensureMimeType(".jpg"));

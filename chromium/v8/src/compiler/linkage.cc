@@ -251,11 +251,14 @@ CallDescriptor* Linkage::ComputeIncoming(Zone* zone,
   if (!info->closure().is_null()) {
     // If we are compiling a JS function, use a JS call descriptor,
     // plus the receiver.
-    Tagged<SharedFunctionInfo> shared = info->closure()->shared();
-    return GetJSCallDescriptor(
-        zone, info->is_osr(),
-        shared->internal_formal_parameter_count_with_receiver(),
-        CallDescriptor::kCanUseRoots);
+    DCHECK(info->has_bytecode_array());
+    DCHECK_EQ(info->closure()
+                  ->shared()
+                  ->internal_formal_parameter_count_with_receiver(),
+              info->bytecode_array()->parameter_count());
+    return GetJSCallDescriptor(zone, info->is_osr(),
+                               info->bytecode_array()->parameter_count(),
+                               CallDescriptor::kCanUseRoots);
   }
   return nullptr;  // TODO(titzer): ?
 }
@@ -368,6 +371,7 @@ CallDescriptor* Linkage::GetCEntryStubCallDescriptor(
       LinkageLocation::ForAnyRegister(MachineType::AnyTagged());
   return zone->New<CallDescriptor>(     // --
       CallDescriptor::kCallCodeObject,  // kind
+      kDefaultCodeEntrypointTag,        // tag
       target_type,                      // target MachineType
       target_loc,                       // target location
       locations.Build(),                // location_sig
@@ -426,6 +430,7 @@ CallDescriptor* Linkage::GetJSCallDescriptor(Zone* zone, bool is_osr,
   CallDescriptor::Kind descriptor_kind = CallDescriptor::kCallJSFunction;
   return zone->New<CallDescriptor>(  // --
       descriptor_kind,               // kind
+      kJSEntrypointTag,              // tag
       target_type,                   // target MachineType
       target_loc,                    // target location
       locations.Build(),             // location_sig
@@ -526,6 +531,7 @@ CallDescriptor* Linkage::GetStubCallDescriptor(
   LinkageLocation target_loc = LinkageLocation::ForAnyRegister(target_type);
   return zone->New<CallDescriptor>(          // --
       kind,                                  // kind
+      descriptor.tag(),                      // tag
       target_type,                           // target MachineType
       target_loc,                            // target location
       locations.Build(),                     // location_sig
@@ -571,16 +577,17 @@ CallDescriptor* Linkage::GetBytecodeDispatchCallDescriptor(
   LinkageLocation target_loc = LinkageLocation::ForAnyRegister(target_type);
   const CallDescriptor::Flags kFlags =
       CallDescriptor::kCanUseRoots | CallDescriptor::kFixedTargetRegister;
-  return zone->New<CallDescriptor>(  // --
-      CallDescriptor::kCallAddress,  // kind
-      target_type,                   // target MachineType
-      target_loc,                    // target location
-      locations.Build(),             // location_sig
-      stack_parameter_count,         // stack_parameter_count
-      Operator::kNoProperties,       // properties
-      kNoCalleeSaved,                // callee-saved registers
-      kNoCalleeSavedFp,              // callee-saved fp
-      kFlags,                        // flags
+  return zone->New<CallDescriptor>(   // --
+      CallDescriptor::kCallAddress,   // kind
+      kBytecodeHandlerEntrypointTag,  // tag
+      target_type,                    // target MachineType
+      target_loc,                     // target location
+      locations.Build(),              // location_sig
+      stack_parameter_count,          // stack_parameter_count
+      Operator::kNoProperties,        // properties
+      kNoCalleeSaved,                 // callee-saved registers
+      kNoCalleeSavedFp,               // callee-saved fp
+      kFlags,                         // flags
       descriptor.DebugName());
 }
 

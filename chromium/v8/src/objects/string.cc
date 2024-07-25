@@ -13,7 +13,7 @@
 #include "src/heap/heap-inl.h"
 #include "src/heap/local-factory-inl.h"
 #include "src/heap/local-heap-inl.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/read-only-heap.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/instance-type.h"
@@ -107,7 +107,7 @@ Handle<String> String::SlowShare(Isolate* isolate, Handle<String> source) {
   // Do not recursively call Share, so directly compute the sharing strategy for
   // the flat string, which could already be a copy or an existing string from
   // e.g. a shortcut ConsString.
-  MaybeHandle<Map> new_map;
+  MaybeDirectHandle<Map> new_map;
   switch (isolate->factory()->ComputeSharingStrategyForString(flat, &new_map)) {
     case StringTransitionStrategy::kCopy:
       break;
@@ -178,11 +178,11 @@ void MigrateExternalString(Isolate* isolate, Tagged<String> string,
 
 void ExternalString::InitExternalPointerFieldsDuringExternalization(
     Tagged<Map> new_map, Isolate* isolate) {
-  resource_.Init(isolate, kNullAddress);
+  resource_.Init(address(), isolate, kNullAddress);
   bool is_uncached = (new_map->instance_type() & kUncachedExternalStringMask) ==
                      kUncachedExternalStringTag;
   if (!is_uncached) {
-    resource_data_.Init(isolate, kNullAddress);
+    resource_data_.Init(address(), isolate, kNullAddress);
   }
 }
 
@@ -714,7 +714,7 @@ bool String::LooksValid() {
   // RO_SPACE objects should always be valid.
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return true;
   if (ReadOnlyHeap::Contains(this)) return true;
-  BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(this);
+  MemoryChunkMetadata* chunk = MemoryChunkMetadata::FromHeapObject(this);
   if (chunk->heap() == nullptr) return false;
   return chunk->heap()->Contains(this);
 }
@@ -999,14 +999,10 @@ void String::WriteToFlat(Tagged<String> source, sinkchar* sink, int start,
   UNREACHABLE();
 }
 
-namespace {
-static int constexpr kInlineLineEndsSize = 32;
-}
-
 template <typename SourceChar>
-static void CalculateLineEndsImpl(
-    base::SmallVector<int32_t, kInlineLineEndsSize>* line_ends,
-    base::Vector<const SourceChar> src, bool include_ending_line) {
+static void CalculateLineEndsImpl(String::LineEndsVector* line_ends,
+                                  base::Vector<const SourceChar> src,
+                                  bool include_ending_line) {
   const int src_len = src.length();
   for (int i = 0; i < src_len - 1; i++) {
     SourceChar current = src[i];
@@ -1025,14 +1021,13 @@ static void CalculateLineEndsImpl(
 }
 
 template <typename IsolateT>
-Handle<FixedArray> String::CalculateLineEnds(IsolateT* isolate,
-                                             Handle<String> src,
-                                             bool include_ending_line) {
+String::LineEndsVector String::CalculateLineEndsVector(
+    IsolateT* isolate, Handle<String> src, bool include_ending_line) {
   src = Flatten(isolate, src);
   // Rough estimate of line count based on a roughly estimated average
   // length of packed code. Most scripts have < 32 lines.
   int line_count_estimate = (src->length() >> 6) + 16;
-  base::SmallVector<int32_t, kInlineLineEndsSize> line_ends;
+  LineEndsVector line_ends;
   line_ends.reserve(line_count_estimate);
   {
     DisallowGarbageCollection no_gc;
@@ -1047,6 +1042,20 @@ Handle<FixedArray> String::CalculateLineEnds(IsolateT* isolate,
                             include_ending_line);
     }
   }
+  return line_ends;
+}
+
+template String::LineEndsVector String::CalculateLineEndsVector(
+    Isolate* isolate, Handle<String> src, bool include_ending_line);
+template String::LineEndsVector String::CalculateLineEndsVector(
+    LocalIsolate* isolate, Handle<String> src, bool include_ending_line);
+
+template <typename IsolateT>
+Handle<FixedArray> String::CalculateLineEnds(IsolateT* isolate,
+                                             Handle<String> src,
+                                             bool include_ending_line) {
+  LineEndsVector line_ends =
+      CalculateLineEndsVector(isolate, src, include_ending_line);
   int line_count = static_cast<int>(line_ends.size());
   Handle<FixedArray> array =
       isolate->factory()->NewFixedArray(line_count, AllocationType::kOld);
@@ -1373,7 +1382,7 @@ MaybeHandle<String> String::GetSubstitution(Isolate* isolate, Match* match,
     const int peek_ix = next_dollar_ix + 1;
     if (peek_ix >= replacement_length) {
       builder.AppendCharacter('$');
-      return builder.Finish();
+      return indirect_handle(builder.Finish(), isolate);
     }
 
     int continue_from_ix = -1;
@@ -1490,7 +1499,7 @@ MaybeHandle<String> String::GetSubstitution(Isolate* isolate, Match* match,
         builder.AppendString(factory->NewSubString(
             replacement, continue_from_ix, replacement_length));
       }
-      return builder.Finish();
+      return indirect_handle(builder.Finish(), isolate);
     }
 
     // Append substring between the previous and the next $ character.

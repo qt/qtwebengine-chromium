@@ -392,9 +392,9 @@ void MockTabletEventConverterEvdev::ConfigureReadMock(struct input_event* queue,
                                                       long queue_index) {
   int nwrite = HANDLE_EINTR(write(write_pipe_, queue + queue_index,
                                   sizeof(struct input_event) * read_this_many));
-  DCHECK(nwrite ==
-         static_cast<int>(sizeof(struct input_event) * read_this_many))
-      << "write() failed, errno: " << errno;
+  DPCHECK(nwrite ==
+          static_cast<int>(sizeof(struct input_event) * read_this_many))
+      << "write() failed";
 }
 
 }  // namespace ui
@@ -789,7 +789,9 @@ TEST_F(TabletEventConverterEvdevTest, StylusButtonPress) {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 TEST_F(TabletEventConverterEvdevTest, TabletButtonPress) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(ash::features::kPeripheralCustomization);
+  feature_list.InitWithFeatures({ash::features::kInputDeviceSettingsSplit,
+                                 ash::features::kPeripheralCustomization},
+                                {});
 
   std::unique_ptr<ui::MockTabletEventConverterEvdev> dev =
       CreateDevice(kWacomIntuos5SPen);

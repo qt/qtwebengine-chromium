@@ -37,7 +37,6 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/frame/policy_container.mojom-blink.h"
-#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/renderer/core/core_initializer.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -134,8 +133,7 @@ DummyPageHolder::DummyPageHolder(
                /*document_ukm_source_id=*/ukm::kInvalidSourceId,
                /*creator_base_url=*/KURL());
 
-  CoreInitializer::GetInstance().ProvideModulesToPage(GetPage(),
-                                                      base::EmptyString());
+  CoreInitializer::GetInstance().ProvideModulesToPage(GetPage(), std::string());
 }
 
 DummyPageHolder::~DummyPageHolder() {

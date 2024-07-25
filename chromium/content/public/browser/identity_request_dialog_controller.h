@@ -10,23 +10,28 @@
 #include <vector>
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_forward.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/federated_identity_modal_dialog_view_delegate.h"
 #include "content/public/browser/identity_request_account.h"
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace content {
 class WebContents;
 
 struct CONTENT_EXPORT ClientMetadata {
-  ClientMetadata(const GURL& tos_url, const GURL& privacy_policy_url);
+  ClientMetadata(const GURL& terms_of_service_url,
+                 const GURL& privacy_policy_url,
+                 const GURL& brand_icon_url);
   ClientMetadata(const ClientMetadata& other);
   ~ClientMetadata();
 
   GURL terms_of_service_url;
   GURL privacy_policy_url;
+  GURL brand_icon_url;
 };
 
 struct CONTENT_EXPORT IdentityCredentialTokenError {
@@ -43,6 +48,7 @@ struct CONTENT_EXPORT IdentityProviderMetadata {
   std::optional<SkColor> brand_background_color;
   GURL brand_icon_url;
   GURL idp_login_url;
+  std::string requested_label;
   // The URL of the configuration endpoint. This is stored in
   // IdentityProviderMetadata so that the UI code can pass it along when an
   // Account is selected by the user.
@@ -75,8 +81,10 @@ struct CONTENT_EXPORT IdentityProviderData {
   bool has_login_status_mismatch;
 };
 
-// IdentityRequestDialogController is in interface for control of the UI
-// surfaces that are displayed to intermediate the exchange of ID tokens.
+// IdentityRequestDialogController is an interface, overridden and implemented
+// by embedders, that controls the UI surfaces that are displayed to
+// intermediate the exchange of federated accounts between identity providers
+// and relying parties.
 class CONTENT_EXPORT IdentityRequestDialogController {
  public:
   // This enum is used to back a histogram. Do not remove or reorder members.
@@ -107,8 +115,11 @@ class CONTENT_EXPORT IdentityRequestDialogController {
 
   using DismissCallback =
       base::OnceCallback<void(DismissReason dismiss_reason)>;
-  using LoginToIdPCallback = base::OnceCallback<void(GURL /*idp_login_url*/)>;
+  using LoginToIdPCallback =
+      base::RepeatingCallback<void(const GURL& /*idp_config_url*/,
+                                   GURL /*idp_login_url*/)>;
   using MoreDetailsCallback = base::OnceCallback<void()>;
+  using AccountsDisplayedCallback = base::OnceCallback<void()>;
 
   IdentityRequestDialogController() = default;
 
@@ -130,19 +141,22 @@ class CONTENT_EXPORT IdentityRequestDialogController {
   // When this is true, the dialog should not be immediately auto-accepted.
   virtual void SetIsInterceptionEnabled(bool enabled);
 
-  // Shows and accounts selections for the given IDP. The |on_selected| callback
+  // Shows and accounts selections for the given IDP. The `on_selected` callback
   // is called with the selected account id or empty string otherwise.
-  // |sign_in_mode| represents whether this is an auto re-authn flow.
+  // `sign_in_mode` represents whether this is an auto re-authn flow.
+  // `new_account_idp` is the account that was just logged in, which should be
+  // prioritized in the UI.
   virtual void ShowAccountsDialog(
       const std::string& top_frame_for_display,
       const std::optional<std::string>& iframe_for_display,
       const std::vector<IdentityProviderData>& identity_provider_data,
       IdentityRequestAccount::SignInMode sign_in_mode,
       blink::mojom::RpMode rp_mode,
-      bool show_auto_reauthn_checkbox,
+      const std::optional<IdentityProviderData>& new_account_idp,
       AccountSelectionCallback on_selected,
       LoginToIdPCallback on_add_account,
-      DismissCallback dismiss_callback);
+      DismissCallback dismiss_callback,
+      AccountsDisplayedCallback accounts_displayed_callback);
 
   // Shows a failure UI when the accounts fetch is failed such that it is
   // observable by users. This could happen when an IDP claims that the user is
@@ -169,12 +183,17 @@ class CONTENT_EXPORT IdentityRequestDialogController {
       DismissCallback dismiss_callback,
       MoreDetailsCallback more_details_callback);
 
+  // Shows a loading UI when the user triggers a button flow and while waiting
+  // for their accounts to be fetched.
+  virtual void ShowLoadingDialog(const std::string& top_frame_for_display,
+                                 const std::string& idp_for_display,
+                                 blink::mojom::RpContext rp_context,
+                                 blink::mojom::RpMode rp_mode,
+                                 DismissCallback dismiss_callback);
+
   // Only to be called after a dialog is shown.
   virtual std::string GetTitle() const;
   virtual std::optional<std::string> GetSubtitle() const;
-
-  // Show dialog notifying user that IdP sign-in failed.
-  virtual void ShowIdpSigninFailureDialog(base::OnceClosure dismiss_callback);
 
   // Open a popup or similar that shows the specified URL.
   virtual void ShowUrl(LinkType type, const GURL& url);
@@ -185,6 +204,13 @@ class CONTENT_EXPORT IdentityRequestDialogController {
 
   // Closes the modal dialog.
   virtual void CloseModalDialog();
+
+  // Request the user's permission to register an origin as an identity
+  // provider. Calls the callback with a response of whether the request was
+  // accepted or not.
+  virtual void RequestIdPRegistrationPermision(
+      const url::Origin& origin,
+      base::OnceCallback<void(bool accepted)> callback);
 
  protected:
   bool is_interception_enabled_{false};

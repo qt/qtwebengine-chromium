@@ -1576,7 +1576,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 // Ensures that a pending navigation's URL  is no longer visible after the
 // speculative RFH is discarded due to a concurrent renderer-initiated
 // navigation.  See https://crbug.com/760342.
-// TODO(https://crbug.com/945194): Disabled due to flaky timeouts.
+// TODO(crbug.com/41448629): Disabled due to flaky timeouts.
 IN_PROC_BROWSER_TEST_P(
     RenderFrameHostManagerTest,
     DISABLED_ResetVisibleURLOnCrossProcessNavigationInterrupted) {
@@ -2097,7 +2097,7 @@ class RenderViewHostDestructionObserver : public WebContentsObserver {
     watched_render_view_hosts_.erase(rvh);
   }
 
-  std::set<RenderViewHost*> watched_render_view_hosts_;
+  std::set<raw_ptr<RenderViewHost, SetExperimental>> watched_render_view_hosts_;
 };
 
 // Crashes under ThreadSanitizer, http://crbug.com/356758.
@@ -2129,7 +2129,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   SiteInstance* blank_site_instance =
       shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance();
   EXPECT_EQ(shell()->web_contents()->GetLastCommittedURL(), GURL());
-  EXPECT_EQ(blank_site_instance->GetSiteURL(), GURL::EmptyGURL());
+  EXPECT_EQ(blank_site_instance->GetSiteURL(), GURL());
   rvh_observers.EnsureRVHGetsDestructed(blank_rvh);
 
   // Now navigate to the view-source URL and ensure we got a different
@@ -2788,7 +2788,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   entries.push_back(std::move(cloned_entry));
   Shell* new_shell =
       Shell::CreateNewWindow(shell()->web_contents()->GetBrowserContext(),
-                             GURL::EmptyGURL(), nullptr, gfx::Size());
+                             GURL(), nullptr, gfx::Size());
   FrameTreeNode* new_root =
       static_cast<WebContentsImpl*>(new_shell->web_contents())
           ->GetPrimaryFrameTree()
@@ -5949,7 +5949,7 @@ class AssertForegroundHelper {
 // "visible" widget being added to the process. This test discards the spare
 // RenderProcessHost if present, to ensure that it is not used in the
 // cross-process navigation.
-// TODO(https://crbug.com/1197438): Flaky on Mac.
+// TODO(crbug.com/40760155): Flaky on Mac.
 #if BUILDFLAG(IS_APPLE)
 #define MAYBE_ForegroundNavigationIsNeverBackgroundedWithoutSpareProcess \
   DISABLED_ForegroundNavigationIsNeverBackgroundedWithoutSpareProcess
@@ -6520,7 +6520,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerNoSiteIsolationTest,
 // its own unload handler caused a crash. https://crbug.com/1148793
 IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
                        RemoveSubframeInPageHide_SameSite) {
-  // TODO(https://crbug.com/1148793): Remove this early return. This doesn't
+  // TODO(crbug.com/40731502): Remove this early return. This doesn't
   // work for RenderDocumentLevel::kNonLocalRootSubframe or greater because
   // cancelling the navigation when detaching the subtree tries to restore the
   // replaced `blink::RemoteFrame` (which doesn't exist in the same-site
@@ -6536,7 +6536,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 // See RemoveSubframeInUnload_SameSite
 IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
                        RemoveSubframeInPageHide_CrossSite) {
-  // TODO(https://crbug.com/1148793): Remove this early return.
+  // TODO(crbug.com/40731502): Remove this early return.
   if (ShouldCreateNewRenderFrameHostOnSameSiteNavigation(
           /*is_main_frame=*/false, /*is_local_root=*/false) &&
       !AreAllSitesIsolatedForTesting()) {
@@ -6596,7 +6596,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerUnloadBrowserTest, NestedUnload) {
 
   // The subframe has been removed.
   EXPECT_EQ(0UL, web_contents->GetPrimaryMainFrame()->child_count());
-  // TODO(https://crbug.com/1111191): Remove this. Without this, the crash in
+  // TODO(crbug.com/40142480): Remove this. Without this, the crash in
   // the renderer in https://crbug.com/1148793 is usually not caught.
   ASSERT_TRUE(ExecJs(shell(), ""));
 }
@@ -6639,7 +6639,7 @@ void RenderFrameHostManagerTest::AssertCanRemoveSubframeInPageHide(
 
   // The subframe has been removed.
   EXPECT_EQ(0UL, web_contents->GetPrimaryMainFrame()->child_count());
-  // TODO(https://crbug.com/1111191): Remove this. Without this, the crash in
+  // TODO(crbug.com/40142480): Remove this. Without this, the crash in
   // the renderer in https://crbug.com/1148793 is usually not caught.
   ASSERT_TRUE(ExecJs(shell(), ""));
 }

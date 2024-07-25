@@ -36,6 +36,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_content_browser_client.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/no_renderer_crashes_assertion.h"
 #include "content/public/test/scoped_web_ui_controller_factory_registration.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
@@ -110,11 +111,18 @@ class WebUITsMojoTestCacheImpl : public mojom::WebUITsMojoTestCache {
     std::move(callback).Run(std::move(items));
   }
 
-  void Echo(std::optional<bool> optional_bool,
-            std::optional<uint8_t> optional_uint8,
-            std::optional<mojom::TestEnum> optional_enum,
-            mojom::OptionalNumericsStructPtr optional_numerics,
-            EchoCallback callback) override {
+  void Echo(
+      std::optional<bool> optional_bool,
+      std::optional<uint8_t> optional_uint8,
+      std::optional<mojom::TestEnum> optional_enum,
+      mojom::OptionalNumericsStructPtr optional_numerics,
+      const std::vector<std::optional<bool>>& optional_bools,
+      const std::vector<std::optional<uint32_t>>& optional_ints,
+      const std::vector<std::optional<mojom::TestEnum>>& optional_enums,
+      const base::flat_map<int32_t, std::optional<bool>>& bool_map,
+      const base::flat_map<int32_t, std::optional<int32_t>>& int_map,
+      const base::flat_map<int32_t, std::optional<mojom::TestEnum>>& enum_map,
+      EchoCallback callback) override {
     std::move(callback).Run(
         optional_bool.has_value() ? std::make_optional(!optional_bool.value())
                                   : std::nullopt,
@@ -131,7 +139,9 @@ class WebUITsMojoTestCacheImpl : public mojom::WebUITsMojoTestCache {
                 : std::nullopt,
             optional_numerics->optional_enum.has_value()
                 ? std::make_optional(mojom::TestEnum::kTwo)
-                : std::nullopt));
+                : std::nullopt),
+        optional_bools, optional_ints, optional_enums, bool_map, int_map,
+        enum_map);
   }
 
  private:

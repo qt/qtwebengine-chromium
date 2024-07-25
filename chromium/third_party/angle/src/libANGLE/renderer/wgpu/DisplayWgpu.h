@@ -10,6 +10,9 @@
 #ifndef LIBANGLE_RENDERER_WGPU_DISPLAYWGPU_H_
 #define LIBANGLE_RENDERER_WGPU_DISPLAYWGPU_H_
 
+#include <dawn/native/DawnNative.h>
+#include <dawn/webgpu_cpp.h>
+
 #include "libANGLE/renderer/DisplayImpl.h"
 #include "libANGLE/renderer/ShareGroupImpl.h"
 
@@ -87,9 +90,19 @@ class DisplayWgpu : public DisplayImpl
 
     void populateFeatureList(angle::FeatureList *features) override {}
 
+    wgpu::Device &getDevice() { return mDevice; }
+    wgpu::Queue &getQueue() { return mQueue; }
+    wgpu::Instance getInstance() const;
+
   private:
     void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
     void generateCaps(egl::Caps *outCaps) const override;
+
+    egl::Error createWgpuDevice();
+
+    std::unique_ptr<dawn::native::Instance> mInstance;
+    wgpu::Device mDevice;
+    wgpu::Queue mQueue;
 };
 
 }  // namespace rx

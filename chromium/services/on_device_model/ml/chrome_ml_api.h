@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "third_party/dawn/include/dawn/dawn_proc_table.h"
@@ -32,6 +33,12 @@ enum ContextMode {
   kIgnoreContext = 1 << 2,
 };
 
+#if defined(_WIN32)
+using PlatformFile = void*;
+#else
+using PlatformFile = int;
+#endif
+
 // Opaque handle to an instance of a ChromeML model.
 using ChromeMLModel = uintptr_t;
 
@@ -49,15 +56,9 @@ struct ChromeMLModelData {
   // Called when the model_proto data is no longer needed.
   const ChromeMLDisposeFn* model_proto_dispose;
 
-  // Points to raw tensor weight data, indexed by fields encoded in the above
-  // proto. This memory must be mutable.
-  void* weights_data;
-
-  // The size in bytes of the data at `weights_data`.
-  size_t weights_size;
-
-  // Called when the weights data is no longer needed.
-  const ChromeMLDisposeFn* weights_dispose;
+  // File holding the weights data. The file will be owned by the inference
+  // library and closed once weight loading is complete.
+  PlatformFile weights_file;
 };
 
 // Describes a model to use with ChromeML.
@@ -87,6 +88,20 @@ struct ChromeMLModelDescriptor {
   const void* ts_spm_data;
   size_t ts_spm_size;
   size_t ts_dimension;
+
+  const uint32_t* adaptation_ranks;
+  size_t adaptation_ranks_size;
+
+  bool prefer_texture_weights;
+  bool enable_host_mapped_pointer;
+  bool use_low_power;
+  bool allow_fp16;
+};
+
+// Describes an adaptation for a model.
+struct ChromeMLAdaptationDescriptor {
+  // The model data to use.
+  const ChromeMLModelData* model_data;
 };
 
 // A status value included with each output chunk.
@@ -116,6 +131,23 @@ struct ChromeMLExecutionOutput {
   // `num_ts_scores` is zero.
   float* ts_scores;
   size_t num_ts_scores;
+};
+
+// Status value indicating the result of ad hoc safety classification.
+enum class ChromeMLSafetyResult {
+  // Safety classification succeeded and the caller's output buffer has been
+  // populated with the requested class scores.
+  kOk,
+
+  // The given ChromeMLModel does not have a valid safety classifier to use.
+  kNoClassifier,
+
+  // The caller's output buffer is insufficient to hold the complete set of
+  // safety scores that would be output by the model's safety classifier.
+  kInsufficientStorage,
+
+  // Classification failed due to an internal model execution error.
+  kModelExecutionFailure,
 };
 
 // Function provided from the library that will cancel the corresponding input
@@ -150,6 +182,10 @@ using ChromeMLScoreTSFn = std::function<void(const std::vector<float>&)>;
 // thread executing the model.
 using ChromeMLContextSavedFn = std::function<void(int)>;
 
+// Called with the number of tokens after a call to SizeInTokens().
+// This will be called on the internal thread executing the model.
+using ChromeMLSizeInTokensFn = std::function<void(int)>;
+
 // Conveys details regarding a completed model execution.
 struct ChromeMLExecutionResult {
   // If true, all prior output received for this model execution is effectively
@@ -178,6 +214,10 @@ struct ChromeMLExecuteOptions {
   const ChromeMLContextSavedFn* context_saved_fn;
   const ChromeMLCompletionFn* completion_fn;
   const ChromeMLExecutionOutputFn* execution_output_fn;
+  // Optional adaptation ID for this request.
+  uint32_t* adaptation_id;
+  uint32_t top_k;
+  float temperature;
 };
 
 // Performance data filled out by GetEstimatedPerformance().
@@ -231,7 +271,7 @@ struct ChromeMLAPI {
 
   // Sets an error handling function for fatal errors in the GPU. See also
   // SetFatalErrorNonGpuFn.
-  void (*SetFatalErrorFn)(ChromeMLFatalErrorFn error_fn) = nullptr;
+  void (*SetFatalErrorFn)(ChromeMLFatalErrorFn error_fn);
 
   // Creates a new ChromeML model instance as described by `model`. The returned
   // object can be destroyed by passing it to DestroyModel(). `context` is
@@ -247,6 +287,26 @@ struct ChromeMLAPI {
                        const ChromeMLExecuteOptions* options,
                        ChromeMLCancelFn* cancel_fn);
 
+  // Performs ad hoc safety classification on a chunk of text using the
+  // classifier defined by `model`.
+  //
+  // On input, `scores` must point to an output buffer to receive the safety
+  // class scores, and `num_scores` must point to the capacity of that buffer in
+  // number of elements.
+  //
+  // On success this returns kOk on and `*num_scores` is set to the actual
+  // number of score values written into the output buffer. This number is
+  // guaranteed to be no larger than the input value of `*num_scores`.
+  //
+  // If this fails with kInsufficientStorage, no `scores` are populated and
+  // `*num_scores` is set to the correct number scores the caller should expect.
+  //
+  // If `model` does not define a safety classifier, this returns kNoClassifier.
+  ChromeMLSafetyResult (*ClassifyTextSafety)(ChromeMLModel model,
+                                             const char* text,
+                                             float* scores,
+                                             size_t* num_scores);
+
   // Destroys a model that was created by CreateModel().
   void (*DestroyModel)(ChromeMLModel model);
 
@@ -256,11 +316,32 @@ struct ChromeMLAPI {
 
   // Returns the GpuConfig in `config`. Returns true on success, false if there
   // was an error calculating it.
+  // Deprecated: Use QueryGPUAdapter insteed.
   bool (*GetGpuConfig)(GpuConfig& config);
+
+  // Query the GPU adapter used.
+  // Synchronously calls `adapter_callback_fn` with a non-owning pointer to the
+  // adapter. Returns false if there was an error getting an adapter at all; the
+  // callback is not called. It is not safe to save reference to this adapter as
+  // it is allocated in another dll. Use of the adapter must only be scoped to
+  // the duration of `adapter_callback_fn`.
+  bool (*QueryGPUAdapter)(void (*adapter_callback_fn)(WGPUAdapter adapter,
+                                                      void* userdata),
+                          void* userdata);
 
   // Same as SetFatalErrorFn(), but for fatal errors that occur outside of the
   // gpu.
-  void (*SetFatalErrorNonGpuFn)(ChromeMLFatalErrorFn error_fn) = nullptr;
+  void (*SetFatalErrorNonGpuFn)(ChromeMLFatalErrorFn error_fn);
+
+  // Loads an adaptation and outputs an identifier for this adaptation in `id`.
+  bool (*CreateAdaptation)(ChromeMLModel model,
+                           const ChromeMLAdaptationDescriptor* descriptor,
+                           uint32_t& id);
+
+  // Get the size of the given text in tokens.
+  void (*SizeInTokens)(ChromeMLModel model,
+                       const std::string& text,
+                       const ChromeMLSizeInTokensFn& fn);
 };
 
 // Signature of the GetChromeMLAPI() function which the shared library exports.

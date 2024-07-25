@@ -40,6 +40,10 @@
 #include "third_party/blink/renderer/platform/graphics/color.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
+namespace ui {
+class ColorProvider;
+}  // namespace ui
+
 namespace blink {
 
 class CORE_EXPORT StyleColor {
@@ -50,20 +54,22 @@ class CORE_EXPORT StyleColor {
   // value time (such as "currentcolor"), we need to store them here and
   // resolve them to individual colors later.
   class UnresolvedColorMix;
-  union ColorOrUnresolvedColorMix {
+  struct ColorOrUnresolvedColorMix {
+    DISALLOW_NEW();
+
+   public:
     ColorOrUnresolvedColorMix() : color(Color::kTransparent) {}
     explicit ColorOrUnresolvedColorMix(Color color) : color(color) {}
-    explicit ColorOrUnresolvedColorMix(const StyleColor style_color);
-    explicit ColorOrUnresolvedColorMix(UnresolvedColorMix color_mix);
-    // Since an instance ColorOrUnresolvedColorMix does not know whether it
-    // contains a color or an UnresolvedColorMix, release of
-    // unresolved_color_mix is left to StyleColor::~StyleColor().
-    ~ColorOrUnresolvedColorMix() {}
+    explicit ColorOrUnresolvedColorMix(const UnresolvedColorMix* color_mix)
+        : unresolved_color_mix(color_mix) {}
+
+    CORE_EXPORT void Trace(Visitor*) const;
 
     Color color;
-    std::unique_ptr<UnresolvedColorMix> unresolved_color_mix;
+    Member<const UnresolvedColorMix> unresolved_color_mix;
   };
-  class UnresolvedColorMix {
+
+  class UnresolvedColorMix : public GarbageCollected<UnresolvedColorMix> {
    public:
     enum class UnderlyingColorType {
       kColor,
@@ -75,8 +81,14 @@ class CORE_EXPORT StyleColor {
                        const StyleColor& c1,
                        const StyleColor& c2);
     UnresolvedColorMix();
-    UnresolvedColorMix(const UnresolvedColorMix& other);
-    UnresolvedColorMix& operator=(const UnresolvedColorMix& other);
+
+    void Trace(Visitor* visitor) const {
+      visitor->Trace(color1_);
+      visitor->Trace(color2_);
+    }
+
+    cssvalue::CSSColorMixValue* ToCSSColorMixValue() const;
+
     Color Resolve(const Color& current_color) const;
 
     static bool Equals(const ColorOrUnresolvedColorMix& first,
@@ -128,7 +140,7 @@ class CORE_EXPORT StyleColor {
       : color_keyword_(CSSValueID::kInvalid),
         color_or_unresolved_color_mix_(color) {}
   explicit StyleColor(CSSValueID keyword) : color_keyword_(keyword) {}
-  explicit StyleColor(UnresolvedColorMix color_mix)
+  explicit StyleColor(const UnresolvedColorMix* color_mix)
       : color_keyword_(CSSValueID::kColorMix),
         color_or_unresolved_color_mix_(color_mix) {}
   // We need to store the color and keyword for system colors to be able to
@@ -137,13 +149,9 @@ class CORE_EXPORT StyleColor {
   StyleColor(Color color, CSSValueID keyword)
       : color_keyword_(keyword), color_or_unresolved_color_mix_(color) {}
 
-  // All copy/move/assignment operators are necessary to handle the potential
-  // unique pointer in color_or_unresolved_color_mix_.
-  StyleColor(const StyleColor& other);
-  StyleColor& operator=(const StyleColor& other);
-  StyleColor& operator=(StyleColor&& other);
-  StyleColor(StyleColor&&);
-  ~StyleColor();
+  void Trace(Visitor* visitor) const {
+    visitor->Trace(color_or_unresolved_color_mix_);
+  }
 
   static StyleColor CurrentColor() { return StyleColor(); }
 
@@ -157,7 +165,7 @@ class CORE_EXPORT StyleColor {
     return IsSystemColorIncludingDeprecated(color_keyword_);
   }
   bool IsSystemColor() const { return IsSystemColor(color_keyword_); }
-  UnresolvedColorMix GetUnresolvedColorMix() const {
+  const UnresolvedColorMix& GetUnresolvedColorMix() const {
     DCHECK(IsUnresolvedColorMixFunction());
     return *color_or_unresolved_color_mix_.unresolved_color_mix;
   }
@@ -173,23 +181,29 @@ class CORE_EXPORT StyleColor {
 
   Color Resolve(const Color& current_color,
                 mojom::blink::ColorScheme color_scheme,
-                bool* is_current_color = nullptr,
-                bool is_forced_color = false) const;
+                bool* is_current_color = nullptr) const;
 
   // Resolve and override the resolved color's alpha channel as specified by
   // |alpha|.
   Color ResolveWithAlpha(Color current_color,
                          mojom::blink::ColorScheme color_scheme,
                          int alpha,
-                         bool* is_current_color = nullptr,
-                         bool is_forced_color = false) const;
+                         bool* is_current_color = nullptr) const;
+
+  // Re-resolve the current system color keyword. This is needed in cases such
+  // as forced colors mode because initial values for some internal forced
+  // colors properties are system colors so we need to re-resolve them to ensure
+  // they pick up the correct color on theme change.
+  StyleColor ResolveSystemColor(mojom::blink::ColorScheme color_scheme,
+                                const ui::ColorProvider* color_provider) const;
 
   bool IsNumeric() const {
     return EffectiveColorKeyword() == CSSValueID::kInvalid;
   }
 
   static Color ColorFromKeyword(CSSValueID,
-                                mojom::blink::ColorScheme color_scheme);
+                                mojom::blink::ColorScheme color_scheme,
+                                const ui::ColorProvider* color_provider);
   static bool IsColorKeyword(CSSValueID);
   static bool IsSystemColorIncludingDeprecated(CSSValueID);
   static bool IsSystemColor(CSSValueID);

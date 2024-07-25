@@ -30,7 +30,7 @@ DisplayCompositorMemoryAndTaskController::
   event.Wait();
 
   shared_image_interface_ =
-      std::make_unique<gpu::SharedImageInterfaceInProcess>(
+      base::MakeRefCounted<gpu::SharedImageInterfaceInProcess>(
           gpu_task_scheduler_->GetTaskSequence(), controller_on_gpu_.get());
 }
 
@@ -59,7 +59,6 @@ void DisplayCompositorMemoryAndTaskController::InitializeOnGpu(
   controller_on_gpu_ =
       std::make_unique<gpu::DisplayCompositorMemoryAndTaskControllerOnGpu>(
           skia_dependency->GetSharedContextState(),
-          skia_dependency->GetMailboxManager(),
           skia_dependency->GetSharedImageManager(),
           skia_dependency->GetSyncPointManager(),
           skia_dependency->GetGpuPreferences(),

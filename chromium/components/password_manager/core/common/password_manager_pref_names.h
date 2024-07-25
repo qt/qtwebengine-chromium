@@ -41,6 +41,11 @@ inline constexpr char kCredentialProviderEnabledOnStartup[] =
 #endif
 
 #if BUILDFLAG(IS_ANDROID)
+// Boolean pref indicating if the one-time notice for account storage was shown.
+// The notice informs passwords will start being saved to the signed-in account.
+inline constexpr char kAccountStorageNoticeShown[] =
+    "password_manager.account_storage_notice_shown";
+
 // Boolean controlling whether the password manager allows automatic signing in
 // through Credential Management API. This pref is not synced. Its value is set
 // by fetching the latest value from Google Mobile Services. Except for
@@ -64,18 +69,6 @@ inline constexpr char kEmptyProfileStoreLoginDatabase[] =
 inline constexpr char kOfferToSavePasswordsEnabledGMS[] =
     "profile.save_passwords_enabed_gms";
 
-// Boolean that disables saving by overriding kOfferToSavePasswordsEnabledGMS.
-// If there are errors that prevent successful saves, this pref will be true and
-// users should act as if kOfferToSavePasswordsEnabledGMS was disabled. If this
-// pref is false, the value of kOfferToSavePasswordsEnabledGMS applies. This
-// pref is not synced since errors presumably affect only the local client. Its
-// value is set automatically whenever communication with GMS succeeds or fails.
-//
-// This pref doesn't have a policy mapped to it. It is temporary in nature and
-// can only be stricter than any policy applied
-inline constexpr char kSavePasswordsSuspendedByError[] =
-    "profile.save_passwords_suspended_by_error";
-
 // Boolean value indicating whether the regular prefs that apply to the local
 // password store were migrated to UPM settings. It will be set to true
 // automatically if there is nothing to migrate.
@@ -88,7 +81,7 @@ inline constexpr char kCurrentMigrationVersionToGoogleMobileServices[] =
     "current_migration_version_to_google_mobile_services";
 
 // Timestamps of when credentials from the GMS Core to the built in storage were
-// last time migrated, in microseconds since Windows epoch.
+// last time migrated, in milliseconds since UNIX epoch.
 inline constexpr char kTimeOfLastMigrationAttempt[] =
     "time_of_last_migration_attempt";
 
@@ -103,10 +96,12 @@ inline constexpr char kTimeOfLastMigrationAttempt[] =
 // their migration doesn't impact this pref.
 //
 // Do not renumber UseUpmLocalAndSeparateStoresState, values are persisted.
+// Values are also used for metrics recording.
 enum class UseUpmLocalAndSeparateStoresState {
   kOff = 0,
   kOffAndMigrationPending = 1,
   kOn = 2,
+  kMaxValue = kOn
 };
 inline constexpr char kPasswordsUseUPMLocalAndSeparateStores[] =
     "passwords_use_upm_local_and_separate_stores";
@@ -160,7 +155,16 @@ inline constexpr char kTimesAttemptedToReenrollToGoogleMobileServices[] =
 // should not be displayed again.
 inline constexpr char kUserAcknowledgedLocalPasswordsMigrationWarning[] =
     "user_acknowledged_local_passwords_migration_warning";
+#endif
 
+// Maintains a list of password hashes of enterprise passwords. This pref
+// differs from |kPasswordHashDataList| in two ways: it only stores password
+// hashes for enterprise passwords and it is stored as a local state
+// preference.
+inline constexpr char kLocalPasswordHashDataList[] =
+    "local.password_hash_data_list";
+
+#if BUILDFLAG(IS_ANDROID)
 // The timestamp at which the last UPM local passwords migration warning was
 // shown to the user in microseconds since Windows epoch. This is needed to
 // ensure that the UI is prompted only once per given time interval (currently
@@ -180,6 +184,16 @@ inline constexpr char kLocalPasswordMigrationWarningPrefsVersion[] =
 // in a row. The counter resets when the user applies password generation.
 inline constexpr char kPasswordGenerationBottomSheetDismissCount[] =
     "password_generation_bottom_sheet_dismiss_count";
+
+// Whether the post password migration sheet ahould be shown at startup.
+inline constexpr char kShouldShowPostPasswordMigrationSheetAtStartup[] =
+    "should_show_post_password_migration_sheet_at_startup";
+
+// Becomes true when a user received an error from GMSCore. It's later used to
+// guard activation algorithm of "Remove unenrollment" experiment.
+inline constexpr char kUserReceivedGMSCoreError[] =
+    "user_received_gmscore_error";
+
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -244,7 +258,8 @@ inline constexpr char kLastTimePasswordCheckCompleted[] =
 inline constexpr char kLastTimePasswordStoreMetricsReported[] =
     "profile.last_time_password_store_metrics_reported";
 
-// List that contains captured password hashes.
+// List that contains captured password hashes. Only includes gaia password
+// hashes.
 inline constexpr char kPasswordHashDataList[] =
     "profile.password_hash_data_list";
 
@@ -261,9 +276,9 @@ inline constexpr char kPasswordDismissCompromisedAlertEnabled[] =
 // Boolean value indicating if the user has clicked on the "Password Manager"
 // item in settings after switching to the Unified Password Manager. A "New"
 // label is shown for the users who have not clicked on this item yet.
-// TODO(crbug.com/1217070): Remove this on Android once the feature is rolled
+// TODO(crbug.com/40185049): Remove this on Android once the feature is rolled
 // out.
-// TODO(crbug.com/1420597): Remove this for desktop once the feature is rolled
+// TODO(crbug.com/40258836): Remove this for desktop once the feature is rolled
 // out.
 inline constexpr char kPasswordsPrefWithNewLabelUsed[] =
     "passwords_pref_with_new_label_used";
@@ -293,18 +308,6 @@ inline constexpr char kBiometricAuthenticationBeforeFilling[] =
 inline constexpr char kHadBiometricsAvailable[] =
     "password_manager.had_biometrics_available";
 #endif
-
-#if BUILDFLAG(IS_IOS)
-// Boolean pref indicating if the one-time notice for account storage was shown.
-// The notice informs passwords will start being saved to the signed-in account.
-inline constexpr char kAccountStorageNoticeShown[] =
-    "password_manager.account_storage_notice_shown";
-
-// Integer value indicating the number of times the "new feature icon" was
-// displayed with the account storage opt-out toggle.
-inline constexpr char kAccountStorageNewFeatureIconImpressions[] =
-    "password_manager.account_storage_new_feature_icon_impressions";
-#endif  // BUILDFLAG(IS_IOS)
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
 // How many times in a row the password generation popup in `kNudgePassword`

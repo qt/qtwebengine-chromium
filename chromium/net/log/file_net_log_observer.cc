@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/containers/queue.h"
@@ -67,9 +68,9 @@ base::File OpenFileForWrite(const base::FilePath& path) {
 // in which case nothing will be written. Returns the number of bytes
 // successfully written (may be less than input data in case of errors).
 size_t WriteToFile(base::File* file,
-                   base::StringPiece data1,
-                   base::StringPiece data2 = base::StringPiece(),
-                   base::StringPiece data3 = base::StringPiece()) {
+                   std::string_view data1,
+                   std::string_view data2 = std::string_view(),
+                   std::string_view data3 = std::string_view()) {
   size_t bytes_written = 0;
 
   if (file->IsValid()) {
@@ -104,7 +105,7 @@ void AppendToFileThenDelete(const base::FilePath& source_path,
   while ((num_bytes_read =
               fread(read_buffer, 1, read_buffer_size, source_file.get())) > 0) {
     WriteToFile(destination_file,
-                base::StringPiece(read_buffer, num_bytes_read));
+                std::string_view(read_buffer, num_bytes_read));
   }
 
   // Now that it has been copied, delete the source file.
@@ -201,7 +202,7 @@ class FileNetLogObserver::FileWriter {
   // If max_event_file_size == kNoLimit, then no limit is enforced.
   FileWriter(const base::FilePath& log_path,
              const base::FilePath& inprogress_dir_path,
-             absl::optional<base::File> pre_existing_log_file,
+             std::optional<base::File> pre_existing_log_file,
              uint64_t max_event_file_size,
              size_t total_num_event_files,
              scoped_refptr<base::SequencedTaskRunner> task_runner);
@@ -338,7 +339,7 @@ std::unique_ptr<FileNetLogObserver> FileNetLogObserver::CreateBounded(
     NetLogCaptureMode capture_mode,
     std::unique_ptr<base::Value::Dict> constants) {
   return CreateInternal(log_path, SiblingInprogressDirectory(log_path),
-                        absl::nullopt, max_total_size, kDefaultNumFiles,
+                        std::nullopt, max_total_size, kDefaultNumFiles,
                         capture_mode, std::move(constants));
 }
 
@@ -346,7 +347,7 @@ std::unique_ptr<FileNetLogObserver> FileNetLogObserver::CreateUnbounded(
     const base::FilePath& log_path,
     NetLogCaptureMode capture_mode,
     std::unique_ptr<base::Value::Dict> constants) {
-  return CreateInternal(log_path, base::FilePath(), absl::nullopt, kNoLimit,
+  return CreateInternal(log_path, base::FilePath(), std::nullopt, kNoLimit,
                         kDefaultNumFiles, capture_mode, std::move(constants));
 }
 
@@ -358,7 +359,7 @@ FileNetLogObserver::CreateBoundedPreExisting(
     NetLogCaptureMode capture_mode,
     std::unique_ptr<base::Value::Dict> constants) {
   return CreateInternal(base::FilePath(), inprogress_dir_path,
-                        absl::make_optional<base::File>(std::move(output_file)),
+                        std::make_optional<base::File>(std::move(output_file)),
                         max_total_size, kDefaultNumFiles, capture_mode,
                         std::move(constants));
 }
@@ -369,7 +370,7 @@ FileNetLogObserver::CreateUnboundedPreExisting(
     NetLogCaptureMode capture_mode,
     std::unique_ptr<base::Value::Dict> constants) {
   return CreateInternal(base::FilePath(), base::FilePath(),
-                        absl::make_optional<base::File>(std::move(output_file)),
+                        std::make_optional<base::File>(std::move(output_file)),
                         kNoLimit, kDefaultNumFiles, capture_mode,
                         std::move(constants));
 }
@@ -435,14 +436,14 @@ std::unique_ptr<FileNetLogObserver> FileNetLogObserver::CreateBoundedForTests(
     NetLogCaptureMode capture_mode,
     std::unique_ptr<base::Value::Dict> constants) {
   return CreateInternal(log_path, SiblingInprogressDirectory(log_path),
-                        absl::nullopt, max_total_size, total_num_event_files,
+                        std::nullopt, max_total_size, total_num_event_files,
                         capture_mode, std::move(constants));
 }
 
 std::unique_ptr<FileNetLogObserver> FileNetLogObserver::CreateInternal(
     const base::FilePath& log_path,
     const base::FilePath& inprogress_dir_path,
-    absl::optional<base::File> pre_existing_log_file,
+    std::optional<base::File> pre_existing_log_file,
     uint64_t max_total_size,
     size_t total_num_event_files,
     NetLogCaptureMode capture_mode,
@@ -547,7 +548,7 @@ FileNetLogObserver::WriteQueue::~WriteQueue() = default;
 FileNetLogObserver::FileWriter::FileWriter(
     const base::FilePath& log_path,
     const base::FilePath& inprogress_dir_path,
-    absl::optional<base::File> pre_existing_log_file,
+    std::optional<base::File> pre_existing_log_file,
     uint64_t max_event_file_size,
     size_t total_num_event_files,
     scoped_refptr<base::SequencedTaskRunner> task_runner)

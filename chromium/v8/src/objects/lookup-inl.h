@@ -123,7 +123,8 @@ LookupIterator::LookupIterator(Isolate* isolate, Configuration configuration,
   // This is the only lookup configuration allowed by this constructor because
   // it's special case allowing lookup of the private symbols on the prototype
   // chain. Usually private symbols are limited to OWN_SKIP_INTERCEPTOR lookups.
-  DCHECK_EQ(*name_, *isolate->factory()->error_stack_symbol());
+  DCHECK(*name_ == *isolate->factory()->error_stack_symbol() ||
+         *name_ == *isolate->factory()->error_message_symbol());
   DCHECK_EQ(configuration, PROTOTYPE_CHAIN_SKIP_INTERCEPTOR);
   Start<false>();
 }
@@ -287,7 +288,8 @@ void LookupIterator::UpdateProtector(Isolate* isolate, Handle<Object> receiver,
       *name == roots.is_concat_spreadable_symbol() ||
       *name == roots.iterator_symbol() || *name == roots.species_symbol() ||
       *name == roots.match_all_symbol() || *name == roots.replace_symbol() ||
-      *name == roots.split_symbol();
+      *name == roots.split_symbol() || *name == roots.to_primitive_symbol() ||
+      *name == roots.valueOf_string();
   DCHECK_EQ(maybe_protector, debug_maybe_protector);
 #endif  // DEBUG
 

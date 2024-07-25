@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_UNTRUSTED_PAGE_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_UNTRUSTED_PAGE_HANDLER_H_
 
+#include <memory>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
@@ -16,17 +17,23 @@
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_model.h"
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_side_panel_controller.h"
+#include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_snapshotter.h"
 #include "chrome/common/accessibility/read_anything.mojom.h"
-#include "components/services/screen_ai/buildflags/buildflags.h"
-#include "content/public/browser/ax_event_notification_details.h"
+#include "components/translate/core/browser/translate_client.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "ui/accessibility/ax_action_data.h"
+#include "ui/accessibility/ax_updates_and_events.h"
 
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-#include "chrome/browser/screen_ai/screen_ai_install_state.h"
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/public/cpp/session/session_observer.h"
 #endif
+
+namespace content {
+class ScopedAccessibilityMode;
+}
 
 class ReadAnythingUntrustedPageHandler;
 
@@ -40,7 +47,8 @@ class ReadAnythingWebContentsObserver : public content::WebContentsObserver {
  public:
   ReadAnythingWebContentsObserver(
       base::SafeRef<ReadAnythingUntrustedPageHandler> page_handler,
-      content::WebContents* web_contents);
+      content::WebContents* web_contents,
+      ui::AXMode accessibility_mode);
   ReadAnythingWebContentsObserver(const ReadAnythingWebContentsObserver&) =
       delete;
   ReadAnythingWebContentsObserver& operator=(
@@ -49,13 +57,19 @@ class ReadAnythingWebContentsObserver : public content::WebContentsObserver {
 
   // content::WebContentsObserver:
   void AccessibilityEventReceived(
-      const content::AXEventNotificationDetails& details) override;
+      const ui::AXUpdatesAndEvents& details) override;
   void PrimaryPageChanged(content::Page& page) override;
+  void WebContentsDestroyed() override;
 
   // base::SafeRef used since the lifetime of ReadAnythingWebContentsObserver is
   // completely contained by page_handler_. See
   // ReadAnythingUntrustedPageHandler's destructor.
   base::SafeRef<ReadAnythingUntrustedPageHandler> page_handler_;
+
+ private:
+  // Enables the kReadAnythingAXMode accessibility mode flags for the
+  // WebContents.
+  std::unique_ptr<content::ScopedAccessibilityMode> scoped_accessibility_mode_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,16 +80,17 @@ class ReadAnythingWebContentsObserver : public content::WebContentsObserver {
 //  This class is created and owned by ReadAnythingUntrustedUI and has the same
 //  lifetime as the Side Panel view.
 //
-class ReadAnythingUntrustedPageHandler
-    : public ui::AXActionHandlerObserver,
-      public read_anything::mojom::UntrustedPageHandler,
-      public ReadAnythingModel::Observer,
-      public ReadAnythingCoordinator::Observer,
-      public ReadAnythingSidePanelController::Observer,
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-      public screen_ai::ScreenAIInstallState::Observer,
+class ReadAnythingUntrustedPageHandler :
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    public ash::SessionObserver,
 #endif
-      public TabStripModelObserver {
+    public ui::AXActionHandlerObserver,
+    public read_anything::mojom::UntrustedPageHandler,
+    public ReadAnythingModel::Observer,
+    public ReadAnythingCoordinator::Observer,
+    public ReadAnythingSidePanelController::Observer,
+    public translate::TranslateDriver::LanguageDetectionObserver,
+    public TabStripModelObserver {
  public:
   ReadAnythingUntrustedPageHandler(
       mojo::PendingRemote<read_anything::mojom::UntrustedPage> page,
@@ -88,15 +103,34 @@ class ReadAnythingUntrustedPageHandler
       const ReadAnythingUntrustedPageHandler&) = delete;
   ~ReadAnythingUntrustedPageHandler() override;
 
-  void AccessibilityEventReceived(
-      const content::AXEventNotificationDetails& details);
+  void AccessibilityEventReceived(const ui::AXUpdatesAndEvents& details);
   void PrimaryPageChanged();
+  void WebContentsDestroyed();
+
+  // read_anything::mojom::UntrustedPageHandler:
+  void OnVoiceChange(const std::string& voice,
+                     const std::string& lang) override;
+  void OnLanguagePrefChange(const std::string& lang, bool enabled) override;
+
+  // ash::SessionObserver
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  void OnLockStateChanged(bool locked) override;
+#endif
 
  private:
+  // TranslateDriver::LanguageDetectionObserver:
+  void OnLanguageDetermined(
+      const translate::LanguageDetectionDetails& details) override;
+  void OnTranslateDriverDestroyed(translate::TranslateDriver* driver) override;
+
   // ui::AXActionHandlerObserver:
   void TreeRemoved(ui::AXTreeID ax_tree_id) override;
 
   // read_anything::mojom::UntrustedPageHandler:
+  void GetVoicePackInfo(const std::string& language,
+                        GetVoicePackInfoCallback mojo_remote_callback) override;
+  void InstallVoicePack(const std::string& language,
+                        InstallVoicePackCallback mojo_remote_callback) override;
   void OnCopy() override;
   void OnLineSpaceChange(
       read_anything::mojom::LineSpacing line_spacing) override;
@@ -104,21 +138,22 @@ class ReadAnythingUntrustedPageHandler
       read_anything::mojom::LetterSpacing letter_spacing) override;
   void OnFontChange(const std::string& font) override;
   void OnFontSizeChange(double font_size) override;
+  void OnLinksEnabledChanged(bool enabled) override;
   void OnColorChange(read_anything::mojom::Colors color) override;
   void OnSpeechRateChange(double rate) override;
-  void OnVoiceChange(const std::string& voice,
-                     const std::string& lang) override;
   void OnHighlightGranularityChanged(
       read_anything::mojom::HighlightGranularity granularity) override;
   void OnLinkClicked(const ui::AXTreeID& target_tree_id,
                      ui::AXNodeID target_node_id) override;
+  void OnImageDataRequested(const ui::AXTreeID& target_tree_id,
+                            ui::AXNodeID target_node_id) override;
   void OnSelectionChange(const ui::AXTreeID& target_tree_id,
                          ui::AXNodeID anchor_node_id,
                          int anchor_offset,
                          ui::AXNodeID focus_node_id,
                          int focus_offset) override;
   void OnCollapseSelection() override;
-  void EnablePDFContentAccessibility(const ui::AXTreeID& ax_tree_id) override;
+  void OnSnapshotRequested() override;
 
   // ReadAnythingModel::Observer:
   void OnReadAnythingThemeChanged(
@@ -138,6 +173,11 @@ class ReadAnythingUntrustedPageHandler
   void Activate(bool active) override;
   void OnCoordinatorDestroyed() override;
   void SetDefaultLanguageCode(const std::string& code) override;
+
+  // Sends the language code of the new page, or the default if a language can't
+  // be determined.
+  void SetLanguageCode(const std::string& code);
+
   // ReadAnythingSidePanelController::Observer:
   void OnSidePanelControllerDestroyed() override;
 
@@ -157,9 +197,9 @@ class ReadAnythingUntrustedPageHandler
   // 2. Notifies the model that the AXTreeID has changed.
   void OnActiveWebContentsChanged();
 
-  // force_update_state will tell the UI to update the state even if the active
-  // tree id does not change.
-  void OnActiveAXTreeIDChanged(bool force_update_state = false);
+  void SetUpPdfObserver();
+
+  void OnActiveAXTreeIDChanged();
 
   // Logs the current visual settings values.
   void LogTextStyle();
@@ -168,6 +208,9 @@ class ReadAnythingUntrustedPageHandler
   // WebContents.
   void ObserveWebContentsSidePanelController(
       content::WebContents* web_contents);
+
+  void PerformActionInTargetTree(const ui::AXTreeID& target_tree_id,
+                                 const ui::AXActionData& data);
 
   raw_ptr<ReadAnythingCoordinator> coordinator_;
   raw_ptr<ReadAnythingTabHelper> tab_helper_;
@@ -190,6 +233,10 @@ class ReadAnythingUntrustedPageHandler
   // contained.
   std::unique_ptr<ReadAnythingWebContentsObserver> pdf_observer_;
 
+  // `web_snapshotter_` is used to capture a screenshot of the main web
+  // contents requested.
+  std::unique_ptr<ReadAnythingSnapshotter> web_snapshotter_;
+
   const mojo::Receiver<read_anything::mojom::UntrustedPageHandler> receiver_;
   const mojo::Remote<read_anything::mojom::UntrustedPage> page_;
 
@@ -197,21 +244,23 @@ class ReadAnythingUntrustedPageHandler
   // active when it is currently shown in the Side Panel.
   bool active_ = true;
 
+  // The default language code to use if the page language isn't determined.
+  std::string default_language_code_ = "en-US";
+  // The current language being used in the app.
+  std::string current_language_code_ = "en-US";
+
   // Observes the AXActionHandlerRegistry for AXTree removals.
   base::ScopedObservation<ui::AXActionHandlerRegistry,
                           ui::AXActionHandlerObserver>
       ax_action_handler_observer_{this};
 
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-  // screen_ai::ScreenAIInstallState::Observer:
-  void StateChanged(screen_ai::ScreenAIInstallState::State state) override;
+  void OnScreenAIServiceInitialized(bool successful);
 
-  // Observes the install state of ScreenAI. When ScreenAI is ready, notifies
-  // the WebUI.
-  base::ScopedObservation<screen_ai::ScreenAIInstallState,
-                          screen_ai::ScreenAIInstallState::Observer>
-      component_ready_observer_{this};
-#endif
+  // Observes LanguageDetectionObserver, which notifies us when the language of
+  // the contents of the current page has been determined.
+  base::ScopedObservation<translate::TranslateDriver,
+                          translate::TranslateDriver::LanguageDetectionObserver>
+      translate_observation_{this};
 
   base::WeakPtrFactory<ReadAnythingUntrustedPageHandler> weak_factory_{this};
 };

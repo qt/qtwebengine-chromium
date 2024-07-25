@@ -53,7 +53,7 @@ class CodecWrapperTest : public testing::Test {
         .WillByDefault(Return(OkStatus()));
 
     uint8_t data = 0;
-    fake_decoder_buffer_ = DecoderBuffer::CopyFrom(&data, 1);
+    fake_decoder_buffer_ = DecoderBuffer::CopyFrom(base::span_from_ref(data));
 
     // May fail.
     other_thread_.Start();
@@ -242,7 +242,7 @@ TEST_F(CodecWrapperTest, CodecOutputBuffersGuessCodedSizeNoAlignment) {
       std::move(surface_pair), output_buffer_release_cb_.Get(),
       // Unrendered output buffers are released on our thread.
       base::SequencedTaskRunner::GetCurrentDefault(), kInitialCodedSize,
-      absl::nullopt);
+      std::nullopt);
 
   EXPECT_CALL(*codec_, DequeueOutputBuffer(_, _, _, _, _, _, _))
       .WillOnce(Return(MediaCodecResult::Codes::kOutputFormatChanged))

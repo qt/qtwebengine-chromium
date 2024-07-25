@@ -4,19 +4,22 @@
 
 #include "src/snapshot/serializer.h"
 
+#include "include/v8-internal.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/common/globals.h"
 #include "src/handles/global-handles-inl.h"
 #include "src/heap/heap-inl.h"  // For Space::identity().
-#include "src/heap/memory-chunk-inl.h"
+#include "src/heap/mutable-page-inl.h"
 #include "src/heap/read-only-heap.h"
 #include "src/objects/code.h"
 #include "src/objects/descriptor-array.h"
+#include "src/objects/instance-type-checker.h"
 #include "src/objects/instance-type.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/map.h"
 #include "src/objects/objects-body-descriptors-inl.h"
 #include "src/objects/slots-inl.h"
+#include "src/objects/slots.h"
 #include "src/objects/smi.h"
 #include "src/snapshot/embedded/embedded-data.h"
 #include "src/snapshot/serializer-deserializer.h"
@@ -163,7 +166,7 @@ void Serializer::SerializeObject(Handle<HeapObject> obj, SlotType slot_type) {
       // For now just serialize the BytecodeArray instead of baseline code.
       // TODO(v8:11429,pthier): Handle Baseline code in cases we want to
       // serialize it.
-      obj = handle(code->bytecode_or_interpreter_data(isolate()), isolate());
+      obj = handle(code->bytecode_or_interpreter_data(), isolate());
     }
   }
   SerializeObjectImpl(obj, slot_type);
@@ -656,6 +659,17 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
     // Ensure deterministic output by setting extension to null during
     // serialization.
     buffer->set_extension(nullptr);
+
+#ifdef V8_COMPRESS_POINTERS
+    // With the above, we're effectively temporarily releasing ownership of the
+    // extension, so we should also invalidate it's entry in the external
+    // pointer table. Failure to do this here would result in DCHECK failures
+    // as set_extension takes ownership of the extension and verifies that
+    // there isn't already an owner.
+    if (extension) {
+      extension->ZapExternalPointerTableEntry();
+    }
+#endif  // V8_COMPRESS_POINTERS
   }
   SerializeObject();
   {
@@ -864,7 +878,7 @@ SnapshotSpace GetSnapshotSpace(Tagged<HeapObject> object) {
     return SnapshotSpace::kReadOnlyHeap;
   } else {
     AllocationSpace heap_space =
-        MemoryChunk::FromHeapObject(object)->owner_identity();
+        MutablePageMetadata::FromHeapObject(object)->owner_identity();
     // Large code objects are not supported and cannot be expressed by
     // SnapshotSpace.
     DCHECK_NE(heap_space, CODE_LO_SPACE);
@@ -887,6 +901,12 @@ SnapshotSpace GetSnapshotSpace(Tagged<HeapObject> object) {
         return SnapshotSpace::kCode;
       case TRUSTED_SPACE:
       case TRUSTED_LO_SPACE:
+        return SnapshotSpace::kTrusted;
+      // Shared objects are currently encoded as 'trusteds' snapshot objects.
+      // This basically duplicates shared trusted heap objects for each isolate
+      // again.
+      case SHARED_TRUSTED_SPACE:
+      case SHARED_TRUSTED_LO_SPACE:
         return SnapshotSpace::kTrusted;
       case CODE_LO_SPACE:
       case RO_SPACE:
@@ -972,7 +992,7 @@ void Serializer::ObjectSerializer::VisitPointers(Tagged<HeapObject> host,
     }
     // TODO(ishell): Revisit this change once we stick to 32-bit compressed
     // tagged values.
-    while (current < end && current.load(cage_base)->IsCleared()) {
+    while (current < end && current.load(cage_base).IsCleared()) {
       sink_->Put(kClearedWeakReference, "ClearedWeakReference");
       bytes_processed_so_far_ += kTaggedSize;
       ++current;
@@ -1060,6 +1080,7 @@ void Serializer::ObjectSerializer::OutputExternalReference(
   DCHECK_LE(target_size, sizeof(target));  // Must fit in Address.
   DCHECK_IMPLIES(sandboxify, V8_ENABLE_SANDBOX_BOOL);
   DCHECK_IMPLIES(sandboxify, tag != kExternalPointerNullTag);
+  DCHECK_NE(tag, kAnyExternalPointerTag);
   ExternalReferenceEncoder::Value encoded_reference;
   bool encoded_successfully;
 
@@ -1113,6 +1134,25 @@ void Serializer::ObjectSerializer::OutputExternalReference(
   }
 }
 
+void Serializer::ObjectSerializer::VisitCppHeapPointer(
+    Tagged<HeapObject> host, CppHeapPointerSlot slot) {
+  PtrComprCageBase cage_base(isolate());
+  // Currently there's only very limited support for CppHeapPointerSlot
+  // serialization as it's only used for API wrappers.
+  //
+  // We serialize the slot as initialized-but-unused slot.  The actual API
+  // wrapper serialization is implemented in
+  // `ContextSerializer::SerializeApiWrapperFields()`.
+  DCHECK(IsJSApiWrapperObject(object_->map(cage_base)));
+  static_assert(kCppHeapPointerSlotSize % kTaggedSize == 0);
+  sink_->Put(
+      FixedRawDataWithSize::Encode(kCppHeapPointerSlotSize >> kTaggedSizeLog2),
+      "FixedRawData");
+  sink_->PutRaw(reinterpret_cast<const uint8_t*>(&kNullCppHeapPointer),
+                kCppHeapPointerSlotSize, "empty cpp heap pointer handle");
+  bytes_processed_so_far_ += kCppHeapPointerSlotSize;
+}
+
 void Serializer::ObjectSerializer::VisitExternalPointer(
     Tagged<HeapObject> host, ExternalPointerSlot slot) {
   PtrComprCageBase cage_base(isolate());
@@ -1120,15 +1160,22 @@ void Serializer::ObjectSerializer::VisitExternalPointer(
   if (InstanceTypeChecker::IsForeign(instance_type) ||
       InstanceTypeChecker::IsJSExternalObject(instance_type) ||
       InstanceTypeChecker::IsAccessorInfo(instance_type) ||
-      InstanceTypeChecker::IsCallHandlerInfo(instance_type)) {
+      InstanceTypeChecker::IsFunctionTemplateInfo(instance_type)) {
     // Output raw data payload, if any.
     OutputRawData(slot.address());
     Address value = slot.load(isolate());
-    const bool sandboxify =
-        V8_ENABLE_SANDBOX_BOOL && slot.tag() != kExternalPointerNullTag;
-    OutputExternalReference(value, kSystemPointerSize, sandboxify, slot.tag());
+#ifdef V8_ENABLE_SANDBOX
+    // We need to load the actual tag from the table here since the slot may
+    // use a generic tag (e.g. kAnyExternalPointerTag) if the concrete tag is
+    // unknown by the visitor (for example the case for Foreigns).
+    ExternalPointerHandle handle = slot.Relaxed_LoadHandle();
+    ExternalPointerTag tag = isolate()->external_pointer_table().GetTag(handle);
+#else
+    ExternalPointerTag tag = kExternalPointerNullTag;
+#endif  // V8_ENABLE_SANDBOX
+    const bool sandboxify = V8_ENABLE_SANDBOX_BOOL;
+    OutputExternalReference(value, kSystemPointerSize, sandboxify, tag);
     bytes_processed_so_far_ += kExternalPointerSlotSize;
-
   } else {
     // Serialization of external references in other objects is handled
     // elsewhere or not supported.
@@ -1144,7 +1191,12 @@ void Serializer::ObjectSerializer::VisitExternalPointer(
         InstanceTypeChecker::IsExternalString(instance_type) ||
         // See ObjectSerializer::SanitizeNativeContextScope.
         InstanceTypeChecker::IsNativeContext(instance_type) ||
-        // See ContextSerializer::SerializeJSObjectWithEmbedderFields().
+        // Serialization of external pointers stored in
+        // JSSynchronizationPrimitive is not supported.
+        // TODO(v8:12547): JSSynchronizationPrimitives should also be sanitized
+        // to always be serialized in an unlocked state.
+        InstanceTypeChecker::IsJSSynchronizationPrimitive(instance_type) ||
+        // See ContextSerializer::SerializeObjectWithEmbedderFields().
         (InstanceTypeChecker::IsJSObject(instance_type) &&
          JSObject::cast(host)->GetEmbedderFieldCount() > 0));
   }
@@ -1197,17 +1249,24 @@ void Serializer::ObjectSerializer::VisitTrustedPointerTableEntry(
 
 void Serializer::ObjectSerializer::VisitProtectedPointer(
     Tagged<TrustedObject> host, ProtectedPointerSlot slot) {
+  Tagged<Object> content = slot.load(isolate());
+
+  // Similar to the indirect pointer case, if the slot is empty (i.e. contains
+  // Smi::zero()), then we skip it here.
+  if (content == Smi::zero()) return;
+  DCHECK(!IsSmi(content));
+
   // If necessary, output any raw data preceeding this slot.
   OutputRawData(slot.address());
 
-  Handle<HeapObject> content(HeapObject::cast(slot.load(isolate())), isolate());
+  Handle<HeapObject> object(HeapObject::cast(content), isolate());
   bytes_processed_so_far_ += kTaggedSize;
 
   // Currently we cannot see pending objects here, but we may need to support
   // them in the future. They should already be supported by the deserializer.
-  CHECK(!serializer_->SerializePendingObject(*content));
+  CHECK(!serializer_->SerializePendingObject(*object));
   sink_->Put(kProtectedPointerPrefix, "ProtectedPointer");
-  serializer_->SerializeObject(content, SlotType::kAnySlot);
+  serializer_->SerializeObject(object, SlotType::kAnySlot);
 }
 namespace {
 
@@ -1344,11 +1403,11 @@ bool Serializer::SerializeReadOnlyObjectReference(Tagged<HeapObject> obj,
   // create a back reference that encodes the page number as the chunk_index and
   // the offset within the page as the chunk_offset.
   Address address = obj.address();
-  BasicMemoryChunk* chunk = BasicMemoryChunk::FromAddress(address);
+  MemoryChunkMetadata* chunk = MemoryChunkMetadata::FromAddress(address);
   uint32_t chunk_index = 0;
   ReadOnlySpace* const read_only_space = isolate()->heap()->read_only_space();
   DCHECK(!read_only_space->writable());
-  for (ReadOnlyPage* page : read_only_space->pages()) {
+  for (ReadOnlyPageMetadata* page : read_only_space->pages()) {
     if (chunk == page) break;
     ++chunk_index;
   }

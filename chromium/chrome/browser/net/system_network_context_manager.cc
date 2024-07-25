@@ -79,10 +79,15 @@
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/mojom/cert_verifier_service.mojom.h"
+#include "services/network/public/mojom/network_annotation_monitor.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
 #include "third_party/blink/public/common/features.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chrome/browser/net/network_annotation_monitor.h"
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/net/dhcp_wpad_url_client.h"
@@ -90,7 +95,7 @@
 #include "chrome/browser/browser_process_platform_part.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-// TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
+// TODO(crbug.com/40118868): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/common/chrome_paths_internal.h"
@@ -103,7 +108,6 @@
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
 #if BUILDFLAG(IS_WIN)
-#include "chrome/browser/browser_features.h"
 #include "chrome/browser/net/chrome_mojo_proxy_resolver_win.h"
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -450,7 +454,7 @@ SystemNetworkContextManager::GetURLLoaderFactory() {
   network::mojom::URLLoaderFactoryParamsPtr params =
       network::mojom::URLLoaderFactoryParams::New();
   params->process_id = network::mojom::kBrowserProcessId;
-  params->is_corb_enabled = false;
+  params->is_orb_enabled = false;
   params->is_trusted = true;
 
   url_loader_factory_.reset();
@@ -493,7 +497,7 @@ SystemNetworkContextManager* SystemNetworkContextManager::GetInstance() {
     // CreateInstance() to initialize |g_system_network_context_manager|.
     content::GetNetworkService();
 
-    // TODO(crbug.com/981057): There should be a DCHECK() here to make sure
+    // TODO(crbug.com/40634772): There should be a DCHECK() here to make sure
     // |g_system_network_context_manager| has been created, but that is not
     // true in many unit tests.
   }
@@ -599,10 +603,10 @@ SystemNetworkContextManager::SystemNetworkContextManager(
           base::Unretained(this)));
 
 #if BUILDFLAG(CHROME_ROOT_STORE_OPTIONAL)
-  // TODO(crbug.com/1501418): If this call is removed, clank crashes on startup.
-  // Not sure why.
+  // TODO(crbug.com/40941700): If this call is removed, clank crashes on
+  // startup. Not sure why.
   content::GetCertVerifierServiceFactory()->SetUseChromeRootStore(
-      IsUsingChromeRootStore(), base::DoNothing());
+      true, base::DoNothing());
 #endif
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
@@ -768,8 +772,9 @@ void SystemNetworkContextManager::OnNetworkServiceCreated(
 
   int max_connections_per_proxy =
       local_state_->GetInteger(prefs::kMaxConnectionsPerProxy);
-  if (max_connections_per_proxy != -1)
-    network_service->SetMaxConnectionsPerProxy(max_connections_per_proxy);
+  if (max_connections_per_proxy != -1) {
+    network_service->SetMaxConnectionsPerProxyChain(max_connections_per_proxy);
+  }
 
   network_service_network_context_.reset();
   content::CreateNetworkContextInNetworkService(
@@ -813,6 +818,21 @@ void SystemNetworkContextManager::OnNetworkServiceCreated(
   UpdateExplicitlyAllowedNetworkPorts();
 
   UpdateIPv6ReachabilityOverrideEnabled();
+
+#if BUILDFLAG(IS_CHROMEOS)
+  if (base::FeatureList::IsEnabled(features::kNetworkAnnotationMonitoring)) {
+    // Create NetworkAnnotationMonitor.
+    if (!network_annotation_monitor_) {
+      network_annotation_monitor_ =
+          std::make_unique<NetworkAnnotationMonitor>();
+    }
+
+    // Pass NetworkAnnotationMonitor remote to NetworkService so that network
+    // calls can be reported.
+    network_service->SetNetworkAnnotationMonitor(
+        network_annotation_monitor_->GetClient());
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
 void SystemNetworkContextManager::DisableQuic() {
@@ -824,14 +844,12 @@ void SystemNetworkContextManager::DisableQuic() {
   content::GetNetworkService()->DisableQuic();
 }
 
-#if BUILDFLAG(IS_WIN)
 void SystemNetworkContextManager::
     AddCookieEncryptionManagerToNetworkContextParams(
         network::mojom::NetworkContextParams* network_context_params) {
   network_context_params->cookie_encryption_provider =
       cookie_encryption_provider_.BindNewRemote();
 }
-#endif  // BUILDFLAG(IS_WIN)
 
 void SystemNetworkContextManager::AddSSLConfigToNetworkContextParams(
     network::mojom::NetworkContextParams* network_context_params) {
@@ -978,6 +996,14 @@ void SystemNetworkContextManager::FlushNetworkInterfaceForTesting() {
     url_loader_factory_.FlushForTesting();
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
+void SystemNetworkContextManager::FlushNetworkAnnotationMonitorForTesting() {
+  if (network_annotation_monitor_) {
+    network_annotation_monitor_->FlushForTesting();  // IN-TEST
+  }
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 network::mojom::HttpAuthStaticParamsPtr
 SystemNetworkContextManager::GetHttpAuthStaticParamsForTesting() {
   return CreateHttpAuthStaticParams(g_browser_process->local_state());
@@ -1008,13 +1034,6 @@ bool SystemNetworkContextManager::IsCertificateTransparencyEnabled() {
   return base::FeatureList::IsEnabled(
       features::kCertificateTransparencyAskBeforeEnabling);
 }
-
-#if BUILDFLAG(CHROME_ROOT_STORE_OPTIONAL)
-// static
-bool SystemNetworkContextManager::IsUsingChromeRootStore() {
-  return base::FeatureList::IsEnabled(net::features::kChromeRootStoreUsed);
-}
-#endif  // BUILDFLAG(CHROME_ROOT_STORE_OPTIONAL)
 
 network::mojom::NetworkContextParamsPtr
 SystemNetworkContextManager::CreateNetworkContextParams() {

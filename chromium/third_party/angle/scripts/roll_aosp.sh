@@ -97,7 +97,7 @@ function generate_Android_bp_file() {
         --gn_json_arm64=${GN_OUTPUT_DIRECTORY}/desc.arm64.json \
         --gn_json_x86=${GN_OUTPUT_DIRECTORY}/desc.x86.json \
         --gn_json_x64=${GN_OUTPUT_DIRECTORY}/desc.x64.json \
-        > Android.bp
+        --output=Android.bp
 }
 
 
@@ -148,7 +148,7 @@ for removal_dir in "${extra_third_party_removal_patterns[@]}"; do
 done
 
 # Sync all of ANGLE's deps so that 'gn gen' works
-python scripts/bootstrap.py
+python3 scripts/bootstrap.py
 gclient sync --reset --force --delete_unversioned_trees
 
 # Delete outdir to ensure a clean gn run.

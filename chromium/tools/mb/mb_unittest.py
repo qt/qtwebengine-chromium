@@ -162,7 +162,6 @@ TEST_CONFIG = """\
       'fake_args_file': 'args_file_goma',
       'fake_builder': 'rel_bot',
       'fake_debug_builder': 'debug_goma',
-      'fake_ios_error': 'ios_error',
       'fake_multi_phase': { 'phase_1': 'phase_1', 'phase_2': 'phase_2'},
     },
   },
@@ -170,7 +169,6 @@ TEST_CONFIG = """\
     'args_file_goma': ['fake_args_bot', 'goma'],
     'debug_goma': ['debug', 'goma'],
     'fake_args_bot': ['fake_args_bot'],
-    'ios_error': ['error'],
     'phase_1': ['rel', 'phase_1'],
     'phase_2': ['rel', 'phase_2'],
     'rel_bot': ['rel', 'goma', 'fake_feature1'],
@@ -178,9 +176,6 @@ TEST_CONFIG = """\
   'mixins': {
     'debug': {
       'gn_args': 'is_debug=true',
-    },
-    'error': {
-      'gn_args': 'error',
     },
     'fake_args_bot': {
       'args_file': '//build/args/bots/fake_builder_group/fake_args_bot.gn',
@@ -530,7 +525,7 @@ class UnitTest(unittest.TestCase):
     self.check(['gen', '-m', 'fake_builder_group', '-b', 'fake_args_bot',
                 '//out/Debug'],
                mbw=mbw, ret=0)
-    # TODO(https://crbug.com/1093038): This assert is inappropriately failing.
+    # TODO(crbug.com/40134852): This assert is inappropriately failing.
     # self.assertEqual(
     #     mbw.files['/fake_src/out/Debug/args.gn'],
     #     'import("//build/args/bots/fake_builder_group/fake_args_bot.gn")\n')
@@ -763,6 +758,43 @@ class UnitTest(unittest.TestCase):
     self.assertIn('../../filters/some_filter', files)
     self.assertNotIn('../../filters/some_filter/foo', files)
     self.assertIn('../../filters/another_filter/hoo', files)
+
+  def test_gen_isolate_generated_dir(self):
+    files = {
+        '/tmp/swarming_targets':
+        'base_unittests\n',
+        '/fake_src/testing/buildbot/gn_isolate_map.pyl':
+        ("{'base_unittests': {"
+         "  'label': '//base:base_unittests',"
+         "  'type': 'console_test_launcher',"
+         "}}\n"),
+    }
+
+    mbw = self.fake_mbw(files)
+
+    def fake_call(cmd, env=None, capture_output=True, input=''):
+      del cmd
+      del env
+      del capture_output
+      del input
+      mbw.files['/fake_src/out/Default/base_unittests.runtime_deps'] = (
+          'test_data/\n')
+      return 0, '', ''
+
+    mbw.Call = fake_call
+
+    self.check([
+        'gen', '-c', 'debug_goma', '--swarming-targets-file',
+        '/tmp/swarming_targets', '//out/Default'
+    ],
+               mbw=mbw,
+               ret=1)
+    files = mbw.files.get('/fake_src/out/Default/base_unittests.isolate')
+
+    expected_err = ('error: gn `data` items may not list generated directories;'
+                    ' list files in directory instead for:\n'
+                    '//out/Default/test_data/\n')
+    self.assertIn(expected_err, mbw.out)
 
   def test_isolate_dir(self):
     files = {
@@ -1183,54 +1215,6 @@ class UnitTest(unittest.TestCase):
     self.check(['run', '//out/Default', 'base_unittests'], mbw=mbw, ret=0)
     self.assertIn(['autoninja.bat', '-C', 'out\\Default', 'base_unittests'],
                   mbw.calls)
-
-  def test_ios_error_config_with_ios_json(self):
-    """Ensures that ios_error config finds the correct iOS JSON file for args"""
-    files = {
-        '/fake_src/ios/build/bots/fake_builder_group/fake_ios_error.json':
-        ('{"gn_args": ["is_debug=true"]}\n')
-    }
-    mbw = self.fake_mbw(files)
-    self.check(['lookup', '-m', 'fake_builder_group', '-b', 'fake_ios_error'],
-               mbw=mbw,
-               ret=0,
-               out=('\n'
-                    'Writing """\\\n'
-                    'is_debug = true\n'
-                    '""" to _path_/args.gn.\n\n'
-                    '/fake_src/buildtools/linux64/gn gen _path_\n'))
-
-  def test_bot_definition_in_ios_json_only(self):
-    """Ensures that logic checks iOS JSON file for args
-
-    When builder definition is not present, ensure that ios/build/bots/ is
-    checked.
-    """
-    files = {
-        '/fake_src/ios/build/bots/fake_builder_group/fake_ios_bot.json':
-        ('{"gn_args": ["is_debug=true"]}\n')
-    }
-    mbw = self.fake_mbw(files)
-    self.check(['lookup', '-m', 'fake_builder_group', '-b', 'fake_ios_bot'],
-               mbw=mbw,
-               ret=0,
-               out=('\n'
-                    'Writing """\\\n'
-                    'is_debug = true\n'
-                    '""" to _path_/args.gn.\n\n'
-                    '/fake_src/buildtools/linux64/gn gen _path_\n'))
-
-  def test_ios_error_config_missing_json_definition(self):
-    """Ensures MBErr is thrown
-
-    Expect MBErr with 'No iOS definition ...' for iOS bots when the bot config
-    is ios_error, but there is no iOS JSON definition for it.
-    """
-    mbw = self.fake_mbw()
-    self.check(['lookup', '-m', 'fake_builder_group', '-b', 'fake_ios_error'],
-               mbw=mbw,
-               ret=1)
-    self.assertIn('MBErr: No iOS definition was found.', mbw.out)
 
   def test_bot_missing_definition(self):
     """Ensures builder missing MBErr is thrown

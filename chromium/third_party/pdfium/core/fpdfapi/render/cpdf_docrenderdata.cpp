@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 
 #include <stdint.h>
@@ -111,7 +116,7 @@ RetainPtr<CPDF_TransferFunc> CPDF_DocRenderData::CreateTransferFunc(
     for (size_t v = 0; v < CPDF_TransferFunc::kChannelSampleSize; ++v) {
       float input = static_cast<float>(v) / 255.0f;
       for (int i = 0; i < 3; ++i) {
-        if (pFuncs[i]->CountOutputs() > kMaxOutputs) {
+        if (pFuncs[i]->OutputCount() > kMaxOutputs) {
           samples[i][v] = v;
           continue;
         }
@@ -125,8 +130,9 @@ RetainPtr<CPDF_TransferFunc> CPDF_DocRenderData::CreateTransferFunc(
   } else {
     for (size_t v = 0; v < CPDF_TransferFunc::kChannelSampleSize; ++v) {
       float input = static_cast<float>(v) / 255.0f;
-      if (pFuncs[0]->CountOutputs() <= kMaxOutputs)
+      if (pFuncs[0]->OutputCount() <= kMaxOutputs) {
         pFuncs[0]->Call(pdfium::span_from_ref(input), output);
+      }
       size_t o = FXSYS_roundf(output[0] * 255);
       if (o != v)
         bIdentity = false;

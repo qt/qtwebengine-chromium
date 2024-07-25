@@ -16,8 +16,7 @@
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
 
-namespace extensions {
-namespace declarative_net_request {
+namespace extensions::declarative_net_request {
 
 namespace {
 namespace dnr_api = api::declarative_net_request;
@@ -37,7 +36,7 @@ InstallIndexHelper::Result CombineResults(
   size_t enabled_regex_rules_count = 0;
   base::TimeDelta total_index_and_persist_time;
 
-  // TODO(crbug.com/754526): Limit the number of install warnings across all
+  // TODO(crbug.com/40534665): Limit the number of install warnings across all
   // rulesets.
 
   // Note |results| may be empty.
@@ -198,5 +197,4 @@ void InstallIndexHelper::OnRulesetIndexed(
   std::move(ruleset_done_closure).Run();
 }
 
-}  // namespace declarative_net_request
-}  // namespace extensions
+}  // namespace extensions::declarative_net_request

@@ -8,10 +8,10 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-#include "base/allocator/allocator_extension.h"
 #include "base/allocator/partition_alloc_support.h"
 #include "base/at_exit.h"
 #include "base/command_line.h"
@@ -111,6 +111,7 @@
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "gpu/config/gpu_switches.h"
+#include "gpu/ipc/client/client_shared_image_interface.h"
 #include "gpu/ipc/client/command_buffer_proxy_impl.h"
 #include "gpu/ipc/client/gpu_channel_host.h"
 #include "ipc/ipc_channel_handle.h"
@@ -182,7 +183,9 @@
 
 #if BUILDFLAG(IS_WIN)
 #include <objbase.h>
+
 #include <windows.h>
+
 #include "content/renderer/media/win/dcomp_texture_factory.h"
 #include "content/renderer/media/win/overlay_state_service_provider.h"
 #include "media/base/win/mf_feature_checks.h"
@@ -260,8 +263,9 @@ static_assert(
 // Feature to migrate the Media thread to a SequencedTaskRunner backed from
 // the base::ThreadPool. Does not currently work on Fuchsia due to FIDL
 // requiring thread affinity.
-BASE_DECLARE_FEATURE(kUseThreadPoolForMediaTaskRunner){
-    "UseThreadPoolForMediaTaskRunner", base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kUseThreadPoolForMediaTaskRunner,
+             "UseThreadPoolForMediaTaskRunner",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Updates the crash key for whether this renderer is foregrounded.
 void UpdateForegroundCrashKey(bool foreground) {
@@ -411,7 +415,7 @@ bool RenderThreadImpl::HistogramCustomizer::IsAlexaTop10NonGoogleSite(
     return true;
 
   if (!sanitized_host.empty()) {
-    std::vector<base::StringPiece> host_tokens = base::SplitStringPiece(
+    std::vector<std::string_view> host_tokens = base::SplitStringPiece(
         sanitized_host, ".", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
 
     if (host_tokens.size() >= 2) {
@@ -639,6 +643,12 @@ void RenderThreadImpl::Init() {
 
   UpdateForegroundCrashKey(
       /*foreground=*/!blink::kLaunchingProcessIsBackgrounded);
+
+  use_cached_routing_table_ =
+      base::FeatureList::IsEnabled(features::kFrameRoutingCache);
+  if (use_cached_routing_table_) {
+    RequestNewItemsForFrameRoutingCache();
+  }
 }
 
 RenderThreadImpl::~RenderThreadImpl() {
@@ -739,8 +749,56 @@ bool RenderThreadImpl::GenerateFrameRoutingID(
     blink::LocalFrameToken& frame_token,
     base::UnguessableToken& devtools_frame_token,
     blink::DocumentToken& document_token) {
-  return render_message_filter()->GenerateFrameRoutingID(
-      &routing_id, &frame_token, &devtools_frame_token, &document_token);
+  if (!use_cached_routing_table_) {
+    mojom::FrameRoutingInfoPtr info;
+    if (!render_message_filter()->GenerateSingleFrameRoutingInfo(&info)) {
+      return false;
+    }
+    routing_id = info->routing_id;
+    frame_token = info->frame_token;
+    devtools_frame_token = info->devtools_frame_token;
+    document_token = info->document_token;
+    return true;
+  }
+
+  // If table is empty force a synchronous fetch.
+  if (cached_frame_routing_.empty()) {
+    std::vector<mojom::FrameRoutingInfoPtr> infos;
+    if (!render_message_filter()->GenerateFrameRoutingInfos(&infos)) {
+      return false;
+    }
+    for (auto& info : infos) {
+      cached_frame_routing_.push_back(std::move(info));
+    }
+  }
+
+  auto& front = cached_frame_routing_.front();
+  routing_id = front->routing_id;
+  frame_token = front->frame_token;
+  devtools_frame_token = front->devtools_frame_token;
+  document_token = front->document_token;
+  cached_frame_routing_.pop_front();
+
+  // If the table drops to 2 or less, request an asynchronous populate.
+  if (!cached_items_requested_ && cached_frame_routing_.size() <= 2) {
+    RequestNewItemsForFrameRoutingCache();
+  }
+  return true;
+}
+
+void RenderThreadImpl::RequestNewItemsForFrameRoutingCache() {
+  cached_items_requested_ = true;
+  render_message_filter()->GenerateFrameRoutingInfos(
+      base::BindOnce(&RenderThreadImpl::PopulateFrameRoutingCacheWithItems,
+                     base::Unretained(this)));
+}
+
+void RenderThreadImpl::PopulateFrameRoutingCacheWithItems(
+    std::vector<mojom::FrameRoutingInfoPtr> infos) {
+  cached_items_requested_ = false;
+  for (auto& info : infos) {
+    cached_frame_routing_.push_back(std::move(info));
+  }
 }
 
 void RenderThreadImpl::AddObserver(RenderThreadObserver* observer) {
@@ -1013,20 +1071,17 @@ RenderThreadImpl::GetVideoFrameCompositorContextProvider(
 
   scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
       EstablishGpuChannelSync();
-  if (!gpu_channel_host)
+  if (!gpu_channel_host) {
     return nullptr;
+  }
 
   // This context is only used to create textures and mailbox them, so
   // use lower limits than the default.
   gpu::SharedMemoryLimits limits = gpu::SharedMemoryLimits::ForMailboxContext();
 
   bool support_locking = false;
-  bool support_gles2_interface = true;
-  // Use RasterInterface if kRasterInterfaceInVideoResourceUpdater is enabled.
-  if (base::FeatureList::IsEnabled(
-          media::kRasterInterfaceInVideoResourceUpdater)) {
-    support_gles2_interface = false;
-  }
+  // Use RasterInterface always.
+  bool support_gles2_interface = false;
   bool support_raster_interface = true;
   bool support_oop_rasterization = false;
   bool support_grcontext = false;
@@ -1038,6 +1093,27 @@ RenderThreadImpl::GetVideoFrameCompositorContextProvider(
       viz::command_buffer_metrics::ContextType::RENDER_COMPOSITOR,
       kGpuStreamIdMedia, kGpuStreamPriorityMedia);
   return video_frame_compositor_context_provider_;
+}
+
+scoped_refptr<gpu::ClientSharedImageInterface>
+RenderThreadImpl::GetVideoFrameCompositorSharedImageInterface() {
+  if (shared_image_interface_ &&
+      !shared_image_interface_->gpu_channel()->IsLost()) {
+    return shared_image_interface_;
+  }
+
+  shared_image_interface_.reset();
+
+  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host =
+      EstablishGpuChannelSync();
+  if (!gpu_channel_host) {
+    return nullptr;
+  }
+
+  shared_image_interface_ =
+      gpu_channel_host->CreateClientSharedImageInterface();
+
+  return shared_image_interface_;
 }
 
 scoped_refptr<viz::ContextProviderCommandBuffer>
@@ -1071,10 +1147,6 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
   // See https://crbug.com/880901
   bool automatic_flushes = true;
 
-  // We use kGpuStreamIdDefault here, the same as in
-  // PepperVideoDecodeContextProvider, so we don't need to handle
-  // synchronization between the pepper context and the shared main thread
-  // context.
   shared_main_thread_contexts_ = CreateOffscreenContext(
       std::move(gpu_channel_host), gpu::SharedMemoryLimits(), support_locking,
       support_gles2_interface, support_raster_interface,
@@ -1088,43 +1160,6 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
   }
 
   return shared_main_thread_contexts_;
-}
-
-scoped_refptr<viz::ContextProviderCommandBuffer>
-RenderThreadImpl::PepperVideoDecodeContextProvider() {
-  DCHECK(IsMainThread());
-  if (pepper_video_decode_contexts_ &&
-      pepper_video_decode_contexts_->ContextGL()->GetGraphicsResetStatusKHR() ==
-          GL_NO_ERROR)
-    return pepper_video_decode_contexts_;
-
-  scoped_refptr<gpu::GpuChannelHost> gpu_channel_host(
-      EstablishGpuChannelSync());
-  if (!gpu_channel_host) {
-    pepper_video_decode_contexts_ = nullptr;
-    return nullptr;
-  }
-
-  bool support_locking = false;
-  bool support_raster_interface = false;
-  bool support_oop_rasterization = false;
-  bool support_gles2_interface = true;
-  bool support_grcontext = !support_oop_rasterization;
-  bool automatic_flushes = false;
-  // We use kGpuStreamIdDefault here, the same as in
-  // SharedMainThreadContextProvider, so we don't need to handle
-  // synchronization between the pepper context and the shared main thread
-  // context.
-  pepper_video_decode_contexts_ = CreateOffscreenContext(
-      std::move(gpu_channel_host), gpu::SharedMemoryLimits::ForMailboxContext(),
-      support_locking, support_gles2_interface, support_raster_interface,
-      support_oop_rasterization, support_grcontext, automatic_flushes,
-      viz::command_buffer_metrics::ContextType::RENDERER_MAIN_THREAD,
-      kGpuStreamIdDefault, kGpuStreamPriorityDefault);
-  auto result = pepper_video_decode_contexts_->BindToCurrentSequence();
-  if (result != gpu::ContextResult::kSuccess)
-    pepper_video_decode_contexts_ = nullptr;
-  return pepper_video_decode_contexts_;
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1318,12 +1353,6 @@ void RenderThreadImpl::SetProcessState(
 }
 
 void RenderThreadImpl::SetBatterySaverMode(bool battery_saver_mode_enabled) {
-  if (battery_saver_mode_enabled) {
-    base::MessagePump::OverrideAlignWakeUpsState(true, base::Milliseconds(32));
-  } else {
-    base::MessagePump::ResetAlignWakeUpsState();
-  }
-
   blink::SetBatterySaverModeForAllIsolates(battery_saver_mode_enabled);
 }
 
@@ -1488,33 +1517,15 @@ void RenderThreadImpl::OnSystemColorsChanged(int32_t aqua_color_variant) {
 
 void RenderThreadImpl::UpdateSystemColorInfo(
     mojom::UpdateSystemColorInfoParamsPtr params) {
-  bool color_providers_changed =
-      blink_platform_impl_->ThemeEngine()->UpdateColorProviders(
-          params->light_colors, params->dark_colors, params->forced_colors_map);
-  if (color_providers_changed) {
-    // Notify blink that the global ColorProvider instances for this renderer
-    // have changed. These color providers are only used to paint native
-    // controls and only require us to invalidate paint for local frames in this
-    // renderer.
-    blink::ColorProvidersChanged();
-  }
-
   auto* native_theme = ui::NativeTheme::GetInstanceForWeb();
 
-  bool did_system_color_info_change = native_theme->UpdateSystemColorInfo(
-      params->is_dark_mode, params->forced_colors, params->colors);
-
-  did_system_color_info_change |=
+  bool did_accent_color_change =
       native_theme->user_color() != params->accent_color;
   native_theme->set_user_color(params->accent_color);
 
-  if (did_system_color_info_change) {
-    // Notify blink of system color info changes. These give blink the
-    // opportunity to update internal state to reflect the NativeTheme's color
-    // scheme. These will also prompt blink to invalidate and recalculate styles
-    // for elements that rely on system colors, such as those leveraging the
-    // forced colors media feature. These can affect CSS styles and thus require
-    // action beyond simply invalidating paint on local frames.
+  if (did_accent_color_change) {
+    // Notify blink of accent color changes. These can affect CSS styles and
+    // thus require action beyond simply invalidating paint on local frames.
     blink::SystemColorsChanged();
     blink::ColorSchemeChanged();
   }
@@ -1570,7 +1581,7 @@ RenderThreadImpl::GetMediaSequencedTaskRunner() {
 #if BUILDFLAG(IS_FUCHSIA)
     // Start IO thread on Fuchsia to make that thread usable for FIDL.
     base::Thread::Options options(base::MessagePumpType::IO, 0);
-    // TODO(crbug.com/1400772): Use kCompositing to address media latency on
+    // TODO(crbug.com/40250424): Use kCompositing to address media latency on
     // Fuchsia until alignment on new media thread types is achieved.
     options.thread_type = base::ThreadType::kCompositing;
 #else
@@ -1670,6 +1681,7 @@ void RenderThreadImpl::OnRendererBackgrounded() {
   main_thread_scheduler_->SetRendererBackgrounded(true);
   discardable_memory_allocator_->OnBackgrounded();
   base::allocator::PartitionAllocSupport::Get()->OnBackgrounded();
+  blink::OnProcessBackgrounded();
 }
 
 void RenderThreadImpl::OnRendererForegrounded() {
@@ -1678,12 +1690,12 @@ void RenderThreadImpl::OnRendererForegrounded() {
   discardable_memory_allocator_->OnForegrounded();
   base::allocator::PartitionAllocSupport::Get()->OnForegrounded(
       MainFrameCounter::has_main_frame());
+  blink::OnProcessForegrounded();
   process_foregrounded_count_++;
 }
 
 void RenderThreadImpl::ReleaseFreeMemory() {
   TRACE_EVENT0("blink", "RenderThreadImpl::ReleaseFreeMemory()");
-  base::allocator::ReleaseFreeMemory();
   discardable_memory_allocator_->ReleaseFreeMemory();
 
   // Do not call into blink if it is not initialized.

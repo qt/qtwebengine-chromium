@@ -290,8 +290,6 @@ bool MailboxToSurfaceBridgeImpl::CopyMailboxToSurfaceAndSwap(
     needs_resize_ = false;
   }
 
-  DCHECK(mailbox.mailbox.IsSharedImage());
-
   // While it's not an error to use a zero-sized Surface, it's not going to
   // produce any visible output. Show a debug mode warning in that case to avoid
   // another annoying debugging session.
@@ -357,12 +355,12 @@ MailboxToSurfaceBridgeImpl::CreateSharedImage(
 
   CHECK_EQ(buffer_format, gfx::BufferFormat::RGBA_8888);
   auto client_shared_image = sii->CreateSharedImage(
-      viz::SinglePlaneFormat::kRGBA_8888, size, color_space,
-      kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, usage,
-      "WebXrMailboxToSurfaceBridge", std::move(buffer_handle));
+      {viz::SinglePlaneFormat::kRGBA_8888, size, color_space, usage,
+       "WebXrMailboxToSurfaceBridge"},
+      std::move(buffer_handle));
   CHECK(client_shared_image);
   sync_token = sii->GenVerifiedSyncToken();
-  DCHECK(!gpu::NativeBufferNeedsPlatformSpecificTextureTarget(buffer_format));
+  DCHECK(client_shared_image->GetTextureTarget(buffer_format) == GL_TEXTURE_2D);
   return client_shared_image;
 }
 

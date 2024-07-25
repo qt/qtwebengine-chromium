@@ -1,17 +1,5 @@
 <style include="mwb-element-shared-style">
   :host {
-     --audio-icon-color: var(--google-grey-700);
-     --media-recording-icon-color:  var(--google-red-600);
-   }
-
-  @media (prefers-color-scheme: dark) {
-    :host {
-      --audio-icon-color: var(--google-grey-300);
-      --media-recording-icon-color:  var(--google-red-300);
-    }
-  }
-
-  :host-context([chrome-refresh-2023]):host {
      --audio-icon-color: var(--color-tab-search-media-icon);
      --media-recording-icon-color:  var(--color-tab-search-media-recording-icon);
    }
@@ -71,7 +59,6 @@
     color: var(--cr-primary-text-color);
     font-size: var(--mwb-primary-text-font-size);
     font-weight: var(--mwb-primary-text-font-weight);
-    margin-bottom: 3px;
   }
 
   #secondaryContainer {
@@ -82,8 +69,13 @@
     font-weight: var(--mwb-secondary-text-font-weight);
   }
 
+  :host([compact]) #secondaryContainer {
+    display: none;
+  }
+
   #primaryContainer {
     display: flex;
+    gap: 3px;
   }
 
   #secondaryTimestamp {
@@ -150,10 +142,6 @@
   }
 
   #iconContainer {
-    margin-inline-end: 16px;
-  }
-
-  :host-context([chrome-refresh-2023]) #iconContainer {
     align-items: center;
     background: var(--tab-search-favicon-background,
         var(--color-list-item-url-favicon-background));
@@ -163,7 +151,13 @@
     height: 40px;
     justify-content: center;
     overflow: hidden;
+    margin-inline-end: 16px;
     width: 40px;
+  }
+
+  :host([compact]) #iconContainer {
+    height: 24px;
+    width: 24px;
   }
 </style>
 
@@ -198,7 +192,7 @@
 </div>
 <template is="dom-if" if="[[isCloseable_(data.type)]]">
   <div class$="[[getButtonContainerStyles_(data)]]">
-    <cr-icon-button id="closeButton"
+    <cr-icon-button id="closeButton" role="[[getCloseButtonRole_()]]"
         aria-label="[[ariaLabelForButton_(data.tab.title)]]"
         iron-icon="mwb16:close" noink="[[!buttonRipples_]]"
         no-ripple-on-focus on-click="onItemClose_"

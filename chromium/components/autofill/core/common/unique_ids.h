@@ -36,7 +36,7 @@ class TokenType
 // LocalFrameToken and RemoteFrameToken identify AutofillDrivers and
 // AutofillAgents.
 //
-// TODO(crbug.com/1441921): Implement frame tokens as described below for iOS.
+// TODO(crbug.com/40266699): Implement frame tokens as described below for iOS.
 //
 // Every pair of associated AutofillAgent and AutofillDriver has a
 // LocalFrameToken, which uniquely identifies them and remains stable for their
@@ -99,7 +99,7 @@ using FieldRendererIdType = ::base::IdTypeU64<class FieldRendererIdMarker>;
 // FormRendererId and FieldRendererId uniquely identify a DOM form or field
 // element, respectively, among all such elements in one frame.
 //
-// To uniquely identify frames across frames, see FormGlobalId and
+// To uniquely identify forms and fields across frames, see FormGlobalId and
 // FieldGlobalId.
 //
 // As a sentinel value, the FormRendererId of a synthetic form converts to
@@ -135,10 +135,10 @@ struct GlobalId {
     return static_cast<bool>(renderer_id);
   }
 
-  friend constexpr auto operator<=>(const GlobalId<RendererId>& lhs,
-                                    const GlobalId<RendererId>& rhs) = default;
-  friend constexpr bool operator==(const GlobalId<RendererId>& lhs,
-                                   const GlobalId<RendererId>& rhs) = default;
+  friend auto operator<=>(const GlobalId<RendererId>& lhs,
+                          const GlobalId<RendererId>& rhs) = default;
+  friend bool operator==(const GlobalId<RendererId>& lhs,
+                         const GlobalId<RendererId>& rhs) = default;
 };
 
 }  // namespace internal
@@ -153,10 +153,10 @@ struct GlobalId {
 // GlobalIds are not necessarily persistent across page loads.
 //
 // Since LocalFrameTokens must not be leaked to renderer processes other than
-// the one they originate from, so Autofill should generally not send GlobalIds
-// to any renderer process.
+// the one they originate from, Autofill does not send GlobalIds to any renderer
+// process.
 //
-// TODO(crbug/1207920) Move to core/browser.
+// TODO(crbug.com/40181498) Move to core/browser.
 using FormGlobalId = internal::GlobalId<FormRendererId>;
 using FieldGlobalId = internal::GlobalId<FieldRendererId>;
 

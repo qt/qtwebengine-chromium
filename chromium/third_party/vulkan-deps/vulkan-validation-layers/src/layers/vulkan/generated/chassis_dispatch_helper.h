@@ -129,6 +129,8 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateGetQueryPoolResults,
     InterceptIdPreCallRecordGetQueryPoolResults,
     InterceptIdPostCallRecordGetQueryPoolResults,
+    InterceptIdPreCallValidateCreateBuffer,
+    InterceptIdPostCallRecordCreateBuffer,
     InterceptIdPreCallValidateDestroyBuffer,
     InterceptIdPreCallRecordDestroyBuffer,
     InterceptIdPostCallRecordDestroyBuffer,
@@ -171,6 +173,8 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateDestroyPipeline,
     InterceptIdPreCallRecordDestroyPipeline,
     InterceptIdPostCallRecordDestroyPipeline,
+    InterceptIdPreCallValidateCreatePipelineLayout,
+    InterceptIdPostCallRecordCreatePipelineLayout,
     InterceptIdPreCallValidateDestroyPipelineLayout,
     InterceptIdPreCallRecordDestroyPipelineLayout,
     InterceptIdPostCallRecordDestroyPipelineLayout,
@@ -195,6 +199,7 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateResetDescriptorPool,
     InterceptIdPreCallRecordResetDescriptorPool,
     InterceptIdPostCallRecordResetDescriptorPool,
+    InterceptIdPreCallRecordAllocateDescriptorSets,
     InterceptIdPreCallValidateFreeDescriptorSets,
     InterceptIdPreCallRecordFreeDescriptorSets,
     InterceptIdPostCallRecordFreeDescriptorSets,
@@ -759,6 +764,12 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateCmdSetFragmentShadingRateKHR,
     InterceptIdPreCallRecordCmdSetFragmentShadingRateKHR,
     InterceptIdPostCallRecordCmdSetFragmentShadingRateKHR,
+    InterceptIdPreCallValidateCmdSetRenderingAttachmentLocationsKHR,
+    InterceptIdPreCallRecordCmdSetRenderingAttachmentLocationsKHR,
+    InterceptIdPostCallRecordCmdSetRenderingAttachmentLocationsKHR,
+    InterceptIdPreCallValidateCmdSetRenderingInputAttachmentIndicesKHR,
+    InterceptIdPreCallRecordCmdSetRenderingInputAttachmentIndicesKHR,
+    InterceptIdPostCallRecordCmdSetRenderingInputAttachmentIndicesKHR,
     InterceptIdPreCallValidateWaitForPresentKHR,
     InterceptIdPreCallRecordWaitForPresentKHR,
     InterceptIdPostCallRecordWaitForPresentKHR,
@@ -873,6 +884,9 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateGetImageSubresourceLayout2KHR,
     InterceptIdPreCallRecordGetImageSubresourceLayout2KHR,
     InterceptIdPostCallRecordGetImageSubresourceLayout2KHR,
+    InterceptIdPreCallValidateCmdSetLineStippleKHR,
+    InterceptIdPreCallRecordCmdSetLineStippleKHR,
+    InterceptIdPostCallRecordCmdSetLineStippleKHR,
     InterceptIdPreCallValidateGetCalibratedTimestampsKHR,
     InterceptIdPreCallRecordGetCalibratedTimestampsKHR,
     InterceptIdPostCallRecordGetCalibratedTimestampsKHR,
@@ -1473,9 +1487,6 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateGetPipelineIndirectDeviceAddressNV,
     InterceptIdPreCallRecordGetPipelineIndirectDeviceAddressNV,
     InterceptIdPostCallRecordGetPipelineIndirectDeviceAddressNV,
-    InterceptIdPreCallValidateCmdSetTessellationDomainOriginEXT,
-    InterceptIdPreCallRecordCmdSetTessellationDomainOriginEXT,
-    InterceptIdPostCallRecordCmdSetTessellationDomainOriginEXT,
     InterceptIdPreCallValidateCmdSetDepthClampEnableEXT,
     InterceptIdPreCallRecordCmdSetDepthClampEnableEXT,
     InterceptIdPostCallRecordCmdSetDepthClampEnableEXT,
@@ -1506,6 +1517,9 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateCmdSetColorWriteMaskEXT,
     InterceptIdPreCallRecordCmdSetColorWriteMaskEXT,
     InterceptIdPostCallRecordCmdSetColorWriteMaskEXT,
+    InterceptIdPreCallValidateCmdSetTessellationDomainOriginEXT,
+    InterceptIdPreCallRecordCmdSetTessellationDomainOriginEXT,
+    InterceptIdPostCallRecordCmdSetTessellationDomainOriginEXT,
     InterceptIdPreCallValidateCmdSetRasterizationStreamEXT,
     InterceptIdPreCallRecordCmdSetRasterizationStreamEXT,
     InterceptIdPostCallRecordCmdSetRasterizationStreamEXT,
@@ -1855,6 +1869,8 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetQueryPoolResults);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetQueryPoolResults);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetQueryPoolResults);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreateBuffer);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreateBuffer);
     BUILD_DISPATCH_VECTOR(PreCallValidateDestroyBuffer);
     BUILD_DISPATCH_VECTOR(PreCallRecordDestroyBuffer);
     BUILD_DISPATCH_VECTOR(PostCallRecordDestroyBuffer);
@@ -1897,6 +1913,8 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateDestroyPipeline);
     BUILD_DISPATCH_VECTOR(PreCallRecordDestroyPipeline);
     BUILD_DISPATCH_VECTOR(PostCallRecordDestroyPipeline);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreatePipelineLayout);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreatePipelineLayout);
     BUILD_DISPATCH_VECTOR(PreCallValidateDestroyPipelineLayout);
     BUILD_DISPATCH_VECTOR(PreCallRecordDestroyPipelineLayout);
     BUILD_DISPATCH_VECTOR(PostCallRecordDestroyPipelineLayout);
@@ -1921,6 +1939,7 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateResetDescriptorPool);
     BUILD_DISPATCH_VECTOR(PreCallRecordResetDescriptorPool);
     BUILD_DISPATCH_VECTOR(PostCallRecordResetDescriptorPool);
+    BUILD_DISPATCH_VECTOR(PreCallRecordAllocateDescriptorSets);
     BUILD_DISPATCH_VECTOR(PreCallValidateFreeDescriptorSets);
     BUILD_DISPATCH_VECTOR(PreCallRecordFreeDescriptorSets);
     BUILD_DISPATCH_VECTOR(PostCallRecordFreeDescriptorSets);
@@ -2491,6 +2510,12 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetFragmentShadingRateKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetFragmentShadingRateKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetFragmentShadingRateKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetRenderingAttachmentLocationsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetRenderingAttachmentLocationsKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetRenderingAttachmentLocationsKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetRenderingInputAttachmentIndicesKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetRenderingInputAttachmentIndicesKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetRenderingInputAttachmentIndicesKHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateWaitForPresentKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordWaitForPresentKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordWaitForPresentKHR);
@@ -2605,6 +2630,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetImageSubresourceLayout2KHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetImageSubresourceLayout2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetImageSubresourceLayout2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetLineStippleKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetLineStippleKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetLineStippleKHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateGetCalibratedTimestampsKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetCalibratedTimestampsKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetCalibratedTimestampsKHR);
@@ -3217,9 +3245,6 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineIndirectDeviceAddressNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineIndirectDeviceAddressNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineIndirectDeviceAddressNV);
-    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetTessellationDomainOriginEXT);
-    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetTessellationDomainOriginEXT);
-    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetTessellationDomainOriginEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetDepthClampEnableEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetDepthClampEnableEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetDepthClampEnableEXT);
@@ -3250,6 +3275,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetColorWriteMaskEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetColorWriteMaskEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetColorWriteMaskEXT);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetTessellationDomainOriginEXT);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetTessellationDomainOriginEXT);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetTessellationDomainOriginEXT);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetRasterizationStreamEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetRasterizationStreamEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetRasterizationStreamEXT);

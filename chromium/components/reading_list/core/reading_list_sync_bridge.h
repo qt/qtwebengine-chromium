@@ -17,6 +17,7 @@
 
 namespace base {
 class Clock;
+class Location;
 }  // namespace base
 
 namespace syncer {
@@ -53,6 +54,7 @@ class ReadingListSyncBridge : public syncer::ModelTypeSyncBridge {
   void DidAddOrUpdateEntry(const ReadingListEntry& entry,
                            syncer::MetadataChangeList* metadata_change_list);
   void DidRemoveEntry(const ReadingListEntry& entry,
+                      const base::Location& location,
                       syncer::MetadataChangeList* metadata_change_list);
 
   // Exposes whether the underlying ModelTypeChangeProcessor is tracking
@@ -84,7 +86,7 @@ class ReadingListSyncBridge : public syncer::ModelTypeSyncBridge {
   // atomically, should save the metadata after the data changes, so that this
   // merge will be re-driven by sync if is not completely saved during the
   // current run.
-  absl::optional<syncer::ModelError> MergeFullSyncData(
+  std::optional<syncer::ModelError> MergeFullSyncData(
       std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
       syncer::EntityChangeList entity_changes) override;
 
@@ -93,7 +95,7 @@ class ReadingListSyncBridge : public syncer::ModelTypeSyncBridge {
   // |metadata_change_list| in case when some of the data changes are filtered
   // out, or even be empty in case when a commit confirmation is processed and
   // only the metadata needs to persisted.
-  absl::optional<syncer::ModelError> ApplyIncrementalSyncChanges(
+  std::optional<syncer::ModelError> ApplyIncrementalSyncChanges(
       std::unique_ptr<syncer::MetadataChangeList> metadata_change_list,
       syncer::EntityChangeList entity_changes) override;
 

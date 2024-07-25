@@ -7,6 +7,7 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <string_view>
 
 #include "base/check.h"
 #include "base/containers/contains.h"
@@ -165,7 +166,7 @@ std::map<std::string, std::string> Clipboard::ExtractCustomPlatformNames(
     ReadData(ui::ClipboardFormatType::WebCustomFormatMap(), data_dst,
              &custom_format_json);
     if (!custom_format_json.empty()) {
-      absl::optional<base::Value> json_val =
+      std::optional<base::Value> json_val =
           base::JSONReader::Read(custom_format_json);
       if (json_val.has_value() && json_val->is_dict()) {
         for (const auto it : json_val->GetDict()) {
@@ -240,7 +241,7 @@ void Clipboard::DispatchPortableRepresentation(const ObjectMapParams& params) {
               return;
             }
 
-            WriteHTML(data.markup, data.source_url, params.content_type);
+            WriteHTML(data.markup, data.source_url);
           },
           [&](const RtfData& data) {
             if (data.data.empty()) {
@@ -309,9 +310,8 @@ void Clipboard::DispatchPortableRepresentation(const ObjectMapParams& params) {
 
 Clipboard::ObjectMapParams::ObjectMapParams() = default;
 
-Clipboard::ObjectMapParams::ObjectMapParams(Data data,
-                                            ClipboardContentType content_type)
-    : data(std::move(data)), content_type(content_type) {}
+Clipboard::ObjectMapParams::ObjectMapParams(Data data)
+    : data(std::move(data)) {}
 
 Clipboard::ObjectMapParams::ObjectMapParams(const ObjectMapParams& other) =
     default;
@@ -354,7 +354,7 @@ void Clipboard::RemoveObserver(ClipboardWriteObserver* observer) {
   write_observers_.RemoveObserver(observer);
 }
 
-void Clipboard::NotifyCopyWithUrl(const base::StringPiece text,
+void Clipboard::NotifyCopyWithUrl(const std::string_view text,
                                   const GURL& frame,
                                   const GURL& main_frame) {
   GURL text_url(text);
@@ -387,8 +387,6 @@ base::Lock& Clipboard::ClipboardMapLock() {
 bool Clipboard::IsMarkedByOriginatorAsConfidential() const {
   return false;
 }
-
-void Clipboard::MarkAsConfidential() {}
 
 void Clipboard::ReadAvailableTypes(ClipboardBuffer buffer,
                                    const DataTransferEndpoint* data_dst,

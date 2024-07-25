@@ -4,12 +4,14 @@
 
 #include "cc/metrics/event_latency_tracing_recorder.h"
 
+#include "base/feature_list.h"
 #include "base/notreached.h"
 #include "base/ranges/algorithm.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_id_helper.h"
 #include "base/trace_event/typed_macros.h"
 #include "base/tracing/protos/chrome_track_event.pbzero.h"
+#include "cc/base/features.h"
 #include "cc/metrics/event_metrics.h"
 #include "third_party/perfetto/include/perfetto/tracing/track.h"
 
@@ -148,8 +150,8 @@ const char* EventLatencyTracingRecorder::GetDispatchToCompositorBreakdownName(
             kSubmitCompositorFrameToPresentationCompositorFrame:
           return "RendererCompositorFinishedToSubmitCompositorFrame";
         default:
-          // TODO(crbug.com/1366253): Logs are added to debug NOTREACHED() begin
-          // hit in crbug/1366253. Remove after investigation is finished.
+          // TODO(crbug.com/40866824): Logs are added to debug NOTREACHED()
+          // begin hit in crbug/1366253. Remove after investigation is finished.
           NOTREACHED() << "Invalid CC stage after compositor thread: "
                        << static_cast<int>(compositor_stage);
           return "";
@@ -174,8 +176,8 @@ const char* EventLatencyTracingRecorder::GetDispatchToCompositorBreakdownName(
             kSubmitCompositorFrameToPresentationCompositorFrame:
           return "RendererMainFinishedToSubmitCompositorFrame";
         default:
-          // TODO(crbug.com/1366253): Logs are added to debug NOTREACHED() begin
-          // hit in crbug/1366253. Remove after investigation is finished.
+          // TODO(crbug.com/40866824): Logs are added to debug NOTREACHED()
+          // begin hit in crbug/1366253. Remove after investigation is finished.
           NOTREACHED() << "Invalid CC stage after main thread: "
                        << static_cast<int>(compositor_stage);
           return "";
@@ -223,6 +225,13 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
   event_metrics->tracing_recorded();
 }
 
+// static
+bool EventLatencyTracingRecorder::IsEventLatencyTracingEnabled() {
+  return IsTracingEnabled() ||
+         !base::FeatureList::IsEnabled(
+             ::features::kMetricsTracingCalculationReduction);
+}
+
 void EventLatencyTracingRecorder::RecordEventLatencyTraceEventInternal(
     const EventMetrics* event_metrics,
     base::TimeTicks termination_time,
@@ -249,7 +258,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEventInternal(
             (termination_time - generated_timestamp) > high_latency_threshold;
         event_latency->set_has_high_latency(has_high_latency);
         for (auto stage : event_metrics->GetHighLatencyStages()) {
-          // TODO(crbug.com/1334827): Consider changing the high_latency_stage
+          // TODO(crbug.com/40228308): Consider changing the high_latency_stage
           // type from a string to enum type in chrome_track_event.proto,
           // similar to event_type.
           event_latency->add_high_latency_stage(stage);
@@ -307,7 +316,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEventInternal(
     auto stage_it = base::ranges::lower_bound(
         *stage_history, dispatch_timestamp, {},
         &CompositorFrameReporter::StageData::start_time);
-    // TODO(crbug.com/1330903): Ideally, at least the start time of
+    // TODO(crbug.com/40843545): Ideally, at least the start time of
     // SubmitCompositorFrameToPresentationCompositorFrame stage should be
     // greater than or equal to the final event dispatch timestamp, but
     // apparently, this is not always the case (see crbug.com/1330903). Skip

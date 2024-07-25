@@ -73,7 +73,7 @@ void KeyframeModel::SetRunState(RunState run_state,
 
 void KeyframeModel::Pause(base::TimeDelta pause_offset) {
   // Convert pause offset which is in local time to monotonic time.
-  // TODO(crbug.com/912407): This should be scaled by playbackrate.
+  // TODO(crbug.com/41430321): This should be scaled by playbackrate.
   base::TimeTicks monotonic_time = pause_offset +
                                    start_time_.value_or(base::TimeTicks()) +
                                    total_paused_duration_;
@@ -96,7 +96,7 @@ KeyframeModel::Phase KeyframeModel::CalculatePhase(
       (local_time == before_active_boundary_time && playback_rate_ < 0)) {
     return KeyframeModel::Phase::BEFORE;
   }
-  // TODO(crbug.com/909794): By spec end time = max(start delay + duration +
+  // TODO(crbug.com/41428771): By spec end time = max(start delay + duration +
   // end delay, 0). The logic should be updated once "end delay" is supported.
   base::TimeDelta active_after_boundary_time = base::TimeDelta::Max();
   if (std::isfinite(iterations_)) {
@@ -119,7 +119,7 @@ KeyframeModel::Phase KeyframeModel::CalculatePhase(
   return KeyframeModel::Phase::ACTIVE;
 }
 
-absl::optional<base::TimeDelta> KeyframeModel::CalculateActiveTime(
+std::optional<base::TimeDelta> KeyframeModel::CalculateActiveTime(
     base::TimeTicks monotonic_time) const {
   base::TimeDelta local_time = ConvertMonotonicTimeToLocalTime(monotonic_time);
   KeyframeModel::Phase phase = CalculatePhase(local_time);
@@ -128,7 +128,7 @@ absl::optional<base::TimeDelta> KeyframeModel::CalculateActiveTime(
     case KeyframeModel::Phase::BEFORE:
       if (fill_mode_ == FillMode::BACKWARDS || fill_mode_ == FillMode::BOTH)
         return std::max(local_time + time_offset_, base::TimeDelta());
-      return absl::nullopt;
+      return std::nullopt;
     case KeyframeModel::Phase::ACTIVE:
       return local_time + time_offset_;
     case KeyframeModel::Phase::AFTER:
@@ -139,10 +139,10 @@ absl::optional<base::TimeDelta> KeyframeModel::CalculateActiveTime(
         return std::max(std::min(local_time + time_offset_, active_duration),
                         base::TimeDelta());
       }
-      return absl::nullopt;
+      return std::nullopt;
     default:
       NOTREACHED();
-      return absl::nullopt;
+      return std::nullopt;
   }
 }
 
@@ -241,7 +241,8 @@ base::TimeDelta KeyframeModel::TrimTimeToCurrentIteration(
   return iteration_time;
 }
 
-// TODO(crbug.com/912407): Local time should be scaled by playback rate by spec.
+// TODO(crbug.com/41430321): Local time should be scaled by playback rate by
+// spec.
 base::TimeDelta KeyframeModel::ConvertMonotonicTimeToLocalTime(
     base::TimeTicks monotonic_time) const {
   // When waiting on receiving a start time, then our global clock is 'stuck' at

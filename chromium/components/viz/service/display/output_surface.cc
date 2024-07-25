@@ -35,14 +35,6 @@ OutputSurface::OutputSurface(
 
 OutputSurface::~OutputSurface() = default;
 
-void OutputSurface::SetDrawRectangle(const gfx::Rect& rect) {
-  NOTREACHED();
-}
-
-void OutputSurface::SetEnableDCLayers(bool enabled) {
-  NOTREACHED();
-}
-
 gfx::Rect OutputSurface::GetCurrentFramebufferDamage() const {
   return gfx::Rect();
 }
@@ -74,14 +66,6 @@ void OutputSurface::SetNeedsSwapSizeNotifications(
 
 base::ScopedClosureRunner OutputSurface::GetCacheBackBufferCb() {
   return base::ScopedClosureRunner();
-}
-
-void OutputSurface::SetGpuVSyncCallback(GpuVSyncCallback callback) {
-  NOTREACHED();
-}
-
-void OutputSurface::SetGpuVSyncEnabled(bool enabled) {
-  NOTREACHED();
 }
 
 gpu::Mailbox OutputSurface::GetOverlayMailbox() const {

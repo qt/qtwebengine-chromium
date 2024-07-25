@@ -106,14 +106,13 @@ class TLSClientSocketTestBase {
     while (received_contents.size() < num_bytes) {
       base::RunLoop().RunUntilIdle();
       std::vector<char> buffer(num_bytes);
-      uint32_t read_size = static_cast<uint32_t>(num_bytes);
-      MojoResult result = handle->get().ReadData(buffer.data(), &read_size,
+      MojoResult result = handle->get().ReadData(buffer.data(), &num_bytes,
                                                  MOJO_READ_DATA_FLAG_NONE);
       if (result == MOJO_RESULT_SHOULD_WAIT)
         continue;
       if (result != MOJO_RESULT_OK)
         return received_contents;
-      received_contents.append(buffer.data(), read_size);
+      received_contents.append(buffer.data(), num_bytes);
     }
     return received_contents;
   }
@@ -154,14 +153,14 @@ class TLSClientSocketTestBase {
     base::RunLoop run_loop;
     int net_error = net::ERR_FAILED;
     factory_->CreateTCPConnectedSocket(
-        absl::nullopt /* local_addr */, remote_addr_list,
+        std::nullopt /* local_addr */, remote_addr_list,
         nullptr /* tcp_connected_socket_options */,
         TRAFFIC_ANNOTATION_FOR_TESTS, std::move(receiver),
         pre_tls_observer()->GetObserverRemote(),
         base::BindLambdaForTesting(
             [&](int result,
-                const absl::optional<net::IPEndPoint>& actual_local_addr,
-                const absl::optional<net::IPEndPoint>& peer_addr,
+                const std::optional<net::IPEndPoint>& actual_local_addr,
+                const std::optional<net::IPEndPoint>& peer_addr,
                 mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
                 mojo::ScopedDataPipeProducerHandle send_pipe_handle) {
               net_error = result;
@@ -185,8 +184,8 @@ class TLSClientSocketTestBase {
         std::move(receiver), mojo::NullRemote() /* observer */,
         base::BindLambdaForTesting(
             [&](int result,
-                const absl::optional<net::IPEndPoint>& actual_local_addr,
-                const absl::optional<net::IPEndPoint>& peer_addr,
+                const std::optional<net::IPEndPoint>& actual_local_addr,
+                const std::optional<net::IPEndPoint>& peer_addr,
                 mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
                 mojo::ScopedDataPipeProducerHandle send_pipe_handle) {
               net_error = result;
@@ -227,10 +226,10 @@ class TLSClientSocketTestBase {
             [](net::CompletionOnceCallback cb,
                mojo::ScopedDataPipeConsumerHandle* consumer_handle_out,
                mojo::ScopedDataPipeProducerHandle* producer_handle_out,
-               absl::optional<net::SSLInfo>* ssl_info_out, int result,
+               std::optional<net::SSLInfo>* ssl_info_out, int result,
                mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
                mojo::ScopedDataPipeProducerHandle send_pipe_handle,
-               const absl::optional<net::SSLInfo>& ssl_info) {
+               const std::optional<net::SSLInfo>& ssl_info) {
               *consumer_handle_out = std::move(receive_pipe_handle);
               *producer_handle_out = std::move(send_pipe_handle);
               *ssl_info_out = ssl_info;
@@ -282,7 +281,7 @@ class TLSClientSocketTestBase {
     return &post_tls_send_handle_;
   }
 
-  const absl::optional<net::SSLInfo>& ssl_info() { return ssl_info_; }
+  const std::optional<net::SSLInfo>& ssl_info() { return ssl_info_; }
 
   net::MockClientSocketFactory* mock_client_socket_factory() {
     return &mock_client_socket_factory_;
@@ -303,7 +302,7 @@ class TLSClientSocketTestBase {
   mojo::ScopedDataPipeProducerHandle post_tls_send_handle_;
 
   // SSLInfo obtained from UpgradeToTLS.
-  absl::optional<net::SSLInfo> ssl_info_;
+  std::optional<net::SSLInfo> ssl_info_;
 
   net::MockClientSocketFactory mock_client_socket_factory_;
   std::unique_ptr<net::URLRequestContext> url_request_context_;
@@ -355,7 +354,7 @@ TEST_P(TLSClientSocketTest, UpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, post_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
   EXPECT_EQ(kMsg, Read(post_tls_recv_handle(), kMsgSize));
@@ -398,7 +397,7 @@ TEST_P(TLSClientSocketTest, ClosePipesRunUntilIdleAndUpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, post_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
   EXPECT_EQ(kMsg, Read(post_tls_recv_handle(), kMsgSize));
@@ -442,7 +441,7 @@ TEST_P(TLSClientSocketTest, UpgradeToTLSTwice) {
     auto upgrade2_callback = base::BindLambdaForTesting(
         [&](int result, mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
             mojo::ScopedDataPipeProducerHandle send_pipe_handle,
-            const absl::optional<net::SSLInfo>& ssl_info) {
+            const std::optional<net::SSLInfo>& ssl_info) {
           net_error = result;
           run_loop.Quit();
         });
@@ -505,7 +504,7 @@ TEST_P(TLSClientSocketTest, UpgradeToTLSWithCustomSSLConfig) {
   auto upgrade_callback = base::BindLambdaForTesting(
       [&](int result, mojo::ScopedDataPipeConsumerHandle receive_pipe_handle,
           mojo::ScopedDataPipeProducerHandle send_pipe_handle,
-          const absl::optional<net::SSLInfo>& ssl_info) {
+          const std::optional<net::SSLInfo>& ssl_info) {
         net_error = result;
         run_loop.Quit();
       });
@@ -547,7 +546,7 @@ TEST_P(TLSClientSocketTest, ReadWriteBeforeUpgradeToTLS) {
 
   EXPECT_EQ(kMsg, Read(pre_tls_recv_handle(), kMsgSize));
 
-  uint32_t num_bytes = kMsgSize;
+  size_t num_bytes = kMsgSize;
   EXPECT_EQ(MOJO_RESULT_OK, pre_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
 
@@ -601,7 +600,7 @@ TEST_P(TLSClientSocketTest, ReadErrorAfterUpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kSecretMsg);
+  size_t num_bytes = strlen(kSecretMsg);
   EXPECT_EQ(MOJO_RESULT_OK,
             post_tls_send_handle()->get().WriteData(&kSecretMsg, &num_bytes,
                                                     MOJO_WRITE_DATA_FLAG_NONE));
@@ -642,7 +641,7 @@ TEST_P(TLSClientSocketTest, WriteErrorAfterUpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kSecretMsg);
+  size_t num_bytes = strlen(kSecretMsg);
   EXPECT_EQ(MOJO_RESULT_OK,
             post_tls_send_handle()->get().WriteData(&kSecretMsg, &num_bytes,
                                                     MOJO_WRITE_DATA_FLAG_NONE));
@@ -690,7 +689,7 @@ TEST_P(TLSClientSocketTest, ReadFromPreTlsDataPipeAfterUpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kSecretMsg);
+  size_t num_bytes = strlen(kSecretMsg);
   EXPECT_EQ(MOJO_RESULT_OK,
             post_tls_send_handle()->get().WriteData(&kSecretMsg, &num_bytes,
                                                     MOJO_WRITE_DATA_FLAG_NONE));
@@ -729,7 +728,7 @@ TEST_P(TLSClientSocketTest, WriteToPreTlsDataPipeAfterUpgradeToTLS) {
                tls_socket.BindNewPipeAndPassReceiver(), callback.callback());
   base::RunLoop().RunUntilIdle();
 
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, pre_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
 
@@ -777,7 +776,7 @@ TEST_P(TLSClientSocketTest, ReadAndWritePreTlsDataPipeAfterUpgradeToTLS) {
   UpgradeToTLS(&client_socket, host_port_pair,
                tls_socket.BindNewPipeAndPassReceiver(), callback.callback());
   EXPECT_EQ(kMsg, Read(pre_tls_recv_handle(), kMsgSize));
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, pre_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
 
@@ -861,7 +860,7 @@ TEST_P(TLSClientSocketTest, WriteErrorBeforeUpgradeToTLS) {
   mojo::Remote<mojom::TLSClientSocket> tls_socket;
   UpgradeToTLS(&client_socket, host_port_pair,
                tls_socket.BindNewPipeAndPassReceiver(), callback.callback());
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, pre_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
 
@@ -934,7 +933,7 @@ TEST_F(TLSCLientSocketProxyTest, UpgradeToTLS) {
   ASSERT_EQ(net::OK, callback.WaitForResult());
   ResetSocket(&client_socket);
 
-  uint32_t num_bytes = strlen(kMsg);
+  size_t num_bytes = strlen(kMsg);
   EXPECT_EQ(MOJO_RESULT_OK, post_tls_send_handle()->get().WriteData(
                                 &kMsg, &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
   EXPECT_EQ(kMsg, Read(post_tls_recv_handle(), kMsgSize));
@@ -1009,7 +1008,7 @@ TEST_P(TLSClientSocketIoModeTest, MultipleWriteToTLSSocket) {
   for (int j = 0; j < kNumIterations; ++j) {
     // Write multiple times.
     for (size_t i = 0; i < kSecretMsgSize; ++i) {
-      uint32_t num_bytes = 1;
+      size_t num_bytes = 1;
       EXPECT_EQ(MOJO_RESULT_OK,
                 post_tls_send_handle()->get().WriteData(
                     &kSecretMsg[i], &num_bytes, MOJO_WRITE_DATA_FLAG_NONE));
@@ -1139,7 +1138,7 @@ class TLSClientSocketTestWithEmbeddedTestServerBase
   void TestTlsSocket() {
     ASSERT_TRUE(tls_socket_.is_bound());
     const char kTestMsg[] = "GET /secret HTTP/1.1\r\n\r\n";
-    uint32_t num_bytes = strlen(kTestMsg);
+    size_t num_bytes = strlen(kTestMsg);
     const char kResponse[] = "HTTP/1.1 200 OK\n\n";
     EXPECT_EQ(MOJO_RESULT_OK,
               post_tls_send_handle()->get().WriteData(

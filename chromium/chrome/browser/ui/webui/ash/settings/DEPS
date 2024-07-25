@@ -7,10 +7,6 @@ specific_include_rules = {
     '+ash/color_enhancement/color_enhancement_controller.h',
     '+content/public/browser/tts_controller.h',
   ],
-  'add_new_keyboard_interactive_uitest\.cc': [
-    '+ash/shell.h',
-    '+device/udev_linux/fake_udev_loader.h',
-  ],
   'device_keyboard_handler\.cc': [
     '+ash/shell.h',
   ],
@@ -20,12 +16,24 @@ specific_include_rules = {
   'device_section\.cc': [
     '+ash/shell.h',
   ],
-  'display_settings_provider\.cc': [
+  'display_settings_provider\.(cc|h)': [
     '+ash/shell.h',
+    '+ash/shell_observer.h',
     "+ash/display/display_prefs.h",
+    "+ash/display/display_performance_mode_controller.h",
+  ],
+  'display_settings_provider_unittest\.cc': [
+    '+ash/shell.h',
+    "+ash/display/display_performance_mode_controller.h",
   ],
   'fast_pair_.*': [
     "+ash/quick_pair",
+    "+components/cross_device/logging/logging.h",
+  ],
+  'input_device_settings_provider\.(cc|h)': [
+    '+ash/shell.h',
+    '+ash/shell_observer.h',
+    '+ash/rgb_keyboard/rgb_keyboard_manager.h'
   ],
   'power_section\.(cc|h)' : [
     '+ash/shell.h',

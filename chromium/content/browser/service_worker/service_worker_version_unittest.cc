@@ -209,19 +209,19 @@ class ServiceWorkerVersionTest
       controllee_process_id = version_->embedded_worker()->process_id();
     }
 
-    base::WeakPtr<ServiceWorkerContainerHost> container_host =
-        CreateContainerHostForWindow(
+    base::WeakPtr<ServiceWorkerClient> service_worker_client =
+        CreateServiceWorkerClientForWindow(
             GlobalRenderFrameHostId(controllee_process_id,
                                     /*mock frame_routing_id=*/1),
             /*is_parent_frame_secure=*/true, helper_->context()->AsWeakPtr(),
             &remote_endpoint);
-    container_host->UpdateUrls(registration_->scope(),
-                               registration_->key().origin(),
-                               registration_->key());
-    container_host->SetControllerRegistration(
+    service_worker_client->UpdateUrls(registration_->scope(),
+                                      registration_->key().origin(),
+                                      registration_->key());
+    service_worker_client->SetControllerRegistration(
         registration_, false /* notify_controllerchange */);
     EXPECT_TRUE(version_->HasControllee());
-    EXPECT_TRUE(container_host->controller());
+    EXPECT_TRUE(service_worker_client->controller());
     return remote_endpoint;
   }
 
@@ -533,18 +533,18 @@ TEST_P(ServiceWorkerVersionTest, Doom) {
   version_->SetStatus(ServiceWorkerVersion::ACTIVATED);
   registration_->SetActiveVersion(version_);
   ServiceWorkerRemoteContainerEndpoint remote_endpoint;
-  base::WeakPtr<ServiceWorkerContainerHost> container_host =
-      CreateContainerHostForWindow(
+  base::WeakPtr<ServiceWorkerClient> service_worker_client =
+      CreateServiceWorkerClientForWindow(
           GlobalRenderFrameHostId(/*mock process_id=*/33,
                                   /*mock frame_routing_id=*/1),
           /*is_parent_frame_secure=*/true, helper_->context()->AsWeakPtr(),
           &remote_endpoint);
-  container_host->UpdateUrls(registration_->scope(),
-                             registration_->key().origin(),
-                             registration_->key());
-  container_host->SetControllerRegistration(registration_, false);
+  service_worker_client->UpdateUrls(registration_->scope(),
+                                    registration_->key().origin(),
+                                    registration_->key());
+  service_worker_client->SetControllerRegistration(registration_, false);
   EXPECT_TRUE(version_->HasControllee());
-  EXPECT_TRUE(container_host->controller());
+  EXPECT_TRUE(service_worker_client->controller());
 
   // Set main_script_load_params_.
   version_->set_main_script_load_params(
@@ -559,7 +559,7 @@ TEST_P(ServiceWorkerVersionTest, Doom) {
   // The controllee should have been removed.
   EXPECT_EQ(ServiceWorkerVersion::REDUNDANT, version_->status());
   EXPECT_FALSE(version_->HasControllee());
-  EXPECT_FALSE(container_host->controller());
+  EXPECT_FALSE(service_worker_client->controller());
 
   // Ensure that the params are released.
   EXPECT_TRUE(version_->main_script_load_params_.is_null());
@@ -1445,19 +1445,19 @@ TEST_P(ServiceWorkerVersionTest,
   // cause the client to have an invalid process id like we see in real
   // navigations.
   ServiceWorkerRemoteContainerEndpoint remote_endpoint;
-  std::unique_ptr<ServiceWorkerContainerHostAndInfo> host_and_info =
-      CreateContainerHostAndInfoForWindow(helper_->context()->AsWeakPtr(),
-                                          /*are_ancestors_secure=*/true);
-  base::WeakPtr<ServiceWorkerContainerHost> container_host =
-      std::move(host_and_info->host);
-  remote_endpoint.BindForWindow(std::move(host_and_info->info));
-  container_host->UpdateUrls(registration_->scope(),
-                             registration_->key().origin(),
-                             registration_->key());
-  container_host->SetControllerRegistration(
+  std::unique_ptr<ServiceWorkerClientAndInfo> client_and_info =
+      CreateServiceWorkerClientAndInfoForWindow(helper_->context()->AsWeakPtr(),
+                                                /*are_ancestors_secure=*/true);
+  base::WeakPtr<ServiceWorkerClient> service_worker_client =
+      std::move(client_and_info->service_worker_client);
+  remote_endpoint.BindForWindow(std::move(client_and_info->info));
+  service_worker_client->UpdateUrls(registration_->scope(),
+                                    registration_->key().origin(),
+                                    registration_->key());
+  service_worker_client->SetControllerRegistration(
       registration_, false /* notify_controllerchange */);
   EXPECT_TRUE(version_->HasControllee());
-  EXPECT_TRUE(container_host->controller());
+  EXPECT_TRUE(service_worker_client->controller());
 
   // RenderProcessHost should be notified of foreground worker.
   base::RunLoop().RunUntilIdle();
@@ -1466,7 +1466,8 @@ TEST_P(ServiceWorkerVersionTest,
       helper_->mock_render_process_host()->foreground_service_worker_count());
 
   // This is necessary to make OnBeginNavigationCommit() work.
-  auto remote_controller = container_host->GetRemoteControllerServiceWorker();
+  auto remote_controller =
+      service_worker_client->GetRemoteControllerServiceWorker();
 
   // Establish a dummy connection to allow sending messages without errors.
   mojo::PendingRemote<network::mojom::CrossOriginEmbedderPolicyReporter>
@@ -1476,7 +1477,7 @@ TEST_P(ServiceWorkerVersionTest,
   // Now begin the navigation commit with the same process id used by the
   // worker. This should cause the worker to stop being considered foreground
   // priority.
-  container_host->OnBeginNavigationCommit(
+  service_worker_client->CommitResponse(
       GlobalRenderFrameHostId(version_->embedded_worker()->process_id(),
                               /*frame_routing_id=*/1),
       PolicyContainerPolicies(), std::move(reporter),
@@ -2040,6 +2041,8 @@ TEST_P(ServiceWorkerVersionStaticRouterTest, SetRouterEvaluator) {
       helper_->context()->registry(), registration_.get(),
       GURL("https://www.example.com/test/service_worker.js"),
       blink::mojom::ScriptType::kClassic);
+  version->set_fetch_handler_type(
+      ServiceWorkerVersion::FetchHandlerType::kNotSkippable);
 
   // The router_evaluator should be unset on setup.
   EXPECT_FALSE(version->router_evaluator());
@@ -2062,7 +2065,7 @@ TEST_P(ServiceWorkerVersionStaticRouterTest, SetRouterEvaluator) {
         {blink::ServiceWorkerRouterRunningStatusCondition::RunningStatusEnum::
              kRunning});
     blink::ServiceWorkerRouterSource source;
-    source.type = blink::ServiceWorkerRouterSource::Type::kNetwork;
+    source.type = network::mojom::ServiceWorkerRouterSourceType::kNetwork;
     source.network_source = blink::ServiceWorkerRouterNetworkSource{};
     rule.sources.emplace_back(source);
     rules.rules.emplace_back(rule);
@@ -2081,7 +2084,7 @@ TEST_P(ServiceWorkerVersionStaticRouterTest, SetRouterEvaluator) {
         {blink::ServiceWorkerRouterRunningStatusCondition::RunningStatusEnum::
              kNotRunning});
     blink::ServiceWorkerRouterSource source;
-    source.type = blink::ServiceWorkerRouterSource::Type::kFetchEvent;
+    source.type = network::mojom::ServiceWorkerRouterSourceType::kFetchEvent;
     source.fetch_event_source = blink::ServiceWorkerRouterFetchEventSource{};
     rule.sources.emplace_back(source);
     rules.rules.emplace_back(rule);
@@ -2091,19 +2094,21 @@ TEST_P(ServiceWorkerVersionStaticRouterTest, SetRouterEvaluator) {
     auto first_rule = version->router_evaluator()->rules().rules[0];
     auto second_rule = version->router_evaluator()->rules().rules[1];
     auto&& [first_url_pattern, first_request, first_running_status,
-            first_or_condition] = first_rule.condition.get();
+            first_or_condition, first_not_condition] =
+        first_rule.condition.get();
     EXPECT_EQ(first_running_status->status,
               blink::ServiceWorkerRouterRunningStatusCondition::
                   RunningStatusEnum::kRunning);
     EXPECT_EQ(first_rule.sources.begin()->type,
-              blink::ServiceWorkerRouterSource::Type::kNetwork);
+              network::mojom::ServiceWorkerRouterSourceType::kNetwork);
     auto&& [second_url_pattern, second_request, second_running_status,
-            second_or_condition] = second_rule.condition.get();
+            second_or_condition, second_not_condition] =
+        second_rule.condition.get();
     EXPECT_EQ(second_running_status->status,
               blink::ServiceWorkerRouterRunningStatusCondition::
                   RunningStatusEnum::kNotRunning);
     EXPECT_EQ(second_rule.sources.begin()->type,
-              blink::ServiceWorkerRouterSource::Type::kFetchEvent);
+              network::mojom::ServiceWorkerRouterSourceType::kFetchEvent);
   }
 }
 

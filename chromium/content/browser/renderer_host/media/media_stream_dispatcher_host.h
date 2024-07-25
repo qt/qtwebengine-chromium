@@ -81,9 +81,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       base::circular_deque<std::unique_ptr<PendingAccessRequest>>;
   RequestsQueue pending_requests_;
 
-  static bool CheckRequestAllScreensAllowed(
-      GlobalRenderFrameHostId render_frame_host_id);
-
   // Performs checks / computations that need to be done on the UI
   // thread (i.e. if a select all screens request is permitted and
   // the computation of the device salt and origin).
@@ -94,6 +91,20 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
           get_salt_and_origin_cb,
       base::OnceCallback<void(GenerateStreamsUIThreadCheckResult)>
           result_callback);
+
+  static void CheckRequestAllScreensAllowed(
+      base::OnceCallback<void(MediaDeviceSaltAndOriginCallback)>
+          get_salt_and_origin_cb,
+      base::OnceCallback<void(GenerateStreamsUIThreadCheckResult)>
+          result_callback,
+      GlobalRenderFrameHostId render_frame_host_id);
+
+  static void CheckStreamsPermissionResultReceived(
+      base::OnceCallback<void(MediaDeviceSaltAndOriginCallback)>
+          get_salt_and_origin_cb,
+      base::OnceCallback<void(GenerateStreamsUIThreadCheckResult)>
+          result_callback,
+      bool result);
 
   const mojo::Remote<blink::mojom::MediaStreamDeviceObserver>&
   GetMediaStreamDeviceObserver();
@@ -120,7 +131,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       const std::optional<base::UnguessableToken>& session_id,
       blink::mojom::MediaStreamType type,
       bool is_secure) override;
-  void OnStreamStarted(const std::string& label) override;
   using KeepDeviceAliveForTransferCallback =
       base::OnceCallback<void(bool device_found)>;
   void KeepDeviceAliveForTransfer(
@@ -137,8 +147,6 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
   void SendWheel(const base::UnguessableToken& device_id,
                  blink::mojom::CapturedWheelActionPtr action,
                  SendWheelCallback callback) override;
-  void GetZoomLevel(const base::UnguessableToken& device_id,
-                    GetZoomLevelCallback callback) override;
   void SetZoomLevel(const base::UnguessableToken& device_id,
                     int32_t zoom_level,
                     SetZoomLevelCallback callback) override;
@@ -186,6 +194,9 @@ class CONTENT_EXPORT MediaStreamDispatcherHost
       const blink::MediaStreamDevice& device);
   void OnDeviceCaptureHandleChange(const std::string& label,
                                    const blink::MediaStreamDevice& device);
+  void OnZoomLevelChange(const std::string& label,
+                         const blink::MediaStreamDevice& device,
+                         int zoom_level);
 
   void SetWebContentsObserver(
       std::unique_ptr<MediaStreamWebContentsObserver,

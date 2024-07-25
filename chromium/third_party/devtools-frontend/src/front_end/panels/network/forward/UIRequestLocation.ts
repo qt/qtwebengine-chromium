@@ -9,6 +9,7 @@ export const enum UIHeaderSection {
   General = 'General',
   Request = 'Request',
   Response = 'Response',
+  EarlyHints = 'EarlyHints',
 }
 
 interface UIHeaderLocation {
@@ -19,14 +20,14 @@ interface UIHeaderLocation {
 export const enum UIRequestTabs {
   Cookies = 'cookies',
   EventSource = 'eventSource',
-  HeadersComponent = 'headersComponent',
+  HeadersComponent = 'headers-component',
   Payload = 'payload',
   Initiator = 'initiator',
   Preview = 'preview',
   Response = 'response',
   Timing = 'timing',
-  TrustTokens = 'trustTokens',
-  WsFrames = 'webSocketFrames',
+  TrustTokens = 'trust-tokens',
+  WsFrames = 'web-socket-frames',
 }
 
 export interface FilterOptions {

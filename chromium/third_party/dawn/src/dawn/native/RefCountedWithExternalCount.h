@@ -32,29 +32,52 @@
 
 namespace dawn::native {
 
-// RecCountedWithExternalCount is a version of RefCounted which tracks a separate
-// refcount for calls to APIReference/APIRelease (refs added/removed by the application).
-// The external refcount starts at 1, and the total refcount starts at 1 - i.e. the first
-// ref is the external ref.
-// Then, when the external refcount drops to zero, WillDropLastExternalRef is called.
+// RecCountedWithExternalCountBase is a version of RefCounted which tracks a separate
+// refcount for calls to APIAddRef/APIRelease (refs added/removed by the application).
+// The external refcount starts at 0, and the total refcount starts at 1 - i.e. the first
+// ref isn't an external ref.
+// When the external refcount drops to zero, WillDropLastExternalRef is called. and it can be called
+// more than once.
 // The derived class should override the behavior of WillDropLastExternalRef.
-class RefCountedWithExternalCount : private RefCounted {
+template <typename T>
+class RefCountedWithExternalCountBase : public T {
   public:
-    using RefCounted::RefCounted;
-    using RefCounted::Reference;
-    using RefCounted::Release;
+    static constexpr bool HasExternalRefCount = true;
 
-    void APIReference();
-    void APIRelease();
+    using T::AddRef;
+    using T::Release;
+    using T::T;
+
+    // TODO(dawn:2234): Deprecated. Remove when no longer used.
+    void APIReference() { APIAddRef(); }
+    void APIAddRef() {
+        IncrementExternalRefCount();
+        T::APIAddRef();
+    }
+
+    void APIRelease() {
+        if (mExternalRefCount.Decrement()) {
+            WillDropLastExternalRef();
+        }
+        T::APIRelease();
+    }
+
+    void IncrementExternalRefCount() { mExternalRefCount.Increment(); }
+
+    uint64_t GetExternalRefCountForTesting() const {
+        return mExternalRefCount.GetValueForTesting();
+    }
 
   protected:
-    using RefCounted::DeleteThis;
+    using T::DeleteThis;
 
   private:
     virtual void WillDropLastExternalRef() = 0;
 
-    RefCount mExternalRefCount;
+    RefCount mExternalRefCount{/*initCount=*/0, /*payload=*/0};
 };
+
+using RefCountedWithExternalCount = RefCountedWithExternalCountBase<RefCounted>;
 
 }  // namespace dawn::native
 

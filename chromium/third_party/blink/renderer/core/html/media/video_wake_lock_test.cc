@@ -105,7 +105,7 @@ class VideoWakeLockMediaPlayer final : public EmptyWebMediaPlayer {
         viz::LocalSurfaceId(
             11, base::UnguessableToken::CreateForTesting(0x111111, 0)));
   }
-  absl::optional<viz::SurfaceId> GetSurfaceId() override { return surface_id_; }
+  std::optional<viz::SurfaceId> GetSurfaceId() override { return surface_id_; }
 
   bool HasAudio() const override { return has_audio_; }
   void SetHasAudio(bool has_audio) { has_audio_ = has_audio; }
@@ -120,7 +120,7 @@ class VideoWakeLockMediaPlayer final : public EmptyWebMediaPlayer {
   bool has_audio_ = true;
   bool has_video_ = true;
   gfx::Size size_ = kNormalVideoSize;
-  absl::optional<viz::SurfaceId> surface_id_;
+  std::optional<viz::SurfaceId> surface_id_;
 };
 
 class VideoWakeLockFrameClient : public test::MediaStubLocalFrameClient {
@@ -585,10 +585,6 @@ TEST_P(VideoWakeLockTest, VideoWithFramesTakesLock) {
 }
 
 TEST_P(VideoWakeLockTest, HidingVideoOnlyReleasesLock) {
-  if (!GetVideoWakeLock()->HasStrictWakeLockForTests()) {
-    GTEST_SKIP();
-  }
-
   GetMediaPlayer()->SetHasAudio(false);
   ShowVideo();
   UpdateObservers();
@@ -601,10 +597,6 @@ TEST_P(VideoWakeLockTest, HidingVideoOnlyReleasesLock) {
 }
 
 TEST_P(VideoWakeLockTest, SmallMutedVideoDoesNotTakeLock) {
-  if (!GetVideoWakeLock()->HasStrictWakeLockForTests()) {
-    GTEST_SKIP();
-  }
-
   ASSERT_LT(
       kSmallVideoSize.Area64() / static_cast<double>(kWindowSize.Area64()),
       GetVideoWakeLock()->GetSizeThresholdForTests());
@@ -628,10 +620,6 @@ TEST_P(VideoWakeLockTest, SmallMutedVideoDoesNotTakeLock) {
 }
 
 TEST_P(VideoWakeLockTest, SizeChangeTakesLock) {
-  if (!GetVideoWakeLock()->HasStrictWakeLockForTests()) {
-    GTEST_SKIP();
-  }
-
   // Set player to take less than 20% of the page and mute it.
   GetMediaPlayer()->SetSize(kSmallVideoSize);
   Video()->setMuted(true);
@@ -655,10 +643,6 @@ TEST_P(VideoWakeLockTest, SizeChangeTakesLock) {
 }
 
 TEST_P(VideoWakeLockTest, MutedVideoTooFarOffscreenDoesNotTakeLock) {
-  if (!GetVideoWakeLock()->HasStrictWakeLockForTests()) {
-    GTEST_SKIP();
-  }
-
   Video()->setMuted(true);
 
   // Move enough of the video off screen to not take the lock.
@@ -695,10 +679,6 @@ TEST_P(VideoWakeLockTest, WakeLockTracksDocumentsPage) {
 }
 
 TEST_P(VideoWakeLockTest, VideoOnlyMediaStreamAlwaysTakesLock) {
-  if (!GetVideoWakeLock()->HasStrictWakeLockForTests()) {
-    GTEST_SKIP();
-  }
-
   // Default player is consumed on the first src=file load, so we must provide a
   // new one for the MediaStream load below.
   RecreateWebMediaPlayer();

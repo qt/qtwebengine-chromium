@@ -70,6 +70,7 @@ let CdpFrame = (() => {
         #url = (__runInitializers(this, _instanceExtraInitializers), '');
         #detached = false;
         #client;
+        worlds;
         _frameManager;
         _id;
         _loaderId = '';
@@ -183,14 +184,20 @@ let CdpFrame = (() => {
             const watcher = new LifecycleWatcher_js_1.LifecycleWatcher(this._frameManager.networkManager, this, waitUntil, timeout);
             const error = await Deferred_js_1.Deferred.race([
                 watcher.terminationPromise(),
-                watcher.sameDocumentNavigationPromise(),
+                ...(options.ignoreSameDocumentNavigation
+                    ? []
+                    : [watcher.sameDocumentNavigationPromise()]),
                 watcher.newDocumentNavigationPromise(),
             ]);
             try {
                 if (error) {
                     throw error;
                 }
-                return await watcher.navigationResponse();
+                const result = await Deferred_js_1.Deferred.race([watcher.terminationPromise(), watcher.navigationResponse()]);
+                if (result instanceof Error) {
+                    throw error;
+                }
+                return result || null;
             }
             finally {
                 watcher.dispose();

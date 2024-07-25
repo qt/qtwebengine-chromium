@@ -26,15 +26,22 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include "gmock/gmock.h"
+
+#include "src/tint/lang/core/address_space.h"
 #include "src/tint/lang/core/ir/builder.h"
+#include "src/tint/lang/core/ir/function_param.h"
 #include "src/tint/lang/core/ir/ir_helper_test.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/type/array.h"
+#include "src/tint/lang/core/type/manager.h"
 #include "src/tint/lang/core/type/matrix.h"
+#include "src/tint/lang/core/type/memory_view.h"
 #include "src/tint/lang/core/type/pointer.h"
+#include "src/tint/lang/core/type/reference.h"
 #include "src/tint/lang/core/type/struct.h"
 #include "src/tint/utils/text/string.h"
 
@@ -59,20 +66,20 @@ TEST_F(IR_ValidatorTest, RootBlock_NonVar) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:2:3 error: root block: invalid instruction: tint::core::ir::Loop
-  loop [b: %b2] {  # loop_1
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:2:3 error: loop: root block: invalid instruction: tint::core::ir::Loop
+  loop [b: $B2] {  # loop_1
   ^^^^^^^^^^^^^
 
-:1:1 note: In block
-%b1 = block {  # root
-^^^^^^^^^^^
+:1:1 note: in block
+$B1: {  # root
+^^^
 
 note: # Disassembly
-%b1 = block {  # root
-  loop [b: %b2] {  # loop_1
-    %b2 = block {  # body
-      continue %b3
+$B1: {  # root
+  loop [b: $B2] {  # loop_1
+    $B2: {  # body
+      continue  # -> $B3
     }
   }
 }
@@ -90,22 +97,22 @@ TEST_F(IR_ValidatorTest, RootBlock_VarBlockMismatch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:2:38 error: var: instruction in root block does not have root block as parent
   %1:ptr<private, i32, read_write> = var
                                      ^^^
 
-:1:1 note: In block
-%b1 = block {  # root
-^^^^^^^^^^^
+:1:1 note: in block
+$B1: {  # root
+^^^
 
 note: # Disassembly
-%b1 = block {  # root
+$B1: {  # root
   %1:ptr<private, i32, read_write> = var
 }
 
-%f = func():void -> %b2 {
-  %b2 = block {
+%f = func():void {
+  $B2: {
     ret
   }
 }
@@ -131,16 +138,101 @@ TEST_F(IR_ValidatorTest, Function_Duplicate) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(error: function 'my_func' added to module multiple times
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:1:1 error: function %my_func added to module multiple times
+%my_func = func(%2:i32, %3:f32):void {
+^^^^^^^^
+
 note: # Disassembly
-%my_func = func(%2:i32, %3:f32):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:i32, %3:f32):void {
+  $B1: {
     ret
   }
 }
-%my_func = func(%2:i32, %3:f32):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:i32, %3:f32):void {
+  $B1: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Function_DeadParameter) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* p = b.FunctionParam("my_param", ty.f32());
+    f->SetParams({p});
+    f->Block()->Append(b.Return(f));
+
+    p->Destroy();
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:1:17 error: destroyed parameter found in function parameter list
+%my_func = func(%my_param:f32):void {
+                ^^^^^^^^^^^^^
+
+note: # Disassembly
+%my_func = func(%my_param:f32):void {
+  $B1: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Function_ParameterWithNullFunction) {
+    auto* f = b.Function("my_func", ty.void_());
+    auto* p = b.FunctionParam("my_param", ty.f32());
+    f->SetParams({p});
+    f->Block()->Append(b.Return(f));
+
+    p->SetFunction(nullptr);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:1:17 error: function parameter has nullptr parent function
+%my_func = func(%my_param:f32):void {
+                ^^^^^^^^^^^^^
+
+note: # Disassembly
+%my_func = func(%my_param:f32):void {
+  $B1: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Function_ParameterUsedInMultipleFunctions) {
+    auto* p = b.FunctionParam("my_param", ty.f32());
+    auto* f1 = b.Function("my_func1", ty.void_());
+    auto* f2 = b.Function("my_func2", ty.void_());
+    f1->SetParams({p});
+    f2->SetParams({p});
+    f1->Block()->Append(b.Return(f1));
+    f2->Block()->Append(b.Return(f2));
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:1:18 error: function parameter has incorrect parent function
+%my_func1 = func(%my_param:f32):void {
+                 ^^^^^^^^^^^^^
+
+:6:1 note: parent function declared here
+%my_func2 = func(%my_param:f32):void {
+^^^^^^^^^
+
+note: # Disassembly
+%my_func1 = func(%my_param:f32):void {
+  $B1: {
+    ret
+  }
+}
+%my_func2 = func(%my_param:f32):void {
+  $B2: {
     ret
   }
 }
@@ -160,18 +252,18 @@ TEST_F(IR_ValidatorTest, CallToFunctionOutsideModule) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:20 error: call: call target is not part of the module
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:20 error: call: %g is not part of the module
     %2:void = call %g
                    ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%f = func():void -> %b1 {
-  %b1 = block {
+%f = func():void {
+  $B1: {
     %2:void = call %g
     ret
   }
@@ -191,24 +283,24 @@ TEST_F(IR_ValidatorTest, CallToEntryPointFunction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:20 error: call: call target must not have a pipeline stage
     %2:void = call %g
                    ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%f = func():void -> %b1 {
-  %b1 = block {
+%f = func():void {
+  $B1: {
     %2:void = call %g
     ret
   }
 }
-%g = @compute func():void -> %b2 {
-  %b2 = block {
+%g = @compute func():void {
+  $B2: {
     ret
   }
 }
@@ -228,23 +320,23 @@ TEST_F(IR_ValidatorTest, CallToFunctionTooFewArguments) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:8:20 error: call: function has 2 parameters, but call provides 1 arguments
     %5:void = call %g, 42i
                    ^^
 
-:7:3 note: In block
-  %b2 = block {
-  ^^^^^^^^^^^
+:7:3 note: in block
+  $B2: {
+  ^^^
 
 note: # Disassembly
-%g = func(%2:i32, %3:i32):void -> %b1 {
-  %b1 = block {
+%g = func(%2:i32, %3:i32):void {
+  $B1: {
     ret
   }
 }
-%f = func():void -> %b2 {
-  %b2 = block {
+%f = func():void {
+  $B2: {
     %5:void = call %g, 42i
     ret
   }
@@ -265,23 +357,23 @@ TEST_F(IR_ValidatorTest, CallToFunctionTooManyArguments) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:8:20 error: call: function has 2 parameters, but call provides 3 arguments
     %5:void = call %g, 1i, 2i, 3i
                    ^^
 
-:7:3 note: In block
-  %b2 = block {
-  ^^^^^^^^^^^
+:7:3 note: in block
+  $B2: {
+  ^^^
 
 note: # Disassembly
-%g = func(%2:i32, %3:i32):void -> %b1 {
-  %b1 = block {
+%g = func(%2:i32, %3:i32):void {
+  $B1: {
     ret
   }
 }
-%f = func():void -> %b2 {
-  %b2 = block {
+%f = func():void {
+  $B2: {
     %5:void = call %g, 1i, 2i, 3i
     ret
   }
@@ -302,23 +394,24 @@ TEST_F(IR_ValidatorTest, CallToFunctionWrongArgType) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:8:28 error: call: function parameter 1 is of type i32, but argument is of type f32
+    EXPECT_EQ(
+        res.Failure().reason.Str(),
+        R"(:8:28 error: call: function parameter 1 is of type 'i32', but argument is of type 'f32'
     %6:void = call %g, 1i, 2.0f, 3i
                            ^^^^
 
-:7:3 note: In block
-  %b2 = block {
-  ^^^^^^^^^^^
+:7:3 note: in block
+  $B2: {
+  ^^^
 
 note: # Disassembly
-%g = func(%2:i32, %3:i32, %4:i32):void -> %b1 {
-  %b1 = block {
+%g = func(%2:i32, %3:i32, %4:i32):void {
+  $B1: {
     ret
   }
 }
-%f = func():void -> %b2 {
-  %b2 = block {
+%f = func():void {
+  $B2: {
     %6:void = call %g, 1i, 2.0f, 3i
     ret
   }
@@ -331,14 +424,14 @@ TEST_F(IR_ValidatorTest, Block_NoTerminator) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:2:3 error: block: does not end in a terminator instruction
-  %b1 = block {
-  ^^^^^^^^^^^
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:2:3 error: block does not end in a terminator instruction
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
   }
 }
 )");
@@ -358,28 +451,137 @@ TEST_F(IR_ValidatorTest, Block_VarBlockMismatch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:41 error: var: block instruction does not have same block as parent
     %2:ptr<function, i32, read_write> = var
                                         ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%f = func():void -> %b1 {
-  %b1 = block {
+%f = func():void {
+  $B1: {
     %2:ptr<function, i32, read_write> = var
     ret
   }
 }
-%g = func():void -> %b2 {
-  %b2 = block {
+%g = func():void {
+  $B2: {
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Block_DeadParameter) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    auto* p = b.BlockParam("my_param", ty.f32());
+    b.Append(f->Block(), [&] {
+        auto* l = b.Loop();
+        l->Body()->SetParams({p});
+        b.Append(l->Body(), [&] { b.ExitLoop(l); });
+        b.Return(f);
+    });
+
+    p->Destroy();
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:12 error: destroyed parameter found in block parameter list
+      $B2 (%my_param:f32): {  # body
+           ^^^^^^^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2 (%my_param:f32): {  # body
+        exit_loop  # loop_1
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Block_ParameterWithNullBlock) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    auto* p = b.BlockParam("my_param", ty.f32());
+    b.Append(f->Block(), [&] {
+        auto* l = b.Loop();
+        l->Body()->SetParams({p});
+        b.Append(l->Body(), [&] { b.ExitLoop(l); });
+        b.Return(f);
+    });
+
+    p->SetBlock(nullptr);
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:12 error: block parameter has nullptr parent block
+      $B2 (%my_param:f32): {  # body
+           ^^^^^^^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2 (%my_param:f32): {  # body
+        exit_loop  # loop_1
+      }
+    }
+    ret
+  }
+}
+)");
+}
+
+TEST_F(IR_ValidatorTest, Block_ParameterUsedInMultipleBlocks) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    auto* p = b.BlockParam("my_param", ty.f32());
+    b.Append(f->Block(), [&] {
+        auto* l = b.Loop();
+        l->Body()->SetParams({p});
+        b.Append(l->Body(), [&] { b.Continue(l, p); });
+        l->Continuing()->SetParams({p});
+        b.Append(l->Continuing(), [&] { b.NextIteration(l, p); });
+        b.Return(f);
+    });
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:12 error: block parameter has incorrect parent block
+      $B2 (%my_param:f32): {  # body
+           ^^^^^^^^^
+
+:7:7 note: parent block declared here
+      $B3 (%my_param:f32): {  # continuing
+      ^^^^^^^^^^^^^^^^^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2 (%my_param:f32): {  # body
+        continue %my_param  # -> $B3
+      }
+      $B3 (%my_param:f32): {  # continuing
+        next_iteration %my_param  # -> $B2
+      }
+    }
     ret
   }
 }
@@ -398,18 +600,18 @@ TEST_F(IR_ValidatorTest, Access_NegativeIndex) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:25 error: access: constant index must be positive, got -1
     %3:f32 = access %2, -1i
                         ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:vec3<f32>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:vec3<f32>):void {
+  $B1: {
     %3:f32 = access %2, -1i
     ret
   }
@@ -429,22 +631,22 @@ TEST_F(IR_ValidatorTest, Access_OOB_Index_Value) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:29 error: access: index out of bounds for type vec2<f32>
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:29 error: access: index out of bounds for type 'vec2<f32>'
     %3:f32 = access %2, 1u, 3u
                             ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 :3:29 note: acceptable range: [0..1]
     %3:f32 = access %2, 1u, 3u
                             ^^
 
 note: # Disassembly
-%my_func = func(%2:mat3x2<f32>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:mat3x2<f32>):void {
+  $B1: {
     %3:f32 = access %2, 1u, 3u
     ret
   }
@@ -465,22 +667,22 @@ TEST_F(IR_ValidatorTest, Access_OOB_Index_Ptr) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:55 error: access: index out of bounds for type ptr<private, array<f32, 2>, read_write>
+        res.Failure().reason.Str(),
+        R"(:3:55 error: access: index out of bounds for type 'ptr<private, array<f32, 2>, read_write>'
     %3:ptr<private, f32, read_write> = access %2, 1u, 3u
                                                       ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 :3:55 note: acceptable range: [0..1]
     %3:ptr<private, f32, read_write> = access %2, 1u, 3u
                                                       ^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void {
+  $B1: {
     %3:ptr<private, f32, read_write> = access %2, 1u, 3u
     ret
   }
@@ -500,17 +702,17 @@ TEST_F(IR_ValidatorTest, Access_StaticallyUnindexableType_Value) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:25 error: access: type f32 cannot be indexed
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:25 error: access: type 'f32' cannot be indexed
     %3:f32 = access %2, 1u
                         ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:f32):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:f32):void {
+  $B1: {
     %3:f32 = access %2, 1u
     ret
   }
@@ -530,18 +732,18 @@ TEST_F(IR_ValidatorTest, Access_StaticallyUnindexableType_Ptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:51 error: access: type ptr<private, f32, read_write> cannot be indexed
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:51 error: access: type 'ptr<private, f32, read_write>' cannot be indexed
     %3:ptr<private, f32, read_write> = access %2, 1u
                                                   ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, f32, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, f32, read_write>):void {
+  $B1: {
     %3:ptr<private, f32, read_write> = access %2, 1u
     ret
   }
@@ -567,14 +769,14 @@ TEST_F(IR_ValidatorTest, Access_DynamicallyUnindexableType_Value) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:8:25 error: access: type MyStruct cannot be dynamically indexed
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:8:25 error: access: type 'MyStruct' cannot be dynamically indexed
     %4:i32 = access %2, %3
                         ^^
 
-:7:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:7:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
 MyStruct = struct @align(4) {
@@ -582,8 +784,8 @@ MyStruct = struct @align(4) {
   b:i32 @offset(4)
 }
 
-%my_func = func(%2:MyStruct, %3:i32):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:MyStruct, %3:i32):void {
+  $B1: {
     %4:i32 = access %2, %3
     ret
   }
@@ -610,14 +812,14 @@ TEST_F(IR_ValidatorTest, Access_DynamicallyUnindexableType_Ptr) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:8:25 error: access: type ptr<private, MyStruct, read_write> cannot be dynamically indexed
+        res.Failure().reason.Str(),
+        R"(:8:25 error: access: type 'ptr<private, MyStruct, read_write>' cannot be dynamically indexed
     %4:i32 = access %2, %3
                         ^^
 
-:7:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:7:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
 MyStruct = struct @align(4) {
@@ -625,8 +827,8 @@ MyStruct = struct @align(4) {
   b:i32 @offset(4)
 }
 
-%my_func = func(%2:ptr<private, MyStruct, read_write>, %3:i32):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, MyStruct, read_write>, %3:i32):void {
+  $B1: {
     %4:i32 = access %2, %3
     ret
   }
@@ -646,18 +848,19 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Type_Value_Value) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:14 error: access: result of access chain is type f32 but instruction type is i32
+    EXPECT_EQ(
+        res.Failure().reason.Str(),
+        R"(:3:14 error: access: result of access chain is type 'f32' but instruction type is 'i32'
     %3:i32 = access %2, 1u, 1u
              ^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:mat3x2<f32>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:mat3x2<f32>):void {
+  $B1: {
     %3:i32 = access %2, 1u, 1u
     ret
   }
@@ -678,18 +881,18 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Type_Ptr_Ptr) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:40 error: access: result of access chain is type ptr<private, f32, read_write> but instruction type is ptr<private, i32, read_write>
+        res.Failure().reason.Str(),
+        R"(:3:40 error: access: result of access chain is type 'ptr<private, f32, read_write>' but instruction type is 'ptr<private, i32, read_write>'
     %3:ptr<private, i32, read_write> = access %2, 1u, 1u
                                        ^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void {
+  $B1: {
     %3:ptr<private, i32, read_write> = access %2, 1u, 1u
     ret
   }
@@ -710,18 +913,18 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Type_Ptr_Value) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:14 error: access: result of access chain is type ptr<private, f32, read_write> but instruction type is f32
+        res.Failure().reason.Str(),
+        R"(:3:14 error: access: result of access chain is type 'ptr<private, f32, read_write>' but instruction type is 'f32'
     %3:f32 = access %2, 1u, 1u
              ^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, array<array<f32, 2>, 3>, read_write>):void {
+  $B1: {
     %3:f32 = access %2, 1u, 1u
     ret
   }
@@ -741,18 +944,18 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:25 error: access: cannot obtain address of vector element
     %3:f32 = access %2, 1u
                         ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, vec3<f32>, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, vec3<f32>, read_write>):void {
+  $B1: {
     %3:f32 = access %2, 1u
     ret
   }
@@ -770,7 +973,7 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_WithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, EnumSet<Capability>{Capability::kAllowVectorElementPointer});
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowVectorElementPointer});
     ASSERT_EQ(res, Success);
 }
 
@@ -786,18 +989,18 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_ViaMatrixPtr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:29 error: access: cannot obtain address of vector element
     %3:f32 = access %2, 1u, 1u
                             ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<private, mat3x2<f32>, read_write>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<private, mat3x2<f32>, read_write>):void {
+  $B1: {
     %3:f32 = access %2, 1u, 1u
     ret
   }
@@ -815,7 +1018,7 @@ TEST_F(IR_ValidatorTest, Access_IndexVectorPtr_ViaMatrixPtr_WithCapability) {
         b.Return(f);
     });
 
-    auto res = ir::Validate(mod, EnumSet<Capability>{Capability::kAllowVectorElementPointer});
+    auto res = ir::Validate(mod, Capabilities{Capability::kAllowVectorElementPointer});
     ASSERT_EQ(res, Success);
 }
 
@@ -832,18 +1035,18 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Ptr_AddressSpace) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:34 error: access: result of access chain is type ptr<storage, f32, read> but instruction type is ptr<uniform, f32, read>
+        res.Failure().reason.Str(),
+        R"(:3:34 error: access: result of access chain is type 'ptr<storage, f32, read>' but instruction type is 'ptr<uniform, f32, read>'
     %3:ptr<uniform, f32, read> = access %2, 1u
                                  ^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<storage, array<f32, 2>, read>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<storage, array<f32, 2>, read>):void {
+  $B1: {
     %3:ptr<uniform, f32, read> = access %2, 1u
     ret
   }
@@ -864,18 +1067,18 @@ TEST_F(IR_ValidatorTest, Access_Incorrect_Ptr_Access) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:40 error: access: result of access chain is type ptr<storage, f32, read> but instruction type is ptr<storage, f32, read_write>
+        res.Failure().reason.Str(),
+        R"(:3:40 error: access: result of access chain is type 'ptr<storage, f32, read>' but instruction type is 'ptr<storage, f32, read_write>'
     %3:ptr<storage, f32, read_write> = access %2, 1u
                                        ^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func(%2:ptr<storage, array<f32, 2>, read>):void -> %b1 {
-  %b1 = block {
+%my_func = func(%2:ptr<storage, array<f32, 2>, read>):void {
+  $B1: {
     %3:ptr<storage, f32, read_write> = access %2, 1u
     ret
   }
@@ -921,18 +1124,18 @@ TEST_F(IR_ValidatorTest, Block_TerminatorInMiddle) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:5 error: block: terminator which isn't the final instruction
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:5 error: return: block terminator which isn't the final instruction
     ret
     ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     ret
     ret
   }
@@ -963,18 +1166,18 @@ TEST_F(IR_ValidatorTest, If_EmptyTrue) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:7 error: block: does not end in a terminator instruction
-      %b2 = block {  # true
-      ^^^^^^^^^^^
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:7 error: block does not end in a terminator instruction
+      $B2: {  # true
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2, f: %b3] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
       }
-      %b3 = block {  # false
+      $B3: {  # false
         ret
       }
     }
@@ -996,22 +1199,22 @@ TEST_F(IR_ValidatorTest, If_ConditionIsBool) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:8 error: if: condition must be a `bool` type
-    if 1i [t: %b2, f: %b3] {  # if_1
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:8 error: if: condition type must be 'bool'
+    if 1i [t: $B2, f: $B3] {  # if_1
        ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if 1i [t: %b2, f: %b3] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if 1i [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
         ret
       }
-      %b3 = block {  # false
+      $B3: {  # false
         ret
       }
     }
@@ -1033,22 +1236,22 @@ TEST_F(IR_ValidatorTest, If_ConditionIsNullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:8 error: if: operand is undefined
-    if undef [t: %b2, f: %b3] {  # if_1
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:8 error: if: operand is undefined
+    if undef [t: $B2, f: $B3] {  # if_1
        ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if undef [t: %b2, f: %b3] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if undef [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
         ret
       }
-      %b3 = block {  # false
+      $B3: {  # false
         ret
       }
     }
@@ -1072,22 +1275,22 @@ TEST_F(IR_ValidatorTest, If_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: if: result is undefined
-    undef = if true [t: %b2, f: %b3] {  # if_1
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: if: result is undefined
+    undef = if true [t: $B2, f: $B3] {  # if_1
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    undef = if true [t: %b2, f: %b3] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    undef = if true [t: $B2, f: $B3] {  # if_1
+      $B2: {  # true
         ret
       }
-      %b3 = block {  # false
+      $B3: {  # false
         ret
       }
     }
@@ -1119,16 +1322,16 @@ TEST_F(IR_ValidatorTest, Loop_EmptyBody) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:7 error: block: does not end in a terminator instruction
-      %b2 = block {  # body
-      ^^^^^^^^^^^
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:7 error: block does not end in a terminator instruction
+      $B2: {  # body
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2] {  # loop_1
+      $B2: {  # body
       }
     }
     ret
@@ -1138,21 +1341,21 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Var_RootBlock_NullResult) {
-    auto* v = mod.instructions.Create<ir::Var>(nullptr);
+    auto* v = mod.allocators.instructions.Create<ir::Var>(nullptr);
     mod.root_block->Append(v);
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:2:3 error: var: result is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:2:3 error: var: result is undefined
   undef = var
   ^^^^^
 
-:1:1 note: In block
-%b1 = block {  # root
-^^^^^^^^^^^
+:1:1 note: in block
+$B1: {  # root
+^^^
 
 note: # Disassembly
-%b1 = block {  # root
+$B1: {  # root
   undef = var
 }
 
@@ -1160,7 +1363,7 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Var_Function_NullResult) {
-    auto* v = mod.instructions.Create<ir::Var>(nullptr);
+    auto* v = mod.allocators.instructions.Create<ir::Var>(nullptr);
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1170,17 +1373,17 @@ TEST_F(IR_ValidatorTest, Var_Function_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: var: result is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: var: result is undefined
     undef = var
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     undef = var
     ret
   }
@@ -1191,27 +1394,27 @@ note: # Disassembly
 TEST_F(IR_ValidatorTest, Var_Init_WrongType) {
     auto* f = b.Function("my_func", ty.void_());
 
-    auto sb = b.Append(f->Block());
-    auto* v = sb.Var(ty.ptr<function, f32>());
-    sb.Return(f);
-
-    auto* result = sb.InstructionResult(ty.i32());
-    v->SetInitializer(result);
+    b.Append(f->Block(), [&] {
+        auto* v = b.Var<function, f32>();
+        v->SetInitializer(b.Constant(1_i));
+        b.Return(f);
+    });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:41 error: var: initializer has incorrect type
-    %2:ptr<function, f32, read_write> = var, %3
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:41 error: var: initializer type 'i32' does not match store type 'f32'
+    %2:ptr<function, f32, read_write> = var, 1i
                                         ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:ptr<function, f32, read_write> = var, %3
+%my_func = func():void {
+  $B1: {
+    %2:ptr<function, f32, read_write> = var, 1i
     ret
   }
 }
@@ -1219,7 +1422,7 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Let_NullResult) {
-    auto* v = mod.instructions.Create<ir::Let>(nullptr, b.Constant(1_i));
+    auto* v = mod.allocators.instructions.Create<ir::Let>(nullptr, b.Constant(1_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1229,17 +1432,17 @@ TEST_F(IR_ValidatorTest, Let_NullResult) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: let: result is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: let: result is undefined
     undef = let 1i
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     undef = let 1i
     ret
   }
@@ -1248,7 +1451,7 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Let_NullValue) {
-    auto* v = mod.instructions.Create<ir::Let>(b.InstructionResult(ty.f32()), nullptr);
+    auto* v = mod.allocators.instructions.Create<ir::Let>(b.InstructionResult(ty.f32()), nullptr);
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1258,17 +1461,17 @@ TEST_F(IR_ValidatorTest, Let_NullValue) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:18 error: let: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:18 error: let: operand is undefined
     %2:f32 = let undef
                  ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:f32 = let undef
     ret
   }
@@ -1277,7 +1480,8 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Let_WrongType) {
-    auto* v = mod.instructions.Create<ir::Let>(b.InstructionResult(ty.f32()), b.Constant(1_i));
+    auto* v =
+        mod.allocators.instructions.Create<ir::Let>(b.InstructionResult(ty.f32()), b.Constant(1_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1287,17 +1491,18 @@ TEST_F(IR_ValidatorTest, Let_WrongType) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:14 error: let: result type does not match value type
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:14 error: let: result type 'f32' does not match value type 'i32'
     %2:f32 = let 1i
              ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:f32 = let 1i
     ret
   }
@@ -1322,13 +1527,13 @@ TEST_F(IR_ValidatorTest, Instruction_AppendedDead) {
     <destroyed tint::core::ir::Var $ADDRESS>
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^$ARROWS^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     <destroyed tint::core::ir::Var $ADDRESS>
     ret
   }
@@ -1340,7 +1545,7 @@ note: # Disassembly
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), expected);
+    EXPECT_EQ(res.Failure().reason.Str(), expected);
 }
 
 TEST_F(IR_ValidatorTest, Instruction_NullInstruction) {
@@ -1354,18 +1559,18 @@ TEST_F(IR_ValidatorTest, Instruction_NullInstruction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:3:5 error: var: instruction of result is undefined
     %2:ptr<function, f32, read_write> = var
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, f32, read_write> = var
     ret
   }
@@ -1386,17 +1591,17 @@ TEST_F(IR_ValidatorTest, Instruction_DeadOperand) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: operand is not alive
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:46 error: var: operand is not alive
     %2:ptr<function, f32, read_write> = var, %3
                                              ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, f32, read_write> = var, %3
     ret
   }
@@ -1417,17 +1622,17 @@ TEST_F(IR_ValidatorTest, Instruction_OperandUsageRemoved) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:46 error: var: operand missing usage
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:46 error: var: operand missing usage
     %2:ptr<function, f32, read_write> = var, %3
                                              ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, f32, read_write> = var, %3
     ret
   }
@@ -1447,10 +1652,10 @@ TEST_F(IR_ValidatorTest, Instruction_OrphanedInstruction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(error: orphaned instruction: load
+    EXPECT_EQ(res.Failure().reason.Str(), R"(error: load: orphaned instruction: load
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, f32, read_write> = var
     ret
   }
@@ -1467,17 +1672,17 @@ TEST_F(IR_ValidatorTest, Binary_LHS_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:18 error: binary: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:18 error: binary: operand is undefined
     %2:i32 = add undef, 2i
                  ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:i32 = add undef, 2i
     ret
   }
@@ -1494,17 +1699,17 @@ TEST_F(IR_ValidatorTest, Binary_RHS_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:22 error: binary: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:22 error: binary: operand is undefined
     %2:i32 = add 2i, undef
                      ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:i32 = add 2i, undef
     ret
   }
@@ -1513,8 +1718,8 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Binary_Result_Nullptr) {
-    auto* bin = mod.instructions.Create<ir::CoreBinary>(nullptr, BinaryOp::kAdd, b.Constant(3_i),
-                                                        b.Constant(2_i));
+    auto* bin = mod.allocators.instructions.Create<ir::CoreBinary>(
+        nullptr, BinaryOp::kAdd, b.Constant(3_i), b.Constant(2_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1524,17 +1729,17 @@ TEST_F(IR_ValidatorTest, Binary_Result_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: binary: result is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: binary: result is undefined
     undef = add 3i, 2i
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     undef = add 3i, 2i
     ret
   }
@@ -1551,17 +1756,17 @@ TEST_F(IR_ValidatorTest, Unary_Value_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:23 error: unary: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:23 error: unary: operand is undefined
     %2:i32 = negation undef
                       ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:i32 = negation undef
     ret
   }
@@ -1570,8 +1775,8 @@ note: # Disassembly
 }
 
 TEST_F(IR_ValidatorTest, Unary_Result_Nullptr) {
-    auto* bin =
-        mod.instructions.Create<ir::CoreUnary>(nullptr, UnaryOp::kNegation, b.Constant(2_i));
+    auto* bin = mod.allocators.instructions.Create<ir::CoreUnary>(nullptr, UnaryOp::kNegation,
+                                                                  b.Constant(2_i));
 
     auto* f = b.Function("my_func", ty.void_());
 
@@ -1581,17 +1786,17 @@ TEST_F(IR_ValidatorTest, Unary_Result_Nullptr) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: unary: result is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: unary: result is undefined
     undef = negation 2i
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     undef = negation 2i
     ret
   }
@@ -1611,18 +1816,18 @@ TEST_F(IR_ValidatorTest, Unary_ResultTypeNotMatchValueType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:3:5 error: unary: unary instruction result type (f32) does not match overload result type (i32)
+        res.Failure().reason.Str(),
+        R"(:3:5 error: unary: result value type 'f32' does not match complement result type 'i32'
     %2:f32 = complement 2i
     ^^^^^^^^^^^^^^^^^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:f32 = complement 2i
     ret
   }
@@ -1644,7 +1849,7 @@ TEST_F(IR_ValidatorTest, ExitIf) {
 
 TEST_F(IR_ValidatorTest, ExitIf_NullIf) {
     auto* if_ = b.If(true);
-    if_->True()->Append(mod.instructions.Create<ExitIf>(nullptr));
+    if_->True()->Append(mod.allocators.instructions.Create<ExitIf>(nullptr));
 
     auto* f = b.Function("my_func", ty.void_());
     auto sb = b.Append(f->Block());
@@ -1653,19 +1858,19 @@ TEST_F(IR_ValidatorTest, ExitIf_NullIf) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:5:9 error: exit_if: has no parent control instruction
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:5:9 error: exit_if: has no parent control instruction
         exit_if  # undef
         ^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # true
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # true
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2] {  # if_1
+      $B2: {  # true
         exit_if  # undef
       }
     }
@@ -1691,24 +1896,24 @@ TEST_F(IR_ValidatorTest, ExitIf_LessOperandsThenIfParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_if: args count (1) does not match control instruction result count (2)
         exit_if 1i  # if_1
         ^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # true
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # true
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
+      $B2: {  # true
         exit_if 1i  # if_1
       }
       # implicit false block: exit_if undef, undef
@@ -1735,24 +1940,24 @@ TEST_F(IR_ValidatorTest, ExitIf_MoreOperandsThenIfParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_if: args count (3) does not match control instruction result count (2)
         exit_if 1i, 2.0f, 3i  # if_1
         ^^^^^^^^^^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # true
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # true
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
+      $B2: {  # true
         exit_if 1i, 2.0f, 3i  # if_1
       }
       # implicit false block: exit_if undef, undef
@@ -1796,24 +2001,24 @@ TEST_F(IR_ValidatorTest, ExitIf_IncorrectResultType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:5:21 error: exit_if: argument type (f32) does not match control instruction type (i32)
+        res.Failure().reason.Str(),
+        R"(:5:21 error: exit_if: argument type 'f32' does not match control instruction type 'i32'
         exit_if 1i, 2i  # if_1
                     ^^
 
-:4:7 note: In block
-      %b2 = block {  # true
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # true
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = if true [t: %b2] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = if true [t: $B2] {  # if_1
+      $B2: {  # true
         exit_if 1i, 2i  # if_1
       }
       # implicit false block: exit_if undef, undef
@@ -1836,20 +2041,20 @@ TEST_F(IR_ValidatorTest, ExitIf_NotInParentIf) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:8:5 error: exit_if: found outside all control instructions
     exit_if  # if_1
     ^^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2] {  # if_1
-      %b2 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2] {  # if_1
+      $B2: {  # true
         ret
       }
     }
@@ -1879,26 +2084,26 @@ TEST_F(IR_ValidatorTest, ExitIf_InvalidJumpsOverIf) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_if: if target jumps over other control instructions
             exit_if  # if_1
             ^^^^^^^
 
-:6:11 note: In block
-          %b3 = block {  # true
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B3: {  # true
+          ^^^
 
 :5:9 note: first control instruction jumped
-        if true [t: %b3] {  # if_2
+        if true [t: $B3] {  # if_2
         ^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2] {  # if_1
-      %b2 = block {  # true
-        if true [t: %b3] {  # if_2
-          %b3 = block {  # true
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2] {  # if_1
+      $B2: {  # true
+        if true [t: $B3] {  # if_2
+          $B3: {  # true
             exit_if  # if_1
           }
         }
@@ -1932,26 +2137,26 @@ TEST_F(IR_ValidatorTest, ExitIf_InvalidJumpOverSwitch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_if: if target jumps over other control instructions
             exit_if  # if_1
             ^^^^^^^
 
-:6:11 note: In block
-          %b3 = block {  # case
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B3: {  # case
+          ^^^
 
 :5:9 note: first control instruction jumped
-        switch 1i [c: (1i, %b3)] {  # switch_1
+        switch 1i [c: (1i, $B3)] {  # switch_1
         ^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2] {  # if_1
-      %b2 = block {  # true
-        switch 1i [c: (1i, %b3)] {  # switch_1
-          %b3 = block {  # case
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2] {  # if_1
+      $B2: {  # true
+        switch 1i [c: (1i, $B3)] {  # switch_1
+          $B3: {  # case
             exit_if  # if_1
           }
         }
@@ -1984,26 +2189,26 @@ TEST_F(IR_ValidatorTest, ExitIf_InvalidJumpOverLoop) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_if: if target jumps over other control instructions
             exit_if  # if_1
             ^^^^^^^
 
-:6:11 note: In block
-          %b3 = block {  # body
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B3: {  # body
+          ^^^
 
 :5:9 note: first control instruction jumped
-        loop [b: %b3] {  # loop_1
+        loop [b: $B3] {  # loop_1
         ^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    if true [t: %b2] {  # if_1
-      %b2 = block {  # true
-        loop [b: %b3] {  # loop_1
-          %b3 = block {  # body
+%my_func = func():void {
+  $B1: {
+    if true [t: $B2] {  # if_1
+      $B2: {  # true
+        loop [b: $B3] {  # loop_1
+          $B3: {  # body
             exit_if  # if_1
           }
         }
@@ -2034,7 +2239,7 @@ TEST_F(IR_ValidatorTest, ExitSwitch_NullSwitch) {
     auto* switch_ = b.Switch(true);
 
     auto* def = b.DefaultCase(switch_);
-    def->Append(mod.instructions.Create<ExitSwitch>(nullptr));
+    def->Append(mod.allocators.instructions.Create<ExitSwitch>(nullptr));
 
     auto* f = b.Function("my_func", ty.void_());
     auto sb = b.Append(f->Block());
@@ -2043,20 +2248,20 @@ TEST_F(IR_ValidatorTest, ExitSwitch_NullSwitch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:5:9 error: exit_switch: has no parent control instruction
         exit_switch  # undef
         ^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # case
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # case
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
+%my_func = func():void {
+  $B1: {
+    switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
         exit_switch  # undef
       }
     }
@@ -2084,24 +2289,24 @@ TEST_F(IR_ValidatorTest, ExitSwitch_LessOperandsThenSwitchParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_switch: args count (1) does not match control instruction result count (2)
         exit_switch 1i  # switch_1
         ^^^^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # case
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # case
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
         exit_switch 1i  # switch_1
       }
     }
@@ -2128,24 +2333,24 @@ TEST_F(IR_ValidatorTest, ExitSwitch_MoreOperandsThenSwitchParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_switch: args count (3) does not match control instruction result count (2)
         exit_switch 1i, 2.0f, 3i  # switch_1
         ^^^^^^^^^^^^^^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # case
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # case
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
         exit_switch 1i, 2.0f, 3i  # switch_1
       }
     }
@@ -2190,24 +2395,24 @@ TEST_F(IR_ValidatorTest, ExitSwitch_IncorrectResultType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:5:25 error: exit_switch: argument type (f32) does not match control instruction type (i32)
+        res.Failure().reason.Str(),
+        R"(:5:25 error: exit_switch: argument type 'f32' does not match control instruction type 'i32'
         exit_switch 1i, 2i  # switch_1
                         ^^
 
-:4:7 note: In block
-      %b2 = block {  # case
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # case
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
         exit_switch 1i, 2i  # switch_1
       }
     }
@@ -2234,25 +2439,25 @@ TEST_F(IR_ValidatorTest, ExitSwitch_NotInParentSwitch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:10:9 error: exit_switch: switch not found in parent control instructions
         exit_switch  # switch_1
         ^^^^^^^^^^^
 
-:9:7 note: In block
-      %b3 = block {  # true
-      ^^^^^^^^^^^
+:9:7 note: in block
+      $B3: {  # true
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
+%my_func = func():void {
+  $B1: {
+    switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
         ret
       }
     }
-    if true [t: %b3] {  # if_1
-      %b3 = block {  # true
+    if true [t: $B3] {  # if_1
+      $B3: {  # true
         exit_switch  # switch_1
       }
     }
@@ -2315,26 +2520,26 @@ TEST_F(IR_ValidatorTest, ExitSwitch_InvalidJumpOverSwitch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_switch: switch target jumps over other control instructions
             exit_switch  # switch_1
             ^^^^^^^^^^^
 
-:6:11 note: In block
-          %b3 = block {  # case
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B3: {  # case
+          ^^^
 
 :5:9 note: first control instruction jumped
-        switch false [c: (default, %b3)] {  # switch_2
+        switch false [c: (default, $B3)] {  # switch_2
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
-        switch false [c: (default, %b3)] {  # switch_2
-          %b3 = block {  # case
+%my_func = func():void {
+  $B1: {
+    switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
+        switch false [c: (default, $B3)] {  # switch_2
+          $B3: {  # case
             exit_switch  # switch_1
           }
         }
@@ -2366,26 +2571,26 @@ TEST_F(IR_ValidatorTest, ExitSwitch_InvalidJumpOverLoop) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_switch: switch target jumps over other control instructions
             exit_switch  # switch_1
             ^^^^^^^^^^^
 
-:6:11 note: In block
-          %b3 = block {  # body
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B3: {  # body
+          ^^^
 
 :5:9 note: first control instruction jumped
-        loop [b: %b3] {  # loop_1
+        loop [b: $B3] {  # loop_1
         ^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    switch true [c: (default, %b2)] {  # switch_1
-      %b2 = block {  # case
-        loop [b: %b3] {  # loop_1
-          %b3 = block {  # body
+%my_func = func():void {
+  $B1: {
+    switch true [c: (default, $B2)] {  # switch_1
+      $B2: {  # case
+        loop [b: $B3] {  # loop_1
+          $B3: {  # body
             exit_switch  # switch_1
           }
         }
@@ -2414,7 +2619,7 @@ TEST_F(IR_ValidatorTest, ExitLoop) {
 TEST_F(IR_ValidatorTest, ExitLoop_NullLoop) {
     auto* loop = b.Loop();
     loop->Continuing()->Append(b.NextIteration(loop));
-    loop->Body()->Append(mod.instructions.Create<ExitLoop>(nullptr));
+    loop->Body()->Append(mod.allocators.instructions.Create<ExitLoop>(nullptr));
 
     auto* f = b.Function("my_func", ty.void_());
     auto sb = b.Append(f->Block());
@@ -2423,24 +2628,24 @@ TEST_F(IR_ValidatorTest, ExitLoop_NullLoop) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:5:9 error: exit_loop: has no parent control instruction
         exit_loop  # undef
         ^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # body
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
         exit_loop  # undef
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2466,28 +2671,28 @@ TEST_F(IR_ValidatorTest, ExitLoop_LessOperandsThenLoopParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_loop: args count (1) does not match control instruction result count (2)
         exit_loop 1i  # loop_1
         ^^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # body
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
         exit_loop 1i  # loop_1
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2513,28 +2718,28 @@ TEST_F(IR_ValidatorTest, ExitLoop_MoreOperandsThenLoopParams) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
+        res.Failure().reason.Str(),
         R"(:5:9 error: exit_loop: args count (3) does not match control instruction result count (2)
         exit_loop 1i, 2.0f, 3i  # loop_1
         ^^^^^^^^^^^^^^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # body
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
         exit_loop 1i, 2.0f, 3i  # loop_1
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2578,28 +2783,28 @@ TEST_F(IR_ValidatorTest, ExitLoop_IncorrectResultType) {
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
     EXPECT_EQ(
-        res.Failure().reason.str(),
-        R"(:5:23 error: exit_loop: argument type (f32) does not match control instruction type (i32)
+        res.Failure().reason.Str(),
+        R"(:5:23 error: exit_loop: argument type 'f32' does not match control instruction type 'i32'
         exit_loop 1i, 2i  # loop_1
                       ^^
 
-:4:7 note: In block
-      %b2 = block {  # body
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # body
+      ^^^
 
 :3:5 note: control instruction
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    %2:i32, %3:f32 = loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    %2:i32, %3:f32 = loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
         exit_loop 1i, 2i  # loop_1
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2624,28 +2829,28 @@ TEST_F(IR_ValidatorTest, ExitLoop_NotInParentLoop) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:13:9 error: exit_loop: loop not found in parent control instructions
         exit_loop  # loop_1
         ^^^^^^^^^
 
-:12:7 note: In block
-      %b4 = block {  # true
-      ^^^^^^^^^^^
+:12:7 note: in block
+      $B4: {  # true
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
         ret
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
-    if true [t: %b4] {  # if_1
-      %b4 = block {  # true
+    if true [t: $B4] {  # if_1
+      $B4: {  # true
         exit_loop  # loop_1
       }
     }
@@ -2707,33 +2912,33 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidJumpOverSwitch) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_loop: loop target jumps over other control instructions
             exit_loop  # loop_1
             ^^^^^^^^^
 
-:6:11 note: In block
-          %b4 = block {  # case
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B4: {  # case
+          ^^^
 
 :5:9 note: first control instruction jumped
-        switch false [c: (default, %b4)] {  # switch_1
+        switch false [c: (default, $B4)] {  # switch_1
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
-        switch false [c: (default, %b4)] {  # switch_1
-          %b4 = block {  # case
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        switch false [c: (default, $B4)] {  # switch_1
+          $B4: {  # case
             exit_loop  # loop_1
           }
         }
         exit_loop  # loop_1
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2762,33 +2967,33 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidJumpOverLoop) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_loop: loop target jumps over other control instructions
             exit_loop  # loop_1
             ^^^^^^^^^
 
-:6:11 note: In block
-          %b4 = block {  # body
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B4: {  # body
+          ^^^
 
 :5:9 note: first control instruction jumped
-        loop [b: %b4] {  # loop_2
+        loop [b: $B4] {  # loop_2
         ^^^^^^^^^^^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
-        loop [b: %b4] {  # loop_2
-          %b4 = block {  # body
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        loop [b: $B4] {  # loop_2
+          $B4: {  # body
             exit_loop  # loop_1
           }
         }
         exit_loop  # loop_1
       }
-      %b3 = block {  # continuing
-        next_iteration %b2
+      $B3: {  # continuing
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2812,23 +3017,23 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidInsideContinuing) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:8:9 error: exit_loop: loop exit jumps out of continuing block
         exit_loop  # loop_1
         ^^^^^^^^^
 
-:7:7 note: In block
-      %b3 = block {  # continuing
-      ^^^^^^^^^^^
+:7:7 note: in block
+      $B3: {  # continuing
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
-        continue %b3
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        continue  # -> $B3
       }
-      %b3 = block {  # continuing
+      $B3: {  # continuing
         exit_loop  # loop_1
       }
     }
@@ -2858,33 +3063,33 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidInsideContinuingNested) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:10:13 error: exit_loop: loop exit jumps out of continuing block
             exit_loop  # loop_1
             ^^^^^^^^^
 
-:9:11 note: In block
-          %b4 = block {  # true
-          ^^^^^^^^^^^
+:9:11 note: in block
+          $B4: {  # true
+          ^^^
 
 :7:7 note: in continuing block
-      %b3 = block {  # continuing
-      ^^^^^^^^^^^
+      $B3: {  # continuing
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [b: %b2, c: %b3] {  # loop_1
-      %b2 = block {  # body
-        continue %b3
+%my_func = func():void {
+  $B1: {
+    loop [b: $B2, c: $B3] {  # loop_1
+      $B2: {  # body
+        continue  # -> $B3
       }
-      %b3 = block {  # continuing
-        if true [t: %b4] {  # if_1
-          %b4 = block {  # true
+      $B3: {  # continuing
+        if true [t: $B4] {  # if_1
+          $B4: {  # true
             exit_loop  # loop_1
           }
         }
-        next_iteration %b2
+        next_iteration  # -> $B2
       }
     }
     ret
@@ -2910,27 +3115,27 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidInsideInitializer) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:5:9 error: exit_loop: loop exit not permitted in loop initializer
         exit_loop  # loop_1
         ^^^^^^^^^
 
-:4:7 note: In block
-      %b2 = block {  # initializer
-      ^^^^^^^^^^^
+:4:7 note: in block
+      $B2: {  # initializer
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [i: %b2, b: %b3, c: %b4] {  # loop_1
-      %b2 = block {  # initializer
+%my_func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
         exit_loop  # loop_1
       }
-      %b3 = block {  # body
-        continue %b4
+      $B3: {  # body
+        continue  # -> $B4
       }
-      %b4 = block {  # continuing
-        next_iteration %b3
+      $B4: {  # continuing
+        next_iteration  # -> $B3
       }
     }
     ret
@@ -2960,36 +3165,36 @@ TEST_F(IR_ValidatorTest, ExitLoop_InvalidInsideInitializerNested) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:7:13 error: exit_loop: loop exit not permitted in loop initializer
             exit_loop  # loop_1
             ^^^^^^^^^
 
-:6:11 note: In block
-          %b5 = block {  # true
-          ^^^^^^^^^^^
+:6:11 note: in block
+          $B5: {  # true
+          ^^^
 
 :4:7 note: in initializer block
-      %b2 = block {  # initializer
-      ^^^^^^^^^^^
+      $B2: {  # initializer
+      ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
-    loop [i: %b2, b: %b3, c: %b4] {  # loop_1
-      %b2 = block {  # initializer
-        if true [t: %b5] {  # if_1
-          %b5 = block {  # true
+%my_func = func():void {
+  $B1: {
+    loop [i: $B2, b: $B3, c: $B4] {  # loop_1
+      $B2: {  # initializer
+        if true [t: $B5] {  # if_1
+          $B5: {  # true
             exit_loop  # loop_1
           }
         }
-        next_iteration %b3
+        next_iteration  # -> $B3
       }
-      %b3 = block {  # body
-        continue %b4
+      $B3: {  # body
+        continue  # -> $B4
       }
-      %b4 = block {  # continuing
-        next_iteration %b3
+      $B4: {  # continuing
+        next_iteration  # -> $B3
       }
     }
     ret
@@ -3024,17 +3229,17 @@ TEST_F(IR_ValidatorTest, Return_NullFunction) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: return: undefined function
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: return: undefined function
     ret
     ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     ret
   }
 }
@@ -3049,17 +3254,17 @@ TEST_F(IR_ValidatorTest, Return_UnexpectedValue) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: return: unexpected return value
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: return: unexpected return value
     ret 42i
     ^^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     ret 42i
   }
 }
@@ -3074,17 +3279,17 @@ TEST_F(IR_ValidatorTest, Return_MissingValue) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:5 error: return: expected return value
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:5 error: return: expected return value
     ret
     ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():i32 -> %b1 {
-  %b1 = block {
+%my_func = func():i32 {
+  $B1: {
     ret
   }
 }
@@ -3099,18 +3304,19 @@ TEST_F(IR_ValidatorTest, Return_WrongValueType) {
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:3:5 error: return: return value type does not match function return type
+    EXPECT_EQ(
+        res.Failure().reason.Str(),
+        R"(:3:5 error: return: return value type 'f32' does not match function return type 'i32'
     ret 42.0f
     ^^^^^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():i32 -> %b1 {
-  %b1 = block {
+%my_func = func():i32 {
+  $B1: {
     ret 42.0f
   }
 }
@@ -3121,23 +3327,24 @@ TEST_F(IR_ValidatorTest, Load_NullFrom) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        b.Append(mod.instructions.Create<ir::Load>(b.InstructionResult(ty.i32()), nullptr));
+        b.Append(
+            mod.allocators.instructions.Create<ir::Load>(b.InstructionResult(ty.i32()), nullptr));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:19 error: load: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:19 error: load: operand is undefined
     %2:i32 = load undef
                   ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:i32 = load undef
     ret
   }
@@ -3150,24 +3357,25 @@ TEST_F(IR_ValidatorTest, Load_SourceNotMemoryView) {
 
     b.Append(f->Block(), [&] {
         auto* let = b.Let("l", 1_i);
-        b.Append(mod.instructions.Create<ir::Load>(b.InstructionResult(ty.f32()), let->Result(0)));
+        b.Append(mod.allocators.instructions.Create<ir::Load>(b.InstructionResult(ty.f32()),
+                                                              let->Result(0)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:19 error: load source operand is not a memory view
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:19 error: load: load source operand is not a memory view
     %3:f32 = load %l
                   ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %l:i32 = let 1i
     %3:f32 = load %l
     ret
@@ -3181,24 +3389,25 @@ TEST_F(IR_ValidatorTest, Load_TypeMismatch) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, i32>());
-        b.Append(mod.instructions.Create<ir::Load>(b.InstructionResult(ty.f32()), var->Result(0)));
+        b.Append(mod.allocators.instructions.Create<ir::Load>(b.InstructionResult(ty.f32()),
+                                                              var->Result(0)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:19 error: result type does not match source store type
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:19 error: load: result type 'f32' does not match source store type 'i32'
     %3:f32 = load %2
                   ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, i32, read_write> = var
     %3:f32 = load %2
     ret
@@ -3211,23 +3420,23 @@ TEST_F(IR_ValidatorTest, Store_NullTo) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        b.Append(mod.instructions.Create<ir::Store>(nullptr, b.Constant(42_i)));
+        b.Append(mod.allocators.instructions.Create<ir::Store>(nullptr, b.Constant(42_i)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:11 error: store: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:11 error: store: operand is undefined
     store undef, 42i
           ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     store undef, 42i
     ret
   }
@@ -3240,23 +3449,23 @@ TEST_F(IR_ValidatorTest, Store_NullFrom) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, i32>());
-        b.Append(mod.instructions.Create<ir::Store>(var->Result(0), nullptr));
+        b.Append(mod.allocators.instructions.Create<ir::Store>(var->Result(0), nullptr));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:4:15 error: store: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:4:15 error: store: operand is undefined
     store %2, undef
               ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, i32, read_write> = var
     store %2, undef
     ret
@@ -3270,24 +3479,24 @@ TEST_F(IR_ValidatorTest, Store_TargetNotMemoryView) {
 
     b.Append(f->Block(), [&] {
         auto* let = b.Let("l", 1_i);
-        b.Append(mod.instructions.Create<ir::Store>(let->Result(0), b.Constant(42_u)));
+        b.Append(mod.allocators.instructions.Create<ir::Store>(let->Result(0), b.Constant(42_u)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:15 error: store target operand is not a memory view
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:15 error: store: store target operand is not a memory view
     store %l, 42u
               ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %l:i32 = let 1i
     store %l, 42u
     ret
@@ -3301,24 +3510,24 @@ TEST_F(IR_ValidatorTest, Store_TypeMismatch) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, i32>());
-        b.Append(mod.instructions.Create<ir::Store>(var->Result(0), b.Constant(42_u)));
+        b.Append(mod.allocators.instructions.Create<ir::Store>(var->Result(0), b.Constant(42_u)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
-              R"(:4:15 error: value type does not match store type
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:4:15 error: store: value type 'u32' does not match store type 'i32'
     store %2, 42u
               ^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, i32, read_write> = var
     store %2, 42u
     ret
@@ -3332,25 +3541,25 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullResult) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::LoadVectorElement>(nullptr, var->Result(0),
-                                                                b.Constant(1_i)));
+        b.Append(mod.allocators.instructions.Create<ir::LoadVectorElement>(nullptr, var->Result(0),
+                                                                           b.Constant(1_i)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(),
+    EXPECT_EQ(res.Failure().reason.Str(),
               R"(:4:5 error: load_vector_element: result is undefined
     undef = load_vector_element %2, 1i
     ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, vec3<f32>, read_write> = var
     undef = load_vector_element %2, 1i
     ret
@@ -3363,24 +3572,24 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullFrom) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        b.Append(mod.instructions.Create<ir::LoadVectorElement>(b.InstructionResult(ty.f32()),
-                                                                nullptr, b.Constant(1_i)));
+        b.Append(mod.allocators.instructions.Create<ir::LoadVectorElement>(
+            b.InstructionResult(ty.f32()), nullptr, b.Constant(1_i)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:34 error: load_vector_element: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:34 error: load_vector_element: operand is undefined
     %2:f32 = load_vector_element undef, 1i
                                  ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:f32 = load_vector_element undef, 1i
     ret
   }
@@ -3393,24 +3602,24 @@ TEST_F(IR_ValidatorTest, LoadVectorElement_NullIndex) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::LoadVectorElement>(b.InstructionResult(ty.f32()),
-                                                                var->Result(0), nullptr));
+        b.Append(mod.allocators.instructions.Create<ir::LoadVectorElement>(
+            b.InstructionResult(ty.f32()), var->Result(0), nullptr));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:4:38 error: load_vector_element: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:4:38 error: load_vector_element: operand is undefined
     %3:f32 = load_vector_element %2, undef
                                      ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, vec3<f32>, read_write> = var
     %3:f32 = load_vector_element %2, undef
     ret
@@ -3423,24 +3632,24 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullTo) {
     auto* f = b.Function("my_func", ty.void_());
 
     b.Append(f->Block(), [&] {
-        b.Append(mod.instructions.Create<ir::StoreVectorElement>(nullptr, b.Constant(1_i),
-                                                                 b.Constant(2_i)));
+        b.Append(mod.allocators.instructions.Create<ir::StoreVectorElement>(
+            nullptr, b.Constant(1_i), b.Constant(2_i)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:3:26 error: store_vector_element: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:3:26 error: store_vector_element: operand is undefined
     store_vector_element undef, 1i, 2i
                          ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     store_vector_element undef, 1i, 2i
     ret
   }
@@ -3453,32 +3662,32 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullIndex) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(0), nullptr,
-                                                                 b.Constant(2_i)));
+        b.Append(mod.allocators.instructions.Create<ir::StoreVectorElement>(var->Result(0), nullptr,
+                                                                            b.Constant(2_i)));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:4:30 error: store_vector_element: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:4:30 error: store_vector_element: operand is undefined
     store_vector_element %2, undef, 2i
                              ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
-:4:37 error: value type does not match vector pointer element type
+:4:37 error: store_vector_element: value type 'i32' does not match vector pointer element type 'f32'
     store_vector_element %2, undef, 2i
                                     ^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, vec3<f32>, read_write> = var
     store_vector_element %2, undef, 2i
     ret
@@ -3492,24 +3701,24 @@ TEST_F(IR_ValidatorTest, StoreVectorElement_NullValue) {
 
     b.Append(f->Block(), [&] {
         auto* var = b.Var(ty.ptr<function, vec3<f32>>());
-        b.Append(mod.instructions.Create<ir::StoreVectorElement>(var->Result(0), b.Constant(1_i),
-                                                                 nullptr));
+        b.Append(mod.allocators.instructions.Create<ir::StoreVectorElement>(
+            var->Result(0), b.Constant(1_i), nullptr));
         b.Return(f);
     });
 
     auto res = ir::Validate(mod);
     ASSERT_NE(res, Success);
-    EXPECT_EQ(res.Failure().reason.str(), R"(:4:34 error: store_vector_element: operand is undefined
+    EXPECT_EQ(res.Failure().reason.Str(), R"(:4:34 error: store_vector_element: operand is undefined
     store_vector_element %2, 1i, undef
                                  ^^^^^
 
-:2:3 note: In block
-  %b1 = block {
-  ^^^^^^^^^^^
+:2:3 note: in block
+  $B1: {
+  ^^^
 
 note: # Disassembly
-%my_func = func():void -> %b1 {
-  %b1 = block {
+%my_func = func():void {
+  $B1: {
     %2:ptr<function, vec3<f32>, read_write> = var
     store_vector_element %2, 1i, undef
     ret
@@ -3518,5 +3727,148 @@ note: # Disassembly
 )");
 }
 
+TEST_F(IR_ValidatorTest, Scoping_UseBeforeDecl) {
+    auto* f = b.Function("my_func", ty.void_());
+
+    auto* y = b.Add<i32>(2_i, 3_i);
+    auto* x = b.Add<i32>(y, 1_i);
+
+    f->Block()->Append(x);
+    f->Block()->Append(y);
+    f->Block()->Append(b.Return(f));
+
+    auto res = ir::Validate(mod);
+    ASSERT_NE(res, Success);
+    EXPECT_EQ(res.Failure().reason.Str(),
+              R"(:3:18 error: binary: %3 is not in scope
+    %2:i32 = add %3, 1i
+                 ^^
+
+:2:3 note: in block
+  $B1: {
+  ^^^
+
+:4:5 note: %3 declared here
+    %3:i32 = add 2i, 3i
+    ^^^^^^
+
+note: # Disassembly
+%my_func = func():void {
+  $B1: {
+    %2:i32 = add %3, 1i
+    %3:i32 = add 2i, 3i
+    ret
+  }
+}
+)");
+}
+
+template <typename T>
+static const type::Type* TypeBuilder(type::Manager& m) {
+    return m.Get<T>();
+}
+template <typename T>
+static const type::Type* RefTypeBuilder(type::Manager& m) {
+    return m.ref<AddressSpace::kFunction, T>();
+}
+using TypeBuilderFn = decltype(&TypeBuilder<i32>);
+
+using IR_ValidatorRefTypeTest = IRTestParamHelper<std::tuple</* holds_ref */ bool,
+                                                             /* refs_allowed */ bool,
+                                                             /* type_builder */ TypeBuilderFn>>;
+
+TEST_P(IR_ValidatorRefTypeTest, Var) {
+    bool holds_ref = std::get<0>(GetParam());
+    bool refs_allowed = std::get<1>(GetParam());
+    auto* type = std::get<2>(GetParam())(ty);
+
+    auto* fn = b.Function("my_func", ty.void_());
+    b.Append(fn->Block(), [&] {
+        if (auto* view = type->As<type::MemoryView>()) {
+            b.Var(view);
+        } else {
+            b.Var(ty.ptr<function>(type));
+        }
+
+        b.Return(fn);
+    });
+
+    Capabilities caps;
+    if (refs_allowed) {
+        caps.Add(Capability::kAllowRefTypes);
+    }
+    auto res = ir::Validate(mod, caps);
+    if (!holds_ref || refs_allowed) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        EXPECT_THAT(res.Failure().reason.Str(),
+                    testing::HasSubstr("3:5 error: var: reference type is not permitted"));
+    }
+}
+
+TEST_P(IR_ValidatorRefTypeTest, FnParam) {
+    bool holds_ref = std::get<0>(GetParam());
+    bool refs_allowed = std::get<1>(GetParam());
+    auto* type = std::get<2>(GetParam())(ty);
+
+    auto* fn = b.Function("my_func", ty.void_());
+    fn->SetParams(Vector{b.FunctionParam(type)});
+    b.Append(fn->Block(), [&] { b.Return(fn); });
+
+    Capabilities caps;
+    if (refs_allowed) {
+        caps.Add(Capability::kAllowRefTypes);
+    }
+    auto res = ir::Validate(mod, caps);
+    if (!holds_ref) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        EXPECT_THAT(res.Failure().reason.Str(),
+                    testing::HasSubstr("references are not permitted as parameter types"));
+    }
+}
+
+TEST_P(IR_ValidatorRefTypeTest, FnRet) {
+    bool holds_ref = std::get<0>(GetParam());
+    bool refs_allowed = std::get<1>(GetParam());
+    auto* type = std::get<2>(GetParam())(ty);
+
+    auto* fn = b.Function("my_func", type);
+    b.Append(fn->Block(), [&] { b.Unreachable(); });
+
+    Capabilities caps;
+    if (refs_allowed) {
+        caps.Add(Capability::kAllowRefTypes);
+    }
+    auto res = ir::Validate(mod, caps);
+    if (!holds_ref) {
+        ASSERT_EQ(res, Success) << res.Failure();
+    } else {
+        ASSERT_NE(res, Success);
+        EXPECT_THAT(res.Failure().reason.Str(),
+                    testing::HasSubstr("references are not permitted as return types"));
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(NonRefTypes,
+                         IR_ValidatorRefTypeTest,
+                         testing::Combine(/* holds_ref */ testing::Values(false),
+                                          /* refs_allowed */ testing::Values(false, true),
+                                          /* type_builder */
+                                          testing::Values(TypeBuilder<i32>,
+                                                          TypeBuilder<bool>,
+                                                          TypeBuilder<vec4<f32>>,
+                                                          TypeBuilder<array<f32, 3>>)));
+
+INSTANTIATE_TEST_SUITE_P(RefTypes,
+                         IR_ValidatorRefTypeTest,
+                         testing::Combine(/* holds_ref */ testing::Values(true),
+                                          /* refs_allowed */ testing::Values(false, true),
+                                          /* type_builder */
+                                          testing::Values(RefTypeBuilder<i32>,
+                                                          RefTypeBuilder<bool>,
+                                                          RefTypeBuilder<vec4<f32>>)));
 }  // namespace
 }  // namespace tint::core::ir

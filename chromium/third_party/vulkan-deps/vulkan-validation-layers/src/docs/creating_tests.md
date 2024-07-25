@@ -6,7 +6,9 @@ This is an "up-to-speed" document for writing tests to validate the Validation L
 
 ## Rule #1
 
-The first rule is to make sure you are actually running the tests on the built version of the Validation Layers you want. If you have the Vulkan SDK installed, then you will have a pre-built version of the Validation Layers set in your path and those are probably not the version you want to test.
+The first rule is to make sure you are actually running the tests on the built version of the Validation Layers you want. Set the environment variable `VK_LOADER_DEBUG` to `layer` and check that the output of the tests report that the path of the validation layer matches what is expected.
+
+The tests automatically set `VK_LAYER_PATH` to the validation layer in the build tree. However if you wish to use a different validation layer than the one that was built, or if you wish to use multiple layers in the tests at the same time, you must set `VK_LAYER_PATH` or `VK_ADD_LAYER_PATH` to include each path to the desired layers, including the validation layer.
 
 Make sure you have the correct `VK_LAYER_PATH` set on Windows or Linux (on Android the layers are baked into the APK so there is nothing to worry about)
 
@@ -85,13 +87,13 @@ RETURN_IF_SKIP(Init());
 const bool copy_commands2 = IsExtensionsEnabled(VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME);
 
 // Validate core copy command
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, vuid);
+m_errorMonitor->SetDesiredError(vuid);
 vk::CmdCopyBuffer( /* */ );
 m_errorMonitor->VerifyFound();
 
 // optional test using VK_KHR_copy_commands2
 if (copy_commands2) {
-    m_errorMonitor->SetDesiredFailureMsg(kErrorBit, vuid);
+    m_errorMonitor->SetDesiredError(vuid);
     vk::CmdCopyBuffer2KHR( /* */  );
     m_errorMonitor->VerifyFound();
 }
@@ -149,26 +151,26 @@ The few common patterns that will cover 99% of cases are:
 - **By default**, all Vulkan API calls are expected to succeed. In the past, one would have to "wrap" API calls in `ExpectSuccess`/`VerifyNotFound` to ensure an API call did not trigger any errors. This is no longer the case. e.g.,
 ```cpp
 // m_errorMonitor->ExpectSuccess(); <- implicit
-vk::CreateSampler(m_device->device(), &sci, nullptr, &samplers[0]);
+vk::CreateSampler(device(), &sci, nullptr, &samplers[0]);
 // m_errorMonitor->VerifyNoutFound(); <- implicit
 ```
 The `ExpectSuccess` and `VerifyNotFound` calls are now implicit.
 - For checking a call that invokes a VUID error
 ```cpp
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkSamplerCreateInfo-addressModeU-01646");
+m_errorMonitor->SetDesiredError("VUID-VkSamplerCreateInfo-addressModeU-01646");
 // The following API call is expected to trigger 01646 and _only_ 01646
-vk::CreateSampler(m_device->device(), &sci, NULL, &BadSampler);
+vk::CreateSampler(device(), &sci, NULL, &BadSampler);
 m_errorMonitor->VerifyFound();
 
 // All calls after m_errorMonitor->VerifyFound() are expected to not trigger any errors. e.g., the following API call should succeed with no validation errors being triggered.
-vk::CreateImage(m_device->device(), &ci, nullptr, &mp_image);
+vk::CreateImage(device(), &ci, nullptr, &mp_image);
 
 ```
 - When it is possible another VUID will be triggered that you are not testing. This usually happens due to making something invalid can cause a chain effect causing other things to be invalid as well.
     - Note: If the `SetUnexpectedError` is never called it will not fail the test
 ```cpp
 m_errorMonitor->SetUnexpectedError("VUID-VkImageMemoryRequirementsInfo2-image-01590");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkImageMemoryRequirementsInfo2-image-02280");
+m_errorMonitor->SetDesiredError("VUID-VkImageMemoryRequirementsInfo2-image-02280");
 vkGetImageMemoryRequirements2Function(device(), &mem_req_info2, &mem_req2);
 m_errorMonitor->VerifyFound();
 ```
@@ -176,8 +178,8 @@ m_errorMonitor->VerifyFound();
 - When you expect multpile VUID to be triggered. This is also be a case if you expect the same VUID to be called twice.
     - Note: If both VUID are not found the test will fail
 ```cpp
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkDeviceGroupRenderPassBeginInfo-deviceMask-00905");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkDeviceGroupRenderPassBeginInfo-deviceMask-00907");
+m_errorMonitor->SetDesiredError("VUID-VkDeviceGroupRenderPassBeginInfo-deviceMask-00905");
+m_errorMonitor->SetDesiredError("VUID-VkDeviceGroupRenderPassBeginInfo-deviceMask-00907");
 vk::CmdBeginRenderPass(m_commandBuffer->handle(), &m_renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 m_errorMonitor->VerifyFound();
 ```
@@ -186,7 +188,7 @@ m_errorMonitor->VerifyFound();
     - Note: The start of the test might already have a boolean that checks for extension support
 ```cpp
 const char* vuid = IsExtensionsEnabled(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME) ? "VUID-vkCmdCopyImage-dstImage-01733" : "VUID-vkCmdCopyImage-dstImage-01733";
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, vuid);
+m_errorMonitor->SetDesiredError(vuid);
 m_commandBuffer->CopyImage(image_2.image(), VK_IMAGE_LAYOUT_GENERAL, image_1.image(), VK_IMAGE_LAYOUT_GENERAL, 1, &copy_region);
 m_errorMonitor->VerifyFound();
 ```
@@ -195,12 +197,12 @@ m_errorMonitor->VerifyFound();
 - Keep it simple. Try to make each test as small and concise as possible.
 - Avoid testing VUIDs in "batches" such as:
 ```cpp
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferBeginInfo-flags-06003");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferInheritanceRenderingInfo-colorAttachmentCount-06004");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferInheritanceRenderingInfo-variableMultisampleRate-06005");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06007");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferInheritanceRenderingInfo-multiview-06008");
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-VkCommandBufferInheritanceRenderingInfo-viewMask-06009");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferBeginInfo-flags-06003");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferInheritanceRenderingInfo-colorAttachmentCount-06004");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferInheritanceRenderingInfo-variableMultisampleRate-06005");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferInheritanceRenderingInfo-depthAttachmentFormat-06007");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferInheritanceRenderingInfo-multiview-06008");
+m_errorMonitor->SetDesiredError("VUID-VkCommandBufferInheritanceRenderingInfo-viewMask-06009");
 ...
 vk::BeginCommandBuffer(secondary_cmd_buffer, &cmd_buffer_begin_info);
 m_errorMonitor->VerifyFound();
@@ -216,7 +218,7 @@ used to make it obvious).
 VkImageSubresource subresource{};
 subresource.aspectMask = VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT;
 VkSubresourceLayout layout{};
-m_errorMonitor->SetDesiredFailureMsg(kErrorBit, "VUID-vkGetImageSubresourceLayout-tiling-09433");
+m_errorMonitor->SetDesiredError("VUID-vkGetImageSubresourceLayout-tiling-09433");
 vk::GetImageSubresourceLayout(m_device->handle(), image.handle(), &subresource, &layout);
 m_errorMonitor->VerifyFound();
 ```
@@ -224,7 +226,7 @@ Here it is obvious that the `aspectMask` parameter is the cause of 02271.
 
 ### Viewing VU Messages
 
-When `SetDesiredFailureMsg` is used, nothing is displayed if the test is successful. To see the messages regardless use `--print-vu`
+When `SetDesiredError` is used, nothing is displayed if the test is successful. To see the messages regardless use `--print-vu`
 
 ```bash
 ./tests/vk_layer_validation_tests --print-vu --gtest_filter=Tests

@@ -834,7 +834,7 @@ GamepadBusType BusTypeFromDeviceInfo(const mojom::HidDeviceInfo* device_info) {
     default:
       break;
   }
-  NOTREACHED();
+  DUMP_WILL_BE_NOTREACHED_NORETURN();
   return GAMEPAD_BUS_UNKNOWN;
 }
 }  // namespace
@@ -1679,7 +1679,7 @@ void NintendoController::ReadInputReport() {
 void NintendoController::OnReadInputReport(
     bool success,
     uint8_t report_id,
-    const absl::optional<std::vector<uint8_t>>& report_bytes) {
+    const std::optional<std::vector<uint8_t>>& report_bytes) {
   if (success) {
     DCHECK(report_bytes);
     HandleInputReport(report_id, *report_bytes);

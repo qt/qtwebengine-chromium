@@ -25,7 +25,8 @@
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "p2p/base/port.h"
-#include "p2p/client/basic_port_allocator.h"
+#include "p2p/base/port_allocator.h"
+#include "p2p/client/relay_port_factory_interface.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/ssl_certificate.h"
@@ -251,12 +252,7 @@ class TurnPort : public Port {
   bool CreateTurnClientSocket();
 
   void set_nonce(absl::string_view nonce) { nonce_ = std::string(nonce); }
-  void set_realm(absl::string_view realm) {
-    if (realm != realm_) {
-      realm_ = std::string(realm);
-      UpdateHash();
-    }
-  }
+  void set_realm(absl::string_view realm);
 
   void OnRefreshError();
   void HandleRefreshError();

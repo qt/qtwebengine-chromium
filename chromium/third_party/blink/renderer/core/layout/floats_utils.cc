@@ -63,8 +63,8 @@ LayoutOpportunity FindLayoutOpportunityForFloat(
 // should only be set when we want to fragmentation to occur.
 ConstraintSpace CreateConstraintSpaceForFloat(
     const UnpositionedFloat& unpositioned_float,
-    absl::optional<LayoutUnit> origin_block_offset = absl::nullopt,
-    absl::optional<BoxStrut> margins = absl::nullopt) {
+    std::optional<LayoutUnit> origin_block_offset = std::nullopt,
+    std::optional<BoxStrut> margins = std::nullopt) {
   const ComputedStyle& style = unpositioned_float.node.Style();
   const ConstraintSpace& parent_space = unpositioned_float.parent_space;
   ConstraintSpaceBuilder builder(parent_space, style.GetWritingDirection(),
@@ -72,6 +72,7 @@ ConstraintSpace CreateConstraintSpaceForFloat(
   SetOrthogonalFallbackInlineSizeIfNeeded(unpositioned_float.parent_style,
                                           unpositioned_float.node, &builder);
   builder.SetIsPaintedAtomically(true);
+  builder.SetIsHiddenForPaint(unpositioned_float.is_hidden_for_paint);
 
   if (origin_block_offset) {
     DCHECK(margins);
@@ -162,6 +163,7 @@ const ExclusionArea* CreateExclusionArea(
           : nullptr;
 
   return ExclusionArea::Create(BfcRect(start_offset, end_offset), type,
+                               unpositioned_float.is_hidden_for_paint,
                                std::move(shape_data));
 }
 
@@ -395,7 +397,8 @@ PositionedFloat PositionFloat(UnpositionedFloat* unpositioned_float,
                               FragmentainerSpaceLeft(parent_space) +
                                   parent_space.ExpectedBfcBlockOffset());
     const ExclusionArea* exclusion = ExclusionArea::Create(
-        BfcRect(past_everything, past_everything), float_type);
+        BfcRect(past_everything, past_everything), float_type,
+        unpositioned_float->is_hidden_for_paint);
     exclusion_space->Add(std::move(exclusion));
 
     // Also specify that there will be a fragmentainer break before this

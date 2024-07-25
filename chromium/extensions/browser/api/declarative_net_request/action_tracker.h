@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <vector>
+
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -45,7 +46,7 @@ class ActionTracker {
   ActionTracker(const ActionTracker& other) = delete;
   ActionTracker& operator=(const ActionTracker& other) = delete;
 
-  // TODO(crbug.com/1043367): Use a task environment to avoid having to set
+  // TODO(crbug.com/40115239): Use a task environment to avoid having to set
   // clocks just for tests.
 
   // Sets a custom Clock to use in tests. |clock| should be owned by the caller

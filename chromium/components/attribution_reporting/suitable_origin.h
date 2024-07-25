@@ -6,14 +6,15 @@
 #define COMPONENTS_ATTRIBUTION_REPORTING_SUITABLE_ORIGIN_H_
 
 #include <compare>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include "base/check.h"
 #include "base/component_export.h"
+#include "base/not_fatal_until.h"
 #include "mojo/public/cpp/bindings/default_construct_tag.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/origin.h"
 
 class GURL;
@@ -45,16 +46,16 @@ class COMPONENT_EXPORT(ATTRIBUTION_REPORTING) SuitableOrigin {
  public:
   static bool IsSuitable(const url::Origin&);
 
-  static absl::optional<SuitableOrigin> Create(url::Origin);
+  static std::optional<SuitableOrigin> Create(url::Origin);
 
-  static absl::optional<SuitableOrigin> Create(const GURL&);
+  static std::optional<SuitableOrigin> Create(const GURL&);
 
   // Creates a `SuitableOrigin` from the given string, which is first converted
   // to a `GURL`, then to a `url::Origin`, and then subject to this class's
   // invariants.
   //
   // All parts of the URL other than the origin are ignored.
-  static absl::optional<SuitableOrigin> Deserialize(std::string_view);
+  static std::optional<SuitableOrigin> Deserialize(std::string_view);
 
   // Creates an invalid instance for use with Mojo deserialization, which
   // requires types to be default-constructible.
@@ -69,17 +70,17 @@ class COMPONENT_EXPORT(ATTRIBUTION_REPORTING) SuitableOrigin {
   SuitableOrigin& operator=(SuitableOrigin&&);
 
   const url::Origin& operator*() const& {
-    DCHECK(IsValid());
+    CHECK(IsValid(), base::NotFatalUntil::M128);
     return origin_;
   }
 
   url::Origin&& operator*() && {
-    DCHECK(IsValid());
+    CHECK(IsValid(), base::NotFatalUntil::M128);
     return std::move(origin_);
   }
 
   const url::Origin* operator->() const& {
-    DCHECK(IsValid());
+    CHECK(IsValid(), base::NotFatalUntil::M128);
     return &origin_;
   }
 
@@ -87,7 +88,7 @@ class COMPONENT_EXPORT(ATTRIBUTION_REPORTING) SuitableOrigin {
   // this type in places currently requiring `url::Origin`s with
   // guaranteed preconditions.
   operator const url::Origin&() const {  // NOLINT
-    DCHECK(IsValid());
+    CHECK(IsValid(), base::NotFatalUntil::M128);
     return origin_;
   }
 

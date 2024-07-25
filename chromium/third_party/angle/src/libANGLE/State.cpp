@@ -3695,20 +3695,6 @@ angle::Result State::syncVertexArray(const Context *context, Command command)
     return mVertexArray->syncState(context);
 }
 
-angle::Result State::syncProgram(const Context *context, Command command)
-{
-    // There may not be a program if the calling application only uses program pipelines.
-    if (mProgram)
-    {
-        return mProgram->syncState(context);
-    }
-    else if (mProgramPipeline.get())
-    {
-        return mProgramPipeline->syncState(context);
-    }
-    return angle::Result::Continue;
-}
-
 angle::Result State::syncProgramPipelineObject(const Context *context, Command command)
 {
     // If a ProgramPipeline is bound, ensure it is linked.
@@ -3731,21 +3717,8 @@ angle::Result State::syncDirtyObject(const Context *context, GLenum target)
         case GL_DRAW_FRAMEBUFFER:
             localSet.set(state::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
             break;
-        case GL_FRAMEBUFFER:
-            localSet.set(state::DIRTY_OBJECT_READ_FRAMEBUFFER);
-            localSet.set(state::DIRTY_OBJECT_DRAW_FRAMEBUFFER);
-            break;
-        case GL_VERTEX_ARRAY:
-            localSet.set(state::DIRTY_OBJECT_VERTEX_ARRAY);
-            break;
-        case GL_TEXTURE:
-            localSet.set(state::DIRTY_OBJECT_TEXTURES);
-            break;
-        case GL_SAMPLER:
-            localSet.set(state::DIRTY_OBJECT_SAMPLERS);
-            break;
-        case GL_PROGRAM:
-            localSet.set(state::DIRTY_OBJECT_PROGRAM);
+        default:
+            UNREACHABLE();
             break;
     }
 
@@ -3769,9 +3742,6 @@ void State::setObjectDirty(GLenum target)
         case GL_VERTEX_ARRAY:
             mDirtyObjects.set(state::DIRTY_OBJECT_VERTEX_ARRAY);
             break;
-        case GL_PROGRAM:
-            mDirtyObjects.set(state::DIRTY_OBJECT_PROGRAM);
-            break;
         default:
             break;
     }
@@ -3787,11 +3757,10 @@ angle::Result State::installProgramExecutable(const Context *context)
 
     mDirtyBits.set(state::DIRTY_BIT_PROGRAM_EXECUTABLE);
 
-    // Make sure the program is synced before draw, if needed
-    if (mProgram->needsSync())
-    {
-        mDirtyObjects.set(state::DIRTY_OBJECT_PROGRAM);
-    }
+    // Make sure the program binary is cached if needed and not already.  This is automatically done
+    // on program destruction, but is done here anyway to support situations like Android apps that
+    // are typically killed instead of cleanly closed.
+    mProgram->cacheProgramBinaryIfNotAlready(context);
 
     // The bound Program always overrides the ProgramPipeline, so install the executable regardless
     // of whether a program pipeline is bound.
@@ -3860,6 +3829,10 @@ angle::Result State::onExecutableChange(const Context *context)
             mDirtyObjects.set(state::DIRTY_OBJECT_IMAGES_INIT);
         }
     }
+
+    // Mark uniform blocks as _not_ dirty. When an executable changes, the backends should already
+    // reprocess all uniform blocks.  These dirty bits only track what's made dirty afterwards.
+    mDirtyUniformBlocks.reset();
 
     return angle::Result::Continue;
 }
@@ -3963,13 +3936,11 @@ void State::onImageStateChange(const Context *context, size_t unit)
 
 void State::onUniformBufferStateChange(size_t uniformBufferIndex)
 {
-    if (mProgram)
+    if (mExecutable)
     {
-        mProgram->onUniformBufferStateChange(uniformBufferIndex);
-    }
-    else if (mProgramPipeline.get())
-    {
-        mProgramPipeline->onUniformBufferStateChange(uniformBufferIndex);
+        // When a buffer at a given binding changes, set all blocks mapped to it dirty.
+        mDirtyUniformBlocks |=
+            mExecutable->getUniformBufferBlocksMappedToBinding(uniformBufferIndex);
     }
     // This could be represented by a different dirty bit. Using the same one keeps it simple.
     mDirtyBits.set(state::DIRTY_BIT_UNIFORM_BUFFER_BINDINGS);
@@ -3994,7 +3965,5 @@ void State::initializeForCapture(const Context *context)
     Context *mutableContext = const_cast<Context *>(context);
     initialize(mutableContext);
 }
-
-constexpr State::DirtyObjectHandler State::kDirtyObjectHandlers[state::DIRTY_OBJECT_MAX];
 
 }  // namespace gl

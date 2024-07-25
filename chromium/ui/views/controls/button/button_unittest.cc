@@ -26,6 +26,7 @@
 #include "ui/events/test/event_generator.h"
 #include "ui/events/types/event_type.h"
 #include "ui/gfx/geometry/point.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/animation/ink_drop_host.h"
 #include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/animation/test/ink_drop_host_test_api.h"
@@ -940,7 +941,7 @@ TEST_F(ButtonTest, SetTooltipTextNotifiesAccessibilityEvent) {
   EXPECT_EQ(1, counter.GetCount(ax::mojom::Event::kTextChanged));
   EXPECT_EQ(test_tooltip_text, button()->GetTooltipText(gfx::Point()));
   ui::AXNodeData data;
-  button()->GetAccessibleNodeData(&data);
+  button()->GetViewAccessibility().GetAccessibleNodeData(&data);
   const std::string& name =
       data.GetStringAttribute(ax::mojom::StringAttribute::kName);
   EXPECT_EQ(test_tooltip_text, base::ASCIIToUTF16(name));
@@ -948,14 +949,14 @@ TEST_F(ButtonTest, SetTooltipTextNotifiesAccessibilityEvent) {
 
 TEST_F(ButtonTest, AccessibleRole) {
   ui::AXNodeData data;
-  button()->GetAccessibleNodeData(&data);
+  button()->GetViewAccessibility().GetAccessibleNodeData(&data);
   EXPECT_EQ(data.role, ax::mojom::Role::kButton);
   EXPECT_EQ(button()->GetAccessibleRole(), ax::mojom::Role::kButton);
 
   button()->SetAccessibleRole(ax::mojom::Role::kCheckBox);
 
   data = ui::AXNodeData();
-  button()->GetAccessibleNodeData(&data);
+  button()->GetViewAccessibility().GetAccessibleNodeData(&data);
   EXPECT_EQ(data.role, ax::mojom::Role::kCheckBox);
   EXPECT_EQ(button()->GetAccessibleRole(), ax::mojom::Role::kCheckBox);
 }
@@ -970,7 +971,7 @@ TEST_F(ButtonTest, AnchorHighlightSetsHiglight) {
 TEST_F(ButtonTest, AnchorHighlightDestructionClearsHighlight) {
   TestInkDrop* ink_drop = CreateButtonWithInkDrop(false);
 
-  absl::optional<Button::ScopedAnchorHighlight> highlight =
+  std::optional<Button::ScopedAnchorHighlight> highlight =
       button()->AddAnchorHighlight();
   EXPECT_EQ(InkDropState::ACTIVATED, ink_drop->GetTargetInkDropState());
 
@@ -981,9 +982,9 @@ TEST_F(ButtonTest, AnchorHighlightDestructionClearsHighlight) {
 TEST_F(ButtonTest, NestedAnchorHighlights) {
   TestInkDrop* ink_drop = CreateButtonWithInkDrop(false);
 
-  absl::optional<Button::ScopedAnchorHighlight> highlight1 =
+  std::optional<Button::ScopedAnchorHighlight> highlight1 =
       button()->AddAnchorHighlight();
-  absl::optional<Button::ScopedAnchorHighlight> highlight2 =
+  std::optional<Button::ScopedAnchorHighlight> highlight2 =
       button()->AddAnchorHighlight();
 
   EXPECT_EQ(InkDropState::ACTIVATED, ink_drop->GetTargetInkDropState());
@@ -998,9 +999,9 @@ TEST_F(ButtonTest, NestedAnchorHighlights) {
 TEST_F(ButtonTest, OverlappingAnchorHighlights) {
   TestInkDrop* ink_drop = CreateButtonWithInkDrop(false);
 
-  absl::optional<Button::ScopedAnchorHighlight> highlight1 =
+  std::optional<Button::ScopedAnchorHighlight> highlight1 =
       button()->AddAnchorHighlight();
-  absl::optional<Button::ScopedAnchorHighlight> highlight2 =
+  std::optional<Button::ScopedAnchorHighlight> highlight2 =
       button()->AddAnchorHighlight();
 
   EXPECT_EQ(InkDropState::ACTIVATED, ink_drop->GetTargetInkDropState());
@@ -1015,7 +1016,7 @@ TEST_F(ButtonTest, OverlappingAnchorHighlights) {
 TEST_F(ButtonTest, AnchorHighlightsCanOutliveButton) {
   CreateButtonWithInkDrop(false);
 
-  absl::optional<Button::ScopedAnchorHighlight> highlight =
+  std::optional<Button::ScopedAnchorHighlight> highlight =
       button()->AddAnchorHighlight();
 
   // Creating a new button will destroy the old one

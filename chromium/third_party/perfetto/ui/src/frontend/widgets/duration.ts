@@ -23,7 +23,7 @@ import {
   setDurationPrecision,
   TimestampFormat,
   timestampFormat,
-} from '../../common/timestamp_format';
+} from '../../core/timestamp_format';
 import {raf} from '../../core/raf_scheduler';
 import {Anchor} from '../../widgets/anchor';
 import {MenuDivider, MenuItem, PopupMenu2} from '../../widgets/menu';
@@ -38,50 +38,55 @@ interface DurationWidgetAttrs {
 export class DurationWidget implements m.ClassComponent<DurationWidgetAttrs> {
   view({attrs}: m.Vnode<DurationWidgetAttrs>) {
     const {dur} = attrs;
+    if (dur === -1n) {
+      return '(Did not end)';
+    }
     return m(
-        PopupMenu2,
-        {
-          trigger: m(Anchor, renderDuration(dur)),
+      PopupMenu2,
+      {
+        trigger: m(Anchor, renderDuration(dur)),
+      },
+      m(MenuItem, {
+        icon: Icons.Copy,
+        label: `Copy raw value`,
+        onclick: () => {
+          copyToClipboard(dur.toString());
         },
-        m(MenuItem, {
-          icon: Icons.Copy,
-          label: `Copy raw value`,
-          onclick: () => {
-            copyToClipboard(dur.toString());
-          },
-        }),
-        m(
-            MenuItem,
-            {
-              label: 'Set time format',
-            },
-            menuItemForFormat(TimestampFormat.Timecode, 'Timecode'),
-            menuItemForFormat(TimestampFormat.UTC, 'Realtime (UTC)'),
-            menuItemForFormat(TimestampFormat.TraceTz, 'Realtime (Trace TZ)'),
-            menuItemForFormat(TimestampFormat.Seconds, 'Seconds'),
-            menuItemForFormat(TimestampFormat.Raw, 'Raw'),
-            menuItemForFormat(
-                TimestampFormat.RawLocale,
-                'Raw (with locale-specific formatting)'),
-            ),
-        m(
-            MenuItem,
-            {
-              label: 'Duration precision',
-              disabled: !durationPrecisionHasEffect(),
-              title: 'Not configurable with current time format',
-            },
-            menuItemForPrecision(DurationPrecision.Full, 'Full'),
-            menuItemForPrecision(
-                DurationPrecision.HumanReadable, 'Human readable'),
-            ),
-        attrs.extraMenuItems ? [m(MenuDivider), attrs.extraMenuItems] : null,
+      }),
+      m(
+        MenuItem,
+        {
+          label: 'Set time format',
+        },
+        menuItemForFormat(TimestampFormat.Timecode, 'Timecode'),
+        menuItemForFormat(TimestampFormat.UTC, 'Realtime (UTC)'),
+        menuItemForFormat(TimestampFormat.TraceTz, 'Realtime (Trace TZ)'),
+        menuItemForFormat(TimestampFormat.Seconds, 'Seconds'),
+        menuItemForFormat(TimestampFormat.Raw, 'Raw'),
+        menuItemForFormat(
+          TimestampFormat.RawLocale,
+          'Raw (with locale-specific formatting)',
+        ),
+      ),
+      m(
+        MenuItem,
+        {
+          label: 'Duration precision',
+          disabled: !durationPrecisionHasEffect(),
+          title: 'Not configurable with current time format',
+        },
+        menuItemForPrecision(DurationPrecision.Full, 'Full'),
+        menuItemForPrecision(DurationPrecision.HumanReadable, 'Human readable'),
+      ),
+      attrs.extraMenuItems ? [m(MenuDivider), attrs.extraMenuItems] : null,
     );
   }
 }
 
 function menuItemForPrecision(
-    value: DurationPrecision, label: string): m.Children {
+  value: DurationPrecision,
+  label: string,
+): m.Children {
   return m(MenuItem, {
     label,
     active: value === durationPrecision(),
@@ -102,7 +107,6 @@ function durationPrecisionHasEffect(): boolean {
       return false;
   }
 }
-
 
 export function renderDuration(dur: duration): string {
   const fmt = timestampFormat();

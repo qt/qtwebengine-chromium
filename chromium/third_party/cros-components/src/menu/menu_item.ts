@@ -26,6 +26,11 @@ export type MenuItemTriggeredEvent = CustomEvent<{
   menuItem: MenuItem,
 }>;
 
+// Lit analyzer has stricter types then the actual typesceipt lib types, as such
+// we need to cast our strings to this type before setting aria-has-popup to
+// avoid lit analyzer raising a warning.
+type AriaHasPopupValue = 'false'|'true'|'menu'|'listbox'|'tree'|'grid'|'dialog';
+
 /**
  * A cros compliant menu-item component for use in cros-menu.
  */
@@ -135,6 +140,8 @@ export class MenuItem extends LitElement implements MenuItemType {
 
   /** @nocollapse */
   static override properties = {
+    ariaHasPopup: {type: String, reflect: true, attribute: 'aria-haspopup'},
+    ariaLabel: {type: String, reflect: true, attribute: 'aria-label'},
     headline: {type: String},
     itemStart: {type: String},
     itemEnd: {type: String},
@@ -212,12 +219,17 @@ export class MenuItem extends LitElement implements MenuItemType {
    * dropped since there is no md-menu-item to send the value to. To prevent
    * this we cache these values and set them on first render.
    */
-  protected missedPropertySets: Partial<
-      {selected: boolean, typeaheadText: string, switchSelected: boolean}> = {};
+  protected missedPropertySets: Partial<{
+    selected: boolean,
+    typeaheadText: string,
+    switchSelected: boolean,
+  }> = {};
 
   constructor() {
     super();
 
+    this.ariaHasPopup = 'false';
+    this.ariaLabel = '';
     this.headline = '';
     this.itemStart = '';
     this.itemEnd = '';
@@ -314,6 +326,15 @@ export class MenuItem extends LitElement implements MenuItemType {
     } else {
       crosSwitch.selected = value;
     }
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // All aria properties on button just get proxied down to the real <button>
+    // element, as such we set role to presentation so screenreaders ignore
+    // this component and instead only read aria attributes off the inner
+    // interactive element.
+    this.setAttribute('role', 'presentation');
   }
 
   override disconnectedCallback() {
@@ -423,6 +444,8 @@ export class MenuItem extends LitElement implements MenuItemType {
     }
     return html`
       <md-menu-item
+          aria-haspopup=${(this.ariaHasPopup || 'false') as AriaHasPopupValue}
+          aria-label=${this.ariaLabel ?? ''}
           @close-menu=${(e: CloseMenuEvent) => void this.fireTriggerEvent(e)}
           .keepOpen=${keepOpen}
           .disabled=${this.disabled}

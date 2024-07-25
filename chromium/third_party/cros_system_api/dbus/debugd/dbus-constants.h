@@ -36,6 +36,7 @@ const char kGetLog[] = "GetLog";
 const char kGetAllLogs[] = "GetAllLogs";
 const char kGetFeedbackLogs[] = "GetFeedbackLogs";
 const char kGetFeedbackLogsV3[] = "GetFeedbackLogsV3";
+const char kGetFeedbackBinaryLogs[] = "GetFeedbackBinaryLogs";
 const char kKstaledSetRatio[] = "KstaledSetRatio";
 const char kTestICMP[] = "TestICMP";
 const char kTestICMPWithOptions[] = "TestICMPWithOptions";
@@ -160,11 +161,24 @@ enum FeedbackLogType {
   WIFI_FIRMWARE_DUMPS = 11,
 };
 
+// FeedbackBinaryLogType contains the enum representation of different
+// categories of binary data that can be added to feedback reports.
+enum FeedbackBinaryLogType {
+  WIFI_FIRMWARE_DUMP = 0,
+};
+
 // PrintscanDebugCategories flags. These values must align with those in
 // org.chromium.debug.xml.
 enum PrintscanDebugCategories {
   PrintscanDebugCategory_PRINTING = 0x1,
   PrintscanDebugCategory_SCANNING = 0x2,
+};
+
+// Firmware dump types for firmware dump operations. These values must align
+// with those in org.chromium.debug.xml.
+enum class FirmwareDumpType {
+  ALL = 0,
+  WIFI = 1,
 };
 
 // Debug log keys which should be substituted in the system info dialog.

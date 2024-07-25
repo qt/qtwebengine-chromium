@@ -26,9 +26,9 @@ robolectric_toolchain = "//build/toolchain/android:robolectric_$host_cpu"
 # toolchains. Checking |is_android| here would therefore be too restrictive.
 if (is_android || is_chromeos) {
   import("//build/config/android/channel.gni")
-  import("//build/config/cast.gni")
   import("//build/config/clang/clang.gni")
   import("//build/config/dcheck_always_on.gni")
+  import("//build/config/sanitizers/sanitizers.gni")
   import("//build/toolchain/siso.gni")
   import("//build_overrides/build.gni")
   import("abi.gni")
@@ -68,6 +68,9 @@ if (is_android || is_chromeos) {
     # The default to use for android:minSdkVersion for targets that do
     # not explicitly set it.
     default_min_sdk_version = 26
+    if (is_asan) {
+      default_min_sdk_version = 27
+    }
 
     # Static analysis can be either "on" or "off" or "build_server". This
     # controls how android lint, error-prone, bytecode checks are run. This
@@ -89,6 +92,12 @@ if (is_android || is_chromeos) {
 
   # Our build system no longer supports legacy multidex.
   min_supported_sdk_version = 21
+
+  # ASAN requires O MR1.
+  # https://github.com/google/sanitizers/wiki/AddressSanitizerOnAndroid/01f8df1ac1a447a8475cdfcb03e8b13140042dbd#running-with-wrapsh-recommended
+  if (is_asan) {
+    min_supported_sdk_version = 27
+  }
 
   assert(
       default_min_sdk_version >= min_supported_sdk_version,
@@ -291,6 +300,11 @@ if (is_android || is_chromeos) {
     expectations_failure_dir = "$root_build_dir/failed_expectations"
   }
 
+  if (is_asan) {
+    # Disable lint since increasing min_sdk_version can cause ObsoleteSdkInt warnings.
+    disable_android_lint = true
+  }
+
   # We need a second declare_args block to make sure we are using the overridden
   # value of the arguments set above.
   declare_args() {
@@ -392,10 +406,41 @@ if (is_android || is_chromeos) {
 
   android_sdk_tools_bundle_aapt2 = "${android_sdk_tools_bundle_aapt2_dir}/aapt2"
 
-  # Actions that use java should add this as an input so that they are rebuilt
-  # when the JDK changes.
-  java_path_for_inputs = "//third_party/jdk/current/bin/java.chromium"
+  _common_inputs_for_jre_jdk = [
+    "//third_party/jdk/current/conf/logging.properties",
+    "//third_party/jdk/current/conf/security/java.security",
+    "//third_party/jdk/current/lib/ct.sym",
+    "//third_party/jdk/current/lib/jrt-fs.jar",
+    "//third_party/jdk/current/lib/jvm.cfg",
+    "//third_party/jdk/current/lib/libawt.so",
+    "//third_party/jdk/current/lib/libawt_headless.so",
+    "//third_party/jdk/current/lib/libawt_xawt.so",
+    "//third_party/jdk/current/lib/libjava.so",
+    "//third_party/jdk/current/lib/libjimage.so",
+    "//third_party/jdk/current/lib/libjli.so",
+    "//third_party/jdk/current/lib/libjsvml.so",
+    "//third_party/jdk/current/lib/libmanagement.so",
+    "//third_party/jdk/current/lib/libmanagement_ext.so",
+    "//third_party/jdk/current/lib/libnet.so",
+    "//third_party/jdk/current/lib/libnio.so",
+    "//third_party/jdk/current/lib/libverify.so",
+    "//third_party/jdk/current/lib/libzip.so",
+    "//third_party/jdk/current/lib/modules",
+    "//third_party/jdk/current/lib/server/classes.jsa",
+    "//third_party/jdk/current/lib/server/libjvm.so",
+    "//third_party/jdk/current/lib/tzdb.dat",
+  ]
 
-  # TODO(crbug.com/1426605): Remove.
+  # Actions that use java should add this as inputs so that they are rebuilt
+  # when the JDK changes.
+  java_paths_for_inputs = [
+                            "//third_party/jdk/current/bin/java",
+                            "//third_party/jdk/current/bin/java.chromium",
+                          ] + _common_inputs_for_jre_jdk
+
+  javac_paths_for_inputs =
+      [ "//third_party/jdk/current/bin/javac" ] + _common_inputs_for_jre_jdk
+
+  # TODO(crbug.com/40261378): Remove.
   use_upstream_errorprone_annotations_threadsafe = true
 }

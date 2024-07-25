@@ -38,9 +38,10 @@ base::FilePath GetDownloadsDirectory(content::WebUI* web_ui) {
 }
 
 std::string GetJsonPolicies(content::WebUI* web_ui) {
-  auto client = std::make_unique<policy::ChromePolicyConversionsClient>(
-      web_ui->GetWebContents()->GetBrowserContext());
-  return policy::DictionaryPolicyConversions(std::move(client)).ToJSON();
+  return policy::PolicyConversions(
+             std::make_unique<policy::ChromePolicyConversionsClient>(
+                 web_ui->GetWebContents()->GetBrowserContext()))
+      .ToJSON();
 }
 
 bool WriteTimestampedFile(const base::FilePath& file_path,
@@ -90,7 +91,7 @@ void NetworkLogsMessageHandler::OnStoreLogs(const base::Value::List& list) {
   if (GetBoolOrFalse(options, "systemLogs")) {
     bool scrub_data = GetBoolOrFalse(options, "filterPII");
     system_logs_writer::WriteSystemLogs(
-        out_dir_, scrub_data,
+        Profile::FromWebUI(web_ui()), out_dir_, scrub_data,
         base::BindOnce(&NetworkLogsMessageHandler::OnWriteSystemLogs,
                        weak_factory_.GetWeakPtr(), callback_id,
                        options.Clone()));

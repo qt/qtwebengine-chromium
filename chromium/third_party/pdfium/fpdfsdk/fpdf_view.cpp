@@ -32,9 +32,15 @@
 #include "core/fpdfdoc/cpdf_viewerpreferences.h"
 #include "core/fxcrt/cfx_read_only_span_stream.h"
 #include "core/fxcrt/cfx_timer.h"
+#include "core/fxcrt/check_op.h"
+#include "core/fxcrt/compiler_specific.h"
+#include "core/fxcrt/fx_memcpy_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/numerics/safe_conversions.h"
+#include "core/fxcrt/ptr_util.h"
+#include "core/fxcrt/span.h"
 #include "core/fxcrt/span_util.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/unowned_ptr.h"
@@ -50,14 +56,9 @@
 #include "fpdfsdk/cpdfsdk_renderpage.h"
 #include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/containers/span.h"
-#include "third_party/base/memory/ptr_util.h"
-#include "third_party/base/numerics/safe_conversions.h"
 
 #ifdef PDF_ENABLE_V8
 #include "fxjs/cfx_v8_array_buffer_allocator.h"
-#include "third_party/base/no_destructor.h"
 #endif
 
 #ifdef PDF_ENABLE_XFA
@@ -274,6 +275,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_DestroyLibrary() {
   CPDF_PageModule::Destroy();
   CFX_GEModule::Destroy();
   CFX_Timer::DestroyGlobals();
+  FX_DestroyMemoryAllocators();
 
   g_bLibraryInitialized = false;
 }
@@ -342,21 +344,22 @@ FPDF_LoadMemDocument(const void* data_buf, int size, FPDF_BYTESTRING password) {
   if (size < 0) {
     return nullptr;
   }
-
-  return LoadDocumentImpl(
-      pdfium::MakeRetain<CFX_ReadOnlySpanStream>(pdfium::make_span(
-          static_cast<const uint8_t*>(data_buf), static_cast<size_t>(size))),
-      password);
+  // SAFETY: required from caller.
+  auto data_span = UNSAFE_BUFFERS(pdfium::make_span(
+      static_cast<const uint8_t*>(data_buf), static_cast<size_t>(size)));
+  return LoadDocumentImpl(pdfium::MakeRetain<CFX_ReadOnlySpanStream>(data_span),
+                          password);
 }
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadMemDocument64(const void* data_buf,
                        size_t size,
                        FPDF_BYTESTRING password) {
-  return LoadDocumentImpl(
-      pdfium::MakeRetain<CFX_ReadOnlySpanStream>(
-          pdfium::make_span(static_cast<const uint8_t*>(data_buf), size)),
-      password);
+  // SAFETY: required from caller.
+  auto data_span = UNSAFE_BUFFERS(
+      pdfium::make_span(static_cast<const uint8_t*>(data_buf), size));
+  return LoadDocumentImpl(pdfium::MakeRetain<CFX_ReadOnlySpanStream>(data_span),
+                          password);
 }
 
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
@@ -608,9 +611,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPage(HDC dc,
   }
 
   RetainPtr<CFX_DIBitmap> pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  // Create will probably work fine even if it fails here: we will just attach
-  // a zero-sized bitmap to `device`.
-  pBitmap->Create(size_x, size_y, FXDIB_Format::kArgb);
+  CHECK(pBitmap->Create(size_x, size_y, FXDIB_Format::kArgb));
   if (!CFX_DefaultRenderDevice::UseSkiaRenderer()) {
     // Not needed by Skia. Call it for AGG to preserve pre-existing behavior.
     pBitmap->Clear(0x00ffffff);
@@ -839,7 +840,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_DeviceToPage(FPDF_PAGE page,
 
   IPDF_Page* pPage = IPDFPageFromFPDFPage(page);
   const FX_RECT rect(start_x, start_y, start_x + size_x, start_y + size_y);
-  absl::optional<CFX_PointF> pos =
+  std::optional<CFX_PointF> pos =
       pPage->DeviceToPage(rect, rotate, CFX_PointF(device_x, device_y));
   if (!pos.has_value())
     return false;
@@ -865,8 +866,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_PageToDevice(FPDF_PAGE page,
   IPDF_Page* pPage = IPDFPageFromFPDFPage(page);
   const FX_RECT rect(start_x, start_y, start_x + size_x, start_y + size_y);
   CFX_PointF page_point(static_cast<float>(page_x), static_cast<float>(page_y));
-  absl::optional<CFX_PointF> pos =
-      pPage->PageToDevice(rect, rotate, page_point);
+  std::optional<CFX_PointF> pos = pPage->PageToDevice(rect, rotate, page_point);
   if (!pos.has_value())
     return false;
 
@@ -1102,11 +1102,13 @@ FPDF_VIEWERREF_GetName(FPDF_DOCUMENT document,
     return 0;
 
   CPDF_ViewerPreferences viewRef(pDoc);
-  absl::optional<ByteString> bsVal = viewRef.GenericName(key);
-  if (!bsVal.has_value())
+  std::optional<ByteString> bsVal = viewRef.GenericName(key);
+  if (!bsVal.has_value()) {
     return 0;
-
-  return NulTerminateMaybeCopyAndReturnLength(bsVal.value(), buffer, length);
+  }
+  // SAFETY: required from caller.
+  return NulTerminateMaybeCopyAndReturnLength(
+      bsVal.value(), UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, length)));
 }
 
 FPDF_EXPORT FPDF_DWORD FPDF_CALLCONV
@@ -1152,8 +1154,11 @@ FPDF_EXPORT const char* FPDF_CALLCONV FPDF_GetRecommendedV8Flags() {
 }
 
 FPDF_EXPORT void* FPDF_CALLCONV FPDF_GetArrayBufferAllocatorSharedInstance() {
-  static pdfium::base::NoDestructor<CFX_V8ArrayBufferAllocator> allocator;
-  return allocator.get();
+  // Deliberately leaked. This allocator is used outside of the library
+  // initialization / destruction lifecycle, and the caller does not take
+  // ownership of the object. Thus there is no existing way to delete this.
+  static auto* s_allocator = new CFX_V8ArrayBufferAllocator();
+  return s_allocator;
 }
 #endif  // PDF_ENABLE_V8
 
@@ -1174,20 +1179,25 @@ FPDF_EXPORT FPDF_RESULT FPDF_CALLCONV FPDF_BStr_Set(FPDF_BSTR* bstr,
     return -1;
 
   if (length == -1)
-    length = pdfium::base::checked_cast<int>(strlen(cstr));
+    length = pdfium::checked_cast<int>(strlen(cstr));
 
   if (length == 0) {
     FPDF_BStr_Clear(bstr);
     return 0;
   }
 
-  if (bstr->str && bstr->len < length)
-    bstr->str = FX_Realloc(char, bstr->str, length + 1);
-  else if (!bstr->str)
+  if (!bstr->str) {
     bstr->str = FX_Alloc(char, length + 1);
+  } else if (bstr->len < length) {
+    bstr->str = FX_Realloc(char, bstr->str, length + 1);
+  }
 
-  bstr->str[length] = 0;
-  memcpy(bstr->str, cstr, length);
+  // SAFETY: only alloc/realloc is performed above and will ensure at least
+  // length + 1 bytes are available.
+  UNSAFE_BUFFERS({
+    bstr->str[length] = 0;
+    FXSYS_memcpy(bstr->str, cstr, length);
+  });
   bstr->len = length;
   return 0;
 }
@@ -1250,7 +1260,7 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
         break;
       i++;
     }
-    wsName = PDF_DecodeText(bsName.raw_span());
+    wsName = PDF_DecodeText(bsName.unsigned_span());
   } else {
     pDestObj = name_tree->LookupValueAndName(index, &wsName);
   }
@@ -1265,11 +1275,14 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
     return nullptr;
 
   ByteString utf16Name = wsName.ToUTF16LE();
-  int len = pdfium::base::checked_cast<int>(utf16Name.GetLength());
+  int len = pdfium::checked_cast<int>(utf16Name.GetLength());
   if (!buffer) {
     *buflen = len;
   } else if (len <= *buflen) {
-    memcpy(buffer, utf16Name.c_str(), len);
+    // SAFETY: required from caller.
+    auto buffer_span =
+        UNSAFE_BUFFERS(pdfium::make_span(static_cast<char*>(buffer), *buflen));
+    fxcrt::spancpy(buffer_span, utf16Name.span());
     *buflen = len;
   } else {
     *buflen = -1;
@@ -1297,11 +1310,13 @@ FPDF_GetXFAPacketName(FPDF_DOCUMENT document,
 
   std::vector<XFAPacket> xfa_packets =
       GetXFAPackets(GetXFAEntryFromDocument(doc));
-  if (static_cast<size_t>(index) >= xfa_packets.size())
+  if (static_cast<size_t>(index) >= xfa_packets.size()) {
     return 0;
-
-  return NulTerminateMaybeCopyAndReturnLength(xfa_packets[index].name, buffer,
-                                              buflen);
+  }
+  // SAFETY: required from caller.
+  return NulTerminateMaybeCopyAndReturnLength(
+      xfa_packets[index].name,
+      UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen)));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -1319,9 +1334,11 @@ FPDF_GetXFAPacketContent(FPDF_DOCUMENT document,
   if (static_cast<size_t>(index) >= xfa_packets.size())
     return false;
 
+  // SAFETY: caller ensures `buffer` points to at least `buflen` bytes.
   *out_buflen = DecodeStreamMaybeCopyAndReturnLength(
       xfa_packets[index].data,
-      {static_cast<uint8_t*>(buffer), static_cast<size_t>(buflen)});
+      UNSAFE_BUFFERS(pdfium::make_span(static_cast<uint8_t*>(buffer),
+                                       static_cast<size_t>(buflen))));
   return true;
 }
 
@@ -1339,8 +1356,9 @@ FPDF_GetTrailerEnds(FPDF_DOCUMENT document,
   const unsigned long trailer_ends_len =
       fxcrt::CollectionSize<unsigned long>(trailer_ends);
   if (buffer && length >= trailer_ends_len) {
-    for (size_t i = 0; i < trailer_ends_len; ++i)
-      buffer[i] = trailer_ends[i];
+    // SAFETY: required from caller.
+    fxcrt::spancpy(UNSAFE_BUFFERS(pdfium::make_span(buffer, length)),
+                   pdfium::make_span(trailer_ends));
   }
 
   return trailer_ends_len;

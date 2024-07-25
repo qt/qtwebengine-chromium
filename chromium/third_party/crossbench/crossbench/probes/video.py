@@ -276,8 +276,6 @@ class VideoProbeContext(ProbeContext[VideoProbe]):
         # Use the decoder timebase.
         "-copytb", "0", \
         *self.probe.VIDEO_QUALITY,
-        # Apple "industry standard" compatible
-        "-tag:v", "hvc1",\
         self.result_path
     )
     if not self.result_path.exists() or self.result_path.stat().st_size == 0:

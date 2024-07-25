@@ -608,8 +608,7 @@ class ImeObserverChromeOS
         extensions::ExtensionRegistry::Get(profile_);
     if (extension_registry) {
       const extensions::Extension* extension =
-          extension_registry->GetExtensionById(
-              extension_id_, extensions::ExtensionRegistry::ENABLED);
+          extension_registry->enabled_extensions().GetByID(extension_id_);
       if (!extension)
         return;
       extensions::ProcessManager* process_manager =
@@ -666,7 +665,7 @@ class ImeObserverChromeOS
   }
 
   // Returns true if there are any listeners on the given event.
-  // TODO(https://crbug.com/835699): Merge this with |ExtensionHasListener|.
+  // TODO(crbug.com/41384866): Merge this with |ExtensionHasListener|.
   bool HasListener(const std::string& event_name) const {
     return extensions::EventRouter::Get(profile_)->HasEventListener(event_name);
   }

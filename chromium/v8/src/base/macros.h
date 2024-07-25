@@ -25,19 +25,21 @@
 
 #define OFFSET_OF(type, field) offsetof(type, field)
 
+// A comma, to be used in macro arguments where it would otherwise be
+// interpreted as separator of arguments.
+#define LITERAL_COMMA ,
+
 // The arraysize(arr) macro returns the # of elements in an array arr.
 // The expression is a compile-time constant, and therefore can be
 // used in defining new arrays, for example.  If you use arraysize on
 // a pointer by mistake, you will get a compile-time error.
 #define arraysize(array) (sizeof(ArraySizeHelper(array)))
 
-
 // This template function declaration is used in defining arraysize.
 // Note that the function doesn't need an implementation, as we only
 // use its type.
 template <typename T, size_t N>
 char (&ArraySizeHelper(T (&array)[N]))[N];
-
 
 #if !V8_CC_MSVC
 // That gcc wants both of these prototypes seems mysterious. VC, for
@@ -427,7 +429,18 @@ bool is_inbounds(float_t v) {
 #define IF_TARGET_ARCH_64_BIT(V, ...) EXPAND(V(__VA_ARGS__))
 #else
 #define IF_TARGET_ARCH_64_BIT(V, ...)
-#endif
+#endif  // V8_TARGET_ARCH_64_BIT
+
+// Defines IF_OFFICIAL_BUILD and IF_NO_OFFICIAL_BUILD, to be used in macro lists
+// for elements that should only be there in official / non-official builds.
+#ifdef OFFICIAL_BUILD
+// EXPAND is needed to work around MSVC's broken __VA_ARGS__ expansion.
+#define IF_OFFICIAL_BUILD(V, ...) EXPAND(V(__VA_ARGS__))
+#define IF_NO_OFFICIAL_BUILD(V, ...)
+#else
+#define IF_OFFICIAL_BUILD(V, ...)
+#define IF_NO_OFFICIAL_BUILD(V, ...) EXPAND(V(__VA_ARGS__))
+#endif  // OFFICIAL_BUILD
 
 #ifdef GOOGLE3
 // Disable FRIEND_TEST macro in Google3.

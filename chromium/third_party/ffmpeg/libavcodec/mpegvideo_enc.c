@@ -39,6 +39,7 @@
 #include "libavutil/internal.h"
 #include "libavutil/intmath.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/thread.h"
@@ -250,7 +251,6 @@ static void update_duplicate_context_after_me(MpegEncContext *dst,
 {
 #define COPY(a) dst->a= src->a
     COPY(pict_type);
-    COPY(current_picture);
     COPY(f_code);
     COPY(b_code);
     COPY(qscale);
@@ -1194,8 +1194,8 @@ static int load_input_picture(MpegEncContext *s, const AVFrame *pic_arg)
             }
 
             for (int i = 0; i < 3; i++) {
-                int src_stride = pic_arg->linesize[i];
-                int dst_stride = i ? s->uvlinesize : s->linesize;
+                ptrdiff_t src_stride = pic_arg->linesize[i];
+                ptrdiff_t dst_stride = i ? s->uvlinesize : s->linesize;
                 int h_shift = i ? s->chroma_x_shift : 0;
                 int v_shift = i ? s->chroma_y_shift : 0;
                 int w = s->width  >> h_shift;
@@ -1213,7 +1213,7 @@ static int load_input_picture(MpegEncContext *s, const AVFrame *pic_arg)
                     dst += INPLACE_OFFSET;
 
                 if (src_stride == dst_stride)
-                    memcpy(dst, src, src_stride * h);
+                    memcpy(dst, src, src_stride * h - src_stride + w);
                 else {
                     int h2 = h;
                     uint8_t *dst2 = dst;

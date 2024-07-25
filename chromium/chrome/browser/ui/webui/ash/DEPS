@@ -1,5 +1,6 @@
 include_rules = [
-  "+ash/system/diagnostics",
+  "+ash/style",
+  "+ash/system",
   "+ash/test",
 
   # Ash depends on views, so allow code in ui/webui/ash to depend on ui/views.

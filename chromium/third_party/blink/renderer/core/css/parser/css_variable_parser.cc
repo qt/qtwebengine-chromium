@@ -5,19 +5,19 @@
 #include "third_party/blink/renderer/core/css/parser/css_variable_parser.h"
 
 #include "base/containers/contains.h"
-#include "third_party/blink/renderer/core/css/css_custom_property_declaration.h"
-#include "third_party/blink/renderer/core/css/css_variable_reference_value.h"
+#include "third_party/blink/renderer/core/css/css_unparsed_declaration_value.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_token_range.h"
 #include "third_party/blink/renderer/core/css/properties/css_parsing_utils.h"
 #include "third_party/blink/renderer/core/css/resolver/style_cascade.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/parser/html_parser_idioms.h"
 
 namespace blink {
 
 namespace {
 
-bool IsValidVariableReference(CSSParserTokenRange);
-bool IsValidEnvVariableReference(CSSParserTokenRange);
+bool IsValidVariableReference(CSSParserTokenRange, const ExecutionContext*);
+bool IsValidEnvVariableReference(CSSParserTokenRange, const ExecutionContext*);
 
 // Checks if a token sequence is a valid <declaration-value> [1],
 // with the additional restriction that any var()/env() functions (if present)
@@ -46,7 +46,8 @@ bool IsValidEnvVariableReference(CSSParserTokenRange);
 // [3] https://github.com/w3c/csswg-drafts/issues/9317
 bool IsValidRestrictedDeclarationValue(CSSParserTokenRange range,
                                        bool& has_references,
-                                       bool& has_positioned_braces) {
+                                       bool& has_positioned_braces,
+                                       const ExecutionContext* context) {
   size_t block_stack_size = 0;
 
   // https://drafts.csswg.org/css-syntax/#component-value
@@ -54,12 +55,10 @@ bool IsValidRestrictedDeclarationValue(CSSParserTokenRange range,
   bool has_top_level_brace = false;
 
   while (!range.AtEnd()) {
-    if (RuntimeEnabledFeatures::CSSNestingIdentEnabled()) {
-      if (block_stack_size == 0 && range.Peek().GetType() != kWhitespaceToken) {
-        ++top_level_component_values;
-        if (range.Peek().GetType() == kLeftBraceToken) {
-          has_top_level_brace = true;
-        }
+    if (block_stack_size == 0 && range.Peek().GetType() != kWhitespaceToken) {
+      ++top_level_component_values;
+      if (range.Peek().GetType() == kLeftBraceToken) {
+        has_top_level_brace = true;
       }
     }
 
@@ -71,14 +70,23 @@ bool IsValidRestrictedDeclarationValue(CSSParserTokenRange range,
       // A block may have both var and env references. They can also be nested
       // and used as fallbacks.
       switch (token.FunctionId()) {
+        case CSSValueID::kInvalid:
+          // Not a built-in function, but it might be a user-defined
+          // CSS function (e.g. --foo()).
+          if (RuntimeEnabledFeatures::CSSFunctionsEnabled() &&
+              token.GetType() == kFunctionToken &&
+              CSSVariableParser::IsValidVariableName(token.Value())) {
+            has_references = true;
+          }
+          break;
         case CSSValueID::kVar:
-          if (!IsValidVariableReference(range.ConsumeBlock())) {
+          if (!IsValidVariableReference(range.ConsumeBlock(), context)) {
             return false;  // Invalid reference.
           }
           has_references = true;
           continue;
         case CSSValueID::kEnv:
-          if (!IsValidEnvVariableReference(range.ConsumeBlock())) {
+          if (!IsValidEnvVariableReference(range.ConsumeBlock(), context)) {
             return false;  // Invalid reference.
           }
           has_references = true;
@@ -118,15 +126,14 @@ bool IsValidRestrictedDeclarationValue(CSSParserTokenRange range,
     }
   }
 
-  if (RuntimeEnabledFeatures::CSSNestingIdentEnabled()) {
-    has_positioned_braces =
-        has_top_level_brace && (top_level_component_values > 1);
-  }
+  has_positioned_braces =
+      has_top_level_brace && (top_level_component_values > 1);
 
   return true;
 }
 
-bool IsValidVariableReference(CSSParserTokenRange range) {
+bool IsValidVariableReference(CSSParserTokenRange range,
+                              const ExecutionContext* context) {
   range.ConsumeWhitespace();
   if (!CSSVariableParser::IsValidVariableName(
           range.ConsumeIncludingWhitespace())) {
@@ -143,10 +150,11 @@ bool IsValidVariableReference(CSSParserTokenRange range) {
   bool has_references = false;
   bool has_positioned_braces = false;
   return IsValidRestrictedDeclarationValue(range, has_references,
-                                           has_positioned_braces);
+                                           has_positioned_braces, context);
 }
 
-bool IsValidEnvVariableReference(CSSParserTokenRange range) {
+bool IsValidEnvVariableReference(CSSParserTokenRange range,
+                                 const ExecutionContext* context) {
   range.ConsumeWhitespace();
   auto token = range.ConsumeIncludingWhitespace();
   if (token.GetType() != CSSParserTokenType::kIdentToken) {
@@ -156,7 +164,7 @@ bool IsValidEnvVariableReference(CSSParserTokenRange range) {
     return true;
   }
 
-  if (RuntimeEnabledFeatures::ViewportSegmentsEnabled()) {
+  if (RuntimeEnabledFeatures::ViewportSegmentsEnabled(context)) {
     // Consume any number of integer values that indicate the indices for a
     // multi-dimensional variable.
     token = range.ConsumeIncludingWhitespace();
@@ -187,16 +195,17 @@ bool IsValidEnvVariableReference(CSSParserTokenRange range) {
   bool has_references = false;
   bool has_positioned_braces = false;
   return IsValidRestrictedDeclarationValue(range, has_references,
-                                           has_positioned_braces);
+                                           has_positioned_braces, context);
 }
 
 bool IsValidVariable(CSSParserTokenRange range,
                      bool& has_references,
-                     bool& has_positioned_braces) {
+                     bool& has_positioned_braces,
+                     const ExecutionContext* context) {
   has_references = false;
   has_positioned_braces = false;
   return IsValidRestrictedDeclarationValue(range, has_references,
-                                           has_positioned_braces);
+                                           has_positioned_braces, context);
 }
 
 CSSValue* ParseCSSWideValue(CSSParserTokenRange range) {
@@ -212,19 +221,20 @@ bool CSSVariableParser::IsValidVariableName(const CSSParserToken& token) {
     return false;
   }
 
-  StringView value = token.Value();
-  return value.length() >= 3 && value[0] == '-' && value[1] == '-';
+  return IsValidVariableName(token.Value());
 }
 
-bool CSSVariableParser::IsValidVariableName(const String& string) {
+bool CSSVariableParser::IsValidVariableName(StringView string) {
   return string.length() >= 3 && string[0] == '-' && string[1] == '-';
 }
 
 bool CSSVariableParser::ContainsValidVariableReferences(
-    CSSParserTokenRange range) {
+    CSSParserTokenRange range,
+    const ExecutionContext* context) {
   bool has_references;
   bool has_positioned_braces;
-  return IsValidVariable(range, has_references, has_positioned_braces) &&
+  return IsValidVariable(range, has_references, has_positioned_braces,
+                         context) &&
          has_references && !has_positioned_braces;
 }
 
@@ -238,7 +248,7 @@ CSSValue* CSSVariableParser::ParseDeclarationIncludingCSSWide(
   return ParseDeclarationValue(tokenized_value, is_animation_tainted, context);
 }
 
-CSSCustomPropertyDeclaration* CSSVariableParser::ParseDeclarationValue(
+CSSUnparsedDeclarationValue* CSSVariableParser::ParseDeclarationValue(
     const CSSTokenizedValue& tokenized_value,
     bool is_animation_tainted,
     const CSSParserContext& context) {
@@ -246,7 +256,8 @@ CSSCustomPropertyDeclaration* CSSVariableParser::ParseDeclarationValue(
   bool has_positioned_braces_ignored;
   // Note that positioned braces are allowed in custom property declarations.
   if (!IsValidVariable(tokenized_value.range, has_references,
-                       has_positioned_braces_ignored)) {
+                       has_positioned_braces_ignored,
+                       context.GetExecutionContext())) {
     return nullptr;
   }
   if (tokenized_value.text.length() > CSSVariableData::kMaxVariableBytes) {
@@ -254,28 +265,29 @@ CSSCustomPropertyDeclaration* CSSVariableParser::ParseDeclarationValue(
   }
 
   StringView text = StripTrailingWhitespaceAndComments(tokenized_value.text);
-  return MakeGarbageCollected<CSSCustomPropertyDeclaration>(
+  return MakeGarbageCollected<CSSUnparsedDeclarationValue>(
       CSSVariableData::Create(CSSTokenizedValue{tokenized_value.range, text},
                               is_animation_tainted, has_references),
       &context);
 }
 
-CSSVariableReferenceValue* CSSVariableParser::ParseUniversalSyntaxValue(
+CSSUnparsedDeclarationValue* CSSVariableParser::ParseUniversalSyntaxValue(
     CSSTokenizedValue value,
     const CSSParserContext& context,
     bool is_animation_tainted) {
   bool has_references;
   bool has_positioned_braces_ignored;
   if (!IsValidVariable(value.range, has_references,
-                       has_positioned_braces_ignored)) {
+                       has_positioned_braces_ignored,
+                       context.GetExecutionContext())) {
     return nullptr;
   }
   if (ParseCSSWideValue(value.range)) {
     return nullptr;
   }
-  return MakeGarbageCollected<CSSVariableReferenceValue>(
+  return MakeGarbageCollected<CSSUnparsedDeclarationValue>(
       CSSVariableData::Create(value, is_animation_tainted, has_references),
-      context);
+      &context);
 }
 
 StringView CSSVariableParser::StripTrailingWhitespaceAndComments(

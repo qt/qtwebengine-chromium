@@ -13,11 +13,11 @@ corresponding attribute on `defaults` that is a `lucicfg.var` that can be used
 to set the default value. Can also be accessed through `ci.defaults`.
 """
 
+load("//project.star", "settings")
 load("./args.star", "args")
 load("./branches.star", "branches")
 load("./builder_config.star", "builder_config")
-load("./builders.star", "builders", "os", "os_category")
-load("//project.star", "settings")
+load("./builders.star", "builders", "os")
 
 defaults = args.defaults(
     extends = builders.defaults,
@@ -89,7 +89,7 @@ def ci_builder(
 
     experiments = experiments or {}
 
-    # TODO(crbug.com/1346781): Remove when the experiment is the default.
+    # TODO(crbug.com/40232671): Remove when the experiment is the default.
     experiments.setdefault("chromium_swarming.expose_merge_script_failures", 100)
 
     try_only_kwargs = [k for k in ("mirrors", "try_settings") if k in kwargs]
@@ -102,6 +102,8 @@ def ci_builder(
         tree_closing_notifiers = args.listify("chromium-tree-closer", "chromium-tree-closer-email", tree_closing_notifiers)
 
         notifies = args.listify(notifies, tree_closing_notifiers)
+    if notifies:
+        kwargs["notifies"] = notifies
 
     merged_resultdb_bigquery_exports = [
         resultdb.export_test_results(
@@ -112,8 +114,9 @@ def ci_builder(
             predicate = resultdb.test_result_predicate(
                 # Only match the telemetry_gpu_integration_test target and its
                 # Fuchsia and Android variants that have a suffix added to the
-                # end. Those are caught with [^/]*.
-                test_id_regexp = "ninja://chrome/test:telemetry_gpu_integration_test[^/]*/.+",
+                # end. Those are caught with [^/]*. The Fuchsia version is in
+                # //content/test since Fuchsia cannot depend on //chrome.
+                test_id_regexp = "ninja://(chrome|content)/test:telemetry_gpu_integration_test[^/]*/.+",
             ),
         ),
         resultdb.export_test_results(
@@ -134,14 +137,6 @@ def ci_builder(
     })
     sheriff_rotations = args.listify(sheriff_rotations, branch_sheriff_rotations)
 
-    goma_enable_ats = defaults.get_value_from_kwargs("goma_enable_ats", kwargs)
-    if goma_enable_ats == args.COMPUTE:
-        os = defaults.get_value_from_kwargs("os", kwargs)
-
-        # in CI, enable ATS on windows.
-        if os and os.category == os_category.WINDOWS:
-            kwargs["goma_enable_ats"] = True
-
     # Define the builder first so that any validation of luci.builder arguments
     # (e.g. bucket) occurs before we try to use it
     builders.builder(
@@ -150,7 +145,6 @@ def ci_builder(
         console_view_entry = console_view_entry,
         resultdb_bigquery_exports = merged_resultdb_bigquery_exports,
         sheriff_rotations = sheriff_rotations,
-        notifies = notifies,
         experiments = experiments,
         resultdb_index_by_timestamp = True,
         **kwargs

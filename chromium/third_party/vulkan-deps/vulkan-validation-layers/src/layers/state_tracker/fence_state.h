@@ -20,6 +20,7 @@
 #pragma once
 
 #include "state_tracker/state_object.h"
+#include "state_tracker/submission_reference.h"
 #include <future>
 #include <mutex>
 
@@ -30,18 +31,12 @@ namespace vvl {
 class Queue;
 class Swapchain;
 
-// References a specific submission on the given queue.
-struct SubmissionLocator {
-    Queue *queue = nullptr;
-    uint64_t seq = kU64Max;
-};
-
 // present-based sync is when a fence from AcquireNextImage is used to synchronize
 // with submissions presented in one of the previous frames.
 // More common scheme is to use QueueSubmit fence for frame synchronization.
 struct PresentSync {
     // Queue submissions that will be notified when WaitForFences is called.
-    small_vector<SubmissionLocator, 2, uint32_t> submissions;
+    small_vector<SubmissionReference, 2, uint32_t> submissions;
 
     // Swapchain associated with this PresentSync.
     std::shared_ptr<vvl::Swapchain> swapchain;
@@ -56,8 +51,8 @@ class Fence : public RefcountedStateObject {
         kExternalPermanent,
     };
     // Default constructor
-    Fence(ValidationStateTracker &dev, VkFence f, const VkFenceCreateInfo *pCreateInfo)
-        : RefcountedStateObject(f, kVulkanObjectTypeFence),
+    Fence(ValidationStateTracker &dev, VkFence handle, const VkFenceCreateInfo *pCreateInfo)
+        : RefcountedStateObject(handle, kVulkanObjectTypeFence),
           flags(pCreateInfo->flags),
           exportHandleTypes(GetExportHandleTypes(pCreateInfo)),
           state_((pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? kRetired : kUnsignaled),
@@ -90,6 +85,12 @@ class Fence : public RefcountedStateObject {
 
     enum State State() const { return state_; }
     enum Scope Scope() const { return scope_; }
+
+    // used to catch if GetFence() is called multiple times
+    bool HasImportedHandleType() const {
+        auto guard = ReadLock();
+        return imported_handle_type_.has_value();
+    }
 
     VkExternalFenceHandleTypeFlagBits ImportedHandleType() const {
         auto guard = ReadLock();

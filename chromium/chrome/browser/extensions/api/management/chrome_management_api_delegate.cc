@@ -47,7 +47,6 @@
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "components/favicon/core/favicon_service.h"
 #include "components/services/app_service/public/cpp/app_launch_util.h"
-#include "components/supervised_user/core/common/buildflags.h"
 #include "components/webapps/browser/install_result_code.h"
 #include "components/webapps/browser/installable/installable_manager.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
@@ -59,8 +58,10 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/supervised_user_extensions_delegate.h"
 #include "extensions/common/api/management.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_id.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
@@ -235,16 +236,17 @@ class ChromeAppForLinkDelegate : public extensions::AppForLinkDelegate {
     auto* provider = web_app::WebAppProvider::GetForWebApps(
         Profile::FromBrowserContext(context));
 
-    provider->scheduler().InstallFromInfo(
+    provider->scheduler().InstallFromInfoWithParams(
         std::move(web_app_info),
         /*overwrite_existing_manifest_fields=*/false,
         webapps::WebappInstallSource::MANAGEMENT_API,
         base::BindOnce(OnGenerateAppForLinkCompleted,
-                       base::RetainedRef(function)));
+                       base::RetainedRef(function)),
+        web_app::WebAppInstallParams());
   }
 
   extensions::api::management::ExtensionInfo CreateExtensionInfoFromWebApp(
-      const std::string& app_id,
+      const extensions::ExtensionId& app_id,
       content::BrowserContext* context) override {
     auto* provider = web_app::WebAppProvider::GetForWebApps(
         Profile::FromBrowserContext(context));
@@ -291,6 +293,7 @@ class ChromeAppForLinkDelegate : public extensions::AppForLinkDelegate {
       case web_app::DisplayMode::kWindowControlsOverlay:
       case web_app::DisplayMode::kTabbed:
       case web_app::DisplayMode::kBorderless:
+      case web_app::DisplayMode::kPictureInPicture:
       case web_app::DisplayMode::kUndefined:
         info.launch_type = extensions::api::management::LaunchType::kNone;
         break;
@@ -306,7 +309,7 @@ class ChromeAppForLinkDelegate : public extensions::AppForLinkDelegate {
 void LaunchWebApp(const webapps::AppId& app_id, Profile* profile) {
   // Look at prefs to find the right launch container. If the user has not set a
   // preference, the default launch value will be returned.
-  // TODO(crbug.com/1003602): Make AppLaunchParams launch container Optional or
+  // TODO(crbug.com/40098656): Make AppLaunchParams launch container Optional or
   // add a "default" launch container enum value.
   auto* provider = web_app::WebAppProvider::GetForWebApps(profile);
   DCHECK(provider);
@@ -374,7 +377,6 @@ void OnWebAppInstallabilityChecked(
   NOTREACHED();
 }
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 extensions::SupervisedUserExtensionsDelegate*
 GetSupervisedUserExtensionsDelegateFromContext(
     content::BrowserContext* context) {
@@ -386,8 +388,6 @@ GetSupervisedUserExtensionsDelegateFromContext(
   CHECK(supervised_user_extensions_delegate);
   return supervised_user_extensions_delegate;
 }
-#endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
-
 }  // namespace
 
 ChromeManagementAPIDelegate::ChromeManagementAPIDelegate() = default;
@@ -400,13 +400,12 @@ bool ChromeManagementAPIDelegate::LaunchAppFunctionDelegate(
   // Look at prefs to find the right launch container.
   // If the user has not set a preference, the default launch value will be
   // returned.
-  // TODO(crbug.com/1003602): Make AppLaunchParams launch container Optional or
+  // TODO(crbug.com/40098656): Make AppLaunchParams launch container Optional or
   // add a "default" launch container enum value.
   apps::LaunchContainer launch_container =
       GetLaunchContainer(extensions::ExtensionPrefs::Get(context), extension);
   Profile* profile = Profile::FromBrowserContext(context);
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
-    BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   if (extensions::IsExtensionUnsupportedDeprecatedApp(profile,
                                                       extension->id())) {
     return false;
@@ -556,21 +555,18 @@ void ChromeManagementAPIDelegate::InstallOrLaunchReplacementWebApp(
 
 void ChromeManagementAPIDelegate::EnableExtension(
     content::BrowserContext* context,
-    const std::string& extension_id) const {
+    const extensions::ExtensionId& extension_id) const {
   const extensions::Extension* extension =
       extensions::ExtensionRegistry::Get(context)->GetExtensionById(
           extension_id, extensions::ExtensionRegistry::EVERYTHING);
+  // The extension must exist as this method is invoked on enabling an extension
+  // from the extensions management page (see `ManagementSetEnabledFunction`).
+  CHECK(extension);
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-  // We add approval for the extension here under the assumption that prior
-  // to this point, the supervised child user has already been prompted
-  // for, and received parent permission to install the extension.
   extensions::SupervisedUserExtensionsDelegate* extensions_delegate =
       GetSupervisedUserExtensionsDelegateFromContext(context);
-
-  extensions_delegate->AddExtensionApproval(*extension);
+  extensions_delegate->MaybeRecordPermissionsIncreaseMetrics(*extension);
   extensions_delegate->RecordExtensionEnablementUmaMetrics(/*enabled=*/true);
-#endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
 
   // If the extension was disabled for a permissions increase, the Management
   // API will have displayed a re-enable prompt to the user, so we know it's
@@ -583,13 +579,11 @@ void ChromeManagementAPIDelegate::EnableExtension(
 void ChromeManagementAPIDelegate::DisableExtension(
     content::BrowserContext* context,
     const extensions::Extension* source_extension,
-    const std::string& extension_id,
+    const extensions::ExtensionId& extension_id,
     extensions::disable_reason::DisableReason disable_reason) const {
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
   extensions::SupervisedUserExtensionsDelegate* extensions_delegate =
       GetSupervisedUserExtensionsDelegateFromContext(context);
   extensions_delegate->RecordExtensionEnablementUmaMetrics(/*enabled=*/false);
-#endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
   extensions::ExtensionSystem::Get(context)
       ->extension_service()
       ->DisableExtensionWithSource(source_extension, extension_id,
@@ -598,7 +592,7 @@ void ChromeManagementAPIDelegate::DisableExtension(
 
 bool ChromeManagementAPIDelegate::UninstallExtension(
     content::BrowserContext* context,
-    const std::string& transient_extension_id,
+    const extensions::ExtensionId& transient_extension_id,
     extensions::UninstallReason reason,
     std::u16string* error) const {
   return extensions::ExtensionSystem::Get(context)
@@ -608,7 +602,7 @@ bool ChromeManagementAPIDelegate::UninstallExtension(
 
 void ChromeManagementAPIDelegate::SetLaunchType(
     content::BrowserContext* context,
-    const std::string& extension_id,
+    const extensions::ExtensionId& extension_id,
     extensions::LaunchType launch_type) const {
   extensions::SetLaunchType(context, extension_id, launch_type);
 }
@@ -616,7 +610,7 @@ void ChromeManagementAPIDelegate::SetLaunchType(
 GURL ChromeManagementAPIDelegate::GetIconURL(
     const extensions::Extension* extension,
     int icon_size,
-    ExtensionIconSet::MatchType match,
+    ExtensionIconSet::Match match,
     bool grayscale) const {
   return extensions::ExtensionIconSource::GetIconURL(extension, icon_size,
                                                      match, grayscale);

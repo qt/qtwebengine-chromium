@@ -50,6 +50,19 @@ class CORE_EXPORT HTMLDataListElement final : public HTMLElement {
 
   void OptionElementChildrenChanged();
 
+  HTMLSelectElement* ParentSelect() const;
+  Node::InsertionNotificationRequest InsertedInto(ContainerNode&) override;
+  void RemovedFrom(ContainerNode&) override;
+
+  void ShowPopoverInternal(Element* invoker,
+                           ExceptionState* exception_state) override;
+  void HidePopoverInternal(HidePopoverFocusBehavior focus_behavior,
+                           HidePopoverTransitionBehavior event_firing,
+                           ExceptionState* exception_state) override;
+
+  void ShowPopoverForSelectElement();
+  void HidePopoverForSelectElement();
+
  private:
   void ChildrenChanged(const ChildrenChange&) override;
   void FinishParsingChildren() override;

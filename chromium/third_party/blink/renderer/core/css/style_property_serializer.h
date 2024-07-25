@@ -29,6 +29,10 @@
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_value_list.h"
 
+namespace WTF {
+class StringBuilder;
+}  // namespace WTF
+
 namespace blink {
 
 class CSSPropertyName;
@@ -71,14 +75,12 @@ class CORE_EXPORT StylePropertySerializer {
   String TimelineValue(const StylePropertyShorthand&) const;
   String ScrollTimelineValue() const;
   String ViewTimelineValue() const;
-  String AlternativeViewTimelineWithInsetValue() const;
-  String AnimationDelayShorthandValue() const;
   String AnimationRangeShorthandValue() const;
   String FontValue() const;
   String FontSynthesisValue() const;
   String FontVariantValue() const;
   bool AppendFontLonghandValueIfNotNormal(const CSSProperty&,
-                                          StringBuilder& result) const;
+                                          WTF::StringBuilder& result) const;
   String OffsetValue() const;
   String TextDecorationValue() const;
   String TextSpacingValue() const;
@@ -86,6 +88,7 @@ class CORE_EXPORT StylePropertySerializer {
   String WhiteSpaceValue() const;
   String ScrollStartValue() const;
   String ScrollStartTargetValue() const;
+  String PositionTryValue() const;
   String GetPropertyText(const CSSPropertyName&,
                          const String& value,
                          bool is_important,
@@ -93,7 +96,7 @@ class CORE_EXPORT StylePropertySerializer {
   bool IsPropertyShorthandAvailable(const StylePropertyShorthand&) const;
   bool ShorthandHasOnlyInitialOrInheritedValue(
       const StylePropertyShorthand&) const;
-  void AppendBackgroundPropertyAsText(StringBuilder& result,
+  void AppendBackgroundPropertyAsText(WTF::StringBuilder& result,
                                       unsigned& num_decls) const;
 
   // This function does checks common to all shorthands, and returns:

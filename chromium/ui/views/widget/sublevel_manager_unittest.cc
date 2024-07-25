@@ -10,11 +10,9 @@
 #include <tuple>
 #include <utility>
 
-#include "base/test/scoped_feature_list.h"
 #include "build/buildflag.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
-#include "ui/views/views_features.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/mac_util.h"
@@ -30,9 +28,7 @@ class SublevelManagerTest : public ViewsTestBase,
                                            WidgetShowType,
                                            Widget::InitParams::Activatable>> {
  public:
-  SublevelManagerTest() {
-    scoped_feature_list_.InitAndEnableFeature(features::kWidgetLayering);
-  }
+  SublevelManagerTest() = default;
 
   void SetUp() override {
     set_native_widget_type(
@@ -96,9 +92,6 @@ class SublevelManagerTest : public ViewsTestBase,
     }
     return test_name;
   }
-
- protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 // Widgets should be stacked according to their sublevel regardless
@@ -133,7 +126,7 @@ TEST_P(SublevelManagerTest, EnsureSublevel) {
 }
 
 // Level should takes precedence over sublevel.
-// TODO(crbug.com/1358586): disabled because currently non-desktop widgets
+// TODO(crbug.com/40237029): disabled because currently non-desktop widgets
 // ignore z-order level (except on ash) and we don't have a reliable way to
 // test desktop widgets.
 TEST_P(SublevelManagerTest, DISABLED_LevelSupersedeSublevel) {
@@ -314,7 +307,7 @@ TEST_P(SublevelManagerTest, SkipInvisibleWidget) {
                                                      children[1].get()));
 }
 
-// TODO(crbug.com/1333445): We should also test NativeWidgetType::kDesktop,
+// TODO(crbug.com/40227915): We should also test NativeWidgetType::kDesktop,
 // but currently IsWindowStackedAbove() does not work for desktop widgets.
 INSTANTIATE_TEST_SUITE_P(
     ,

@@ -16,8 +16,10 @@
 
 namespace skgpu::graphite {
 
+class VulkanBuffer;
 class VulkanResourceProvider;
 class VulkanSharedContext;
+class VulkanTexture;
 class Buffer;
 
 class VulkanCommandBuffer final : public CommandBuffer {
@@ -117,7 +119,7 @@ private:
 
     // TODO: The virtuals in this class have not yet been implemented as we still haven't
     // implemented the objects they use.
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     bool onCopyBufferToBuffer(const Buffer* srcBuffer,
                               size_t srcOffset,
@@ -158,6 +160,18 @@ private:
     // given viewport. The resource provider is responsible for finding a suitable buffer and
     // managing its lifetime.
     void updateRtAdjustUniform(const SkRect& viewport);
+
+    bool updateLoadMSAAVertexBuffer();
+    bool loadMSAAFromResolve(const RenderPassDesc&,
+                             VulkanTexture& resolveTexture,
+                             SkISize dstDimensions);
+    bool updateAndBindLoadMSAAInputAttachment(const VulkanTexture& resolveTexture);
+    void updateBuffer(const VulkanBuffer* buffer,
+                      const void* data,
+                      size_t dataSize,
+                      size_t dstOffset = 0);
+    void nextSubpass();
+    void setViewport(const SkRect& viewport);
 
     VkCommandPool fPool;
     VkCommandBuffer fPrimaryCommandBuffer;

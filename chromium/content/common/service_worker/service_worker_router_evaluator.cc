@@ -13,6 +13,8 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "services/network/public/cpp/request_destination.h"
 #include "services/network/public/cpp/request_mode.h"
 #include "third_party/blink/public/common/service_worker/service_worker_router_rule.h"
@@ -24,6 +26,7 @@
 namespace {
 
 class BaseCondition;
+class NotCondition;
 class OrCondition;
 class ConditionObject;
 
@@ -56,7 +59,12 @@ void RecordMatchedSourceType(
       "ServiceWorker.RouterEvaluator.MatchedFirstSourceType", sources[0].type);
 }
 
-// TODO(crbug.com/1371756): consolidate code with blink::url_pattern.
+void RecordEvaluationTime(base::TimeDelta duration) {
+  base::UmaHistogramMicrosecondsTimes(
+      "ServiceWorker.RouterEvaluator.EvaluationTime", duration);
+}
+
+// TODO(crbug.com/40241479): consolidate code with blink::url_pattern.
 //
 // The type and method come form
 // third_party/blink/renderer/core/url_pattern/url_pattern_component.{h,cc}.
@@ -88,7 +96,7 @@ GetOptionsAndSegmentWildcardRegex(const blink::SafeUrlPattern& url_pattern,
   if (type == URLPatternFieldType::kHostname) {
     options.delimiter_list = ".";
   } else if (type == URLPatternFieldType::kPathname) {
-    // TODO(crbug.com/1371756): follows the original GetOptions behavior.
+    // TODO(crbug.com/40241479): follows the original GetOptions behavior.
     // It sets the following delimiters for some limited protocols.
     options.delimiter_list = "/";
     options.prefix_list = "/";
@@ -186,11 +194,17 @@ base::Value OrConditionToValue(
   return base::Value(std::move(ret));
 }
 
+base::Value NotConditionToValue(
+    const blink::ServiceWorkerRouterNotCondition& not_condition) {
+  CHECK(not_condition.condition);
+  return ConditionToValue(*not_condition.condition);
+}
+
 base::Value ConditionToValue(
     const blink::ServiceWorkerRouterCondition& condition) {
   base::Value::Dict out_c;
-  const auto& [url_pattern, request, running_status, or_condition] =
-      condition.get();
+  const auto& [url_pattern, request, running_status, or_condition,
+               not_condition] = condition.get();
   if (url_pattern) {
     base::Value::Dict url_pattern_value;
 #define TO_VALUE(type, type_name)                            \
@@ -219,6 +233,9 @@ base::Value ConditionToValue(
   if (or_condition) {
     out_c.Set("or", OrConditionToValue(*or_condition));
   }
+  if (not_condition) {
+    out_c.Set("not", NotConditionToValue(*not_condition));
+  }
   return base::Value(std::move(out_c));
 }
 
@@ -229,32 +246,32 @@ bool IsValidSources(
     RecordSetupError(ServiceWorkerRouterEvaluatorErrorEnums::kEmptySource);
     return false;
   }
-  // TODO(crbug.com/1371756): support other sources in the future.
+  // TODO(crbug.com/40241479): support other sources in the future.
   // Currently, only network source is supported.
   for (const auto& s : sources) {
     switch (s.type) {
-      case blink::ServiceWorkerRouterSource::Type::kNetwork:
+      case network::mojom::ServiceWorkerRouterSourceType::kNetwork:
         if (!s.network_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
           return false;
         }
         break;
-      case blink::ServiceWorkerRouterSource::Type::kRace:
+      case network::mojom::ServiceWorkerRouterSourceType::kRace:
         if (!s.race_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
           return false;
         }
         break;
-      case blink::ServiceWorkerRouterSource::Type::kFetchEvent:
+      case network::mojom::ServiceWorkerRouterSourceType::kFetchEvent:
         if (!s.fetch_event_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
           return false;
         }
         break;
-      case blink::ServiceWorkerRouterSource::Type::kCache:
+      case network::mojom::ServiceWorkerRouterSourceType::kCache:
         if (!s.cache_source) {
           RecordSetupError(
               ServiceWorkerRouterEvaluatorErrorEnums::kInvalidSource);
@@ -275,15 +292,52 @@ bool IsValidSources(
   const auto& or_condition =
       std::get<const std::optional<blink::ServiceWorkerRouterOrCondition>&>(
           condition.get());
-  if (!or_condition) {
-    return false;
+  if (or_condition) {
+    for (const auto& c : or_condition->conditions) {
+      if (ExceedsMaxConditionDepth(c, depth + 1)) {
+        return true;
+      }
+    }
   }
-  for (const auto& c : or_condition->conditions) {
-    if (ExceedsMaxConditionDepth(c, depth + 1)) {
+  const auto& not_condition =
+      std::get<const std::optional<blink::ServiceWorkerRouterNotCondition>&>(
+          condition.get());
+  if (not_condition) {
+    CHECK(not_condition->condition);
+    if (ExceedsMaxConditionDepth(*not_condition->condition, depth + 1)) {
       return true;
     }
   }
   return false;
+}
+
+void UpdateMaxConditionDepthAndWidth(
+    const blink::ServiceWorkerRouterCondition& condition,
+    size_t& max_depth,
+    size_t& max_width,
+    size_t depth = 0) {
+  const auto& or_condition =
+      std::get<const std::optional<blink::ServiceWorkerRouterOrCondition>&>(
+          condition.get());
+  if (or_condition) {
+    max_width = std::max(max_width, or_condition->conditions.size());
+    for (const auto& c : or_condition->conditions) {
+      UpdateMaxConditionDepthAndWidth(c, max_depth, max_width, depth + 1);
+    }
+    // Or and other conditions are mutual exclusive.
+    return;
+  }
+  const auto& not_condition =
+      std::get<const std::optional<blink::ServiceWorkerRouterNotCondition>&>(
+          condition.get());
+  if (not_condition) {
+    CHECK(not_condition->condition);
+    UpdateMaxConditionDepthAndWidth(*not_condition->condition, max_depth,
+                                    max_width, depth + 1);
+    // Not and other conditions are mutual exclusive.
+    return;
+  }
+  max_depth = std::max(max_depth, depth);
 }
 
 bool MatchRequestCondition(
@@ -353,13 +407,14 @@ bool BaseCondition::Set(const blink::ServiceWorkerRouterCondition& condition) {
     RecordSetupError(ServiceWorkerRouterEvaluatorErrorEnums::kEmptyCondition);
     return false;
   }
-  const auto& [url_pattern, request, running_status, or_condition] =
-      condition.get();
+  const auto& [url_pattern, request, running_status, or_condition,
+               not_condition] = condition.get();
 
   CHECK(!or_condition);
+  CHECK(!not_condition);
 
   non_url_pattern_condition_ = {std::nullopt, request, running_status,
-                                std::nullopt};
+                                std::nullopt, std::nullopt};
   if (running_status) {
     need_running_status_ = true;
   }
@@ -386,7 +441,7 @@ bool BaseCondition::Set(const blink::ServiceWorkerRouterCondition& condition) {
     SET_PATTERN(hash, URLPatternFieldType::kHash);
 #undef SET_PATTERN
     has_url_pattern_ = true;
-    // TODO(crbug.com/1371756): consider fast path on empty parts and "*".
+    // TODO(crbug.com/40241479): consider fast path on empty parts and "*".
     // Currently, regular expressions are executed even for empty parts cases,
     // which try to match inputs with "^$".  It is also executed for "*".
     // If performance to evaluate regular expressions matter, fast path can
@@ -430,9 +485,10 @@ bool BaseCondition::MatchNonUrlPatternConditions(
     const network::ResourceRequest& request,
     std::optional<blink::EmbeddedWorkerStatus> running_status) const {
   const auto& [url_pattern, request_pattern, running_status_pattern,
-               or_condition] = non_url_pattern_condition_.get();
+               or_condition, not_condition] = non_url_pattern_condition_.get();
   CHECK(!url_pattern);
   CHECK(!or_condition);
+  CHECK(!not_condition);
   if (request_pattern && !MatchRequestCondition(*request_pattern, request)) {
     return false;
   }
@@ -467,6 +523,31 @@ class OrCondition {
   bool need_running_status_ = false;
 };
 
+class NotCondition {
+ public:
+  NotCondition() = default;
+  // Not copyable
+  NotCondition(const NotCondition&) = delete;
+  // Movable
+  NotCondition(NotCondition&&) = default;
+  NotCondition& operator=(NotCondition&&) = default;
+  // Returns true on success. Otherwise, false.
+  bool Set(
+      const std::unique_ptr<blink::ServiceWorkerRouterCondition>& condition);
+  bool Match(const network::ResourceRequest& request,
+             std::optional<blink::EmbeddedWorkerStatus> running_status) const;
+  bool need_running_status() const { return need_running_status_; }
+
+ private:
+  bool MatchUrlPatternConditions(const network::ResourceRequest& request) const;
+  bool MatchNonUrlPatternConditions(
+      const network::ResourceRequest& request,
+      std::optional<blink::EmbeddedWorkerStatus> running_status) const;
+
+  std::unique_ptr<ConditionObject> condition_;
+  bool need_running_status_ = false;
+};
+
 class ConditionObject {
  public:
   // Returns true on success. Otherwise, false.
@@ -476,6 +557,7 @@ class ConditionObject {
           ServiceWorkerRouterEvaluatorErrorEnums::kInvalidCondition);
       return false;
     }
+
     const auto& or_condition =
         std::get<const std::optional<blink::ServiceWorkerRouterOrCondition>&>(
             condition.get());
@@ -484,7 +566,20 @@ class ConditionObject {
       bool success = v.Set(or_condition->conditions);
       value_ = std::move(v);
       return success;
-    } else {
+    }
+
+    const auto& not_condition =
+        std::get<const std::optional<blink::ServiceWorkerRouterNotCondition>&>(
+            condition.get());
+    if (not_condition) {
+      NotCondition v;
+      bool success = v.Set(not_condition->condition);
+      value_ = std::move(v);
+      return success;
+    }
+
+    // Neither the not condition nor the or condition.
+    {
       BaseCondition v;
       bool success = v.Set(condition);
       value_ = std::move(v);
@@ -506,7 +601,7 @@ class ConditionObject {
   }
 
  private:
-  absl::variant<BaseCondition, OrCondition> value_;
+  absl::variant<BaseCondition, OrCondition, NotCondition> value_;
 };
 
 bool OrCondition::Set(
@@ -534,6 +629,27 @@ bool OrCondition::Match(
     }
   }
   return false;
+}
+
+bool NotCondition::Set(
+    const std::unique_ptr<blink::ServiceWorkerRouterCondition>& condition) {
+  if (!condition) {
+    return false;
+  }
+
+  condition_ = std::make_unique<ConditionObject>();
+  if (!condition_->Set(*condition)) {
+    condition_.reset();
+    return false;
+  }
+  need_running_status_ = condition_->need_running_status();
+  return true;
+}
+
+bool NotCondition::Match(
+    const network::ResourceRequest& request,
+    std::optional<blink::EmbeddedWorkerStatus> running_status) const {
+  return !condition_->Match(request, running_status);
 }
 
 }  // namespace
@@ -607,6 +723,13 @@ void ServiceWorkerRouterEvaluator::Compile() {
       return;
     }
     need_running_status_ |= rule->need_running_status();
+    for (const auto& s : r.sources) {
+      bool has_fetch_event =
+          (s.type ==
+           network::mojom::ServiceWorkerRouterSourceType::kFetchEvent);
+      has_fetch_event_source_ |= has_fetch_event;
+      has_non_fetch_event_source_ |= !has_fetch_event;
+    }
     compiled_rules_.emplace_back(std::move(rule));
   }
   RecordSetupError(ServiceWorkerRouterEvaluatorErrorEnums::kNoError);
@@ -618,9 +741,11 @@ ServiceWorkerRouterEvaluator::EvaluateInternal(
     const network::ResourceRequest& request,
     std::optional<blink::EmbeddedWorkerStatus> running_status) const {
   CHECK(is_valid_);
+  base::ElapsedTimer timer;
   for (const auto& rule : compiled_rules_) {
     if (rule->Match(request, running_status)) {
       VLOG(3) << "matched request url=" << request.url;
+      RecordEvaluationTime(timer.Elapsed());
       RecordMatchedSourceType(rule->sources());
       ServiceWorkerRouterEvaluator::Result result;
       result.id = rule->id();
@@ -629,6 +754,7 @@ ServiceWorkerRouterEvaluator::EvaluateInternal(
     }
   }
   VLOG(3) << "not matched request url=" << request.url;
+  RecordEvaluationTime(timer.Elapsed());
   return std::nullopt;
 }
 
@@ -656,17 +782,18 @@ base::Value ServiceWorkerRouterEvaluator::ToValue() const {
     base::Value::List source;
     for (const auto& s : r.sources) {
       switch (s.type) {
-        case blink::ServiceWorkerRouterSource::Type::kNetwork:
+        case network::mojom::ServiceWorkerRouterSourceType::kNetwork:
           source.Append("network");
           break;
-        case blink::ServiceWorkerRouterSource::Type::kRace:
-          // TODO(crbug.com/1371756): we may need to update the name per target.
+        case network::mojom::ServiceWorkerRouterSourceType::kRace:
+          // TODO(crbug.com/40241479): we may need to update the name per
+          // target.
           source.Append("race-network-and-fetch-handler");
           break;
-        case blink::ServiceWorkerRouterSource::Type::kFetchEvent:
+        case network::mojom::ServiceWorkerRouterSourceType::kFetchEvent:
           source.Append("fetch-event");
           break;
-        case blink::ServiceWorkerRouterSource::Type::kCache:
+        case network::mojom::ServiceWorkerRouterSourceType::kCache:
           if (s.cache_source->cache_name) {
             base::Value::Dict out_s;
             out_s.Set("cache_name", *s.cache_source->cache_name);
@@ -689,6 +816,26 @@ std::string ServiceWorkerRouterEvaluator::ToString() const {
   std::string json;
   base::JSONWriter::Write(ToValue(), &json);
   return json;
+}
+
+void ServiceWorkerRouterEvaluator::RecordRouterRuleInfo() const {
+  base::UmaHistogramCounts1000("ServiceWorker.RouterEvaluator.RuleCount",
+                               compiled_rules_.size());
+  size_t depth, width;
+  std::tie(depth, width) = GetMaxDepthAndWidth();
+  base::UmaHistogramCounts1000("ServiceWorker.RouterEvaluator.ConditionDepth",
+                               depth);
+  base::UmaHistogramCounts1000("ServiceWorker.RouterEvaluator.OrConditionWidth",
+                               width);
+}
+
+std::tuple<size_t, size_t> ServiceWorkerRouterEvaluator::GetMaxDepthAndWidth()
+    const {
+  size_t depth = 0, width = 0;
+  for (const auto& r : rules_.rules) {
+    UpdateMaxConditionDepthAndWidth(r.condition, depth, width);
+  }
+  return {depth, width};
 }
 
 }  // namespace content

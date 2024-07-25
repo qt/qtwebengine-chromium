@@ -90,7 +90,6 @@ component("clipboard") {
   sources = [
     "clipboard.cc",
     "clipboard.h",
-    "clipboard_content_type.h",
     "clipboard_metrics.cc",
     "clipboard_metrics.h",
     "clipboard_monitor.cc",
@@ -179,7 +178,7 @@ component("clipboard") {
   }
 
   if (is_android) {
-    deps += [ "//ui/base:ui_base_jni_headers" ]
+    deps += [ "//ui/base:clipboard_jni_headers" ]
   }
 
   if (is_mac) {

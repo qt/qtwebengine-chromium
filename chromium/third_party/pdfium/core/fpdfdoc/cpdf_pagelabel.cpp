@@ -4,6 +4,11 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fpdfdoc/cpdf_pagelabel.h"
 
 #include <utility>
@@ -81,20 +86,20 @@ CPDF_PageLabel::CPDF_PageLabel(CPDF_Document* pDocument)
 
 CPDF_PageLabel::~CPDF_PageLabel() = default;
 
-absl::optional<WideString> CPDF_PageLabel::GetLabel(int nPage) const {
+std::optional<WideString> CPDF_PageLabel::GetLabel(int nPage) const {
   if (!m_pDocument)
-    return absl::nullopt;
+    return std::nullopt;
 
   if (nPage < 0 || nPage >= m_pDocument->GetPageCount())
-    return absl::nullopt;
+    return std::nullopt;
 
   const CPDF_Dictionary* pPDFRoot = m_pDocument->GetRoot();
   if (!pPDFRoot)
-    return absl::nullopt;
+    return std::nullopt;
 
   RetainPtr<const CPDF_Dictionary> pLabels = pPDFRoot->GetDictFor("PageLabels");
   if (!pLabels)
-    return absl::nullopt;
+    return std::nullopt;
 
   CPDF_NumberTree numberTree(std::move(pLabels));
   RetainPtr<const CPDF_Object> pValue;

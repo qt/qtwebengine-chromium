@@ -54,7 +54,7 @@ FormData* FormForest::GetFormData(FormGlobalId form, FrameData* frame_data) {
     return nullptr;
   }
   auto it = base::ranges::find(frame_data->child_forms, form.renderer_id,
-                               &FormData::unique_renderer_id);
+                               &FormData::renderer_id);
   return it != frame_data->child_forms.end() ? &*it : nullptr;
 }
 
@@ -63,7 +63,7 @@ FormForest::FrameAndForm FormForest::GetRoot(FormGlobalId form) {
     FrameData* frame = GetFrameData(form.frame_token);
     if (!frame->parent_form) {
       auto it = base::ranges::find(frame->child_forms, form.renderer_id,
-                                   &FormData::unique_renderer_id);
+                                   &FormData::renderer_id);
       CHECK(it != frame->child_forms.end());
       return {raw_ref(*frame), raw_ref(*it)};
     }
@@ -192,8 +192,8 @@ void FormForest::UpdateTreeOfRendererForm(FormData* form,
     *old_form = std::move(*form);
     form = old_form;
   } else {
-    DCHECK(!base::Contains(frame->child_forms, form->unique_renderer_id,
-                           &FormData::unique_renderer_id));
+    DCHECK(!base::Contains(frame->child_forms, form->renderer_id,
+                           &FormData::renderer_id));
     form->fields = {};
     child_frames_changed = false;
     frame->child_forms.push_back(std::move(*form));
@@ -590,8 +590,8 @@ FormForest::RendererForms FormForest::GetRendererFormsOfBrowserForm(
           };
       const url::Origin& main_origin = browser_form.main_frame_origin;
       return security_options.all_origins_are_trusted() ||
-             field.origin == security_options.triggered_origin() ||
-             (field.origin == main_origin &&
+             field.origin() == security_options.triggered_origin() ||
+             (field.origin() == main_origin &&
               !IsSensitiveFieldType(
                   security_options.GetFieldType(field.global_id())) &&
               HasSharedAutofillPermission(renderer_form->host_frame)) ||
@@ -601,7 +601,7 @@ FormForest::RendererForms FormForest::GetRendererFormsOfBrowserForm(
 
     renderer_form->fields.push_back(browser_field);
     if (!IsSafeToFill(renderer_form->fields.back())) {
-      renderer_form->fields.back().value.clear();
+      renderer_form->fields.back().set_value({});
     } else {
       result.safe_fields.insert(browser_field.global_id());
     }

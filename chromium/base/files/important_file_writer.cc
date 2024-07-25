@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/files/important_file_writer.h"
 
 #include <stddef.h>
@@ -121,7 +126,7 @@ void ImportantFileWriter::ProduceAndWriteStringToFileAtomically(
     OnceCallback<void(bool success)> after_write_callback,
     const std::string& histogram_suffix) {
   // Produce the actual data string on the background sequence.
-  absl::optional<std::string> data =
+  std::optional<std::string> data =
       std::move(data_producer_for_background_sequence).Run();
   if (!data) {
     DLOG(WARNING) << "Failed to serialize data to be saved in " << path.value();
@@ -305,12 +310,12 @@ bool ImportantFileWriter::HasPendingWrite() const {
 void ImportantFileWriter::WriteNow(std::string data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!IsValueInRangeForNumericType<int32_t>(data.length())) {
-    NOTREACHED();
+    NOTREACHED_IN_MIGRATION();
     return;
   }
 
   WriteNowWithBackgroundDataProducer(base::BindOnce(
-      [](std::string data) { return absl::make_optional(std::move(data)); },
+      [](std::string data) { return std::make_optional(std::move(data)); },
       std::move(data)));
 }
 
@@ -331,7 +336,7 @@ void ImportantFileWriter::WriteNowWithBackgroundDataProducer(
     // Posting the task to background message loop is not expected
     // to fail, but if it does, avoid losing data and just hit the disk
     // on the current thread.
-    NOTREACHED();
+    NOTREACHED_IN_MIGRATION();
 
     std::move(split_task.second).Run();
   }
@@ -373,7 +378,7 @@ void ImportantFileWriter::DoScheduledWrite() {
   BackgroundDataProducerCallback data_producer_for_background_sequence;
 
   if (absl::holds_alternative<DataSerializer*>(serializer_)) {
-    absl::optional<std::string> data;
+    std::optional<std::string> data;
     data = absl::get<DataSerializer*>(serializer_)->SerializeData();
     if (!data) {
       DLOG(WARNING) << "Failed to serialize data to be saved in "
@@ -384,7 +389,7 @@ void ImportantFileWriter::DoScheduledWrite() {
 
     previous_data_size_ = data->size();
     data_producer_for_background_sequence = base::BindOnce(
-        [](std::string data) { return absl::make_optional(std::move(data)); },
+        [](std::string data) { return std::make_optional(std::move(data)); },
         std::move(data).value());
   } else {
     data_producer_for_background_sequence =

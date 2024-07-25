@@ -47,8 +47,10 @@ class PromoCardMovePasswordsTest : public ChromeRenderViewHostTestHarness {
   }
 
   void TearDown() override {
-    ChromeRenderViewHostTestHarness::TearDown();
+    fake_sync_service_ = nullptr;
     delegate_ = nullptr;
+    profile_store_ = nullptr;
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   void EnableButter() {
@@ -179,8 +181,5 @@ TEST_F(PromoCardMovePasswordsTest, PromoShownIn7DaysAfterDismiss) {
 
   histogram_tester.ExpectUniqueSample(
       "PasswordManager.PromoCard.Shown",
-      password_manager::PromoCardType::kMovePasswords, 1);
-  histogram_tester.ExpectUniqueSample(
-      "PasswordManager.PromoCard.Dismissed",
       password_manager::PromoCardType::kMovePasswords, 1);
 }

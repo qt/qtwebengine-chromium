@@ -41,20 +41,21 @@ class MockPaymentStateResolver final
   ~MockPaymentStateResolver() override = default;
 
   MOCK_METHOD3(Complete,
-               ScriptPromise(ScriptState*,
-                             PaymentComplete result,
-                             ExceptionState&));
-  MOCK_METHOD3(Retry,
-               ScriptPromise(ScriptState*,
-                             const PaymentValidationErrors* errorFields,
-                             ExceptionState&));
+               ScriptPromise<IDLUndefined>(ScriptState*,
+                                           PaymentComplete result,
+                                           ExceptionState&));
+  MOCK_METHOD3(
+      Retry,
+      ScriptPromise<IDLUndefined>(ScriptState*,
+                                  const PaymentValidationErrors* errorFields,
+                                  ExceptionState&));
 
   void Trace(Visitor* visitor) const override {
     visitor->Trace(dummy_promise_);
   }
 
  private:
-  ScriptPromise dummy_promise_;
+  ScriptPromise<IDLUndefined> dummy_promise_;
 };
 
 TEST(PaymentResponseTest, DataCopiedOver) {
@@ -138,7 +139,6 @@ static v8::Local<v8::ArrayBuffer> GetArrayBuffer(V8TestingScope& scope,
 
 TEST(PaymentResponseTest, PaymentResponseDetailsContainsSpcExtensionsPRF) {
   test::TaskEnvironment task_environment;
-  ScopedSecurePaymentConfirmationExtensionsForTest extensions_flag(true);
   V8TestingScope scope;
   payments::mojom::blink::PaymentResponsePtr input =
       BuildPaymentResponseForTest();
@@ -152,7 +152,7 @@ TEST(PaymentResponseTest, PaymentResponseDetailsContainsSpcExtensionsPRF) {
   input->get_assertion_authenticator_response->extensions->echo_prf = true;
   input->get_assertion_authenticator_response->extensions->prf_results =
       mojom::blink::PRFValues::New(
-          /*id=*/absl::nullopt,
+          /*id=*/std::nullopt,
           /*first=*/WTF::Vector<uint8_t>{1, 2, 3},
           /*second=*/WTF::Vector<uint8_t>{4, 5, 6});
   MockPaymentStateResolver* complete_callback =

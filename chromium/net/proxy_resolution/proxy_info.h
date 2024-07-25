@@ -61,7 +61,7 @@ class NET_EXPORT ProxyInfo {
   // Indicates that the request that uses this proxy config caused a match with
   // the masked domain list.
   // This is a temporary workaround to gather initial metrics for IP Protection.
-  // TODO(1507085): Remove once the experiment is concluded.
+  // TODO(crbug.com/40947771): Remove once the experiment is concluded.
   void set_is_mdl_match(bool is_mdl_match) { is_mdl_match_ = is_mdl_match; }
 
   // Returns true if this proxy info specifies a direct connection.
@@ -77,45 +77,18 @@ class NET_EXPORT ProxyInfo {
     return is_direct() && proxy_list_.size() == 1 && proxy_retry_info_.empty();
   }
 
+  // Return true if there is at least one proxy chain, and at least one proxy
+  // server in that chain matches the given predicate.
+  template <class Predicate>
+  bool AnyProxyInChain(Predicate p) const {
+    if (is_empty()) {
+      return false;
+    }
+    return proxy_chain().AnyProxy(p);
+  }
+
   // Returns true if any of the contained ProxyChains are multi-proxy.
   bool ContainsMultiProxyChain() const;
-
-  // Returns true if the first valid proxy server is an https proxy.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_https() const;
-
-  // Returns true if the first proxy server is an HTTP compatible proxy.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_http_like() const;
-
-  // Returns true if the first proxy server is an HTTP compatible proxy over a
-  // secure connection.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_secure_http_like() const;
-
-  // Returns true if the first valid proxy server is an http proxy.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_http() const;
-
-  // Returns true if the first valid proxy server is a quic proxy.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_quic() const;
-
-  // Returns true if the first valid proxy server is a socks server.
-  // TODO(https://crbug.com/1491092): Remove this method in favor of checking
-  // the corresponding property of the relevant proxy server from the next
-  // proxy chain in the proxy list.
-  bool is_socks() const;
 
   // Returns true if this proxy info has no proxies left to try.
   bool is_empty() const {
@@ -135,7 +108,7 @@ class NET_EXPORT ProxyInfo {
   // Returns true if the request that uses this proxy config caused a match with
   // the masked domain list.
   // This is a temporary workaround to gather initial metrics for IP Protection.
-  // TODO(1507085): Remove once the experiment is concluded.
+  // TODO(crbug.com/40947771): Remove once the experiment is concluded.
   bool is_mdl_match() const { return is_mdl_match_; }
 
   // Returns the first valid proxy chain. is_empty() must be false to be able
@@ -221,7 +194,7 @@ class NET_EXPORT ProxyInfo {
   // Whether the request that uses this proxy config caused a match with the
   // masked domain list.
   // This is a temporary workaround to gather initial metrics for IP Protection.
-  // TODO(1507085): Remove once the experiment is concluded.
+  // TODO(crbug.com/40947771): Remove once the experiment is concluded.
   bool is_mdl_match_ = false;
 
   // How long it took to resolve the proxy.  Times are both null if proxy was

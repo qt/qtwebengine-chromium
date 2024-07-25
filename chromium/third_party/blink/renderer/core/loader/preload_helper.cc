@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/css/parser/sizes_attribute_parser.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/scripted_idle_task_controller.h"
+#include "third_party/blink/renderer/core/execution_context/agent.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -74,6 +75,7 @@ class LoadDictionaryWhenIdleTask final : public IdleTask {
   void Trace(Visitor* visitor) const override {
     visitor->Trace(resource_fetcher_);
     visitor->Trace(pending_preload_);
+    visitor->Trace(fetch_params_);
     IdleTask::Trace(visitor);
   }
 
@@ -328,7 +330,7 @@ void PreloadHelper::PreconnectIfNeeded(
 // served from the cache correctly. Until
 // https://github.com/w3c/preload/issues/97 is resolved and implemented we need
 // to disable these preloads.
-absl::optional<ResourceType> PreloadHelper::GetResourceTypeFromAsAttribute(
+std::optional<ResourceType> PreloadHelper::GetResourceTypeFromAsAttribute(
     const String& as) {
   DCHECK_EQ(as.DeprecatedLower(), as);
   if (as == "image")
@@ -343,7 +345,7 @@ absl::optional<ResourceType> PreloadHelper::GetResourceTypeFromAsAttribute(
     return ResourceType::kFont;
   if (as == "fetch")
     return ResourceType::kRaw;
-  return absl::nullopt;
+  return std::nullopt;
 }
 
 // |base_url| is used in Link HTTP Header based preloads to resolve relative
@@ -361,7 +363,7 @@ void PreloadHelper::PreloadIfNeeded(
   if (!document.Loader() || !params.rel.IsLinkPreload())
     return;
 
-  absl::optional<ResourceType> resource_type =
+  std::optional<ResourceType> resource_type =
       PreloadHelper::GetResourceTypeFromAsAttribute(params.as);
 
   MediaValuesCached* media_values = nullptr;
@@ -413,7 +415,7 @@ void PreloadHelper::PreloadIfNeeded(
 
   if (caller == kLinkCalledFromHeader)
     UseCounter::Count(document, WebFeature::kLinkHeaderPreload);
-  if (resource_type == absl::nullopt) {
+  if (resource_type == std::nullopt) {
     String message;
     if (IsValidButUnsupportedAsAttribute(params.as)) {
       message = String("<link rel=preload> uses an unsupported `as` value");
@@ -624,10 +626,11 @@ void PreloadHelper::ModulePreloadIfNeeded(
   // is specified, or the empty string otherwise." [spec text]
   // |nonce| parameter is the value of the nonce attribute.
 
-  // Step 8. "Let integrity metadata be the value of the integrity attribute, if
+  // Step 9. "Let integrity metadata be the value of the integrity attribute, if
   // it is specified, or the empty string otherwise." [spec text]
   IntegrityMetadataSet integrity_metadata;
-  if (!params.integrity.empty()) {
+  String integrity_value = params.integrity;
+  if (!integrity_value.empty()) {
     SubresourceIntegrity::IntegrityFeatures integrity_features =
         SubresourceIntegrityHelper::GetFeatures(document.GetExecutionContext());
     SubresourceIntegrity::ReportInfo report_info;
@@ -635,26 +638,32 @@ void PreloadHelper::ModulePreloadIfNeeded(
         params.integrity, integrity_features, integrity_metadata, &report_info);
     SubresourceIntegrityHelper::DoReport(*document.GetExecutionContext(),
                                          report_info);
+  } else if (integrity_value.IsNull()) {
+    // Step 10. "If el does not have an integrity attribute, then set integrity
+    // metadata to the result of resolving a module integrity metadata with url
+    // and settings object." [spec text]
+    integrity_value = modulator->GetIntegrityMetadataString(params.href);
+    integrity_metadata = modulator->GetIntegrityMetadata(params.href);
   }
 
-  // Step 9. "Let referrer policy be the current state of the element's
+  // Step 11. "Let referrer policy be the current state of the element's
   // referrerpolicy attribute." [spec text]
   // |referrer_policy| parameter is the value of the referrerpolicy attribute.
 
-  // Step 10. "Let options be a script fetch options whose cryptographic nonce
+  // Step 12. "Let options be a script fetch options whose cryptographic nonce
   // is cryptographic nonce, integrity metadata is integrity metadata, parser
   // metadata is "not-parser-inserted", credentials mode is credentials mode,
   // and referrer policy is referrer policy." [spec text]
   ModuleScriptFetchRequest request(
       params.href, ModuleType::kJavaScript, context_type, destination,
-      ScriptFetchOptions(params.nonce, integrity_metadata, params.integrity,
+      ScriptFetchOptions(params.nonce, integrity_metadata, integrity_value,
                          kNotParserInserted, credentials_mode,
                          params.referrer_policy,
                          mojom::blink::FetchPriorityHint::kAuto,
                          RenderBlockingBehavior::kNonBlocking),
       Referrer::NoReferrer(), TextPosition::MinimumPosition());
 
-  // Step 11. "Fetch a modulepreload module script graph given url, destination,
+  // Step 13. "Fetch a modulepreload module script graph given url, destination,
   // settings object, and options. Wait until the algorithm asynchronously
   // completes with result." [spec text]
   //
@@ -782,7 +791,7 @@ void PreloadHelper::LoadLinksFromHeader(
     if (alternate_resource_info && params.rel.IsLinkPreload()) {
       DCHECK(document);
       KURL url = params.href;
-      absl::optional<ResourceType> resource_type =
+      std::optional<ResourceType> resource_type =
           PreloadHelper::GetResourceTypeFromAsAttribute(params.as);
       if (resource_type == ResourceType::kImage &&
           !params.image_srcset.empty()) {
@@ -935,8 +944,9 @@ Resource* PreloadHelper::StartPreload(ResourceType type,
       params.SetRequestContext(mojom::blink::RequestContextType::SCRIPT);
       params.SetRequestDestination(network::mojom::RequestDestination::kScript);
       resource = ScriptResource::Fetch(
-          params, resource_fetcher, nullptr, ScriptResource::kAllowStreaming,
-          v8_compile_hints_producer, v8_compile_hints_consumer);
+          params, resource_fetcher, nullptr, document.GetAgent().isolate(),
+          ScriptResource::kAllowStreaming, v8_compile_hints_producer,
+          v8_compile_hints_consumer);
       break;
     }
     case ResourceType::kCSSStyleSheet:

@@ -18,8 +18,9 @@ try_.defaults.set(
     os = os.LINUX_DEFAULT,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     reclient_instance = reclient.instance.DEFAULT_UNTRUSTED,
-    reclient_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
+    siso_enabled = True,
+    siso_remote_jobs = reclient.jobs.HIGH_JOBS_FOR_CQ,
 )
 
 consoles.list_view(
@@ -40,7 +41,7 @@ try_.builder(
     gn_args = gn_args.config(
         configs = [
             "ci/android-official",
-            # TODO(crbug.com/1517934): Restore DCHECKs when the build is fixed.
+            # TODO(crbug.com/41490911): Restore DCHECKs when the build is fixed.
             #"dcheck_always_on",
         ],
     ),
@@ -77,7 +78,7 @@ try_.builder(
     cores = None,
     os = os.MAC_ANY,
     cpu = cpu.ARM64,
-    # TODO(crbug.com/1279290) builds with PGO change take long time.
+    # TODO(crbug.com/40208487) builds with PGO change take long time.
     # Keep in sync with mac-official in ci/chromium.star.
     execution_timeout = 15 * time.hour,
 )

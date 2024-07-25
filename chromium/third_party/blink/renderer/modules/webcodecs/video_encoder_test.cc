@@ -105,11 +105,13 @@ MockVideoEncoder* CreateMockEncoder(ScriptState* script_state,
                                                 exception_state);
 }
 
-VideoEncoderInit* CreateInit(v8::Local<v8::Function> output_callback,
-                             v8::Local<v8::Function> error_callback) {
+VideoEncoderInit* CreateInit(ScriptFunction* output_callback,
+                             ScriptFunction* error_callback) {
   auto* init = MakeGarbageCollected<VideoEncoderInit>();
-  init->setOutput(V8EncodedVideoChunkOutputCallback::Create(output_callback));
-  init->setError(V8WebCodecsErrorCallback::Create(error_callback));
+  init->setOutput(
+      V8EncodedVideoChunkOutputCallback::Create(output_callback->V8Function()));
+  init->setError(
+      V8WebCodecsErrorCallback::Create(error_callback->V8Function()));
   return init;
 }
 
@@ -129,7 +131,7 @@ VideoFrame* MakeVideoFrame(ScriptState* script_state,
     return nullptr;
 
   ImageBitmap* image_bitmap = MakeGarbageCollected<ImageBitmap>(
-      image_data, absl::nullopt, ImageBitmapOptions::Create());
+      image_data, std::nullopt, ImageBitmapOptions::Create());
 
   VideoFrameInit* video_frame_init = VideoFrameInit::Create();
   video_frame_init->setTimestamp(timestamp);
@@ -343,12 +345,12 @@ TEST_F(
                 FROM_HERE, WTF::BindOnce(std::move(done_cb),
                                          media::EncoderStatus::Codes::kOk));
             media::VideoEncoderOutput out;
-            out.data = std::make_unique<uint8_t[]>(100);
+            out.data = base::HeapArray<uint8_t>::Uninit(100);
             out.size = 100;
             out.key_frame = true;
             scheduler::GetSequencedTaskRunnerForTesting()->PostTask(
                 FROM_HERE,
-                WTF::BindOnce(*output_cb, std::move(out), absl::nullopt));
+                WTF::BindOnce(*output_cb, std::move(out), std::nullopt));
           })));
 
   EXPECT_CALL(*mock_encoder_metrics_provider, MockIncrementEncodedFrameCount())

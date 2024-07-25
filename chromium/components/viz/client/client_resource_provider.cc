@@ -7,15 +7,14 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/containers/cxx20_erase.h"
 #include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/task/bind_post_task.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "components/viz/common/features.h"
-#include "components/viz/common/gpu/context_provider.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -139,7 +138,7 @@ struct ClientResourceProvider::ImportedResource {
         // If the resource is immediately deleted, it returns the same SyncToken
         // it came with. The client may need to wait on that before deleting the
         // backing or reusing it.
-        returned_sync_token(resource.mailbox_holder.sync_token),
+        returned_sync_token(resource.sync_token()),
         evicted_callback(std::move(evicted_callback)) {
     // We should never have no ReleaseCallback.
     DCHECK(this->impl_release_callback || this->main_thread_release_callback);
@@ -164,7 +163,7 @@ struct ClientResourceProvider::ImportedResource {
     // start/stop, we cannot batch them. Instead maintain previous behaviour
     // of just calling these directly.
     //
-    // TODO(crbug.com/1449273): Create a "Scoped Resources Release" class that
+    // TODO(crbug.com/40269731): Create a "Scoped Resources Release" class that
     // can collect all of the `main_thread_release_callbacks` being removed
     // independently. Which can then perform a single thread hop to run them.
     if (main_thread_release_callback) {
@@ -224,20 +223,6 @@ gpu::SyncToken ClientResourceProvider::GenerateSyncTokenHelper(
 void ClientResourceProvider::PrepareSendToParent(
     const std::vector<ResourceId>& export_ids,
     std::vector<TransferableResource>* list,
-    ContextProvider* context_provider) {
-  auto cb = base::BindOnce(
-      [](scoped_refptr<ContextProvider> context_provider,
-         std::vector<GLbyte*>* tokens) {
-        context_provider->ContextGL()->VerifySyncTokensCHROMIUM(tokens->data(),
-                                                                tokens->size());
-      },
-      base::WrapRefCounted(context_provider));
-  PrepareSendToParentInternal(export_ids, list, std::move(cb));
-}
-
-void ClientResourceProvider::PrepareSendToParent(
-    const std::vector<ResourceId>& export_ids,
-    std::vector<TransferableResource>* list,
     RasterContextProvider* context_provider) {
   PrepareSendToParentInternal(
       export_ids, list,
@@ -272,9 +257,9 @@ void ClientResourceProvider::PrepareSendToParentInternal(
   std::vector<GLbyte*> unverified_sync_tokens;
   for (ImportedResource* imported : imports) {
     if (!imported->resource.is_software &&
-        !imported->resource.mailbox_holder.sync_token.verified_flush()) {
+        !imported->resource.sync_token().verified_flush()) {
       unverified_sync_tokens.push_back(
-          imported->resource.mailbox_holder.sync_token.GetData());
+          imported->resource.mutable_sync_token().GetData());
     }
   }
 
@@ -291,6 +276,7 @@ void ClientResourceProvider::PrepareSendToParentInternal(
 
 void ClientResourceProvider::ReceiveReturnsFromParent(
     std::vector<ReturnedResource> resources) {
+  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   // |imported_resources_| is a set sorted by id, so if we sort the incoming

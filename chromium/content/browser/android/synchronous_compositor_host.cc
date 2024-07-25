@@ -204,17 +204,11 @@ bool SynchronousCompositorHost::IsReadyForSynchronousCall() {
 }
 
 void SynchronousCompositorHost::OnCompositorVisible() {
-  if (base::FeatureList::IsEnabled(
-          features::kSynchronousCompositorBackgroundSignal)) {
-    CompositorDependenciesAndroid::Get().OnSynchronousCompositorVisible();
-  }
+  CompositorDependenciesAndroid::Get().OnSynchronousCompositorVisible();
 }
 
 void SynchronousCompositorHost::OnCompositorHidden() {
-  if (base::FeatureList::IsEnabled(
-          features::kSynchronousCompositorBackgroundSignal)) {
-    CompositorDependenciesAndroid::Get().OnSynchronousCompositorHidden();
-  }
+  CompositorDependenciesAndroid::Get().OnSynchronousCompositorHidden();
 }
 
 scoped_refptr<SynchronousCompositor::FrameFuture>
@@ -607,6 +601,11 @@ void SynchronousCompositorHost::SetNeedsBeginFrames(bool needs_begin_frames) {
     ClearBeginFrameRequest(PERSISTENT_BEGIN_FRAME);
 }
 
+void SynchronousCompositorHost::SetThreadIds(
+    const std::vector<int32_t>& thread_ids) {
+  client_->SetThreadIds(thread_ids);
+}
+
 void SynchronousCompositorHost::LayerTreeFrameSinkCreated() {
   bridge_->RemoteReady();
 
@@ -616,8 +615,7 @@ void SynchronousCompositorHost::LayerTreeFrameSinkCreated() {
   DCHECK(compositor);
   compositor->SetMemoryPolicy(bytes_limit_);
 
-  if (begin_frame_paused_)
-    SendBeginFramePaused();
+  SendBeginFramePaused();
 }
 
 void SynchronousCompositorHost::UpdateState(

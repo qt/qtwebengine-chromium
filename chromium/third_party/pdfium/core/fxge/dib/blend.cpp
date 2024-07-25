@@ -4,13 +4,19 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#if defined(UNSAFE_BUFFERS_BUILD)
+// TODO(crbug.com/pdfium/2153): resolve buffer safety issues.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "core/fxge/dib/blend.h"
 
 #include <algorithm>
+#include <cmath>
 
+#include "core/fxcrt/check_op.h"
+#include "core/fxcrt/notreached.h"
 #include "core/fxge/dib/fx_dib.h"
-#include "third_party/base/check_op.h"
-#include "third_party/base/notreached.h"
 
 namespace fxge {
 

@@ -261,6 +261,12 @@ Instead of DXBC labels/calls, DXIL supports functions and call instructions. Rec
 
 The functions are regular LLVM functions. Parameters can be passed by-value or by-reference. The functions are to facilitate separate compilation for big, complex shaders. However, driver compilers are free to inline functions as they see fit.
 
+In DXIL, only two string function attributes are permitted: 'waveops-include-helper-lanes' and 'fp32-denorm-mode'.
+
+The attribute 'waveops-include-helper-lanes' is utilized to indicate that wave operations should consider helper lanes as active lanes.
+
+'fp32-denorm-mode' is employed to define the denorm mode for the function. The possible values for this attribute can be 'any', 'preserve', or 'ftz'.
+
 Identifiers
 -----------
 
@@ -3249,7 +3255,7 @@ SM.NOPSOUTPUTIDX                          Pixel shader output registers are not 
 SM.OPCODE                                 Opcode must be defined in target shader model
 SM.OPCODEININVALIDFUNCTION                Invalid DXIL opcode usage like StorePatchConstant in patch constant function
 SM.OPERAND                                Operand must be defined in target shader model.
-SM.OUTPUTCONTROLPOINTCOUNTRANGE           output control point count must be [0..%0].  %1 specified.
+SM.OUTPUTCONTROLPOINTCOUNTRANGE           output control point count must be [%0..%1].  %2 specified.
 SM.OUTPUTCONTROLPOINTSTOTALSCALARS        Total number of scalars across all HS output control points must not exceed .
 SM.PATCHCONSTANTONLYFORHSDS               patch constant signature only valid in HS and DS.
 SM.PSCONSISTENTINTERP                     Interpolation mode for PS input position must be linear_noperspective_centroid or linear_noperspective_sample when outputting oDepthGE or oDepthLE and not running at sample frequency (which is forced by inputting SV_SampleIndex or declaring an input linear_sample or linear_noperspective_sample).
@@ -3390,4 +3396,3 @@ The following work on this specification is still pending:
 
 * Consider moving some additional tables and lists into hctdb and cross-reference.
 * Complete the extended documentation for instructions.
-

@@ -49,15 +49,33 @@
 #include "third_party/blink/renderer/core/frame/settings.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
+#include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
 #include "third_party/blink/renderer/core/html/fenced_frame/html_fenced_frame_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_field_set_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_legend_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
+#include "third_party/blink/renderer/core/html/html_br_element.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
+#include "third_party/blink/renderer/core/html/html_frame_element.h"
+#include "third_party/blink/renderer/core/html/html_frame_set_element.h"
+#include "third_party/blink/renderer/core/html/html_html_element.h"
 #include "third_party/blink/renderer/core/html/html_iframe_element.h"
 #include "third_party/blink/renderer/core/html/html_image_element.h"
+#include "third_party/blink/renderer/core/html/html_marquee_element.h"
+#include "third_party/blink/renderer/core/html/html_meter_element.h"
+#include "third_party/blink/renderer/core/html/html_olist_element.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
+#include "third_party/blink/renderer/core/html/html_progress_element.h"
+#include "third_party/blink/renderer/core/html/html_script_element.h"
+#include "third_party/blink/renderer/core/html/html_span_element.h"
+#include "third_party/blink/renderer/core/html/html_style_element.h"
 #include "third_party/blink/renderer/core/html/html_table_cell_element.h"
+#include "third_party/blink/renderer/core/html/html_table_element.h"
+#include "third_party/blink/renderer/core/html/html_ulist_element.h"
+#include "third_party/blink/renderer/core/html/html_wbr_element.h"
 #include "third_party/blink/renderer/core/html/media/html_media_element.h"
 #include "third_party/blink/renderer/core/html/shadow/shadow_element_names.h"
 #include "third_party/blink/renderer/core/html_names.h"
@@ -69,7 +87,12 @@
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/style/style_intrinsic_length.h"
+#include "third_party/blink/renderer/core/svg/svg_foreign_object_element.h"
+#include "third_party/blink/renderer/core/svg/svg_g_element.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
+#include "third_party/blink/renderer/core/svg/svg_text_element.h"
+#include "third_party/blink/renderer/core/svg/svg_tspan_element.h"
+#include "third_party/blink/renderer/core/svg/svg_use_element.h"
 #include "third_party/blink/renderer/core/svg_names.h"
 #include "third_party/blink/renderer/platform/geometry/length.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -292,13 +315,10 @@ static bool IsAtMediaUAShadowBoundary(const Element* element) {
 // to manually stop text-decorations to apply to text inside media controls.
 static bool StopPropagateTextDecorations(const ComputedStyleBuilder& builder,
                                          const Element* element) {
-  const bool is_ruby_text = RuntimeEnabledFeatures::CssDisplayRubyEnabled()
-                                ? (builder.Display() == EDisplay::kRubyText)
-                                : IsA<HTMLRTElement>(element);
   return builder.IsDisplayReplacedType() ||
          IsAtMediaUAShadowBoundary(element) || builder.IsFloating() ||
          builder.HasOutOfFlowPosition() || IsOutermostSVGElement(element) ||
-         is_ruby_text;
+         builder.Display() == EDisplay::kRubyText;
 }
 
 static bool LayoutParentStyleForcesZIndexToCreateStackingContext(
@@ -469,15 +489,6 @@ static void AdjustStyleForHTMLElement(ComputedStyleBuilder& builder,
         element.GetDocument().GetStyleResolver().InitialZoom());
   }
 
-  if (IsA<HTMLRTElement>(element) &&
-      !RuntimeEnabledFeatures::CssDisplayRubyEnabled()) {
-    // Ruby text does not support float or position. This might change with
-    // evolution of the specification.
-    builder.SetPosition(EPosition::kStatic);
-    builder.SetFloating(EFloat::kNone);
-    return;
-  }
-
   if (IsA<HTMLLegendElement>(element) &&
       builder.Display() != EDisplay::kContents) {
     // Allow any blockified display value for legends. Note that according to
@@ -628,8 +639,7 @@ static void AdjustStyleForDisplay(ComputedStyleBuilder& builder,
 
   // We need to avoid to inlinify children of a <fieldset>, which creates a
   // dedicated LayoutObject and it assumes only block children.
-  if (RuntimeEnabledFeatures::RubyInlinifyEnabled() &&
-      layout_parent_style.InlinifiesChildren() &&
+  if (layout_parent_style.InlinifiesChildren() &&
       !builder.HasOutOfFlowPosition() && !builder.IsFloating() &&
       !(element && IsA<HTMLFieldSetElement>(element->parentNode()))) {
     builder.SetIsInInlinifyingDisplay();
@@ -778,8 +788,7 @@ void StyleAdjuster::AdjustEffectiveTouchAction(
 
   // TODO(crbug.com/1346169): Full style invalidation is needed when this
   // feature status changes at runtime as it affects the computed style.
-  if (base::FeatureList::IsEnabled(blink::features::kStylusWritingToInput) &&
-      RuntimeEnabledFeatures::StylusHandwritingEnabled() &&
+  if (RuntimeEnabledFeatures::StylusHandwritingEnabled() &&
       (element_touch_action & TouchAction::kPan) == TouchAction::kPan &&
       IsEditableElement(element, builder) &&
       !IsPasswordFieldWithUnrevealedPassword(element)) {
@@ -840,7 +849,8 @@ static void AdjustStyleForInert(ComputedStyleBuilder& builder,
   }
 }
 
-void StyleAdjuster::AdjustForForcedColorsMode(ComputedStyleBuilder& builder) {
+void StyleAdjuster::AdjustForForcedColorsMode(ComputedStyleBuilder& builder,
+                                              Document& document) {
   if (!builder.InForcedColorsMode() ||
       builder.ForcedColorAdjust() != EForcedColorAdjust::kAuto) {
     return;
@@ -857,6 +867,34 @@ void StyleAdjuster::AdjustForForcedColorsMode(ComputedStyleBuilder& builder) {
   if (!builder.HasUrlBackgroundImage()) {
     builder.ClearBackgroundImage();
   }
+
+  mojom::blink::ColorScheme color_scheme = mojom::blink::ColorScheme::kLight;
+  if (document.GetStyleEngine().GetPreferredColorScheme() ==
+      mojom::blink::PreferredColorScheme::kDark) {
+    color_scheme = mojom::blink::ColorScheme::kDark;
+  }
+  const ui::ColorProvider* color_provider =
+      document.GetColorProviderForPainting(color_scheme);
+
+  // Re-resolve some internal forced color properties whose initial
+  // values are system colors. This is necessary to ensure we get
+  // the correct computed value from the color provider for the
+  // system color when the theme changes.
+  if (builder.InternalForcedBackgroundColor().IsSystemColor()) {
+    builder.SetInternalForcedBackgroundColor(
+        builder.InternalForcedBackgroundColor().ResolveSystemColor(
+            color_scheme, color_provider));
+  }
+  if (builder.InternalForcedColor().IsSystemColor()) {
+    builder.SetInternalForcedColor(
+        builder.InternalForcedColor().ResolveSystemColor(color_scheme,
+                                                         color_provider));
+  }
+  if (builder.InternalForcedVisitedColor().IsSystemColor()) {
+    builder.SetInternalForcedVisitedColor(
+        builder.InternalForcedVisitedColor().ResolveSystemColor(
+            color_scheme, color_provider));
+  }
 }
 
 void StyleAdjuster::AdjustForSVGTextElement(ComputedStyleBuilder& builder) {
@@ -866,7 +904,7 @@ void StyleAdjuster::AdjustForSVGTextElement(ComputedStyleBuilder& builder) {
   builder.SetColumnRuleStyle(
       ComputedStyleInitialValues::InitialColumnRuleStyle());
   builder.SetColumnRuleWidthInternal(
-      LayoutUnit(ComputedStyleInitialValues::InitialColumnRuleWidth()));
+      ComputedStyleInitialValues::InitialColumnRuleWidth());
   builder.SetColumnRuleColor(
       ComputedStyleInitialValues::InitialColumnRuleColor());
   builder.SetInternalVisitedColumnRuleColor(
@@ -1036,7 +1074,7 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
 
   // A subset of CSS properties should be forced at computed value time:
   // https://drafts.csswg.org/css-color-adjust-1/#forced-colors-properties.
-  AdjustForForcedColorsMode(builder);
+  AdjustForForcedColorsMode(builder, state.GetDocument());
 
   // Let the theme also have a crack at adjusting the style.
   LayoutTheme::GetTheme().AdjustStyle(element, builder);
@@ -1150,9 +1188,10 @@ void StyleAdjuster::AdjustComputedStyle(StyleResolverState& state,
     element->AdjustStyle(base::PassKey<StyleAdjuster>(), builder);
   }
 
-  if (element &&
+  // We need to use styled element here to ensure coverage for pseudo-elements.
+  if (state.GetStyledElement() &&
       ViewTransitionUtils::IsViewTransitionElementExcludingRootFromSupplement(
-          *element)) {
+          *state.GetStyledElement())) {
     builder.SetElementIsViewTransitionParticipant();
   }
 

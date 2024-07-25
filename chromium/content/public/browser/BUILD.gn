@@ -41,8 +41,6 @@ source_set("browser_sources") {
     "audio_stream_broker.cc",
     "audio_stream_broker.h",
     "authenticator_common.h",
-    "ax_event_notification_details.cc",
-    "ax_event_notification_details.h",
     "ax_inspect_factory.cc",
     "ax_inspect_factory.h",
     "back_forward_cache.h",
@@ -95,6 +93,7 @@ source_set("browser_sources") {
     "browsing_instance_id.h",
     "browsing_topics_site_data_manager.h",
     "cdm_registry.h",
+    "cdm_storage_data_model.h",
     "certificate_request_result_type.h",
     "child_process_data.cc",
     "child_process_data.h",
@@ -152,6 +151,10 @@ source_set("browser_sources") {
     "devtools_manager_delegate.h",
     "devtools_network_transaction_factory.h",
     "devtools_socket_factory.h",
+    "digital_identity_provider.cc",
+    "digital_identity_provider.h",
+    "dips_delegate.cc",
+    "dips_delegate.h",
     "disallow_activation_reason.h",
     "document_picture_in_picture_window_controller.h",
     "document_ref.cc",
@@ -328,6 +331,8 @@ source_set("browser_sources") {
     "presentation_request.h",
     "presentation_screen_availability_listener.h",
     "presentation_service_delegate.h",
+    "preview_cancel_reason.cc",
+    "preview_cancel_reason.h",
     "privacy_sandbox_attestations_observer.h",
     "privacy_sandbox_invoking_api.h",
     "private_aggregation_data_model.cc",
@@ -364,11 +369,15 @@ source_set("browser_sources") {
     "resource_coordinator_service.h",
     "responsiveness_calculator_delegate.h",
     "restore_type.h",
+    "runtime_feature_state/runtime_feature_state_document_data.cc",
+    "runtime_feature_state/runtime_feature_state_document_data.h",
     "save_page_type.h",
     "scoped_accessibility_mode.h",
     "scoped_authenticator_environment_for_testing.h",
     "screen_orientation_delegate.h",
     "screenlock_observer.h",
+    "secure_payment_confirmation_utils.cc",
+    "secure_payment_confirmation_utils.h",
     "serial_chooser.cc",
     "serial_chooser.h",
     "serial_delegate.h",
@@ -534,11 +543,14 @@ source_set("browser_sources") {
     "//services/media_session/public/cpp",
     "//services/media_session/public/mojom",
     "//services/network/public/mojom",
+    "//services/on_device_model/public/cpp",
+    "//services/on_device_model/public/mojom",
     "//services/resource_coordinator/public/cpp:resource_coordinator_cpp",
     "//services/service_manager/public/cpp",
     "//services/tracing/public/cpp",
     "//services/tracing/public/mojom",
     "//services/video_capture/public/mojom",
+    "//services/video_effects/public/mojom:mojom",
     "//services/viz/public/mojom",
 
     # We expose skia headers in the public API.
@@ -692,6 +704,8 @@ source_set("browser_sources") {
   if (is_chromeos_ash) {
     sources += [
       "chromeos/delegate_to_browser_gpu_service_accelerator_factory.h",
+      "on_device_model_service_instance.cc",
+      "on_device_model_service_instance.h",
       "tts_controller_delegate.cc",
       "tts_controller_delegate.h",
     ]
@@ -727,6 +741,9 @@ if (is_android) {
   }
   java_cpp_enum("bluetooth_chooser_event_javagen") {
     sources = [ "bluetooth_chooser.h" ]
+  }
+  java_cpp_enum("digital_identity_enum") {
+    sources = [ "digital_identity_provider.h" ]
   }
 }
 

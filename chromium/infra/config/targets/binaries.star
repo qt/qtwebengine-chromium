@@ -212,11 +212,6 @@ targets.binaries.console_test_launcher(
     label = "//third_party/blink/renderer/controller:blink_unittests",
 )
 
-targets.binaries.console_test_launcher(
-    name = "blink_unittests_v2",
-    label = "//third_party/blink/renderer/controller:blink_unittests_v2",
-)
-
 targets.binaries.generated_script(
     name = "blink_web_tests",
     label = "//:blink_web_tests",
@@ -290,11 +285,6 @@ targets.binaries.windowed_test_launcher(
 )
 
 targets.binaries.console_test_launcher(
-    name = "cast_display_settings_unittests",
-    label = "//chromecast/ui/display_settings:cast_display_settings_unittests",
-)
-
-targets.binaries.console_test_launcher(
     name = "cast_runner_browsertests",
     label = "//fuchsia_web/runners:cast_runner_browsertests",
 )
@@ -307,6 +297,13 @@ targets.binaries.console_test_launcher(
 targets.binaries.console_test_launcher(
     name = "cast_runner_unittests",
     label = "//fuchsia_web/runners:cast_runner_unittests",
+)
+
+# TODO(crbug.com/41489655): Remove unneeded cast_* suites.
+
+targets.binaries.console_test_launcher(
+    name = "cast_display_settings_unittests",
+    label = "//chromecast/ui/display_settings:cast_display_settings_unittests",
 )
 
 targets.binaries.console_test_launcher(
@@ -388,6 +385,14 @@ targets.binaries.generated_script(
     ],
 )
 
+targets.binaries.generated_script(
+    name = "cq_medium_tast_tests",
+    label = "//chromeos:cq_medium_tast_tests",
+    args = [
+        "--logs-dir=${ISOLATED_OUTDIR}",
+    ],
+)
+
 targets.binaries.console_test_launcher(
     name = "chrome_elf_unittests",
     label = "//chrome/chrome_elf:chrome_elf_unittests",
@@ -428,7 +433,7 @@ targets.binaries.console_test_launcher(
     label = "//chrome/android:chrome_public_smoke_test",
 )
 
-# TODO(crbug.com/1238057): Rename to chrome_public_integration_test_apk
+# TODO(crbug.com/40193330): Rename to chrome_public_integration_test_apk
 targets.binaries.console_test_launcher(
     name = "chrome_public_test_apk",
     label = "//chrome/android:chrome_public_test_apk",
@@ -507,22 +512,6 @@ targets.binaries.windowed_test_launcher(
 targets.binaries.generated_script(
     name = "chrome_wpt_tests",
     label = "//:chrome_wpt_tests",
-    results_handler = "layout tests",
-    args = [
-        "--results-directory",
-        "${ISOLATED_OUTDIR}",
-    ],
-    merge = targets.merge(
-        script = "//third_party/blink/tools/merge_web_test_results.py",
-        args = [
-            "--verbose",
-        ],
-    ),
-)
-
-targets.binaries.generated_script(
-    name = "content_shell_wpt",
-    label = "//:content_shell_wpt",
     results_handler = "layout tests",
     args = [
         "--results-directory",
@@ -827,6 +816,22 @@ targets.binaries.console_test_launcher(
     label = "//media/gpu/vaapi/test/fake_libva_driver:fake_libva_driver_unittest",
 )
 
+targets.binaries.generated_script(
+    name = "headless_shell_wpt",
+    label = "//:headless_shell_wpt",
+    results_handler = "layout tests",
+    args = [
+        "--results-directory",
+        "${ISOLATED_OUTDIR}",
+    ],
+    merge = targets.merge(
+        script = "//third_party/blink/tools/merge_web_test_results.py",
+        args = [
+            "--verbose",
+        ],
+    ),
+)
+
 targets.binaries.console_test_launcher(
     name = "video_decode_accelerator_tests",
     label = "//media/gpu/test:video_decode_accelerator_tests",
@@ -1106,11 +1111,6 @@ targets.binaries.windowed_test_launcher(
 )
 
 targets.binaries.console_test_launcher(
-    name = "lacros_chrome_unittests",
-    label = "//chrome/test:lacros_chrome_unittests",
-)
-
-targets.binaries.console_test_launcher(
     name = "latency_unittests",
     label = "//ui/latency:latency_unittests",
 )
@@ -1211,9 +1211,19 @@ targets.binaries.console_test_launcher(
     label = "//components/minidump_uploader:minidump_uploader_test",
 )
 
+targets.binaries.console_test_launcher(
+    name = "jni_zero_sample_apk_test",
+    label = "//third_party/jni_zero/sample:jni_zero_sample_apk_test",
+)
+
 targets.binaries.generated_script(
     name = "model_validation_tests",
     label = "//components/optimization_guide/internal/testing:model_validation_tests",
+)
+
+targets.binaries.generated_script(
+    name = "model_validation_tests_light",
+    label = "//components/optimization_guide/internal/testing:model_validation_tests_light",
 )
 
 targets.binaries.generated_script(
@@ -1328,6 +1338,21 @@ targets.binaries.console_test_launcher(
 targets.binaries.windowed_test_launcher(
     name = "notification_helper_unittests",
     label = "//chrome/notification_helper:notification_helper_unittests",
+)
+
+targets.binaries.generated_script(
+    name = "ondevice_quality_tests",
+    label = "//components/optimization_guide/internal/testing:ondevice_quality_tests",
+)
+
+targets.binaries.generated_script(
+    name = "ondevice_stability_tests",
+    label = "//components/optimization_guide/internal/testing:ondevice_stability_tests",
+)
+
+targets.binaries.generated_script(
+    name = "ondevice_stability_tests_light",
+    label = "//components/optimization_guide/internal/testing:ondevice_stability_tests_light",
 )
 
 targets.binaries.console_test_launcher(
@@ -1692,7 +1717,7 @@ targets.binaries.script(
 
 targets.binaries.script(
     name = "telemetry_gpu_integration_test_fuchsia",
-    label = "//chrome/test:telemetry_gpu_integration_test_fuchsia",
+    label = "//content/test:telemetry_gpu_integration_test_fuchsia",
     script = "//testing/scripts/run_gpu_integration_test_as_googletest.py",
     args = [
         "../../content/test/gpu/run_gpu_integration_test_fuchsia.py",
@@ -2123,10 +2148,13 @@ targets.binaries.script(
     args = [
         "--cts-gcs-path",
         "../../android_webview/tools/cts_config/webview_cts_hostside_gcs_path.json",
+        "--skip-expected-failures",
         "--additional-apk",
         "apks/TrichromeLibrary64.apk",
         "--use-webview-provider",
         "apks/TrichromeWebView64.apk",
+        "--module-apk",
+        "CtsHostsideWebViewTests.apk",
     ],
 )
 

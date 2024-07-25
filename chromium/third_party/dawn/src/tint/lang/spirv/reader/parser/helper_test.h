@@ -34,7 +34,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "src/tint/lang/core/ir/disassembler.h"
+#include "src/tint/lang/core/ir/disassembly.h"
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/spirv/reader/common/helper_test.h"
@@ -47,7 +47,7 @@ namespace tint::spirv::reader {
 #define EXPECT_IR(asm, ir)                                           \
     do {                                                             \
         auto result = Run(asm);                                      \
-        ASSERT_EQ(result, Success) << result.Failure().reason.str(); \
+        ASSERT_EQ(result, Success) << result.Failure().reason.Str(); \
         auto got = "\n" + result.Get();                              \
         ASSERT_THAT(got, testing::HasSubstr(ir)) << got;             \
     } while (false)
@@ -74,7 +74,7 @@ class SpirvParserTestHelperBase : public BASE {
 
         // Validate the IR module against the capabilities supported by the SPIR-V dialect.
         auto validated =
-            core::ir::Validate(parsed.Get(), EnumSet<core::ir::Capability>{
+            core::ir::Validate(parsed.Get(), core::ir::Capabilities{
                                                  core::ir::Capability::kAllowVectorElementPointer,
                                              });
         if (validated != Success) {
@@ -82,7 +82,7 @@ class SpirvParserTestHelperBase : public BASE {
         }
 
         // Return the disassembled IR module.
-        return core::ir::Disassemble(parsed.Get());
+        return core::ir::Disassemble(parsed.Get()).Plain();
     }
 };
 

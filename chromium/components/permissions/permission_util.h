@@ -72,7 +72,7 @@ class PermissionUtil {
 
   // Returns the corresponding permissions policy feature to the given content
   // settings type, or nullopt if there is none.
-  static absl::optional<blink::mojom::PermissionsPolicyFeature>
+  static std::optional<blink::mojom::PermissionsPolicyFeature>
   GetPermissionsPolicyFeature(ContentSettingsType type);
 
   // Checks whether the given ContentSettingsType is a permission. Use this
@@ -95,7 +95,7 @@ class PermissionUtil {
 
   // Returns the authoritative `embedding origin`, as a GURL, to be used for
   // permission decisions in `render_frame_host`.
-  // TODO(crbug.com/1327384): Remove this method when possible.
+  // TODO(crbug.com/40226169): Remove this method when possible.
   static GURL GetLastCommittedOriginAsURL(
       content::RenderFrameHost* render_frame_host);
 

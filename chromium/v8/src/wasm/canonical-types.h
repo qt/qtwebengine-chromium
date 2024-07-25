@@ -75,6 +75,9 @@ class TypeCanonicalizer {
                                             const WasmModule* sub_module,
                                             const WasmModule* super_module);
 
+  // Deletes recursive groups. Used only by the Wasm compile fuzzer.
+  V8_EXPORT_PRIVATE void EmptyStorageForTesting();
+
   size_t EstimateCurrentMemoryConsumption() const;
 
  private:
@@ -160,6 +163,8 @@ class TypeCanonicalizer {
   // gets mapped to its canonical representative.
   ValueType CanonicalizeValueType(const WasmModule* module, ValueType type,
                                   uint32_t recursive_group_start) const;
+
+  void CheckMaxCanonicalIndex() const;
 
   std::vector<uint32_t> canonical_supertypes_;
   // Maps groups of size >=2 to the canonical id of the first type.

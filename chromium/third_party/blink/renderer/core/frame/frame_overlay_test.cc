@@ -105,9 +105,9 @@ TEST_P(FrameOverlayTest, AcceleratedCompositing) {
               onDrawRect(SkRect::MakeWH(kViewportWidth, kViewportHeight),
                          Property(&SkPaint::getColor, SK_ColorYELLOW)));
 
-  auto* builder = MakeGarbageCollected<PaintRecordBuilder>();
-  frame_overlay->Paint(builder->Context());
-  builder->EndRecording().Playback(&canvas);
+  PaintRecordBuilder builder;
+  frame_overlay->Paint(builder.Context());
+  builder.EndRecording().Playback(&canvas);
   frame_overlay->Destroy();
 }
 
@@ -141,7 +141,7 @@ TEST_P(FrameOverlayTest, DeviceEmulationScale) {
     EXPECT_EQ(gfx::Rect(0, 0, 800, 600),
               paint_controller.GetDisplayItemList()[0].VisualRect());
     EXPECT_THAT(
-        paint_controller.PaintChunks(),
+        paint_controller.GetPaintChunks(),
         ElementsAre(IsPaintChunk(
             0, 1,
             PaintChunk::Id(frame_overlay->Id(), DisplayItem::kFrameOverlay),

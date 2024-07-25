@@ -10,6 +10,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -37,7 +38,6 @@
 #include "net/spdy/spdy_session_pool.h"
 #include "net/ssl/ssl_client_session_cache.h"
 #include "net/third_party/quiche/src/quiche/spdy/core/spdy_protocol.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class Value;
@@ -127,7 +127,7 @@ struct NET_EXPORT HttpNetworkSessionParams {
   // https://tools.ietf.org/html/draft-bishop-httpbis-grease-00.
   // The same frame will be sent out on all connections to prevent the retry
   // logic from hiding broken servers.
-  absl::optional<SpdySessionPool::GreasedHttp2Frame> greased_http2_frame;
+  std::optional<SpdySessionPool::GreasedHttp2Frame> greased_http2_frame;
   // If set, the HEADERS frame carrying a request without body will not have
   // the END_STREAM flag set.  The stream will be closed by a subsequent empty
   // DATA frame with END_STREAM.  Does not affect bidirectional or proxy
@@ -146,9 +146,6 @@ struct NET_EXPORT HttpNetworkSessionParams {
 
   // Enables QUIC support.
   bool enable_quic = true;
-
-  // If true, HTTPS URLs can be sent to QUIC proxies.
-  bool enable_quic_proxies_for_https_urls = false;
 
   // If non-empty, QUIC will only be spoken to hosts in this list.
   base::flat_set<std::string> quic_host_allowlist;
@@ -190,7 +187,7 @@ struct NET_EXPORT HttpNetworkSessionContext {
   raw_ptr<CertVerifier> cert_verifier;
   raw_ptr<TransportSecurityState> transport_security_state;
   raw_ptr<SCTAuditingDelegate> sct_auditing_delegate;
-  raw_ptr<ProxyResolutionService, DanglingUntriaged> proxy_resolution_service;
+  raw_ptr<ProxyResolutionService> proxy_resolution_service;
   raw_ptr<ProxyDelegate> proxy_delegate;
   raw_ptr<const HttpUserAgentSettings> http_user_agent_settings;
   raw_ptr<SSLConfigService> ssl_config_service;
@@ -329,8 +326,7 @@ class NET_EXPORT HttpNetworkSession {
   const raw_ptr<ReportingService> reporting_service_;
   const raw_ptr<NetworkErrorLoggingService> network_error_logging_service_;
 #endif
-  const raw_ptr<ProxyResolutionService, DanglingUntriaged>
-      proxy_resolution_service_;
+  const raw_ptr<ProxyResolutionService> proxy_resolution_service_;
   const raw_ptr<SSLConfigService> ssl_config_service_;
 
   HttpAuthCache http_auth_cache_;

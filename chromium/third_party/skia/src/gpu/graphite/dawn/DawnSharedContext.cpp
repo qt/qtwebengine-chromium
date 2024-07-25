@@ -22,6 +22,7 @@ wgpu::ShaderModule CreateNoopFragment(const wgpu::Device& device) {
             "fn main() {}\n";
     wgpu::ShaderModuleDescriptor smDesc;
     smDesc.nextInChain = &wgslDesc;
+    smDesc.label = "no-op";
     auto fsModule = device.CreateShaderModule(&smDesc);
     return fsModule;
 }
@@ -50,6 +51,7 @@ DawnSharedContext::DawnSharedContext(const DawnBackendContext& backendContext,
                                      std::unique_ptr<const DawnCaps> caps,
                                      wgpu::ShaderModule noopFragment)
         : skgpu::graphite::SharedContext(std::move(caps), BackendApi::kDawn)
+        , fInstance(backendContext.fInstance)
         , fDevice(backendContext.fDevice)
         , fQueue(backendContext.fQueue)
         , fTick(backendContext.fTick)

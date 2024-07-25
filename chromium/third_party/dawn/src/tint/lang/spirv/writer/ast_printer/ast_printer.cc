@@ -29,7 +29,7 @@
 
 #include <unordered_map>
 
-#include "src/tint/lang/spirv/writer/ast_raise/clamp_frag_depth.h"
+#include "src/tint/api/options/depth_range_offsets.h"
 #include "src/tint/lang/spirv/writer/ast_raise/for_loop_to_loop.h"
 #include "src/tint/lang/spirv/writer/ast_raise/merge_return.h"
 #include "src/tint/lang/spirv/writer/ast_raise/var_for_dynamic_index.h"
@@ -41,10 +41,12 @@
 #include "src/tint/lang/wgsl/ast/transform/binding_remapper.h"
 #include "src/tint/lang/wgsl/ast/transform/builtin_polyfill.h"
 #include "src/tint/lang/wgsl/ast/transform/canonicalize_entry_point_io.h"
+#include "src/tint/lang/wgsl/ast/transform/clamp_frag_depth.h"
 #include "src/tint/lang/wgsl/ast/transform/demote_to_helper.h"
 #include "src/tint/lang/wgsl/ast/transform/direct_variable_access.h"
 #include "src/tint/lang/wgsl/ast/transform/disable_uniformity_analysis.h"
 #include "src/tint/lang/wgsl/ast/transform/expand_compound_assignment.h"
+#include "src/tint/lang/wgsl/ast/transform/fold_constants.h"
 #include "src/tint/lang/wgsl/ast/transform/manager.h"
 #include "src/tint/lang/wgsl/ast/transform/multiplanar_external_texture.h"
 #include "src/tint/lang/wgsl/ast/transform/preserve_padding.h"
@@ -64,8 +66,11 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     ast::transform::Manager manager;
     ast::transform::DataMap data;
 
+    manager.Add<ast::transform::FoldConstants>();
+
     if (options.clamp_frag_depth) {
-        manager.Add<ClampFragDepth>();
+        manager.Add<ast::transform::ClampFragDepth>();
+        data.Add<ast::transform::ClampFragDepth::Config>(tint::DepthRangeOffsets{0, 4});
     }
 
     manager.Add<ast::transform::DisableUniformityAnalysis>();
@@ -109,10 +114,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     RemapperData remapper_data{};
     PopulateRemapperAndMultiplanarOptions(options, remapper_data, external_texture_options);
 
-    // BindingRemapper must come before MultiplanarExternalTexture. Note, this is flipped to the
-    // other generators which run Multiplanar first and then binding remapper.
     manager.Add<ast::transform::BindingRemapper>();
-
     data.Add<ast::transform::BindingRemapper::Remappings>(
         remapper_data, std::unordered_map<BindingPoint, core::Access>{},
         /* allow_collisions */ false);
@@ -191,7 +193,7 @@ SanitizedResult Sanitize(const Program& in, const Options& options) {
     data.Add<ast::transform::CanonicalizeEntryPointIO::Config>(
         ast::transform::CanonicalizeEntryPointIO::Config(
             ast::transform::CanonicalizeEntryPointIO::ShaderStyle::kSpirv, 0xFFFFFFFF,
-            options.emit_vertex_point_size));
+            options.emit_vertex_point_size, !options.use_storage_input_output_16));
 
     SanitizedResult result;
     ast::transform::DataMap outputs;

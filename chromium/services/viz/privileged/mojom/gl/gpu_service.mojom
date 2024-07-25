@@ -19,7 +19,6 @@ import "components/chromeos_camera/common/mjpeg_decode_accelerator.mojom";
 [EnableIf=is_chromeos_ash]
 import "components/chromeos_camera/common/jpeg_encode_accelerator.mojom";
 import "gpu/ipc/common/device_perf_info.mojom";
-import "gpu/ipc/common/dx_diag_node.mojom";
 import "gpu/ipc/common/gpu_disk_cache_type.mojom";
 import "gpu/ipc/common/gpu_feature_info.mojom";
 import "gpu/ipc/common/gpu_info.mojom";
@@ -189,7 +188,7 @@ interface GpuService {
   // host since multiple clients may be using the same physical disk path. Note
   // that this method is used only from a trusted process.
   LoadedBlob(gpu.mojom.GpuDiskCacheHandle cache_handle,
-             string key,
+             mojo_base.mojom.ByteString key,
              mojo_base.mojom.ByteString data);
 
   // Tells GPU to wake up the GPU because we're about to draw.

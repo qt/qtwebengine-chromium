@@ -32,15 +32,14 @@ struct ColorSpaceConversionConstants {
 
 struct ExternalTextureSource {
   scoped_refptr<media::VideoFrame> media_video_frame = nullptr;
-  raw_ptr<media::PaintCanvasVideoRenderer, ExperimentalRenderer>
-      video_renderer = nullptr;
-  absl::optional<media::VideoFrame::ID> media_video_frame_unique_id =
-      absl::nullopt;
+  raw_ptr<media::PaintCanvasVideoRenderer> video_renderer = nullptr;
+  std::optional<media::VideoFrame::ID> media_video_frame_unique_id =
+      std::nullopt;
   bool valid = false;
 };
 
 struct ExternalTexture {
-  WGPUExternalTexture wgpu_external_texture = nullptr;
+  wgpu::ExternalTexture wgpu_external_texture = nullptr;
   scoped_refptr<WebGPUMailboxTexture> mailbox_texture = nullptr;
   bool is_zero_copy = false;
 };

@@ -85,6 +85,12 @@ void ParsePathInternal(const char16_t* spec,
                        Component* query,
                        Component* ref);
 
+// Internal functions in url_parse.cc that parse non-special URLs, which are
+// similar to `ParseNonSpecialURL` functions in url_parse.h, but with
+// `trim_path_end` parameter that controls whether to trim path end or not.
+Parsed ParseNonSpecialURLInternal(std::string_view url, bool trim_path_end);
+Parsed ParseNonSpecialURLInternal(std::u16string_view url, bool trim_path_end);
+
 // Given a spec and a pointer to the character after the colon following the
 // special scheme, this parses it and fills in the structure, Every item in the
 // parsed structure is filled EXCEPT for the scheme, which is untouched.
@@ -96,6 +102,18 @@ void ParseAfterSpecialScheme(const char16_t* spec,
                              int spec_len,
                              int after_scheme,
                              Parsed* parsed);
+
+// Given a spec and a pointer to the character after the colon following the
+// non-special scheme, this parses it and fills in the structure, Every item in
+// the parsed structure is filled EXCEPT for the scheme, which is untouched.
+void ParseAfterNonSpecialScheme(const char* spec,
+                                int spec_len,
+                                int after_scheme,
+                                Parsed* parsed);
+void ParseAfterNonSpecialScheme(const char16_t* spec,
+                                int spec_len,
+                                int after_scheme,
+                                Parsed* parsed);
 
 }  // namespace url
 

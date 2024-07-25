@@ -353,7 +353,8 @@ class TouchSelectionControllerImpl::EditingHandleView : public View {
     }
   }
 
-  gfx::Size CalculatePreferredSize() const override {
+  gfx::Size CalculatePreferredSize(
+      const SizeBounds& /*available_size*/) const override {
     // This function will be called during widget initialization, i.e. before
     // SetBoundInScreen has been called. No-op in that case.
     if (!selection_bound_.HasHandle()) {
@@ -446,7 +447,7 @@ class TouchSelectionControllerImpl::EditingHandleView : public View {
   bool is_dragging_ = false;
 };
 
-BEGIN_METADATA(TouchSelectionControllerImpl, EditingHandleView, View)
+BEGIN_METADATA(TouchSelectionControllerImpl, EditingHandleView)
 ADD_READONLY_PROPERTY_METADATA(gfx::SelectionBound::Type, SelectionBoundType)
 ADD_READONLY_PROPERTY_METADATA(bool, IsDragging)
 ADD_READONLY_PROPERTY_METADATA(gfx::Size, HandleImageSize)

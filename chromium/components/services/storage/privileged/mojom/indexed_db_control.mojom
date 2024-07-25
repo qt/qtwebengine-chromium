@@ -4,7 +4,7 @@
 
 module storage.mojom;
 
-import "components/services/storage/privileged/mojom/indexed_db_bucket_types.mojom";
+import "components/services/storage/privileged/mojom/indexed_db_internals_types.mojom";
 import "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom";
 import "components/services/storage/privileged/mojom/indexed_db_control_test.mojom";
 import "components/services/storage/public/mojom/buckets/bucket_locator.mojom";
@@ -23,7 +23,7 @@ enum ForceCloseReason {
   FORCE_CLOSE_BACKING_STORE_FAILURE = 1,
   FORCE_CLOSE_INTERNALS_PAGE = 2,
   FORCE_CLOSE_COPY_ORIGIN = 3,
-  FORCE_SCHEMA_DOWNGRADE_INTERNALS_PAGE = 4,
+  // Deprecated: FORCE_SCHEMA_DOWNGRADE_INTERNALS_PAGE = 4,
   // Append new values here and update IDBContextForcedCloseReason in
   // enums.xml.
 };
@@ -57,10 +57,6 @@ interface IndexedDBControl {
     pending_remote<storage.mojom.IndexedDBClientStateChecker>
         client_state_checker_remote,
     pending_receiver<blink.mojom.IDBFactory> receiver);
-
-  // Deletes all indexed db files (across all buckets) for the given
-  // `storage_key`.
-  DeleteForStorageKey(blink.mojom.StorageKey storage_key) => (bool success);
 
   // Forcibly closes all connections to all databases within the bucket.
   ForceClose(storage.mojom.BucketId bucket_id, ForceCloseReason reason) => ();

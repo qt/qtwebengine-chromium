@@ -1,5 +1,5 @@
-/* Copyright (c) 2023 Nintendo
- * Copyright (c) 2023 LunarG, Inc.
+/* Copyright (c) 2023-2024 Nintendo
+ * Copyright (c) 2023-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,25 @@
  */
 
 #include "shader_object_state.h"
-#include "pipeline_layout_state.h"
+#include "shader_module.h"
+#include "state_tracker/state_tracker.h"
 
 namespace vvl {
-static ShaderObject::SetLayoutVector GetSetLayouts(ValidationStateTracker *dev_data, const VkShaderCreateInfoEXT &pCreateInfo) {
+static ShaderObject::SetLayoutVector GetSetLayouts(ValidationStateTracker &dev_data, const VkShaderCreateInfoEXT &pCreateInfo) {
     ShaderObject::SetLayoutVector set_layouts(pCreateInfo.setLayoutCount);
 
     for (uint32_t i = 0; i < pCreateInfo.setLayoutCount; ++i) {
-        set_layouts[i] = dev_data->Get<vvl::DescriptorSetLayout>(pCreateInfo.pSetLayouts[i]);
+        set_layouts[i] = dev_data.Get<vvl::DescriptorSetLayout>(pCreateInfo.pSetLayouts[i]);
     }
     return set_layouts;
 }
 
-ShaderObject::ShaderObject(ValidationStateTracker *dev_data, const VkShaderCreateInfoEXT &create_info, VkShaderEXT shader_object,
+ShaderObject::ShaderObject(ValidationStateTracker &dev_data, const VkShaderCreateInfoEXT &create_info_i, VkShaderEXT handle,
                            std::shared_ptr<spirv::Module> &spirv_module, uint32_t createInfoCount, VkShaderEXT *pShaders,
                            uint32_t unique_shader_id)
-    : StateObject(shader_object, kVulkanObjectTypeShaderEXT),
-      create_info(&create_info),
+    : StateObject(handle, kVulkanObjectTypeShaderEXT),
+      safe_create_info(&create_info_i),
+      create_info(*safe_create_info.ptr()),
       spirv(spirv_module),
       entrypoint(spirv ? spirv->FindEntrypoint(create_info.pName, create_info.stage) : nullptr),
       gpu_validation_shader_id(unique_shader_id),
@@ -42,7 +44,7 @@ ShaderObject::ShaderObject(ValidationStateTracker *dev_data, const VkShaderCreat
       set_compat_ids(GetCompatForSet(set_layouts, push_constant_ranges)) {
     if ((create_info.flags & VK_SHADER_CREATE_LINK_STAGE_BIT_EXT) != 0) {
         for (uint32_t i = 0; i < createInfoCount; ++i) {
-            if (pShaders[i] != shader_object) {
+            if (pShaders[i] != handle) {
                 linked_shaders.push_back(pShaders[i]);
             }
         }

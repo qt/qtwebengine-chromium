@@ -58,7 +58,7 @@ std::map<std::string, std::string> ParseParams(std::string_view param_string) {
   url::Component value;
   constexpr int kMaxUriDecodeLen = 2048;
   std::map<std::string, std::string> params;
-  while (url::ExtractQueryKeyValue(param_string.data(), &query, &key, &value)) {
+  while (url::ExtractQueryKeyValue(param_string, &query, &key, &value)) {
     url::RawCanonOutputW<kMaxUriDecodeLen> output;
     url::DecodeURLEscapeSequences(param_string.substr(value.begin, value.len),
                                   url::DecodeURLMode::kUTF8OrIsomorphic,
@@ -347,10 +347,10 @@ void SanitizedImageSource::EncodeAndReplyStaticImage(
             const bool success =
                 encode_type == RequestAttributes::EncodeType::kWebP
                     ? gfx::WebpCodec::Encode(bitmap, /*quality=*/90,
-                                             &encoded->data())
+                                             &encoded->as_vector())
                     : gfx::PNGCodec::EncodeBGRASkBitmap(
                           bitmap, /*discard_transparency=*/false,
-                          &encoded->data());
+                          &encoded->as_vector());
             return success ? encoded
                            : base::MakeRefCounted<base::RefCountedBytes>();
           },

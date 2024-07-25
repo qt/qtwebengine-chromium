@@ -14,18 +14,19 @@
 #include "chrome/browser/image_fetcher/image_decoder_impl.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
 #include "chrome/browser/new_tab_page/new_tab_page_util.h"
-#include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
-#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/background/ntp_custom_background_service_factory.h"
 #include "chrome/browser/search/background/wallpaper_search/wallpaper_search_background_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/ui/side_panel/customize_chrome/customize_chrome_utils.h"
+#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/cr_components/customize_color_scheme_mode/customize_color_scheme_mode_handler.h"
 #include "chrome/browser/ui/webui/cr_components/theme_color_picker/theme_color_picker_handler.h"
 #include "chrome/browser/ui/webui/new_tab_page/new_tab_page_ui.h"
 #include "chrome/browser/ui/webui/sanitized_image_source.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_page_handler.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
+#include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_toolbar/customize_toolbar_handler.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/wallpaper_search/wallpaper_search_handler.h"
 #include "chrome/browser/ui/webui/webui_util.h"
 #include "chrome/common/webui_url_constants.h"
@@ -34,8 +35,6 @@
 #include "chrome/grit/side_panel_customize_chrome_resources_map.h"
 #include "chrome/grit/side_panel_shared_resources.h"
 #include "chrome/grit/side_panel_shared_resources_map.h"
-#include "components/optimization_guide/core/model_execution/model_execution_features.h"
-#include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/search/ntp_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/render_frame_host.h"
@@ -50,7 +49,7 @@ namespace {
 
 int64_t RandInt64() {
   int64_t number;
-  base::RandBytes(&number, sizeof(number));
+  base::RandBytes(base::byte_span_from_ref(number));
   return number;
 }
 
@@ -67,7 +66,7 @@ DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(CustomizeChromeUI,
 DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(CustomizeChromeUI, kChromeThemeElementId);
 
 CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
-    : ui::MojoBubbleWebUIController(web_ui),
+    : TopChromeWebUIController(web_ui),
       image_decoder_(std::make_unique<ImageDecoderImpl>()),
       profile_(Profile::FromWebUI(web_ui)),
       web_contents_(web_ui->GetWebContents()),
@@ -75,13 +74,9 @@ CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
           NewTabPageUI::IsDriveModuleEnabledForProfile(profile_))),
       page_factory_receiver_(this),
       id_(RandInt64()) {
-  const bool wallpaper_search_flags_enabled =
-      base::FeatureList::IsEnabled(
-          ntp_features::kCustomizeChromeWallpaperSearch) &&
-      base::FeatureList::IsEnabled(
-          optimization_guide::features::kOptimizationGuideModelExecution) &&
-      features::IsChromeWebuiRefresh2023();
-  if (wallpaper_search_flags_enabled) {
+  const bool wallpaper_search_enabled =
+      customize_chrome::IsWallpaperSearchEnabledForProfile(profile_);
+  if (wallpaper_search_enabled) {
     wallpaper_search_background_manager_ =
         std::make_unique<WallpaperSearchBackgroundManager>(profile_);
   }
@@ -97,9 +92,9 @@ CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
       {"cardsHeader", IDS_NTP_CUSTOMIZE_MENU_MODULES_LABEL},
       {"categoriesHeader", IDS_NTP_CUSTOMIZE_THEMES_HEADER},
       {"shortcutsHeader", IDS_NTP_CUSTOMIZE_MENU_SHORTCUTS_LABEL},
+      {"toolbarHeader", IDS_NTP_CUSTOMIZE_MENU_TOOLBAR_LABEL},
       // Appearance strings.
       {"changeTheme", IDS_NTP_CUSTOMIZE_CHROME_CHANGE_THEME_LABEL},
-      {"chromeColors", IDS_NTP_CUSTOMIZE_CHROME_COLORS_LABEL},
       {"chromeWebStore", IDS_EXTENSION_WEB_STORE_TITLE},
       {"classicChrome", IDS_NTP_CUSTOMIZE_NO_BACKGROUND_LABEL},
       {"colorsContainerLabel", IDS_NTP_THEMES_CONTAINER_LABEL},
@@ -111,7 +106,6 @@ CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
       {"hueSliderDeleteTitle", IDS_NTP_CUSTOMIZE_COLOR_HUE_SLIDER_DELETE_TITLE},
       {"hueSliderDeleteA11yLabel",
        IDS_NTP_CUSTOMIZE_COLOR_HUE_SLIDER_DELETE_A11Y_LABEL},
-      {"mainColorName", IDS_NTP_CUSTOMIZE_MAIN_COLOR_LABEL},
       {"managedColorsTitle", IDS_NTP_THEME_MANAGED_DIALOG_TITLE},
       {"managedColorsBody", IDS_NTP_THEME_MANAGED_DIALOG_BODY},
       {"uploadImage", IDS_NTP_CUSTOM_BG_UPLOAD_AN_IMAGE},
@@ -214,6 +208,17 @@ CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
        IDS_NTP_WALLPAPER_SEARCH_GENERIC_ERROR_DESCRIPTION_WITH_HISTORY_AND_INSPIRATION},
       {"wallpaperSearchDescriptorsChangedA11yMessage",
        IDS_NTP_WALLPAPER_SEARCH_DESCRIPTORS_CHANGED_A11Y_MESSAGE},
+      {"signedOutDescription", IDS_NTP_WALLPAPER_SEARCH_SIGNED_OUT_DESCRIPTION},
+      {"signedOutTitle", IDS_NTP_WALLPAPER_SEARCH_SIGNED_OUT_TITLE},
+      // Side Panel Extension Card.
+      {"customizeWithChromeWebstoreLabel",
+       IDS_NTP_CUSTOMIZE_CHROME_WEBSTORE_LABEL},
+      {"webstoreShoppingCategoryLabel",
+       IDS_NTP_WEBSTORE_SHOPPING_CATEOGRY_LABEL},
+      {"webstoreWritingHelpCollectionLabel",
+       IDS_NTP_WEBSTORE_WRITTING_HELP_COLLECTION_LABEL},
+      {"webstoreProductivityCategoryLabel",
+       IDS_NTP_WEBSTORE_PRODUCTIVITY_CATEOGRY_LABEL},
   };
   source->AddLocalizedStrings(kLocalizedStrings);
 
@@ -240,23 +245,19 @@ CustomizeChromeUI::CustomizeChromeUI(content::WebUI* web_ui)
           ntp_features::kCustomizeChromeSidePanelExtensionsCard) &&
           features::IsChromeWebuiRefresh2023());
 
-  OptimizationGuideKeyedService* optimization_guide_keyed_service =
-      OptimizationGuideKeyedServiceFactory::GetForProfile(profile_);
-  source->AddBoolean(
-      "wallpaperSearchEnabled",
-      wallpaper_search_flags_enabled &&
-          (optimization_guide_keyed_service &&
-           optimization_guide_keyed_service
-               ->ShouldFeatureBeCurrentlyEnabledForUser(
-                   optimization_guide::proto::ModelExecutionFeature::
-                       MODEL_EXECUTION_FEATURE_WALLPAPER_SEARCH)));
-
+  source->AddBoolean("wallpaperSearchEnabled", wallpaper_search_enabled);
   source->AddBoolean(
       "wallpaperSearchInspirationCardEnabled",
-      wallpaper_search_flags_enabled &&
+      wallpaper_search_enabled &&
           base::FeatureList::IsEnabled(
               ntp_features::kCustomizeChromeWallpaperSearchInspirationCard));
-  webui::SetupChromeRefresh2023(source);
+  source->AddBoolean(
+      "wallpaperSearchButtonEnabled",
+      wallpaper_search_enabled &&
+          base::FeatureList::IsEnabled(
+              ntp_features::kCustomizeChromeWallpaperSearchButton));
+  source->AddBoolean("toolbarCustomizationEnabled",
+                     base::FeatureList::IsEnabled(features::kToolbarPinning));
 
   webui::SetupWebUIDataSource(
       source,
@@ -293,6 +294,16 @@ void CustomizeChromeUI::BindInterface(
     page_factory_receiver_.reset();
   }
   page_factory_receiver_.Bind(std::move(receiver));
+}
+
+void CustomizeChromeUI::BindInterface(
+    mojo::PendingReceiver<
+        side_panel::customize_chrome::mojom::CustomizeToolbarHandlerFactory>
+        receiver) {
+  if (customize_toolbar_handler_factory_receiver_.is_bound()) {
+    customize_toolbar_handler_factory_receiver_.reset();
+  }
+  customize_toolbar_handler_factory_receiver_.Bind(std::move(receiver));
 }
 
 void CustomizeChromeUI::BindInterface(
@@ -414,4 +425,17 @@ void CustomizeChromeUI::CreateWallpaperSearchHandler(
   wallpaper_search_handler_ = std::make_unique<WallpaperSearchHandler>(
       std::move(handler), std::move(client), profile_, image_decoder_.get(),
       wallpaper_search_background_manager_.get(), id_);
+}
+
+void CustomizeChromeUI::CreateCustomizeToolbarHandler(
+    mojo::PendingRemote<
+        side_panel::customize_chrome::mojom::CustomizeToolbarClient> client,
+    mojo::PendingReceiver<
+        side_panel::customize_chrome::mojom::CustomizeToolbarHandler> handler) {
+  if (customize_toolbar_handler_) {
+    mojo::ReportBadMessage("Only allowed to create one Mojo pipe per WebUI.");
+    return;
+  }
+  customize_toolbar_handler_ = std::make_unique<CustomizeToolbarHandler>(
+      std::move(handler), std::move(client), profile_, web_contents_);
 }

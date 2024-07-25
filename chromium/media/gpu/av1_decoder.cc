@@ -127,6 +127,12 @@ scoped_refptr<AV1Picture> AV1Decoder::AV1Accelerator::CreateAV1PictureSecure(
   return nullptr;
 }
 
+AV1Decoder::AV1Accelerator::Status AV1Decoder::AV1Accelerator::SetStream(
+    base::span<const uint8_t> stream,
+    const DecryptConfig* decrypt_config) {
+  return Status::kOk;
+}
+
 AV1Decoder::AV1Decoder(std::unique_ptr<AV1Accelerator> accelerator,
                        VideoCodecProfile profile,
                        const VideoColorSpace& container_color_space)
@@ -188,11 +194,11 @@ void AV1Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   stream_id_ = id;
   stream_ = decoder_buffer.data();
-  stream_size_ = decoder_buffer.data_size();
+  stream_size_ = decoder_buffer.size();
   ClearCurrentFrame();
 
   parser_ = base::WrapUnique(new (std::nothrow) libgav1::ObuParser(
-      decoder_buffer.data(), decoder_buffer.data_size(), kDefaultOperatingPoint,
+      decoder_buffer.data(), decoder_buffer.size(), kDefaultOperatingPoint,
       buffer_pool_.get(), state_.get()));
   if (!parser_) {
     on_error_ = true;
@@ -210,6 +216,13 @@ void AV1Decoder::SetStream(int32_t id, const DecoderBuffer& decoder_buffer) {
     secure_handle_ = decoder_buffer.side_data()->secure_handle;
   } else {
     secure_handle_ = 0;
+  }
+
+  const AV1Accelerator::Status status = accelerator_->SetStream(
+      base::make_span(stream_, stream_size_), decrypt_config_.get());
+  if (status != AV1Accelerator::Status::kOk) {
+    on_error_ = true;
+    return;
   }
 }
 
@@ -266,19 +279,6 @@ AcceleratedVideoDecoder::DecodeResult AV1Decoder::DecodeInternal() {
       current_frame_header_ = parser_->frame_header();
       // Detects if a new coded video sequence is starting.
       if (parser_->sequence_header_changed()) {
-        // TODO(b/171853869): Remove this check once libgav1::ObuParser does
-        // this check.
-        if (current_frame_header_->frame_type != libgav1::kFrameKey ||
-            !current_frame_header_->show_frame ||
-            current_frame_header_->show_existing_frame ||
-            current_frame_->temporal_id() != 0) {
-          // Section 7.5.
-          DVLOG(1)
-              << "The first frame successive to sequence header OBU must be a "
-              << "keyframe with show_frame=1, show_existing_frame=0 and "
-              << "temporal_id=0";
-          return kDecodeError;
-        }
         if (IsSpatialLayerDecoding(
                 parser_->sequence_header()
                     .operating_point_idc[kDefaultOperatingPoint])) {
@@ -603,7 +603,7 @@ AV1Decoder::AV1Accelerator::Status AV1Decoder::DecodeAndOutputPicture(
   return AV1Accelerator::Status::kOk;
 }
 
-absl::optional<gfx::HDRMetadata> AV1Decoder::GetHDRMetadata() const {
+std::optional<gfx::HDRMetadata> AV1Decoder::GetHDRMetadata() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return hdr_metadata_;
 }

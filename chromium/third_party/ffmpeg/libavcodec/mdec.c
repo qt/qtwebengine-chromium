@@ -27,6 +27,7 @@
  * This is very similar to intra-only MPEG-1.
  */
 
+#include "libavutil/mem.h"
 #include "libavutil/mem_internal.h"
 
 #include "avcodec.h"
@@ -68,7 +69,7 @@ static inline int mdec_decode_block_intra(MDECContext *a, int16_t *block, int n)
     const int qscale = a->qscale;
 
     /* DC coefficient */
-    if (a->version == 2) {
+    if (a->version <= 2) {
         block[0] = 2 * get_sbits(&a->gb, 10) + 1024;
     } else {
         component = (n <= 3 ? 0 : n - 4 + 1);

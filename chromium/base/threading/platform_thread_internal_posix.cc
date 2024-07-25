@@ -11,6 +11,7 @@
 
 #include "base/containers/adapters.h"
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 
 namespace base {
@@ -22,7 +23,7 @@ BASE_EXPORT int ThreadTypeToNiceValue(ThreadType thread_type) {
     if (pair.thread_type == thread_type)
       return pair.nice_value;
   }
-  NOTREACHED() << "Unknown ThreadType";
+  NOTREACHED_IN_MIGRATION() << "Unknown ThreadType";
   return 0;
 }
 

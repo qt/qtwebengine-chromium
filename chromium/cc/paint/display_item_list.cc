@@ -83,15 +83,18 @@ DisplayItemList::~DisplayItemList() = default;
 
 void DisplayItemList::Raster(SkCanvas* canvas,
                              ImageProvider* image_provider) const {
-  gfx::Rect canvas_playback_rect;
-  if (!GetCanvasClipBounds(canvas, &canvas_playback_rect))
-    return;
+  Raster(canvas, PlaybackParams(image_provider));
+}
 
+void DisplayItemList::Raster(SkCanvas* canvas,
+                             const PlaybackParams& params) const {
   TRACE_EVENT_BEGIN1("cc", "DisplayItemList::Raster", "total_op_count",
                      TotalOpCount());
-  std::vector<size_t> offsets;
-  rtree_.Search(canvas_playback_rect, &offsets);
-  paint_op_buffer_.Playback(canvas, PlaybackParams(image_provider), &offsets);
+  std::vector<size_t> offsets = OffsetsOfOpsToRaster(canvas);
+  if (offsets.empty()) {
+    return;
+  }
+  paint_op_buffer_.Playback(canvas, params, /*local_ctm=*/true, &offsets);
 
   bool trace_enabled = false;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED("cc", &trace_enabled);
@@ -104,6 +107,16 @@ void DisplayItemList::Raster(SkCanvas* canvas,
     TRACE_EVENT_END1("cc", "DisplayItemList::Raster", "rastered_op_count",
                      rastered_op_count);
   }
+}
+
+std::vector<size_t> DisplayItemList::OffsetsOfOpsToRaster(
+    SkCanvas* canvas) const {
+  std::vector<size_t> offsets;
+  gfx::Rect canvas_playback_rect;
+  if (GetCanvasClipBounds(canvas, &canvas_playback_rect)) {
+    rtree_.Search(canvas_playback_rect, &offsets);
+  }
+  return offsets;
 }
 
 void DisplayItemList::CaptureContent(const gfx::Rect& rect,
@@ -350,8 +363,8 @@ bool DisplayItemList::GetColorIfSolidInRect(const gfx::Rect& rect,
 
 namespace {
 
-std::optional<DisplayItemList::DirectlyCompositedImageResult>
-DirectlyCompositedImageResultForPaintOpBuffer(const PaintOpBuffer& op_buffer) {
+std::optional<DirectlyCompositedImageInfo>
+DirectlyCompositedImageInfoForPaintOpBuffer(const PaintOpBuffer& op_buffer) {
   // A PaintOpBuffer for an image may have 1 (a kDrawimagerect or a kDrawrecord
   // that recursively contains a PaintOpBuffer for an image) or 4 paint
   // operations:
@@ -368,7 +381,7 @@ DirectlyCompositedImageResultForPaintOpBuffer(const PaintOpBuffer& op_buffer) {
     return std::nullopt;
 
   bool transpose_image_size = false;
-  std::optional<DisplayItemList::DirectlyCompositedImageResult> result;
+  std::optional<DirectlyCompositedImageInfo> result;
   for (const PaintOp& op : op_buffer) {
     switch (op.GetType()) {
       case PaintOpType::kSave:
@@ -418,7 +431,7 @@ DirectlyCompositedImageResultForPaintOpBuffer(const PaintOpBuffer& op_buffer) {
       case PaintOpType::kDrawRecord:
         if (result)
           return std::nullopt;
-        result = DirectlyCompositedImageResultForPaintOpBuffer(
+        result = DirectlyCompositedImageInfoForPaintOpBuffer(
             static_cast<const DrawRecordOp&>(op).record.buffer());
         if (!result)
           return std::nullopt;
@@ -437,9 +450,9 @@ DirectlyCompositedImageResultForPaintOpBuffer(const PaintOpBuffer& op_buffer) {
 
 }  // anonymous namespace
 
-std::optional<DisplayItemList::DirectlyCompositedImageResult>
-DisplayItemList::GetDirectlyCompositedImageResult() const {
-  return DirectlyCompositedImageResultForPaintOpBuffer(paint_op_buffer_);
+std::optional<DirectlyCompositedImageInfo>
+DisplayItemList::GetDirectlyCompositedImageInfo() const {
+  return DirectlyCompositedImageInfoForPaintOpBuffer(paint_op_buffer_);
 }
 
 }  // namespace cc

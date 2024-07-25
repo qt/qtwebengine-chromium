@@ -22,6 +22,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
 from selenium.webdriver.chromium.options import ChromiumOptions
 from selenium.webdriver.chromium.service import ChromiumService
 from selenium.webdriver.chromium.webdriver import ChromiumDriver
+from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
 
 from crossbench import exception, helper, plt
 from crossbench.browsers.browser_helper import BROWSERS_CACHE
@@ -201,6 +202,25 @@ class ChromiumWebDriverAndroid(ChromiumWebDriver):
     options.add_experimental_option("androidDeviceSerial",
                                     self.platform.adb.serial_id)
     return options
+
+
+class ChromiumWebDriverSsh(ChromiumWebDriver):
+
+  @property
+  def platform(self) -> plt.LinuxSshPlatform:
+    assert isinstance(
+        self._platform,
+        plt.LinuxSshPlatform), (f"Invalid platform: {self._platform}")
+    return cast(plt.LinuxSshPlatform, self._platform)
+
+  def _start_driver(self, session: BrowserSessionRunGroup,
+                    driver_path: pathlib.Path) -> RemoteWebDriver:
+    args = self._get_browser_flags_for_session(session)
+    options = self._create_options(session, args)
+    host = self._platform.host
+    port = self._platform.port
+    driver = RemoteWebDriver(f"http://{host}:{port}", options=options)
+    return driver
 
 
 class DriverNotFoundError(ValueError):

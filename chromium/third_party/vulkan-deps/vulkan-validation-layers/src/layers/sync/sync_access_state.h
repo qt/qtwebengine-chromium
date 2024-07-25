@@ -1,6 +1,6 @@
-/* Copyright (c) 2019-2023 The Khronos Group Inc.
- * Copyright (c) 2019-2023 Valve Corporation
- * Copyright (c) 2019-2023 LunarG, Inc.
+/* Copyright (c) 2019-2024 The Khronos Group Inc.
+ * Copyright (c) 2019-2024 Valve Corporation
+ * Copyright (c) 2019-2024 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -293,11 +293,26 @@ class ResourceAccessState : public SyncStageAccess {
             // then the barrier access is unsafe (R/W after R)
             return (src_exec_scope & (stage | barriers)) == 0;
         }
-        bool IsReadBarrierHazard(QueueId barrier_queue, VkPipelineStageFlags2KHR src_exec_scope) const {
+        bool IsReadBarrierHazard(QueueId barrier_queue, VkPipelineStageFlags2KHR src_exec_scope,
+                                 const SyncStageAccessFlags &src_access_scope) const {
             // If the read stage is not in the src sync scope
             // *AND* not execution chained with an existing sync barrier (that's the or)
             // then the barrier access is unsafe (R/W after R)
             VkPipelineStageFlags2 queue_ordered_stage = (queue == barrier_queue) ? stage : VK_PIPELINE_STAGE_2_NONE;
+
+            // Current implementation relies on TOP_OF_PIPE constant due to the fact that it's non-zero value
+            // and AND-ing with it can create execution dependency when it's necessary. When NONE constant is
+            // used, which equals to zero, then AND-ing with it always results in 0 which means "no barrier",
+            // so it's not possible to use NONE internally in equivalent way to TOP_OF_PIPE.
+            // Replace NONE with TOP_OF_PIPE in the scenarios where they are equivalent.
+            //
+            // If we update implementation to get rid of deprecated TOP_OF_PIPE/BOTTOM_OF_PIPE then we must
+            // invert the condition below and exchange TOP_OF_PIPE and NONE roles, so deprecated stages would
+            // not propagate into implementation internals.
+            if (src_exec_scope == VK_PIPELINE_STAGE_2_NONE && src_access_scope.none()) {
+                src_exec_scope = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+            }
+
             return (src_exec_scope & (queue_ordered_stage | barriers)) == 0;
         }
 
@@ -324,9 +339,9 @@ class ResourceAccessState : public SyncStageAccess {
     HazardResult DetectHazard(const SyncStageAccessInfoType &usage_info, const OrderingBarrier &ordering, QueueId queue_id) const;
     HazardResult DetectHazard(const ResourceAccessState &recorded_use, QueueId queue_id, const ResourceUsageRange &tag_range) const;
 
-    HazardResult DetectAsyncHazard(const SyncStageAccessInfoType &usage_info, ResourceUsageTag start_tag) const;
+    HazardResult DetectAsyncHazard(const SyncStageAccessInfoType &usage_info, ResourceUsageTag start_tag, QueueId queue_id) const;
     HazardResult DetectAsyncHazard(const ResourceAccessState &recorded_use, const ResourceUsageRange &tag_range,
-                                   ResourceUsageTag start_tag) const;
+                                   ResourceUsageTag start_tag, QueueId queue_id) const;
 
     HazardResult DetectBarrierHazard(const SyncStageAccessInfoType &usage_info, QueueId queue_id,
                                      VkPipelineStageFlags2KHR source_exec_scope,
@@ -607,7 +622,7 @@ bool ResourceAccessState::ApplyPredicatedWait(Predicate &predicate) {
         ClearRead();
     }
 
-    bool all_clear = last_reads.size() == 0;
+    bool all_clear = last_reads.empty();
     if (last_write.has_value()) {
         if (predicate(*this) || sync_reads) {
             // Clear any predicated write, or any the write from any any access with synchronized reads.

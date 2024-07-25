@@ -919,6 +919,20 @@ class HashTable final
             typename X,
             typename Y>
   friend struct WeakProcessingHashTableHelper;
+
+  struct TypeConstraints {
+    constexpr TypeConstraints() {
+      static_assert(!IsStackAllocatedType<Key>);
+      static_assert(!IsStackAllocatedType<Value>);
+      static_assert(
+          Allocator::kIsGarbageCollected ||
+              (!IsPointerToGarbageCollectedType<Key>::value &&
+               !IsPointerToGarbageCollectedType<Value>::value),
+          "Cannot put raw pointers to garbage-collected classes into an "
+          "off-heap collection.");
+    }
+  };
+  NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
 };
 
 template <typename Key,
@@ -949,11 +963,6 @@ inline HashTable<Key,
       stats_(nullptr)
 #endif
 {
-  static_assert(Allocator::kIsGarbageCollected ||
-                    (!IsPointerToGarbageCollectedType<Key>::value &&
-                     !IsPointerToGarbageCollectedType<Value>::value),
-                "Cannot put raw pointers to garbage-collected classes into an "
-                "off-heap collection.");
 }
 
 inline unsigned CalculateCapacity(unsigned size) {
@@ -1961,8 +1970,7 @@ void HashTable<Key, Value, Extractor, Traits, KeyTraits, Allocator>::Trace(
     auto visitor) const
   requires Allocator::kIsGarbageCollected
 {
-  static_assert(WTF::IsWeak<ValueType>::value ||
-                    IsTraceableInCollectionTrait<Traits>::value,
+  static_assert(WTF::IsWeak<ValueType>::value || IsTraceable<ValueType>::value,
                 "Value should not be traced");
   TraceTable(visitor, AsAtomicPtr(&table_)->load(std::memory_order_relaxed));
 }

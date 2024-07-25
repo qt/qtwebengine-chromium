@@ -5,9 +5,6 @@
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOC_FEATURES_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOC_FEATURES_H_
 
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_base/time/time.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_buildflags.h"
-#include "base/allocator/partition_allocator/src/partition_alloc/partition_root.h"
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/feature_list.h"
@@ -15,6 +12,9 @@
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "partition_alloc/partition_alloc_base/time/time.h"
+#include "partition_alloc/partition_alloc_buildflags.h"
+#include "partition_alloc/partition_root.h"
 
 namespace base {
 namespace features {
@@ -59,10 +59,10 @@ enum class DanglingPtrType {
 extern const BASE_EXPORT base::FeatureParam<DanglingPtrType>
     kDanglingPtrTypeParam;
 
-#if BUILDFLAG(USE_STARSCAN)
+#if PA_BUILDFLAG(USE_STARSCAN)
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPCScan);
 #endif
-#if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#if PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPCScanBrowserOnly);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocPCScanRendererOnly);
 
@@ -72,15 +72,12 @@ BASE_EXPORT int GetPartitionAllocLargeThreadCacheSizeValueForLowRAMAndroid();
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocLargeEmptySlotSpanRing);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocSchedulerLoopQuarantine);
-// Scheduler Loop Quarantine's capacity in bytes.
+// Scheduler Loop Quarantine's per-thread capacity in bytes.
 extern const BASE_EXPORT base::FeatureParam<int>
-    kPartitionAllocSchedulerLoopQuarantineCapacity;
-// Scheduler Loop Quarantine's capacity count.
-extern const BASE_EXPORT base::FeatureParam<int>
-    kPartitionAllocSchedulerLoopQuarantineCapacityCount;
+    kPartitionAllocSchedulerLoopQuarantineBranchCapacity;
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocZappingByFreeFlags);
-#endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
+#endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 
 enum class BackupRefPtrEnabledProcesses {
   // BRP enabled only in the browser process.
@@ -101,11 +98,6 @@ enum class BackupRefPtrMode {
   // BRP is enabled in the main partition, as well as certain Renderer-only
   // partitions (if enabled in Renderer at all).
   kEnabled,
-
-  // As above, but "same slot" mode is used, as opposed to "previous slot".
-  // This means that ref-count is placed at the end of the same slot as the
-  // object it protects, as opposed to the end of the previous slot.
-  kEnabledInSameSlotMode,
 };
 
 enum class MemtagMode {
@@ -128,6 +120,24 @@ enum class BucketDistributionMode : uint8_t {
   kDefault,
   kDenser,
 };
+
+// Parameter for 'kPartitionAllocMakeFreeNoOpOnShutdown' feature which
+// controls when free() becomes a no-op during Shutdown()
+enum class WhenFreeBecomesNoOp {
+  kBeforePreShutdown,
+  kBeforeHaltingStartupTracingController,
+  kBeforeShutDownThreads,
+  kInShutDownThreads,
+  kAfterShutDownThreads,
+};
+
+// Inserts a no-op on 'free()' allocator shim at the front of the
+// dispatch chain if called from the appropriate callsite.
+BASE_EXPORT void MakeFreeNoOp(WhenFreeBecomesNoOp callsite);
+
+BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocMakeFreeNoOpOnShutdown);
+extern const BASE_EXPORT base::FeatureParam<WhenFreeBecomesNoOp>
+    kPartitionAllocMakeFreeNoOpOnShutdownParam;
 
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocBackupRefPtr);
 extern const BASE_EXPORT base::FeatureParam<BackupRefPtrEnabledProcesses>
@@ -179,11 +189,6 @@ extern const base::FeatureParam<bool>
     kPartialLowEndModeExcludePartitionAllocSupport;
 #endif
 
-// Name of the synthetic trial associated with forcibly enabling BRP in
-// all processes.
-inline constexpr base::StringPiece kRendererLiveBRPSyntheticTrialName =
-    "BackupRefPtrRendererLive";
-
 BASE_EXPORT BASE_DECLARE_FEATURE(kEnableConfigurableThreadCacheMultiplier);
 BASE_EXPORT double GetThreadCacheMultiplier();
 BASE_EXPORT double GetThreadCacheMultiplierForAndroid();
@@ -205,9 +210,13 @@ BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocDisableBRPInBufferPartition);
 // This feature is additionally gated behind a buildflag because
 // pool offset freelists cannot be represented when PartitionAlloc uses
 // 32-bit pointers.
-#if BUILDFLAG(USE_FREELIST_POOL_OFFSETS)
+#if PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
 BASE_EXPORT BASE_DECLARE_FEATURE(kUsePoolOffsetFreelists);
 #endif
+
+// When set, partitions use a larger ring buffer and free memory less
+// aggressively when in the foreground.
+BASE_EXPORT BASE_DECLARE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground);
 
 }  // namespace features
 }  // namespace base

@@ -137,18 +137,6 @@ class RiscvOperandGeneratorT final : public OperandGeneratorT<Adapter> {
 };
 
 template <typename Adapter>
-void InstructionSelectorT<Adapter>::VisitProtectedStore(node_t node) {
-  // TODO(eholk)
-  UNIMPLEMENTED();
-}
-
-template <typename Adapter>
-void InstructionSelectorT<Adapter>::VisitProtectedLoad(node_t node) {
-  // TODO(eholk)
-  UNIMPLEMENTED();
-}
-
-template <typename Adapter>
 void VisitRR(InstructionSelectorT<Adapter>* selector, ArchOpcode opcode,
              typename Adapter::node_t node) {
   RiscvOperandGeneratorT<Adapter> g(selector);
@@ -388,7 +376,8 @@ static void VisitBinop(InstructionSelectorT<Adapter>* selector,
 template <typename Adapter>
 void InstructionSelectorT<Adapter>::VisitStackSlot(node_t node) {
   StackSlotRepresentation rep = this->stack_slot_representation_of(node);
-  int slot = frame_->AllocateSpillSlot(rep.size(), rep.alignment());
+  int slot =
+      frame_->AllocateSpillSlot(rep.size(), rep.alignment(), rep.is_tagged());
   OperandGenerator g(this);
 
   Emit(kArchStackSlot, g.DefineAsRegister(node),
@@ -415,43 +404,104 @@ void InstructionSelectorT<Adapter>::VisitLoadTransform(node_t node) {
     UNIMPLEMENTED();
   } else {
     LoadTransformParameters params = LoadTransformParametersOf(node->op());
-
+    bool is_protected = (params.kind == MemoryAccessKind::kProtected);
+    InstructionCode opcode = kArchNop;
     switch (params.transformation) {
       case LoadTransformation::kS128Load8Splat:
-        EmitS128Load(this, node, kRiscvS128LoadSplat, E8, m1);
+        opcode = kRiscvS128LoadSplat;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E8, m1);
         break;
       case LoadTransformation::kS128Load16Splat:
-        EmitS128Load(this, node, kRiscvS128LoadSplat, E16, m1);
+        opcode = kRiscvS128LoadSplat;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E16, m1);
         break;
       case LoadTransformation::kS128Load32Splat:
-        EmitS128Load(this, node, kRiscvS128LoadSplat, E32, m1);
+        opcode = kRiscvS128LoadSplat;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E32, m1);
         break;
       case LoadTransformation::kS128Load64Splat:
-        EmitS128Load(this, node, kRiscvS128LoadSplat, E64, m1);
+        opcode = kRiscvS128LoadSplat;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E64, m1);
         break;
       case LoadTransformation::kS128Load8x8S:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendS, E16, m1);
+        opcode = kRiscvS128Load64ExtendS;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E16, m1);
         break;
       case LoadTransformation::kS128Load8x8U:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendU, E16, m1);
+        opcode = kRiscvS128Load64ExtendU;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E16, m1);
         break;
       case LoadTransformation::kS128Load16x4S:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendS, E32, m1);
+        opcode = kRiscvS128Load64ExtendS;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E32, m1);
         break;
       case LoadTransformation::kS128Load16x4U:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendU, E32, m1);
+        opcode = kRiscvS128Load64ExtendU;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E32, m1);
         break;
       case LoadTransformation::kS128Load32x2S:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendS, E64, m1);
+        opcode = kRiscvS128Load64ExtendS;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E64, m1);
         break;
       case LoadTransformation::kS128Load32x2U:
-        EmitS128Load(this, node, kRiscvS128Load64ExtendU, E64, m1);
+        opcode = kRiscvS128Load64ExtendU;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E64, m1);
         break;
       case LoadTransformation::kS128Load32Zero:
-        EmitS128Load(this, node, kRiscvS128Load32Zero, E32, m1);
+        opcode = kRiscvS128Load32Zero;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E32, m1);
         break;
       case LoadTransformation::kS128Load64Zero:
-        EmitS128Load(this, node, kRiscvS128Load64Zero, E64, m1);
+        opcode = kRiscvS128Load64Zero;
+        if (is_protected) {
+          opcode |=
+              AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
+        }
+        EmitS128Load(this, node, opcode, E64, m1);
         break;
       default:
         UNIMPLEMENTED();
@@ -675,58 +725,19 @@ void EmitWordCompareZero(InstructionSelectorT<Adapter>* selector,
                                  g.UseRegisterOrImmediateZero(value), cont);
 }
 
+#ifdef V8_TARGET_ARCH_RISCV64
 template <typename Adapter>
-void VisitAtomicExchange(InstructionSelectorT<Adapter>* selector, Node* node,
-                         ArchOpcode opcode, AtomicWidth width) {
+void EmitWord32CompareZero(InstructionSelectorT<Adapter>* selector,
+                         typename Adapter::node_t value,
+                         FlagsContinuationT<Adapter>* cont) {
   RiscvOperandGeneratorT<Adapter> g(selector);
-  Node* base = node->InputAt(0);
-  Node* index = node->InputAt(1);
-  Node* value = node->InputAt(2);
-
-  AddressingMode addressing_mode = kMode_MRI;
-  InstructionOperand inputs[3];
-  size_t input_count = 0;
-  inputs[input_count++] = g.UseUniqueRegister(base);
-  inputs[input_count++] = g.UseUniqueRegister(index);
-  inputs[input_count++] = g.UseUniqueRegister(value);
-  InstructionOperand outputs[1];
-  outputs[0] = g.UseUniqueRegister(node);
-  InstructionOperand temp[3];
-  temp[0] = g.TempRegister();
-  temp[1] = g.TempRegister();
-  temp[2] = g.TempRegister();
-  InstructionCode code = opcode | AddressingModeField::encode(addressing_mode) |
-                         AtomicWidthField::encode(width);
-  selector->Emit(code, 1, outputs, input_count, inputs, 3, temp);
+  InstructionOperand inputs[] = {g.UseRegisterOrImmediateZero(value)};
+  InstructionOperand temps[] = {g.TempRegister()};
+  selector->EmitWithContinuation(kRiscvCmpZero32, 0, nullptr, arraysize(inputs),
+                                 inputs, arraysize(temps), temps, cont);
 }
+#endif
 
-template <typename Adapter>
-void VisitAtomicCompareExchange(InstructionSelectorT<Adapter>* selector,
-                                Node* node, ArchOpcode opcode,
-                                AtomicWidth width) {
-  RiscvOperandGeneratorT<Adapter> g(selector);
-  Node* base = node->InputAt(0);
-  Node* index = node->InputAt(1);
-  Node* old_value = node->InputAt(2);
-  Node* new_value = node->InputAt(3);
-
-  AddressingMode addressing_mode = kMode_MRI;
-  InstructionOperand inputs[4];
-  size_t input_count = 0;
-  inputs[input_count++] = g.UseUniqueRegister(base);
-  inputs[input_count++] = g.UseUniqueRegister(index);
-  inputs[input_count++] = g.UseUniqueRegister(old_value);
-  inputs[input_count++] = g.UseUniqueRegister(new_value);
-  InstructionOperand outputs[1];
-  outputs[0] = g.UseUniqueRegister(node);
-  InstructionOperand temp[3];
-  temp[0] = g.TempRegister();
-  temp[1] = g.TempRegister();
-  temp[2] = g.TempRegister();
-  InstructionCode code = opcode | AddressingModeField::encode(addressing_mode) |
-                         AtomicWidthField::encode(width);
-  selector->Emit(code, 1, outputs, input_count, inputs, 3, temp);
-}
 
 template <typename Adapter>
 void InstructionSelectorT<Adapter>::VisitFloat32Equal(node_t node) {
@@ -793,6 +804,23 @@ void InstructionSelectorT<Adapter>::VisitFloat64SilenceNaN(node_t node) {
   } else {
     VisitRR(this, kRiscvFloat64SilenceNaN, node);
   }
+}
+
+template <>
+void InstructionSelectorT<TurboshaftAdapter>::VisitBitcastWord32PairToFloat64(
+    node_t node) {
+  using namespace turboshaft;  // NOLINT(build/namespaces)
+  RiscvOperandGeneratorT<TurboshaftAdapter> g(this);
+  const auto& bitcast =
+      this->Cast<turboshaft::BitcastWord32PairToFloat64Op>(node);
+  node_t hi = bitcast.high_word32();
+  node_t lo = bitcast.low_word32();
+  // TODO(nicohartmann@): We could try to emit a better sequence here.
+  InstructionOperand zero = sequence()->AddImmediate(Constant(0.0));
+  InstructionOperand temp = g.TempDoubleRegister();
+  Emit(kRiscvFloat64InsertHighWord32, temp, zero, g.Use(hi));
+  Emit(kRiscvFloat64InsertLowWord32, g.DefineSameAsFirst(node), temp,
+       g.Use(lo));
 }
 
 template <typename Adapter>
@@ -1037,11 +1065,7 @@ void InstructionSelectorT<Adapter>::VisitFloat64Min(node_t node) {
 
 template <typename Adapter>
 void InstructionSelectorT<Adapter>::VisitTruncateFloat64ToWord32(node_t node) {
-  if constexpr (Adapter::IsTurboshaft) {
-    UNIMPLEMENTED();
-  } else {
-    VisitRR(this, kArchTruncateDoubleToI, node);
-  }
+  VisitRR(this, kArchTruncateDoubleToI, node);
 }
 
 template <typename Adapter>
@@ -2244,18 +2268,6 @@ void InstructionSelectorT<Adapter>::VisitWord32Ctz(node_t node) {
   }
 }
 
-template <>
-Node* InstructionSelectorT<TurbofanAdapter>::FindProjection(
-    Node* node, size_t projection_index) {
-  return NodeProperties::FindProjection(node, projection_index);
-}
-
-template <>
-TurboshaftAdapter::node_t
-InstructionSelectorT<TurboshaftAdapter>::FindProjection(
-    node_t node, size_t projection_index) {
-  UNIMPLEMENTED();
-}
 
 #define VISIT_EXT_MUL(OPCODE1, OPCODE2, TYPE)                                 \
   template <typename Adapter>                                                 \

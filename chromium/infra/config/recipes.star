@@ -121,14 +121,22 @@ build_recipe(
 
 build_recipe(
     name = "recipe:chrome_build/build_perf",
+    bootstrappable = True,
 )
 
 build_recipe(
     name = "recipe:chrome_build/build_perf_siso",
+    bootstrappable = True,
 )
 
 build_recipe(
     name = "recipe:chrome_build/build_perf_developer",
+    bootstrappable = True,
+)
+
+build_recipe(
+    name = "recipe:chrome_build/build_perf_without_rbe",
+    bootstrappable = True,
 )
 
 build_recipe(
@@ -156,6 +164,10 @@ build_recipe(
 build_recipe(
     name = "recipe:chromium/orchestrator",
     bootstrappable = True,
+)
+
+build_recipe(
+    name = "recipe:chromium/rr_test_launcher",
 )
 
 build_recipe(
@@ -190,10 +202,15 @@ build_recipe(
 
 build_recipe(
     name = "recipe:chromium/fuzz",
+    bootstrappable = True,
 )
 
 build_recipe(
     name = "recipe:chromium/mega_cq_launcher",
+)
+
+build_recipe(
+    name = "recipe:chromium/universal_test_runner_test",
 )
 
 build_recipe(
@@ -202,6 +219,10 @@ build_recipe(
 
 build_recipe(
     name = "recipe:chromium_fuzz_coverage",
+)
+
+build_recipe(
+    name = "recipe:chrome_codeql_database_builder",
 )
 
 build_recipe(

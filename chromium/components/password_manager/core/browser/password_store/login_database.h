@@ -30,13 +30,15 @@
 #include "base/gtest_prod_util.h"
 #endif
 
+namespace affiliations {
+class SQLTableBuilder;
+}  // namespace affiliations
+
 namespace syncer {
 class MetadataBatch;
 }
 
 namespace password_manager {
-
-class SQLTableBuilder;
 
 extern const int kCurrentVersionNumber;
 extern const int kCompatibleVersionNumber;
@@ -46,15 +48,23 @@ extern const int kCompatibleVersionNumber;
 // the login information.
 class LoginDatabase {
  public:
-  // If a non-null `is_empty_cb` is passed, it's called to signal whether the
-  // database is empty, i.e. without any logins *or* blocklists. The call
-  // happens when initializing the database and when adding/removing entries,
-  // regardless of success.
-  LoginDatabase(const base::FilePath& db_path,
-                IsAccountStore is_account_store,
-                const base::RepeatingCallback<void(bool)>& is_empty_cb =
-                    base::NullCallback());
+  struct LoginDatabaseEmptinessState {
+    // True if the login database has 0 passwords stored.
+    bool no_login_found = true;
+    // True if the database has autofillable credentials. Used to decide whether
+    // password suggestions can be displayed via manual fallbacks. Not
+    // autofillable entries are: blocklisted entries, federated credentials and
+    // username-only credentials.
+    bool autofillable_credentials_exist = false;
 
+    friend bool operator==(const LoginDatabaseEmptinessState&,
+                           const LoginDatabaseEmptinessState&) = default;
+  };
+
+  using IsEmptyCallback =
+      base::RepeatingCallback<void(LoginDatabaseEmptinessState)>;
+
+  LoginDatabase(const base::FilePath& db_path, IsAccountStore is_account_store);
   LoginDatabase(const LoginDatabase&) = delete;
   LoginDatabase& operator=(const LoginDatabase&) = delete;
 
@@ -160,7 +170,7 @@ class LoginDatabase {
   // whether further use of this login database will succeed is unspecified.
   bool DeleteAndRecreateDatabaseFile();
 
-  bool IsEmpty();
+  LoginDatabaseEmptinessState IsEmpty();
 
   // On MacOS, it deletes all logins from the database that cannot be decrypted
   // when encryption key from Keychain is available. If the Keychain is locked,
@@ -178,6 +188,12 @@ class LoginDatabase {
   bool BeginTransaction();
   void RollbackTransaction();
   bool CommitTransaction();
+
+  // `is_empty_cb`is called to signal whether the database is empty (i.e.
+  // without any logins *or* blocklists) and whether there are any autofillable
+  // logins. The call happens when initializing the database and when
+  // adding/removing entries, regardless of success.
+  void SetIsEmptyCb(IsEmptyCallback is_empty_cb);
 
   StatisticsTable& stats_table() { return stats_table_; }
   InsecureCredentialsTable& insecure_credentials_table() {
@@ -325,7 +341,7 @@ class LoginDatabase {
 
   // Initializes all the *_statement_ data members with appropriate SQL
   // fragments based on |builder|.
-  void InitializeStatementStrings(const SQLTableBuilder& builder);
+  void InitializeStatementStrings(const affiliations::SQLTableBuilder& builder);
 
   // Returns either kProfileStore or kAccountStore depending on the value of
   // `is_account_store_`.
@@ -355,7 +371,7 @@ class LoginDatabase {
 
   const base::FilePath db_path_;
   const IsAccountStore is_account_store_;
-  const base::RepeatingCallback<void(bool)> is_empty_cb_;
+  IsEmptyCallback is_empty_cb_ = base::NullCallback();
 
   mutable sql::Database db_;
   sql::MetaTable meta_table_;

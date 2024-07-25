@@ -2,18 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef BASE_TOKEN_H_
 #define BASE_TOKEN_H_
 
 #include <stdint.h>
 
 #include <compare>
+#include <optional>
 #include <string>
 
 #include "base/base_export.h"
 #include "base/containers/span.h"
 #include "base/strings/string_piece.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 
@@ -59,9 +64,9 @@ class BASE_EXPORT Token {
   // Generates a string representation of this Token useful for e.g. logging.
   std::string ToString() const;
 
-  // FromString is the opposite of ToString. It returns absl::nullopt if the
+  // FromString is the opposite of ToString. It returns std::nullopt if the
   // |string_representation| is invalid.
-  static absl::optional<Token> FromString(StringPiece string_representation);
+  static std::optional<Token> FromString(StringPiece string_representation);
 
  private:
   // Note: Two uint64_t are used instead of uint8_t[16] in order to have a
@@ -81,7 +86,7 @@ class PickleIterator;
 
 // For serializing and deserializing Token values.
 BASE_EXPORT void WriteTokenToPickle(Pickle* pickle, const Token& token);
-BASE_EXPORT absl::optional<Token> ReadTokenFromPickle(
+BASE_EXPORT std::optional<Token> ReadTokenFromPickle(
     PickleIterator* pickle_iterator);
 
 }  // namespace base

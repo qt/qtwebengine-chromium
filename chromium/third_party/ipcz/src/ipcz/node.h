@@ -7,11 +7,13 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "ipcz/api_object.h"
 #include "ipcz/driver_memory.h"
+#include "ipcz/features.h"
 #include "ipcz/ipcz.h"
 #include "ipcz/link_side.h"
 #include "ipcz/node_messages.h"
@@ -21,7 +23,6 @@
 #include "third_party/abseil-cpp/absl/container/flat_hash_map.h"
 #include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 #include "third_party/abseil-cpp/absl/synchronization/mutex.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/span.h"
 
 namespace ipcz {
@@ -59,6 +60,7 @@ class Node : public APIObjectImpl<Node, APIObject::kNode> {
   Type type() const { return type_; }
   const IpczDriver& driver() const { return driver_; }
   const IpczCreateNodeOptions& options() const { return options_; }
+  const Features& features() const { return features_; }
 
   // APIObject:
   IpczResult Close() override;
@@ -82,7 +84,7 @@ class Node : public APIObjectImpl<Node, APIObject::kNode> {
 
   // Returns a copy of the Connection to the remote node named by `name`, or
   // null if this node has no connection to that node.
-  absl::optional<Node::Connection> GetConnection(const NodeName& name);
+  std::optional<Node::Connection> GetConnection(const NodeName& name);
 
   // Returns a reference to the NodeLink used by this Node to communicate with
   // the remote node identified by `name`; or null if this node has no NodeLink
@@ -135,6 +137,7 @@ class Node : public APIObjectImpl<Node, APIObject::kNode> {
                           LinkSide side,
                           Node::Type remote_node_type,
                           uint32_t remote_protocol_version,
+                          const Features& remote_features,
                           Ref<DriverTransport> transport,
                           Ref<NodeLinkMemory> memory);
 
@@ -189,6 +192,7 @@ class Node : public APIObjectImpl<Node, APIObject::kNode> {
   const Type type_;
   const IpczDriver& driver_;
   const IpczCreateNodeOptions options_;
+  const Features features_;
 
   absl::Mutex mutex_;
 

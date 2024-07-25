@@ -10,9 +10,7 @@
 
 namespace blink {
 
-class RubyContainer;
-
-// This is a general block container wrapping an anonymous LayoutRubyAsInline.
+// This is a general block container wrapping an anonymous LayoutRuby.
 //
 // https://drafts.csswg.org/css-ruby/#block-ruby
 // > If an element has an inner display type of ruby and an outer display type
@@ -22,7 +20,6 @@ class CORE_EXPORT LayoutRubyAsBlock : public LayoutNGBlockFlow {
  public:
   explicit LayoutRubyAsBlock(Element*);
   ~LayoutRubyAsBlock() override;
-  void Trace(Visitor* visitor) const override;
 
   const char* GetName() const override {
     NOT_DESTROYED();
@@ -35,14 +32,8 @@ class CORE_EXPORT LayoutRubyAsBlock : public LayoutNGBlockFlow {
 
   void AddChild(LayoutObject* child,
                 LayoutObject* before_child = nullptr) override;
-  void RemoveChild(LayoutObject* child) override;
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
   void RemoveLeftoverAnonymousBlock(LayoutBlock*) override;
-
-  void DidRemoveChildFromColumn(LayoutObject& child);
-
- private:
-  Member<RubyContainer> ruby_container_;
 };
 
 template <>

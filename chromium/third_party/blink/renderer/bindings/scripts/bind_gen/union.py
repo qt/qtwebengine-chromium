@@ -350,7 +350,7 @@ def make_factory_methods(cg_context):
             # Shortcut to reduce the binary size
             S("blink_value", (_format(
                 "auto&& ${blink_value} = "
-                "{}::ToWrappableUnsafe(${v8_value}.As<v8::Object>());",
+                "{}::ToWrappableUnsafe(${isolate}, ${v8_value}.As<v8::Object>());",
                 v8_bridge_name))))
 
     # 6. If Type(V) is Object and V has an [[ArrayBufferData]] internal slot,
@@ -1048,11 +1048,14 @@ def generate_union(union_identifier):
         PathManager(idl_type.type_definition_object).api_path(ext="h")
         for idl_type in union.flattened_member_types if idl_type.is_interface
     ])
-    (header_forward_decls, header_include_headers, source_forward_decls,
+    (header_forward_decls, header_include_headers,
+     header_stdcpp_include_headers, source_forward_decls,
      source_include_headers) = collect_forward_decls_and_include_headers(
          union.flattened_member_types)
     header_node.accumulator.add_class_decls(header_forward_decls)
     header_node.accumulator.add_include_headers(header_include_headers)
+    header_node.accumulator.add_stdcpp_include_headers(
+        header_stdcpp_include_headers)
     source_node.accumulator.add_class_decls(source_forward_decls)
     source_node.accumulator.add_include_headers(source_include_headers)
 

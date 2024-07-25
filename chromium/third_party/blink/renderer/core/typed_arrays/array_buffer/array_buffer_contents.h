@@ -29,6 +29,7 @@
 
 #include "base/allocator/partition_allocator/src/partition_alloc/page_allocator.h"
 #include "base/allocator/partition_allocator/src/partition_alloc/partition_alloc_constants.h"
+#include "base/containers/span.h"
 #include "base/memory/platform_shared_memory_region.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -64,7 +65,7 @@ class CORE_EXPORT ArrayBufferContents {
                       SharingType is_shared,
                       InitializationPolicy policy)
       : ArrayBufferContents(num_elements,
-                            absl::nullopt,
+                            std::nullopt,
                             element_byte_size,
                             is_shared,
                             policy) {}
@@ -72,7 +73,7 @@ class CORE_EXPORT ArrayBufferContents {
   // ArrayBuffer is created. Otherwise a backing store for a fixed-length
   // ArrayBuffer is created.
   ArrayBufferContents(size_t num_elements,
-                      absl::optional<size_t> max_num_elements,
+                      std::optional<size_t> max_num_elements,
                       size_t element_byte_size,
                       SharingType is_shared,
                       InitializationPolicy);
@@ -124,6 +125,18 @@ class CORE_EXPORT ArrayBufferContents {
                           : false;
   }
   bool IsValid() const { return backing_store_ && backing_store_->Data(); }
+  base::span<uint8_t> ByteSpan() const {
+    // SAFETY: `BackingStore` guarantees that `Data()` points to at least
+    // `DataLength()` many bytes.
+    return UNSAFE_BUFFERS(
+        base::span(static_cast<uint8_t*>(Data()), DataLength()));
+  }
+  base::span<uint8_t> ByteSpanMaybeShared() const {
+    // SAFETY: `BackingStore` guarantees that `Data()` points to at least
+    // `DataLength()` many bytes.
+    return UNSAFE_BUFFERS(
+        base::span(static_cast<uint8_t*>(DataMaybeShared()), DataLength()));
+  }
 
   std::shared_ptr<v8::BackingStore> BackingStore() const {
     return backing_store_;

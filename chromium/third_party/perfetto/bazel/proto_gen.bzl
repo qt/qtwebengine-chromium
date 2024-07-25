@@ -26,10 +26,15 @@ def _proto_gen_impl(ctx):
         for dep in ctx.attr.deps
         for f in dep[ProtoInfo].transitive_imports.to_list()
     ]
+    proto_paths = [
+        f
+        for dep in ctx.attr.deps
+        for f in dep[ProtoInfo].transitive_proto_path.to_list()
+    ]
 
     proto_path = "."
 
-    out_dir = str(ctx.genfiles_dir.path)
+    out_dir = ctx.bin_dir.path
     strip_base_path = ""
     if ctx.attr.root != "//":
         # This path is hit in Google internal builds, where root is typically
@@ -38,8 +43,7 @@ def _proto_gen_impl(ctx):
 
         # The below will likely be //third_party/perfetto/ but may also be any
         # subdir under //third_party/perfetto.
-        last_slash_idx = ctx.build_file_path.rfind("/")
-        strip_base_path = ctx.build_file_path[:last_slash_idx + 1]
+        strip_base_path = ctx.label.package + "/"
     elif ctx.label.workspace_root:
         # This path is hit when proto targets are built as @perfetto//:xxx
         # instead of //:xxx. This happens in embedder builds. In this case,
@@ -59,8 +63,10 @@ def _proto_gen_impl(ctx):
         out_files += [ctx.actions.declare_file(base_path + ".%s.cc" % suffix)]
 
     arguments = [
-        "--proto_path=" + proto_path,
+        "--proto_path=" + proto_path
+        for proto_path in proto_paths
     ]
+
     plugin_deps = []
     if ctx.attr.plugin:
         wrap_arg = ctx.attr.wrapper_namespace
@@ -121,7 +127,6 @@ proto_gen = rule(
             default = "//",
         ),
     },
-    output_to_genfiles = True,
     implementation = _proto_gen_impl,
 )
 

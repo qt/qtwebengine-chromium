@@ -7,7 +7,6 @@
 #include <utility>
 #include <vector>
 
-#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/ranges/algorithm.h"
@@ -75,7 +74,7 @@ ActiveDevicesProviderImpl::CalculateInvalidationInfo(
               switches::kSyncUseFCMRegistrationTokensList)) {
         all_fcm_registration_tokens.push_back(device->fcm_registration_token());
       }
-    } else if (!device->interested_data_types().Empty()) {
+    } else if (!device->interested_data_types().empty()) {
       // An empty FCM registration token may be set for old clients, and for
       // modern clients supporting sync standalone invalidatoins if there was an
       // error during FCM registration. This does not matter in this case since
@@ -133,7 +132,7 @@ ActiveDevicesProviderImpl::GetActiveDevicesSortedByUpdateTime() const {
 
   if (base::FeatureList::IsEnabled(
           switches::kSyncFilterOutInactiveDevicesForSingleClient)) {
-    base::EraseIf(all_devices, [this](const syncer::DeviceInfo* device) {
+    std::erase_if(all_devices, [this](const syncer::DeviceInfo* device) {
       const base::Time expected_expiration_time =
           device->last_updated_timestamp() + device->pulse_interval() +
           switches::kSyncActiveDeviceMargin.Get();

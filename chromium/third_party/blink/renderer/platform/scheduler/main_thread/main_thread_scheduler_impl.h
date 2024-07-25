@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stack>
 
 #include "base/dcheck_is_on.h"
@@ -26,7 +27,6 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
@@ -52,7 +52,6 @@
 #include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread_scheduler.h"
 #include "third_party/blink/renderer/platform/scheduler/public/rail_mode_observer.h"
-#include "third_party/blink/renderer/platform/scheduler/public/task_attribution_tracker.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -115,7 +114,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // Don't use except for tracing.
   struct TaskDescriptionForTracing {
     TaskType task_type;
-    absl::optional<MainThreadTaskQueue::QueueType> queue_type;
+    std::optional<MainThreadTaskQueue::QueueType> queue_type;
 
     // Required in order to wrap in TraceableState.
     constexpr bool operator!=(const TaskDescriptionForTracing& rhs) const {
@@ -194,6 +193,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   Vector<WebInputEventAttribution> GetPendingUserInputInfo(
       bool include_continuous) const override;
   void StartIdlePeriodForTesting() override;
+  void SetRendererBackgroundedForTesting(bool backgrounded) override;
 
   // ThreadScheduler implementation:
   bool ShouldYieldForHighPriorityWork() override;
@@ -211,9 +211,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void AddTaskObserver(base::TaskObserver* task_observer) override;
   void RemoveTaskObserver(base::TaskObserver* task_observer) override;
   void SetV8Isolate(v8::Isolate* isolate) override;
-  TaskAttributionTracker* GetTaskAttributionTracker() override;
-  void InitializeTaskAttributionTracker(
-      std::unique_ptr<TaskAttributionTracker> tracker) override;
   blink::MainThreadScheduler* ToMainThreadScheduler() override;
 
   // ThreadSchedulerBase implementation:
@@ -223,8 +220,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   // RenderWidgetSignals::Observer implementation:
   void SetAllRenderWidgetsHidden(bool hidden) override;
-  void SetHasVisibleRenderWidgetWithTouchHandler(
-      bool has_visible_render_widget_with_touch_handler) override;
 
   scoped_refptr<WidgetScheduler> CreateWidgetScheduler();
   void WillBeginFrame(const viz::BeginFrameArgs& args);
@@ -242,13 +237,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       const WebInputEventAttribution& web_input_event_attribution);
   void DidHandleInputEventOnMainThread(const WebInputEvent& web_input_event,
                                        WebInputEventResult result);
-  void DidAnimateForInputOnCompositorThread();
-
-  // Returns true if the scheduler has reason to believe that high priority work
-  // may soon arrive on the main thread, e.g., if gesture events were observed
-  // recently.
-  // Must be called from the main thread.
-  bool IsHighPriorityWorkAnticipated();
 
   // Use a separate task runner so that IPC tasks are not logged via the same
   // task queue that executes them. Otherwise this would result in an infinite
@@ -439,14 +427,14 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void AddAgentGroupScheduler(AgentGroupSchedulerImpl*);
 
   struct AgentGroupSchedulerScope {
-    std::unique_ptr<base::SingleThreadTaskRunner::CurrentHandleOverride>
+    std::unique_ptr<base::SingleThreadTaskRunner::CurrentDefaultHandle>
         single_thread_task_runner_current_handle_override;
     WeakPersistent<AgentGroupScheduler> previous_agent_group_scheduler;
     WeakPersistent<AgentGroupScheduler> current_agent_group_scheduler;
     scoped_refptr<base::SingleThreadTaskRunner> previous_task_runner;
     scoped_refptr<base::SingleThreadTaskRunner> current_task_runner;
     const char* trace_event_scope_name;
-    raw_ptr<void, ExperimentalRenderer> trace_event_scope_id;
+    raw_ptr<void> trace_event_scope_id;
   };
 
   void BeginAgentGroupSchedulerScope(
@@ -489,8 +477,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     ~RendererPauseHandleImpl() override;
 
    private:
-    raw_ptr<MainThreadSchedulerImpl, ExperimentalRenderer>
-        scheduler_;  // NOT OWNED
+    raw_ptr<MainThreadSchedulerImpl> scheduler_;  // NOT OWNED
   };
 
   // IdleHelper::Delegate implementation:
@@ -525,14 +512,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // The amount of time which idle periods can continue being scheduled when the
   // renderer has been hidden, before going to sleep for good.
   static const int kEndIdleWhenHiddenDelayMillis = 10000;
-
-  // The amount of time in milliseconds we have to respond to user input as
-  // defined by RAILS.
-  static const int kRailsResponseTimeMillis = 50;
-
-  // The time we should stay in a priority-escalated mode after a call to
-  // DidAnimateForInputOnCompositorThread().
-  static const int kFlingEscalationLimitMillis = 100;
 
   // Schedules an immediate PolicyUpdate, if there isn't one already pending and
   // sets |policy_may_need_update_|. Note |any_thread_lock_| must be
@@ -578,10 +557,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // nagigation. This function does that. Must be called from the main thread.
   void ResetForNavigationLocked();
 
-  // Estimates the maximum task length that won't cause a jank based on the
-  // current system state. Must be called from the main thread.
-  base::TimeDelta EstimateLongestJankFreeTaskDuration() const;
-
   // Report an intervention to all WebViews in this process.
   void BroadcastIntervention(const String& message);
 
@@ -589,7 +564,7 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // enabled/disabled state based on current policy. When triggered from a
   // policy update, |previous_policy| should be populated with the pre-update
   // policy.
-  void UpdateStateForAllTaskQueues(absl::optional<Policy> previous_policy);
+  void UpdateStateForAllTaskQueues(std::optional<Policy> previous_policy);
 
   void UpdateTaskQueueState(
       MainThreadTaskQueue* task_queue,
@@ -621,11 +596,11 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   // Computes the priority for compositing based on the current use case.
   // Returns nullopt if the use case does not need to set the priority.
-  absl::optional<TaskPriority> ComputeCompositorPriorityFromUseCase() const;
+  std::optional<TaskPriority> ComputeCompositorPriorityFromUseCase() const;
 
   // Computes the compositor task queue priority for the next main frame based
   // on the current `RenderingPrioritizationState`.
-  absl::optional<TaskPriority> ComputeCompositorPriorityForMainFrame() const;
+  std::optional<TaskPriority> ComputeCompositorPriorityForMainFrame() const;
 
   void MaybeUpdateIPCTaskQueuePriorityOnTaskCompleted();
 
@@ -645,8 +620,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
       const base::sequence_manager::TaskQueue::TaskTiming& task_timing,
       FrameSchedulerImpl* frame_scheduler,
       bool precise_attribution);
-
-  void SetNumberOfCompositingTasksToPrioritize(int number_of_tasks);
 
   void ShutdownAllQueues();
 
@@ -732,8 +705,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     base::TimeTicks estimated_next_frame_begin;
     base::TimeTicks current_task_start_time;
     base::TimeDelta compositor_frame_interval;
-    TraceableCounter<base::TimeDelta, TracingCategory::kDebug>
-        longest_jank_free_task_duration;
     TraceableCounter<int, TracingCategory::kInfo>
         renderer_pause_count;  // Renderer is paused if non-zero.
 
@@ -742,13 +713,11 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
         rail_mode_for_tracing;  // Don't use except for tracing.
 
     TraceableObjectState<bool, TracingCategory::kTopLevel> renderer_hidden;
-    absl::optional<base::ScopedSampleMetadata> renderer_hidden_metadata;
+    std::optional<base::ScopedSampleMetadata> renderer_hidden_metadata;
     TraceableObjectState<bool, TracingCategory::kTopLevel>
         renderer_backgrounded;
     TraceableState<bool, TracingCategory::kDefault>
         blocking_input_expected_soon;
-    TraceableState<bool, TracingCategory::kDebug>
-        has_visible_render_widget_with_touch_handler;
     TraceableState<bool, TracingCategory::kDebug> in_idle_period_for_testing;
     TraceableState<bool, TracingCategory::kTopLevel> is_audio_playing;
     TraceableState<bool, TracingCategory::kDebug>
@@ -762,10 +731,10 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     MainThreadMetricsHelper metrics_helper;
     TraceableState<WebRendererProcessType, TracingCategory::kTopLevel>
         process_type;
-    TraceableState<absl::optional<TaskDescriptionForTracing>,
+    TraceableState<std::optional<TaskDescriptionForTracing>,
                    TracingCategory::kInfo>
         task_description_for_tracing;  // Don't use except for tracing.
-    TraceableState<absl::optional<TaskPriority>,
+    TraceableState<std::optional<TaskPriority>,
                    TracingCategory::kInfo>
         task_priority_for_tracing;  // Only used for tracing.
 
@@ -802,7 +771,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
     WTF::Vector<AgentGroupSchedulerScope> agent_group_scheduler_scope_stack;
 
-    std::unique_ptr<TaskAttributionTracker> task_attribution_tracker;
     Persistent<HeapHashSet<WeakMember<AgentGroupSchedulerImpl>>>
         agent_group_schedulers;
     // Task queues that have been detached from their scheduler and may have
@@ -816,7 +784,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
     PendingUserInput::Monitor pending_input_monitor;
     base::TimeTicks last_idle_period_end_time;
-    base::TimeTicks fling_compositor_escalation_deadline;
     UserModel user_model;
     TraceableState<bool, TracingCategory::kInfo> awaiting_touch_start_response;
     TraceableState<bool, TracingCategory::kInfo> in_idle_period;

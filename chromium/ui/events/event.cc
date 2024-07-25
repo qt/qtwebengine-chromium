@@ -639,14 +639,13 @@ MouseWheelEvent::MouseWheelEvent(const MouseWheelEvent& mouse_wheel_event)
   DCHECK_EQ(ET_MOUSEWHEEL, type());
 }
 
-MouseWheelEvent::MouseWheelEvent(
-    const gfx::Vector2d& offset,
-    const gfx::PointF& location,
-    const gfx::PointF& root_location,
-    base::TimeTicks time_stamp,
-    int flags,
-    int changed_button_flags,
-    const absl::optional<gfx::Vector2d> tick_120ths)
+MouseWheelEvent::MouseWheelEvent(const gfx::Vector2d& offset,
+                                 const gfx::PointF& location,
+                                 const gfx::PointF& root_location,
+                                 base::TimeTicks time_stamp,
+                                 int flags,
+                                 int changed_button_flags,
+                                 const std::optional<gfx::Vector2d> tick_120ths)
     : MouseEvent(ET_UNKNOWN,
                  location,
                  root_location,
@@ -1335,7 +1334,7 @@ GestureEvent::GestureEvent(float x,
       details_(details),
       unique_touch_event_id_(unique_touch_event_id) {
   latency()->set_source_event_type(SourceEventType::TOUCH);
-  // TODO(crbug.com/868056) Other touchpad gesture should report as TOUCHPAD.
+  // TODO(crbug.com/40586823) Other touchpad gesture should report as TOUCHPAD.
   if (IsPinchEvent() &&
       details.device_type() == GestureDeviceType::DEVICE_TOUCHPAD) {
     latency()->set_source_event_type(SourceEventType::TOUCHPAD);
