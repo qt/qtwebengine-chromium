@@ -198,12 +198,12 @@ class QUIC_NO_EXPORT QuicIntervalDeque {
     Iterator operator+(difference_type amount) const {
       Iterator copy = *this;
       copy.index_ += amount;
-      DCHECK(copy.index_ < copy.deque_->size());
+      DCHECK(copy.index_ < copy.deque_->Size());
       return copy;
     }
     Iterator& operator+=(difference_type amount) {
       index_ += amount;
-      DCHECK(index_ < deque_->size());
+      DCHECK(index_ < deque_->Size());
       return *this;
     }
     difference_type operator-(const Iterator& rhs) const {
