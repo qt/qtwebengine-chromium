@@ -86,7 +86,8 @@ DWORD __stdcall ThreadFunc(void* params) {
   }
 
   if (thread_params->thread_type != ThreadType::kDefault) {
-    PlatformThread::SetCurrentThreadType(thread_params->thread_type);
+    PlatformThread::SetCurrentThreadType(thread_params->thread_type,
+                                   /* override_priority */ true);
   }
 
   // Retrieve a copy of the thread handle to use as the key in the

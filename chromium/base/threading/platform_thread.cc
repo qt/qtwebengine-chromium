@@ -25,7 +25,8 @@ void PlatformThreadId::WriteIntoTrace(perfetto::TracedValue&& context) const {
 }
 
 // static
-void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type) {
+void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type,
+                                              bool override_priority) {
   MessagePumpType message_pump_type = MessagePumpType::DEFAULT;
   if (CurrentIOThread::IsSet()) {
     message_pump_type = MessagePumpType::IO;

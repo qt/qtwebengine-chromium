@@ -187,6 +187,11 @@ BASE_FEATURE(kBrokerFileOperationsOnDiskCacheInNetworkService,
 // specific request.
 BASE_FEATURE(kBypassRedirectChecksPerRequest, base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, changes main thread priority matching 'Compositing' thread one.
+BASE_FEATURE(kBrowserUseCompositingThreadPriority,
+             "BrowserUseCompositingThreadPriority",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // Allows pages with cache-control:no-store to enter the back/forward cache.
 // Feature params can specify whether pages with cache-control:no-store can be
 // restored if cookies change / if HTTPOnly cookies change.
