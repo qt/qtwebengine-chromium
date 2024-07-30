@@ -20,7 +20,8 @@ constinit thread_local ThreadType current_thread_type = ThreadType::kDefault;
 }  // namespace
 
 // static
-void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type) {
+void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type,
+                                              bool override_priority) {
   MessagePumpType message_pump_type = MessagePumpType::DEFAULT;
   if (CurrentIOThread::IsSet()) {
     message_pump_type = MessagePumpType::IO;
@@ -30,7 +31,8 @@ void PlatformThreadBase::SetCurrentThreadType(ThreadType thread_type) {
     message_pump_type = MessagePumpType::UI;
   }
 #endif
-  internal::SetCurrentThreadType(thread_type, message_pump_type);
+  internal::SetCurrentThreadType(thread_type, message_pump_type,
+                                 override_priority);
 }
 
 // static
@@ -60,9 +62,12 @@ void PlatformThreadBase::SetNameCommon(const std::string& name) {
 namespace internal {
 
 void SetCurrentThreadType(ThreadType thread_type,
-                          MessagePumpType pump_type_hint) {
+                          MessagePumpType pump_type_hint,
+                          bool override_priority) {
   CHECK_LE(thread_type, ThreadType::kMaxValue);
-  SetCurrentThreadTypeImpl(thread_type, pump_type_hint);
+  if (override_priority) {
+    SetCurrentThreadTypeImpl(thread_type, pump_type_hint);
+  }
   current_thread_type = thread_type;
 }
 
