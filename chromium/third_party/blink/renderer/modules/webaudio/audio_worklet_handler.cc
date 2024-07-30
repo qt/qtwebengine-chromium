@@ -150,7 +150,9 @@ void AudioWorkletHandler::Process(uint32_t frames_to_process) {
     // ready yet or it is in the error state. If so, zero out the connected
     // output.
     for (unsigned i = 0; i < NumberOfOutputs(); ++i) {
-      Output(i).Bus()->Zero();
+      if (Output(i).IsConnectedDuringRendering()) {
+        Output(i).Bus()->Zero();
+      }
     }
   }
 }
