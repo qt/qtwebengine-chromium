@@ -137,8 +137,11 @@ void AudioWorkletHandler::Process(uint32_t frames_to_process) {
     // The initialization of handler or the associated processor might not be
     // ready yet or it is in the error state. If so, zero out the connected
     // output.
-    for (unsigned i = 0; i < NumberOfOutputs(); ++i)
-      Output(i).Bus()->Zero();
+    for (unsigned i = 0; i < NumberOfOutputs(); ++i) {
+      if (Output(i).IsConnectedDuringRendering()) {
+        Output(i).Bus()->Zero();
+      }
+    }
   }
 }
 
