@@ -252,7 +252,8 @@ class BASE_EXPORT PlatformThreadBase {
   // Declares the type of work running on the current thread. This will affect
   // things like thread priority and thread QoS (Quality of Service) to the best
   // of the current platform's abilities.
-  static void SetCurrentThreadType(ThreadType thread_type);
+  static void SetCurrentThreadType(ThreadType thread_type,
+                                   bool override_priority = true);
 
   // Get the last `thread_type` set by SetCurrentThreadType, no matter if the
   // underlying priority successfully changed or not.
@@ -349,7 +350,8 @@ using PlatformThread = PlatformThreadBase;
 namespace internal {
 
 void SetCurrentThreadType(ThreadType thread_type,
-                          MessagePumpType pump_type_hint);
+                          MessagePumpType pump_type_hint,
+                          bool override_priority);
 
 void SetCurrentThreadTypeImpl(ThreadType thread_type,
                               MessagePumpType pump_type_hint);
