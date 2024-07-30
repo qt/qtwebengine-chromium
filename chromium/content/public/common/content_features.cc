@@ -137,6 +137,11 @@ BASE_FEATURE(kBrokerFileOperationsOnDiskCacheInNetworkService,
              "BrokerFileOperationsOnDiskCacheInNetworkService",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// When enabled, changes main thread priority matching 'Compositing' thread one.
+BASE_FEATURE(kBrowserUseCompositingThreadPriority,
+             "BrowserUseCompositingThreadPriority",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // When enabled, mouse user activation will be verified by the browser side.
 BASE_FEATURE(kBrowserVerifiedUserActivationMouse,
              "BrowserVerifiedUserActivationMouse",
