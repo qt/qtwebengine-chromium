@@ -225,10 +225,9 @@ bool Scavenger::HandleLargeObject(Tagged<Map> map, Tagged<HeapObject> object,
                                   int object_size, ObjectFields object_fields) {
   // TODO(hpayer): Make this check size based, i.e.
   // object_size > kMaxRegularHeapObjectSize
-  if (V8_UNLIKELY(
-          BasicMemoryChunk::FromHeapObject(object)->InNewLargeObjectSpace())) {
-    DCHECK_EQ(NEW_LO_SPACE,
-              MemoryChunk::FromHeapObject(object)->owner_identity());
+  if (NEW_LO_SPACE ==
+      MemoryChunk::FromHeapObject(object)->owner_identity()) {
+    DCHECK(BasicMemoryChunk::FromHeapObject(object)->InNewLargeObjectSpace());
     if (object->release_compare_and_swap_map_word_forwarded(
             MapWord::FromMap(map), object)) {
       surviving_new_large_objects_.insert({object, map});
