@@ -61,7 +61,7 @@ if (!is_win && !is_mac && !is_ios) {
 
 linker_path = experimental_linker_path
 use_mold = defined(use_mold) && use_mold
-if (use_mold && linker_path == "") {
+if (use_mold && linker_path == "" && !is_qtwebengine) {
   linker_path = "//buildtools/third_party/mold/cipd/mold"
 }
 
@@ -90,6 +90,8 @@ declare_args() {
   # TODO(crbug.com/502338406): See https://crbug.com/502338406 for benchmarking results.
   use_lld = is_clang && current_os != "zos" && linker_path == "" &&
             !(is_ios && current_cpu == "arm64e") && !use_mold
+
+  use_gold = false
 }
 
 declare_args() {
@@ -187,7 +189,8 @@ declare_args() {
       # dwp did not work properly for Android official builds, so disable in
       # order to be able to archive symbols properly. https://crbug.com/40203231
       symbol_level >= 1 && !(is_android && is_official_build) && !is_fuchsia &&
-      !is_apple && !is_win && (use_lld || linker_path != "")
+      !is_apple && !is_win && (use_lld || linker_path != "" || use_mold)
+
 
   # Whether we're using a sample profile collected on an architecture different
   # than the one we're compiling for.
