@@ -241,6 +241,8 @@ declare_args() {
   # Whether to use the gold linker from binutils instead of lld or bfd.
   # TODO(crbug.com/333645515): Remove this variable.
   use_gold = false
+
+  use_mold = false
 }
 
 # Use relative paths for debug info. This is important to make the build

@@ -549,6 +549,14 @@ config("compiler") {
 
   # Linux-specific compiler flags setup.
   # ------------------------------------
+  if (use_gold) {
+    ldflags += [ "-fuse-ld=gold" ]
+  }
+
+  if (use_mold) {
+    ldflags += [ "-fuse-ld=mold" ]
+  }
+
   if (use_icf && (!is_apple || use_lld)) {
     ldflags += [ "-Wl,--icf=all" ]
   }
