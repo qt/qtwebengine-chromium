@@ -32,6 +32,9 @@ declare_args() {
   # The default linker everywhere else.
   use_lld = is_clang && current_os != "zos"
 
+  use_gold = false
+  use_mold = false
+
   # If false, build using C++20; otherwise, build using C++23.
   use_cxx23 = false
 
@@ -76,7 +79,7 @@ declare_args() {
   # use_debug_fission: whether to use split DWARF debug info files. This can
   # reduce link time significantly.
   use_debug_fission =
-      !is_android && !is_fuchsia && !is_apple && !is_win && use_lld
+      !is_android && !is_fuchsia && !is_apple && !is_win &&  (use_lld || use_mold)
 
   # Enables support for ThinLTO, which links 3x-10x faster than full LTO. See
   # also http://blog.llvm.org/2016/06/thinlto-scalable-and-incremental-lto.html
