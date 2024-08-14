@@ -919,6 +919,7 @@ source_set("browser_sources") {
       "//components/safe_browsing/core/common",
       "//components/safe_browsing/core/common/proto:crx_info_proto",
       "//components/sessions",
+      "//components/supervised_user/core/common",
       "//components/sync",
       "//components/update_client",
       "//components/ukm/content",
