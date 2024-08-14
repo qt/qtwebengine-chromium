@@ -212,6 +212,9 @@ def main(argv):
                     help='The path to the macOS SDK sysroot to be used.')
   args_list.add('--qt-version',
                     help="The qt version gn is compiled for.")
+  args_list.add('--osx-architectures',
+                    help='delimited list of architectures for universal build',
+                    type=str)
 
   if sys.platform == 'zos':
     args_list.add('--zoslib-dir',
@@ -566,6 +569,11 @@ def WriteGNNinja(path, platform, host, options, args_list):
       min_mac_version_flag = '-mmacosx-version-min=10.9'
       cflags.append(min_mac_version_flag)
       ldflags.append(min_mac_version_flag)
+      if options.osx_architectures:
+         arch_list = [str(arch) for arch in options.osx_architectures.split(',')]
+         for arch in arch_list:
+           cflags.extend(['-arch',arch])
+           ldflags.extend(['-arch',arch])
     elif platform.is_aix():
       cflags.append('-maix64')
       ldflags.append('-maix64')
