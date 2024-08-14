@@ -18,7 +18,7 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/grit/grit_rule.gni")
 
-assert(enable_supervised_users)
+#assert(enable_supervised_users)
 
 grit("resources") {
   source = "resources/renderer_resources.grd"

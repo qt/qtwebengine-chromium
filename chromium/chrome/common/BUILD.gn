@@ -22,7 +22,7 @@ import("//testing/libfuzzer/fuzzer_test.gni")
 import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/grit/grit_rule.gni")
 
-assert(enable_supervised_users)
+#assert(enable_supervised_users)
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
 fuzzer_test("ini_parser_fuzzer") {

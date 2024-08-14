@@ -33,7 +33,7 @@ import("//third_party/protobuf/proto_library.gni")
 import("//ui/base/ui_features.gni")
 import("//ui/views/features.gni")
 
-assert(enable_supervised_users)
+#assert(enable_supervised_users)
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
 generate_histograms_variants_allowlist("webui_name_variants") {

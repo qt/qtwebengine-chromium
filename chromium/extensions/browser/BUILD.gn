@@ -755,6 +755,7 @@ jumbo_source_set("browser_sources") {
       "//components/pref_registry",
       "//components/safe_browsing/core/common",
       "//components/sessions",
+      "//components/supervised_user/core/common",
       "//components/sync",
       "//components/update_client",
       "//components/ukm/content",

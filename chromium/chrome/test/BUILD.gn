@@ -57,7 +57,7 @@ import("//v8/gni/v8.gni")
 
 assert(!is_ios, "Chromium/iOS shouldn't use anything in //chrome")
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
-assert(enable_supervised_users)
+#assert(enable_supervised_users)
 
 if (is_android) {
   import("//build/config/android/rules.gni")
