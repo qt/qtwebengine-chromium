@@ -7,8 +7,9 @@
 #import <AppKit/AppKit.h>
 #include <CoreFoundation/CoreFoundation.h>
 #import <QuartzCore/QuartzCore.h>
+#if BUILDFLAG(USE_CUPS)
 #include <cups/cups.h>
-
+#endif
 #import <iomanip>
 #import <numeric>
 #include <string_view>
@@ -26,7 +27,9 @@
 #include "printing/buildflags/buildflags.h"
 #include "printing/metafile.h"
 #include "printing/mojom/print.mojom.h"
+#if BUILDFLAG(USE_CUPS)
 #include "printing/print_job_constants_cups.h"
+#endif
 #include "printing/print_settings_initializer_mac.h"
 #include "printing/printing_features.h"
 #include "printing/units.h"
@@ -96,6 +99,7 @@ PMPaper MatchPaper(CFArrayRef paper_list,
   return best_matching_paper;
 }
 
+#if BUILDFLAG(USE_CUPS)
 bool IsIppColorModelColorful(mojom::ColorModel color_model) {
   // Accept `kUnknownColorModel` as it can occur with raw CUPS printers.
   // Treat it similarly to the behavior in  `GetColorModelForModel()`.
@@ -104,6 +108,7 @@ bool IsIppColorModelColorful(mojom::ColorModel color_model) {
   }
   return IsColorModelSelected(color_model).value();
 }
+#endif
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING_NO_OOP_BASIC_PRINT_DIALOG)
 
@@ -685,8 +690,10 @@ bool PrintingContextMac::SetDuplexModeInPrintSettings(mojom::DuplexMode mode) {
 }
 
 bool PrintingContextMac::SetOutputColor(int color_mode) {
+#if !BUILDFLAG(USE_CUPS)
+  return false;
+#else
   const mojom::ColorModel color_model = ColorModeToColorModel(color_mode);
-
   if (!base::FeatureList::IsEnabled(features::kCupsIppPrintingBackend)) {
     std::string color_setting_name;
     std::string color_value;
@@ -713,6 +720,7 @@ bool PrintingContextMac::SetOutputColor(int color_mode) {
   }
 
   return true;
+#endif // BUILDFLAG(USE_CUPS)
 }
 
 bool PrintingContextMac::SetResolution(const gfx::Size& dpi_size) {
