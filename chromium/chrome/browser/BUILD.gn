@@ -46,7 +46,7 @@ import("//third_party/widevine/cdm/widevine.gni")
 import("//tools/grit/grit_rule.gni")
 import("//ui/base/ui_features.gni")
 
-assert(enable_supervised_users)
+#assert(enable_supervised_users)
 
 # //build/config/android/rules.gni imports //tools/grit/grit_rule.gni, which
 # produces a conflict for the "grit" template so we have to only include one.
