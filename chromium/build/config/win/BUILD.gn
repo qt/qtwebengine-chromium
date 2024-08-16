@@ -616,7 +616,11 @@ config("static_crt") {
 # This is appended to the subsystem to specify a minimum version.
 # The number after the comma is the minimum required OS version.
 # Set to 10.0 since we only support >= Win10 since M110.
-subsystem_version_suffix = ",10.0"
+if (is_mingw && current_cpu == "x64") {
+    subsystem_version_suffix = "5.02"
+} else {
+    subsystem_version_suffix = "10.0"
+}
 
 config("console") {
   if (is_mingw) {
