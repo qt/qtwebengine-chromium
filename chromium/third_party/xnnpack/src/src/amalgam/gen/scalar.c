@@ -277,7 +277,7 @@ void xnn_f16_rminmax_ukernel__scalar_u2_acc2(
     size_t batch,
     const void* input,
     void* output,
-    const union xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f16_default_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -14016,7 +14016,7 @@ void xnn_f32_vrsqrt_ukernel__scalar_rsqrt_u1(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rsqrt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -14034,7 +14034,7 @@ void xnn_f32_vrsqrt_ukernel__scalar_rsqrt_u4(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rsqrt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

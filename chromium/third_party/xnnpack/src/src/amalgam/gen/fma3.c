@@ -5453,7 +5453,7 @@ void xnn_f32_vrsqrt_ukernel__fma3_rsqrt_u16(
 
 void xnn_f32_vsqrt_ukernel__fma3_rsqrt_u16(
     size_t batch, const float* input, float* output,
-    const union xnn_f32_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_sqrt_params params[XNN_MIN_ELEMENTS(1)])
     XNN_OOB_READS {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -5560,7 +5560,7 @@ void xnn_f32_vtanh_ukernel__fma3_rational_9_6_div_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_tanh_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

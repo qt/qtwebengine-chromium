@@ -5604,7 +5604,7 @@ void xnn_f32_vrsqrt_ukernel__avx_rsqrt_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const union xnn_f32_rsqrt_params params[XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);

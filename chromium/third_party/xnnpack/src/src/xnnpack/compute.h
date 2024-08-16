@@ -684,7 +684,7 @@ struct subconv_context {
 
 #ifndef __cplusplus
   XNN_PRIVATE void xnn_compute_dq_zero_buffer_subconv(
-    const struct subconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct subconv_context context[XNN_MIN_ELEMENTS(1)],
     size_t size);
 
   XNN_PRIVATE void xnn_compute_grouped_subconv2d(
@@ -699,7 +699,7 @@ struct subconv_context {
       size_t nr_block_size);
 
   XNN_PRIVATE void xnn_compute_grouped_dqsubconv2d(
-    const struct subconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct subconv_context context[XNN_MIN_ELEMENTS(1)],
     size_t batch_index,
     size_t group_index,
     size_t subkernel_index,
@@ -720,7 +720,7 @@ struct subconv_context {
       size_t nr_block_size);
 
   XNN_PRIVATE void xnn_compute_dqsubconv2d(
-      const struct subconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct subconv_context context[XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t subkernel_index,
       size_t slice_y,

@@ -380,7 +380,7 @@ void xnn_compute_batched_packw_gemm_goi(
 }
 
 void xnn_compute_hmp_grouped_gemm(
-    const struct gemm_context context[restrict XNN_MIN_ELEMENTS(1)],
+    const struct gemm_context context[XNN_MIN_ELEMENTS(1)],
     uint32_t uarch_index, size_t group_index, size_t mr_block_start,
     size_t nr_block_start, size_t mr_block_size, size_t nr_block_size) {
   const size_t k_scaled  = context->k_scaled;
@@ -888,7 +888,7 @@ void xnn_compute_grouped_subconv2d(
 }
 
 void xnn_compute_grouped_dqsubconv2d(
-      const struct subconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct subconv_context context[XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t group_index,
       size_t subkernel_index,
@@ -967,7 +967,7 @@ void xnn_compute_subconv2d(
 }
 
 void xnn_compute_dqsubconv2d(
-      const struct subconv_context context[restrict XNN_MIN_ELEMENTS(1)],
+      const struct subconv_context context[XNN_MIN_ELEMENTS(1)],
       size_t batch_index,
       size_t subkernel_index,
       size_t slice_y,

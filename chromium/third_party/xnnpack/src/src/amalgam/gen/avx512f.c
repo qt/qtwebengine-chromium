@@ -3629,7 +3629,7 @@ void xnn_f32_vrsqrt_ukernel__avx512f_rsqrt_u32(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_rsqrt_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_rsqrt_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -3863,7 +3863,7 @@ void xnn_f32_vsigmoid_ukernel__avx512f_rr2_lut32_p2_perm2_scalef_div_u64(
 
 void xnn_f32_vsqrt_ukernel__avx512f_rsqrt_u16(
     size_t batch, const float* input, float* output,
-    const union xnn_f32_sqrt_params params[restrict XNN_MIN_ELEMENTS(1)]) {
+    const union xnn_f32_sqrt_params params[XNN_MIN_ELEMENTS(1)]) {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
   assert(input != NULL);
@@ -3927,7 +3927,7 @@ void xnn_f32_vtanh_ukernel__avx512f_rational_9_6_nr_u16(
     size_t batch,
     const float* input,
     float* output,
-    const union xnn_f32_tanh_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const union xnn_f32_tanh_params params[XNN_MIN_ELEMENTS(1)])
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
