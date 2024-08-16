@@ -311,15 +311,19 @@ BASE_FEATURE(kDIPSPreservePSData,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables HW decode acceleration for WebRTC.
-BASE_FEATURE(kWebRtcHWDecoding,
-             "webrtc-hw-decoding",
 // TODO: b/336314537 Re enable HW Decoding once the GPU Hang is resolved
 #if BUILDFLAG(PLATFORM_CFM)
+BASE_FEATURE(kWebRtcHWDecoding,
+             "webrtc-hw-decoding",
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kWebRtcHWDecoding,
+             "webrtc-hw-decoding",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
+
 // Enables HW encode acceleration for WebRTC.
 BASE_FEATURE(kWebRtcHWEncoding,
              "webrtc-hw-encoding",
@@ -840,14 +844,17 @@ BASE_FEATURE(kServiceWorkerStaticRouter,
 // process. See https://crbug.com/891961. However, since the dependencies are
 // removed now(b/315966244), the service run in the browser process by default,
 // but an user is able to run it in an utility process by changing the flag.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kRunVideoCaptureServiceInBrowserProcess,
              "RunVideoCaptureServiceInBrowserProcess",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kRunVideoCaptureServiceInBrowserProcess,
+             "RunVideoCaptureServiceInBrowserProcess",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // Update scheduler settings using resourced on ChromeOS.
 BASE_FEATURE(kSchedQoSOnResourcedForChrome,

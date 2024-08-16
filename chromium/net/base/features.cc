@@ -27,15 +27,18 @@ BASE_FEATURE(kChromeStaticPinning,
              "ChromeStaticPinning",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kAsyncDns,
-             "AsyncDns",
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+BASE_FEATURE(kAsyncDns,
+             "AsyncDns",
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kAsyncDns,
+             "AsyncDns",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 BASE_FEATURE(kDnsTransactionDynamicTimeouts,
              "DnsTransactionDynamicTimeouts",
@@ -155,11 +158,13 @@ BASE_FEATURE(kTLS13KeyUpdate,
              "TLS13KeyUpdate",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kPostQuantumKyber,
              "PostQuantumKyber",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kPostQuantumKyber,
+             "PostQuantumKyber",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

@@ -371,7 +371,7 @@
     {
       name: "AudioOutputDevices",
       // Android does not yet support switching of audio output devices
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "AudioVideoTracks",
@@ -443,15 +443,9 @@
     },
     {
       name: "BarcodeDetector",
-      status: {
-        // Built-in barcode detection APIs are only available from some
-        // platforms. See //services/shape_detection.
-        "Android": "stable",
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        "Mac": "stable",
-        "default": "test",
-      },
+      // Built-in barcode detection APIs are only available from some
+      // platforms. See //services/shape_detection.
+      status: "test",
     },
     {
       // There are two different code changes guarded by this feature. Both
@@ -586,7 +580,7 @@
     },
     {
       name: "CaptureController",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // TODO(crbug.com/1444712): Before enabling that flag by default,
@@ -606,7 +600,7 @@
     {
       name: "CaptureHandle",
       depends_on: ["GetDisplayMedia"],
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // https://www.w3.org/TR/cssom-view-1/#dom-document-caretpositionfrompoint
@@ -694,15 +688,15 @@
     },
     {
       name: "ContactsManager",
-      status:  {"Android": "stable", "default": "test"},
+      status: "test",
     },
     {
       name: "ContactsManagerExtraProperties",
-      status:  {"Android": "stable", "default": "test"},
+      status: "test",
     },
     {
       name: "ContentIndex",
-      status:  {"Android": "stable", "default": "experimental"},
+      status: "experimental",
     },
     {
       name: "ContextMenu",
@@ -1145,11 +1139,7 @@
     },
     {
       name: "DeviceAttributes",
-      status: {
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        "default": "experimental",
-      },
+      status: "experimental",
     },
     {
       name: "DeviceOrientationRequestPermission",
@@ -1179,26 +1169,16 @@
       origin_trial_feature_name: "DigitalGoodsV2",
       origin_trial_os: ["android", "chromeos"],
       public: true,
-      status: {
-        "Android": "stable",
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        // crbug.com/1143079: Web tests cannot differentiate ChromeOS and Linux,
-        // so enable the API on all platforms for testing.
-        "default": "test"
-      },
+      // crbug.com/1143079: Web tests cannot differentiate ChromeOS and Linux,
+      // so enable the API on all platforms for testing.
+      status: "test",
       base_feature: "none",
     },
     {
       name: "DigitalGoodsV2_1",
-      status: {
-        "Android": "stable",
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        // crbug.com/1143079: Web tests cannot differentiate ChromeOS and Linux,
-        // so enable the API on all platforms for testing.
-        "default": "test"
-      },
+      // crbug.com/1143079: Web tests cannot differentiate ChromeOS and Linux,
+      // so enable the API on all platforms for testing.
+      status: "test",
     },
     {
       // Shipping in M123.  Flag should be removed after M123 has been
@@ -1659,7 +1639,7 @@
     {
       name: "FileHandlingIcons",
       depends_on: ["FileHandling"],
-      status: {"Android": "test", "default": "experimental"},
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -1687,7 +1667,7 @@
     {
       // Non-OPFS File System Access API.
       name: "FileSystemAccessLocal",
-      status: {"Android": "test", "default": "stable"},
+      status: "stable",
     },
     {
       name: "FileSystemAccessLockingScheme",
@@ -1869,7 +1849,7 @@
     },
     {
       name: "ForceTallerSelectPopup",
-      status: {"ChromeOS_Ash": "stable", "ChromeOS_Lacros": "stable"},
+      // status: {"ChromeOS_Ash": "stable", "ChromeOS_Lacros": "stable"},
     },
     {
       name: "FormattedText",
@@ -1931,10 +1911,7 @@
     {
       name: "GetDisplayMedia",
       public: true,
-      status: {
-        "Android": "experimental",
-        "default": "stable",
-      },
+      status: "stable",
       base_feature: "none",
     },
     {
@@ -1952,11 +1929,7 @@
     },
     {
       name: "HandwritingRecognition",
-      status: {
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        "default": "experimental",
-      },
+      status: "experimental",
     },
     {
       // Updates the hanging behavior of preserved whitespace at the end of a
@@ -2119,7 +2092,7 @@
       name: "InputMultipleFieldsUI",
       // No plan to support complex UI for date/time INPUT types on Android and
       // iOS.
-      status: {"Android": "test", "iOS": "test", "default": "stable"},
+      status: "stable",
     },
     {
       // If enabled, the input stepDown(n) and stepUp(n) methods will check
@@ -2355,7 +2328,7 @@
     },
     {
       name: "MediaCapture",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "MediaCaptureBackgroundBlur",
@@ -2555,8 +2528,7 @@
     },
     {
       name: "NavigatorContentUtils",
-      // Android does not yet support NavigatorContentUtils.
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // This should be removed in M127, after it has been shipped for several
@@ -2571,12 +2543,7 @@
       name: "NetInfoDownlinkMax",
       public: true,
       // Only Android, ChromeOS support NetInfo downlinkMax, type and ontypechange now
-      status: {
-        "Android": "stable",
-        "ChromeOS_Ash": "stable",
-        "ChromeOS_Lacros": "stable",
-        "default": "experimental",
-      },
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -2653,7 +2620,7 @@
       name: "NotificationConstructor",
       // Android won't be able to reliably support non-persistent notifications, the
       // intended behavior for which is in flux by itself.
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     // NotificationContentImage is not available in all platforms
     // The Notification Center on Mac OS X does not support content images.
@@ -2717,7 +2684,7 @@
     {
       name: "OnDeviceChange",
       // Android does not yet support SystemMonitor.
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     // This flag is a killswitch. It was only exists as a way for us to turn
     // the feature off in the emergency that it breaks websites.
@@ -2729,7 +2696,7 @@
     },
     {
       name: "OrientationEvent",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "OriginIsolationHeader",
@@ -2879,7 +2846,7 @@
     {
       name: "PagePopup",
       // Android does not have support for PagePopup
-      status: {"Android": "", "iOS": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "PageRevealEvent",
@@ -3220,7 +3187,7 @@
     },
     {
       name: "RegionCapture",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "RemotePlayback",
@@ -3276,10 +3243,10 @@
       // TODO(crbug.com/1500633): Remove this flag when the new CursorAnchorInfo
       // mojo pipe is launched.
       name: "ReportVisibleLineBounds",
-      status: {
-        "Android": "stable",
-        "default": "",
-      }
+      // status: {
+      //   "Android": "stable",
+      //   "default": "",
+      // }
     },
     {
       name: "ResourceTimingContentType",
@@ -3520,14 +3487,14 @@
     },
     {
       name: "Serial",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       name: "SerializeViewTransitionStateInSPA",
     },
     {
       name: "SerialPortConnected",
-      status: {"Android": "", "default": "experimental"},
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -3597,7 +3564,7 @@
       name: "SharedWorker",
       public: true,
       // Android does not yet support SharedWorker. crbug.com/154571
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
       base_feature: "none",
     },
     {
@@ -3922,7 +3889,7 @@
     },
     {
       name: "TextFragmentTapOpensContextMenu",
-      status: {"Android": "stable"},
+      // status: {"Android": "stable"},
     },
     {
       name: "TextMetricsBaselines",
@@ -4327,13 +4294,7 @@
     {
       name: "WebBluetooth",
       public: true,
-      status: {
-        "Android": "stable",
-        "ChromeOS_Ash": "stable", "ChromeOS_Lacros": "stable",
-        "Mac": "stable",
-        "Win": "stable",
-        "default": "experimental",
-      },
+      status: "experimental",
       base_feature: "none",
     },
     {
@@ -4414,7 +4375,7 @@
     },
     {
       name: "WebHID",
-      status: {"Android": "", "default": "stable"},
+      status: "stable",
     },
     {
       // It is only enabled in extension environment for now.
@@ -4440,7 +4401,7 @@
     {
       name: "WebNFC",
       public: true,
-      status: {"Android": "stable", "default": "test"},
+      status: "test",
       base_feature: "none",
     },
     {

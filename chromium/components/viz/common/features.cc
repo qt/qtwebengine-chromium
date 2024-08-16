@@ -88,14 +88,17 @@ BASE_FEATURE(kDelegatedCompositingLimitToUi,
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kRenderPassDrawnRect,
              "RenderPassDrawnRect",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kRenderPassDrawnRect,
+             "RenderPassDrawnRect",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
 // When wide color gamut content from the web is encountered, promote our
@@ -383,15 +386,18 @@ BASE_FEATURE(kBatchMainThreadReleaseCallbacks,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // If enabled, snapshot the root surface when it is evicted.
-BASE_FEATURE(kSnapshotEvictedRootSurface,
-             "SnapshotEvictedRootSurface",
 // TODO(edcourtney): Enable for Android.
 #if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kSnapshotEvictedRootSurface,
+             "SnapshotEvictedRootSurface",
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kSnapshotEvictedRootSurface,
+             "SnapshotEvictedRootSurface",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 // The scale to use for root surface snapshots on eviction. See
 // `kSnapshotEvictedRootSurface`.

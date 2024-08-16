@@ -1648,15 +1648,18 @@ BASE_FEATURE(kMemoryCacheStrongReferenceFilterCrossOriginScripts,
              "MemoryCacheStrongReferenceFilterCrossOriginScripts",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+#if BUILDFLAG(IS_ANDROID)
+// Finch study showed no improvement on Android for strong memory cache.
 BASE_FEATURE(kMemoryCacheStrongReference,
              "MemoryCacheStrongReference",
-// Finch study showed no improvement on Android for strong memory cache.
-#if BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT
-#else
-             base::FEATURE_ENABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kMemoryCacheStrongReference,
+             "MemoryCacheStrongReference",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+#endif
 
 const base::FeatureParam<int>
     kMemoryCacheStrongReferenceTotalSizeThresholdParam{

@@ -44,14 +44,17 @@ BASE_FEATURE(kScreenPowerListenerForNativeWinOcclusion,
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS_LACROS)
 // Once enabled, the exact behavior is dictated by the field trial param
 // name `kApplyNativeOcclusionToCompositorType`.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kApplyNativeOcclusionToCompositor,
              "ApplyNativeOcclusionToCompositor",
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kApplyNativeOcclusionToCompositor,
+             "ApplyNativeOcclusionToCompositor",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // If enabled, native window occlusion tracking will always be used, even if
 // CHROME_HEADLESS is set.

@@ -32,14 +32,17 @@ BASE_FEATURE(kMojoRecordUnreadMessageCount,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables predictive allocation for Mojo serialization.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kMojoPredictiveAllocation,
              "MojoPredictiveAllocation",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kMojoPredictiveAllocation,
+             "MojoPredictiveAllocation",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 // Enables a bugfix for https://crbug.com/331636067. This is a very old bug, and
 // this flag will be used to understand the stability and performance impact of
