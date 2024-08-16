@@ -484,9 +484,8 @@ uint64_t CategoryGroupToETWKeyword(std::string_view category_group_name) {
   // TODO(joel@microsoft.com) Explore better methods in future integration
   // with perfetto.
 
-  StringViewTokenizer category_group_tokens(
-      category_group_name.data(),
-      category_group_name.data() + category_group_name.size(), ",");
+  StringViewTokenizer category_group_tokens(category_group_name.begin(),
+                                            category_group_name.end(), ",");
   while (category_group_tokens.GetNext()) {
     std::string_view category_group_token = category_group_tokens.token_piece();
 
