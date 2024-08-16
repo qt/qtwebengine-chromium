@@ -106,7 +106,7 @@ ScriptPromise<IDLBoolean> PaymentInstruments::deleteInstrument(
     ScriptState* script_state,
     const String& instrument_key,
     ExceptionState& exception_state) {
-  if (!AllowedToUsePaymentFeatures(script_state)) {
+  if (!AllowedToUsePaymentFeatures2(script_state)) {
     ThrowNotAllowedToUsePaymentFeatures(exception_state);
     return ScriptPromise<IDLBoolean>();
   }
