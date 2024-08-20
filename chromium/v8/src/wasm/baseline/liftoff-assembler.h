@@ -301,9 +301,9 @@ class LiftoffAssembler : public TurboAssembler {
   // but discarded with {stack_state.pop_back(count)}.
   LiftoffRegister PeekToRegister(int index, LiftoffRegList pinned);
 
-  // Ensure that the loop inputs are either in a register or spilled to the
-  // stack, so that we can merge different values on the back-edge.
-  void PrepareLoopArgs(int num);
+  // Spill all loop inputs to the stack to free registers and to ensure that we
+  // can merge different values on the back-edge.
+  void SpillLoopArgs(int num);
 
   int NextSpillOffset(ValueType type) {
     int offset = TopSpillOffset() + SlotSizeForType(type);
