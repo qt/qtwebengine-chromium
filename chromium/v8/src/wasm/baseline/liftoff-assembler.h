@@ -561,9 +561,9 @@ class LiftoffAssembler : public MacroAssembler {
   // the bottom of the stack.
   void DropExceptionValueAtOffset(int offset);
 
-  // Ensure that the loop inputs are either in a register or spilled to the
-  // stack, so that we can merge different values on the back-edge.
-  void PrepareLoopArgs(int num);
+  // Spill all loop inputs to the stack to free registers and to ensure that we
+  // can merge different values on the back-edge.
+  void SpillLoopArgs(int num);
 
   V8_INLINE static int NextSpillOffset(ValueKind kind, int top_spill_offset) {
     int offset = top_spill_offset + SlotSizeForType(kind);
