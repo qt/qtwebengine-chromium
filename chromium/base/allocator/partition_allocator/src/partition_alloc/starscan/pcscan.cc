@@ -86,7 +86,6 @@ void PCScan::SetClearType(ClearType clear_type) {
 
 void PCScan::UninitForTesting() {
   PCScanInternal::Instance().ClearRootsForTesting();  // IN-TEST
-  ReinitPCScanMetadataAllocatorForTesting();          // IN-TEST
 }
 
 void PCScan::ReinitForTesting(InitConfig config) {

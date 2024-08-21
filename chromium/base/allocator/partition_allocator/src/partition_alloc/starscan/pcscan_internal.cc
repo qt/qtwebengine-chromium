@@ -20,6 +20,7 @@
 #include "partition_alloc/address_pool_manager.h"
 #include "partition_alloc/allocation_guard.h"
 #include "partition_alloc/build_config.h"
+#include "partition_alloc/internal_allocator.h"
 #include "partition_alloc/page_allocator.h"
 #include "partition_alloc/page_allocator_constants.h"
 #include "partition_alloc/partition_address_space.h"
@@ -42,7 +43,6 @@
 #include "partition_alloc/partition_page.h"
 #include "partition_alloc/reservation_offset_table.h"
 #include "partition_alloc/stack/stack.h"
-#include "partition_alloc/starscan/metadata_allocator.h"
 #include "partition_alloc/starscan/pcscan_scheduling.h"
 #include "partition_alloc/starscan/raceful_worklist.h"
 #include "partition_alloc/starscan/scan_loop.h"
@@ -177,16 +177,16 @@ static_assert(kSuperPageSize >= sizeof(QuarantineCardTable),
 #endif  // PA_CONFIG(STARSCAN_USE_CARD_TABLE)
 
 template <typename T>
-using MetadataVector = std::vector<T, MetadataAllocator<T>>;
+using MetadataVector = std::vector<T, InternalAllocator<T>>;
 template <typename T>
-using MetadataSet = std::set<T, std::less<>, MetadataAllocator<T>>;
+using MetadataSet = std::set<T, std::less<>, InternalAllocator<T>>;
 template <typename K, typename V>
 using MetadataHashMap =
     std::unordered_map<K,
                        V,
                        std::hash<K>,
                        std::equal_to<>,
-                       MetadataAllocator<std::pair<const K, V>>>;
+                       InternalAllocator<std::pair<const K, V>>>;
 
 struct GetSlotStartResult final {
   PA_ALWAYS_INLINE bool is_found() const {
@@ -486,7 +486,7 @@ class PCScanScanLoop;
 // This class is responsible for performing the entire PCScan task.
 // TODO(bikineev): Move PCScan algorithm out of PCScanTask.
 class PCScanTask final : public base::RefCountedThreadSafe<PCScanTask>,
-                         public AllocatedOnPCScanMetadataPartition {
+                         public InternalPartitionAllocated {
  public:
   // Creates and initializes a PCScan state.
   PCScanTask(PCScan& pcscan, size_t quarantine_last_size);
