@@ -120,6 +120,8 @@ class PLATFORM_EXPORT HarfBuzzShaper final {
                     const BufferSlice&,
                     ShapeResult*) const;
 
+  void CheckTextLen(unsigned start, unsigned length) const;
+
   const String text_;
 };
 
