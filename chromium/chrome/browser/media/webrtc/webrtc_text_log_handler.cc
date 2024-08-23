@@ -210,7 +210,7 @@ bool WebRtcTextLogHandler::StartLogging(GenericDoneCallback callback) {
   }
 
   WebRtcLogUploader* log_uploader = WebRtcLogUploader::GetInstance();
-  if (!log_uploader->ApplyForStartLogging()) {
+  if (log_uploader && !log_uploader->ApplyForStartLogging()) {
     FireGenericDoneCallback(std::move(callback), false,
                             "Cannot start, maybe the maximum number of "
                             "simultaneuos logs has been reached.");
