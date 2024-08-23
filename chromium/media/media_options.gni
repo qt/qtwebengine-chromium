@@ -122,6 +122,10 @@ declare_args() {
   # Enable inclusion of VVC/H.266 parser/demuxer, and also enable VVC/H.266 decoding
   # with hardware acceleration provided by platform. Disabled by default for all builds.
   enable_platform_vvc = false
+
+  # Enable the use of ScreenCaptureKit framework on macOS. A stable ScreenCaptureKit is available
+  # from macOS 13.2. Enabled by default for all build.
+  use_sck = true
 }
 
 # Use another declare_args() to allow dependence on args defined above.
