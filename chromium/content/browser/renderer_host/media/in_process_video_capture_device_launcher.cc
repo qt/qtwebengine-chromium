@@ -48,8 +48,11 @@
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_MAC)
+#include "base/mac/mac_util.h"
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
+#if BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/screen_capture_kit_device_mac.h"
+#endif // BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/views_widget_video_capture_device_mac.h"
 #endif
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -194,7 +197,9 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
 #if BUILDFLAG(IS_MAC)
   // Prefer using ScreenCaptureKit. After that try DesktopCaptureDeviceMac, and
   // if both fail, use the generic DesktopCaptureDevice.
-#if !BUILDFLAG(IS_QTWEBENGINE)
+  // Although ScreenCaptureKit is available in 12.3 there were some bugs that
+  // were not fixed until 13.2
+#if BUILDFLAG(USE_SCK)
   // ### Requires macOS sdk 12.3:
   if (base::FeatureList::IsEnabled(kScreenCaptureKitMac) ||
       (desktop_id.type == DesktopMediaID::TYPE_WINDOW &&
@@ -204,7 +209,7 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
     if ((device_out = CreateScreenCaptureKitDeviceMac(desktop_id)))
       return kScreenCaptureKitDeviceMac;
   }
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
+#endif //BUILDFLAG(USE_SCK)
   if ((device_out = CreateDesktopCaptureDeviceMac(desktop_id))) {
     return kDesktopCaptureDeviceMac;
   }
