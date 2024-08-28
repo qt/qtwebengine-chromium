@@ -129,8 +129,10 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
 
   bool InitializePixels(base::span<const uint8_t> pixel_data);
 
+#if BUILDFLAG(USE_DAWN)
   void AddWGPUDeviceWithPendingCommands(wgpu::Device device);
   void WaitForDawnCommandsToBeScheduled(const wgpu::Device& device_to_exclude);
+#endif
 
   void AddEGLDisplayWithPendingCommands(gl::GLDisplayEGL* display);
   void WaitForANGLECommandsToBeScheduled();
@@ -164,6 +166,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   std::unique_ptr<OverlayImageRepresentation> ProduceOverlay(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker) final;
+#if BUILDFLAG(USE_DAWN)
   std::unique_ptr<DawnImageRepresentation> ProduceDawn(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -171,6 +174,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
       wgpu::BackendType backend_type,
       std::vector<wgpu::TextureFormat> view_formats,
       scoped_refptr<SharedContextState> context_state) final;
+#endif
   std::unique_ptr<SkiaGaneshImageRepresentation> ProduceSkiaGanesh(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -211,6 +215,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   const uint32_t io_surface_format_;
   const gfx::GenericSharedMemoryId io_surface_id_;
 
+#if BUILDFLAG(USE_DAWN)
   // DawnSharedTextureHolder that keeps an internal cache of per-device
   // SharedTextureData that vends WebGPU textures for the underlying IOSurface.
   std::unique_ptr<DawnSharedTextureHolder> dawn_texture_holder_;
@@ -237,6 +242,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   // Returns the number of ongoing accesses that will still be present on this
   // texture after ending this access.
   int TrackEndAccessToWGPUTexture(wgpu::Texture texture);
+#endif  // BUILDFLAG(USE_DAWN)
 
   const GLenum gl_target_;
   const bool framebuffer_attachment_angle_;

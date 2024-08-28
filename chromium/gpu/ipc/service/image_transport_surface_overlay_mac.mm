@@ -119,6 +119,7 @@ void ImageTransportSurfaceOverlayMacEGL::Present(
     // With SkiaGraphite, we pass the Graphite-Dawn MTLDevice for creating
     // CAMetalLayer used to display HDR IOSurfaces. With SkiaGanesh, we pass the
     // ANGLE MTLDevice instead.
+#if BUILDFLAG(USE_DAWN)
     if (dawn_context_provider_ &&
         dawn_context_provider_->backend_type() == wgpu::BackendType::Metal) {
       id<MTLDevice> metal_device = dawn::native::metal::GetMTLDevice(
@@ -126,6 +127,7 @@ void ImageTransportSurfaceOverlayMacEGL::Present(
       ca_layer_tree_coordinator_->GetPendingCARendererLayerTree()
           ->SetMetalDevice(metal_device);
     } else {
+#else
       EGLAttrib angle_device_attrib = 0;
       if (eglQueryDisplayAttribEXT(display->GetDisplay(), EGL_DEVICE_EXT,
                                    &angle_device_attrib)) {
@@ -139,7 +141,10 @@ void ImageTransportSurfaceOverlayMacEGL::Present(
               ->SetMetalDevice(metal_device);
         }
       }
+#endif
+#if BUILDFLAG(USE_DAWN)
     }
+#endif
   }
 
   ca_layer_tree_coordinator_->Present(std::move(completion_callback),
