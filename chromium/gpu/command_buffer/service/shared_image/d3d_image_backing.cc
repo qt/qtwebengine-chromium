@@ -532,6 +532,7 @@ void D3DImageBacking::OnCopyToStagingTextureDone(
   std::move(readback_cb).Run(ReadbackFromStagingTexture(pixmaps));
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> D3DImageBacking::ProduceDawn(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -627,6 +628,7 @@ std::unique_ptr<DawnImageRepresentation> D3DImageBacking::ProduceDawn(
   return std::make_unique<DawnD3DImageRepresentation>(
       manager, this, tracker, device, backend_type, view_formats);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 void D3DImageBacking::UpdateExternalFence(
     scoped_refptr<gfx::D3DSharedFence> external_fence) {
@@ -718,6 +720,7 @@ D3DImageBacking::GetPendingWaitFences(
   return wait_fences;
 }
 
+#if BUILDFLAG(USE_DAWN)
 int D3DImageBacking::TrackBeginAccessToWGPUTexture(wgpu::Texture texture) {
   return wgpu_texture_ongoing_accesses_[texture.Get()]++;
 }
@@ -926,6 +929,7 @@ wgpu::SharedTextureMemory D3DImageBacking::GetSharedTextureMemory(
   }
   return dawn_shared_texture_holder_.GetSharedTextureMemory(device);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 bool D3DImageBacking::BeginAccessD3D11(
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
@@ -1021,6 +1025,7 @@ D3DImageBacking::GetDCompTextureAvailabilityFenceForCurrentFrame() const {
       /*d3d11_signal_device=*/nullptr, std::move(d3d11_fence), fence_value);
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnBufferRepresentation> D3DImageBacking::ProduceDawnBuffer(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1145,6 +1150,7 @@ void D3DImageBacking::EndAccessDawnBuffer(const wgpu::Device& device,
 
   EndAccessCommon(signaled_fences);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 bool D3DImageBacking::ValidateBeginAccess(bool write_access) const {
   if (in_write_access_) {

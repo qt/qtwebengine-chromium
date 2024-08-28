@@ -91,6 +91,7 @@ gfx::BufferFormat GetBufferFormatForPlane(viz::SharedImageFormat format,
   NOTREACHED();
 }
 
+#if BUILDFLAG(USE_DAWN)
 wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
                                 SharedImageUsageSet shared_image_usage,
                                 const gfx::Size& io_surface_size,
@@ -122,6 +123,7 @@ wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
 
   return shared_texture_memory.CreateTexture(&texture_descriptor);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 #if BUILDFLAG(SKIA_USE_METAL)
 
@@ -655,9 +657,11 @@ bool IOSurfaceImageBacking::OverlayRepresentation::BeginReadAccess(
   // WaitForANGLECommandsToBeScheduled() call is required.
   iosurface_backing->WaitForANGLECommandsToBeScheduled();
 
+#if BUILDFLAG(USE_DAWN)
   // Likewise do the same for Dawn's commands.
   iosurface_backing->WaitForDawnCommandsToBeScheduled(
       /*device_to_exclude=*/nullptr);
+#endif
 
   gl::GLContext* context = gl::GLContext::GetCurrent();
   if (context) {
@@ -700,6 +704,7 @@ bool IOSurfaceImageBacking::OverlayRepresentation::IsInUseByWindowServer()
   return IOSurfaceIsInUse(io_surface_.get());
 }
 
+#if BUILDFLAG(USE_DAWN)
 ///////////////////////////////////////////////////////////////////////////////
 // DawnRepresentation
 
@@ -950,6 +955,7 @@ bool IOSurfaceImageBacking::DawnRepresentation::
     SupportsMultipleConcurrentReadAccess() {
   return true;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 ///////////////////////////////////////////////////////////////////////////////
 // IOSurfaceImageBacking
@@ -986,7 +992,9 @@ IOSurfaceImageBacking::IOSurfaceImageBacking(
                        IOSurfaceGetHeight(io_surface_.get())),
       io_surface_format_(IOSurfaceGetPixelFormat(io_surface_.get())),
       io_surface_id_(io_surface_id),
+#if BUILDFLAG(USE_DAWN)
       dawn_texture_holder_(std::make_unique<DawnSharedTextureHolder>()),
+#endif
       gl_target_(gl_target),
       framebuffer_attachment_angle_(framebuffer_attachment_angle),
       cleared_rect_(is_cleared ? gfx::Rect(size) : gfx::Rect()),
@@ -1027,7 +1035,9 @@ bool IOSurfaceImageBacking::ReadbackToMemory(
 
   // Make sure any pending ANGLE EGLDisplays and Dawn devices are flushed.
   WaitForANGLECommandsToBeScheduled();
+#if BUILDFLAG(USE_DAWN)
   WaitForDawnCommandsToBeScheduled(/*device_to_exclude=*/nullptr);
+#endif
 
   ScopedIOSurfaceLock io_surface_lock(io_surface_.get(), /*options=*/0);
 
@@ -1078,7 +1088,9 @@ bool IOSurfaceImageBacking::UploadFromMemory(
 
   // Make sure any pending ANGLE EGLDisplays and Dawn devices are flushed.
   WaitForANGLECommandsToBeScheduled();
+#if BUILDFLAG(USE_DAWN)
   WaitForDawnCommandsToBeScheduled(/*device_to_exclude=*/nullptr);
+#endif
 
   ScopedIOSurfaceLock io_surface_lock(io_surface_.get(), /*options=*/0);
 
@@ -1256,6 +1268,7 @@ IOSurfaceImageBacking::ProduceOverlay(SharedImageManager* manager,
                                                  io_surface_);
 }
 
+#if BUILDFLAG(USE_DAWN)
 int IOSurfaceImageBacking::TrackBeginAccessToWGPUTexture(
     wgpu::Texture texture) {
   return wgpu_texture_ongoing_accesses_[texture.Get()]++;
@@ -1303,6 +1316,7 @@ void IOSurfaceImageBacking::WaitForDawnCommandsToBeScheduled(
     wgpu_devices_pending_flush_.insert(device_to_exclude);
   }
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 void IOSurfaceImageBacking::AddEGLDisplayWithPendingCommands(
     gl::GLDisplayEGL* display) {
@@ -1324,6 +1338,7 @@ void IOSurfaceImageBacking::ClearEGLDisplaysWithPendingCommands(
   }
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1403,6 +1418,7 @@ std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
       manager, this, tracker, wgpu::Device(device), wgpu_format,
       std::move(view_formats));
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 std::unique_ptr<SkiaGaneshImageRepresentation>
 IOSurfaceImageBacking::ProduceSkiaGanesh(
@@ -1596,10 +1612,12 @@ bool IOSurfaceImageBacking::IOSurfaceBackingEGLStateBeginAccess(
   CHECK(display);
   CHECK_EQ(display->GetDisplay(), egl_state->egl_display_);
 
+#if BUILDFLAG(USE_DAWN)
   // IOSurface might be written on a different GPU. So we have to wait for the
   // previous Dawn and ANGLE commands to be scheduled first.
   // TODO(crbug.com/40260114): Skip this if we're not on a dual-GPU system.
   WaitForDawnCommandsToBeScheduled(/*device_to_exclude=*/nullptr);
+#endif
 
   // Note that we don't need to call WaitForANGLECommandsToBeScheduled for other
   // EGLDisplays because it is already done when the previous GL context is made
