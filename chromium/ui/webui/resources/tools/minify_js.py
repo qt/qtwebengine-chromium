@@ -23,6 +23,7 @@ def main(argv):
   parser.add_argument('--out_folder', required=True)
   parser.add_argument('--in_files', nargs='*', required=True)
   parser.add_argument('--out_manifest', required=True)
+  parser.add_argument('--ascii_only', action='store_true')
 
   args = parser.parse_args(argv)
   out_path = os.path.normpath(
@@ -31,12 +32,15 @@ def main(argv):
       os.path.join(_CWD, args.in_folder).replace('\\', '/'))
 
   for input_file in args.in_files:
-    node.RunNode([
+    node_args = [
         node_modules.PathToTerser(),
         os.path.join(in_path, input_file), '--comments',
         '/Copyright|license|LICENSE/', '--output',
         os.path.join(out_path, input_file), '--module'
-    ])
+    ]
+    if args.ascii_only:
+      node_args += ['-f', 'ascii_only']
+    node.RunNode(node_args)
 
   manifest_data = {}
   manifest_data['base_dir'] = args.out_folder

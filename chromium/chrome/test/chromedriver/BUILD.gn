@@ -76,6 +76,13 @@ minify_js("minify_bidimapper") {
   in_folder = "$input_dir"
   in_files = [ "mapper.js" ]
   out_folder = "$target_gen_dir/bidimapper/minified"
+
+  if (is_win) {
+    # This is workaround for Windows build. Terser converts \x1a to ^Z and
+    # it causes "unexpected end-of-file" error. The "-f ascii_only" terser
+    # option prevents the conversion.
+    ascii_only = true
+  }
 }
 
 action("embed_bidimapper_in_cpp") {
@@ -294,6 +301,10 @@ source_set("automation_client_lib") {
 
   if (is_qtwebengine) {
     deps -= [ "//net/traffic_annotation:test_support" ]
+
+    if (is_gcc) {
+      cflags = [ "-Wno-trigraphs" ]
+    }
   }
 }
 
