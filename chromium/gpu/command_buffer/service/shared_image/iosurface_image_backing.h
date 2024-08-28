@@ -217,6 +217,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   std::unique_ptr<OverlayImageRepresentation> ProduceOverlay(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker) final;
+#if BUILDFLAG(USE_DAWN)
   std::unique_ptr<DawnImageRepresentation> ProduceDawn(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -224,6 +225,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
       wgpu::BackendType backend_type,
       std::vector<wgpu::TextureFormat> view_formats,
       scoped_refptr<SharedContextState> context_state) final;
+#endif
   std::unique_ptr<SkiaGaneshImageRepresentation> ProduceSkiaGanesh(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -280,6 +282,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   const gfx::Size io_surface_size_;
   const uint32_t io_surface_format_;
 
+#if BUILDFLAG(USE_DAWN)
   // DawnSharedTextureCache that keeps an internal cache of per-device
   // SharedTextureData that vends WebGPU textures for the underlying IOSurface.
   scoped_refptr<DawnSharedTextureCache> dawn_texture_cache_ GUARDED_BY(lock_);
@@ -311,6 +314,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   // texture after ending this access.
   int TrackEndAccessToWGPUTexture(wgpu::Texture texture)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+#endif  // BUILDFLAG(USE_DAWN)
 
   const GLenum gl_target_;
   const bool framebuffer_attachment_angle_;

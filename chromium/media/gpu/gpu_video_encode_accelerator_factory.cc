@@ -105,6 +105,7 @@ std::unique_ptr<VideoEncodeAccelerator> CreateMediaFoundationVEA(
           gpu_preferences, gpu_workarounds, gpu_device.luid));
 }
 
+#if BUILDFLAG(USE_DAWN)
 Microsoft::WRL::ComPtr<IDXGIAdapter> GetDxgiAdapterByLuid(CHROME_LUID luid) {
   Microsoft::WRL::ComPtr<IDXGIFactory4> dxgi_factory4;
   if (FAILED(::CreateDXGIFactory1(IID_PPV_ARGS(&dxgi_factory4)))) {
@@ -147,6 +148,7 @@ std::unique_ptr<VideoEncodeAccelerator> CreateD3D12VEA(
       new D3D12VideoEncodeAccelerator(std::move(d3d12_device),
                                       gpu_workarounds));
 }
+#endif // BUILDFLAG(USE_DAWN)
 #endif
 
 #if BUILDFLAG(IS_FUCHSIA)

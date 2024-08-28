@@ -466,6 +466,7 @@ bool D3DImageBackingFactory::IsD3DSharedImageSupported(
 bool D3DImageBackingFactory::IsSwapChainSupported(
     const GpuPreferences& gpu_preferences,
     DawnContextProvider* dawn_context_provider /*=nullptr*/) {
+#if BUILDFLAG(SKIA_USE_DAWN)
   if (gpu_preferences.gr_context_type == GrContextType::kGraphiteDawn) {
     // This is only supported if graphite and ANGLE share the same D3D11 device.
     CHECK(dawn_context_provider);
@@ -475,6 +476,7 @@ bool D3DImageBackingFactory::IsSwapChainSupported(
       return false;
     }
   }
+#endif
 
   return gl::DirectCompositionSupported() &&
          gl::DXGISwapChainTearingSupported();
