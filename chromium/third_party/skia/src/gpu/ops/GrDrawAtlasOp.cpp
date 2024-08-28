@@ -12,6 +12,7 @@
 #include "include/utils/SkRandom.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkSafeMath.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrDefaultGeoProcFactory.h"
 #include "src/gpu/GrDrawOpTest.h"
@@ -274,8 +275,14 @@ GrOp::CombineResult DrawAtlasOp::onCombineIfPossible(GrOp* t, GrRecordingContext
         return CombineResult::kCannotCombine;
     }
 
+    SkSafeMath safeMath;
+    int newQuadCount = safeMath.addInt(fQuadCount, that->quadCount());
+    if (!safeMath) {
+        return CombineResult::kCannotCombine;
+    }
+
     fGeoData.push_back_n(that->fGeoData.count(), that->fGeoData.begin());
-    fQuadCount += that->quadCount();
+    fQuadCount = newQuadCount;
 
     return CombineResult::kMerged;
 }
