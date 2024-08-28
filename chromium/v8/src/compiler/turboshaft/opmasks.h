@@ -182,10 +182,14 @@ using kBitwiseXor = WordBinopKindMask::For<WordBinopOp::Kind::kBitwiseXor>;
 
 using WordUnaryMask =
     MaskBuilder<WordUnaryOp, FIELD(WordUnaryOp, kind), FIELD(WordUnaryOp, rep)>;
-using kWord32ReverseBytes = WordUnaryMask::For<WordUnaryOp::Kind::kReverseBytes,
-                                               WordRepresentation::Word32()>;
-using kWord64ReverseBytes = WordUnaryMask::For<WordUnaryOp::Kind::kReverseBytes,
-                                               WordRepresentation::Word64()>;
+
+using kWord32ReverseBytes = OpMaskT<WordUnaryOp, WordUnaryMask::BuildMask(),
+                                    WordUnaryMask::EncodeValue(WordUnaryOp::Kind::kReverseBytes,
+                                                               WordRepresentation::Word32())>;
+
+using kWord64ReverseBytes = OpMaskT<WordUnaryOp, WordUnaryMask::BuildMask(),
+                                    WordUnaryMask::EncodeValue(WordUnaryOp::Kind::kReverseBytes,
+                                                               WordRepresentation::Word64())>;
 
 using FloatUnaryMask = MaskBuilder<FloatUnaryOp, FIELD(FloatUnaryOp, kind),
                                    FIELD(FloatUnaryOp, rep)>;
@@ -295,13 +299,16 @@ using TaggedBitcastMask =
     MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, from),
                 FIELD(TaggedBitcastOp, to), FIELD(TaggedBitcastOp, kind)>;
 using kBitcastTaggedToWordPtrForTagAndSmiBits =
-    TaggedBitcastMask::For<RegisterRepresentation::Tagged(),
-                           RegisterRepresentation::WordPtr(),
-                           TaggedBitcastOp::Kind::kTagAndSmiBits>;
+    OpMaskT<TaggedBitcastOp, TaggedBitcastMask::BuildMask(),
+            TaggedBitcastMask::EncodeValue(RegisterRepresentation::Tagged(),
+                                           RegisterRepresentation::WordPtr(),
+                                           TaggedBitcastOp::Kind::kTagAndSmiBits)>;
+
 using kBitcastWordPtrToSmi =
-    TaggedBitcastMask::For<RegisterRepresentation::WordPtr(),
-                           RegisterRepresentation::Tagged(),
-                           TaggedBitcastOp::Kind::kSmi>;
+    OpMaskT<TaggedBitcastOp, TaggedBitcastMask::BuildMask(),
+            TaggedBitcastMask::EncodeValue(RegisterRepresentation::WordPtr(),
+                                           RegisterRepresentation::Tagged(),
+                                           TaggedBitcastOp::Kind::kSmi)>;
 
 using TaggedBitcastKindMask =
     MaskBuilder<TaggedBitcastOp, FIELD(TaggedBitcastOp, kind)>;
