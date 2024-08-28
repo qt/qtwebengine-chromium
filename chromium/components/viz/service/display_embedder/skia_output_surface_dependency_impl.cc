@@ -104,7 +104,7 @@ SkiaOutputSurfaceDependencyImpl::CreatePresenter() {
   DCHECK(!IsOffscreen());
 
   auto context_state = GetSharedContextState();
-#if BUILDFLAG(IS_WIN) && BUILDFLAG(SKIA_USE_DAWN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(SKIA_USE_DAWN) && BUILDFLAG(USE_DAWN)
   // DirectComposition is only supported with dawn D3D11 backend.
   if (context_state->IsGraphiteDawn() &&
       context_state->dawn_context_provider()->backend_type() !=

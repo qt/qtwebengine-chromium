@@ -104,6 +104,7 @@ class GPU_GLES2_EXPORT D3DImageBacking final
   void ReadbackToMemoryAsync(const std::vector<SkPixmap>& pixmaps,
                              base::OnceCallback<void(bool)> callback) override;
   bool PresentSwapChain() override;
+#if BUILDFLAG(USE_DAWN)
   std::unique_ptr<DawnImageRepresentation> ProduceDawn(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -111,6 +112,7 @@ class GPU_GLES2_EXPORT D3DImageBacking final
       wgpu::BackendType backend_type,
       std::vector<wgpu::TextureFormat> view_formats,
       scoped_refptr<SharedContextState> context_state) override;
+#endif
   void UpdateExternalFence(
       scoped_refptr<gfx::D3DSharedFence> external_fence) override;
 
@@ -118,12 +120,14 @@ class GPU_GLES2_EXPORT D3DImageBacking final
                         bool write_access);
   void EndAccessD3D11(Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device);
 
+#if BUILDFLAG(USE_DAWN)
   wgpu::Texture BeginAccessDawn(const wgpu::Device& device,
                                 wgpu::BackendType backend_type,
                                 wgpu::TextureUsage usage,
                                 wgpu::TextureUsage internal_usage,
                                 std::vector<wgpu::TextureFormat> view_formats);
   void EndAccessDawn(const wgpu::Device& device, wgpu::Texture texture);
+#endif
 
   std::unique_ptr<DawnBufferRepresentation> ProduceDawnBuffer(
       SharedImageManager* manager,
@@ -292,10 +296,12 @@ class GPU_GLES2_EXPORT D3DImageBacking final
       const wgpu::Device& wait_dawn_device,
       bool write_access) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
+#if BUILDFLAG(USE_DAWN)
   // Uses either DXGISharedHandleState or internal |dawn_shared_texture_holder_|
   // depending on whether the texture has a shared handle or not.
   wgpu::SharedTextureMemory GetSharedTextureMemory(const wgpu::Device& device)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+#endif
 
   // Returns the number of ongoing accesses that were already present on this
   // texture prior to beginning this access.

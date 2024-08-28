@@ -64,6 +64,7 @@ void GLTexturePassthroughD3DImageRepresentation::EndAccess() {
   d3d_image_backing->EndAccessD3D11(d3d11_device_);
 }
 
+#if BUILDFLAG(USE_DAWN)
 DawnD3DImageRepresentation::DawnD3DImageRepresentation(
     SharedImageManager* manager,
     SharedImageBacking* backing,
@@ -102,6 +103,7 @@ void DawnD3DImageRepresentation::EndAccess() {
 
   texture_ = nullptr;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 // Enabling this functionality reduces overhead in the compositor by lowering
 // the frequency of begin/end access pairs. The semantic constraints for a

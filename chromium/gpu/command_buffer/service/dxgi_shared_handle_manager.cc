@@ -188,6 +188,7 @@ void DXGISharedHandleState::ReleaseKeyedMutex(
   }
 }
 
+#if BUILDFLAG(USE_DAWN)
 wgpu::SharedTextureMemory DXGISharedHandleState::GetSharedTextureMemory(
     const wgpu::Device& device) {
   base::AutoLock auto_lock(lock_);
@@ -214,6 +215,7 @@ void DXGISharedHandleState::EraseDawnSharedTextureMemory(
   CHECK(dawn_shared_texture_memory_cache_.at(device.Get()).IsDeviceLost());
   dawn_shared_texture_memory_cache_.erase(device.Get());
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 DXGISharedHandleManager::DXGISharedHandleManager() = default;
 
