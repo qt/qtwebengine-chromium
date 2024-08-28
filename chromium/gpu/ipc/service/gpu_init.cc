@@ -947,6 +947,7 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> d3d12_command_queue;
     gl::SolidColorPoolFactory solid_color_factory;
+#if BUILDFLAG(USE_DAWN)
     if (dawn_context_provider_) {
       d3d11_device = dawn_context_provider_->GetD3D11Device();
       d3d12_command_queue = dawn_context_provider_->GetD3D12CommandQueue();
@@ -960,7 +961,9 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
             dawn_context_provider_->GetDevice(), d3d12_command_queue);
       }
 #endif  // BUILDFLAG(SKIA_USE_DAWN)
-    } else {
+    } else
+#endif
+    {
       d3d11_device = gl::QueryD3D11DeviceObjectFromANGLE();
     }
     if (!solid_color_factory) {

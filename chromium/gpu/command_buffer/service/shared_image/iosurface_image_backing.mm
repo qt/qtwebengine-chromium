@@ -102,6 +102,7 @@ viz::SharedImageFormat GetFormatForPlane(viz::SharedImageFormat format,
   NOTREACHED();
 }
 
+#if BUILDFLAG(USE_DAWN)
 wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
                                 SharedImageUsageSet shared_image_usage,
                                 const gfx::Size& io_surface_size,
@@ -133,6 +134,7 @@ wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
 
   return shared_texture_memory.CreateTexture(&texture_descriptor);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 id<MTLDevice> QueryMetalDeviceFromANGLE(EGLDisplay display) {
   auto* display_egl =
@@ -709,6 +711,7 @@ bool IOSurfaceImageBacking::OverlayRepresentation::IsInUseByWindowServer()
   return IOSurfaceIsInUse(io_surface_.get());
 }
 
+#if BUILDFLAG(USE_DAWN)
 ///////////////////////////////////////////////////////////////////////////////
 // DawnRepresentation
 
@@ -962,6 +965,7 @@ bool IOSurfaceImageBacking::SkiaGraphiteDawnMetalRepresentation::
     SupportsMultipleConcurrentReadAccess() {
   return true;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 ///////////////////////////////////////////////////////////////////////////////
 // IOSurfaceImageBacking
@@ -986,7 +990,9 @@ IOSurfaceImageBacking::IOSurfaceImageBacking(
       io_surface_size_(IOSurfaceGetWidth(io_surface_.get()),
                        IOSurfaceGetHeight(io_surface_.get())),
       io_surface_format_(IOSurfaceGetPixelFormat(io_surface_.get())),
+#if BUILDFLAG(USE_DAWN)
       dawn_texture_cache_(base::MakeRefCounted<DawnSharedTextureCache>()),
+#endif
       gl_target_(gl_target),
       framebuffer_attachment_angle_(framebuffer_attachment_angle),
       weak_factory_(this) {
@@ -1259,6 +1265,7 @@ IOSurfaceImageBacking::ProduceOverlay(SharedImageManager* manager,
                                                  io_surface_);
 }
 
+#if BUILDFLAG(USE_DAWN)
 int IOSurfaceImageBacking::TrackBeginAccessToWGPUTexture(
     wgpu::Texture texture) {
   AssertLockAcquired();
@@ -1289,6 +1296,7 @@ IOSurfaceImageBacking::GetDawnTextureCache() {
   AssertLockAcquired();
   return dawn_texture_cache_;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
     id<MTLDevice> waiting_device) {
@@ -1297,6 +1305,7 @@ void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
   base::TimeDelta dawn_wait_time;
   base::TimeDelta angle_wait_time;
 
+#if BUILDFLAG(USE_DAWN)
   base::flat_map<wgpu::Device, wgpu::Future, WGPUDeviceCompare> futures_to_keep;
   for (const auto& [device, future] : wgpu_commands_scheduled_futures_) {
     id<MTLDevice> mtl_device = dawn::native::metal::GetMTLDevice(device.Get());
@@ -1316,6 +1325,7 @@ void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
     dawn_wait_time += base::TimeTicks::Now() - start_time;
   }
   wgpu_commands_scheduled_futures_ = std::move(futures_to_keep);
+#endif
 
   base::flat_map<EGLDisplay, std::unique_ptr<gl::GLFenceEGL>> fences_to_keep;
   for (auto& [display, fence] : egl_commands_scheduled_fences_) {
@@ -1365,6 +1375,7 @@ IOSurfaceRef IOSurfaceImageBacking::GetIOSurface() {
   return io_surface_.get();
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1457,6 +1468,7 @@ std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
       manager, this, tracker, wgpu::Device(device), wgpu_format,
       std::move(view_formats));
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 std::unique_ptr<SkiaGaneshImageRepresentation>
 IOSurfaceImageBacking::ProduceSkiaGanesh(
