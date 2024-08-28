@@ -164,6 +164,7 @@ void D3DImageBacking::GLTextureHolder::MarkContextLost() {
 
 D3DImageBacking::GLTextureHolder::~GLTextureHolder() = default;
 
+#if BUILDFLAG(USE_DAWN)
 // PersistentGraphiteDawnAccess. This is ref counted because it would out-live
 // the parent backing when its ref is kept inside a GraphiteTextureHolder.
 class D3DImageBacking::PersistentGraphiteDawnAccess
@@ -368,6 +369,7 @@ class D3DImageBacking::GraphiteTextureHolder
   scoped_refptr<DawnSharedTextureCache> shared_texture_cache_;
   scoped_refptr<PersistentGraphiteDawnAccess> persistent_graphite_dawn_access_;
 };
+#endif  // BUILDFLAG(USE_DAWN)
 
 // static
 scoped_refptr<D3DImageBacking::GLTextureHolder>
@@ -563,9 +565,12 @@ D3DImageBacking::D3DImageBacking(
       use_update_subresource1_(use_update_subresource1),
       share_dxgi_handle_with_other_backings_(
           dxgi_shared_handle_state_ && share_dxgi_handle_with_other_backings),
-      angle_d3d11_device_(gl::QueryD3D11DeviceObjectFromANGLE()),
-      dawn_shared_texture_cache_(
-          base::MakeRefCounted<DawnSharedTextureCache>()) {
+      angle_d3d11_device_(gl::QueryD3D11DeviceObjectFromANGLE())
+#if BUILDFLAG(USE_DAWN)
+      , dawn_shared_texture_cache_(
+          base::MakeRefCounted<DawnSharedTextureCache>())
+#endif
+{
   if (d3d11_texture_) {
     d3d11_texture_->GetDevice(&texture_d3d11_device_);
     d3d11_texture_->GetDesc(&d3d11_texture_desc_);
@@ -591,9 +596,12 @@ D3DImageBacking::D3DImageBacking(
       d3d12_resource_(std::move(d3d12_resource)),
       texture_target_(0),
       array_slice_(0),
-      use_update_subresource1_(false),
-      dawn_shared_texture_cache_(
-          base::MakeRefCounted<DawnSharedTextureCache>()) {}
+      use_update_subresource1_(false)
+#if BUILDFLAG(USE_DAWN)
+      , dawn_shared_texture_cache_(
+          base::MakeRefCounted<DawnSharedTextureCache>())
+#endif
+{}
 
 D3DImageBacking::~D3DImageBacking() {
   if (!have_context()) {
@@ -803,6 +811,7 @@ void D3DImageBacking::OnCopyToStagingTextureDone(
   std::move(readback_cb).Run(ReadbackFromStagingTexture(pixmaps));
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> D3DImageBacking::ProduceDawn(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -994,6 +1003,7 @@ wgpu::Texture D3DImageBacking::GetOrCreateDawnTexture(
 
   return texture;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 void D3DImageBacking::UpdateExternalFence(
     scoped_refptr<gfx::D3DSharedFence> external_fence) {
@@ -1085,6 +1095,7 @@ D3DImageBacking::GetPendingWaitFences(
   return wait_fences;
 }
 
+#if BUILDFLAG(USE_DAWN)
 int D3DImageBacking::TrackBeginAccessToWGPUTexture(wgpu::Texture texture) {
   return wgpu_texture_ongoing_accesses_[texture.Get()]++;
 }
@@ -1384,6 +1395,7 @@ wgpu::SharedTextureMemory D3DImageBacking::GetSharedTextureMemory(
   }
   return dawn_shared_texture_cache_->GetSharedTextureMemory(device);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 bool D3DImageBacking::BeginAccessD3D11(
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
@@ -1391,6 +1403,7 @@ bool D3DImageBacking::BeginAccessD3D11(
     bool is_overlay_access) {
   AutoLock auto_lock(this);
 
+#if BUILDFLAG(USE_DAWN)
   if (persistent_graphite_dawn_access_) {
     if (persistent_graphite_dawn_access_->IsGraphiteD3D11Device(d3d11_device)) {
       FlushGraphiteCommandsIfNeeded();
@@ -1400,6 +1413,7 @@ bool D3DImageBacking::BeginAccessD3D11(
       InvalidatePersistentGraphiteDawnAccess();
     }
   }
+#endif
 
   if (!ValidateBeginAccess(write_access)) {
     return false;
@@ -1463,9 +1477,11 @@ void D3DImageBacking::EndAccessD3D11(
     EndDCompTextureAccess();
   }
 
+#if BUILDFLAG(USE_DAWN)
   if (in_write_access_) {
     NotifyGraphiteAboutInitializedStatus();
   }
+#endif
 
   EndAccessCommon(signaled_fence);
 }
@@ -1530,6 +1546,7 @@ void D3DImageBacking::EndDCompTextureAccess() {
       /*d3d11_signal_device=*/nullptr, std::move(d3d11_fence), fence_value);
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnBufferRepresentation> D3DImageBacking::ProduceDawnBuffer(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1654,6 +1671,7 @@ void D3DImageBacking::EndAccessDawnBuffer(const wgpu::Device& device,
 
   EndAccessCommon(signaled_fences);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 bool D3DImageBacking::ValidateBeginAccess(bool write_access) const {
   if (usage().Has(SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE)) {
@@ -1744,8 +1762,10 @@ bool D3DImageBacking::PresentSwapChain() {
     return false;
   }
 
+#if BUILDFLAG(USE_DAWN)
   // Flush any deferred Graphite submits before presentation.
   FlushGraphiteCommandsIfNeeded();
+#endif
 
   TRACE_EVENT1("gpu", "D3DImageBacking::PresentSwapChain", "has_alpha",
                !SkAlphaTypeIsOpaque(alpha_type()));
@@ -1907,6 +1927,7 @@ bool D3DImageBacking::HasStagingTextureForTesting() const {
   return !!staging_texture_;
 }
 
+#if BUILDFLAG(USE_DAWN)
 void D3DImageBacking::FlushGraphiteCommandsIfNeeded() {
   if (!persistent_graphite_dawn_access_) {
     return;
@@ -1939,5 +1960,6 @@ bool D3DImageBacking::SupportsDeferredGraphiteSubmit() const {
   // supported.
   return persistent_graphite_dawn_access_ != nullptr;
 }
+#endif
 
 }  // namespace gpu

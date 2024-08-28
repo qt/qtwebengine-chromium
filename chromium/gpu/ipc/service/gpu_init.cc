@@ -909,9 +909,12 @@ bool GpuInit::InitializeAndStartSandbox(base::CommandLine* command_line,
 #if BUILDFLAG(IS_WIN)
   {
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device;
+#if BUILDFLAG(USE_DAWN)
     if (dawn_context_provider_) {
       d3d11_device = dawn_context_provider_->GetD3D11Device();
-    } else {
+    } else
+#endif
+    {
       d3d11_device = gl::QueryD3D11DeviceObjectFromANGLE();
     }
     gl::InitializeDirectComposition(std::move(d3d11_device));

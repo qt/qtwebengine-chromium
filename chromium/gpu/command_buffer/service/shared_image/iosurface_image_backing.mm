@@ -97,6 +97,7 @@ gfx::BufferFormat GetBufferFormatForPlane(viz::SharedImageFormat format,
   NOTREACHED();
 }
 
+#if BUILDFLAG(USE_DAWN)
 wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
                                 SharedImageUsageSet shared_image_usage,
                                 const gfx::Size& io_surface_size,
@@ -128,6 +129,7 @@ wgpu::Texture CreateWGPUTexture(wgpu::SharedTextureMemory shared_texture_memory,
 
   return shared_texture_memory.CreateTexture(&texture_descriptor);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 #if BUILDFLAG(SKIA_USE_METAL)
 
@@ -765,6 +767,7 @@ bool IOSurfaceImageBacking::OverlayRepresentation::IsInUseByWindowServer()
   return IOSurfaceIsInUse(io_surface_.get());
 }
 
+#if BUILDFLAG(USE_DAWN)
 ///////////////////////////////////////////////////////////////////////////////
 // DawnRepresentation
 
@@ -1022,6 +1025,7 @@ bool IOSurfaceImageBacking::SkiaGraphiteDawnMetalRepresentation::
     SupportsMultipleConcurrentReadAccess() {
   return true;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 ///////////////////////////////////////////////////////////////////////////////
 // IOSurfaceImageBacking
@@ -1057,7 +1061,9 @@ IOSurfaceImageBacking::IOSurfaceImageBacking(
       io_surface_size_(IOSurfaceGetWidth(io_surface_.get()),
                        IOSurfaceGetHeight(io_surface_.get())),
       io_surface_format_(IOSurfaceGetPixelFormat(io_surface_.get())),
+#if BUILDFLAG(USE_DAWN)
       dawn_texture_cache_(base::MakeRefCounted<DawnSharedTextureCache>()),
+#endif
       gl_target_(gl_target),
       framebuffer_attachment_angle_(framebuffer_attachment_angle),
       weak_factory_(this) {
@@ -1330,6 +1336,7 @@ IOSurfaceImageBacking::ProduceOverlay(SharedImageManager* manager,
                                                  io_surface_);
 }
 
+#if BUILDFLAG(USE_DAWN)
 int IOSurfaceImageBacking::TrackBeginAccessToWGPUTexture(
     wgpu::Texture texture) {
   AssertLockAcquired();
@@ -1366,12 +1373,14 @@ void IOSurfaceImageBacking::AddWGPUDeviceWithPendingCommands(
   AssertLockAcquired();
   wgpu_devices_pending_flush_.insert(std::move(device));
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
     id<MTLDevice> waiting_device) {
   AssertLockAcquired();
   TRACE_EVENT0("gpu", "IOSurfaceImageBacking::WaitForCommandsToBeScheduled");
 
+#if BUILDFLAG(USE_DAWN)
   std::vector<wgpu::Device> wgpu_devices_to_keep;
   for (const auto& device : wgpu_devices_pending_flush_) {
     // Only Metal backed devices are added to `wgpu_devices_pending_flush_`.
@@ -1385,6 +1394,7 @@ void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
     dawn::native::metal::WaitForCommandsToBeScheduled(device.Get());
   }
   wgpu_devices_pending_flush_ = std::move(wgpu_devices_to_keep);
+#endif
 
   std::vector<gl::GLDisplayEGL*> egl_displays_to_keep;
   for (auto* display : egl_displays_pending_flush_) {
@@ -1416,6 +1426,7 @@ void IOSurfaceImageBacking::ClearEGLDisplaysWithPendingCommands(
   }
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1508,6 +1519,7 @@ std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
       manager, this, tracker, wgpu::Device(device), wgpu_format,
       std::move(view_formats));
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 std::unique_ptr<SkiaGaneshImageRepresentation>
 IOSurfaceImageBacking::ProduceSkiaGanesh(

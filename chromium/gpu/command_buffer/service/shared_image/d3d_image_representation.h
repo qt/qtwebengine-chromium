@@ -46,6 +46,7 @@ class GLTexturePassthroughD3DImageRepresentation
       gl_texture_holders_;
 };
 
+#if BUILDFLAG(USE_DAWN)
 // Representation of a D3DImageBacking as a Dawn Texture
 class DawnD3DImageRepresentation : public DawnImageRepresentation {
  public:
@@ -67,6 +68,7 @@ class DawnD3DImageRepresentation : public DawnImageRepresentation {
   wgpu::Texture texture_;
   std::vector<wgpu::TextureFormat> view_formats_;
 };
+#endif  // BUILDFLAG(USE_DAWN)
 
 class DawnD3DBufferRepresentation : public DawnBufferRepresentation {
  public:
@@ -175,6 +177,7 @@ class D3D11VideoImageCopyRepresentation : public VideoImageRepresentation {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture_;
 };
 
+#if BUILDFLAG(USE_DAWN)
 class D3DSkiaGraphiteDawnImageRepresentation
     : public SkiaGraphiteDawnImageRepresentation {
  public:
@@ -190,6 +193,7 @@ class D3DSkiaGraphiteDawnImageRepresentation
       wgpu::Texture texture,
       std::vector<skgpu::graphite::BackendTexture> backend_textures) override;
 };
+#endif  // BUILDFLAG(USE_DAWN)
 
 }  // namespace gpu
 #endif  // GPU_COMMAND_BUFFER_SERVICE_SHARED_IMAGE_D3D_IMAGE_REPRESENTATION_H_
