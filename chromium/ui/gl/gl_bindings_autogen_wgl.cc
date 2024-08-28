@@ -203,19 +203,19 @@ BOOL TraceWGLApi::wglChoosePixelFormatARBFn(HDC dc,
                                             UINT max_formats,
                                             int* formats,
                                             UINT* num_formats) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglChoosePixelFormatARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglChoosePixelFormatARB");
   return wgl_api_->wglChoosePixelFormatARBFn(dc, int_attrib_list,
                                              float_attrib_list, max_formats,
                                              formats, num_formats);
 }
 
 BOOL TraceWGLApi::wglCopyContextFn(HGLRC hglrcSrc, HGLRC hglrcDst, UINT mask) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCopyContext")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCopyContext");
   return wgl_api_->wglCopyContextFn(hglrcSrc, hglrcDst, mask);
 }
 
 HGLRC TraceWGLApi::wglCreateContextFn(HDC hdc) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreateContext")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreateContext");
   return wgl_api_->wglCreateContextFn(hdc);
 }
 
@@ -223,12 +223,12 @@ HGLRC TraceWGLApi::wglCreateContextAttribsARBFn(HDC hDC,
                                                 HGLRC hShareContext,
                                                 const int* attribList) {
   TRACE_EVENT_BINARY_EFFICIENT0("gpu",
-                                "TraceWGLAPI::wglCreateContextAttribsARB")
+                                "TraceWGLAPI::wglCreateContextAttribsARB");
   return wgl_api_->wglCreateContextAttribsARBFn(hDC, hShareContext, attribList);
 }
 
 HGLRC TraceWGLApi::wglCreateLayerContextFn(HDC hdc, int iLayerPlane) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreateLayerContext")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreateLayerContext");
   return wgl_api_->wglCreateLayerContextFn(hdc, iLayerPlane);
 }
 
@@ -237,75 +237,75 @@ HPBUFFERARB TraceWGLApi::wglCreatePbufferARBFn(HDC hDC,
                                                int iWidth,
                                                int iHeight,
                                                const int* piAttribList) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreatePbufferARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglCreatePbufferARB");
   return wgl_api_->wglCreatePbufferARBFn(hDC, iPixelFormat, iWidth, iHeight,
                                          piAttribList);
 }
 
 BOOL TraceWGLApi::wglDeleteContextFn(HGLRC hglrc) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglDeleteContext")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglDeleteContext");
   return wgl_api_->wglDeleteContextFn(hglrc);
 }
 
 BOOL TraceWGLApi::wglDestroyPbufferARBFn(HPBUFFERARB hPbuffer) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglDestroyPbufferARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglDestroyPbufferARB");
   return wgl_api_->wglDestroyPbufferARBFn(hPbuffer);
 }
 
 HGLRC TraceWGLApi::wglGetCurrentContextFn() {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetCurrentContext")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetCurrentContext");
   return wgl_api_->wglGetCurrentContextFn();
 }
 
 HDC TraceWGLApi::wglGetCurrentDCFn() {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetCurrentDC")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetCurrentDC");
   return wgl_api_->wglGetCurrentDCFn();
 }
 
 const char* TraceWGLApi::wglGetExtensionsStringARBFn(HDC hDC) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetExtensionsStringARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetExtensionsStringARB");
   return wgl_api_->wglGetExtensionsStringARBFn(hDC);
 }
 
 const char* TraceWGLApi::wglGetExtensionsStringEXTFn() {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetExtensionsStringEXT")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetExtensionsStringEXT");
   return wgl_api_->wglGetExtensionsStringEXTFn();
 }
 
 HDC TraceWGLApi::wglGetPbufferDCARBFn(HPBUFFERARB hPbuffer) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetPbufferDCARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglGetPbufferDCARB");
   return wgl_api_->wglGetPbufferDCARBFn(hPbuffer);
 }
 
 BOOL TraceWGLApi::wglMakeCurrentFn(HDC hdc, HGLRC hglrc) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglMakeCurrent")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglMakeCurrent");
   return wgl_api_->wglMakeCurrentFn(hdc, hglrc);
 }
 
 BOOL TraceWGLApi::wglQueryPbufferARBFn(HPBUFFERARB hPbuffer,
                                        int iAttribute,
                                        int* piValue) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglQueryPbufferARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglQueryPbufferARB");
   return wgl_api_->wglQueryPbufferARBFn(hPbuffer, iAttribute, piValue);
 }
 
 int TraceWGLApi::wglReleasePbufferDCARBFn(HPBUFFERARB hPbuffer, HDC hDC) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglReleasePbufferDCARB")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglReleasePbufferDCARB");
   return wgl_api_->wglReleasePbufferDCARBFn(hPbuffer, hDC);
 }
 
 BOOL TraceWGLApi::wglShareListsFn(HGLRC hglrc1, HGLRC hglrc2) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglShareLists")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglShareLists");
   return wgl_api_->wglShareListsFn(hglrc1, hglrc2);
 }
 
 BOOL TraceWGLApi::wglSwapIntervalEXTFn(int interval) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglSwapIntervalEXT")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglSwapIntervalEXT");
   return wgl_api_->wglSwapIntervalEXTFn(interval);
 }
 
 BOOL TraceWGLApi::wglSwapLayerBuffersFn(HDC hdc, UINT fuPlanes) {
-  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglSwapLayerBuffers")
+  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceWGLAPI::wglSwapLayerBuffers");
   return wgl_api_->wglSwapLayerBuffersFn(hdc, fuPlanes);
 }
 
