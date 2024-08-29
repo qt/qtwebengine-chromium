@@ -111,7 +111,7 @@ declare_args() {
 
   if (current_cpu == "arm" || current_cpu == "arm64") {
     if (arm_use_neon) {
-      enable_vectorized_html_scanning = true
+      enable_vectorized_html_scanning = false
     }
   }
   if (current_cpu == "x64") {

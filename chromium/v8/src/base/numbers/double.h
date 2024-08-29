@@ -14,11 +14,15 @@ namespace v8 {
 namespace base {
 
 // We assume that doubles and uint64_t have the same endianness.
-inline constexpr uint64_t double_to_uint64(double d) {
-  return std::bit_cast<uint64_t>(d);
+inline uint64_t double_to_uint64(double d) {
+  uint64_t result;
+  std::memcpy(&result, &d, sizeof(double));
+  return result;
 }
-inline constexpr double uint64_to_double(uint64_t d64) {
-  return std::bit_cast<double>(d64);
+inline double uint64_to_double(uint64_t d64) {
+  double result;
+  std::memcpy(&result, &d64, sizeof(uint64_t));
+  return result;
 }
 
 // Helper functions for doubles.
@@ -33,7 +37,7 @@ class Double {
   static constexpr int kSignificandSize = 53;
 
   constexpr Double() : d64_(0) {}
-  constexpr explicit Double(double d) : d64_(double_to_uint64(d)) {}
+  explicit Double(double d) : d64_(double_to_uint64(d)) {}
   constexpr explicit Double(uint64_t d64) : d64_(d64) {}
   constexpr explicit Double(DiyFp diy_fp) : d64_(DiyFpToUint64(diy_fp)) {}
 
@@ -155,7 +159,7 @@ class Double {
     *out_m_minus = m_minus;
   }
 
-  constexpr double value() const { return uint64_to_double(d64_); }
+  double value() const { return uint64_to_double(d64_); }
 
   // Returns the significand size for a given order of magnitude.
   // If v = f*2^e with 2^p-1 <= f <= 2^p then p+e is v's order of magnitude.

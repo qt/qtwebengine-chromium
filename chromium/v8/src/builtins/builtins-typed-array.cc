@@ -835,13 +835,15 @@ BUILTIN(Uint8ArrayPrototypeToBase64) {
     // 11. Return CodePointsToString(outAscii).
 
     size_t simd_result_size;
+    const char* backing_store;
+    std::memcpy(&backing_store, uint8array->DataPtr(), sizeof(backing_store));
     if (uint8array->buffer()->is_shared()) {
       simd_result_size = simdutf::atomic_binary_to_base64(
-          std::bit_cast<const char*>(uint8array->DataPtr()), length,
+          backing_store, length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
     } else {
       simd_result_size = simdutf::binary_to_base64(
-          std::bit_cast<const char*>(uint8array->DataPtr()), length,
+          backing_store, length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
     }
     DCHECK_EQ(simd_result_size, output_length);
