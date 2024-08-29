@@ -6,6 +6,7 @@
 #define NET_TOOLS_TRANSPORT_SECURITY_STATE_GENERATOR_CERT_UTIL_H_
 
 #include <stdint.h>
+#include <string>
 
 #include <string_view>
 
