@@ -40,9 +40,9 @@
 #include "chrome/common/pref_names.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/url_and_title.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/metrics/metrics_service.h"
-#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/policy/core/browser/browser_policy_connector.h"
 #endif
 #include "components/prefs/pref_service.h"

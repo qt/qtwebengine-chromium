@@ -25,7 +25,9 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_manager_builder.h"
 #include "components/signin/public/webdata/token_web_data.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/features.h"
+#endif
 #include "content/public/browser/network_service_instance.h"
 
 #if (BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !BUILDFLAG(IS_QTWEBENGINE)
@@ -34,7 +36,7 @@
 #include "components/signin/core/browser/cookie_settings_util.h"
 #endif
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT) && BUILDFLAG(IS_QTWEBENGINE)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/webdata_services/web_data_service_factory.h"
 #include "components/keyed_service/core/service_access_type.h"
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
@@ -199,7 +201,11 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
 #endif
 
   params.require_sync_consent_for_scope_verification =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      true;
+#else
       !base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos);
+#endif
 
   std::unique_ptr<signin::IdentityManager> identity_manager =
       signin::BuildIdentityManager(&params);

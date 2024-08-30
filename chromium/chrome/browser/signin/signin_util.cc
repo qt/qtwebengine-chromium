@@ -279,6 +279,7 @@ PrimaryAccountError SetPrimaryAccountWithInvalidToken(
     bool is_under_advanced_protection,
     signin_metrics::AccessPoint access_point,
     signin_metrics::SourceForRefreshTokenOperation source) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
 
   CHECK(identity_manager->FindExtendedAccountInfoByEmailAddress(user_email)
@@ -309,6 +310,9 @@ PrimaryAccountError SetPrimaryAccountWithInvalidToken(
            << static_cast<int>(set_primary_account_result);
 
   return set_primary_account_result;
+#else
+  return {};
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 }
 
 }  // namespace signin_util
