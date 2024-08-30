@@ -115,12 +115,13 @@ WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::Run() {
                                       origin /* security_origin */,
                                       true /* user_gesture */,
                                       blink::MediaStreamRequestType::MEDIA_DEVICE_ACCESS /* request_type */,
-                                      "" /* requested_audio_device_id */,
-                                      "" /* requested_video_device_id */,
+                                      {} /* requested_audio_device_ids */,
+                                      {} /* requested_video_device_ids */,
                                       blink::mojom::MediaStreamType::GUM_DESKTOP_AUDIO_CAPTURE /* audio_type */,
                                       blink::mojom::MediaStreamType::GUM_DESKTOP_VIDEO_CAPTURE /* video_type */,
                                       true /* disable_local_echo */,
-                                      false /* request_pan_tilt_zoom_permission */);
+                                      false /* request_pan_tilt_zoom_permission */,
+                                      false /* captured_surface_control_active */);
 
   extensions::ExtensionHost *host = extensions::ProcessManager::Get(browser_context())->GetBackgroundHostForExtension(extension_id());
   host->RequestMediaAccessPermission(web_contents, request,
