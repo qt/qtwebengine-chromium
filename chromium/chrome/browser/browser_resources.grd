@@ -250,7 +250,7 @@
         <!-- Chrome Cart -->
         <!-- part file="cart/resources/cart_resources.grdp" / -->
         <!-- FedCM -->
-        <part file="ui/views/webid/resources/webid_resources.grdp" />
+        <!-- <part file="ui/views/webid/resources/webid_resources.grdp" /> -->
       </if>
     </includes>
   </release>

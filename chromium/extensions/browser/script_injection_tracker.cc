@@ -237,6 +237,8 @@ bool DoesScriptMatch(const Extension& extension,
 
   GURL effective_url =
       GetEffectiveDocumentURL(&frame, url, script.match_origin_as_fallback());
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
   auto* web_contents = content::WebContents::FromRenderFrameHost(&frame);
   int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
 
@@ -245,6 +247,7 @@ bool DoesScriptMatch(const Extension& extension,
           tab_id, effective_url)) {
     return true;
   }
+#endif
 
   // Dynamic scripts can only inject when the extension has host permissions for
   // the url.
