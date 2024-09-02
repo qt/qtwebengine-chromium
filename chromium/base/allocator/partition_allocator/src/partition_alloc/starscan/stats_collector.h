@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "partition_alloc/internal_allocator_forward.h"
+#include "partition_alloc/internal_allocator.h"
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
 #include "partition_alloc/partition_alloc_base/time/time.h"
 #include "partition_alloc/partition_alloc_check.h"

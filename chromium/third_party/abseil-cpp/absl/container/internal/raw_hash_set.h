@@ -4028,7 +4028,7 @@ class raw_hash_set {
   }
 
   static const PolicyFunctions& GetPolicyFunctions() {
-    static constexpr PolicyFunctions value = {
+    static const PolicyFunctions value = {
         sizeof(slot_type),
         PolicyTraits::template get_hash_slot_fn<hasher>(),
         PolicyTraits::transfer_uses_memcpy()

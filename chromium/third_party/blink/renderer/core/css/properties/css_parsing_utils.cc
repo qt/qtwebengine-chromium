@@ -7654,6 +7654,12 @@ template bool ConsumeRadii(CSSValue* horizontal_radii[4],
                            const CSSParserContext& context,
                            bool use_legacy_parsing);
 
+template bool ConsumeRadii(CSSValue* horizontal_radii[4],
+                           CSSValue* vertical_radii[4],
+                           CSSParserTokenRange& stream,
+                           const CSSParserContext& context,
+                           bool use_legacy_parsing);
+
 template <class T = CSSParserTokenRange>
   requires std::is_same_v<T, CSSParserTokenStream> ||
            std::is_same_v<T, CSSParserTokenRange>
@@ -8537,7 +8543,7 @@ std::optional<InsetAreaKeyword> ConsumeInsetAreaKeyword(
     default:
       return std::nullopt;
   }
-  return InsetAreaKeyword(css_parsing_utils::ConsumeIdent(range), type);
+  return InsetAreaKeyword{css_parsing_utils::ConsumeIdent(range), type};
 }
 
 }  // namespace

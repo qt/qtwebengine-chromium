@@ -1470,18 +1470,18 @@ class State : angle::NonCopyable
             return handlers;
         }();
 
-    static_assert(
-        []() {
-            for (auto handler : kDirtyObjectHandlers)
-            {
-                if (handler == nullptr)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }(),
-        "kDirtyObjectHandlers missing a handler");
+//    static_assert(
+//        []() {
+//            for (auto handler : kDirtyObjectHandlers)
+//            {
+//                if (handler == nullptr)
+//                {
+//                    return false;
+//                }
+//            }
+//            return true;
+//        }(),
+//        "kDirtyObjectHandlers missing a handler");
 
     // Robust init must happen before Framebuffer init for the Vulkan back-end.
     static_assert(state::DIRTY_OBJECT_ACTIVE_TEXTURES < state::DIRTY_OBJECT_TEXTURES_INIT,

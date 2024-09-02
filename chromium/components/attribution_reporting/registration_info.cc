@@ -96,7 +96,7 @@ RegistrationInfo::ParseInfo(const net::structured_headers::Dictionary& dict,
 
   ASSIGN_OR_RETURN(bool report_header_errors, ParseReportHeaderErrors(dict));
 
-  return RegistrationInfo(preferred_platform, report_header_errors);
+  return RegistrationInfo{preferred_platform, report_header_errors};
 }
 
 }  // namespace attribution_reporting

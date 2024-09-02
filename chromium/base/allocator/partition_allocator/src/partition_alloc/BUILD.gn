@@ -145,8 +145,6 @@ component("raw_ptr") {
   public_deps = [ ":build_config" ]
   if (use_partition_alloc) {
     public_deps += [ ":partition_alloc" ]
-  } else {
-    public_deps += [ ":partition_alloc_buildflags" ]
   }
 
   deps = [ ":buildflags" ]

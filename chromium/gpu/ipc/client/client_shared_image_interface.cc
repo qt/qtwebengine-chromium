@@ -251,11 +251,11 @@ scoped_refptr<ClientSharedImage> ClientSharedImageInterface::CreateSharedImage(
       AddMailbox(proxy_->CreateSharedImage(
           buffer_format, plane, gpu_memory_buffer->GetSize(), si_info,
           gpu_memory_buffer->CloneHandle())),
-      SharedImageMetadata(viz::GetSinglePlaneSharedImageFormat(
+      SharedImageMetadata{viz::GetSinglePlaneSharedImageFormat(
                               GetPlaneBufferFormat(plane, buffer_format)),
                           gpu_memory_buffer->GetSize(),
                           si_info.meta.color_space, si_info.meta.surface_origin,
-                          si_info.meta.alpha_type, si_info.meta.usage),
+                          si_info.meta.alpha_type, si_info.meta.usage},
       GenUnverifiedSyncToken(), holder_, gpu_memory_buffer->GetType());
 }
 
@@ -297,13 +297,13 @@ ClientSharedImageInterface::CreateSwapChain(viz::SharedImageFormat format,
   return ClientSharedImageInterface::SwapChainSharedImages(
       base::MakeRefCounted<ClientSharedImage>(
           mailboxes.front_buffer,
-          SharedImageMetadata(format, size, color_space, surface_origin,
-                              alpha_type, usage),
+          SharedImageMetadata{format, size, color_space, surface_origin,
+                              alpha_type, usage},
           sync_token, holder_, gfx::EMPTY_BUFFER),
       base::MakeRefCounted<ClientSharedImage>(
           mailboxes.back_buffer,
-          SharedImageMetadata(format, size, color_space, surface_origin,
-                              alpha_type, usage),
+          SharedImageMetadata{format, size, color_space, surface_origin,
+                              alpha_type, usage},
           sync_token, holder_, gfx::EMPTY_BUFFER));
 }
 
@@ -361,8 +361,8 @@ scoped_refptr<ClientSharedImage> ClientSharedImageInterface::NotifyMailboxAdded(
 
   return base::MakeRefCounted<ClientSharedImage>(
       mailbox,
-      SharedImageMetadata(format, size, color_space, surface_origin, alpha_type,
-                          usage),
+      SharedImageMetadata{format, size, color_space, surface_origin, alpha_type,
+                          usage},
       GenUnverifiedSyncToken(), holder_, gfx::EMPTY_BUFFER);
 }
 

@@ -591,7 +591,7 @@ AnchorEvaluatorImpl::ComputeInsetAreaOffsetsForLayout(
     right = Evaluate(query.value(), position_anchor,
                      /* inset_area_offsets */ std::nullopt);
   }
-  return InsetAreaOffsets(top, bottom, left, right);
+  return InsetAreaOffsets{top, bottom, left, right};
 }
 
 PhysicalRect AnchorEvaluatorImpl::InsetAreaModifiedContainingBlock(

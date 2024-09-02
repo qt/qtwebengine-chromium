@@ -272,8 +272,16 @@ const CSSValue* AnchorName::ParseSingleValueFromRange(
           css_parsing_utils::ConsumeIdent<CSSValueID::kNone>(range)) {
     return value;
   }
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeDashedIdent, range, context);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeDashedIdent(range, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(range));
+  DCHECK(list->length());
+  return list;
 }
 const CSSValue* AnchorName::CSSValueFromComputedStyleInternal(
     const ComputedStyle& style,
@@ -10004,8 +10012,16 @@ const CSSValue* MaskOrigin::ParseSingleValueFromRange(
         css_parsing_utils::ConsumePrefixedBackgroundBox, range,
         css_parsing_utils::AllowTextValue::kForbid);
   }
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeCoordBox, range);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeCoordBox(range);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(range));
+  DCHECK(list->length());
+  return list;
 }
 
 const CSSValue* MaskOrigin::CSSValueFromComputedStyleInternal(
@@ -10589,9 +10605,16 @@ const CSSValue* TimelineScope::ParseSingleValueFromRange(
   if (range.Peek().Id() == CSSValueID::kNone) {
     return css_parsing_utils::ConsumeIdent(range);
   }
-  using css_parsing_utils::ConsumeCommaSeparatedList;
-  using css_parsing_utils::ConsumeCustomIdent;
-  return ConsumeCommaSeparatedList(ConsumeCustomIdent, range, context);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeCustomIdent(range, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(range));
+  DCHECK(list->length());
+  return list;
 }
 
 const CSSValue* TimelineScope::CSSValueFromComputedStyleInternal(

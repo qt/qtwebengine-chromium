@@ -392,12 +392,12 @@ GpuChannelSharedImageInterface::CreateSharedImage(
 
   return base::MakeRefCounted<ClientSharedImage>(
       mailbox,
-      SharedImageMetadata(
+      SharedImageMetadata{
           viz::GetSinglePlaneSharedImageFormat(
               GetPlaneBufferFormat(plane, gpu_memory_buffer->GetFormat())),
           gpu_memory_buffer->GetSize(), si_info.meta.color_space,
           si_info.meta.surface_origin, si_info.meta.alpha_type,
-          si_info.meta.usage),
+          si_info.meta.usage},
       GenUnverifiedSyncToken(), holder_, gpu_memory_buffer->GetType());
 }
 

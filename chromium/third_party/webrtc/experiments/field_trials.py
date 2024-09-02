@@ -1001,7 +1001,8 @@ def validate_field_trials(
 
 def cmd_header(args: argparse.Namespace) -> None:
     if not args.no_validation:
-        if errors := validate_field_trials():
+        errors = validate_field_trials()
+        if errors:
             print('\n'.join(sorted(errors)))
             sys.exit(1)
 

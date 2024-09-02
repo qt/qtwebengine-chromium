@@ -64,19 +64,19 @@ struct SharedImageInfo {
                   SkAlphaType alpha_type,
                   uint32_t usage,
                   std::string_view debug_label)
-      : meta(format, size, color_space, surface_origin, alpha_type, usage),
+      : meta{format, size, color_space, surface_origin, alpha_type, usage},
         debug_label(debug_label) {}
   SharedImageInfo(const viz::SharedImageFormat& format,
                   gfx::Size size,
                   const gfx::ColorSpace& color_space,
                   uint32_t usage,
                   std::string_view debug_label)
-      : meta(format,
+      : meta{format,
              size,
              color_space,
              kTopLeft_GrSurfaceOrigin,
              kPremul_SkAlphaType,
-             usage),
+             usage},
         debug_label(debug_label) {}
   // This constructor exists only to support the DEPRECATED CreareSharedImage
   // call below that accepts a GpuMemoryBuffer. This should be removed when that
