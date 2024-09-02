@@ -9974,7 +9974,7 @@ test("unit_tests") {
     ]
   }
 
-  if (enable_pdf) {
+  if (enable_pdf && enable_extensions) {
     sources += [
       "../browser/extensions/api/pdf_viewer_private/pdf_viewer_private_api_unittest.cc",
       "../browser/pdf/pdf_viewer_stream_manager_unittest.cc",
