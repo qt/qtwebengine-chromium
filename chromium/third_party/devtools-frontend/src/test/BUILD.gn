@@ -7,13 +7,13 @@ import("../third_party/typescript/typescript.gni")
 
 group("test") {
   deps = [
-    ":config",
-    ":run",
-    ":unittests",
-    "e2e",
-    "interactions",
-    "perf",
-    "shared",
+#    ":config",
+#    ":run",
+#    ":unittests",
+#    "e2e",
+#    "interactions",
+#    "perf",
+#    "shared",
   ]
 }
 

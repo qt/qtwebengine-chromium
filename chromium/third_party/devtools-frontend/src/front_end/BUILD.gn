@@ -184,7 +184,7 @@ group("unittests") {
     "panels/sources/components:unittests",
     "panels/timeline:unittests",
     "panels/timeline/components:unittests",
-    "panels/timeline/fixtures/traces",
+#    "panels/timeline/fixtures/traces",
     "panels/timeline/track_appenders:unittests",
     "panels/utils:unittests",
     "panels/web_audio:unittests",

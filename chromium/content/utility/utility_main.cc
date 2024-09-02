@@ -34,8 +34,8 @@
 #include "sandbox/policy/sandbox_type.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/on_device_model/on_device_model_service.h"
-#include "services/screen_ai/buildflags/buildflags.h"
 #endif
+#include "services/screen_ai/buildflags/buildflags.h"
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "third_party/icu/source/common/unicode/unistr.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
@@ -248,9 +248,11 @@ int UtilityMain(MainFunctionParams parameters) {
     }
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (utility_sub_type == on_device_model::mojom::OnDeviceModelService::Name_) {
     CHECK(on_device_model::OnDeviceModelService::PreSandboxInit());
   }
+#endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   // Thread type delegate of the process should be registered before first
@@ -445,9 +447,11 @@ int UtilityMain(MainFunctionParams parameters) {
 
   run_loop.Run();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (utility_sub_type == on_device_model::mojom::OnDeviceModelService::Name_) {
     CHECK(on_device_model::OnDeviceModelService::Shutdown());
   }
+#endif
 
 #if defined(LEAK_SANITIZER)
   // Invoke LeakSanitizer before shutting down the utility thread, to avoid
