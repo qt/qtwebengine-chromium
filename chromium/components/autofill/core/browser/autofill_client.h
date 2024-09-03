@@ -407,10 +407,12 @@ class AutofillClient {
   // When the enterprise plus address feature is supported, gets the
   // KeyedService that manages that data.
   virtual plus_addresses::PlusAddressService* GetPlusAddressService();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns the `AutofillComposeDelegate` instance for the tab of this client.
   virtual AutofillComposeDelegate* GetComposeDelegate();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the `AutofillPlusAddressDelegate` associated with the profile of
   // the window of this tab.
   virtual AutofillPlusAddressDelegate* GetPlusAddressDelegate();

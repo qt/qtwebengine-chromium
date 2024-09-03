@@ -487,14 +487,10 @@ void AutofillManager::OnHidePopup() {
 void AutofillManager::OnSuggestionsHidden() {
   // If the unmask prompt is shown, keep showing the preview. The preview
   // will be cleared when the prompt closes.
-#if !defined(TOOLKIT_QT)
   if (ShouldClearPreviewedForm()) {
     driver().RendererShouldClearPreviewedForm();
   }
   NotifyObservers(&Observer::OnSuggestionsHidden);
-#else
-  NOTREACHED();
-#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillManager::OnSelectOrSelectListFieldOptionsDidChange(

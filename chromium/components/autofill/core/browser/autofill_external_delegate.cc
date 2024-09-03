@@ -304,8 +304,8 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
   }
 
   // Send to display.
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (query_field_.is_focusable() && manager_->driver().CanShowAutofillUi()) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (shortcut_test_suggestion_index_ >= 0) {
       const Suggestion* test_suggestion = FindTestSuggestion(
           manager_->client(), suggestions, shortcut_test_suggestion_index_);
@@ -313,6 +313,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
       DidAcceptSuggestion(*test_suggestion, {});
       return;
     }
+#endif
 
     AutofillComposeDelegate* delegate = manager_->client().GetComposeDelegate();
     const bool show_proactive_nudge_at_caret =
@@ -340,7 +341,6 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
                                 : default_anchor_type);
     manager_->client().ShowAutofillSuggestions(open_args, GetWeakPtr());
   }
-#endif
 }
 
 std::optional<FieldTypeSet>

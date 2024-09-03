@@ -17,6 +17,7 @@
 #include "components/autofill/core/browser/ui/payments/bubble_show_options.h"
 #include "components/autofill/core/browser/ui/popup_open_enums.h"
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/version_info/channel.h"
 
@@ -80,11 +81,13 @@ IbanManager* AutofillClient::GetIbanManager() {
 IbanAccessManager* AutofillClient::GetIbanAccessManager() {
   return nullptr;
 }
+#endif
 
 AutofillComposeDelegate* AutofillClient::GetComposeDelegate() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillPlusAddressDelegate* AutofillClient::GetPlusAddressDelegate() {
   return nullptr;
 }
