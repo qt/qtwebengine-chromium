@@ -76,9 +76,31 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define PERFETTO_POPCOUNT(x) __builtin_popcountll(x)
-#else
+#elif defined(__AVX__) || defined(__SSE4_2__) || defined(__POPCNT__)
 #include <intrin.h>
 #define PERFETTO_POPCOUNT(x) __popcnt64(x)
+#else
+#if _MSVC_LANG >= 202002L || (__cplusplus > 201703L && __has_include(<bit>)) // C++20
+#include <bit>
+#endif
+template <typename ValueType, std::enable_if_t<std::is_unsigned_v<ValueType>, int> = 0>
+inline uint32_t qPopulationCount(ValueType v) noexcept
+{
+#if defined(__cpp_lib_bitops)
+    return std::popcount(v);
+#else
+    // we static_cast these bit patterns in order to truncate them to the correct size
+    v = static_cast<ValueType>(v - ((v >> 1) & static_cast<ValueType>(0x5555'5555'5555'5555ull)));
+    v = static_cast<ValueType>((v & static_cast<ValueType>(0x3333'3333'3333'3333ull))
+      + ((v >> 2) & static_cast<ValueType>(0x3333'3333'3333'3333ull)));
+    v = static_cast<ValueType>((v + (v >> 4)) & static_cast<ValueType>(0x0F0F'0F0F'0F0F'0F0Full));
+    // Multiply by one in each byte, so that it will have the sum of all source bytes in the highest byte
+    v = static_cast<ValueType>(v * static_cast<ValueType>(0x0101'0101'0101'0101ull));
+    // Extract highest byte
+    return static_cast<uint32_t>(v >> (sizeof(ValueType) * CHAR_BIT - 8));
+#endif
+}
+#define PERFETTO_POPCOUNT(x) qPopulationCount(x)
 #endif
 
 #if defined(__clang__)

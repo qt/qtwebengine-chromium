@@ -45,12 +45,21 @@ ElementRareDataVector::~ElementRareDataVector() {
 unsigned ElementRareDataVector::GetFieldIndex(FieldId field_id) const {
   unsigned field_id_int = static_cast<unsigned>(field_id);
   DCHECK(fields_bitfield_ & (static_cast<BitfieldType>(1) << field_id_int));
-#ifdef _MSC_VER
-  return __popcnt(fields_bitfield_ &
-                            ~(~static_cast<BitfieldType>(0) << field_id_int));
-#else
+#if defined(__GNUC__) || defined(__clang__)
   return __builtin_popcount(fields_bitfield_ &
                             ~(~static_cast<BitfieldType>(0) << field_id_int));
+#elif _MSVC_LANG >= 202002L // C++20
+  return std::popcount(fields_bitfield_ &
+                       ~(~static_cast<BitfieldType>(0) << field_id_int));
+#else
+    uint32_t v = (fields_bitfield_ &
+                  ~(~static_cast<BitfieldType>(0) << field_id_int));
+    uint32_t c = v - ((v >> 1) & 0x55555555);
+    c = ((c >> 2) & 0x33333333) + (c & 0x33333333);
+    c = ((c >> 4) + c) & 0x0F0F0F0F;
+    c = ((c >> 8) + c) & 0x00FF00FF;
+    c = ((c >> 16) + c) & 0x0000FFFF;
+    return c;
 #endif
 }
 
