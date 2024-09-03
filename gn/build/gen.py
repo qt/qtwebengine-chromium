@@ -656,6 +656,8 @@ def WriteGNNinja(path, platform, host, options, args_list):
     target_arch = windows_target_build_arch()
     if target_arch == 'x64':
         ldflags.extend(['/MACHINE:x64'])
+    elif target_arch == 'arm64':
+        ldflags.extend(['/MACHINE:arm64'])
     else:
         ldflags.extend(['/MACHINE:x86'])
 
@@ -1024,7 +1026,7 @@ def WriteGNNinja(path, platform, host, options, args_list):
 
 def windows_target_build_arch():
     target_arch = os.environ.get('Platform')
-    if target_arch in ['x64', 'x86']: return target_arch
+    if target_arch in ['x64', 'x86', 'arm64']: return target_arch
 
     if platform.machine().lower() in ['x86_64', 'amd64']: return 'x64'
     return 'x86'
