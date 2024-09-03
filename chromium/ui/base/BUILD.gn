@@ -710,6 +710,11 @@ jumbo_component("base") {
         "win/win_cursor_factory.h",
       ]
     }
+
+    sources -= [
+      "pointer/touch_ui_controller.cc",
+      "pointer/touch_ui_controller.h",
+    ]
   }
 }
 
