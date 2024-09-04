@@ -147,7 +147,7 @@ class TaskRunnerTimer : public TimerBase {
   ~TaskRunnerTimer() override = default;
 
  protected:
-  void Fired() override { (object_->*function_)(this); }
+  void Fired() override { (object_.get()->*function_)(this); }
 
  private:
   raw_ptr<TimerFiredClass> object_;
