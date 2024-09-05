@@ -93,8 +93,11 @@ class COMPONENT_EXPORT(ATTRIBUTION_REPORTING) SuitableOrigin {
   }
 
   // Allows this type to be used as a key in a set or map.
-  friend std::weak_ordering operator<=>(const SuitableOrigin&,
-                                        const SuitableOrigin&) = default;
+  friend bool operator==(const SuitableOrigin&, const SuitableOrigin&) = default;
+  friend bool operator!=(const SuitableOrigin&, const SuitableOrigin&) = default;
+  friend bool operator<(const SuitableOrigin& lhs, const SuitableOrigin& rhs) {
+      return lhs.origin_ < rhs.origin_;
+  }
 
   std::string Serialize() const;
 
