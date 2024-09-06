@@ -63,6 +63,10 @@ if (is_android) {
       "//ui/android:ui_no_recycler_view_java",
     ]
 
+    if (is_qtwebengine) {
+      deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
+    }
+
     public_deps = [ ":ui_delegate_java" ]
   }
 
