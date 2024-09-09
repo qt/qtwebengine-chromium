@@ -583,19 +583,20 @@ inline constexpr bool IsObjCArcBlockPointer<R (^)(Args...)> = true;
 // Do not decay `Functor` before testing this, lest it give an incorrect result
 // for overloads with different ref-qualifiers.
 template <typename Functor, typename... BoundArgs>
-concept HasOverloadedCallOp = requires {
-  // The functor must be invocable with the bound args.
-  requires requires(Functor&& f, BoundArgs&&... args) {
+concept FunctorIsInvocable = requires (Functor&& f, BoundArgs&&... args) {
     std::forward<Functor>(f)(std::forward<BoundArgs>(args)...);
   };
+template <typename Functor, typename... BoundArgs>
+concept HasOverloadedCallOp =
+  // The functor must be invocable with the bound args.
+  FunctorIsInvocable<Functor, BoundArgs...> and
   // Now exclude invocables that are not cases of overloaded `operator()()`s:
   // * `operator()()` exists, but isn't overloaded
-  requires !HasNonOverloadedCallOp<std::decay_t<Functor>>;
+  !HasNonOverloadedCallOp<std::decay_t<Functor>> and
   // * Function pointer (doesn't have `operator()()`)
-  requires !std::is_pointer_v<std::decay_t<Functor>>;
+  !std::is_pointer_v<std::decay_t<Functor>> and
   // * Block pointer (doesn't have `operator()()`)
-  requires !IsObjCArcBlockPointer<std::decay_t<Functor>>;
-};
+  !IsObjCArcBlockPointer<std::decay_t<Functor>>;
 
 // `HasRefCountedTypeAsRawPtr` is true when any of the `Args` is a raw pointer
 // to a `RefCounted` type.
