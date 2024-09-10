@@ -135,9 +135,8 @@ InterpolationValue CSSOffsetRotateInterpolationType::MaybeConvertValue(
     return ConvertOffsetRotate({0.0, OffsetRotationType::kAuto});
   }
 
-  using CSSPrimitiveValue::UnitType::kDegrees;
   CSSMathExpressionNode* angle =
-      CSSMathExpressionNumericLiteral::Create(0.0, kDegrees);
+      CSSMathExpressionNumericLiteral::Create(0.0, CSSPrimitiveValue::UnitType::kDegrees);
   OffsetRotationType type = OffsetRotationType::kFixed;
   const auto& list = To<CSSValueList>(value);
   DCHECK(list.length() == 1 || list.length() == 2);
@@ -150,7 +149,7 @@ InterpolationValue CSSOffsetRotateInterpolationType::MaybeConvertValue(
                identifier_value->GetValueID() == CSSValueID::kReverse) {
       type = OffsetRotationType::kAuto;
       angle = CSSMathExpressionOperation::CreateArithmeticOperationSimplified(
-          angle, CSSMathExpressionNumericLiteral::Create(180.0, kDegrees),
+          angle, CSSMathExpressionNumericLiteral::Create(180.0, CSSPrimitiveValue::UnitType::kDegrees),
           CSSMathOperator::kAdd);
     } else {
       if (const auto* numeric_value =
@@ -158,7 +157,7 @@ InterpolationValue CSSOffsetRotateInterpolationType::MaybeConvertValue(
         angle = CSSMathExpressionOperation::CreateArithmeticOperationSimplified(
             angle,
             CSSMathExpressionNumericLiteral::Create(
-                numeric_value->ComputeDegrees(), kDegrees),
+                numeric_value->ComputeDegrees(), CSSPrimitiveValue::UnitType::kDegrees),
             CSSMathOperator::kAdd);
         continue;
       }

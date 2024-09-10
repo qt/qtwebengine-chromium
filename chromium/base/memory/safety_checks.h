@@ -214,7 +214,6 @@ NOINLINE void HandleMemorySafetyCheckedOperatorDelete(
                                       ENABLED_CHECKS, DISABLED_CHECKS, ...)    \
  public:                                                                       \
   static constexpr auto kMemorySafetyChecks = []() {                           \
-    using enum base::internal::MemorySafetyCheck;                              \
     return (DEFAULT_CHECKS | ENABLED_CHECKS) & ~(DISABLED_CHECKS);             \
   }();                                                                         \
   SPECIFIER static void* operator new(std::size_t count) {                     \
@@ -256,13 +255,13 @@ NOINLINE void HandleMemorySafetyCheckedOperatorDelete(
   MEMORY_SAFETY_CHECKS_INTERNAL(                                              \
       NOINLINE NOT_TAIL_CALLED,                                               \
       base::internal::kAdvancedMemorySafetyChecks __VA_OPT__(, ) __VA_ARGS__, \
-      kNone, kNone)
+      base::internal::MemorySafetyCheck::kNone, base::internal::MemorySafetyCheck::kNone)
 #else
 #define ADVANCED_MEMORY_SAFETY_CHECKS(...)                                    \
   MEMORY_SAFETY_CHECKS_INTERNAL(                                              \
       ALWAYS_INLINE,                                                          \
       base::internal::kAdvancedMemorySafetyChecks __VA_OPT__(, ) __VA_ARGS__, \
-      kNone, kNone)
+      base::internal::MemorySafetyCheck::kNone, base::internal::MemorySafetyCheck::kNone)
 #endif  // DCHECK_IS_ON()
 
 // When a struct/class with `ADVANCED_MEMORY_SAFETY_CHECKS()` is inherited, a
@@ -299,10 +298,10 @@ NOINLINE void HandleMemorySafetyCheckedOperatorDelete(
   MEMORY_SAFETY_CHECKS_INTERNAL(ALWAYS_INLINE,                                 \
                                 BASE_CLASS::kMemorySafetyChecks __VA_OPT__(, ) \
                                     __VA_ARGS__,                               \
-                                kNone, kNone)
+                                base::internal::MemorySafetyCheck::kNone, base::internal::MemorySafetyCheck::kNone)
 
 #define DEFAULT_MEMORY_SAFETY_CHECKS(...) \
   MEMORY_SAFETY_CHECKS_INTERNAL(          \
-      ALWAYS_INLINE, kNone __VA_OPT__(, ) __VA_ARGS__, kNone, kNone)
+      ALWAYS_INLINE, kNone __VA_OPT__(, ) __VA_ARGS__, base::internal::MemorySafetyCheck::kNone, base::internal::MemorySafetyCheck::kNone)
 
 #endif  // BASE_MEMORY_SAFETY_CHECKS_H_

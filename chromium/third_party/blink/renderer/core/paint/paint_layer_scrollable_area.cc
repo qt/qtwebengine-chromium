@@ -3209,8 +3209,6 @@ void PaintLayerScrollableArea::EnqueueSnapChangingEventFromImplIfNeeded() {
 Node* PaintLayerScrollableArea::GetSnapEventTargetAlongAxis(
     const AtomicString& event_type,
     cc::SnapAxis axis) const {
-  using cc::SnapAxis::kBlock;
-  using cc::SnapAxis::kInline;
   if (!GetLayoutBox() || !GetLayoutBox()->Style()) {
     return nullptr;
   }
@@ -3225,11 +3223,11 @@ Node* PaintLayerScrollableArea::GetSnapEventTargetAlongAxis(
     return nullptr;
   }
   Node* node = nullptr;
-  if ((axis == kBlock && horiz) || (axis == kInline && !horiz)) {
+  if ((axis == cc::SnapAxis::kBlock && horiz) || (axis == cc::SnapAxis::kInline && !horiz)) {
     if (ids->y) {
       node = DOMNodeIds::NodeForId(DOMNodeIdFromCompositorElementId(ids->y));
     }
-  } else if ((axis == kInline && horiz) || (axis == kBlock && !horiz)) {
+  } else if ((axis == cc::SnapAxis::kInline && horiz) || (axis == cc::SnapAxis::kBlock && !horiz)) {
     if (ids->x) {
       node = DOMNodeIds::NodeForId(DOMNodeIdFromCompositorElementId(ids->x));
     }

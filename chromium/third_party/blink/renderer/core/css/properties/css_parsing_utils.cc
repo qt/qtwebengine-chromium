@@ -1123,12 +1123,12 @@ CSSPrimitiveValue* ConsumeIntegerInternal(T& range,
     value_range = CSSPrimitiveValue::ValueRange::kPositiveInteger;
   }
 
-  using enum CSSMathExpressionNode::Flag;
+  using Flag = CSSMathExpressionNode::Flag;
   using Flags = CSSMathExpressionNode::Flags;
 
   Flags parsing_flags;
   if (is_percentage_allowed) {
-    parsing_flags.Put(AllowPercent);
+    parsing_flags.Put(Flag::AllowPercent);
   }
 
   MathFunctionParser<T> math_parser(range, context, value_range, parsing_flags);
@@ -1489,7 +1489,7 @@ CSSPrimitiveValue* ConsumeLengthOrPercentInternal(
     UnitlessQuirk unitless,
     CSSAnchorQueryTypes allowed_anchor_queries,
     AllowCalcSize allow_calc_size) {
-  using enum CSSMathExpressionNode::Flag;
+  using Flag = CSSMathExpressionNode::Flag;
   using Flags = CSSMathExpressionNode::Flags;
 
   const CSSParserToken& token = range.Peek();
@@ -1499,13 +1499,13 @@ CSSPrimitiveValue* ConsumeLengthOrPercentInternal(
   if (token.GetType() == kPercentageToken) {
     return ConsumePercent(range, context, value_range);
   }
-  Flags parsing_flags({AllowPercent});
+  Flags parsing_flags({Flag::AllowPercent});
   switch (allow_calc_size) {
     case AllowCalcSize::kAllowWithAuto:
-      parsing_flags.Put(AllowAutoInCalcSize);
+      parsing_flags.Put(Flag::AllowAutoInCalcSize);
       [[fallthrough]];
     case AllowCalcSize::kAllowWithoutAuto:
-      parsing_flags.Put(AllowCalcSize);
+      parsing_flags.Put(Flag::AllowCalcSize);
       [[fallthrough]];
     case AllowCalcSize::kForbid:
       break;

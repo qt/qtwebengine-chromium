@@ -265,7 +265,7 @@ std::optional<double> ConsumeRelativeColorChannel(
   // replacements. e.g. In "color(from magenta srgb calc(r / 2) 0 0)", the
   // "calc" should substitute "1" for "r" (magenta has a full red channel).
   if (token.GetType() == kFunctionToken) {
-    using enum CSSMathExpressionNode::Flag;
+    using Flag = CSSMathExpressionNode::Flag;
     using Flags = CSSMathExpressionNode::Flags;
 
     // Don't consume the range if the parsing fails.
@@ -273,7 +273,7 @@ std::optional<double> ConsumeRelativeColorChannel(
     CSSMathFunctionValue* calc_value = CSSMathFunctionValue::Create(
         CSSMathExpressionNode::ParseMathFunction(
             token.FunctionId(), css_parsing_utils::ConsumeFunction(calc_range),
-            context, Flags({AllowPercent}), kCSSAnchorQueryTypesNone,
+            context, Flags({Flag::AllowPercent}), kCSSAnchorQueryTypesNone,
             color_channel_keyword_values),
         CSSPrimitiveValue::ValueRange::kAll);
     if (calc_value) {
