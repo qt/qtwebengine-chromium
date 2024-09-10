@@ -70,15 +70,12 @@ class BodyConsumerBase : public GarbageCollected<BodyConsumerBase>,
   }
 
  private:
-  template <typename IDLType, typename T>
-    requires(
-        !std::is_same<T, Persistent<DisallowNewWrapper<ScriptValue>>>::value)
+  template <typename IDLType, typename T, typename = std::enable_if_t<!std::is_same_v<T, Persistent<DisallowNewWrapper<ScriptValue>>>, void*>>
   void ResolveNow(const T& object) {
     resolver_->DowncastTo<IDLType>()->Resolve(object);
   }
 
-  template <typename IDLType, typename T>
-    requires std::is_same<T, Persistent<DisallowNewWrapper<ScriptValue>>>::value
+  template <typename IDLType, typename T, typename = std::enable_if_t<std::is_same_v<T, Persistent<DisallowNewWrapper<ScriptValue>>>, void*>>
   void ResolveNow(const Persistent<DisallowNewWrapper<ScriptValue>>& object) {
     resolver_->DowncastTo<IDLType>()->Resolve(object->Value());
   }
