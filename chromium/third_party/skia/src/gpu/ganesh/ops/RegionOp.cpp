@@ -122,12 +122,9 @@ private:
         for (int i = 0; i < numRegions; i++) {
             numRects = safeMath.addInt(numRects, fRegions[i].fRegion.computeRegionComplexity());
         }
-        if (!safeMath) {
-            // This is a nonsensical draw, so we can just drop it.
-            return;
-        }
 
-        if (!numRects) {
+        if (!numRects || !safeMath) {
+            // This is a nonsensical draw, so we can just drop it.
             return;
         }
 
