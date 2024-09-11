@@ -29,6 +29,9 @@
 #include "third_party/fp16/src/include/fp16.h"
 
 #if BUILDFLAG(IS_WIN)
+#include <DirectML.h>
+#include <wrl.h>
+
 #include "base/containers/fixed_flat_map.h"
 #include "services/webnn/dml/adapter.h"
 #include "services/webnn/dml/command_queue.h"
@@ -37,11 +40,6 @@
 #include "services/webnn/dml/graph_impl.h"
 #include "services/webnn/dml/test_base.h"
 #include "services/webnn/dml/utils.h"
-#include "third_party/microsoft_dxheaders/include/directml.h"
-
-// Windows SDK headers should be included after DirectX headers.
-#include <wrl.h>
-
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_MAC)
