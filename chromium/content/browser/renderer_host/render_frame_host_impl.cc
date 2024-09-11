@@ -13831,6 +13831,8 @@ bool RenderFrameHostImpl::DidCommitNavigationInternal(
       // RenderFrameHost commits before the navigation commits. This happens
       // when the current RenderFrameHost crashes before navigating to a new
       // URL.
+      // Fixes tst::QWebEnginePage::backActionUpdate() crash.
+      document_associated_data_->RemoveAllServices();
       document_associated_data_.emplace(*this,
                                         navigation_request->GetDocumentToken());
     } else {

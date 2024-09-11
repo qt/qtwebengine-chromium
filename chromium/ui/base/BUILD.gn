@@ -528,6 +528,7 @@ jumbo_component("base") {
     "//third_party/modp_b64",
     "//third_party/zlib:zlib",
     "//third_party/zlib/google:compression_utils",
+    "//tools/v8_context_snapshot:buildflags",
     "//ui/base:data_exchange",
     "//ui/base/clipboard:clipboard_types",
     "//ui/base/dragdrop/mojom",
