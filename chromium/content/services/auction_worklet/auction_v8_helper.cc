@@ -284,7 +284,7 @@ class AuctionV8Helper::ScriptTimeoutHelper : public AuctionV8Helper::TimeLimit {
   SEQUENCE_CHECKER(v8_sequence_checker_);
 };
 
-constexpr base::TimeDelta AuctionV8Helper::kScriptTimeout =
+const base::TimeDelta AuctionV8Helper::kScriptTimeout =
 #if defined(MEMORY_SANITIZER) || defined(ADDRESS_SANITIZER) || \
     defined(THREAD_SANITIZER)
     base::Milliseconds(500);
