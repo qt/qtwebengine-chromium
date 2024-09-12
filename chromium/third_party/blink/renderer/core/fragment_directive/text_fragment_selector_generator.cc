@@ -264,6 +264,8 @@ void TextFragmentSelectorGenerator::AdjustSelection() {
         FlatTreeTraversal::Previous(*corrected_end));
     if (corrected_end)
       corrected_end_offset = corrected_end->textContent().length();
+    else
+      corrected_end_offset = 0;
   } else {
     // if node change was not necessary move start and end positions to
     // contain full words. This is not necessary when node change happened
@@ -294,7 +296,7 @@ void TextFragmentSelectorGenerator::AdjustSelection() {
     // TODO(bokan): This can sometimes occur from a selection. Avoid crashing
     // from this case but this can come from a seemingly correct range so we
     // should investigate the source of the bug.  https://crbug.com/1216357
-    if (start >= end) {
+    if (!start || !end || start >= end) {
       range_ = nullptr;
       return;
     }
