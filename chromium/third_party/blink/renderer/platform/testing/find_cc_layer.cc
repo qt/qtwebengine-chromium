@@ -29,8 +29,8 @@ Vector<const cc::Layer*> CcLayersByName(const cc::Layer* root,
   Vector<cc::Layer*> non_const_result =
       CcLayersByName(const_cast<cc::Layer*>(root), name_regex);
   Vector<const cc::Layer*> result(non_const_result.size());
-  auto** it = non_const_result.begin();
-  auto** end = non_const_result.end();
+  auto it = non_const_result.begin();
+  auto end = non_const_result.end();
   for (unsigned i = 0; it != end; ++it, ++i)
     result[i] = *it;
   return result;
@@ -46,8 +46,8 @@ Vector<const cc::Layer*> CcLayersByDOMElementId(const cc::Layer* root,
   Vector<cc::Layer*> non_const_result =
       CcLayersByDOMElementId(const_cast<cc::Layer*>(root), dom_id);
   Vector<const cc::Layer*> result(non_const_result.size());
-  auto** it = non_const_result.begin();
-  auto** end = non_const_result.end();
+  auto it = non_const_result.begin();
+  auto end = non_const_result.end();
   for (unsigned i = 0; it != end; ++it, ++i)
     result[i] = *it;
   return result;

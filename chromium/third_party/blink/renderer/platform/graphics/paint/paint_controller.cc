@@ -406,7 +406,7 @@ void PaintController::CheckNewItem(DisplayItem& display_item) {
     if (index != kNotFound) {
       ShowDebugData();
       const auto& chunks = new_paint_artifact_->GetPaintChunks();
-      const PaintChunk* chunk =
+      auto chunk =
           std::upper_bound(chunks.begin(), chunks.end(), index,
                            [](wtf_size_t index, const PaintChunk& chunk) {
                              return index < chunk.end_index;

@@ -34,14 +34,8 @@ ScreenDetailed* ScreenDetails::currentScreen() const {
   if (screens_.empty())
     return nullptr;
 
-  auto it = screens_.begin();
-  for (; it != screens_.end(); ++it) {
-    const auto& screen = *it;
-    if (screen->DisplayId() == current_display_id_)
-      break;
-  }
-//   auto* it = base::ranges::find(screens_, current_display_id_,
-//                                 &ScreenDetailed::DisplayId);
+  auto it = base::ranges::find(screens_, current_display_id_,
+                               &ScreenDetailed::DisplayId);
   DCHECK(it != screens_.end());
   return it->Get();
 }

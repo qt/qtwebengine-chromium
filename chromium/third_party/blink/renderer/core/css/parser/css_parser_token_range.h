@@ -26,7 +26,7 @@ class CORE_EXPORT CSSParserTokenRange {
  public:
   template <wtf_size_t InlineBuffer>
   CSSParserTokenRange(const Vector<CSSParserToken, InlineBuffer>& vector)
-      : first_(vector.begin()), last_(vector.end()) {}
+      : first_(vector.data()), last_(vector.data() + vector.size()) {}
   explicit CSSParserTokenRange(base::span<CSSParserToken> tokens)
       : first_(tokens.data()), last_(tokens.data() + tokens.size()) {}
 

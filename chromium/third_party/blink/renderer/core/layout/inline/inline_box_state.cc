@@ -230,7 +230,7 @@ InlineBoxState* InlineLayoutStateStack::OnBeginPlaceItems(
     for (InlineBoxState& box : stack_) {
       box.fragment_start = line_box->size();
       if (box.needs_box_fragment) {
-        DCHECK_NE(&box, stack_.begin());
+        DCHECK_NE(&box, stack_.data());
         AddBoxFragmentPlaceholder(&box, line_box, baseline_type);
       }
       if (!line_height_quirk)
@@ -355,7 +355,7 @@ void InlineLayoutStateStack::EndBoxState(const ConstraintSpace& space,
       ApplyBaselineShift(box, line_box, baseline_type);
 
   // We are done here if there is no parent box.
-  if (box == stack_.begin())
+  if (box == stack_.data())
     return;
   InlineBoxState& parent_box = *std::prev(box);
 
@@ -390,7 +390,7 @@ void InlineLayoutStateStack::AddBoxFragmentPlaceholder(
     InlineBoxState* box,
     LogicalLineItems* line_box,
     FontBaseline baseline_type) {
-  DCHECK(box != stack_.begin() &&
+  DCHECK(box != stack_.data() &&
          box->item->Type() != InlineItem::kAtomicInline);
   box->has_box_placeholder = true;
 
@@ -1117,9 +1117,10 @@ InlineLayoutStateStack::ApplyBaselineShift(InlineBoxState* box,
   // Because |box| is an item in |stack_|, |box[-1]| is its parent box.
   // If this box doesn't have a parent; i.e., this box is a line box,
   // 'vertical-align' has no effect.
-  DCHECK(box >= stack_.begin() && box < stack_.end());
-  if (box == stack_.begin())
+  DCHECK(box >= stack_.data() && box < stack_.data() + stack_.size());
+  if (box == stack_.data()) {
     return kPositionNotPending;
+  }
   InlineBoxState& parent_box = box[-1];
 
   switch (vertical_align) {
@@ -1155,7 +1156,7 @@ InlineLayoutStateStack::ApplyBaselineShift(InlineBoxState* box,
       // 'top' and 'bottom' require the layout size of the nearest ancestor that
       // has 'top' or 'bottom', or the line box if none.
       InlineBoxState* ancestor = &parent_box;
-      for (; ancestor != stack_.begin(); --ancestor) {
+      for (; ancestor != stack_.data(); --ancestor) {
         if (ancestor->style->VerticalAlign() == EVerticalAlign::kTop ||
             ancestor->style->VerticalAlign() == EVerticalAlign::kBottom)
           break;
@@ -1186,8 +1187,9 @@ LayoutUnit InlineLayoutStateStack::ComputeAlignmentBaselineShift(
              metrics.FixedAscent(box->alignment_type);
   }
 
-  if (box == stack_.begin())
+  if (box == stack_.data()) {
     return result;
+  }
   if (const auto* font_data = box[-1].font->PrimaryFont()) {
     const FontMetrics& parent_metrics = font_data->GetFontMetrics();
     result -= parent_metrics.FixedAscent(box[-1].style->GetFontBaseline()) -

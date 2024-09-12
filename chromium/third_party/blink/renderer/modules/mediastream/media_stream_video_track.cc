@@ -447,7 +447,7 @@ void MediaStreamVideoTrack::FrameDeliverer::RemoveCallbackOnVideoTaskRunner(
     VideoSinkId id,
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
   DCHECK(video_task_runner_->RunsTasksInCurrentSequence());
-  auto* it = callbacks_.begin();
+  auto it = callbacks_.begin();
   for (; it != callbacks_.end(); ++it) {
     if (it->id == id) {
       // Callback destruction needs to happen on the specified task runner.
@@ -943,7 +943,7 @@ static void AddSinkInternal(Vector<WebMediaStreamSink*>* sinks,
 
 static void RemoveSinkInternal(Vector<WebMediaStreamSink*>* sinks,
                                WebMediaStreamSink* sink) {
-  auto** it = base::ranges::find(*sinks, sink);
+  auto it = base::ranges::find(*sinks, sink);
   DCHECK(it != sinks->end());
   sinks->erase(it);
 }

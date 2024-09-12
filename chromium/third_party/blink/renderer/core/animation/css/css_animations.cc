@@ -994,7 +994,7 @@ const StylePropertyShorthand& PropertiesForTransitionAllDiscrete(
                       (PropertiesForTransitionAll(true, execution_context)));
   DEFINE_STATIC_LOCAL(
       StylePropertyShorthand, property_shorthand,
-      (CSSPropertyID::kInvalid, properties.begin(), properties.size()));
+      (CSSPropertyID::kInvalid, properties.data(), properties.size()));
   return property_shorthand;
 }
 
@@ -1004,7 +1004,7 @@ const StylePropertyShorthand& PropertiesForTransitionAllNormal(
                       (PropertiesForTransitionAll(false, execution_context)));
   DEFINE_STATIC_LOCAL(
       StylePropertyShorthand, property_shorthand,
-      (CSSPropertyID::kInvalid, properties.begin(), properties.size()));
+      (CSSPropertyID::kInvalid, properties.data(), properties.size()));
   return property_shorthand;
 }
 

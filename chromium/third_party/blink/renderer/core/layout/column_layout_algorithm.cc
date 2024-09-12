@@ -1317,13 +1317,13 @@ LayoutUnit ColumnLayoutAlgorithm::ResolveColumnAutoBlockSizeInternal(
    private:
     ContentRun* TallestRun() const {
       DCHECK(!runs_.empty());
-      auto* const it = std::max_element(
+      auto const it = std::max_element(
           runs_.begin(), runs_.end(),
           [](const ContentRun& run1, const ContentRun& run2) {
             return run1.ColumnBlockSize() < run2.ColumnBlockSize();
           });
       DCHECK(it != runs_.end());
-      return const_cast<ContentRun*>(it);
+      return const_cast<ContentRun*>(&*it);
     }
 
     Vector<ContentRun, 1> runs_;

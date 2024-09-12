@@ -81,7 +81,7 @@ class SubresourceIntegrityTest : public testing::Test {
     Vector<UChar> characters;
     text.AppendTo(characters);
     const UChar* position = characters.data();
-    const UChar* end = characters.end();
+    const UChar* end = characters.data() + characters.size();
     IntegrityAlgorithm algorithm;
 
     EXPECT_EQ(SubresourceIntegrity::kAlgorithmValid,
@@ -98,7 +98,7 @@ class SubresourceIntegrityTest : public testing::Test {
     text.AppendTo(characters);
     const UChar* position = characters.data();
     const UChar* begin = characters.data();
-    const UChar* end = characters.end();
+    const UChar* end = characters.data() + characters.size();
     IntegrityAlgorithm algorithm;
 
     EXPECT_EQ(expected_result, SubresourceIntegrity::ParseAttributeAlgorithm(
@@ -110,7 +110,7 @@ class SubresourceIntegrityTest : public testing::Test {
     Vector<UChar> characters;
     text.AppendTo(characters);
     const UChar* position = characters.data();
-    const UChar* end = characters.end();
+    const UChar* end = characters.data() + characters.size();
     String digest;
 
     EXPECT_TRUE(SubresourceIntegrity::ParseDigest(position, end, digest));
@@ -121,7 +121,7 @@ class SubresourceIntegrityTest : public testing::Test {
     Vector<UChar> characters;
     text.AppendTo(characters);
     const UChar* position = characters.data();
-    const UChar* end = characters.end();
+    const UChar* end = characters.data() + characters.size();
     String digest;
 
     EXPECT_FALSE(SubresourceIntegrity::ParseDigest(position, end, digest));

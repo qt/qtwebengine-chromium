@@ -590,7 +590,7 @@ void UserMediaProcessor::RequestInfo::OnTrackStarted(
     MediaStreamRequestResult result,
     const blink::WebString& result_name) {
   SendLogMessage(GetOnTrackStartedLogString(source, result));
-  auto** it = base::ranges::find(sources_waiting_for_callback_, source);
+  auto it = base::ranges::find(sources_waiting_for_callback_, source);
   DCHECK(it != sources_waiting_for_callback_.end());
   sources_waiting_for_callback_.erase(it);
   // All tracks must be started successfully. Otherwise the request is a
@@ -733,7 +733,7 @@ void UserMediaProcessor::SelectAudioDeviceSettings(
     // such source will contain the same non-reconfigurable settings that limit
     // the associated capabilities.
     blink::MediaStreamAudioSource* audio_source = nullptr;
-    auto* it = base::ranges::find_if(
+    auto it = base::ranges::find_if(
         local_sources_, [&device](MediaStreamSource* source) {
           DCHECK(source);
           MediaStreamAudioSource* platform_source =
@@ -1219,7 +1219,7 @@ void UserMediaProcessor::OnStreamsGenerated(
         stream_devices_set->stream_devices.front()->audio_device->id;
     const auto& eligible_audio_settings =
         current_request_info_->eligible_audio_settings();
-    const auto* selected_audio_settings = std::find_if(
+    const auto selected_audio_settings = std::find_if(
         eligible_audio_settings.begin(), eligible_audio_settings.end(),
         [selected_id](const auto& settings) {
           return settings.device_id() == selected_id;
@@ -1243,7 +1243,7 @@ void UserMediaProcessor::OnStreamsGenerated(
         stream_devices_set->stream_devices.front()->video_device->id;
     const auto& eligible_video_settings =
         current_request_info_->eligible_video_settings();
-    const auto* selected_video_settings = std::find_if(
+    const auto selected_video_settings = std::find_if(
         eligible_video_settings.begin(), eligible_video_settings.end(),
         [selected_id](const auto& settings) {
           return settings.device_id() == selected_id;
@@ -1396,7 +1396,7 @@ void UserMediaProcessor::OnAudioSourceStarted(
     const String& result_name) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
-  for (auto* it = pending_local_sources_.begin();
+  for (auto it = pending_local_sources_.begin();
        it != pending_local_sources_.end(); ++it) {
     blink::WebPlatformMediaStreamSource* const source_extra_data =
         (*it)->GetPlatformSource();
@@ -2067,7 +2067,7 @@ bool UserMediaProcessor::RemoveLocalSource(MediaStreamSource* source) {
       source->Id().Utf8().c_str(), source->GetName().Utf8().c_str(),
       source->GroupId().Utf8().c_str()));
 
-  for (auto* device_it = local_sources_.begin();
+  for (auto device_it = local_sources_.begin();
        device_it != local_sources_.end(); ++device_it) {
     if (IsSameSource(*device_it, source)) {
       local_sources_.erase(device_it);
@@ -2076,7 +2076,7 @@ bool UserMediaProcessor::RemoveLocalSource(MediaStreamSource* source) {
   }
 
   // Check if the source was pending.
-  for (auto* device_it = pending_local_sources_.begin();
+  for (auto device_it = pending_local_sources_.begin();
        device_it != pending_local_sources_.end(); ++device_it) {
     if (IsSameSource(*device_it, source)) {
       WebPlatformMediaStreamSource* const platform_source =
@@ -2160,7 +2160,7 @@ void UserMediaProcessor::StopAllProcessing() {
   request_completed_cb_.Reset();
 
   // Loop through all current local sources and stop the sources.
-  auto* it = local_sources_.begin();
+  auto it = local_sources_.begin();
   while (it != local_sources_.end()) {
     StopLocalSource(*it, true);
     it = local_sources_.erase(it);

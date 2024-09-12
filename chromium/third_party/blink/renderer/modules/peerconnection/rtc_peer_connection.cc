@@ -1816,7 +1816,7 @@ void RTCPeerConnection::removeTrack(RTCRtpSender* sender,
   DCHECK(sender);
   if (ThrowExceptionIfSignalingStateClosed(signaling_state_, &exception_state))
     return;
-  auto* it = FindSender(*sender->web_sender());
+  auto it = FindSender(*sender->web_sender());
   if (it == rtp_senders_.end()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidAccessError,
@@ -1943,20 +1943,16 @@ RTCRtpSender* RTCPeerConnection::FindSenderForTrackAndStream(
 
 HeapVector<Member<RTCRtpSender>>::iterator RTCPeerConnection::FindSender(
     const RTCRtpSenderPlatform& web_sender) {
-  for (auto* it = rtp_senders_.begin(); it != rtp_senders_.end(); ++it) {
-    if ((*it)->web_sender()->Id() == web_sender.Id())
-      return it;
-  }
-  return rtp_senders_.end();
+  return base::ranges::find_if(rtp_senders_, [&](const auto& sender) {
+    return sender->web_sender()->Id() == web_sender.Id();
+  });
 }
 
 HeapVector<Member<RTCRtpReceiver>>::iterator RTCPeerConnection::FindReceiver(
     const RTCRtpReceiverPlatform& platform_receiver) {
-  for (auto* it = rtp_receivers_.begin(); it != rtp_receivers_.end(); ++it) {
-    if ((*it)->platform_receiver()->Id() == platform_receiver.Id())
-      return it;
-  }
-  return rtp_receivers_.end();
+  return base::ranges::find_if(rtp_receivers_, [&](const auto& receiver) {
+    return receiver->platform_receiver()->Id() == platform_receiver.Id();
+  });
 }
 
 HeapVector<Member<RTCRtpTransceiver>>::iterator
@@ -1983,7 +1979,7 @@ RTCRtpSender* RTCPeerConnection::CreateOrUpdateSender(
 
   // Create or update sender. If the web sender has stream IDs the sender's
   // streams need to be set separately outside of this method.
-  auto* sender_it = FindSender(*rtp_sender_platform);
+  auto sender_it = FindSender(*rtp_sender_platform);
   RTCRtpSender* sender;
   if (sender_it == rtp_senders_.end()) {
     // Create new sender (with empty stream set).
@@ -2006,7 +2002,7 @@ RTCRtpSender* RTCPeerConnection::CreateOrUpdateSender(
 
 RTCRtpReceiver* RTCPeerConnection::CreateOrUpdateReceiver(
     std::unique_ptr<RTCRtpReceiverPlatform> platform_receiver) {
-  auto* receiver_it = FindReceiver(*platform_receiver);
+  auto receiver_it = FindReceiver(*platform_receiver);
   // Create track.
   MediaStreamTrack* track;
   if (receiver_it == rtp_receivers_.end()) {
@@ -2058,7 +2054,7 @@ RTCRtpTransceiver* RTCPeerConnection::CreateOrUpdateTransceiver(
       CreateOrUpdateReceiver(platform_transceiver->Receiver());
 
   RTCRtpTransceiver* transceiver;
-  auto* transceiver_it = FindTransceiver(*platform_transceiver);
+  auto transceiver_it = FindTransceiver(*platform_transceiver);
   if (transceiver_it == transceivers_.end()) {
     // Create new tranceiver.
     transceiver = MakeGarbageCollected<RTCRtpTransceiver>(
@@ -2280,7 +2276,7 @@ void RTCPeerConnection::DidModifyTransceivers(
   // Remove transceivers and update their states to reflect that they are
   // necessarily stopped.
   for (auto id : removed_transceiver_ids) {
-    for (auto* it = transceivers_.begin(); it != transceivers_.end(); ++it) {
+    for (auto it = transceivers_.begin(); it != transceivers_.end(); ++it) {
       if ((*it)->platform_transceiver()->Id() == id) {
         // All streams are removed on stop, update `remove_list` if necessary.
         auto* track = (*it)->receiver()->track();
@@ -2296,7 +2292,7 @@ void RTCPeerConnection::DidModifyTransceivers(
     }
   }
   for (auto& platform_transceiver : platform_transceivers) {
-    auto* it = FindTransceiver(*platform_transceiver);
+    auto it = FindTransceiver(*platform_transceiver);
     bool previously_had_recv =
         (it != transceivers_.end()) ? (*it)->FiredDirectionHasRecv() : false;
     RTCRtpTransceiver* transceiver =

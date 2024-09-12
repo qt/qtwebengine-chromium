@@ -1318,7 +1318,7 @@ void InlineItemsBuilderTemplate<MappingBuilder>::RemoveTrailingCollapsibleSpace(
 
   // Trailing spaces can be removed across non-character items.
   // Adjust their offsets if after the removed index.
-  for (item++; item != items_->end(); item++) {
+  for (item++; item != items_->data() + items_->size(); item++) {
     item->SetOffset(item->StartOffset() - 1, item->EndOffset() - 1);
   }
 }
@@ -1358,7 +1358,7 @@ void InlineItemsBuilderTemplate<
   item->SetEndOffset(item->EndOffset() + 1);
   item->SetEndCollapseType(InlineItem::kCollapsible);
 
-  for (item++; item != items_->end(); item++) {
+  for (item++; item != items_->data() + items_->size(); item++) {
     item->SetOffset(item->StartOffset() + 1, item->EndOffset() + 1);
   }
 }

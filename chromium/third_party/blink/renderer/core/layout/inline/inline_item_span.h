@@ -38,7 +38,7 @@ struct InlineItemSpan final {
 
   const InlineItem* begin() const {
     SECURITY_DCHECK(begin_ < data_->items.size());
-    return data_->items.begin() + begin_;
+    return data_->items.data() + begin_;
   }
   const InlineItem* end() const {
     SECURITY_DCHECK(begin_ + size_ <= data_->items.size());
