@@ -110,7 +110,8 @@ DWORD __stdcall ThreadFunc(void* params) {
 
   if (thread_params->thread_type != ThreadType::kDefault)
     internal::SetCurrentThreadType(thread_params->thread_type,
-                                   thread_params->message_pump_type);
+                                   thread_params->message_pump_type,
+                                   /* override_priority */ true);
 
   // Retrieve a copy of the thread handle to use as the key in the
   // thread name mapping.
