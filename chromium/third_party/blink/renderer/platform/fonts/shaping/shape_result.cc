@@ -1488,8 +1488,8 @@ void ShapeResult::ComputeGlyphPositions(ShapeResult::RunInfo* run,
     // Offset is primarily used when painting glyphs. Keep it in physical.
     if (UNLIKELY(pos.x_offset || pos.y_offset)) {
       has_vertical_offsets |= (pos.y_offset != 0);
-      const GlyphOffset offset(HarfBuzzPositionToFloat(pos.x_offset),
-                               -HarfBuzzPositionToFloat(pos.y_offset));
+      const GlyphOffset offset(HarfBuzzPositionToFloatSR(pos.x_offset),
+                               -HarfBuzzPositionToFloatSR(pos.y_offset));
       run->glyph_data_.SetOffsetAt(i, offset);
     }
 
