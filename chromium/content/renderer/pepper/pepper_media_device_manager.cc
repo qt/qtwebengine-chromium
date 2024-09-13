@@ -117,7 +117,7 @@ void PepperMediaDeviceManager::EnumerateDevices(PP_DeviceType_Dev type,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback),
                      ToMediaDeviceType(type)));
 #else
-  base::SingleThreadTaskRunner::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperMediaDeviceManager::DevicesEnumerated,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback), ToMediaDeviceType(type),

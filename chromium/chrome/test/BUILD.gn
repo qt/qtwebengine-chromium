@@ -6705,10 +6705,6 @@ test("unit_tests") {
     ]
   }
 
-  if (!enable_webrtc) {
-    deps -= [ "//chrome/browser/media/router:test_support" ]
-  }
-
   if (is_linux || is_chromeos) {
     sources +=
         [ "../browser/policy/browser_dm_token_storage_linux_unittest.cc" ]
