@@ -493,7 +493,7 @@ void BoostingVoteAggregator::ForEachOutgoingEdge(const ExecutionContext* node,
 BoostingVoteAggregator::NodeDataMap::iterator
 BoostingVoteAggregator::FindOrCreateNodeData(const ExecutionContext* node) {
   auto it = nodes_.lower_bound(node);
-  if (it->first == node)
+  if (it != nodes_.end() && it->first == node)
     return it;
   it = nodes_.insert(it, std::make_pair(node, NodeData()));
   return it;
