@@ -240,13 +240,17 @@ static void setup_rtcd_internal(void) {
   (void)flags;
 
   vp9_block_error = vp9_block_error_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vp9_block_error = vp9_block_error_sve;
   }
+#endif
   vp9_block_error_fp = vp9_block_error_fp_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vp9_block_error_fp = vp9_block_error_fp_sve;
   }
+#endif
 }
 #endif
 

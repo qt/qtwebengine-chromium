@@ -8444,165 +8444,245 @@ static void setup_rtcd_internal(void) {
     vpx_get8x8var = vpx_get8x8var_neon_dotprod;
   }
   vpx_highbd_10_get16x16var = vpx_highbd_10_get16x16var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_get16x16var = vpx_highbd_10_get16x16var_sve;
   }
+#endif
   vpx_highbd_10_get8x8var = vpx_highbd_10_get8x8var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_get8x8var = vpx_highbd_10_get8x8var_sve;
   }
+#endif
   vpx_highbd_10_mse16x16 = vpx_highbd_10_mse16x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_mse16x16 = vpx_highbd_10_mse16x16_sve;
   }
+#endif
   vpx_highbd_10_mse16x8 = vpx_highbd_10_mse16x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_mse16x8 = vpx_highbd_10_mse16x8_sve;
   }
+#endif
   vpx_highbd_10_mse8x16 = vpx_highbd_10_mse8x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_mse8x16 = vpx_highbd_10_mse8x16_sve;
   }
+#endif
   vpx_highbd_10_mse8x8 = vpx_highbd_10_mse8x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_mse8x8 = vpx_highbd_10_mse8x8_sve;
   }
+#endif
   vpx_highbd_10_variance16x16 = vpx_highbd_10_variance16x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance16x16 = vpx_highbd_10_variance16x16_sve;
   }
+#endif
   vpx_highbd_10_variance16x32 = vpx_highbd_10_variance16x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance16x32 = vpx_highbd_10_variance16x32_sve;
   }
+#endif
   vpx_highbd_10_variance16x8 = vpx_highbd_10_variance16x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance16x8 = vpx_highbd_10_variance16x8_sve;
   }
+#endif
   vpx_highbd_10_variance32x16 = vpx_highbd_10_variance32x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance32x16 = vpx_highbd_10_variance32x16_sve;
   }
+#endif
   vpx_highbd_10_variance32x32 = vpx_highbd_10_variance32x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance32x32 = vpx_highbd_10_variance32x32_sve;
   }
+#endif
   vpx_highbd_10_variance32x64 = vpx_highbd_10_variance32x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance32x64 = vpx_highbd_10_variance32x64_sve;
   }
+#endif
   vpx_highbd_10_variance4x4 = vpx_highbd_10_variance4x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance4x4 = vpx_highbd_10_variance4x4_sve;
   }
+#endif
   vpx_highbd_10_variance4x8 = vpx_highbd_10_variance4x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance4x8 = vpx_highbd_10_variance4x8_sve;
   }
+#endif
   vpx_highbd_10_variance64x32 = vpx_highbd_10_variance64x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance64x32 = vpx_highbd_10_variance64x32_sve;
   }
+#endif
   vpx_highbd_10_variance64x64 = vpx_highbd_10_variance64x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance64x64 = vpx_highbd_10_variance64x64_sve;
   }
+#endif
   vpx_highbd_10_variance8x16 = vpx_highbd_10_variance8x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance8x16 = vpx_highbd_10_variance8x16_sve;
   }
+#endif
   vpx_highbd_10_variance8x4 = vpx_highbd_10_variance8x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance8x4 = vpx_highbd_10_variance8x4_sve;
   }
+#endif
   vpx_highbd_10_variance8x8 = vpx_highbd_10_variance8x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_10_variance8x8 = vpx_highbd_10_variance8x8_sve;
   }
+#endif
   vpx_highbd_12_get16x16var = vpx_highbd_12_get16x16var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_get16x16var = vpx_highbd_12_get16x16var_sve;
   }
+#endif
   vpx_highbd_12_get8x8var = vpx_highbd_12_get8x8var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_get8x8var = vpx_highbd_12_get8x8var_sve;
   }
+#endif
   vpx_highbd_12_mse16x16 = vpx_highbd_12_mse16x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_mse16x16 = vpx_highbd_12_mse16x16_sve;
   }
+#endif
   vpx_highbd_12_mse16x8 = vpx_highbd_12_mse16x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_mse16x8 = vpx_highbd_12_mse16x8_sve;
   }
+#endif
   vpx_highbd_12_mse8x16 = vpx_highbd_12_mse8x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_mse8x16 = vpx_highbd_12_mse8x16_sve;
   }
+#endif
   vpx_highbd_12_mse8x8 = vpx_highbd_12_mse8x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_mse8x8 = vpx_highbd_12_mse8x8_sve;
   }
+#endif
   vpx_highbd_12_variance16x16 = vpx_highbd_12_variance16x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance16x16 = vpx_highbd_12_variance16x16_sve;
   }
+#endif
   vpx_highbd_12_variance16x32 = vpx_highbd_12_variance16x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance16x32 = vpx_highbd_12_variance16x32_sve;
   }
+#endif
   vpx_highbd_12_variance16x8 = vpx_highbd_12_variance16x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance16x8 = vpx_highbd_12_variance16x8_sve;
   }
+#endif
   vpx_highbd_12_variance32x16 = vpx_highbd_12_variance32x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance32x16 = vpx_highbd_12_variance32x16_sve;
   }
+#endif
   vpx_highbd_12_variance32x32 = vpx_highbd_12_variance32x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance32x32 = vpx_highbd_12_variance32x32_sve;
   }
+#endif
   vpx_highbd_12_variance32x64 = vpx_highbd_12_variance32x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance32x64 = vpx_highbd_12_variance32x64_sve;
   }
+#endif
   vpx_highbd_12_variance4x4 = vpx_highbd_12_variance4x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance4x4 = vpx_highbd_12_variance4x4_sve;
   }
+#endif
   vpx_highbd_12_variance4x8 = vpx_highbd_12_variance4x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance4x8 = vpx_highbd_12_variance4x8_sve;
   }
+#endif
   vpx_highbd_12_variance64x32 = vpx_highbd_12_variance64x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance64x32 = vpx_highbd_12_variance64x32_sve;
   }
+#endif
   vpx_highbd_12_variance64x64 = vpx_highbd_12_variance64x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance64x64 = vpx_highbd_12_variance64x64_sve;
   }
+#endif
   vpx_highbd_12_variance8x16 = vpx_highbd_12_variance8x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance8x16 = vpx_highbd_12_variance8x16_sve;
   }
+#endif
   vpx_highbd_12_variance8x4 = vpx_highbd_12_variance8x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance8x4 = vpx_highbd_12_variance8x4_sve;
   }
+#endif
   vpx_highbd_12_variance8x8 = vpx_highbd_12_variance8x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_12_variance8x8 = vpx_highbd_12_variance8x8_sve;
   }
+#endif
   vpx_highbd_8_get16x16var = vpx_highbd_8_get16x16var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_get16x16var = vpx_highbd_8_get16x16var_sve;
   }
+#endif
   vpx_highbd_8_get8x8var = vpx_highbd_8_get8x8var_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_get8x8var = vpx_highbd_8_get8x8var_sve;
   }
+#endif
   vpx_highbd_8_mse16x16 = vpx_highbd_8_mse16x16_neon;
   if (flags & HAS_NEON_DOTPROD) {
     vpx_highbd_8_mse16x16 = vpx_highbd_8_mse16x16_neon_dotprod;
@@ -8620,81 +8700,119 @@ static void setup_rtcd_internal(void) {
     vpx_highbd_8_mse8x8 = vpx_highbd_8_mse8x8_neon_dotprod;
   }
   vpx_highbd_8_variance16x16 = vpx_highbd_8_variance16x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance16x16 = vpx_highbd_8_variance16x16_sve;
   }
+#endif
   vpx_highbd_8_variance16x32 = vpx_highbd_8_variance16x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance16x32 = vpx_highbd_8_variance16x32_sve;
   }
+#endif
   vpx_highbd_8_variance16x8 = vpx_highbd_8_variance16x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance16x8 = vpx_highbd_8_variance16x8_sve;
   }
+#endif
   vpx_highbd_8_variance32x16 = vpx_highbd_8_variance32x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance32x16 = vpx_highbd_8_variance32x16_sve;
   }
+#endif
   vpx_highbd_8_variance32x32 = vpx_highbd_8_variance32x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance32x32 = vpx_highbd_8_variance32x32_sve;
   }
+#endif
   vpx_highbd_8_variance32x64 = vpx_highbd_8_variance32x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance32x64 = vpx_highbd_8_variance32x64_sve;
   }
+#endif
   vpx_highbd_8_variance4x4 = vpx_highbd_8_variance4x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance4x4 = vpx_highbd_8_variance4x4_sve;
   }
+#endif
   vpx_highbd_8_variance4x8 = vpx_highbd_8_variance4x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance4x8 = vpx_highbd_8_variance4x8_sve;
   }
+#endif
   vpx_highbd_8_variance64x32 = vpx_highbd_8_variance64x32_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance64x32 = vpx_highbd_8_variance64x32_sve;
   }
+#endif
   vpx_highbd_8_variance64x64 = vpx_highbd_8_variance64x64_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance64x64 = vpx_highbd_8_variance64x64_sve;
   }
+#endif
   vpx_highbd_8_variance8x16 = vpx_highbd_8_variance8x16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance8x16 = vpx_highbd_8_variance8x16_sve;
   }
+#endif
   vpx_highbd_8_variance8x4 = vpx_highbd_8_variance8x4_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance8x4 = vpx_highbd_8_variance8x4_sve;
   }
+#endif
   vpx_highbd_8_variance8x8 = vpx_highbd_8_variance8x8_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_8_variance8x8 = vpx_highbd_8_variance8x8_sve;
   }
+#endif
   vpx_highbd_convolve8 = vpx_highbd_convolve8_neon;
+#if HAVE_SVE2
   if (flags & HAS_SVE2) {
     vpx_highbd_convolve8 = vpx_highbd_convolve8_sve2;
   }
+#endif
   vpx_highbd_convolve8_avg = vpx_highbd_convolve8_avg_neon;
+#if HAVE_SVE2
   if (flags & HAS_SVE2) {
     vpx_highbd_convolve8_avg = vpx_highbd_convolve8_avg_sve2;
   }
+#endif
   vpx_highbd_convolve8_avg_horiz = vpx_highbd_convolve8_avg_horiz_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_convolve8_avg_horiz = vpx_highbd_convolve8_avg_horiz_sve;
   }
+#endif
   vpx_highbd_convolve8_avg_vert = vpx_highbd_convolve8_avg_vert_neon;
+#if HAVE_SVE2
   if (flags & HAS_SVE2) {
     vpx_highbd_convolve8_avg_vert = vpx_highbd_convolve8_avg_vert_sve2;
   }
+#endif
   vpx_highbd_convolve8_horiz = vpx_highbd_convolve8_horiz_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_highbd_convolve8_horiz = vpx_highbd_convolve8_horiz_sve;
   }
+#endif
   vpx_highbd_convolve8_vert = vpx_highbd_convolve8_vert_neon;
+#if HAVE_SVE2
   if (flags & HAS_SVE2) {
     vpx_highbd_convolve8_vert = vpx_highbd_convolve8_vert_sve2;
   }
+#endif
   vpx_mse16x16 = vpx_mse16x16_neon;
   if (flags & HAS_NEON_DOTPROD) {
     vpx_mse16x16 = vpx_mse16x16_neon_dotprod;
@@ -8876,9 +8994,11 @@ static void setup_rtcd_internal(void) {
     vpx_sse = vpx_sse_neon_dotprod;
   }
   vpx_sum_squares_2d_i16 = vpx_sum_squares_2d_i16_neon;
+#if HAVE_SVE
   if (flags & HAS_SVE) {
     vpx_sum_squares_2d_i16 = vpx_sum_squares_2d_i16_sve;
   }
+#endif
   vpx_variance16x16 = vpx_variance16x16_neon;
   if (flags & HAS_NEON_DOTPROD) {
     vpx_variance16x16 = vpx_variance16x16_neon_dotprod;

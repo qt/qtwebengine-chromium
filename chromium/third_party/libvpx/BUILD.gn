@@ -375,7 +375,7 @@ if (current_cpu == "arm64") {
   # SVE is disabled for Windows due to a limitation with clang-cl-18:
   # third_party\llvm-build\Release+Asserts\lib\clang\18\include\arm_sve.h(271,1):
   # error: cannot mangle this built-in __SVInt8_t type yet
-  if (!is_win) {
+  if (!is_win && !is_qtwebengine) {
     source_set("libvpx_intrinsics_sve") {
       check_includes = false
       configs -= [ "//build/config/compiler:chromium_code" ]
@@ -589,7 +589,7 @@ static_library("bundled_libvpx") {
   if (current_cpu == "arm64") {
     deps += [ ":libvpx_intrinsics_neon_dotprod" ]
     deps += [ ":libvpx_intrinsics_neon_i8mm" ]
-    if (!is_win) {
+    if (!is_win && !is_qtwebengine) {
       deps += [
         ":libvpx_intrinsics_sve",
         ":libvpx_intrinsics_sve2",
