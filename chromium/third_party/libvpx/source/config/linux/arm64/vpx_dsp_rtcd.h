@@ -1175,7 +1175,9 @@ static void setup_rtcd_internal(void)
     vpx_sse = vpx_sse_neon;
     if (flags & HAS_NEON_DOTPROD) vpx_sse = vpx_sse_neon_dotprod;
     vpx_sum_squares_2d_i16 = vpx_sum_squares_2d_i16_neon;
+#if HAVE_SVE
     if (flags & HAS_SVE) vpx_sum_squares_2d_i16 = vpx_sum_squares_2d_i16_sve;
+#endif
     vpx_variance16x16 = vpx_variance16x16_neon;
     if (flags & HAS_NEON_DOTPROD) vpx_variance16x16 = vpx_variance16x16_neon_dotprod;
     vpx_variance16x32 = vpx_variance16x32_neon;
