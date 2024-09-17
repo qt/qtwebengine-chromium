@@ -129,6 +129,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
 
   bool InitializePixels(base::span<const uint8_t> pixel_data);
 
+#if BUILDFLAG(USE_DAWN)
   wgpu::Texture GetCachedWGPUTexture(wgpu::Device device,
                                      wgpu::TextureUsage texture_usage);
   void MaybeCacheWGPUTexture(wgpu::Device device, wgpu::Texture texture);
@@ -138,6 +139,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
 
   void AddWGPUDeviceWithPendingCommands(wgpu::Device device);
   void WaitForDawnCommandsToBeScheduled(const wgpu::Device& device_to_exclude);
+#endif
 
   void AddEGLDisplayWithPendingCommands(gl::GLDisplayEGL* display);
   void WaitForANGLECommandsToBeScheduled();
@@ -172,6 +174,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   std::unique_ptr<OverlayImageRepresentation> ProduceOverlay(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker) final;
+#if BUILDFLAG(USE_DAWN)
   std::unique_ptr<DawnImageRepresentation> ProduceDawn(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -179,6 +182,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
       wgpu::BackendType backend_type,
       std::vector<wgpu::TextureFormat> view_formats,
       scoped_refptr<SharedContextState> context_state) final;
+#endif
   std::unique_ptr<SkiaGaneshImageRepresentation> ProduceSkiaGanesh(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
@@ -239,6 +243,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
     WGPUTextureCache texture_cache;
   };
 
+#if BUILDFLAG(USE_DAWN)
   // Per-Device SharedTextureData instances used to vend WebGPU textures for
   // the underlying IOSurface. The cache is keyed by raw pointers to the Device
   // as there is currently no better option. To ensure that we don't incorrectly
@@ -274,6 +279,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   // Returns a pointer to the WGPUTextureCache instance for this device, or
   // nullptr if there is no instance.
   WGPUTextureCache* GetWGPUTextureCache(wgpu::Device device);
+#endif  // BUILDFLAG(USE_DAWN)
 
   const GLenum gl_target_;
   const bool framebuffer_attachment_angle_;
