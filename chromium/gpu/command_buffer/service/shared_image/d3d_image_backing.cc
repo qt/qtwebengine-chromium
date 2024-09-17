@@ -893,15 +893,13 @@ void D3DImageBacking::EndAccessD3D11(
   // the texture on one device or using a keyed mutex. The fence is lazily
   // created on the first access from another device in GetPendingWaitFences().
   D3DSharedFenceSet signaled_fence;
-  if (use_fence_synchronization()) {
+  if (use_fence_synchronization() && !is_texture_device) {
     auto& d3d11_signal_fence = d3d11_signaled_fence_map_[d3d11_device];
     if (!d3d11_signal_fence) {
       d3d11_signal_fence = gfx::D3DSharedFence::CreateForD3D11(d3d11_device);
     }
     if (d3d11_signal_fence && d3d11_signal_fence->IncrementAndSignalD3D11()) {
       signaled_fence.insert(d3d11_signal_fence);
-    } else {
-      LOG(ERROR) << "Failed to signal D3D11 device fence on EndAccess";
     }
   }
 
