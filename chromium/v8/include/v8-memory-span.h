@@ -77,7 +77,7 @@ class V8_EXPORT MemorySpan {
             std::enable_if_t<is_compatible_iterator_v<Iterator>, bool> = true>
   constexpr MemorySpan(Iterator first,
                        size_t count)  // NOLINT(runtime/explicit)
-      : data_(to_address(first)), size_(count) {}
+      : data_(count ? to_address(first) : nullptr), size_(count) {}
 
   /** Constructor from two "iterators". */
   template <typename Iterator,
@@ -86,7 +86,7 @@ class V8_EXPORT MemorySpan {
                              bool> = true>
   constexpr MemorySpan(Iterator first,
                        Iterator last)  // NOLINT(runtime/explicit)
-      : data_(to_address(first)), size_(last - first) {}
+      : data_(first != last ? to_address(first) : nullptr), size_(last - first) {}
 
   /** Implicit conversion from C-style array. */
   template <size_t N>
