@@ -363,7 +363,7 @@ class PLATFORM_EXPORT Length {
 
    public:
     std::optional<float> size_keyword_basis = std::nullopt;
-    std::optional<IntrinsicLengthEvaluator> intrinsic_evaluator = std::nullopt;
+    std::optional<IntrinsicLengthEvaluator> intrinsic_evaluator = {};
   };
 
   float NonNanCalculatedValue(float max_value, const EvaluationInput&) const;

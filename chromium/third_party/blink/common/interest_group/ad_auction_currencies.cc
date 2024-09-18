@@ -31,6 +31,8 @@ std::string PrintableAdCurrency(const std::optional<AdCurrency>& currency) {
                               : kUnspecifiedAdCurrency;
 }
 
-bool operator==(const AdCurrency&, const AdCurrency&) = default;
+bool operator==(const AdCurrency& a, const AdCurrency& b) {
+  return a.currency_code() == b.currency_code();
+}
 
 }  // namespace blink

@@ -35,3 +35,12 @@
 /* Define if your (broken) compiler shifts signed values as if they were
    unsigned. */
 /* #undef RIGHT_SHIFT_IS_UNSIGNED */
+
+/* Define "boolean" as unsigned char, not int, on Windows systems.
+ */
+#ifdef _WIN32
+#ifndef __RPCNDR_H__            /* don't conflict if rpcndr.h already read */
+typedef unsigned char boolean;
+#endif
+#define HAVE_BOOLEAN            /* prevent jmorecfg.h from redefining it */
+#endif

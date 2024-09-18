@@ -109,7 +109,7 @@ struct PartitionFreelistDispatcher {
 #else
   static const PartitionFreelistDispatcher* Create(
       PartitionFreelistEncoding encoding) {
-    static constinit PartitionFreelistDispatcher dispatcher =
+    static const PartitionFreelistDispatcher dispatcher =
         PartitionFreelistDispatcher();
     return &dispatcher;
   }

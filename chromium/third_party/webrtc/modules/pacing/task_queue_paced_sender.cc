@@ -99,8 +99,10 @@ void TaskQueuePacedSender::EnqueuePackets(
   task_queue_->PostTask(
       SafeTask(safety_.flag(), [this, packets = std::move(packets)]() mutable {
         RTC_DCHECK_RUN_ON(task_queue_);
+        { //msvc22 complains about class redefinition, put it in own scope
         TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                      "TaskQueuePacedSender::EnqueuePackets");
+        }
         for (auto& packet : packets) {
           TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("webrtc"),
                        "TaskQueuePacedSender::EnqueuePackets::Loop",

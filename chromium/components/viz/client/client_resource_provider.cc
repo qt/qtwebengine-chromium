@@ -276,7 +276,7 @@ void ClientResourceProvider::PrepareSendToParentInternal(
 
 void ClientResourceProvider::ReceiveReturnsFromParent(
     std::vector<ReturnedResource> resources) {
-  TRACE_EVENT0("viz", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("viz", PRETTY_FUNCTION);
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   // |imported_resources_| is a set sorted by id, so if we sort the incoming

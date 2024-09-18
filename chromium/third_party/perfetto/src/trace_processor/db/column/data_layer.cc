@@ -38,6 +38,13 @@
 
 namespace perfetto::trace_processor::column {
 
+#if defined(_MSC_VER)
+template std::unique_ptr<DataLayerChain> NumericStorage<double>::MakeChain();
+template std::unique_ptr<DataLayerChain> NumericStorage<uint32_t>::MakeChain();
+template std::unique_ptr<DataLayerChain> NumericStorage<int32_t>::MakeChain();
+template std::unique_ptr<DataLayerChain> NumericStorage<int64_t>::MakeChain();
+#endif
+
 DataLayer::~DataLayer() = default;
 DataLayerChain::~DataLayerChain() = default;
 

@@ -461,16 +461,19 @@ void UsbDeviceHandleWin::ControlTransfer(
                  ((value >> 8) == USB_BOS_DESCRIPTOR_TYPE)) {
         size_t size = sizeof(USB_DESCRIPTOR_REQUEST) + buffer->size();
         auto request_buffer = base::MakeRefCounted<base::RefCountedBytes>(size);
-        USB_DESCRIPTOR_REQUEST descriptor_request;
-        descriptor_request.ConnectionIndex = device_->port_number();
-        descriptor_request.SetupPacket.bmRequest = BMREQUEST_DEVICE_TO_HOST;
-        descriptor_request.SetupPacket.bRequest = USB_REQUEST_GET_DESCRIPTOR;
-        descriptor_request.SetupPacket.wValue = value;
-        descriptor_request.SetupPacket.wIndex = index;
-        descriptor_request.SetupPacket.wLength = buffer->size();
+        // poor man workaround for illegal zero-size arrays
+        unsigned char workaround[sizeof(USB_DESCRIPTOR_REQUEST)];
+        USB_DESCRIPTOR_REQUEST *descriptor_request = (USB_DESCRIPTOR_REQUEST*)workaround;
+
+        descriptor_request->ConnectionIndex = device_->port_number();
+        descriptor_request->SetupPacket.bmRequest = BMREQUEST_DEVICE_TO_HOST;
+        descriptor_request->SetupPacket.bRequest = USB_REQUEST_GET_DESCRIPTOR;
+        descriptor_request->SetupPacket.wValue = value;
+        descriptor_request->SetupPacket.wIndex = index;
+        descriptor_request->SetupPacket.wLength = buffer->size();
         base::span(request_buffer->as_vector())
             .first<sizeof(USB_DESCRIPTOR_REQUEST)>()
-            .copy_from(base::byte_span_from_ref(descriptor_request));
+            .copy_from(base::byte_span_from_ref(workaround));
 
         blocking_task_runner_->PostTaskAndReplyWithResult(
             FROM_HERE,

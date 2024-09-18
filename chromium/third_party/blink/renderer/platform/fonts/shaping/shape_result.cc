@@ -1538,16 +1538,16 @@ void ShapeResult::InsertRun(ShapeResult::RunInfo* run) {
   // The runs are stored in result->m_runs in visual order. For LTR, we place
   // the run to be inserted before the next run with a bigger character start
   // index.
-  const std::function<bool(Member<RunInfo>&,unsigned)>
-      ltr_comparer = [](scoped_refptr<RunInfo>& run,
+  const auto
+      ltr_comparer = [](ShapeResult::RunInfo* run,
                         unsigned start_index) {
     return run->start_index_ < start_index;
   };
 
   // For RTL, we place the run before the next run with a lower character
   // index. Otherwise, for both directions, at the end.
-  const std::function<bool(Member<RunInfo>&,unsigned)>
-      rtl_comparer = [](scoped_refptr<RunInfo>& run,
+  const auto
+      rtl_comparer = [](ShapeResult::RunInfo* run,
                         unsigned start_index) {
     return run->start_index_ > start_index;
   };

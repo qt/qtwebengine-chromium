@@ -7301,7 +7301,7 @@ test("unit_tests") {
 
   public_deps = []
 
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     assert(toolkit_views)
     sources += [
       "../browser/accessibility/live_caption/live_caption_unavailability_notifier_unittest.cc",

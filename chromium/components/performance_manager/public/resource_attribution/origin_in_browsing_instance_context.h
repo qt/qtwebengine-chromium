@@ -61,8 +61,8 @@ class OriginInBrowsingInstanceContext {
 
   // Test OriginInBrowsingInstanceContexts for equality by origin and browsing
   // instance.
-  constexpr friend bool operator==(const OriginInBrowsingInstanceContext& a,
-                                   const OriginInBrowsingInstanceContext& b) {
+  friend bool operator==(const OriginInBrowsingInstanceContext& a,
+                         const OriginInBrowsingInstanceContext& b) {
     return a.origin_ == b.origin_ &&
            a.browsing_instance_ == b.browsing_instance_;
   }

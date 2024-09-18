@@ -1678,6 +1678,11 @@ group("chromium_builder_perf") {
       "//components:components_perftests",
       "//third_party/angle/src/tests:angle_perftests",
     ]
+    if (is_qtwebengine) {
+      data_deps -= [
+        "//third_party/angle/src/tests:angle_perftests",
+      ]
+    }
   }
 }
 

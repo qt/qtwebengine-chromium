@@ -37,7 +37,7 @@ typedef struct _PROCESSOR_POWER_INFORMATION {
 }  // namespace
 
 double EstimateCpuFrequency() {
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && !defined(COMPILER_MSVC)
   TRACE_EVENT0("power", "EstimateCpuFrequency");
   // The heuristic to estimate CPU frequency is based on UIforETW code.
   // see: https://github.com/google/UIforETW/blob/main/UIforETW/CPUFrequency.cpp

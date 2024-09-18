@@ -2913,7 +2913,6 @@ jumbo_source_set("browser") {
         "accessibility/browser_accessibility_win.h",
       ]
       deps -= [
-        "//components/services/screen_ai/public/cpp:utilities",
         "//third_party/iaccessible2",
       ]
     }

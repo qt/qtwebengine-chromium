@@ -859,11 +859,12 @@ RepresentativenessMap GetInternalRepresentativenessMap() {
 const RepresentativenessMap& GetRepresentativenessMapForCurrentTaxonomy() {
   int current_taxonomy = blink::features::kBrowsingTopicsTaxonomyVersion.Get();
   switch (current_taxonomy) {
-    case 1:
+    case 1: {
       static const base::NoDestructor<RepresentativenessMap>
           kRepresentativenessMapV1(GetInternalRepresentativenessMap());
       return *kRepresentativenessMapV1;
-    case 2:
+    }
+    case 2: {
       static const base::NoDestructor<RepresentativenessMap>
           kRepresentativenessMapV2([]() -> RepresentativenessMap {
             RepresentativenessMap map;
@@ -875,6 +876,7 @@ const RepresentativenessMap& GetRepresentativenessMapForCurrentTaxonomy() {
             return map;
           }());
       return *kRepresentativenessMapV2;
+    }
     default:
       NOTREACHED_NORETURN();
   }

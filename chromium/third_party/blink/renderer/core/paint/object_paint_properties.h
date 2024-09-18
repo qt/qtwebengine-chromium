@@ -461,7 +461,7 @@ class CORE_EXPORT ObjectPaintProperties {
       NodeId node_id,
       const ParentType& parent,
       NodeType::State&& state,
-      const NodeType::AnimationState& animation_state =
+      const typename NodeType::AnimationState& animation_state =
           NodeType::AnimationState()) {
     // First, check if we need to add a new node.
     if (!nodes_.HasField(node_id)) {

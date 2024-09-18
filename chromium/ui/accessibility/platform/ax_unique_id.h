@@ -47,8 +47,9 @@ class COMPONENT_EXPORT(AX_PLATFORM) AXUniqueId final {
   operator int32_t() const { return id_; }
 
   friend bool operator==(const AXUniqueId&, const AXUniqueId&) = default;
+#if !defined(COMPILER_MSVC)
   friend bool operator<=>(const AXUniqueId&, const AXUniqueId&) = default;
-
+#endif
   static AXUniqueId CreateForTest(int32_t max_id) {
     return AXUniqueId(GetNextAXUniqueId(max_id));
   }

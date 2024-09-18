@@ -96,7 +96,9 @@ class HeapVector final : public GarbageCollected<HeapVector<T, inlineCapacity>>,
     constexpr TypeConstraints();
   };
   static_assert(std::is_empty_v<TypeConstraints>);
+#if !defined(COMPILER_MSVC)
   NO_UNIQUE_ADDRESS TypeConstraints type_constraints_;
+#endif
 };
 
 template <typename T>

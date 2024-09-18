@@ -91,6 +91,7 @@ config("compiler") {
     cflags += [
       "/Zc:preprocessor",
       "/wd5105",
+      "/Zc:__cplusplus",
     ]
   }
 

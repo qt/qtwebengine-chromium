@@ -793,7 +793,9 @@ void VideoSendStreamImpl::OnEncoderConfigurationChanged(
   auto closure = [this, streams = std::move(streams), is_svc, content_type,
                   min_transmit_bitrate_bps]() mutable {
     RTC_DCHECK_GE(config_.rtp.ssrcs.size(), streams.size());
+    { //msvc22 complains about class redefinition, put it in own scope
     TRACE_EVENT0("webrtc", "VideoSendStream::OnEncoderConfigurationChanged");
+    }
     RTC_DCHECK_RUN_ON(&thread_checker_);
 
     const VideoCodecType codec_type =

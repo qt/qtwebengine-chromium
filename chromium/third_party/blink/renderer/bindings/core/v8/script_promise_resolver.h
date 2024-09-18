@@ -164,7 +164,7 @@ class CORE_EXPORT ScriptPromiseResolverBase
 #if DCHECK_IS_ON()
   template <typename T>
   inline size_t GetTypeId() {
-    return base::FastHash(__PRETTY_FUNCTION__);
+    return base::FastHash(PRETTY_FUNCTION);
   }
 
   // True if promise() is called.
