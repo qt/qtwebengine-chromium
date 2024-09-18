@@ -204,6 +204,7 @@ BASE_FEATURE(kBrokerFileOperationsOnDiskCacheInNetworkService,
 // When enabled, keyboard user activation will be verified by the browser side.
 BASE_FEATURE(kBrowserVerifiedUserActivationKeyboard,
              "BrowserVerifiedUserActivationKeyboard",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // When enabled, changes main thread priority matching 'Compositing' thread one.
 BASE_FEATURE(kBrowserUseCompositingThreadPriority,
