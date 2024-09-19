@@ -38,6 +38,8 @@
 #include "third_party/blink/renderer/platform/wtf/text/case_folding_hash.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_hasher.h"
 
+#include <optional>
+
 namespace blink {
 
 enum FontFaceCreationType {
@@ -79,7 +81,7 @@ class FontFaceCreationParams {
   }
   const std::string& Filename() const {
     DCHECK_EQ(creation_type_, kCreateFontByFciIdAndTtcIndex);
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || BUILDFLAG(IS_QTWEBENGINE)
     DCHECK(filename_.has_value());
     return *filename_;
 #else
@@ -128,7 +130,7 @@ class FontFaceCreationParams {
   AtomicString family_;
 
   void SetFilename(std::string& filename) {
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || BUILDFLAG(IS_QTWEBENGINE)
     *filename_ = filename;
 #else
     filename_ = filename;
@@ -136,7 +138,7 @@ class FontFaceCreationParams {
   }
 
   bool FilenameEqual(const FontFaceCreationParams& other) const {
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || BUILDFLAG(IS_QTWEBENGINE)
     if (!filename_.has_value() || !other.filename_.has_value()) {
       return filename_.has_value() == other.filename_.has_value();
     }
@@ -147,14 +149,14 @@ class FontFaceCreationParams {
   }
 
   bool HasFilename() const {
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || BUILDFLAG(IS_QTWEBENGINE)
     return filename_.has_value();
 #else
     return true;
 #endif
   }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || BUILDFLAG(IS_QTWEBENGINE)
   // We put the `std::string` behind an optional as ASAN counter checks require
   // that we properly call constructors and destructors for all strings. This is
   // not the case when `FontFaceCreationParams` is used in `HashMap` as key
