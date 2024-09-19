@@ -135,6 +135,13 @@ class FileSystemAccessPermissionContext {
       GlobalRenderFrameHostId frame_id,
       base::OnceCallback<void(AfterWriteCheckResult)> callback) = 0;
 
+  // Due to the lack of safe-browsing component, we just return false here
+  // as is done e.g. in the Android WebView.
+  virtual bool IsFileTypeDangerous(const base::FilePath& path,
+                                   const url::Origin& origin) {
+    return false;
+  }
+
   // Returns whether the give |origin| already allows read permission, or it is
   // possible to request one. This is used to block file dialogs from being
   // shown if permission won't be granted anyway.
