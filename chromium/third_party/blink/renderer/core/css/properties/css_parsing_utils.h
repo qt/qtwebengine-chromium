@@ -791,9 +791,9 @@ CSSValueList* ConsumeSpaceSeparatedList(Func callback,
 }
 
 template <typename T, typename Func, typename... Args>
-  requires std::is_same_v<T, CSSParserTokenStream> ||
-           std::is_same_v<T, CSSParserTokenRange>
-CSSValueList* ConsumeCommaSeparatedList(Func callback,
+std::enable_if_t<std::is_same_v<T, CSSParserTokenStream> ||
+                 std::is_same_v<T, CSSParserTokenRange>, CSSValueList*>
+              ConsumeCommaSeparatedList(Func callback,
                                         T& stream,
                                         Args&&... args) {
   CSSValueList* list = CSSValueList::CreateCommaSeparated();

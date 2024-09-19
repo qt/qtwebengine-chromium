@@ -15,6 +15,8 @@
 
 namespace history {
 
+const std::optional<std::string> kNoAppIdFilter = std::nullopt;
+
 namespace {
 
 static constexpr float kScoreEpsilon = 1e-8;

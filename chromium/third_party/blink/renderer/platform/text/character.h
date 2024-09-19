@@ -279,10 +279,12 @@ inline bool Character::MaybeBidiRtlUtf16(UChar ch) {
          !IsInRange(ch, 0xFF00, 0xFFFF);
 }
 
+inline bool maybe_not_bidi_rtl_utf16(UChar c) {
+  return !Character::MaybeBidiRtlUtf16(c);
+};
+
 inline bool Character::MaybeBidiRtl(const String& text) {
-  return !text.Is8Bit() && !text.IsAllSpecialCharacters<[](UChar c) {
-    return !MaybeBidiRtlUtf16(c);
-  }>();
+  return !text.Is8Bit() && !text.IsAllSpecialCharacters<maybe_not_bidi_rtl_utf16>();
 }
 
 inline bool Character::IsEastAsianWidthFullwidth(UChar32 ch) {

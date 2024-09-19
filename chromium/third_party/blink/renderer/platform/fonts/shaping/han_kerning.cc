@@ -173,10 +173,12 @@ HanKerning::CharType HanKerning::GetCharType(UChar ch,
   NOTREACHED_NORETURN();
 }
 
+static bool maybeNotHanKerningOpenOrCloseFast(UChar ch) {
+  return !Character::MaybeHanKerningOpenOrCloseFast(ch);
+}
+
 bool HanKerning::MayApply(StringView text) {
-  return !text.Is8Bit() && !text.IsAllSpecialCharacters<[](UChar ch) {
-    return !Character::MaybeHanKerningOpenOrCloseFast(ch);
-  }>();
+  return !text.Is8Bit() && !text.IsAllSpecialCharacters<maybeNotHanKerningOpenOrCloseFast>();
 }
 
 inline bool HanKerning::ShouldKern(CharType type, CharType last_type) {

@@ -72,7 +72,7 @@ constexpr VisitedLinkID kInvalidVisitedLinkID = 0;
 typedef std::map<VisitID, VisitSource> VisitSourceMap;
 
 // Constant used to represent that no app_id is used for matching.
-inline constexpr std::optional<std::string> kNoAppIdFilter = std::nullopt;
+extern const std::optional<std::string> kNoAppIdFilter;
 
 // VisitRow -------------------------------------------------------------------
 
