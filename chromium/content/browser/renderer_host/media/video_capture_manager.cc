@@ -152,10 +152,16 @@ void VideoCaptureManager::EnumerateDevices(
   EmitLogMessage("VideoCaptureManager::EnumerateDevices", 1);
 
   // Pass a timer for UMA histogram collection.
-  video_capture_provider_->GetDeviceInfosAsync(
-      base::BindPostTaskToCurrentDefault(
-          base::BindOnce(&VideoCaptureManager::OnDeviceInfosReceived, this,
-                         base::ElapsedTimer(), std::move(client_callback))));
+  if (video_capture_provider_)
+    video_capture_provider_->GetDeviceInfosAsync(
+        base::BindPostTaskToCurrentDefault(
+            base::BindOnce(&VideoCaptureManager::OnDeviceInfosReceived, this,
+                          base::ElapsedTimer(), std::move(client_callback))));
+  else
+    base::BindPostTaskToCurrentDefault(
+        base::BindOnce(&VideoCaptureManager::OnDeviceInfosReceived, this,
+                      base::ElapsedTimer(), std::move(client_callback))).Run(
+                          media::mojom::DeviceEnumerationResult::kUnknownError, {});
 }
 
 base::UnguessableToken VideoCaptureManager::Open(
