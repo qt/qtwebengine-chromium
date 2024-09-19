@@ -102,7 +102,7 @@ void* FX_AlignedAlloc(size_t size, size_t alignment) {
   DCHECK(IsPowerOfTwo(alignment));
   DCHECK_EQ(alignment % sizeof(void*), 0u);
   void* ptr = nullptr;
-#if defined(COMPILER_MSVC)
+#if BUILDFLAG(IS_WIN)
   ptr = _aligned_malloc(size, alignment);
 #elif BUILDFLAG(IS_ANDROID)
   // Android technically supports posix_memalign(), but does not expose it in
