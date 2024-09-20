@@ -217,7 +217,7 @@ void FileSystemAccessHandleBase::DoMove(
     }
   }
 
-  if (!FileSystemAccessDirectoryHandleImpl::IsSafePathComponent(
+  if (!manager()->IsSafePathComponent(
           new_entry_name)) {
     std::move(callback).Run(file_system_access_error::FromStatus(
         blink::mojom::FileSystemAccessStatus::kInvalidArgument));
@@ -250,7 +250,7 @@ void FileSystemAccessHandleBase::DoRename(
     }
   }
 
-  if (!FileSystemAccessDirectoryHandleImpl::IsSafePathComponent(
+  if (!manager()->IsSafePathComponent(
           new_entry_name)) {
     std::move(callback).Run(file_system_access_error::FromStatus(
         blink::mojom::FileSystemAccessStatus::kInvalidArgument));

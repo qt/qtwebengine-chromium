@@ -54,32 +54,6 @@ using UserAction = FileSystemAccessPermissionContext::UserAction;
 #endif
 
 namespace {
-// Returns whether the specified extension receives special handling by the
-// Windows shell.
-bool IsShellIntegratedExtension(const base::FilePath::StringType& extension) {
-  base::FilePath::StringType extension_lower = base::ToLowerASCII(extension);
-
-  // .lnk and .scf files may be used to execute arbitrary code (see
-  // https://nvd.nist.gov/vuln/detail/CVE-2010-2568 and
-  // https://crbug.com/1227995, respectively). '.url' files can be used to read
-  // arbitrary files (see https://crbug.com/1307930 and
-  // https://crbug.com/1354518).
-  if (extension_lower == FILE_PATH_LITERAL("lnk") ||
-      extension_lower == FILE_PATH_LITERAL("scf") ||
-      extension_lower == FILE_PATH_LITERAL("url")) {
-    return true;
-  }
-
-  // Setting a file's extension to a CLSID may conceal its actual file type on
-  // some Windows versions (see https://nvd.nist.gov/vuln/detail/CVE-2004-0420).
-  if (!extension_lower.empty() &&
-      (extension_lower.front() == FILE_PATH_LITERAL('{')) &&
-      (extension_lower.back() == FILE_PATH_LITERAL('}'))) {
-    return true;
-  }
-  return false;
-}
-
 #if BUILDFLAG(IS_POSIX)
 base::FilePath ReadSymbolicLink(const base::FilePath& path) {
   DCHECK(!path.empty());
@@ -710,80 +684,13 @@ void FileSystemAccessDirectoryHandleImpl::AllEntriesReady(
       file_system_access_error::Ok(), std::move(entries), has_more_entries);
 }
 
-// static
-bool FileSystemAccessDirectoryHandleImpl::IsSafePathComponent(
-    const std::string& name) {
-  // This method is similar to net::IsSafePortablePathComponent, with a few
-  // notable differences where the net version does not consider names safe
-  // while here we do want to allow them. These cases are:
-  //  - Names starting with a '.'. These would be hidden files in most file
-  //    managers, but are something we explicitly want to support for the
-  //    File System Access API, for names like .git.
-  //  - Names that end in '.local'. For downloads writing to such files is
-  //    dangerous since it might modify what code is executed when an executable
-  //    is ran from the same directory. For the File System Access API this
-  //    isn't really a problem though, since if a website can write to a .local
-  //    file via a FileSystemDirectoryHandle they can also just modify the
-  //    executables in the directory directly.
-  //
-  // TODO(https://crbug.com/1154757): Unify this with
-  // net::IsSafePortablePathComponent, with the result probably ending up in
-  // base/i18n/file_util_icu.h.
-
-  const base::FilePath component = storage::StringToFilePath(name);
-  // Empty names, or names that contain path separators are invalid.
-  if (component.empty() || component != component.BaseName() ||
-      component != component.StripTrailingSeparators()) {
-    return false;
-  }
-
-  std::u16string component16;
-#if BUILDFLAG(IS_WIN)
-  component16.assign(component.value().begin(), component.value().end());
-#else
-  std::string component8 = component.AsUTF8Unsafe();
-  if (!base::UTF8ToUTF16(component8.c_str(), component8.size(), &component16)) {
-    return false;
-  }
-#endif
-  // base::i18n::IsFilenameLegal blocks names that start with '.', so strip out
-  // a leading '.' before passing it to that method.
-  // TODO(mek): Consider making IsFilenameLegal more flexible to support this
-  // use case.
-  if (component16[0] == '.') {
-    component16 = component16.substr(1);
-  }
-  if (!base::i18n::IsFilenameLegal(component16)) {
-    return false;
-  }
-
-  base::FilePath::StringType extension = component.Extension();
-  if (!extension.empty()) {
-    extension.erase(extension.begin());  // Erase preceding '.'.
-  }
-  if (IsShellIntegratedExtension(extension)) {
-    return false;
-  }
-
-  if (base::TrimString(component.value(), FILE_PATH_LITERAL("."),
-                       base::TRIM_TRAILING) != component.value()) {
-    return false;
-  }
-
-  if (net::IsReservedNameOnWindows(component.value())) {
-    return false;
-  }
-
-  return true;
-}
-
 blink::mojom::FileSystemAccessErrorPtr
 FileSystemAccessDirectoryHandleImpl::GetChildURL(
     const std::string& basename,
     storage::FileSystemURL* result) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!IsSafePathComponent(basename)) {
+  if (!manager()->IsSafePathComponent(basename)) {
     return file_system_access_error::FromStatus(
         FileSystemAccessStatus::kInvalidArgument, "Name is not allowed.");
   }
