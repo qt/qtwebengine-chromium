@@ -227,8 +227,7 @@ void FileSystemAccessHandleBase::DoRename(
   DCHECK_EQ(GetWritePermissionStatus(),
             blink::mojom::PermissionStatus::GRANTED);
 
-  if (!FileSystemAccessDirectoryHandleImpl::IsSafePathComponent(
-          url().type(), new_entry_name)) {
+  if (!manager()->IsSafePathComponent(url().type(), new_entry_name)) {
     std::move(callback).Run(file_system_access_error::FromStatus(
         blink::mojom::FileSystemAccessStatus::kInvalidArgument));
     return;
@@ -269,7 +268,7 @@ void FileSystemAccessHandleBase::DidResolveTokenToMove(
     return;
   }
 
-  if (!FileSystemAccessDirectoryHandleImpl::IsSafePathComponent(
+  if (!manager()->IsSafePathComponent(
           resolved_destination_directory->url().type(), new_entry_name)) {
     std::move(callback).Run(file_system_access_error::FromStatus(
         blink::mojom::FileSystemAccessStatus::kInvalidArgument));
