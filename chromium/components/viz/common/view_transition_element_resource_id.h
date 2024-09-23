@@ -33,8 +33,11 @@ class VIZ_COMMON_EXPORT ViewTransitionElementResourceId {
   VIZ_COMMON_EXPORT friend bool operator==(
       const ViewTransitionElementResourceId&,
       const ViewTransitionElementResourceId&);
-  friend auto operator<=>(const ViewTransitionElementResourceId&,
-                          const ViewTransitionElementResourceId&) = default;
+
+  bool operator<(const ViewTransitionElementResourceId& o) const {
+    return transition_token_ < o.transition_token_ ||
+           (transition_token_ == o.transition_token_ && local_id_ < o.local_id_);
+  }
 
   bool IsValid() const;
   std::string ToString() const;
