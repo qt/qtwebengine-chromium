@@ -20,6 +20,11 @@
 #include "rtc_base/trace_event.h"
 #include "sdk/objc/helpers/scoped_cftyperef.h"
 
+// Build fix for macOS SDK 15 and newer
+#if !defined(CG_AVAILABLE_BUT_DEPRECATED)
+#define CG_AVAILABLE_BUT_DEPRECATED(a,b,c)
+#endif
+
 // All these symbols have incorrect availability annotations in the 13.3 SDK.
 // These have the correct annotation. See https://crbug.com/1431897.
 // TODO(thakis): Remove this once FB12109479 is fixed and we updated to an SDK

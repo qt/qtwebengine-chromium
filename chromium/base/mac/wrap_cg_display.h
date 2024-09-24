@@ -12,6 +12,11 @@
 
 #include <CoreGraphics/CoreGraphics.h>
 
+// Build fix for macOS SDK 15 and newer
+#if !defined(CG_AVAILABLE_BUT_DEPRECATED)
+#define CG_AVAILABLE_BUT_DEPRECATED(a,b,c)
+#endif
+
 inline CGDisplayStreamRef __nullable wrapCGDisplayStreamCreate(
     CGDirectDisplayID display,
     size_t outputWidth,
