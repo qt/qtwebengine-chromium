@@ -584,6 +584,18 @@ std::unique_ptr<AsyncStreamingDecoder::DecodingState>
 AsyncStreamingDecoder::DecodeSectionLength::NextWithValue(
     AsyncStreamingDecoder* streaming) {
   TRACE_STREAMING("DecodeSectionLength(%zu)\n", value_);
+  // Check if this section fits into the overall module length limit.
+  // Note: {this->module_offset_} is the position of the section ID byte,
+  // {streaming->module_offset_} is the start of the section's payload (i.e.
+  // right after the just-decoded section length varint).
+  // The latter can already exceed the max module size, when the previous
+  // section barely fit into it, and this new section's ID or length crossed
+  // the threshold.
+  uint32_t payload_start = streaming->module_offset();
+  size_t max_size = max_module_size();
+  if (payload_start > max_size || max_size - payload_start < value_) {
+    return streaming->Error("module size exceeds maximum size");
+  }
   SectionBuffer* buf =
       streaming->CreateNewBuffer(module_offset_, section_id_, value_,
                                  buffer().SubVector(0, bytes_consumed_));
