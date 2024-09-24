@@ -76,9 +76,12 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #define PERFETTO_POPCOUNT(x) __builtin_popcountll(x)
-#else
+#elif defined(__AVX__) || defined(__SSE4_2__) || defined(__POPCNT__)
 #include <intrin.h>
 #define PERFETTO_POPCOUNT(x) __popcnt64(x)
+#else
+#include <bit>
+#define PERFETTO_POPCOUNT(x) std::popcount(x)
 #endif
 
 #if defined(__clang__)
