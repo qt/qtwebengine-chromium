@@ -296,7 +296,7 @@ static unsigned FindLengthOfValidDouble(base::span<const LChar> chars) {
 
   bool decimal_mark_seen = false;
   size_t valid_length = 0;
-#if defined(__SSE2__) || defined(__ARM_NEON__)
+#if (defined(__SSE2__) || defined(__ARM_NEON__)) && (defined(__GNUC__) || defined(__clang__))
   if (chars.size() >= 16) {
     uint8_t b __attribute__((vector_size(16)));
     UNSAFE_TODO(memcpy(&b, chars.data(), sizeof(b)));
