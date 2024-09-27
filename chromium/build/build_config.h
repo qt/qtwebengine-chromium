@@ -410,7 +410,7 @@
 
 #if !defined(CPU_ARM_NEON)
 #if defined(ARCH_CPU_ARM_FAMILY) && \
-    (defined(__ARM_NEON__) || defined(__ARM_NEON))
+    (defined(__ARM_NEON__) || defined(__ARM_NEON) || defined(_M_ARM64))
 #define CPU_ARM_NEON 1
 #endif
 #endif  // !defined(CPU_ARM_NEON)

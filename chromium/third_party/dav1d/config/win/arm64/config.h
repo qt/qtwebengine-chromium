@@ -41,7 +41,11 @@
 
 #define HAVE_ALIGNED_ALLOC 0
 
+#ifdef __clang__
 #define HAVE_ASM 1
+#else
+#define HAVE_ASM 0
+#endif
 
 #define HAVE_AS_ARCHEXT_DOTPROD_DIRECTIVE 0
 
