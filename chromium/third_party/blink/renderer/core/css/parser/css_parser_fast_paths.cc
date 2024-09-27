@@ -302,7 +302,7 @@ static unsigned FindLengthOfValidDouble(const LChar* string, const LChar* end) {
 
   bool decimal_mark_seen = false;
   int valid_length = 0;
-#if defined(__SSE2__) || defined(__ARM_NEON__)
+#if defined(__SSE2__) || (defined(__ARM_NEON__) && (!defined(_MSC_VER) || defined(__clang__)))
   if (length >= 16) {
     uint8_t b __attribute__((vector_size(16)));
     memcpy(&b, string, sizeof(b));

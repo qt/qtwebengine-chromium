@@ -39,7 +39,11 @@
 
 #define ENDIANNESS_BIG 0
 
+#ifdef __clang__
 #define HAVE_ASM 1
+#else
+#define HAVE_ASM 0
+#endif
 
 #define HAVE_C11_GENERIC 1
 

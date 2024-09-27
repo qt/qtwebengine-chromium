@@ -447,7 +447,7 @@ FindLengthOfDeclarationListAVX2(StringView str) {
   }
 }
 
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) && (!defined(_MSC_VER) || defined(__clang__))
 
 static inline uint8x16_t LoadAndCollapseHighBytes(const UChar* ptr) {
   uint8x16_t x1;

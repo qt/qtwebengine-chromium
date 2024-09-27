@@ -410,7 +410,7 @@ def DoInline(
 
     if filename_expansion_function:
       filename = filename_expansion_function(filename)
-    return os.path.normpath(os.path.join(base_path, filename))
+    return os.path.abspath(os.path.join(base_path, filename))
 
   def InlineFileContents(src_match,
                          pattern,

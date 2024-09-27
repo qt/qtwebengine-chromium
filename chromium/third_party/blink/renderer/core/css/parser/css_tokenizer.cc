@@ -595,7 +595,8 @@ StringView CSSTokenizer::ConsumeName() {
   StringView buffer = input_.Peek();
 
   unsigned size = 0;
-#if defined(__SSE2__) || defined(__ARM_NEON__) || defined(__ARM_NEON)
+#if defined(__SSE2__) || ((defined(__ARM_NEON__) || defined(__ARM_NEON)) \
+    && (!defined(_MSC_VER) || defined(__clang__)))
   if (buffer.Is8Bit()) {
     const LChar* ptr = buffer.Characters8();
     while (size + 16 <= buffer.length()) {
