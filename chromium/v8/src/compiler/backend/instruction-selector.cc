@@ -3134,7 +3134,7 @@ bool InstructionSelector::ZeroExtendsWord32ToWord64(Node* node,
   if (node->opcode() == IrOpcode::kPhi) {
     // Intermediate results from previous calls are not necessarily correct.
     if (recursion_depth == 0) {
-      static_assert(sizeof(Upper32BitsState) == 1);
+      static_assert(sizeof(Upper32BitsState) == 1, "sizeof(Upper32BitsState) must be 1");
       memset(phi_states_.data(),
              static_cast<int>(Upper32BitsState::kNotYetChecked),
              phi_states_.size());
