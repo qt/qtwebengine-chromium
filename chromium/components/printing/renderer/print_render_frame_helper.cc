@@ -175,7 +175,6 @@ void RecordDebugEvent(DebugEvent event) {
   g_debug_events_index %= kDebugEventMaxCount;
 }
 
-#if !defined(TOOLKIT_QT)
 void ExecuteScript(blink::WebLocalFrame* frame,
                    const char* script_format,
                    const base::Value& parameters) {
@@ -186,7 +185,6 @@ void ExecuteScript(blink::WebLocalFrame* frame,
   frame->ExecuteScript(
       blink::WebScriptSource(blink::WebString::FromUTF8(script)));
 }
-#endif // !defined(TOOLKIT_QT)
 
 int GetDPI(const mojom::PrintParams& print_params) {
 #if BUILDFLAG(IS_APPLE)
@@ -571,7 +569,6 @@ void PrintHeaderAndFooter(cc::PaintCanvas* canvas,
                           const blink::WebLocalFrame& source_frame,
                           const mojom::PageSizeMargins& page_layout,
                           const mojom::PrintParams& params) {
-#if !defined(TOOLKIT_QT)
   DCHECK_LE(total_pages, kMaxPageCount);
   DCHECK_LT(page_index, kMaxPageCount);
 
@@ -616,7 +613,6 @@ void PrintHeaderAndFooter(cc::PaintCanvas* canvas,
   frame.PrintBegin(webkit_params, blink::WebNode());
   frame.PrintPage(0, canvas);
   frame.PrintEnd();
-#endif // !defined(TOOLKIT_QT)
 }
 
 // Renders page contents from `frame` to `content_area` of `canvas`.
