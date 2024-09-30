@@ -101,7 +101,7 @@ class Platform(object):
     return self._platform == 'zos'
 
   def is_serenity(self):
-    return self_.platform == 'serenity'
+    return self._platform == 'serenity'
 
 class ArgumentsList:
   """Helper class to accumulate ArgumentParser argument definitions
@@ -263,7 +263,7 @@ def GenerateLastCommitPosition(host, header):
   describe_output = subprocess.check_output(
       ['git', 'describe', 'HEAD', '--abbrev=12', '--match', ROOT_TAG],
       shell=host.is_windows(), cwd=REPO_ROOT)
-  mo = re.match(ROOT_TAG + '-(\\d+)-g([0-9a-f]+)', describe_output.decode())
+  mo = re.match(ROOT_TAG + r'-(\d+)-g([0-9a-f]+)', describe_output.decode())
   if not mo:
     raise ValueError(
         'Unexpected output from git describe when generating version header')
@@ -340,7 +340,12 @@ def WriteGenericNinja(path, static_libraries, executables,
 
   if platform.is_windows():
     executable_ext = '.exe'
-    library_ext = '.lib'
+
+    if platform.is_msvc():
+      library_ext = '.lib'
+    else:
+      library_ext = '.a'
+
     object_ext = '.obj'
   else:
     executable_ext = ''
@@ -560,7 +565,6 @@ def WriteGNNinja(path, platform, host, options, args_list):
         '-Wno-implicit-fallthrough',
         '-Wno-redundant-move',
         '-Wno-unused-variable',
-        '-Wno-parentheses-equality',
         '-Wno-format',             # Use of %llx, which is supported by _UCRT, false positive
         '-Wno-strict-aliasing',    # Dereferencing punned pointer
         '-Wno-cast-function-type', # Casting FARPROC to RegDeleteKeyExPtr
