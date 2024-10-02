@@ -6,14 +6,8 @@
 #include "gpu/vulkan/buildflags.h"
 #include "ui/base/ozone_buildflags.h"
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
-#include "ui/gl/gl_bindings.h"
-#include "ui/gl/gl_context.h"
-#include "ui/gl/gl_display.h"
-#include "ui/gl/gl_surface.h"
-#endif
-
 #if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
+#include "ui/gl/gl_export.h"
 #include "ui/gl/gl_surface_glx.h"
 #endif
 
@@ -48,36 +42,6 @@ bool GLSurfaceGLX::IsCreateContextSupported() {
 }
 } // namespace gl
 #endif  // if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
-
-#if BUILDFLAG(IS_WIN)
-namespace gl {
-class GLShareGroup;
-class GLContextAttribs;
-namespace init {
-
-scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
-                                         GLSurface* compatible_surface,
-                                         const GLContextAttribs& attribs) {
-  return nullptr;
-}
-GLDisplay* InitializeGLOneOffPlatform(GpuPreference preference) {
-  return nullptr;
-}
-bool usingSoftwareDynamicGL() {
-  return false;
-}
-scoped_refptr<GLSurface> CreateOffscreenGLSurface(GLDisplay* display,
-                                                  const gfx::Size& size) {
-  return nullptr;
-}
-scoped_refptr<GLSurface> CreateViewGLSurface(GLDisplay* display,
-                                             gfx::AcceleratedWidget window) {
-  return nullptr;
-}
-
-}  // namespace init
-}  // namespace gl
-#endif  // BUILDFLAG(IS_WIN)
 
 namespace ui {
 class OzonePlatform;
