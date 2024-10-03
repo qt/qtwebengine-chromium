@@ -72,6 +72,8 @@ CONTENT_EXPORT BASE_DECLARE_FEATURE(kSpeculativeServiceWorkerStartup);
 // Flag guard for fix for crbug.com/1414936.
 CONTENT_EXPORT BASE_DECLARE_FEATURE(kWindowOpenFileSelectFix);
 
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kLimitCrossOriginNonActivatedPaintHolding);
+
 // Please keep features in alphabetical order.
 
 }  // namespace content

@@ -1593,4 +1593,8 @@ bool ContentBrowserClient::
   return true;
 }
 
+bool ContentBrowserClient::AllowNonActivatedCrossOriginPaintHolding() {
+  return false;
+}
+
 }  // namespace content

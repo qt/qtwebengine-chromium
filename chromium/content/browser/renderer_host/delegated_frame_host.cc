@@ -503,7 +503,10 @@ void DelegatedFrameHost::ContinueDelegatedFrameEviction(
   // preventing the FrameTree from being traversed. This could happen during
   // navigation involving BFCache. This should not occur with
   // features::kEvictSubtree.
-  DCHECK(!surface_ids.empty() ||
+  // We do allow the surface ids to be empty if we
+  // don't have a local surface id, since that means we don't have memory
+  // allocated in viz.
+  DCHECK(!surface_ids.empty() || !local_surface_id_.is_valid() ||
          !base::FeatureList::IsEnabled(features::kEvictSubtree));
   if (!surface_ids.empty()) {
     DCHECK(host_frame_sink_manager_);
