@@ -1778,4 +1778,8 @@ bool ContentBrowserClient::IsSaveableNavigation(
   return false;
 }
 
+bool ContentBrowserClient::AllowNonActivatedCrossOriginPaintHolding() {
+  return false;
+}
+
 }  // namespace content

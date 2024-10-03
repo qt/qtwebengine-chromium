@@ -3044,6 +3044,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // http POST requests, cannot be synced across machines as the request body
   // is no longer available when reloading the URL.
   virtual bool IsSaveableNavigation(NavigationHandle* navigation_handle);
+
+  // Indicates whether this client allows paint holding in cross-origin
+  // navigations even if there was no user activation.
+  virtual bool AllowNonActivatedCrossOriginPaintHolding();
 };
 
 }  // namespace content
