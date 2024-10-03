@@ -2768,6 +2768,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   // subresources if possible.
   virtual void MaybePrewarmHttpDiskCache(BrowserContext& browser_context,
                                          const GURL& navigation_url);
+
+  // Indicates whether this client allows paint holding in cross-origin
+  // navigations even if there was no user activation.
+  virtual bool AllowNonActivatedCrossOriginPaintHolding();
 };
 
 }  // namespace content
