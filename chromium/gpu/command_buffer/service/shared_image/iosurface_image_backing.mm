@@ -1413,17 +1413,21 @@ void IOSurfaceImageBacking::WaitForCommandsToBeScheduled(
 
 void IOSurfaceImageBacking::AddEGLDisplayWithPendingCommands(
     gl::GLDisplayEGL* display) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AssertLockAcquired();
   egl_displays_pending_flush_.insert(display);
+#endif
 }
 
 void IOSurfaceImageBacking::ClearEGLDisplaysWithPendingCommands(
     gl::GLDisplayEGL* display_to_keep) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AssertLockAcquired();
 
   if (std::move(egl_displays_pending_flush_).contains(display_to_keep)) {
     egl_displays_pending_flush_.insert(display_to_keep);
   }
+#endif
 }
 
 #if BUILDFLAG(USE_DAWN)
@@ -1745,7 +1749,9 @@ bool IOSurfaceImageBacking::IOSurfaceBackingEGLStateBeginAccess(
   // Note that we don't need to call WaitForCommandsToBeScheduled for other
   // EGLDisplays because it is already done when the previous GL context is made
   // uncurrent. We can simply remove the other EGLDisplays from the list.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ClearEGLDisplaysWithPendingCommands(/*display_to_keep=*/display);
+#endif
 
   // IOSurface might be written on a different queue. So we have to wait for the
   // previous Dawn and ANGLE commands to be scheduled first so that the kernel
@@ -1870,7 +1876,11 @@ void IOSurfaceImageBacking::IOSurfaceBackingEGLStateEndAccess(
   // glFlush on OpenGL. Defer the call until CoreAnimation, Dawn, or another
   // ANGLE EGLDisplay needs to access to avoid unnecessary overhead. This also
   // ensures that the Metal shared event enqueued above is eventually flushed.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (is_thread_safe()) {
+#else
+  if (true) {
+#endif
     // With DrDC and Graphite enabled, don't call
     // AddEGLDisplayWithPendingCommands to avoid the GL context flush on
     // the Viz thread.
