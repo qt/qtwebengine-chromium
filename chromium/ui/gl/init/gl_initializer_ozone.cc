@@ -18,6 +18,7 @@
 namespace gl {
 namespace init {
 
+#if !defined(TOOLKIT_QT)
 GLDisplay* InitializeGLOneOffPlatform(gl::GpuPreference gpu_preference) {
   if (HasGLOzone()) {
     gl::GLDisplayEglUtil::SetInstance(gl::GLDisplayEglUtilOzone::GetInstance());
@@ -37,6 +38,7 @@ GLDisplay* InitializeGLOneOffPlatform(gl::GpuPreference gpu_preference) {
   }
   return nullptr;
 }
+#endif
 
 bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
