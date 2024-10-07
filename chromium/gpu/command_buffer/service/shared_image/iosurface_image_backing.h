@@ -141,10 +141,14 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   void WaitForDawnCommandsToBeScheduled(const wgpu::Device& device_to_exclude);
 #endif
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void AddEGLDisplayWithPendingCommands(gl::GLDisplayEGL* display);
+#endif
   void WaitForANGLECommandsToBeScheduled();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void ClearEGLDisplaysWithPendingCommands(
       gl::GLDisplayEGL* display_to_exclude);
+#endif
 
   std::unique_ptr<gfx::GpuFence> GetLastWriteGpuFence();
   void SetReleaseFence(gfx::GpuFenceHandle release_fence);

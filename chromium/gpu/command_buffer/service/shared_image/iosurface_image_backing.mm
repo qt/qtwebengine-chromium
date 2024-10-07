@@ -1405,23 +1405,34 @@ void IOSurfaceImageBacking::WaitForDawnCommandsToBeScheduled(
 }
 #endif  // BUILDFLAG(USE_DAWN)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void IOSurfaceImageBacking::AddEGLDisplayWithPendingCommands(
     gl::GLDisplayEGL* display) {
   egl_displays_pending_flush_.insert(display);
 }
+#endif
 
 void IOSurfaceImageBacking::WaitForANGLECommandsToBeScheduled() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (auto* display : std::move(egl_displays_pending_flush_)) {
     eglWaitUntilWorkScheduledANGLE(display->GetDisplay());
   }
+#else
+  gl::GLDisplayEGL* display = gl::GLDisplayEGL::GetDisplayForCurrentContext();
+  if (display) {
+    eglWaitUntilWorkScheduledANGLE(display->GetDisplay());
+  }
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void IOSurfaceImageBacking::ClearEGLDisplaysWithPendingCommands(
     gl::GLDisplayEGL* display_to_exclude) {
   if (std::move(egl_displays_pending_flush_).contains(display_to_exclude)) {
     egl_displays_pending_flush_.insert(display_to_exclude);
   }
 }
+#endif
 
 #if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnImageRepresentation> IOSurfaceImageBacking::ProduceDawn(
@@ -1738,8 +1749,9 @@ bool IOSurfaceImageBacking::IOSurfaceBackingEGLStateBeginAccess(
   // Note that we don't need to call WaitForANGLECommandsToBeScheduled for other
   // EGLDisplays because it is already done when the previous GL context is made
   // uncurrent. We can simply remove the other EGLDisplays from the list.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ClearEGLDisplaysWithPendingCommands(/*display_to_exclude=*/display);
-
+#endif
   if (gl::GetANGLEImplementation() == gl::ANGLEImplementation::kMetal) {
     // If this image could potentially be shared with another Metal device,
     // it's necessary to synchronize between the two devices. If any Metal
@@ -1857,7 +1869,11 @@ void IOSurfaceImageBacking::IOSurfaceBackingEGLStateEndAccess(
   // IOSurface synchronization by the kernel e.g. using waitUntilScheduled on
   // Metal or glFlush on OpenGL. Defer the call until CoreAnimation, Dawn,
   // or another ANGLE EGLDisplay needs to access to avoid unnecessary overhead.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AddEGLDisplayWithPendingCommands(display);
+#else
+  eglWaitUntilWorkScheduledANGLE(display->GetDisplay());
+#endif
 
   // When SwANGLE is used as the GL implementation, it holds an internal
   // texture. We have to call ReleaseTexImage here to trigger a copy from that
