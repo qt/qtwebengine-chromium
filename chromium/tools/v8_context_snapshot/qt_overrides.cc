@@ -6,11 +6,6 @@
 #include "gpu/vulkan/buildflags.h"
 #include "ui/base/ozone_buildflags.h"
 
-#if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
-#include "ui/gl/gl_export.h"
-#include "ui/gl/gl_surface_glx.h"
-#endif
-
 #include "ui/base/dragdrop/os_exchange_data_provider_factory.h"
 #include "ui/base/pointer/pointer_device.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -23,27 +18,6 @@
 void* GetQtXDisplay() {
   return nullptr;
 }
-
-namespace gl {
-bool GLSurfaceGLX::IsCreateContextRobustnessSupported() {
-  return false;
-}
-bool GLSurfaceGLX::IsRobustnessVideoMemoryPurgeSupported() {
-  return false;
-}
-bool GLSurfaceGLX::IsCreateContextProfileSupported() {
-  return false;
-}
-bool GLSurfaceGLX::IsCreateContextES2ProfileSupported() {
-  return false;
-}
-bool GLSurfaceGLX::IsCreateContextSupported() {
-  return false;
-}
-bool GLSurfaceGLX::InitializeExtensionSettingsOneOff() {
-  return false;
-}
-} // namespace gl
 #endif  // if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
 
 namespace ui {
