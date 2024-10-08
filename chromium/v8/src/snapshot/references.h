@@ -37,7 +37,7 @@ constexpr bool IsPreAllocatedSpace(SnapshotSpace space) {
 
 class SerializerReference {
  private:
-  enum SpecialValueType {
+  enum SpecialValueType : uint8_t {
     kInvalidValue,
     kAttachedReference,
     kOffHeapBackingStore,

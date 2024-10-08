@@ -65,7 +65,7 @@ using WasmName = Vector<const char>;
 class CodeEventListener {
  public:
 #define DECLARE_ENUM(enum_item, _) enum_item,
-  enum LogEventsAndTags {
+  enum LogEventsAndTags : uint8_t {
     LOG_EVENTS_AND_TAGS_LIST(DECLARE_ENUM) NUMBER_OF_LOG_EVENTS
   };
 #undef DECLARE_ENUM
