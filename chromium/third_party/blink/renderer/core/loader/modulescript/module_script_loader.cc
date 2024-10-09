@@ -116,11 +116,19 @@ void ModuleScriptLoader::FetchInternal(
   url_ = module_request.Url();
 #endif
 
+  DOMWrapperWorld& request_world = modulator_->GetScriptState()->World();
+
+  // Prevents web service workers from intercepting isolated world dynamic
+  // script imports requests and responding with different contents.
+  // TODO(crbug.com/1296102): Link to documentation that describes the criteria
+  // where module imports are handled by service worker fetch handler.
+  resource_request.SetSkipServiceWorker(request_world.IsIsolatedWorld());
+
   // <spec step="5">... destination is destination, ...</spec>
   resource_request.SetRequestContext(module_request.ContextType());
   resource_request.SetRequestDestination(module_request.Destination());
 
-  ResourceLoaderOptions options(&modulator_->GetScriptState()->World());
+  ResourceLoaderOptions options(&request_world);
 
   // <spec step="7">Set up the module script request given request and
   // options.</spec>
