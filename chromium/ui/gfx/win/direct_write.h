@@ -8,6 +8,7 @@
 #include <dwrite.h>
 
 #include <optional>
+#include <string>
 #include <string_view>
 
 #include "ui/gfx/gfx_export.h"
