@@ -1,6 +1,21 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::codecs::Decoder;
 use crate::decoder::Category;
 use crate::image::Image;
+use crate::image::YuvRange;
 use crate::internal_utils::pixels::*;
 use crate::*;
 
@@ -182,7 +197,8 @@ impl Decoder for Dav1d {
                 image.row_bytes[3] = dav1d_picture.stride[0] as u32;
                 image.image_owns_planes[3] = false;
                 let seq_hdr = unsafe { &(*dav1d_picture.seq_hdr) };
-                image.full_range = seq_hdr.color_range != 0;
+                image.yuv_range =
+                    if seq_hdr.color_range == 0 { YuvRange::Limited } else { YuvRange::Full };
             }
             _ => {
                 image.width = dav1d_picture.p.w as u32;
@@ -190,14 +206,15 @@ impl Decoder for Dav1d {
                 image.depth = dav1d_picture.p.bpc as u8;
 
                 image.yuv_format = match dav1d_picture.p.layout {
-                    0 => PixelFormat::Monochrome,
+                    0 => PixelFormat::Yuv400,
                     1 => PixelFormat::Yuv420,
                     2 => PixelFormat::Yuv422,
                     3 => PixelFormat::Yuv444,
                     _ => return Err(AvifError::UnknownError("".into())), // not reached.
                 };
                 let seq_hdr = unsafe { &(*dav1d_picture.seq_hdr) };
-                image.full_range = seq_hdr.color_range != 0;
+                image.yuv_range =
+                    if seq_hdr.color_range == 0 { YuvRange::Limited } else { YuvRange::Full };
                 image.chroma_sample_position = (seq_hdr.chr as u32).into();
 
                 image.color_primaries = (seq_hdr.pri as u16).into();
@@ -212,6 +229,10 @@ impl Decoder for Dav1d {
                     let stride_index = if plane == 0 { 0 } else { 1 };
                     image.row_bytes[plane] = dav1d_picture.stride[stride_index] as u32;
                     image.image_owns_planes[plane] = false;
+                }
+                if image.yuv_format == PixelFormat::Yuv400 {
+                    // Clear left over chroma planes from previous frames.
+                    image.clear_chroma_planes();
                 }
             }
         }

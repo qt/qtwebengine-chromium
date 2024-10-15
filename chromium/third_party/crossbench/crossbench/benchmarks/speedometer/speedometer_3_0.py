@@ -9,18 +9,21 @@ import datetime as dt
 import enum
 import logging
 from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    Type, Union)
+                    Type, Union, cast)
 
 from crossbench import cli_helper, compat, helper
+from crossbench.benchmarks.speedometer.speedometer import (
+    ProbeClsTupleT, SpeedometerBenchmark, SpeedometerBenchmarkStoryFilter,
+    SpeedometerProbe, SpeedometerStory)
 from crossbench.browsers import viewport as vp
+from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
+  from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.runner.run import Run
   ShuffleSeedT = Optional[Union[str, int]]
-
-from .speedometer import (ProbeClsTupleT, SpeedometerBenchmark,
-                          SpeedometerBenchmarkStoryFilter, SpeedometerProbe,
-                          SpeedometerStory)
+  from crossbench.runner.actions import Actions
+  from crossbench.types import JSON
 
 
 class Speedometer30Probe(SpeedometerProbe):
@@ -29,6 +32,44 @@ class Speedometer30Probe(SpeedometerProbe):
   Extracts all speedometer times and scores.
   """
   NAME: str = "speedometer_3.0"
+  JS: str = "return window.benchmarkClient.metrics"
+
+  @property
+  def speedometer(self) -> Speedometer30Benchmark:
+    return cast(Speedometer30Benchmark, self.benchmark)
+
+  def to_json(self, actions: Actions) -> JSON:
+    return actions.js(self.JS)
+
+  def process_json_data(self, json_data) -> Any:
+    # Move aggregate scores to the end
+    aggregate_keys = []
+    for metric_key in json_data.keys():
+      if metric_key.startswith("Iteration-"):
+        aggregate_keys.append(metric_key)
+    aggregate_keys.extend(["Geomean", "Score"])
+    for metric_key in aggregate_keys:
+      json_data[metric_key] = json_data.pop(metric_key)
+    return json_data
+
+  def flatten_json_data(self, json_data: Any) -> JSON:
+    result: Dict[str, float] = dict()
+    assert isinstance(json_data, dict), f"Expected dict, got {type(json_data)}"
+    for name, metric in json_data.items():
+      result[name] = metric["mean"]
+    return result
+
+  def _valid_metric_key(self, metric_key: str) -> bool:
+    parts = metric_key.split("/")
+    if len(parts) != 1:
+      return False
+    if self.speedometer.detailed_metrics:
+      return True
+    if metric_key.startswith("Iteration-"):
+      return False
+    if metric_key == "Geomean":
+      return False
+    return True
 
 
 @enum.unique
@@ -194,9 +235,8 @@ SPEEDOMETER_3_STORY_DATA = {
 class Speedometer30Story(SpeedometerStory):
   __doc__ = SpeedometerStory.__doc__
   NAME: str = "speedometer_3.0"
-  PROBES: ProbeClsTupleT = (Speedometer30Probe,)
-  # TODO: Update once public version is available
-  URL: str = "https://sp3-alpha-testing.netlify.app/"
+  URL: str = "https://chromium-workloads.web.app/speedometer/v3.0/"
+  URL_OFFICIAL: str = "https://browserbench.org/Speedometer3.0/"
   URL_LOCAL: str = "http://127.0.0.1:7000"
   SUBSTORIES: Tuple[str, ...] = tuple(SPEEDOMETER_3_STORY_DATA.keys())
 
@@ -372,6 +412,7 @@ class Speedometer30Benchmark(SpeedometerBenchmark):
   NAME: str = "speedometer_3.0"
   DEFAULT_STORY_CLS = Speedometer30Story
   STORY_FILTER_CLS = Speedometer3BenchmarkStoryFilter
+  PROBES: ProbeClsTupleT = (Speedometer30Probe,)
 
   @classmethod
   def version(cls) -> Tuple[int, ...]:
@@ -380,3 +421,32 @@ class Speedometer30Benchmark(SpeedometerBenchmark):
   @classmethod
   def aliases(cls) -> Tuple[str, ...]:
     return ("sp3", "speedometer_3") + super().aliases()
+
+  @classmethod
+  def add_cli_parser(
+      cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
+  ) -> CrossBenchArgumentParser:
+    parser = super().add_cli_parser(subparsers, aliases)
+    parser.add_argument(
+        "--detailed-metrics",
+        default=False,
+        action="store_true",
+        help="Report more detailed internal metrics.")
+    return parser
+
+  @classmethod
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+    kwargs = super().kwargs_from_cli(args)
+    kwargs["detailed_metrics"] = args.detailed_metrics
+    return kwargs
+
+  def __init__(self,
+               stories: Sequence[Story],
+               custom_url: Optional[str] = None,
+               detailed_metrics: bool = False):
+    self._detailed_metrics = detailed_metrics
+    super().__init__(stories, custom_url)
+
+  @property
+  def detailed_metrics(self) -> bool:
+    return self._detailed_metrics

@@ -5,31 +5,33 @@
 from __future__ import annotations
 
 import logging
-import pathlib
 from typing import TYPE_CHECKING, Optional
 
 from crossbench import compat
+from crossbench import path as pth
+from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.browser import Browser
 
 if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.splash_screen import SplashScreen
   from crossbench.browsers.viewport import Viewport
-  from crossbench.flags import Flags
+  from crossbench.flags.base import Flags
   from crossbench.network.base import Network
   from crossbench.runner.runner import Runner
 
 
-SAFARIDRIVER_PATH = pathlib.Path("/usr/bin/safaridriver")
+SAFARIDRIVER_PATH = pth.RemotePath("/usr/bin/safaridriver")
 
 
-def find_safaridriver(bin_path: pathlib.Path) -> pathlib.Path:
-  assert bin_path.is_file(), f"Invalid binary path: {bin_path}"
+def find_safaridriver(bin_path: pth.RemotePath,
+                      platform: plt.Platform) -> pth.RemotePath:
+  assert platform.is_file(bin_path), f"Invalid binary path: {bin_path}"
   driver_path = bin_path.parent / "safaridriver"
-  if driver_path.exists():
+  if platform.exists(driver_path):
     return driver_path
   # The system-default Safari version doesn't come with the driver
-  assert compat.is_relative_to(bin_path, Safari.default_path()), (
+  assert compat.is_relative_to(bin_path, Safari.default_path(platform)), (
       f"Expected default Safari.app binary but got {bin_path}")
   return SAFARIDRIVER_PATH
 
@@ -37,32 +39,29 @@ def find_safaridriver(bin_path: pathlib.Path) -> pathlib.Path:
 class Safari(Browser):
 
   @classmethod
-  def default_path(cls) -> pathlib.Path:
-    return pathlib.Path("/Applications/Safari.app")
+  def default_path(cls, platform: plt.Platform) -> pth.RemotePath:
+    return platform.path("/Applications/Safari.app")
 
   @classmethod
-  def technology_preview_path(cls) -> pathlib.Path:
-    return pathlib.Path("/Applications/Safari Technology Preview.app")
+  def technology_preview_path(cls, platform: plt.Platform) -> pth.RemotePath:
+    return platform.path("/Applications/Safari Technology Preview.app")
 
-  def __init__(
-      self,
-      label: str,
-      path: pathlib.Path,
-      flags: Optional[Flags.InitialDataType] = None,
-      js_flags: Optional[Flags.InitialDataType] = None,
-      cache_dir: Optional[pathlib.Path] = None,
-      type: str = "safari",  # pylint: disable=redefined-builtin
-      network: Optional[Network] = None,
-      driver_path: Optional[pathlib.Path] = None,
-      viewport: Optional[Viewport] = None,
-      splash_screen: Optional[SplashScreen] = None,
-      platform: Optional[plt.MacOSPlatform] = None):
+  def __init__(self,
+               label: str,
+               path: pth.RemotePath,
+               flags: Optional[Flags.InitialDataType] = None,
+               js_flags: Optional[Flags.InitialDataType] = None,
+               cache_dir: Optional[pth.RemotePath] = None,
+               network: Optional[Network] = None,
+               driver_path: Optional[pth.RemotePath] = None,
+               viewport: Optional[Viewport] = None,
+               splash_screen: Optional[SplashScreen] = None,
+               platform: Optional[plt.MacOSPlatform] = None):
     super().__init__(
         label,
         path,
         flags,
         js_flags=None,
-        type=type,
         network=network,
         driver_path=driver_path,
         viewport=viewport,
@@ -73,9 +72,16 @@ class Safari(Browser):
     assert self.path
     self.bundle_name: str = self.path.stem.replace(" ", "")
     assert cache_dir is None, "Cannot set custom cache dir for Safari"
-    self.cache_dir = pathlib.Path(
-        f"~/Library/Containers/com.apple.{self.bundle_name}/Data/Library/Caches"
-    ).expanduser()
+    self.cache_dir = self.platform.home() / (
+        f"Library/Containers/com.apple.{self.bundle_name}/Data/Library/Caches")
+
+  @property
+  def type_name(self) -> str:
+    return "safari"
+
+  @property
+  def attributes(self) -> BrowserAttributes:
+    return BrowserAttributes.SAFARI
 
   def clear_cache(self, runner: Runner) -> None:
     self._clear_cache()
@@ -90,7 +96,9 @@ class Safari(Browser):
 
   def _extract_version(self) -> str:
     # Use the shipped safaridriver to get the more detailed version
-    driver_version = self.platform.app_version(find_safaridriver(self.path))
+    # TODO: support remote platform
+    driver_version = self.platform.app_version(
+        find_safaridriver(self.path, self.platform))
     # Input: "Included with Safari 16.6 (18615.3.6.11.1)"
     # Output: " (18615.3.6.11.1)"
     driver_version = " (" + driver_version.split(" (", maxsplit=1)[1]

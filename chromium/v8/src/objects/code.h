@@ -130,6 +130,7 @@ class Code : public ExposedTrustedObject {
   // out how to obtain the parameter count during code generation when no
   // BytecodeArray is available from which it can be copied.
   DECL_PRIMITIVE_ACCESSORS(parameter_count, uint16_t)
+  inline uint16_t parameter_count_without_receiver() const;
   DECL_PRIMITIVE_ACCESSORS(wasm_js_tagged_parameter_count, uint16_t)
   DECL_PRIMITIVE_ACCESSORS(wasm_js_first_tagged_parameter, uint16_t)
 
@@ -218,6 +219,8 @@ class Code : public ExposedTrustedObject {
 
   inline Tagged<TrustedByteArray> SourcePositionTable(
       Isolate* isolate, Tagged<SharedFunctionInfo> sfi) const;
+  int SourcePosition(int offset) const;
+  int SourceStatementPosition(int offset) const;
 
   inline Address safepoint_table_address() const;
   inline int safepoint_table_size() const;
@@ -342,7 +345,6 @@ class Code : public ExposedTrustedObject {
                  Address current_pc = kNullAddress);
 #endif
 
-  DECL_CAST(Code)
   DECL_VERIFIER(Code)
 
 // Layout description.
@@ -484,8 +486,6 @@ class Code : public ExposedTrustedObject {
 // (checked) casts do not work on GcSafeCode.
 class GcSafeCode : public HeapObject {
  public:
-  DECL_CAST(GcSafeCode)
-
   // Use with care, this casts away knowledge that we're dealing with a
   // special-semantics object.
   inline Tagged<Code> UnsafeCastToCode() const;
@@ -531,7 +531,6 @@ class CodeWrapper : public Struct {
  public:
   DECL_CODE_POINTER_ACCESSORS(code)
 
-  DECL_CAST(CodeWrapper)
   DECL_PRINTER(CodeWrapper)
   DECL_VERIFIER(CodeWrapper)
 

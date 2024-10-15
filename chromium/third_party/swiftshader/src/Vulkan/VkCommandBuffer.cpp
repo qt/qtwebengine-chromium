@@ -844,7 +844,7 @@ public:
 	CmdSetViewportWithCount(uint32_t viewportCount, const VkViewport *pViewports)
 	    : viewportCount(viewportCount)
 	{
-		memcpy(&(viewports[0]), pViewports, viewportCount * sizeof(VkRect2D));
+		memcpy(viewports, pViewports, sizeof(VkViewport) * viewportCount);
 	}
 
 	void execute(vk::CommandBuffer::ExecutionState &executionState) override
@@ -860,7 +860,7 @@ public:
 
 private:
 	const uint32_t viewportCount;
-	VkRect2D viewports[vk::MAX_VIEWPORTS];
+	VkViewport viewports[vk::MAX_VIEWPORTS];
 };
 
 class CmdSetRasterizerDiscardEnable : public vk::CommandBuffer::Command
@@ -1787,8 +1787,15 @@ void DynamicRendering::getAttachments(Attachments *attachments) const
 {
 	for(uint32_t i = 0; i < sw::MAX_COLOR_BUFFERS; ++i)
 	{
-		attachments->colorBuffer[i] =
-		    (i < colorAttachmentCount) ? vk::Cast(colorAttachments[i].imageView) : nullptr;
+		attachments->colorBuffer[i] = nullptr;
+	}
+	for(uint32_t i = 0; i < sw::MAX_COLOR_BUFFERS; ++i)
+	{
+		const uint32_t location = attachments->indexToLocation[i];
+		if(i < colorAttachmentCount && location != VK_ATTACHMENT_UNUSED)
+		{
+			attachments->colorBuffer[location] = vk::Cast(colorAttachments[i].imageView);
+		}
 	}
 	attachments->depthBuffer = vk::Cast(depthAttachment.imageView);
 	attachments->stencilBuffer = vk::Cast(stencilAttachment.imageView);

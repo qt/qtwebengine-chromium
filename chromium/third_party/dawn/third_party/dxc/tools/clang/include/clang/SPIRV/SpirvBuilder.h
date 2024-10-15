@@ -238,17 +238,10 @@ public:
 
   /// \brief Creates an operation with the given OpGroupNonUniform* SPIR-V
   /// opcode.
-  SpirvNonUniformElect *createGroupNonUniformElect(spv::Op op,
-                                                   QualType resultType,
-                                                   spv::Scope execScope,
-                                                   SourceLocation);
-  SpirvNonUniformUnaryOp *createGroupNonUniformUnaryOp(
-      SourceLocation, spv::Op op, QualType resultType, spv::Scope execScope,
-      SpirvInstruction *operand,
-      llvm::Optional<spv::GroupOperation> groupOp = llvm::None);
-  SpirvNonUniformBinaryOp *createGroupNonUniformBinaryOp(
+  SpirvGroupNonUniformOp *createGroupNonUniformOp(
       spv::Op op, QualType resultType, spv::Scope execScope,
-      SpirvInstruction *operand1, SpirvInstruction *operand2, SourceLocation);
+      llvm::ArrayRef<SpirvInstruction *> operands, SourceLocation,
+      llvm::Optional<spv::GroupOperation> groupOp = llvm::None);
 
   /// \brief Creates an atomic instruction with the given parameters and returns
   /// its pointer.
@@ -755,6 +748,7 @@ public:
                        llvm::ArrayRef<SpirvConstant *> constituents,
                        bool specConst = false);
   SpirvConstant *getConstantNull(QualType);
+  SpirvUndef *getUndef(QualType);
 
   SpirvString *createString(llvm::StringRef str);
   SpirvString *getString(llvm::StringRef str);
@@ -770,12 +764,7 @@ public:
                                         SpirvInstruction *v);
   SpirvInstruction *getPerVertexStgInput(SpirvInstruction *k);
 
-public:
   std::vector<uint32_t> takeModule();
-
-protected:
-  /// Only friend classes are allowed to add capability/extension to the module
-  /// under construction.
 
   /// \brief Adds the given capability to the module under construction due to
   /// the feature used at the given source location.

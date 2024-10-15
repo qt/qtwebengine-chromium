@@ -8,11 +8,10 @@ import abc
 import datetime as dt
 import json
 import logging
-import pathlib
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Type
 
-from crossbench.benchmarks.base import PressBenchmark
+from crossbench.benchmarks.base import BenchmarkProbeMixin, PressBenchmark
 from crossbench.probes import metric as cb_metric
 from crossbench.probes.json import JsonResultProbe
 from crossbench.probes.results import ProbeResult, ProbeResultDict
@@ -21,15 +20,16 @@ from crossbench.stories.press_benchmark import PressBenchmarkStory
 if TYPE_CHECKING:
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
+  from crossbench.path import LocalPath
   from crossbench.runner.run import Run
 
 
-class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
+class JetStream2Probe(
+    BenchmarkProbeMixin, JsonResultProbe, metaclass=abc.ABCMeta):
   """
   JetStream2-specific Probe.
   Extracts all JetStream2 times and scores.
   """
-  IS_GENERAL_PURPOSE: bool = False
   FLATTEN: bool = False
   JS: str = """
   let results = Object.create(null);
@@ -91,7 +91,7 @@ class JetStream2Probe(JsonResultProbe, metaclass=abc.ABCMeta):
                   single_result: bool) -> None:
     if self not in result_dict:
       return
-    results_json: pathlib.Path = result_dict[self].json
+    results_json: LocalPath = result_dict[self].json
     logging.info("-" * 80)
     logging.critical("JetStream results:")
     if not single_result:

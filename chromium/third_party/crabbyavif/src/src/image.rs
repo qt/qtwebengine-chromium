@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::decoder::tile::TileInfo;
 use crate::decoder::Category;
 use crate::decoder::ProgressiveState;
@@ -43,6 +57,15 @@ pub const YUV_PLANES: [Plane; 3] = [Plane::Y, Plane::U, Plane::V];
 pub const A_PLANE: [Plane; 1] = [Plane::A];
 pub const ALL_PLANES: [Plane; MAX_PLANE_COUNT] = [Plane::Y, Plane::U, Plane::V, Plane::A];
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+// VideoFullRangeFlag as specified in ISO/IEC 23091-2/ITU-T H.273.
+pub enum YuvRange {
+    Limited = 0,
+    #[default]
+    Full = 1,
+}
+
 #[derive(Default)]
 pub struct Image {
     pub width: u32,
@@ -50,7 +73,7 @@ pub struct Image {
     pub depth: u8,
 
     pub yuv_format: PixelFormat,
-    pub full_range: bool, // VideoFullRangeFlag as specified in ISO/IEC 23091-2/ITU-T H.273.
+    pub yuv_range: YuvRange,
     pub chroma_sample_position: ChromaSamplePosition,
 
     pub alpha_present: bool,
@@ -98,7 +121,11 @@ impl Image {
     }
 
     pub fn max_channel(&self) -> u16 {
-        ((1i32 << self.depth) - 1) as u16
+        if !self.depth_valid() {
+            0
+        } else {
+            ((1i32 << self.depth) - 1) as u16
+        }
     }
 
     pub fn max_channel_f(&self) -> f32 {
@@ -127,7 +154,7 @@ impl Image {
             Plane::U | Plane::V => match self.yuv_format {
                 PixelFormat::Yuv444 => self.width as usize,
                 PixelFormat::Yuv420 | PixelFormat::Yuv422 => (self.width as usize + 1) / 2,
-                PixelFormat::Monochrome => 0,
+                PixelFormat::None | PixelFormat::Yuv400 => 0,
             },
         }
     }
@@ -138,7 +165,7 @@ impl Image {
             Plane::U | Plane::V => match self.yuv_format {
                 PixelFormat::Yuv444 | PixelFormat::Yuv422 => self.height as usize,
                 PixelFormat::Yuv420 => (self.height as usize + 1) / 2,
-                PixelFormat::Monochrome => 0,
+                PixelFormat::None | PixelFormat::Yuv400 => 0,
             },
         }
     }
@@ -157,7 +184,7 @@ impl Image {
 
     pub fn row(&self, plane: Plane, row: u32) -> AvifResult<&[u8]> {
         let plane_data = self.plane_data(plane).ok_or(AvifError::NoContent)?;
-        let start = row * plane_data.row_bytes;
+        let start = checked_mul!(row, plane_data.row_bytes)?;
         self.planes[plane.to_usize()]
             .unwrap_ref()
             .slice(start, plane_data.row_bytes)
@@ -166,7 +193,7 @@ impl Image {
     pub fn row_mut(&mut self, plane: Plane, row: u32) -> AvifResult<&mut [u8]> {
         let plane_data = self.plane_data(plane).ok_or(AvifError::NoContent)?;
         let row_bytes = plane_data.row_bytes;
-        let start = row * row_bytes;
+        let start = checked_mul!(row, row_bytes)?;
         self.planes[plane.to_usize()]
             .unwrap_mut()
             .slice_mut(start, row_bytes)
@@ -175,7 +202,7 @@ impl Image {
     pub fn row16(&self, plane: Plane, row: u32) -> AvifResult<&[u16]> {
         let plane_data = self.plane_data(plane).ok_or(AvifError::NoContent)?;
         let row_bytes = plane_data.row_bytes / 2;
-        let start = row * row_bytes;
+        let start = checked_mul!(row, row_bytes)?;
         self.planes[plane.to_usize()]
             .unwrap_ref()
             .slice16(start, row_bytes)
@@ -184,7 +211,7 @@ impl Image {
     pub fn row16_mut(&mut self, plane: Plane, row: u32) -> AvifResult<&mut [u16]> {
         let plane_data = self.plane_data(plane).ok_or(AvifError::NoContent)?;
         let row_bytes = plane_data.row_bytes / 2;
-        let start = row * row_bytes;
+        let start = checked_mul!(row, row_bytes)?;
         self.planes[plane.to_usize()]
             .unwrap_mut()
             .slice16_mut(start, row_bytes)
@@ -198,15 +225,23 @@ impl Image {
         })
     }
 
+    pub fn clear_chroma_planes(&mut self) {
+        for plane in [Plane::U, Plane::V] {
+            let plane = plane.to_usize();
+            self.planes[plane] = None;
+            self.row_bytes[plane] = 0;
+            self.image_owns_planes[plane] = false;
+        }
+    }
+
     pub fn allocate_planes(&mut self, category: Category) -> AvifResult<()> {
         let pixel_size: usize = if self.depth == 8 { 1 } else { 2 };
         for plane in category.planes() {
             let plane = *plane;
             let plane_index = plane.to_usize();
             let width = self.width(plane);
-            let plane_size = width * self.height(plane);
-            let default_value =
-                if plane == Plane::A { ((1i32 << self.depth) - 1) as u16 } else { 0 };
+            let plane_size = checked_mul!(width, self.height(plane))?;
+            let default_value = if plane == Plane::A { self.max_channel() } else { 0 };
             if self.planes[plane_index].is_some()
                 && self.planes[plane_index].unwrap_ref().size() == plane_size
                 && (self.planes[plane_index].unwrap_ref().pixel_bit_size() == 0
@@ -222,7 +257,7 @@ impl Image {
             });
             let pixels = self.planes[plane_index].unwrap_mut();
             pixels.resize(plane_size, default_value)?;
-            self.row_bytes[plane_index] = u32_from_usize(width * pixel_size)?;
+            self.row_bytes[plane_index] = u32_from_usize(checked_mul!(width, pixel_size)?)?;
             self.image_owns_planes[plane_index] = true;
         }
         Ok(())
@@ -294,23 +329,27 @@ impl Image {
                 u64::from(src_plane.height)
             };
 
-            let dst_y_start = row_index * u64::from(src_plane.height);
-            let dst_x_offset = usize_from_u64(column_index * u64::from(src_plane.width))?;
+            let dst_y_start = checked_mul!(row_index, u64::from(src_plane.height))?;
+            let dst_x_offset =
+                usize_from_u64(checked_mul!(column_index, u64::from(src_plane.width))?)?;
+            let dst_x_offset_end = checked_add!(dst_x_offset, src_width_to_copy)?;
             // TODO: src_height_to_copy can just be u32?
             if self.depth == 8 {
                 for y in 0..src_height_to_copy {
                     let src_row = tile.row(plane, u32_from_u64(y)?)?;
                     let src_slice = &src_row[0..src_width_to_copy];
-                    let dst_row = self.row_mut(plane, u32_from_u64(dst_y_start + y)?)?;
-                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset + src_width_to_copy];
+                    let dst_row =
+                        self.row_mut(plane, u32_from_u64(checked_add!(dst_y_start, y)?)?)?;
+                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset_end];
                     dst_slice.copy_from_slice(src_slice);
                 }
             } else {
                 for y in 0..src_height_to_copy {
                     let src_row = tile.row16(plane, u32_from_u64(y)?)?;
                     let src_slice = &src_row[0..src_width_to_copy];
-                    let dst_row = self.row16_mut(plane, u32_from_u64(dst_y_start + y)?)?;
-                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset + src_width_to_copy];
+                    let dst_row =
+                        self.row16_mut(plane, u32_from_u64(checked_add!(dst_y_start, y)?)?)?;
+                    let dst_slice = &mut dst_row[dst_x_offset..dst_x_offset_end];
                     dst_slice.copy_from_slice(src_slice);
                 }
             }

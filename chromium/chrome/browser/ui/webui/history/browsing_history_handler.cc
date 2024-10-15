@@ -149,7 +149,7 @@ bool IsUrlInLocalDatabase(const BrowsingHistoryService::HistoryEntry& entry) {
     case BrowsingHistoryService::HistoryEntry::EntryType::COMBINED_ENTRY:
       return true;
   }
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return false;
 }
 
@@ -165,7 +165,7 @@ bool IsEntryInRemoteUserData(
     case BrowsingHistoryService::HistoryEntry::EntryType::COMBINED_ENTRY:
       return true;
   }
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return false;
 }
 
@@ -174,7 +174,8 @@ constexpr UrlIdentity::TypeSet allowed_types = {
     UrlIdentity::Type::kDefault, UrlIdentity::Type::kFile,
     UrlIdentity::Type::kIsolatedWebApp, UrlIdentity::Type::kChromeExtension};
 constexpr UrlIdentity::FormatOptions url_identity_options{
-    .default_options = {UrlIdentity::DefaultFormatOptions::kHostname}};
+    .default_options = {UrlIdentity::DefaultFormatOptions::
+                            kOmitSchemePathAndTrivialSubdomains}};
 
 // Converts `entry` to a base::Value::Dict to be owned by the caller.
 base::Value::Dict HistoryEntryToValue(
@@ -310,7 +311,9 @@ void BrowsingHistoryHandler::OnJavascriptDisallowed() {
   initial_results_ = std::nullopt;
   deferred_callbacks_.clear();
   query_history_callback_id_.clear();
-  remove_visits_callback_.clear();
+  while (!remove_visits_callbacks_.empty()) {
+    remove_visits_callbacks_.pop();
+  }
 }
 
 void BrowsingHistoryHandler::RegisterMessages() {
@@ -389,7 +392,7 @@ void BrowsingHistoryHandler::HandleQueryHistory(const base::Value::List& args) {
 
   const base::Value& count = args[2];
   if (!count.is_int()) {
-    NOTREACHED() << "Failed to convert argument 2.";
+    NOTREACHED_IN_MIGRATION() << "Failed to convert argument 2.";
     return;
   }
 
@@ -441,8 +444,7 @@ void BrowsingHistoryHandler::HandleQueryHistoryContinuation(
 void BrowsingHistoryHandler::HandleRemoveVisits(const base::Value::List& args) {
   CHECK_EQ(args.size(), 2U);
   const base::Value& callback_id = args[0];
-  CHECK(remove_visits_callback_.empty());
-  remove_visits_callback_ = callback_id.GetString();
+  remove_visits_callbacks_.push(callback_id.GetString());
 
   std::vector<BrowsingHistoryService::HistoryEntry> items_to_remove;
   const base::Value& items = args[1];
@@ -451,7 +453,7 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::Value::List& args) {
   for (size_t i = 0; i < list.size(); ++i) {
     // Each argument is a dictionary with properties "url" and "timestamps".
     if (!list[i].is_dict()) {
-      NOTREACHED() << "Unable to extract arguments";
+      NOTREACHED_IN_MIGRATION() << "Unable to extract arguments";
       return;
     }
 
@@ -459,7 +461,7 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::Value::List& args) {
     const base::Value::List* timestamps_ptr =
         list[i].GetDict().FindList("timestamps");
     if (!url_ptr || !timestamps_ptr) {
-      NOTREACHED() << "Unable to extract arguments";
+      NOTREACHED_IN_MIGRATION() << "Unable to extract arguments";
       return;
     }
 
@@ -469,7 +471,7 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::Value::List& args) {
 
     for (const base::Value& timestamp : *timestamps_ptr) {
       if (!timestamp.is_double() && !timestamp.is_int()) {
-        NOTREACHED() << "Unable to extract visit timestamp.";
+        NOTREACHED_IN_MIGRATION() << "Unable to extract visit timestamp.";
         continue;
       }
 
@@ -555,16 +557,17 @@ void BrowsingHistoryHandler::OnQueryComplete(
 }
 
 void BrowsingHistoryHandler::OnRemoveVisitsComplete() {
-  CHECK(!remove_visits_callback_.empty());
-  ResolveJavascriptCallback(base::Value(remove_visits_callback_),
+  CHECK(!remove_visits_callbacks_.empty());
+  ResolveJavascriptCallback(base::Value(remove_visits_callbacks_.front()),
                             base::Value());
-  remove_visits_callback_.clear();
+  remove_visits_callbacks_.pop();
 }
 
 void BrowsingHistoryHandler::OnRemoveVisitsFailed() {
-  CHECK(!remove_visits_callback_.empty());
-  RejectJavascriptCallback(base::Value(remove_visits_callback_), base::Value());
-  remove_visits_callback_.clear();
+  CHECK(!remove_visits_callbacks_.empty());
+  RejectJavascriptCallback(base::Value(remove_visits_callbacks_.front()),
+                           base::Value());
+  remove_visits_callbacks_.pop();
 }
 
 void BrowsingHistoryHandler::HistoryDeleted() {

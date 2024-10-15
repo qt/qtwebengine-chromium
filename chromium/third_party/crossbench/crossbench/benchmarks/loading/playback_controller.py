@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import abc
 import argparse
 import datetime as dt
 import logging
@@ -12,7 +13,7 @@ from typing import Iterator
 from crossbench import cli_helper
 
 
-class PlaybackController:
+class PlaybackController(abc.ABC):
 
   @classmethod
   def parse(cls, value: str) -> PlaybackController:
@@ -25,26 +26,14 @@ class PlaybackController:
           f"Missing unit suffix: '{value}'\n"
           "Use 'x' for repetitions or time unit 's', 'm', 'h'")
     if value[-1] == "x":
-      try:
-        loops = int(value[:-1])
-      except ValueError as e:
-        raise argparse.ArgumentTypeError(
-            f"Repeat-count must be a valid int, {e}")
-      if loops <= 0:
-        raise argparse.ArgumentTypeError(
-            f"Repeat-count must be positive: {value}")
-      try:
-        return cls.repeat(loops)
-      except ValueError as e:
-        logging.debug("{%s}.repeat failed, falling back to timeout: %s", cls, e)
-    duration = dt.timedelta()
-    try:
-      duration = cli_helper.Duration.parse_zero(value)
-    except argparse.ArgumentTypeError as e:
-      raise argparse.ArgumentTypeError(f"Invalid cycle argument: {e}") from e
-    if duration.total_seconds() == 0:
-      return cls.forever()
+      loops = cli_helper.parse_positive_int(value[:-1], "Repeat-count")
+      return cls.repeat(loops)
+    duration = cli_helper.Duration.parse_non_zero(value)
     return cls.timeout(duration)
+
+  @classmethod
+  def default(cls):
+    return cls.once()
 
   @classmethod
   def once(cls) -> RepeatPlaybackController:
@@ -56,11 +45,18 @@ class PlaybackController:
 
   @classmethod
   def forever(cls) -> PlaybackController:
-    return PlaybackController()
+    return ForeverPlaybackController()
 
   @classmethod
   def timeout(cls, duration: dt.timedelta) -> TimeoutPlaybackController:
     return TimeoutPlaybackController(duration)
+
+  @abc.abstractmethod
+  def __iter__(self) -> Iterator[None]:
+    pass
+
+
+class ForeverPlaybackController(PlaybackController):
 
   def __iter__(self) -> Iterator[None]:
     while True:
@@ -70,7 +66,6 @@ class PlaybackController:
 class TimeoutPlaybackController(PlaybackController):
 
   def __init__(self, duration: dt.timedelta) -> None:
-    # TODO: support --time-unit
     self._duration = duration
 
   @property
@@ -79,15 +74,16 @@ class TimeoutPlaybackController(PlaybackController):
 
   def __iter__(self) -> Iterator[None]:
     end = dt.datetime.now() + self.duration
-    while dt.datetime.now() <= end:
+    while True:
       yield None
+      if dt.datetime.now() > end:
+        return
 
 
 class RepeatPlaybackController(PlaybackController):
 
   def __init__(self, count: int) -> None:
-    assert count > 0, f"Invalid page playback count: {count}"
-    self._count = count
+    self._count = cli_helper.parse_positive_int(count, " page playback count")
 
   def __iter__(self) -> Iterator[None]:
     for _ in range(self._count):

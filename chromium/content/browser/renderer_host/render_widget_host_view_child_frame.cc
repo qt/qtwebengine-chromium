@@ -11,8 +11,11 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "components/input/cursor_manager.h"
+#include "components/input/render_widget_host_input_event_router.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/surfaces/parent_local_surface_id_allocator.h"
@@ -21,14 +24,13 @@
 #include "content/browser/compositor/surface_utils.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/cross_process_frame_connector.h"
-#include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_input_event_router.h"
 #include "content/browser/renderer_host/render_widget_host_view_event_handler.h"
 #include "content/browser/renderer_host/text_input_manager.h"
+#include "content/common/features.h"
 #include "content/common/input/synthetic_gesture_target.h"
 #include "content/public/browser/render_process_host.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
@@ -154,7 +156,7 @@ void RenderWidgetHostViewChildFrame::UpdateIntrinsicSizingInfo(
 std::unique_ptr<SyntheticGestureTarget>
 RenderWidgetHostViewChildFrame::CreateSyntheticGestureTarget() {
   // Sythetic gestures should be sent to the root view.
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return nullptr;
 }
 
@@ -168,7 +170,7 @@ void RenderWidgetHostViewChildFrame::OnManagerWillDestroy(
 }
 
 void RenderWidgetHostViewChildFrame::InitAsChild(gfx::NativeView parent_view) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::SetSize(const gfx::Size& size) {
@@ -184,14 +186,21 @@ void RenderWidgetHostViewChildFrame::SetBounds(const gfx::Rect& rect) {
 }
 
 void RenderWidgetHostViewChildFrame::Focus() {
-  if (frame_connector_ && !frame_connector_->HasFocus())
+  if (!frame_connector_) {
+    return;
+  }
+  if (frame_connector_->HasFocus() ==
+      CrossProcessFrameConnector::RootViewFocusState::kNotFocused) {
     return frame_connector_->FocusRootView();
+  }
 }
 
 bool RenderWidgetHostViewChildFrame::HasFocus() {
-  if (frame_connector_)
-    return frame_connector_->HasFocus();
-  return false;
+  if (!frame_connector_) {
+    return false;
+  }
+  return frame_connector_->HasFocus() ==
+         CrossProcessFrameConnector::RootViewFocusState::kFocused;
 }
 
 bool RenderWidgetHostViewChildFrame::IsSurfaceAvailableForCopy() {
@@ -299,7 +308,7 @@ gfx::NativeView RenderWidgetHostViewChildFrame::GetNativeView() {
 
 gfx::NativeViewAccessible
 RenderWidgetHostViewChildFrame::GetNativeViewAccessible() {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return nullptr;
 }
 
@@ -327,29 +336,29 @@ void RenderWidgetHostViewChildFrame::UpdateBackgroundColor() {
 
 std::optional<DisplayFeature>
 RenderWidgetHostViewChildFrame::GetDisplayFeature() {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return std::nullopt;
 }
 
 void RenderWidgetHostViewChildFrame::SetDisplayFeatureForTesting(
     const DisplayFeature*) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::NotifyHostAndDelegateOnWasShown(
     blink::mojom::RecordContentToVisibleTimeRequestPtr) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::
     RequestSuccessfulPresentationTimeFromHostOrDelegate(
         blink::mojom::RecordContentToVisibleTimeRequestPtr) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::
     CancelSuccessfulPresentationTimeRequestForHostAndDelegate() {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 gfx::Size RenderWidgetHostViewChildFrame::GetCompositorViewportPixelSize() {
@@ -367,7 +376,7 @@ void RenderWidgetHostViewChildFrame::InitAsPopup(
     RenderWidgetHostView* parent_host_view,
     const gfx::Rect& bounds,
     const gfx::Rect& anchor_rect) {
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::UpdateCursor(const ui::Cursor& cursor) {
@@ -499,7 +508,6 @@ void RenderWidgetHostViewChildFrame::UpdateViewportIntersection(
     // Do not send |visual_properties| to main frames.
     DCHECK(!visual_properties.has_value() || !host()->owner_delegate());
 
-    // TODO(crbug.com/40731581): Also propagate this for portals.
     bool is_fenced_frame = host()->frame_tree()->is_fenced_frame();
     if (!host()->owner_delegate() || is_fenced_frame) {
       host()->GetAssociatedFrameWidget()->SetViewportIntersection(
@@ -547,7 +555,11 @@ void RenderWidgetHostViewChildFrame::StopFlingingIfNecessary(
 
 void RenderWidgetHostViewChildFrame::GestureEventAck(
     const blink::WebGestureEvent& event,
+    blink::mojom::InputEventResultSource ack_source,
     blink::mojom::InputEventResultState ack_result) {
+  TRACE_EVENT1("input", "RenderWidgetHostViewChildFrame::GestureEventAck",
+               "type", blink::WebInputEvent::GetName(event.GetType()));
+
   // Stop flinging if a GSU event with momentum phase is sent to the renderer
   // but not consumed.
   StopFlingingIfNecessary(event, ack_result);
@@ -558,39 +570,53 @@ void RenderWidgetHostViewChildFrame::GestureEventAck(
     return;
 
   if (event.IsTouchpadZoomEvent())
-    ProcessTouchpadZoomEventAckInRoot(event, ack_result);
+    ProcessTouchpadZoomEventAckInRoot(event, ack_source, ack_result);
 
   // GestureScrollBegin is a blocking event; It is forwarded for bubbling if
   // its ack is not consumed. For the rest of the scroll events
   // (GestureScrollUpdate, GestureScrollEnd) are bubbled if the
-  // GestureScrollBegin was bubbled.
-  if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollBegin) {
-    DCHECK(!is_scroll_sequence_bubbling_);
-    is_scroll_sequence_bubbling_ =
-        ack_result == blink::mojom::InputEventResultState::kNotConsumed ||
-        ack_result == blink::mojom::InputEventResultState::kNoConsumerExists;
-  }
+  // GestureScrollBegin was bubbled. If the browser consumed the event, the
+  // event was filtered and shouldn't affect the state of scroll bubbling.
+  bool event_filtered =
+      ack_source == blink::mojom::InputEventResultSource::kBrowser &&
+      ack_result == blink::mojom::InputEventResultState::kConsumed;
 
-  if (is_scroll_sequence_bubbling_ &&
-      (event.GetType() == blink::WebInputEvent::Type::kGestureScrollBegin ||
-       event.GetType() == blink::WebInputEvent::Type::kGestureScrollUpdate ||
-       event.GetType() == blink::WebInputEvent::Type::kGestureScrollEnd)) {
-    const bool can_continue = frame_connector_->BubbleScrollEvent(event);
-    if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollEnd ||
-        !can_continue) {
-      is_scroll_sequence_bubbling_ = false;
+  // TODO(crbug.com/346629231): Remove flag guard once this lands. Prior to the
+  // fix this section was always entered.
+  if (!event_filtered ||
+      !base::FeatureList::IsEnabled(features::kScrollBubblingFix)) {
+    if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollBegin) {
+      DCHECK(!is_scroll_sequence_bubbling_);
+      is_scroll_sequence_bubbling_ =
+          ack_result == blink::mojom::InputEventResultState::kNotConsumed ||
+          ack_result == blink::mojom::InputEventResultState::kNoConsumerExists;
+    }
+
+    if (is_scroll_sequence_bubbling_ &&
+        (event.GetType() == blink::WebInputEvent::Type::kGestureScrollBegin ||
+         event.GetType() == blink::WebInputEvent::Type::kGestureScrollUpdate ||
+         event.GetType() == blink::WebInputEvent::Type::kGestureScrollEnd)) {
+      const bool can_continue = frame_connector_->BubbleScrollEvent(event);
+      if (event.GetType() == blink::WebInputEvent::Type::kGestureScrollEnd ||
+          !can_continue) {
+        is_scroll_sequence_bubbling_ = false;
+      }
     }
   }
 
+  TRACE_EVENT_INSTANT0("input", "Did_Ack_To_Frame_Connector",
+                       TRACE_EVENT_SCOPE_THREAD);
   frame_connector_->DidAckGestureEvent(event, ack_result);
 }
 
 void RenderWidgetHostViewChildFrame::ProcessTouchpadZoomEventAckInRoot(
     const blink::WebGestureEvent& event,
+    blink::mojom::InputEventResultSource ack_source,
     blink::mojom::InputEventResultState ack_result) {
   DCHECK(event.IsTouchpadZoomEvent());
 
-  frame_connector_->ForwardAckedTouchpadZoomEvent(event, ack_result);
+  frame_connector_->ForwardAckedTouchpadZoomEvent(event, ack_source,
+                                                  ack_result);
 }
 
 void RenderWidgetHostViewChildFrame::ForwardTouchpadZoomEventIfNecessary(
@@ -598,7 +624,7 @@ void RenderWidgetHostViewChildFrame::ForwardTouchpadZoomEventIfNecessary(
     blink::mojom::InputEventResultState ack_result) {
   // ACKs of synthetic wheel events for touchpad pinch or double tap are
   // processed in the root RWHV.
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 void RenderWidgetHostViewChildFrame::SetParentFrameSinkId(
@@ -633,7 +659,7 @@ void RenderWidgetHostViewChildFrame::TransformPointToRootSurface(
     gfx::PointF* point) {
   // This function is called by RenderWidgetHostInputEventRouter only for
   // root-views.
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
   return;
 }
 
@@ -784,8 +810,25 @@ bool RenderWidgetHostViewChildFrame::ScreenRectIsUnstableForIOv2For(
 
 void RenderWidgetHostViewChildFrame::PreProcessTouchEvent(
     const blink::WebTouchEvent& event) {
-  if (event.GetType() == blink::WebInputEvent::Type::kTouchStart)
+  if (event.GetType() != blink::WebInputEvent::Type::kTouchStart) {
+    return;
+  }
+
+  if (!frame_connector_) {
+    return;
+  }
+
+  CrossProcessFrameConnector::RootViewFocusState state =
+      frame_connector_->HasFocus();
+#if BUILDFLAG(IS_ANDROID)
+  UMA_HISTOGRAM_ENUMERATION(
+      "Android.FocusChanged.RenderWidgetHostViewChildFrame.RootViewFocusState",
+      state);
+#endif
+
+  if (state == CrossProcessFrameConnector::RootViewFocusState::kNotFocused) {
     Focus();
+  }
 }
 
 viz::FrameSinkId RenderWidgetHostViewChildFrame::GetRootFrameSinkId() {
@@ -814,6 +857,9 @@ double RenderWidgetHostViewChildFrame::GetZoomLevel() const {
   if (adjusted_child_zoom) {
     return *adjusted_child_zoom;
   }
+  if (!frame_connector_) {
+    return RenderWidgetHostViewBase::GetZoomLevel();
+  }
   return frame_connector_->zoom_level();
 }
 
@@ -828,7 +874,7 @@ gfx::PointF RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpaceF(
 
 bool RenderWidgetHostViewChildFrame::TransformPointToCoordSpaceForView(
     const gfx::PointF& point,
-    RenderWidgetHostViewInput* target_view,
+    input::RenderWidgetHostViewInput* target_view,
     gfx::PointF* transformed_point) {
   viz::SurfaceId surface_id = GetCurrentSurfaceId();
   if (!frame_connector_)
@@ -868,7 +914,7 @@ bool RenderWidgetHostViewChildFrame::IsRenderWidgetHostViewChildFrame() {
 void RenderWidgetHostViewChildFrame::
     InvalidateLocalSurfaceIdAndAllocationGroup() {
   // This should only be handled by the top frame.
-  NOTREACHED();
+  NOTREACHED_IN_MIGRATION();
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -1003,7 +1049,7 @@ RenderWidgetHostViewChildFrame::FilterInputEvent(
     if (gesture_event.SourceDevice() == blink::WebGestureDevice::kTouchscreen) {
       return blink::mojom::InputEventResultState::kConsumed;
     }
-    NOTREACHED();
+    DUMP_WILL_BE_NOTREACHED();
   }
 
   if (input_event.GetType() == blink::WebInputEvent::Type::kGestureFlingStart) {

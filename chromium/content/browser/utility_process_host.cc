@@ -284,7 +284,7 @@ bool UtilityProcessHost::StartProcess() {
 
     base::FilePath exe_path = ChildProcessHost::GetChildPath(child_flags);
     if (exe_path.empty()) {
-      NOTREACHED() << "Unable to get utility process binary name.";
+      NOTREACHED_IN_MIGRATION() << "Unable to get utility process binary name.";
       return false;
     }
 
@@ -296,7 +296,6 @@ bool UtilityProcessHost::StartProcess() {
                                 switches::kUtilityProcess);
     // Specify the type of utility process for debugging/profiling purposes.
     cmd_line->AppendSwitchASCII(switches::kUtilitySubType, metrics_name_);
-    BrowserChildProcessHostImpl::CopyTraceStartupFlags(cmd_line.get());
     std::string locale = GetContentClient()->browser()->GetApplicationLocale();
     cmd_line->AppendSwitchASCII(switches::kLang, locale);
 
@@ -337,7 +336,6 @@ bool UtilityProcessHost::StartProcess() {
       switches::kUseFileForFakeVideoCapture,
       switches::kUseMockCertVerifierForTesting,
       switches::kMockCertVerifierDefaultResultForTesting,
-      switches::kTimeZoneForTesting,
       switches::kUtilityStartupDialog,
       switches::kUseANGLE,
       switches::kUseGL,

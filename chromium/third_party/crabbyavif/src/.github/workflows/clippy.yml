@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   clippy:
+    name: "Clippy"
     runs-on: ubuntu-latest
 
     steps:

@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   c-header-file:
+    name: "C Header File"
     runs-on: ubuntu-latest
 
     steps:

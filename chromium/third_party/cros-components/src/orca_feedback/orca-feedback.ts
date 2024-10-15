@@ -8,7 +8,7 @@ import '../button/button';
 import '../chip/chip';
 
 import {Task} from '@lit/task';
-import {css, CSSResultGroup, html, LitElement} from 'lit';
+import {css, CSSResultGroup, html, LitElement, nothing} from 'lit';
 
 import {maybeSafeHTML} from './maybe_safe_html';
 
@@ -36,6 +36,9 @@ interface StringSource {
 const PRIVACY_POLICY_URL = 'https://policies.google.com/privacy';
 const TERMS_OF_SERVICE_URL = 'https://policies.google.com/terms';
 
+const IDEAL_WIDTH = 512;
+const IDEAL_HEIGHT = 600;
+
 /**
  * Component so that users can send feedback about a particular suggestion that
  * we make.
@@ -49,7 +52,14 @@ export class OrcaFeedback extends LitElement {
       background-color: var(--cros-sys-base_elevated);
       display: block;
       padding-top: var(--top-padding);
-      width: 512px;
+    }
+
+    :host(:not([resizing-enabled="true"])) {
+      width: ${IDEAL_WIDTH}px;
+    }
+
+    :host([resizing-enabled="true"]) {
+      width: 100vw;
     }
 
     a.link {
@@ -83,7 +93,6 @@ export class OrcaFeedback extends LitElement {
       flex-direction: column;
       flex-shrink: 0;
       gap: 24px;
-      max-height: calc(600px - var(--footer-height) - var(--top-padding));
       overflow-y: scroll;
       padding-bottom: 24px;
       padding-inline: 32px;
@@ -128,11 +137,28 @@ export class OrcaFeedback extends LitElement {
 
         .value {
         }
+
+        .extra-image {
+          border-radius: 8px;
+          display: inline-block;
+          float: inline-end;
+          height: 58px;
+          margin-inline-start: 12px;
+        }
       }
     }
 
     .scrollable[disablescrollingfortesting] {
       max-height: none;
+    }
+
+    :host(:not([resizing-enabled="true"])) .scrollable {
+      max-height: calc(${
+      IDEAL_HEIGHT}px - var(--footer-height) - var(--top-padding));
+    }
+
+    :host([resizing-enabled="true"]) .scrollable {
+      height: calc(100vh - var(--footer-height) - var(--top-padding));
     }
 
     .footer {
@@ -168,8 +194,16 @@ export class OrcaFeedback extends LitElement {
     extraInfoCallback: {
       attribute: false,
     },
+    extraImage: {
+      type: String,
+      attribute: 'extra-image',
+    },
     revertToPreviousScreen: {},
     disableScrollingForTesting: {},
+    resizingEnabled: {
+      type: Boolean,
+      attribute: 'resizing-enabled',
+    },
     submitFeedback: {
       attribute: false,
     },
@@ -182,10 +216,17 @@ export class OrcaFeedback extends LitElement {
   };
   /** @export */
   extraInfoCallback = async () => '';
+  /**
+   * Optional, extra image URL to be displayed in the feedback form.
+   * @export
+   */
+  extraImage = '';
   /** @export */
   revertToPreviousScreen = () => {};
   /** @export */
   disableScrollingForTesting = false;
+  /** @export */
+  resizingEnabled = false;
   private readonly extraInfoTask = new Task(this, {
     task: async ([callback]: [() => Promise<string>]) => await callback(),
     args: () => [this.extraInfoCallback] as const as [() => Promise<string>],
@@ -230,6 +271,23 @@ export class OrcaFeedback extends LitElement {
   constructor() {
     super();
     document.title = this.stringSource?.MSG_FEEDBACK_TITLE ?? '';
+  }
+
+  override firstUpdated() {
+    if (this.resizingEnabled) {
+      // The first update might be concurrent with the initialization of
+      // MakoRewriteView. Thus we have a delay here to avoid reposition happens
+      // first but `MakoRewriteView::ComputeInitialBounds` happens later.
+      setTimeout(() => this.selfReposition(), 100);
+    }
+  }
+
+  /** @export */
+  selfReposition() {
+    window.resizeTo(IDEAL_WIDTH, IDEAL_HEIGHT);
+    window.moveTo(
+        (window.screen.availWidth - IDEAL_WIDTH) / 2,
+        (window.screen.availHeight - IDEAL_HEIGHT) / 2);
   }
 
   private privacyLinkClickListener: ((e: Event) => void)|null = null;
@@ -334,7 +392,10 @@ export class OrcaFeedback extends LitElement {
                 ) ??
             '')}
       </div>
-      <div class="extra-info">${this.extraInfoTask.render({
+      <div class="extra-info">${
+        this.extraImage.length > 0 ?
+            html`<img class="extra-image" src=${this.extraImage} />` :
+            nothing}${this.extraInfoTask.render({
       complete: (extraInfo: string) => extraInfo,
     })}</div>
   </div>

@@ -5,7 +5,7 @@
 
 wheel: <
   name: "infra/python/wheels/pytype/${vpython_platform}"
-  version: "version:2023.6.2"
+  version: "version:2024.1.24"
 >
 
 wheel: <
@@ -74,8 +74,8 @@ wheel: <
 >
 
 wheel: <
-  name: "infra/python/wheels/frozendict-py3"
-  version: "version:2.0.6"
+  name: "infra/python/wheels/immutabledict-py3"
+  version: "version:4.1.0"
 >
 
 wheel: <
@@ -120,7 +120,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/libcst/${vpython_platform}"
-  version: "version:0.4.9"
+  version: "version:1.1.0"
 >
 
 wheel: <
@@ -241,6 +241,11 @@ wheel: <
 wheel: <
   name: "infra/python/wheels/hjson-py2_py3"
   version: "version:3.1.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/pycnite-py3"
+  version: "version:2023.10.11"
 >
 
 wheel: <

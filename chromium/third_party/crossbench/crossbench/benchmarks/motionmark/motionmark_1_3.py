@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from typing import Tuple
 
-from .motionmark_1 import (MotionMark1Benchmark, MotionMark1Probe,
-                           MotionMark1Story)
+from crossbench.benchmarks.motionmark.motionmark_1 import (MotionMark1Benchmark,
+                                                           MotionMark1Probe,
+                                                           MotionMark1Story)
 
 
 class MotionMark13Probe(MotionMark1Probe):
@@ -17,8 +18,13 @@ class MotionMark13Probe(MotionMark1Probe):
 
 class MotionMark13Story(MotionMark1Story):
   NAME = "motionmark_1.3"
-  PROBES = (MotionMark13Probe,)
-  URL = "https://browserbench.org/MotionMark1.3/developer.html"
+  URL: str = "https://chromium-workloads.web.app/motionmark/v1.3/"
+  URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.3/"
+  DEVELOPER_READY_JS: str = (
+      "return !(document.querySelector('#frame-rate-detection span'));")
+  READY_JS: str = (
+      "return !!("
+      "   document.querySelector('#frame-rate-label')?.textContent?.trim());")
 
 
 class MotionMark13Benchmark(MotionMark1Benchmark):
@@ -30,6 +36,7 @@ class MotionMark13Benchmark(MotionMark1Benchmark):
 
   NAME = "motionmark_1.3"
   DEFAULT_STORY_CLS = MotionMark13Story
+  PROBES = (MotionMark13Probe,)
 
   @classmethod
   def version(cls) -> Tuple[int, ...]:

@@ -128,7 +128,6 @@ export class Switch extends LitElement {
           ?disabled=${this.disabled}
           ?selected=${this.selected}
           @change=${this.onChange}
-          @keydown=${this.onKeyDown}
           aria-label=${this.ariaLabel ?? nothing}>
       </md-switch>
     `;
@@ -137,12 +136,6 @@ export class Switch extends LitElement {
   private onChange() {
     this.selected = this.mdSwitch!.selected;
     this.dispatchEvent(new Event('change', {bubbles: true}));
-  }
-
-  private onKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      this.click();
-    }
   }
 
   override click() {

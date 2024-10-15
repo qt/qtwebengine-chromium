@@ -42,7 +42,7 @@ enum class ExternalEntityTableCompactionOutcome {
  *    compacted. This decision is mostly based on the absolute and relative
  *    size of the freelist.
  *  - If compaction is needed, this algorithm determines by how many segments
- *    it would like to shrink the space (N). It will then attempts to move all
+ *    it would like to shrink the space (N). It will then attempt to move all
  *    live entries out of these segments so that they can be deallocated
  *    afterwards during sweeping.
  *  - The algorithm then simply selects the last N segments for evacuation, and
@@ -111,6 +111,7 @@ class V8_EXPORT_PRIVATE CompactibleExternalEntityTable
     friend class CompactibleExternalEntityTable<Entry, size>;
     friend class ExternalPointerTable;
     friend class ExternalBufferTable;
+    friend class CppHeapPointerTable;
 
     // Routines for compaction. See the comment about table compaction above.
     inline bool IsCompacting();

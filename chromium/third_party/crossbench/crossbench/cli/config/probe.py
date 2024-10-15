@@ -5,22 +5,22 @@
 from __future__ import annotations
 import argparse
 import dataclasses
-import pathlib
 import re
 
 from typing import TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional, TextIO, Type
 
 import hjson
 from crossbench import cli_helper, exception
-from crossbench.config import ConfigObject
+from crossbench.config import ConfigError, ConfigObject
 
 from crossbench.probes.all import GENERAL_PURPOSE_PROBES
 
 if TYPE_CHECKING:
   from crossbench.probes.probe import Probe
+  from crossbench.path import LocalPath
 
 
-class ProbeConfigError(argparse.ArgumentTypeError):
+class ProbeConfigError(ConfigError):
   pass
 
 
@@ -92,7 +92,7 @@ class ProbeListConfig:
       return cls(args.probe)
 
   @classmethod
-  def load_path(cls, path: pathlib.Path) -> ProbeListConfig:
+  def load_path(cls, path: LocalPath) -> ProbeListConfig:
     with path.open(encoding="utf-8") as f:
       return cls.load(f)
 
@@ -122,6 +122,7 @@ class ProbeListConfig:
 
   def load_config_file(self, file: TextIO) -> None:
     with exception.annotate(f"Loading probe config file: {file.name}"):
+      # TODO: use cli_helper.parse_dict_hjson_file
       data = None
       with exception.annotate(f"Parsing {hjson.__name__}"):
         try:

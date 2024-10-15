@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 class ActionRunner(abc.ABC):
 
-  def runAll(self, run: Run, actions: Iterable[i_action.Action]):
+  def run_all(self, run: Run, actions: Iterable[i_action.Action]):
     for action in actions:
-      action.runWith(run, self)
+      action.run_with(run, self)
 
   def wait(self, run: Run, action: i_action.WaitAction) -> None:
     with run.actions("WaitAction", measure=False) as actions:
@@ -32,4 +32,22 @@ class ActionRunner(abc.ABC):
 
   @abc.abstractmethod
   def click(self, run: Run, action: i_action.ClickAction) -> None:
+    pass
+
+  @abc.abstractmethod
+  def tap(self, run: Run, action: i_action.TapAction) -> None:
+    pass
+
+  @abc.abstractmethod
+  def swipe(self, run: Run, action: i_action.SwipeAction) -> None:
+    pass
+
+  @abc.abstractmethod
+  def wait_for_element(self, run: Run,
+                       action: i_action.WaitForElementAction) -> None:
+    pass
+
+  @abc.abstractmethod
+  def inject_new_document_script(
+      self, run: Run, action: i_action.InjectNewDocumentScriptAction) -> None:
     pass

@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::decoder::*;
 use crate::*;
 
@@ -22,7 +36,7 @@ impl DecodeSample {
         match buffer {
             Some(x) => {
                 let start_offset = usize_from_u64(self.offset)?;
-                let end_offset = start_offset + size;
+                let end_offset = checked_add!(start_offset, size)?;
                 let range = start_offset..end_offset;
                 check_slice_range(x.len(), &range)?;
                 Ok(&x[range])
@@ -74,11 +88,11 @@ impl TileInfo {
         self.grid.rows > 0 && self.grid.columns > 0
     }
 
-    pub fn grid_tile_count(&self) -> u32 {
+    pub fn grid_tile_count(&self) -> AvifResult<u32> {
         if self.is_grid() {
-            self.grid.rows * self.grid.columns
+            checked_mul!(self.grid.rows, self.grid.columns)
         } else {
-            1
+            Ok(1)
         }
     }
 
@@ -187,11 +201,9 @@ impl Tile {
                         "lsel layer index not found in a1lx.".into(),
                     ));
                 }
-                let layer_id_plus_1 = layer_id
-                    .checked_add(1)
-                    .ok_or(AvifError::BmffParseFailed("".into()))?;
+                let layer_id_plus_1 = layer_id + 1;
                 for layer_size in layer_sizes.iter().take(layer_id_plus_1) {
-                    sample_size += layer_size;
+                    checked_incr!(sample_size, *layer_size);
                 }
             } else {
                 // This layer payload subsection is not known. Use the whole payload.
@@ -218,13 +230,13 @@ impl Tile {
             for (i, layer_size) in layer_sizes.iter().take(layer_count).enumerate() {
                 let sample = DecodeSample {
                     item_id: item.id,
-                    offset: base_item_offset + offset,
+                    offset: checked_add!(base_item_offset, offset)?,
                     size: *layer_size,
                     spatial_id: 0xff,
                     sync: i == 0, // Assume all layers depend on the first layer.
                 };
                 tile.input.samples.push(sample);
-                offset += *layer_size as u64;
+                offset = checked_add!(offset, *layer_size as u64)?;
             }
         } else {
             // Typical case: Use the entire item's payload for a single frame output
@@ -246,11 +258,16 @@ impl Tile {
         track: &Track,
         mut image_count_limit: u32,
         size_hint: u64,
+        category: Category,
     ) -> AvifResult<Tile> {
         let mut tile = Tile {
             width: track.width,
             height: track.height,
             operating_point: 0, // No way to set operating point via tracks
+            input: DecodeInput {
+                category,
+                ..DecodeInput::default()
+            },
             ..Tile::default()
         };
         let sample_table = &track.sample_table.unwrap_ref();
@@ -286,13 +303,8 @@ impl Tile {
             let mut sample_offset = *chunk_offset;
             for _ in 0..sample_count {
                 let sample_size = sample_table.sample_size(sample_size_index)?;
-                let sample_size_hint = sample_offset.checked_add(sample_size as u64);
-                if sample_size_hint.is_none() {
-                    return Err(AvifError::BmffParseFailed(
-                        "overflow in sample offset+size".into(),
-                    ));
-                }
-                if size_hint != 0 && sample_size_hint.unwrap() > size_hint {
+                let sample_size_hint = checked_add!(sample_offset, sample_size as u64)?;
+                if size_hint != 0 && sample_size_hint > size_hint {
                     return Err(AvifError::BmffParseFailed("exceeded size_hint".into()));
                 }
                 let sample = DecodeSample {
@@ -306,10 +318,8 @@ impl Tile {
                     sync: tile.input.samples.is_empty(),
                 };
                 tile.input.samples.push(sample);
-                sample_offset = sample_offset
-                    .checked_add(sample_size as u64)
-                    .ok_or(AvifError::BmffParseFailed("".into()))?;
-                sample_size_index += 1;
+                checked_incr!(sample_offset, sample_size as u64);
+                checked_incr!(sample_size_index, 1);
             }
         }
         for sync_sample_number in &sample_table.sync_samples {

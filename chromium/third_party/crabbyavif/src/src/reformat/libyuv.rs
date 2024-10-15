@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::rgb;
 use super::rgb::*;
 
@@ -11,7 +25,7 @@ use libyuv_sys::bindings::*;
 use std::os::raw::c_int;
 
 fn find_constants(image: &image::Image) -> Option<(&YuvConstants, &YuvConstants)> {
-    let matrix_coefficients = if image.yuv_format == PixelFormat::Monochrome
+    let matrix_coefficients = if image.yuv_format == PixelFormat::Yuv400
         && image.matrix_coefficients == MatrixCoefficients::Identity
     {
         MatrixCoefficients::Bt601
@@ -27,8 +41,8 @@ fn find_constants(image: &image::Image) -> Option<(&YuvConstants, &YuvConstants)
     };
     */
     unsafe {
-        match image.full_range {
-            true => match matrix_coefficients {
+        match image.yuv_range {
+            YuvRange::Full => match matrix_coefficients {
                 MatrixCoefficients::Bt709 => Some((&kYuvF709Constants, &kYvuF709Constants)),
                 MatrixCoefficients::Bt470bg
                 | MatrixCoefficients::Bt601
@@ -46,7 +60,7 @@ fn find_constants(image: &image::Image) -> Option<(&YuvConstants, &YuvConstants)
                 },
                 _ => None,
             },
-            false => match matrix_coefficients {
+            YuvRange::Limited => match matrix_coefficients {
                 MatrixCoefficients::Bt709 => Some((&kYuvH709Constants, &kYvuH709Constants)),
                 MatrixCoefficients::Bt470bg
                 | MatrixCoefficients::Bt601
@@ -210,7 +224,7 @@ fn find_conversion_function(
         // The fall through here is intentional. If a high bitdepth function was not found, try to
         // see if we can use a low bitdepth function with a downshift.
         //
-        (_, _, Format::Rgba | Format::Bgra, PixelFormat::Monochrome) => {
+        (_, _, Format::Rgba | Format::Bgra, PixelFormat::Yuv400) => {
             Some(ConversionFunction::YUV400ToRGBMatrix(I400ToARGBMatrix))
         }
 
@@ -334,10 +348,10 @@ pub fn yuv_to_rgb(image: &image::Image, rgb: &mut rgb::Image) -> AvifResult<bool
     let matrix = if is_yvu { matrix_yvu } else { matrix_yuv };
     let u_plane_index: usize = if is_yvu { 2 } else { 1 };
     let v_plane_index: usize = if is_yvu { 1 } else { 2 };
-    let filter = if rgb.chroma_upsampling.nearest_neighbor_filter_allowed() {
-        FilterMode_kFilterNone
-    } else {
+    let filter = if rgb.chroma_upsampling.bilinear_or_better_filter_allowed() {
         FilterMode_kFilterBilinear
+    } else {
+        FilterMode_kFilterNone
     };
     let mut plane_u8: [*const u8; 4] = ALL_PLANES
         .iter()

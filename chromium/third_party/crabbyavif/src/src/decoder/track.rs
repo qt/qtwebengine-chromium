@@ -1,14 +1,33 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::internal_utils::*;
 use crate::parser::mp4box::ItemProperty;
 use crate::parser::mp4box::MetaBox;
 use crate::*;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RepetitionCount {
-    #[default]
     Unknown,
     Infinite,
     Finite(i32),
+}
+
+impl Default for RepetitionCount {
+    fn default() -> Self {
+        Self::Finite(0)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -75,10 +94,7 @@ impl Track {
                         "invalid track duration 0".into(),
                     ));
                 }
-                let remainder =
-                    if self.track_duration % self.segment_duration != 0 { 1u64 } else { 0u64 };
-                let repetition_count: u64 =
-                    (self.track_duration / self.segment_duration) + remainder - 1u64;
+                let repetition_count: u64 = self.track_duration.div_ceil(self.segment_duration) - 1;
                 return match i32::try_from(repetition_count) {
                     Ok(value) => Ok(RepetitionCount::Finite(value)),
                     Err(_) => Ok(RepetitionCount::Infinite),
@@ -96,9 +112,13 @@ impl Track {
             ..ImageTiming::default()
         };
         for i in 0..image_index as usize {
-            image_timing.pts_in_timescales += sample_table.image_delta(i) as u64;
+            checked_incr!(
+                image_timing.pts_in_timescales,
+                sample_table.image_delta(i)? as u64
+            );
         }
-        image_timing.duration_in_timescales = sample_table.image_delta(image_index as usize) as u64;
+        image_timing.duration_in_timescales =
+            sample_table.image_delta(image_index as usize)? as u64;
         if image_timing.timescale > 0 {
             image_timing.pts =
                 image_timing.pts_in_timescales as f64 / image_timing.timescale as f64;
@@ -193,15 +213,15 @@ impl SampleTable {
         })
     }
 
-    pub fn image_delta(&self, index: usize) -> u32 {
-        let mut max_index = 0;
+    pub fn image_delta(&self, index: usize) -> AvifResult<u32> {
+        let mut max_index: u32 = 0;
         for (i, time_to_sample) in self.time_to_sample.iter().enumerate() {
-            max_index += time_to_sample.sample_count;
+            checked_incr!(max_index, time_to_sample.sample_count);
             if index < max_index as usize || i == self.time_to_sample.len() - 1 {
-                return time_to_sample.sample_delta;
+                return Ok(time_to_sample.sample_delta);
             }
         }
-        1
+        Ok(1)
     }
 }
 

@@ -25,6 +25,7 @@
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/ParentMap.h"
 #include "clang/AST/TypeOrdering.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -266,6 +267,11 @@ private:
                                const Expr **base = nullptr,
                                const Expr **index = nullptr);
 
+  bool isDescriptorHeap(const Expr *expr);
+
+  void getDescriptorHeapOperands(const Expr *expr, const Expr **base,
+                                 const Expr **index);
+
   /// \brief Returns true if the given CXXOperatorCallExpr is the .mips[][]
   /// access into a Texture or .sample[][] access into Texture2DMS(Array). On
   /// success, writes base texture object into *base if base is not nullptr,
@@ -361,7 +367,14 @@ private:
   /// the value. It returns the <result-id> of the processed vector.
   SpirvInstruction *processEachVectorInMatrix(
       const Expr *matrix, SpirvInstruction *matrixVal,
-      llvm::function_ref<SpirvInstruction *(uint32_t, QualType,
+      llvm::function_ref<SpirvInstruction *(uint32_t, QualType, QualType,
+                                            SpirvInstruction *)>
+          actOnEachVector,
+      SourceLocation loc = {}, SourceRange range = {});
+
+  SpirvInstruction *processEachVectorInMatrix(
+      const Expr *matrix, QualType outputType, SpirvInstruction *matrixVal,
+      llvm::function_ref<SpirvInstruction *(uint32_t, QualType, QualType,
                                             SpirvInstruction *)>
           actOnEachVector,
       SourceLocation loc = {}, SourceRange range = {});
@@ -411,6 +424,10 @@ private:
   /// Validates that vk::* attributes are used correctly and returns false if
   /// errors are found.
   bool validateVKAttributes(const NamedDecl *decl);
+
+  /// Records any Spir-V capabilities and extensions for the given varDecl so
+  /// they will be added to the SPIR-V module.
+  void registerCapabilitiesAndExtensionsForVarDecl(const VarDecl *varDecl);
 
 private:
   /// Converts the given value from the bitwidth of 'fromType' to the bitwidth
@@ -615,7 +632,8 @@ private:
   SpirvInstruction *processWaveCountBits(const CallExpr *,
                                          spv::GroupOperation groupOp);
 
-  /// Processes SM6.0 wave reduction or scan/prefix intrinsic calls.
+  /// Processes SM6.0 wave reduction or scan/prefix and SM6.5 wave multiprefix
+  /// intrinsic calls.
   SpirvInstruction *processWaveReductionOrPrefix(const CallExpr *, spv::Op op,
                                                  spv::GroupOperation groupOp);
 
@@ -984,11 +1002,15 @@ private:
   /// \brief Processes .SampleGrad() method call for texture objects.
   SpirvInstruction *processTextureSampleGrad(const CXXMemberCallExpr *expr);
 
-  /// \brief Processes .SampleCmp() or .SampleCmpLevelZero() method call for
-  /// texture objects.
+  /// \brief Processes .SampleCmp() method call for texture objects.
+  SpirvInstruction *processTextureSampleCmp(const CXXMemberCallExpr *expr);
+
+  /// \brief Processes .SampleCmpLevelZero() method call for texture objects.
   SpirvInstruction *
-  processTextureSampleCmpCmpLevelZero(const CXXMemberCallExpr *expr,
-                                      bool isCmp);
+  processTextureSampleCmpLevelZero(const CXXMemberCallExpr *expr);
+
+  /// \brief Processes .SampleCmpLevel() method call for texture objects.
+  SpirvInstruction *processTextureSampleCmpLevel(const CXXMemberCallExpr *expr);
 
   /// \brief Handles .Gather{|Cmp}{Red|Green|Blue|Alpha}() calls on texture
   /// types.
@@ -1174,6 +1196,12 @@ private:
   /// gets the info/warning/error messages via |messages|.
   /// Returns true on success and false otherwise.
   bool spirvToolsOptimize(std::vector<uint32_t> *mod, std::string *messages);
+
+  // \brief Calls SPIRV-Tools optimizer fix-opextinst-opcodes pass. This pass
+  // fixes OpExtInst/OpExtInstWithForwardRefsKHR opcodes to use the correct one
+  // depending of the presence of forward references.
+  bool spirvToolsFixupOpExtInst(std::vector<uint32_t> *mod,
+                                std::string *messages);
 
   // \brief Calls SPIRV-Tools optimizer's, but only with the capability trimming
   // pass. Removes unused capabilities from the given SPIR-V module |mod|, and
@@ -1416,6 +1444,9 @@ private:
 
   /// The <result-id> of the OpString containing the main source file's path.
   SpirvString *mainSourceFile;
+
+  /// ParentMap of the current function.
+  std::unique_ptr<ParentMap> parentMap = nullptr;
 };
 
 void SpirvEmitter::doDeclStmt(const DeclStmt *declStmt) {

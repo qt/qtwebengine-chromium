@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::gainmap::*;
 use super::io::*;
 use super::types::*;
@@ -77,8 +91,8 @@ pub struct avifImage {
     pub height: u32,
     pub depth: u32,
 
-    pub yuvFormat: avifPixelFormat,
-    pub yuvRange: avifRange,
+    pub yuvFormat: PixelFormat,
+    pub yuvRange: YuvRange,
     pub yuvChromaSamplePosition: ChromaSamplePosition,
     pub yuvPlanes: [*mut u8; AVIF_PLANE_COUNT_YUV],
     pub yuvRowBytes: [u32; AVIF_PLANE_COUNT_YUV],
@@ -112,8 +126,8 @@ impl Default for avifImage {
             width: 0,
             height: 0,
             depth: 0,
-            yuvFormat: avifPixelFormat::None,
-            yuvRange: avifRange::Full,
+            yuvFormat: Default::default(),
+            yuvRange: YuvRange::Full,
             yuvChromaSamplePosition: Default::default(),
             yuvPlanes: [std::ptr::null_mut(); 3],
             yuvRowBytes: [0; 3],
@@ -146,7 +160,7 @@ impl From<&Image> for avifImage {
             height: image.height,
             depth: image.depth as u32,
             yuvFormat: image.yuv_format.into(),
-            yuvRange: image.full_range.into(),
+            yuvRange: image.yuv_range.into(),
             yuvChromaSamplePosition: image.chroma_sample_position,
             alphaPremultiplied: image.alpha_premultiplied as avifBool,
             icc: (&image.icc).into(),
@@ -215,7 +229,7 @@ pub unsafe extern "C" fn crabby_avifImageCreate(
     width: u32,
     height: u32,
     depth: u32,
-    yuvFormat: avifPixelFormat,
+    yuvFormat: PixelFormat,
 ) -> *mut avifImage {
     Box::into_raw(Box::new(avifImage {
         width,
@@ -238,7 +252,7 @@ fn avif_image_allocate_planes_helper(
     let y_size = y_row_bytes
         .checked_mul(usize_from_u32(image.height)?)
         .ok_or(avifResult::InvalidArgument)?;
-    if (planes & 1) != 0 && image.yuvFormat != avifPixelFormat::None {
+    if (planes & 1) != 0 && image.yuvFormat != PixelFormat::None {
         image.imageOwnsYUVPlanes = AVIF_TRUE;
         if image.yuvPlanes[0].is_null() {
             image.yuvRowBytes[0] = u32_from_usize(y_row_bytes)?;

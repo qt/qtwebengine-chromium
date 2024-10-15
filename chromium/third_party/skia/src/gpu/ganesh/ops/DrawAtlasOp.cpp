@@ -10,6 +10,7 @@
 #include "include/core/SkRSXform.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/base/SkRandom.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -17,7 +18,9 @@
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
 using namespace skia_private;
@@ -111,6 +114,7 @@ DrawAtlasOpImpl::DrawAtlasOpImpl(GrProcessorSet* processorSet, const SkPMColor4f
         : GrMeshDrawOp(ClassID()), fHelper(processorSet, aaType), fColor(color) {
     SkASSERT(xforms);
     SkASSERT(rects);
+    SkASSERT(spriteCount >= 0);
 
     fViewMatrix = viewMatrix;
     Geometry& installedGeo = fGeoData.push_back();
@@ -124,6 +128,11 @@ DrawAtlasOpImpl::DrawAtlasOpImpl(GrProcessorSet* processorSet, const SkPMColor4f
     if (colors) {
         texOffset += sizeof(GrColor);
         vertexStride += sizeof(GrColor);
+    }
+
+    // Bail out if we'd overflow from a really large draw
+    if (spriteCount > SK_MaxS32 / static_cast<int>(4 * vertexStride)) {
+        return;
     }
 
     // Compute buffer size and alloc buffer
@@ -280,8 +289,14 @@ GrOp::CombineResult DrawAtlasOpImpl::onCombineIfPossible(GrOp* t,
         return CombineResult::kCannotCombine;
     }
 
+    SkSafeMath safeMath;
+    int newQuadCount = safeMath.addInt(fQuadCount, that->quadCount());
+    if (!safeMath) {
+        return CombineResult::kCannotCombine;
+    }
+
     fGeoData.push_back_n(that->fGeoData.size(), that->fGeoData.begin());
-    fQuadCount += that->quadCount();
+    fQuadCount = newQuadCount;
 
     return CombineResult::kMerged;
 }

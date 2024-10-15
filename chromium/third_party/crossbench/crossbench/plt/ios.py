@@ -3,14 +3,13 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
-from dataclasses import dataclass
+
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict
 
-from crossbench import plt
-
 if TYPE_CHECKING:
-  from .base import Platform
+  from crossbench.plt.base import Platform
 
 pattern = re.compile(
     r"(?P<name>[^\(\)]) \((?P<version>[0-9\.]+)\) \((?P<uuid>[0-9A-Z-]+)\)")
@@ -30,7 +29,7 @@ def ios_devices(platform: Platform,
                 show_all: bool = False) -> Dict[str, IOSDevice]:
   output = platform.sh_stdout("xcrun", "xctrace", "list", "devices")
   category_index = 0
-  results = {}
+  results: Dict[str, IOSDevice] = {}
   for line in output.splitlines():
     if line.startswith("== "):
       category_index += 1

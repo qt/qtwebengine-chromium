@@ -7,8 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
 
 from crossbench import helper
-
-from .base import RunGroup
+from crossbench.runner.groups.base import RunGroup
 
 if TYPE_CHECKING:
   from crossbench import exception
@@ -17,8 +16,8 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
   from crossbench.runner.runner import Runner
-  from crossbench.types import JsonDict
   from crossbench.stories.story import Story
+  from crossbench.types import JsonDict
 
 
 class CacheTemperatureRunGroup(RunGroup):

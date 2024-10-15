@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package perfetto.protos;
+
+import "protos/perfetto/metrics/metrics.proto";
+
+message LCPMetric {
+  optional double lcp_ms = 1;
+}
+
+extend TraceMetrics {
+  // The field number range reserved for Chrome metrics is 1001 to 2000.
+  // Keep field numbers different and within that range.
+  optional LCPMetric lcp_metric = 1201;
+}

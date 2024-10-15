@@ -3,20 +3,20 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
-import datetime as dt
 
 import json
 import logging
 import math
-import pathlib
+from math import floor, log10
 from typing import (TYPE_CHECKING, Any, Callable, Dict, Iterable, List,
                     Optional, Sequence, Set, Tuple, Union)
-from math import floor, log10
 
 from ordered_set import OrderedSet
-from . import helper
+
+from crossbench.probes import helper
 
 if TYPE_CHECKING:
+  from crossbench.path import LocalPath
   from crossbench.types import JsonDict
 
 
@@ -172,7 +172,7 @@ class MetricsMerger:
 
   @classmethod
   def merge_json_list(cls,
-                      files: Iterable[pathlib.Path],
+                      files: Iterable[LocalPath],
                       key_fn: Optional[helper.KeyFnType] = None,
                       merge_duplicate_paths: bool = False) -> MetricsMerger:
     merger = cls(key_fn=key_fn)
@@ -260,7 +260,8 @@ class MetricsMerger:
           values.append(value)
 
   def to_json(self,
-              value_fn: Optional[Callable[[Any], Any]] = None) -> JsonDict:
+              value_fn: Optional[Callable[[Any], Any]] = None,
+              sort: bool = True) -> JsonDict:
     items = []
     for key, value in self._data.items():
       assert isinstance(value, Metric)
@@ -269,9 +270,10 @@ class MetricsMerger:
       else:
         value = value_fn(value)
       items.append((key, value))
-    # Make sure the data is always in the same order, independent of the input
-    # order
-    items.sort()
+    if sort:
+      # Make sure the data is always in the same order, independent of the input
+      # order
+      items.sort()
     return dict(items)
 
   def to_csv(self,
@@ -295,7 +297,7 @@ class MetricsMerger:
       ["Total"                                   "Total", 3]
     ]
     """
-    converted = self.to_json(value_fn)
+    converted = self.to_json(value_fn, sort)
     lookup: Dict[str, Any] = {}
     toplevel: OrderedSet[str] = OrderedSet()
     items = converted.items()

@@ -206,7 +206,7 @@ int SerializeWindowShowState(ui::WindowShowState show_state) {
       return kSerializedShowStateFullscreen;
     case ui::SHOW_STATE_END:
       // This should never happen.
-      NOTREACHED();
+      NOTREACHED_IN_MIGRATION();
   }
   return kSerializedShowStateInvalid;
 }
@@ -376,7 +376,7 @@ std::unique_ptr<sessions::tab_restore::Window> CreateWindowEntryFromCommand(
   } else {
     // This should never be called with anything other than a known window
     // command ID.
-    NOTREACHED();
+    NOTREACHED_IN_MIGRATION();
   }
 
   // Create the Window entry.
@@ -1183,7 +1183,7 @@ void TabRestoreServiceImpl::PersistenceDelegate::CreateEntriesFromCommands(
           DCHECK_EQ(current_group.has_value(), false);
           if (!current_window->first) {
             // We should have created a window already.
-            NOTREACHED();
+            NOTREACHED_IN_MIGRATION();
             return;
           }
           current_window->first->tabs.push_back(
@@ -1195,7 +1195,7 @@ void TabRestoreServiceImpl::PersistenceDelegate::CreateEntriesFromCommands(
         } else if (current_group.has_value()) {
           if (!current_group->first) {
             // We should have created a group already.
-            NOTREACHED();
+            NOTREACHED_IN_MIGRATION();
             return;
           }
           current_group->first->tabs.push_back(
@@ -1265,6 +1265,11 @@ void TabRestoreServiceImpl::PersistenceDelegate::CreateEntriesFromCommands(
             break;
           }
           current_tab->saved_group_id = base::Uuid::ParseLowercase(saved_id);
+        } else {
+          // Explicitly update the nullopt if the group isn't saved. This is to
+          // ensure the right value is set when there are multiple entries in
+          // the append log file.
+          current_tab->saved_group_id = std::nullopt;
         }
 
         current_tab->group =
@@ -1278,7 +1283,7 @@ void TabRestoreServiceImpl::PersistenceDelegate::CreateEntriesFromCommands(
       case kCommandSetWindowAppName: {
         if (!current_window->first) {
           // We should have created a window already.
-          NOTREACHED();
+          NOTREACHED_IN_MIGRATION();
           return;
         }
 
@@ -1347,7 +1352,7 @@ void TabRestoreServiceImpl::PersistenceDelegate::CreateEntriesFromCommands(
       case kCommandSetWindowUserTitle: {
         if (!current_window->first) {
           // We should have created a window already.
-          NOTREACHED();
+          NOTREACHED_IN_MIGRATION();
           return;
         }
 

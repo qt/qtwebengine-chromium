@@ -35,6 +35,7 @@ def CheckChange(input_api, output_api, on_commit):
       "useless-return",
       "line-too-long",  # Annoying false-positives on URLs
       "cyclic-import",  # TODO: This is not working as expected with pytype
+      "no-member",  # Need newer pylint to handle issues with generics
   ]
   tests += input_api.canned_checks.GetPylint(
       input_api,
@@ -70,26 +71,25 @@ def CheckChange(input_api, output_api, on_commit):
         run_on_python2=False)
   # ---------------------------------------------------------------------------
   # Pytype (not supported on windows)
-  if on_commit and platform.system() in ("Linux", "Darwin"):
-    tests.append(
-        input_api.Command(
-            name="pytype",
-            cmd=[
-                input_api.python3_executable,
-                "-m",
-                "pytype",
-                "--keep-going",
-                "--jobs=auto",
-                "--overriding-parameter-count-checks",
-                "--use-enum-overlay",
-                str(testing_path / "crossbench"),
-                # Skip tests to speed up type checking.
-                # str(testing_path / "tests")
-            ],
-            message=output_api.PresubmitError,
-            kwargs={},
-            python3=True,
-        ))
+  # TODO(327478398): move to dedicated cq bot.
+  # if on_commit and platform.system() in ("Linux", "Darwin"):
+  #   tests.append(
+  #       input_api.Command(
+  #           name="pytype",
+  #           cmd=[
+  #               input_api.python3_executable,
+  #               "-m",
+  #               "pytype",
+  #               "--keep-going",
+  #               "--jobs=auto",
+  #               str(testing_path / "crossbench"),
+  #               # Skip tests to speed up type checking.
+  #               # str(testing_path / "tests")
+  #           ],
+  #           message=output_api.PresubmitError,
+  #           kwargs={},
+  #           python3=True,
+  #       ))
   # ---------------------------------------------------------------------------
   # Run all test
   results += input_api.RunTests(tests)

@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod decoder;
@@ -28,20 +42,28 @@ impl std::hash::BuildHasher for NonRandomHasherState {
 pub type HashMap<K, V> = std::collections::HashMap<K, V, NonRandomHasherState>;
 pub type HashSet<K> = std::collections::HashSet<K, NonRandomHasherState>;
 
-// See https://aomediacodec.github.io/av1-spec/#color-config-semantics.
+/// cbindgen:enum-trailing-values=[Count]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+// See https://aomediacodec.github.io/av1-spec/#color-config-semantics.
 pub enum PixelFormat {
-    Yuv444,
-    Yuv422,
     #[default]
-    Yuv420, // Also used for alpha items when 4:0:0 is not supported by the codec.
-    Monochrome, // 4:0:0
+    None = 0,
+    Yuv444 = 1,
+    Yuv422 = 2,
+    Yuv420 = 3, // Also used for alpha items when 4:0:0 is not supported by the codec.
+    Yuv400 = 4,
 }
 
 impl PixelFormat {
+    pub fn is_monochrome(&self) -> bool {
+        *self == Self::Yuv400
+    }
+
     pub fn plane_count(&self) -> usize {
         match self {
-            PixelFormat::Monochrome => 1,
+            PixelFormat::None => 0,
+            PixelFormat::Yuv400 => 1,
             PixelFormat::Yuv420 | PixelFormat::Yuv422 | PixelFormat::Yuv444 => 3,
         }
     }
@@ -70,7 +92,9 @@ pub enum ChromaSamplePosition {
     Unknown = 0, // Corresponds to AV1's CSP_UNKNOWN.
     Vertical = 1,  // Corresponds to AV1's CSP_VERTICAL (MPEG-2, also called "left").
     Colocated = 2, // Corresponds to AV1's CSP_COLOCATED (BT.2020, also called "top-left").
+    Reserved = 3,  // Corresponds to AV1's CSP_RESERVED.
 }
+
 impl ChromaSamplePosition {
     // The AV1 Specification (Version 1.0.0 with Errata 1) does not have a CSP_CENTER value
     // for chroma_sample_position, so we are forced to signal CSP_UNKNOWN in the AV1 bitstream
@@ -84,6 +108,7 @@ impl From<u32> for ChromaSamplePosition {
             0 => Self::Unknown,
             1 => Self::Vertical,
             2 => Self::Colocated,
+            3 => Self::Reserved,
             _ => Self::Unknown,
         }
     }
@@ -146,6 +171,7 @@ pub enum TransferCharacteristics {
     Bt709 = 1,
     #[default]
     Unspecified = 2,
+    Reserved = 3,
     Bt470m = 4,  // 2.2 gamma
     Bt470bg = 5, // 2.8 gamma
     Bt601 = 6,
@@ -169,6 +195,7 @@ impl From<u16> for TransferCharacteristics {
             0 => Self::Unknown,
             1 => Self::Bt709,
             2 => Self::Unspecified,
+            3 => Self::Reserved,
             4 => Self::Bt470m,
             5 => Self::Bt470bg,
             6 => Self::Bt601,
@@ -202,6 +229,7 @@ pub enum MatrixCoefficients {
     Bt709 = 1,
     #[default]
     Unspecified = 2,
+    Reserved = 3,
     Fcc = 4,
     Bt470bg = 5,
     Bt601 = 6,
@@ -223,6 +251,7 @@ impl From<u16> for MatrixCoefficients {
             0 => Self::Identity,
             1 => Self::Bt709,
             2 => Self::Unspecified,
+            3 => Self::Reserved,
             4 => Self::Fcc,
             5 => Self::Bt470bg,
             6 => Self::Bt601,
@@ -298,3 +327,42 @@ impl<T> OptionExtension for Option<T> {
         self.as_mut().unwrap()
     }
 }
+
+macro_rules! checked_add {
+    ($a:expr, $b:expr) => {
+        $a.checked_add($b)
+            .ok_or(AvifError::BmffParseFailed("".into()))
+    };
+}
+
+macro_rules! checked_sub {
+    ($a:expr, $b:expr) => {
+        $a.checked_sub($b)
+            .ok_or(AvifError::BmffParseFailed("".into()))
+    };
+}
+
+macro_rules! checked_mul {
+    ($a:expr, $b:expr) => {
+        $a.checked_mul($b)
+            .ok_or(AvifError::BmffParseFailed("".into()))
+    };
+}
+
+macro_rules! checked_decr {
+    ($a:expr, $b:expr) => {
+        $a = checked_sub!($a, $b)?
+    };
+}
+
+macro_rules! checked_incr {
+    ($a:expr, $b:expr) => {
+        $a = checked_add!($a, $b)?
+    };
+}
+
+pub(crate) use checked_add;
+pub(crate) use checked_decr;
+pub(crate) use checked_incr;
+pub(crate) use checked_mul;
+pub(crate) use checked_sub;

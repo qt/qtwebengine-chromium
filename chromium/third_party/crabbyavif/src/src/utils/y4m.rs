@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::image::*;
 use crate::*;
 use std::fs::File;
@@ -38,6 +52,7 @@ impl Y4MWriter {
 
         let y4m_format = match image.depth {
             8 => match image.yuv_format {
+                PixelFormat::None => "",
                 PixelFormat::Yuv444 => {
                     if image.alpha_present {
                         self.write_alpha = true;
@@ -48,26 +63,31 @@ impl Y4MWriter {
                 }
                 PixelFormat::Yuv422 => "C422 XYSCSS=422",
                 PixelFormat::Yuv420 => "C420jpeg XYSCSS=420JPEG",
-                PixelFormat::Monochrome => "Cmono XYSCSS=400",
+                PixelFormat::Yuv400 => "Cmono XYSCSS=400",
             },
             10 => match image.yuv_format {
+                PixelFormat::None => "",
                 PixelFormat::Yuv444 => "C444p10 XYSCSS=444P10",
                 PixelFormat::Yuv422 => "C422p10 XYSCSS=422P10",
                 PixelFormat::Yuv420 => "C420p10 XYSCSS=420P10",
-                PixelFormat::Monochrome => "Cmono10 XYSCSS=400",
+                PixelFormat::Yuv400 => "Cmono10 XYSCSS=400",
             },
             12 => match image.yuv_format {
+                PixelFormat::None => "",
                 PixelFormat::Yuv444 => "C444p12 XYSCSS=444P12",
                 PixelFormat::Yuv422 => "C422p12 XYSCSS=422P12",
                 PixelFormat::Yuv420 => "C420p12 XYSCSS=420P12",
-                PixelFormat::Monochrome => "Cmono12 XYSCSS=400",
+                PixelFormat::Yuv400 => "Cmono12 XYSCSS=400",
             },
             _ => {
                 return false;
             }
         };
-        let y4m_color_range =
-            if image.full_range { "XCOLORRANGE=FULL" } else { "XCOLORRANGE=LIMITED" };
+        let y4m_color_range = if image.yuv_range == YuvRange::Limited {
+            "XCOLORRANGE=LIMITED"
+        } else {
+            "XCOLORRANGE=FULL"
+        };
         let header = format!(
             "YUV4MPEG2 W{} H{} F25:1 Ip A0:0 {y4m_format} {y4m_color_range}\n",
             image.width, image.height

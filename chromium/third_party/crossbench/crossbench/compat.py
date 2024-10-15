@@ -6,12 +6,15 @@
 from __future__ import annotations
 
 import enum
-import pathlib
 import sys
 import textwrap
-from typing import List, Optional, Tuple, NamedTuple, Type, TypeVar, cast
+from typing import (TYPE_CHECKING, List, NamedTuple, Optional, Tuple, Type,
+                    TypeVar, cast)
 
 import tabulate
+
+if TYPE_CHECKING:
+  from crossbench.path import RemotePath
 
 if sys.version_info >= (3, 11):
   from enum import StrEnum
@@ -25,11 +28,11 @@ else:
 
 if sys.version_info >= (3, 9):
 
-  def is_relative_to(path_a: pathlib.Path, path_b: pathlib.Path) -> bool:
+  def is_relative_to(path_a: RemotePath, path_b: RemotePath) -> bool:
     return path_a.is_relative_to(path_b)
 else:
 
-  def is_relative_to(path_a: pathlib.Path, path_b: pathlib.Path) -> bool:
+  def is_relative_to(path_a: RemotePath, path_b: RemotePath) -> bool:
     try:
       path_a.relative_to(path_b)
       return True
@@ -49,7 +52,7 @@ class StrEnumWithHelp(StrHelpDataMixin, enum.Enum):
   @classmethod
   def _missing_(cls: Type[StrEnumWithHelpT],
                 value) -> Optional[StrEnumWithHelpT]:
-    value = str(value)
+    value = str(value).lower()
     for member in cls:  # pytype: disable=missing-parameter
       if member.value == value:
         return member

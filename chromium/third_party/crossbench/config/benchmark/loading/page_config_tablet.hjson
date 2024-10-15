@@ -1,0 +1,35 @@
+{
+  pages: {
+    amazon_product: [
+      {action: "get", url: "https://www.amazon.co.uk/NIVEA-Suncream-Spray-Protect-Moisture/dp/B001B0OJXM"},
+      {action: "wait_for_element", selector: "input[id=sp-cc-accept]", timeout: "3s"},
+      {action: "click", selector: "input[id=sp-cc-accept]"},
+      {action: "wait", duration: "3s"},
+      {action: "get", url: "about:blank"},
+    ],
+    cnn_article: [
+      {action: "get", url: "https://edition.cnn.com/2024/04/21/china/china-spy-agency-public-profile-intl-hnk/index.html"},
+      {action: "wait_for_element", selector: "button[id=onetrust-accept-btn-handler]", timeout: "3s"},
+      {action: "click", selector: "button[id=onetrust-accept-btn-handler]"},
+      {action: "wait", duration: "3s"},
+      {action: "get", url: "about:blank"},
+    ],
+    google_doc: [
+      {action: "get", url: "https://docs.google.com/document/d/13AWeOGqtSkfpPK7meqE_X-GQQggwx4JJ1vc0YGvKg34/edit#heading=h.gjdgxs"},
+      {action: "wait", duration: "3s"},
+      {action: "get", url: "about:blank"},
+    ],
+    google_search_result: [
+      {action: "get", url: "https://www.google.com/search?q=cats"},
+      // TODO: close the cookies dialog
+      {action: "wait", duration: "3s"},
+      {action: "get", url: "about:blank"},
+    ],
+    youtube_video: [
+      {action: "get", url: "https://youtube.com/watch?v=WuS9kPNAXHw"},
+      // TODO: close the cookies dialog
+      {action: "wait", duration: "3s"},
+      {action: "get", url: "about:blank"},
+    ],
+  },
+}

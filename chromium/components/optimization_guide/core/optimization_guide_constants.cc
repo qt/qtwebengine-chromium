@@ -26,6 +26,9 @@ const char kOptimizationGuideServiceModelQualtiyDefaultURL[] =
 const char kLoadedHintLocalHistogramString[] =
     "OptimizationGuide.LoadedHint.Result";
 
+const char kOptimizationGuideLanguageOverrideHeaderKey[] =
+    "x-optimization-guide-language-override";
+
 const base::FilePath::CharType kOptimizationGuideHintStore[] =
     FILE_PATH_LITERAL("optimization_guide_hint_cache_store");
 
@@ -49,9 +52,6 @@ const base::FilePath::CharType kTsSpModelFile[] =
 
 const base::FilePath::CharType kOnDeviceModelExecutionConfigFile[] =
     FILE_PATH_LITERAL("on_device_model_execution_config.pb");
-
-const base::FilePath::CharType kOnDeviceModelAdaptationModelFile[] =
-    FILE_PATH_LITERAL("adaptation_model.pb");
 
 const base::FilePath::CharType kOnDeviceModelAdaptationWeightsFile[] =
     FILE_PATH_LITERAL("adaptation_weights.bin");

@@ -23,7 +23,6 @@
 #include "ipcz/node_connector.h"
 #include "ipcz/node_link_memory.h"
 #include "ipcz/node_messages.h"
-#include "ipcz/operation_context.h"
 #include "ipcz/parcel.h"
 #include "ipcz/remote_router_link.h"
 #include "ipcz/router.h"
@@ -36,21 +35,6 @@
 #include "util/safe_math.h"
 
 namespace ipcz {
-
-namespace {
-
-template <typename T>
-FragmentRef<T> MaybeAdoptFragmentRef(NodeLinkMemory& memory,
-                                     const FragmentDescriptor& descriptor) {
-  if (descriptor.is_null() || descriptor.size() < sizeof(T) ||
-      descriptor.offset() % 8 != 0) {
-    return {};
-  }
-
-  return memory.AdoptFragmentRef<T>(memory.GetFragment(descriptor));
-}
-
-}  // namespace
 
 // static
 Ref<NodeLink> NodeLink::CreateActive(Ref<Node> node,
@@ -130,13 +114,12 @@ void NodeLink::Activate() {
 }
 
 Ref<RemoteRouterLink> NodeLink::AddRemoteRouterLink(
-    const OperationContext& context,
     SublinkId sublink,
     FragmentRef<RouterLinkState> link_state,
     LinkType type,
     LinkSide side,
     Ref<Router> router) {
-  auto link = RemoteRouterLink::Create(context, WrapRefCounted(this), sublink,
+  auto link = RemoteRouterLink::Create(WrapRefCounted(this), sublink,
                                        std::move(link_state), type, side);
 
   absl::MutexLock lock(&mutex_);
@@ -332,7 +315,7 @@ bool NodeLink::DispatchRelayedMessage(msg::AcceptRelayedMessage& accept) {
   }
 }
 
-void NodeLink::Deactivate(const OperationContext& context) {
+void NodeLink::Deactivate() {
   {
     absl::MutexLock lock(&mutex_);
     if (activation_state_ != kActive) {
@@ -341,7 +324,7 @@ void NodeLink::Deactivate(const OperationContext& context) {
     activation_state_ = kDeactivated;
   }
 
-  HandleTransportError(context);
+  HandleTransportError();
   transport_->Deactivate();
   memory_->SetNodeLink(nullptr);
 }
@@ -668,10 +651,8 @@ bool NodeLink::OnRouteClosed(msg::RouteClosed& route_closed) {
     return true;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
   return sublink->receiver->AcceptRouteClosureFrom(
-      context, sublink->router_link->GetType(),
-      route_closed.v0()->sequence_length);
+      sublink->router_link->GetType(), route_closed.v0()->sequence_length);
 }
 
 bool NodeLink::OnRouteDisconnected(msg::RouteDisconnected& route_closed) {
@@ -682,10 +663,8 @@ bool NodeLink::OnRouteDisconnected(msg::RouteDisconnected& route_closed) {
 
   DVLOG(4) << "Accepting RouteDisconnected at "
            << sublink->router_link->Describe();
-
-  const OperationContext context{OperationContext::kTransportNotification};
   return sublink->receiver->AcceptRouteDisconnectedFrom(
-      context, sublink->router_link->GetType());
+      sublink->router_link->GetType());
 }
 
 bool NodeLink::OnBypassPeer(msg::BypassPeer& bypass) {
@@ -696,8 +675,7 @@ bool NodeLink::OnBypassPeer(msg::BypassPeer& bypass) {
 
   // NOTE: This request is authenticated by the receiving Router, within
   // BypassPeer().
-  const OperationContext context{OperationContext::kTransportNotification};
-  return sublink->receiver->BypassPeer(context, *sublink->router_link,
+  return sublink->receiver->BypassPeer(*sublink->router_link,
                                        bypass.v0()->bypass_target_node,
                                        bypass.v0()->bypass_target_sublink);
 }
@@ -721,8 +699,8 @@ bool NodeLink::OnAcceptBypassLink(msg::AcceptBypassLink& accept) {
     return true;
   }
 
-  auto link_state = MaybeAdoptFragmentRef<RouterLinkState>(
-      memory(), accept.v0()->new_link_state_fragment);
+  auto link_state = memory().AdoptFragmentRefIfValid<RouterLinkState>(
+      accept.v0()->new_link_state_fragment);
   if (link_state.is_null()) {
     // Bypass links must always come with a valid fragment for their
     // RouterLinkState. If one has not been provided, that's a validation
@@ -730,9 +708,8 @@ bool NodeLink::OnAcceptBypassLink(msg::AcceptBypassLink& accept) {
     return false;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
   return receiver->AcceptBypassLink(
-      context, *this, accept.v0()->new_sublink, std::move(link_state),
+      *this, accept.v0()->new_sublink, std::move(link_state),
       accept.v0()->inbound_sequence_length_from_bypassed_link);
 }
 
@@ -742,8 +719,7 @@ bool NodeLink::OnStopProxying(msg::StopProxying& stop) {
     return true;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
-  return router->StopProxying(context, stop.v0()->inbound_sequence_length,
+  return router->StopProxying(stop.v0()->inbound_sequence_length,
                               stop.v0()->outbound_sequence_length);
 }
 
@@ -753,9 +729,7 @@ bool NodeLink::OnProxyWillStop(msg::ProxyWillStop& will_stop) {
     return true;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
-  return router->NotifyProxyWillStop(context,
-                                     will_stop.v0()->inbound_sequence_length);
+  return router->NotifyProxyWillStop(will_stop.v0()->inbound_sequence_length);
 }
 
 bool NodeLink::OnBypassPeerWithLink(msg::BypassPeerWithLink& bypass) {
@@ -764,14 +738,13 @@ bool NodeLink::OnBypassPeerWithLink(msg::BypassPeerWithLink& bypass) {
     return true;
   }
 
-  auto link_state = MaybeAdoptFragmentRef<RouterLinkState>(
-      memory(), bypass.v0()->new_link_state_fragment);
+  auto link_state = memory().AdoptFragmentRefIfValid<RouterLinkState>(
+      bypass.v0()->new_link_state_fragment);
   if (link_state.is_null()) {
     return false;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
-  return router->AcceptBypassLink(context, *this, bypass.v0()->new_sublink,
+  return router->AcceptBypassLink(*this, bypass.v0()->new_sublink,
                                   std::move(link_state),
                                   bypass.v0()->inbound_sequence_length);
 }
@@ -782,15 +755,12 @@ bool NodeLink::OnStopProxyingToLocalPeer(msg::StopProxyingToLocalPeer& stop) {
     return true;
   }
 
-  const OperationContext context{OperationContext::kTransportNotification};
-  return router->StopProxyingToLocalPeer(context,
-                                         stop.v0()->outbound_sequence_length);
+  return router->StopProxyingToLocalPeer(stop.v0()->outbound_sequence_length);
 }
 
 bool NodeLink::OnFlushRouter(msg::FlushRouter& flush) {
   if (Ref<Router> router = GetRouter(flush.v0()->sublink)) {
-    const OperationContext context{OperationContext::kTransportNotification};
-    router->Flush(context, Router::kForceProxyBypassAttempt);
+    router->Flush(Router::kForceProxyBypassAttempt);
   }
   return true;
 }
@@ -844,11 +814,10 @@ bool NodeLink::OnAcceptRelayedMessage(msg::AcceptRelayedMessage& accept) {
 }
 
 void NodeLink::OnTransportError() {
-  const OperationContext context{OperationContext::kTransportNotification};
-  HandleTransportError(context);
+  HandleTransportError();
 }
 
-void NodeLink::HandleTransportError(const OperationContext& context) {
+void NodeLink::HandleTransportError() {
   SublinkMap sublinks;
   {
     absl::MutexLock lock(&mutex_);
@@ -859,11 +828,11 @@ void NodeLink::HandleTransportError(const OperationContext& context) {
     DVLOG(4) << "NodeLink disconnection dropping "
              << sublink.router_link->Describe() << " which is bound to router "
              << sublink.receiver.get();
-    sublink.receiver->NotifyLinkDisconnected(context, *sublink.router_link);
+    sublink.receiver->NotifyLinkDisconnected(*sublink.router_link);
   }
 
   Ref<NodeLink> self = WrapRefCounted(this);
-  node_->DropConnection(context, *this);
+  node_->DropConnection(*this);
 }
 
 void NodeLink::WaitForParcelFragmentToResolve(
@@ -1045,19 +1014,18 @@ bool NodeLink::AcceptCompleteParcel(SublinkId for_sublink,
 
   // At this point we've collected all expected subparcels and can pass the full
   // parcel along to its receiver.
-  const OperationContext context{OperationContext::kTransportNotification};
   parcel->set_remote_source(WrapRefCounted(this));
   const LinkType link_type = sublink->router_link->GetType();
   if (link_type.is_outward()) {
     DVLOG(4) << "Accepting inbound " << parcel->Describe() << " at "
              << sublink->router_link->Describe();
-    return sublink->receiver->AcceptInboundParcel(context, std::move(parcel));
+    return sublink->receiver->AcceptInboundParcel(std::move(parcel));
   }
 
   ABSL_ASSERT(link_type.is_peripheral_inward());
   DVLOG(4) << "Accepting outbound " << parcel->Describe() << " at "
            << sublink->router_link->Describe();
-  return sublink->receiver->AcceptOutboundParcel(context, std::move(parcel));
+  return sublink->receiver->AcceptOutboundParcel(std::move(parcel));
 }
 
 NodeLink::Sublink::Sublink(Ref<RemoteRouterLink> router_link,

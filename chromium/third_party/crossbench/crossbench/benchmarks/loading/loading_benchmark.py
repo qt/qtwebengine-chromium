@@ -5,22 +5,26 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
-import pathlib
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type
-from urllib.parse import urlparse
+from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
+                    Type)
 
 from crossbench import cli_helper
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
-
-from . import page_config
-from .action_runner.base import ActionRunner
-from .action_runner.config import ActionRunnerConfig
-from .page import (PAGE_LIST, PAGE_LIST_SMALL, PAGES, CombinedPage,
-                   InteractivePage, LivePage, Page)
-from .playback_controller import PlaybackController
+from crossbench.benchmarks.loading.action_runner.config import \
+    ActionRunnerConfig
+from crossbench.benchmarks.loading.page import (DEFAULT_DURATION, PAGE_LIST,
+                                                PAGE_LIST_SMALL, PAGES,
+                                                CombinedPage, InteractivePage,
+                                                LivePage, Page)
+from crossbench.benchmarks.loading.page_config import (
+    DevToolsRecorderPagesConfig, ListPagesConfig, PageConfig, PagesConfig)
+from crossbench.benchmarks.loading.playback_controller import \
+    PlaybackController
 
 if TYPE_CHECKING:
+  from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.stories.story import Story
 
 
@@ -41,21 +45,83 @@ class LoadingPageFilter(StoryFilter[Page]):
   stories: Sequence[Page]
 
   @classmethod
+  def add_cli_parser(
+      cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser = super().add_cli_parser(parser)
+    page_config_group = parser.add_mutually_exclusive_group()
+    # TODO: move --stories into mutually exclusive group as well
+    page_config_group.add_argument(
+        "--urls",
+        "--url",
+        dest="urls",
+        help="List of urls and durations to load: url,seconds,...")
+    page_config_group.add_argument(
+        "--page-config",
+        "--pages-config",
+        dest="pages_config",
+        type=PagesConfig.parse,
+        help="Stories we want to perform in the benchmark run following a"
+        "specified scenario. For a reference on how to build scenarios and"
+        "possible actions check config/doc/pages.config.hjson")
+    page_config_group.add_argument(
+        "--url-file",
+        "--urls-file",
+        dest="pages_config",
+        type=ListPagesConfig.parse,
+        help=("List of urls and durations in a line-by-line file. "
+              "Each line has the same format as --url for a single Page."))
+    page_config_group.add_argument(
+        "--devtools-recorder",
+        dest="pages_config",
+        type=DevToolsRecorderPagesConfig.parse,
+        help=("Run a single story from a serialized DevTools recorder session. "
+              "See https://developer.chrome.com/docs/devtools/recorder/ "
+              "for more details."))
+
+    playback_group = parser.add_mutually_exclusive_group()
+    playback_group.add_argument(
+        "--playback",
+        "--cycle",
+        type=PlaybackController.parse,
+        default=PlaybackController.default(),
+        help="Set limit on looping through/repeating the selected stories. "
+        "Default is once."
+        "Valid values are: 'once', 'forever', number, time. "
+        "Cycle 10 times: '--playback=10x'. "
+        "Repeat for 1.5 hours: '--playback=1.5h'.")
+    playback_group.add_argument(
+        "--forever",
+        dest="playback",
+        const=PlaybackController.forever(),
+        action="store_const",
+        help="Equivalent to --playback=infinity")
+
+    parser.add_argument(
+        "--about-blank-duration",
+        "--about-blank",
+        type=cli_helper.Duration.parse_zero,
+        default=dt.timedelta(),
+        help=("If non-zero, navigate to about:blank after every page."))
+
+    parser.add_argument(
+        "--action-runner",
+        type=ActionRunnerConfig.parse,
+        help="Set the action runner for interactive pages.")
+    return parser
+
+  @classmethod
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["separate"] = args.separate
-    kwargs["playback"] = args.playback
-    kwargs["action_runner"] = args.action_runner
+    kwargs["args"] = args
     return kwargs
 
   def __init__(self,
                story_cls: Type[Page],
                patterns: Sequence[str],
-               separate: bool = True,
-               playback: Optional[PlaybackController] = None,
-               action_runner: Optional[ActionRunner] = None) -> None:
-    self._playback = playback or PlaybackController.once()
-    self._action_runner = action_runner
+               args: argparse.Namespace,
+               separate: bool = True) -> None:
+    self._args: argparse.Namespace = args
     super().__init__(story_cls, patterns, separate)
 
   def process_all(self, patterns: Sequence[str]) -> None:
@@ -67,58 +133,56 @@ class LoadingPageFilter(StoryFilter[Page]):
       if name_or_url_list[0] == "default":
         self.stories = PAGE_LIST_SMALL
         return
-    self._resolve_name_or_urls(name_or_url_list)
-    # Check if we have unique domain names for better short names
-    urls = list(urlparse(page.url) for page in self.stories)
-    hostnames = set(url.hostname for url in urls)
-    if len(hostnames) == len(urls):
-      # Regenerate with short names
-      self._resolve_name_or_urls(name_or_url_list, use_hostname=True)
+    # Let the PageConfig handle the arg splitting again:
+    config = PagesConfig.parse(",".join(patterns))
+    self.stories = self.stories_from_config(self._args, config)
 
-  def _resolve_name_or_urls(self,
-                            name_or_url_list: Sequence[str],
-                            use_hostname: bool = False) -> None:
-    page = None
-    self.stories = []
-    for value in name_or_url_list:
-      if value in PAGES:
-        template = PAGES[value]
-        # Create copy so we can modify the playback value.
-        page = LivePage(
-            template.name,
-            template.url,
-            template.duration,
-            playback=self._playback)
-      elif "://" in value or value.startswith("www."):
-        name: Optional[str] = value
-        if value.startswith("www."):
-          url = f"https://{value}"
-        else:
-          url = value
+  @classmethod
+  def stories_from_config(cls, args: argparse.Namespace,
+                          config: PagesConfig) -> Sequence[Page]:
+    labels = set(page_config.label for page_config in config.pages)
+    use_labels = len(labels) == len(config.pages)
 
-        if use_hostname:
-          parse_result = urlparse(url)
-          if parse_result.scheme == "file":
-            name = pathlib.Path(parse_result.path).name
-          else:
-            name = parse_result.hostname
-        if not name:
-          raise argparse.ArgumentTypeError(f"Invalid url: {url}")
-        page = LivePage(name, url, playback=self._playback)
-      else:
-        # Use the last created page and set the duration on it
-        assert page is not None, (
-            f"Duration '{value}' has to follow a URL or page-name.")
-        page.set_duration(cli_helper.Duration.parse(value))
-        continue
-      self.stories.append(page)
+    stories: List[Page] = []
+    for page_config in config.pages:
+      stories.append(cls._story_from_config(args, page_config, use_labels))
+
+    if use_labels:
+      # Double check that the urls are unique
+      urls = set(page_config.url for page_config in config.pages)
+      if len(urls) != len(config.pages):
+        raise argparse.ArgumentTypeError(
+            "Got non-unique story labels and urls.")
+    return stories
+
+  @classmethod
+  def _story_from_config(cls, args: argparse.Namespace, config: PageConfig,
+                         use_labels: bool) -> Page:
+    playback: PlaybackController = args.playback
+    if config.playback:
+      # TODO: support custom config playback
+      playback = config.playback
+    duration: dt.timedelta = config.duration
+    if config.label in PAGES:
+      page = PAGES[config.label]
+      duration = duration or page.duration
+      return LivePage(page.name, page.url, duration, playback,
+                      args.about_blank_duration)
+
+    label: str = config.label if use_labels else config.url
+    duration = duration or DEFAULT_DURATION
+    if not config.actions:
+      return LivePage(label, config.url, duration, playback,
+                      args.about_blank_duration)
+    return InteractivePage(config.actions, label, playback, args.action_runner,
+                           args.about_blank_duration)
 
   def create_stories(self, separate: bool) -> Sequence[Page]:
     logging.info("SELECTED STORIES: %s", str(list(map(str, self.stories))))
     if not separate and len(self.stories) > 1:
       combined_name = "_".join(page.name for page in self.stories)
       self.stories = (CombinedPage(self.stories, combined_name,
-                                   self._playback),)
+                                   self._args.playback),)
     return self.stories
 
 
@@ -144,72 +208,50 @@ class PageLoadBenchmark(SubStoryBenchmark):
   @classmethod
   def add_cli_parser(
       cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
-  ) -> cli_helper.CrossBenchArgumentParser:
+  ) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
-    page_config_group = parser.add_mutually_exclusive_group()
-    # TODO: Migrate to dest="stories" using LoadingPageFilter.parse
-    # TODO: move --stories into mutually exclusive group as well
-    page_config_group.add_argument(
-        "--urls",
-        "--url",
-        dest="stories",
-        help="List of urls and durations to load: url,seconds,...")
-    page_config_group.add_argument(
-        "--page-config",
-        dest="stories",
-        type=page_config.PageConfig.parse,
-        help="Stories we want to perform in the benchmark run following a"
-        "specified scenario. For a reference on how to build scenarios and"
-        "possible actions check  pages.config.example.hjson")
-    page_config_group.add_argument(
-        "--devtools-recorder",
-        dest="stories",
-        type=page_config.DevToolsRecorderPageConfig.parse,
-        help=("Run a single story from a serialized DevTools recorder session. "
-              "See https://developer.chrome.com/docs/devtools/recorder/ "
-              "for more details."))
-
-    playback_group = parser.add_mutually_exclusive_group()
-    playback_group.add_argument(
-        "--playback",
-        "--cycle",
-        type=PlaybackController.parse,
-        help="Set limit on looping through/repeating the selected stories. "
-        "Default is once."
-        "Valid values are: 'once', 'forever', number, time. "
-        "Cycle 10 times: '--playback=10x'. "
-        "Repeat for 1.5 hours: '--playback=1.5h'.")
-    playback_group.add_argument(
-        "--forever",
-        dest="playback",
-        const=PlaybackController(),
-        action="store_const",
-        help="Equivalent to --playback=infinity")
-
-    parser.add_argument(
-        "--action-runner",
-        type=ActionRunnerConfig.parse,
-        help="Set the action runner for interactive pages.")
+    cls.STORY_FILTER_CLS.add_cli_parser(parser)
     return parser
 
   @classmethod
   def stories_from_cli_args(cls, args: argparse.Namespace) -> Sequence[Story]:
-    if isinstance(args.stories, list):
-      cls._patch_action_runner(args, args.stories)
-      if args.separate or len(args.stories) == 1:
-        return args.stories
-      return (CombinedPage(args.stories, "Page Scenarios - Combined",
-                           args.playback),)
+    has_default_stories: bool = args.stories and args.stories == "default"
+    if config := cls._get_pages_config(args):
+      # TODO: make stories and page_config mutually exclusive.
+      if not has_default_stories:
+        raise argparse.ArgumentTypeError(
+            f"Cannot specify --stories={repr(args.stories)} "
+            "with any other page config option.")
+      pages = LoadingPageFilter.stories_from_config(args, config)
+      if args.separate or len(pages) == 1:
+        return pages
+      return (CombinedPage(pages, "Page Scenarios - Combined", args.playback),)
+
+    if args.urls:
+      # TODO: make urls and stories mutually exclusive.
+      if not has_default_stories:
+        raise argparse.ArgumentTypeError(
+            "Cannot specify --urls and --stories at the same time.")
+      args.stories = args.urls
+
+    # Fall back to story filter class.
     return super().stories_from_cli_args(args)
 
   @classmethod
-  def _patch_action_runner(cls, args: argparse.Namespace,
-                           stories: Sequence[Story]) -> None:
-    # TODO: remove this hack and move it to the StoryFilter / ConfigObject
-    if action_runner := args.action_runner:
-      for story in stories:
-        if isinstance(story, InteractivePage):
-          story.action_runner = action_runner
+  def _get_pages_config(cls, args: argparse.Namespace) -> Optional[PagesConfig]:
+    if global_config := args.config:
+      # TODO: migrate --config to an already parsed hjson/json dict
+      config_file = global_config
+      config_data = cli_helper.parse_hjson_file(config_file)
+      if pages_config_dict := config_data.get("pages"):
+        if args.pages_config:
+          raise argparse.ArgumentTypeError(
+              "Conflicting arguments: "
+              "either specify a --config file without a 'pages' property "
+              "or remove the --page-config argument.")
+        # TODO: PagesConfig.load_dict should be able to parse the inner dict.
+        return PagesConfig.load_dict({"pages": pages_config_dict})
+    return args.pages_config
 
   @classmethod
   def aliases(cls) -> Tuple[str, ...]:

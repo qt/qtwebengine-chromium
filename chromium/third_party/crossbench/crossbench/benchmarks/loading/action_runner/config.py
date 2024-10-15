@@ -7,8 +7,11 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from .base import ActionRunner
-from .basic_action_runner import BasicActionRunner
+from crossbench.benchmarks.loading.action_runner.base import ActionRunner
+from crossbench.benchmarks.loading.action_runner.basic_action_runner import \
+    BasicActionRunner
+from crossbench.benchmarks.loading.action_runner.android_input_action_runner import \
+    AndroidInputActionRunner
 
 
 # TODO: migrate to full config.ConfigObject
@@ -20,5 +23,7 @@ class ActionRunnerConfig:
       return value
     if value == "basic":
       return BasicActionRunner()
+    if value == "android":
+      return AndroidInputActionRunner()
     raise argparse.ArgumentTypeError(
         f"Invalid choice '{value}', allowed values are 'basic'")

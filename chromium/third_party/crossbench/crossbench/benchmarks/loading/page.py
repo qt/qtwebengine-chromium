@@ -6,19 +6,22 @@ from __future__ import annotations
 
 import abc
 import datetime as dt
-from typing import TYPE_CHECKING, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple
 
+from crossbench.benchmarks.loading.action import Action
+from crossbench.benchmarks.loading.action_runner.base import ActionRunner
+from crossbench.benchmarks.loading.action_runner.basic_action_runner import \
+    BasicActionRunner
+from crossbench.benchmarks.loading.playback_controller import \
+    PlaybackController
 from crossbench.stories.story import Story
-
-from .action import Action
-from .action_runner.base import ActionRunner
-from .action_runner.basic_action_runner import BasicActionRunner
-from .playback_controller import PlaybackController
 
 if TYPE_CHECKING:
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
 
+DEFAULT_DURATION_SECONDS = 15
+DEFAULT_DURATION = dt.timedelta(seconds=DEFAULT_DURATION_SECONDS)
 
 class Page(Story, metaclass=abc.ABCMeta):
 
@@ -30,26 +33,36 @@ class Page(Story, metaclass=abc.ABCMeta):
 
   def __init__(self,
                name: str,
-               duration: dt.timedelta = dt.timedelta(seconds=15),
-               playback: Optional[PlaybackController] = None):
-    self._playback: PlaybackController = playback or PlaybackController.once()
+               duration: dt.timedelta = DEFAULT_DURATION,
+               playback: PlaybackController = PlaybackController.default(),
+               about_blank_duration: dt.timedelta = dt.timedelta()):
+    self._playback: PlaybackController = playback
+    self._about_blank_duration = about_blank_duration
     super().__init__(name, duration)
 
   def set_parent(self, parent: Page) -> None:
     # TODO: support nested playback controllers.
-    self._playback = PlaybackController.once()
+    self._playback = PlaybackController.default()
     del parent
+
+  def _maybe_navigate_to_about_blank(self, run: Run) -> None:
+    if duration := self._about_blank_duration:
+      run.browser.show_url(run.runner, "about:blank")
+      run.runner.wait(duration)
 
 
 class LivePage(Page):
   url: str
 
-  def __init__(self,
-               name: str,
-               url: str,
-               duration: dt.timedelta = dt.timedelta(seconds=15),
-               playback: Optional[PlaybackController] = None) -> None:
-    super().__init__(name, duration, playback)
+  def __init__(
+      self,
+      name: str,
+      url: str,
+      duration: dt.timedelta = DEFAULT_DURATION,
+      playback: PlaybackController = PlaybackController.default(),
+      about_blank_duration: dt.timedelta = dt.timedelta()
+  ) -> None:
+    super().__init__(name, duration, playback, about_blank_duration)
     assert url, "Invalid page url"
     self.url: str = url
 
@@ -65,6 +78,7 @@ class LivePage(Page):
     for _ in self._playback:
       run.browser.show_url(run.runner, self.url)
       run.runner.wait(self.duration)
+      self._maybe_navigate_to_about_blank(run)
 
   def __str__(self) -> str:
     return f"Page(name={self.name}, url={self.url})"
@@ -75,7 +89,8 @@ class CombinedPage(Page):
   def __init__(self,
                pages: Sequence[Page],
                name: str = "combined",
-               playback: Optional[PlaybackController] = None):
+               playback: PlaybackController = PlaybackController.default(),
+               about_blank_duration: dt.timedelta = dt.timedelta()):
     assert len(pages), "No sub-pages provided for CombinedPage"
     assert len(pages) > 1, "Combined Page needs more than one page"
     self._pages = pages
@@ -83,7 +98,7 @@ class CombinedPage(Page):
     for page in self._pages:
       page.set_parent(self)
       duration += page.duration
-    super().__init__(name, duration, playback)
+    super().__init__(name, duration, playback, about_blank_duration)
     self.url = None
 
   def details_json(self) -> JsonDict:
@@ -104,20 +119,21 @@ class CombinedPage(Page):
 class InteractivePage(Page):
 
   def __init__(self,
-               actions: List[Action],
+               actions: Tuple[Action, ...],
                name: str,
-               playback: Optional[PlaybackController] = None,
-               action_runner: Optional[ActionRunner] = None):
+               playback: PlaybackController = PlaybackController.default(),
+               action_runner: Optional[ActionRunner] = None,
+               about_blank_duration: dt.timedelta = dt.timedelta()):
     self._name: str = name
     self._action_runner: ActionRunner = action_runner or BasicActionRunner()
-    assert isinstance(actions, list)
-    self._actions = actions
+    assert isinstance(actions, tuple)
+    self._actions: Tuple[Action, ...] = actions
     assert self._actions, "Must have at least 1 valid action"
     duration = self._get_duration()
-    super().__init__(name, duration, playback)
+    super().__init__(name, duration, playback, about_blank_duration)
 
   @property
-  def actions(self) -> List[Action]:
+  def actions(self) -> Tuple[Action, ...]:
     return self._actions
 
   @property
@@ -131,7 +147,7 @@ class InteractivePage(Page):
 
   def run(self, run: Run) -> None:
     for _ in self._playback:
-      self.action_runner.runAll(run, self._actions)
+      self.action_runner.run_all(run, self._actions)
 
   def details_json(self) -> JsonDict:
     result = super().details_json()
@@ -147,6 +163,7 @@ class InteractivePage(Page):
 
 
 PAGE_LIST = (
+    LivePage("blank", "about:blank", dt.timedelta(seconds=1)),
     LivePage("amazon", "https://www.amazon.de/s?k=heizkissen",
              dt.timedelta(seconds=5)),
     LivePage("bing", "https://www.bing.com/images/search?q=not+a+squirrel",
@@ -165,6 +182,7 @@ PAGE_LIST = (
              dt.timedelta(seconds=6)),
     LivePage("sueddeutsche", "https://www.sueddeutsche.de/wirtschaft",
              dt.timedelta(seconds=8)),
+    LivePage("theverge", "https://www.theverge.com/", dt.timedelta(seconds=10)),
     LivePage("timesofindia", "https://timesofindia.indiatimes.com/",
              dt.timedelta(seconds=8)),
     LivePage("twitter", "https://twitter.com/wernertwertzog?lang=en",

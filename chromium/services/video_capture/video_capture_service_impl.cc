@@ -25,6 +25,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/video_capture/device_factory_impl.h"
+#include "services/video_capture/public/cpp/features.h"
 #include "services/video_capture/testing_controls_impl.h"
 #include "services/video_capture/video_source_provider_impl.h"
 #include "services/video_capture/virtual_device_enabled_device_factory.h"
@@ -132,9 +133,8 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
       media::VideoCaptureGpuChannelHost::GetInstance().SetSharedImageInterface(
           viz_gpu_->GetGpuChannel()->CreateClientSharedImageInterface());
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-      media::VideoCaptureDeviceFactoryChromeOS::SetGpuBufferManager(
-          media::VideoCaptureGpuChannelHost::GetInstance()
-              .GetGpuMemoryBufferManager());
+      media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(
+          viz_gpu_->GetGpuChannel());
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     }
   }
@@ -142,6 +142,14 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
     // Ensure destroy context provider and not receive callbacks before clear up
     // |viz_gpu_|
     if (context_provider_) {
+      // Ensure there are no dangling pointers.
+      media::VideoCaptureGpuChannelHost::GetInstance()
+          .SetGpuMemoryBufferManager(nullptr);
+      media::VideoCaptureGpuChannelHost::GetInstance().SetSharedImageInterface(
+          nullptr);
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+      media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(nullptr);
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
       context_provider_.reset();
     }
   }
@@ -158,6 +166,12 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
           .SetGpuMemoryBufferManager(nullptr);
       media::VideoCaptureGpuChannelHost::GetInstance().SetSharedImageInterface(
           nullptr);
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+      media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(nullptr);
+    } else {
+      media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(
+          viz_gpu_->GetGpuChannel());
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     }
 
     // Notify context lost after new context ready.
@@ -251,6 +265,12 @@ VideoCaptureServiceImpl::VideoCaptureServiceImpl(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     media::CameraAppDeviceBridgeImpl::GetInstance()->SetUITaskRunner(
         ui_task_runner_);
+#endif
+#if BUILDFLAG(IS_WIN)
+    if (base::FeatureList::IsEnabled(
+            features::kWinCameraMonitoringInVideoCaptureService)) {
+      InitializeDeviceMonitor();
+    }
 #endif
 }
 
@@ -423,6 +443,16 @@ void VideoCaptureServiceImpl::InitializeDeviceMonitor() {
       base::ThreadPool::CreateSingleThreadTaskRunner(
           {base::TaskPriority::USER_VISIBLE}));
   video_capture_device_monitor_mac_->StartMonitoring();
+#endif
+
+#if BUILDFLAG(IS_WIN)
+  CHECK(base::FeatureList::IsEnabled(
+      features::kWinCameraMonitoringInVideoCaptureService));
+  if (video_capture_system_message_window_win_) {
+    return;
+  }
+  video_capture_system_message_window_win_ =
+      std::make_unique<media::SystemMessageWindowWin>();
 #endif
 }
 

@@ -8,6 +8,7 @@
 #include "src/gpu/ganesh/ops/DashOp.h"
 
 #include "include/gpu/GrRecordingContext.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/gpu/BufferWriter.h"
@@ -32,6 +33,14 @@
 #include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
 #include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
+
+#if defined(GR_TEST_UTILS)
+
+#include "src/base/SkRandom.h"
+#include "src/gpu/ganesh/GrDrawOpTest.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
+
+#endif
 
 using namespace skia_private;
 
@@ -354,6 +363,7 @@ private:
         STArray<kNumStackDashes, SkRect, true> rects;
         STArray<kNumStackDashes, DashDraw, true> draws;
 
+        SkSafeMath safeMath;
         int totalRectCount = 0;
         int rectOffset = 0;
         rects.push_back_n(3 * instanceCount);
@@ -520,9 +530,9 @@ private:
                 devIntervals[0] = lineLength;
             }
 
-            totalRectCount += !lineDone ? 1 : 0;
-            totalRectCount += hasStartRect ? 1 : 0;
-            totalRectCount += hasEndRect ? 1 : 0;
+            totalRectCount = safeMath.addInt(totalRectCount, !lineDone ? 1 : 0);
+            totalRectCount = safeMath.addInt(totalRectCount, hasStartRect ? 1 : 0);
+            totalRectCount = safeMath.addInt(totalRectCount, hasEndRect ? 1 : 0);
 
             if (SkPaint::kRound_Cap == cap && 0 != args.fSrcStrokeWidth) {
                 // need to adjust this for round caps to correctly set the dashPos attrib on
@@ -562,7 +572,7 @@ private:
             draw.fHasEndRect = hasEndRect;
         }
 
-        if (!totalRectCount) {
+        if (!totalRectCount || !safeMath) {
             return;
         }
 
@@ -1227,8 +1237,6 @@ bool CanDrawDashLine(const SkPoint pts[2], const GrStyle& style, const SkMatrix&
 } // namespace skgpu::ganesh::DashOp
 
 #if defined(GR_TEST_UTILS)
-
-#include "src/gpu/ganesh/GrDrawOpTest.h"
 
 GR_DRAW_OP_TEST_DEFINE(DashOpImpl) {
     SkMatrix viewMatrix = GrTest::TestMatrixPreservesRightAngles(random);

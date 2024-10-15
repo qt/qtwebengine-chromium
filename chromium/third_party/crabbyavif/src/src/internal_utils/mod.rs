@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 pub mod io;
 pub mod pixels;
 pub mod stream;
@@ -222,6 +236,18 @@ pub fn limited_to_full_y(depth: u8, v: u16) -> u16 {
 
 pub fn create_vec_exact<T>(size: usize) -> AvifResult<Vec<T>> {
     let mut v = Vec::<T>::new();
+    let allocation_size = size
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or(AvifError::OutOfMemory)?;
+    // TODO: b/342251590 - Do not request allocations of more than what is allowed in Chromium's
+    // partition allocator. This is the allowed limit in the chromium fuzzers. The value comes
+    // from:
+    // https://source.chromium.org/chromium/chromium/src/+/main:base/allocator/partition_allocator/src/partition_alloc/partition_alloc_constants.h;l=433-440;drc=c0265133106c7647e90f9aaa4377d28190b1a6a9.
+    // Requesting an allocation larger than this value will cause the fuzzers to crash instead of
+    // returning null. Remove this check once that behavior is fixed.
+    if u64_from_usize(allocation_size)? >= 2_145_386_496 {
+        return Err(AvifError::OutOfMemory);
+    }
     if v.try_reserve_exact(size).is_err() {
         return Err(AvifError::OutOfMemory);
     }

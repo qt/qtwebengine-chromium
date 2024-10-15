@@ -50,7 +50,7 @@ TEST(AvifDecodeTest, AnimatedImageWithSourceSetToPrimaryItem) {
   // imageCount is expected to be 1 because we are using primary item as the
   // preferred source.
   EXPECT_EQ(decoder->imageCount, 1);
-  EXPECT_EQ(decoder->repetitionCount, AVIF_REPETITION_COUNT_UNKNOWN);
+  EXPECT_EQ(decoder->repetitionCount, 0);
   // Get the first (and only) image.
   EXPECT_EQ(avifDecoderNextImage(decoder.get()), AVIF_RESULT_OK);
   // Subsequent calls should not return AVIF_RESULT_OK since there is only one

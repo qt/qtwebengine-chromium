@@ -1,7 +1,22 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::libyuv;
 use super::rgb_impl;
 
 use crate::image::Plane;
+use crate::image::YuvRange;
 use crate::internal_utils::pixels::*;
 use crate::internal_utils::*;
 use crate::*;
@@ -46,6 +61,10 @@ impl Format {
 
     pub fn alpha_offset(&self) -> usize {
         self.offsets()[3]
+    }
+
+    pub fn has_alpha(&self) -> bool {
+        !matches!(self, Format::Rgb | Format::Bgr | Format::Rgb565)
     }
 }
 
@@ -146,38 +165,38 @@ impl Image {
         self.pixels
             .as_ref()
             .ok_or(AvifError::NoContent)?
-            .slice(row * self.row_bytes, self.row_bytes)
+            .slice(checked_mul!(row, self.row_bytes)?, self.row_bytes)
     }
 
     pub fn row_mut(&mut self, row: u32) -> AvifResult<&mut [u8]> {
         self.pixels
             .as_mut()
             .ok_or(AvifError::NoContent)?
-            .slice_mut(row * self.row_bytes, self.row_bytes)
+            .slice_mut(checked_mul!(row, self.row_bytes)?, self.row_bytes)
     }
 
     pub fn row16(&self, row: u32) -> AvifResult<&[u16]> {
         self.pixels
             .as_ref()
             .ok_or(AvifError::NoContent)?
-            .slice16(row * self.row_bytes / 2, self.row_bytes / 2)
+            .slice16(checked_mul!(row, self.row_bytes / 2)?, self.row_bytes / 2)
     }
 
     pub fn row16_mut(&mut self, row: u32) -> AvifResult<&mut [u16]> {
         self.pixels
             .as_mut()
             .ok_or(AvifError::NoContent)?
-            .slice16_mut(row * self.row_bytes / 2, self.row_bytes / 2)
+            .slice16_mut(checked_mul!(row, self.row_bytes / 2)?, self.row_bytes / 2)
     }
 
     pub fn allocate(&mut self) -> AvifResult<()> {
-        let row_bytes = self.width * self.pixel_size();
+        let row_bytes = checked_mul!(self.width, self.pixel_size())?;
         if self.channel_size() == 1 {
-            let buffer_size: usize = usize_from_u32(row_bytes * self.height)?;
+            let buffer_size: usize = usize_from_u32(checked_mul!(row_bytes, self.height)?)?;
             let buffer: Vec<u8> = vec![0; buffer_size];
             self.pixels = Some(Pixels::Buffer(buffer));
         } else {
-            let buffer_size: usize = usize_from_u32((row_bytes / 2) * self.height)?;
+            let buffer_size: usize = usize_from_u32(checked_mul!(row_bytes / 2, self.height)?)?;
             let buffer: Vec<u16> = vec![0; buffer_size];
             self.pixels = Some(Pixels::Buffer16(buffer));
         }
@@ -249,9 +268,30 @@ impl Image {
     }
 
     pub fn convert_from_yuv(&mut self, image: &image::Image) -> AvifResult<()> {
-        if !image.has_plane(Plane::Y) {
+        if !image.has_plane(Plane::Y) || !image.depth_valid() {
             return Err(AvifError::ReformatFailed);
         }
+        if matches!(
+            image.matrix_coefficients,
+            MatrixCoefficients::Reserved
+                | MatrixCoefficients::Bt2020Cl
+                | MatrixCoefficients::Smpte2085
+                | MatrixCoefficients::ChromaDerivedCl
+                | MatrixCoefficients::Ictcp
+        ) {
+            return Err(AvifError::NotImplemented);
+        }
+        if image.matrix_coefficients == MatrixCoefficients::Ycgco
+            && image.yuv_range == YuvRange::Limited
+        {
+            return Err(AvifError::NotImplemented);
+        }
+        if image.matrix_coefficients == MatrixCoefficients::Identity
+            && !matches!(image.yuv_format, PixelFormat::Yuv444 | PixelFormat::Yuv400)
+        {
+            return Err(AvifError::NotImplemented);
+        }
+
         let mut alpha_multiply_mode = AlphaMultiplyMode::NoOp;
         if image.has_alpha() && self.has_alpha() {
             if !image.alpha_premultiplied && self.premultiply_alpha {
@@ -284,13 +324,25 @@ impl Image {
             }
         }
         if !converted_with_libyuv {
-            match rgb_impl::yuv_to_rgb_fast(image, self) {
-                Ok(_) => (),
-                Err(AvifError::NotImplemented) => {
-                    rgb_impl::yuv_to_rgb_any(image, self, alpha_multiply_mode)?;
-                    alpha_multiply_mode = AlphaMultiplyMode::NoOp;
+            let mut converted_by_fast_path = false;
+            if (matches!(
+                self.chroma_upsampling,
+                ChromaUpsampling::Nearest | ChromaUpsampling::Fastest
+            ) || matches!(image.yuv_format, PixelFormat::Yuv444 | PixelFormat::Yuv400))
+                && (alpha_multiply_mode == AlphaMultiplyMode::NoOp || self.format.has_alpha())
+            {
+                match rgb_impl::yuv_to_rgb_fast(image, self) {
+                    Ok(_) => converted_by_fast_path = true,
+                    Err(err) => {
+                        if err != AvifError::NotImplemented {
+                            return Err(err);
+                        }
+                    }
                 }
-                Err(err) => return Err(err),
+            }
+            if !converted_by_fast_path {
+                rgb_impl::yuv_to_rgb_any(image, self, alpha_multiply_mode)?;
+                alpha_multiply_mode = AlphaMultiplyMode::NoOp;
             }
         }
         match alpha_multiply_mode {
@@ -375,6 +427,7 @@ mod tests {
     use super::*;
 
     use crate::decoder::Category;
+    use crate::image::YuvRange;
     use crate::image::ALL_PLANES;
     use crate::image::MAX_PLANE_COUNT;
 
@@ -388,7 +441,7 @@ mod tests {
         height: u32,
         depth: u8,
         format: PixelFormat,
-        full_range: bool,
+        yuv_range: YuvRange,
         color_primaries: ColorPrimaries,
         matrix_coefficients: MatrixCoefficients,
         planes: [[&'static [u16]; HEIGHT]; MAX_PLANE_COUNT],
@@ -399,7 +452,7 @@ mod tests {
         height: HEIGHT as u32,
         depth: 12,
         format: PixelFormat::Yuv420,
-        full_range: false,
+        yuv_range: YuvRange::Limited,
         color_primaries: ColorPrimaries::Srgb,
         matrix_coefficients: MatrixCoefficients::Bt709,
         planes: [
@@ -483,7 +536,7 @@ mod tests {
             yuv_format: yuv_params.format,
             color_primaries: yuv_params.color_primaries,
             matrix_coefficients: yuv_params.matrix_coefficients,
-            full_range: yuv_params.full_range,
+            yuv_range: yuv_params.yuv_range,
             ..image::Image::default()
         };
         image.allocate_planes(Category::Color)?;

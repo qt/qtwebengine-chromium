@@ -1,6 +1,7 @@
 // Copyright 2024 Google LLC
 // SPDX-License-Identifier: BSD-2-Clause
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -26,6 +27,8 @@ struct ExpectedImageInfo {
   avifColorPrimaries color_primaries;
   avifTransferCharacteristics transfer_characteristics;
   avifMatrixCoefficients matrix_coefficients;
+  size_t color_obu_size;
+  size_t alpha_obu_size;
 };
 
 constexpr ExpectedImageInfo kExpectedImageInfos[] = {
@@ -42,6 +45,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        122336,
+        0,
     },
     // index: 1
     {
@@ -55,6 +60,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        2063701,
+        0,
     },
     // index: 2
     {
@@ -69,6 +76,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        2063701,
+        0,
     },
     // index: 3
     {
@@ -82,6 +91,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        1999503,
+        0,
     },
     // index: 4
     {
@@ -95,6 +106,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        1999503,
+        0,
     },
     // index: 5
     {
@@ -108,6 +121,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        1999503,
+        0,
     },
     // index: 6
     {
@@ -121,6 +136,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        2306164,
+        0,
     },
     // index: 7
     {
@@ -134,6 +151,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        2306164,
+        0,
     },
     // index: 8
     {
@@ -147,6 +166,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        1999503,
+        0,
     },
     // index: 9
     {
@@ -160,6 +181,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)12,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        2063701,
+        0,
     },
     // index: 10
     {
@@ -173,6 +196,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        64098,
+        0,
     },
     // index: 11
     {
@@ -186,6 +211,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        56116,
+        0,
     },
     // index: 12
     {
@@ -199,6 +226,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55174,
+        0,
     },
     // index: 13
     {
@@ -212,6 +241,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55254,
+        0,
     },
     // index: 14
     {
@@ -225,6 +256,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54589,
+        0,
     },
     // index: 15
     {
@@ -238,6 +271,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63262,
+        0,
     },
     // index: 16
     {
@@ -251,6 +286,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63442,
+        0,
     },
     // index: 17
     {
@@ -264,6 +301,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        62619,
+        0,
     },
     // index: 18
     {
@@ -277,6 +316,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63157,
+        0,
     },
     // index: 19
     {
@@ -290,6 +331,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55329,
+        0,
     },
     // index: 20
     {
@@ -303,6 +346,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54376,
+        0,
     },
     // index: 21
     {
@@ -316,6 +361,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54460,
+        0,
     },
     // index: 22
     {
@@ -329,6 +376,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        53836,
+        0,
     },
     // index: 23
     {
@@ -342,6 +391,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        62451,
+        0,
     },
     // index: 24
     {
@@ -355,6 +406,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        62535,
+        0,
     },
     // index: 25
     {
@@ -368,6 +421,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        61950,
+        0,
     },
     // index: 26
     {
@@ -381,6 +436,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        74745,
+        0,
     },
     // index: 27
     {
@@ -394,6 +451,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        73212,
+        0,
     },
     // index: 28
     {
@@ -407,6 +466,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        73266,
+        0,
     },
     // index: 29
     {
@@ -420,6 +481,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        72379,
+        0,
     },
     // index: 30
     {
@@ -433,6 +496,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        73902,
+        0,
     },
     // index: 31
     {
@@ -446,6 +511,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        72478,
+        0,
     },
     // index: 32
     {
@@ -459,6 +526,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        72769,
+        0,
     },
     // index: 33
     {
@@ -472,6 +541,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        71795,
+        0,
     },
     // index: 34
     {
@@ -485,6 +556,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        68524,
+        0,
     },
     // index: 35
     {
@@ -498,6 +571,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        56116,
+        0,
     },
     // index: 36
     {
@@ -511,6 +586,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55174,
+        0,
     },
     // index: 37
     {
@@ -524,6 +601,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55254,
+        0,
     },
     // index: 38
     {
@@ -537,6 +616,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54589,
+        0,
     },
     // index: 39
     {
@@ -550,6 +631,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        67602,
+        0,
     },
     // index: 40
     {
@@ -563,6 +646,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        67803,
+        0,
     },
     // index: 41
     {
@@ -576,6 +661,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        66794,
+        0,
     },
     // index: 42
     {
@@ -589,6 +676,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        64688,
+        0,
     },
     // index: 43
     {
@@ -602,6 +691,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        56651,
+        0,
     },
     // index: 44
     {
@@ -615,6 +706,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55561,
+        0,
     },
     // index: 45
     {
@@ -628,6 +721,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55679,
+        0,
     },
     // index: 46
     {
@@ -641,6 +736,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54936,
+        0,
     },
     // index: 47
     {
@@ -654,6 +751,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63714,
+        0,
     },
     // index: 48
     {
@@ -667,6 +766,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63791,
+        0,
     },
     // index: 49
     {
@@ -680,6 +781,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        63145,
+        0,
     },
     // index: 50
     {
@@ -693,6 +796,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        69054,
+        0,
     },
     // index: 51
     {
@@ -706,6 +811,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        56651,
+        0,
     },
     // index: 52
     {
@@ -719,6 +826,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55561,
+        0,
     },
     // index: 53
     {
@@ -732,6 +841,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55679,
+        0,
     },
     // index: 54
     {
@@ -745,6 +856,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54936,
+        0,
     },
     // index: 55
     {
@@ -758,6 +871,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        67792,
+        0,
     },
     // index: 56
     {
@@ -771,6 +886,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        68051,
+        0,
     },
     // index: 57
     {
@@ -784,6 +901,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        67328,
+        0,
     },
     // index: 58
     {
@@ -797,6 +916,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        75004,
+        0,
     },
     // index: 59
     {
@@ -810,6 +931,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        56651,
+        0,
     },
     // index: 60
     {
@@ -823,6 +946,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55561,
+        0,
     },
     // index: 61
     {
@@ -836,6 +961,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55679,
+        0,
     },
     // index: 62
     {
@@ -849,6 +976,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54936,
+        0,
     },
     // index: 63
     {
@@ -862,6 +991,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        73694,
+        0,
     },
     // index: 64
     {
@@ -875,6 +1006,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        73720,
+        0,
     },
     // index: 65
     {
@@ -888,6 +1021,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        72725,
+        0,
     },
     // index: 66
     {
@@ -901,6 +1036,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        67538,
+        0,
     },
     // index: 67
     {
@@ -914,6 +1051,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        55329,
+        0,
     },
     // index: 68
     {
@@ -927,6 +1066,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54376,
+        0,
     },
     // index: 69
     {
@@ -940,6 +1081,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        54460,
+        0,
     },
     // index: 70
     {
@@ -953,6 +1096,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        53836,
+        0,
     },
     // index: 71
     {
@@ -966,6 +1111,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        66814,
+        0,
     },
     // index: 72
     {
@@ -979,6 +1126,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        66974,
+        0,
     },
     // index: 73
     {
@@ -992,6 +1141,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        66154,
+        0,
     },
     // index: 74
     {
@@ -1006,6 +1157,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        178883,
+        0,
     },
     // index: 75
     {
@@ -1019,6 +1172,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        208271,
+        0,
     },
     // index: 76
     {
@@ -1032,6 +1187,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        177474,
+        0,
     },
     // index: 77
     {
@@ -1045,6 +1202,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        207414,
+        0,
     },
     // index: 78
     {
@@ -1059,6 +1218,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        178883,
+        0,
     },
     // index: 79
     {
@@ -1072,6 +1233,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        225894,
+        0,
     },
     // index: 80
     {
@@ -1085,6 +1248,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)9,
+        231531,
+        0,
     },
     // index: 81
     {
@@ -1099,6 +1264,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        226731,
+        0,
     },
     // index: 82
     {
@@ -1112,6 +1279,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        226731,
+        0,
     },
     // index: 83
     {
@@ -1125,6 +1294,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        177474,
+        0,
     },
     // index: 84
     {
@@ -1138,6 +1309,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        225881,
+        0,
     },
     // index: 85
     {
@@ -1151,6 +1324,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        85120,
+        0,
     },
     // index: 86
     {
@@ -1164,6 +1339,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        85120,
+        0,
     },
     // index: 87
     {
@@ -1177,6 +1354,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        84661,
+        0,
     },
     // index: 88
     {
@@ -1190,6 +1369,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        84297,
+        0,
     },
     // index: 89
     {
@@ -1203,6 +1384,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        85184,
+        0,
     },
     // index: 90
     {
@@ -1216,6 +1399,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        85184,
+        0,
     },
     // index: 91
     {
@@ -1229,6 +1414,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        84551,
+        0,
     },
     // index: 92
     {
@@ -1242,6 +1429,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)9,
+        84502,
+        0,
     },
     // index: 93
     {
@@ -1255,6 +1444,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        95279,
+        0,
     },
     // index: 94
     {
@@ -1268,6 +1459,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)10,
+        95279,
+        0,
     },
     // index: 95
     {
@@ -1281,6 +1474,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        37860,
+        0,
     },
     // index: 96
     {
@@ -1294,6 +1489,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        27601,
+        0,
     },
     // index: 97
     {
@@ -1307,6 +1504,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        218726,
+        0,
     },
     // index: 98
     {
@@ -1320,6 +1519,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        158350,
+        0,
     },
     // index: 99
     {
@@ -1333,6 +1534,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)1,
         (avifMatrixCoefficients)1,
+        6979,
+        0,
     },
     // index: 100
     {
@@ -1346,6 +1549,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        95912,
+        0,
     },
     // index: 101
     {
@@ -1359,6 +1564,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        279919,
+        0,
     },
     // index: 102
     {
@@ -1372,6 +1579,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        1963366,
+        0,
     },
     // index: 103
     {
@@ -1385,6 +1594,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)1,
+        7618,
+        0,
     },
     // index: 104
     {
@@ -1398,6 +1609,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        30980,
+        0,
     },
     // index: 105
     {
@@ -1411,6 +1624,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)1,
+        4508,
+        3202,
     },
     // index: 106
     {
@@ -1424,6 +1639,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        57105,
+        0,
     },
     // index: 107
     {
@@ -1437,6 +1654,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)1,
+        7618,
+        0,
     },
     // index: 108
     {
@@ -1450,6 +1669,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)1,
+        7624,
+        0,
     },
     // index: 109
     {
@@ -1463,6 +1684,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)0,
+        2030306,
+        0,
     },
     // index: 110
     {
@@ -1476,6 +1699,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        92239,
+        0,
     },
     // index: 111
     {
@@ -1489,6 +1714,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        32939,
+        0,
     },
     // index: 112
     {
@@ -1502,6 +1729,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        9547,
+        0,
     },
     // index: 113
     {
@@ -1515,6 +1744,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        129471,
+        0,
     },
     // index: 114
     {
@@ -1528,6 +1759,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        45646,
+        0,
     },
     // index: 115
     {
@@ -1541,6 +1774,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        12595,
+        0,
     },
     // index: 116
     {
@@ -1554,6 +1789,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)0,
+        2865083,
+        0,
     },
     // index: 117
     {
@@ -1567,6 +1804,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        260689,
+        0,
     },
     // index: 118
     {
@@ -1580,6 +1819,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        130393,
+        0,
     },
     // index: 119
     {
@@ -1593,6 +1834,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        29579,
+        0,
     },
     // index: 120
     {
@@ -1606,6 +1849,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        372069,
+        0,
     },
     // index: 121
     {
@@ -1619,6 +1864,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        173936,
+        0,
     },
     // index: 122
     {
@@ -1632,6 +1879,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        39535,
+        0,
     },
     // index: 123
     {
@@ -1645,6 +1894,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)0,
+        2164296,
+        0,
     },
     // index: 124
     {
@@ -1658,6 +1909,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        124229,
+        0,
     },
     // index: 125
     {
@@ -1671,6 +1924,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        40359,
+        0,
     },
     // index: 126
     {
@@ -1684,6 +1939,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        7874,
+        0,
     },
     // index: 127
     {
@@ -1697,6 +1954,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        204393,
+        0,
     },
     // index: 128
     {
@@ -1710,6 +1969,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        61973,
+        0,
     },
     // index: 129
     {
@@ -1723,6 +1984,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        11224,
+        0,
     },
     // index: 130
     {
@@ -1736,6 +1999,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)0,
+        3055111,
+        0,
     },
     // index: 131
     {
@@ -1749,6 +2014,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        95933,
+        0,
     },
     // index: 132
     {
@@ -1762,6 +2029,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        47119,
+        0,
     },
     // index: 133
     {
@@ -1775,6 +2044,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        16529,
+        0,
     },
     // index: 134
     {
@@ -1788,6 +2059,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        143650,
+        0,
     },
     // index: 135
     {
@@ -1801,6 +2074,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        66240,
+        0,
     },
     // index: 136
     {
@@ -1814,6 +2089,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)9,
         (avifTransferCharacteristics)16,
         (avifMatrixCoefficients)9,
+        23455,
+        0,
     },
     // index: 137
     {
@@ -1827,6 +2104,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)0,
+        1323382,
+        0,
     },
     // index: 138
     {
@@ -1840,6 +2119,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        91887,
+        0,
     },
     // index: 139
     {
@@ -1853,6 +2134,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        44338,
+        0,
     },
     // index: 140
     {
@@ -1866,6 +2149,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        12204,
+        0,
     },
     // index: 141
     {
@@ -1879,6 +2164,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        129688,
+        0,
     },
     // index: 142
     {
@@ -1892,6 +2179,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        61926,
+        0,
     },
     // index: 143
     {
@@ -1905,6 +2194,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        16744,
+        0,
     },
     // index: 144
     {
@@ -1918,6 +2209,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)0,
+        1734421,
+        0,
     },
     // index: 145
     {
@@ -1931,6 +2224,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        246525,
+        0,
     },
     // index: 146
     {
@@ -1944,6 +2239,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        128922,
+        0,
     },
     // index: 147
     {
@@ -1957,6 +2254,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        39209,
+        0,
     },
     // index: 148
     {
@@ -1970,6 +2269,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        370809,
+        0,
     },
     // index: 149
     {
@@ -1983,6 +2284,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        187912,
+        0,
     },
     // index: 150
     {
@@ -1996,6 +2299,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        53041,
+        0,
     },
     // index: 151
     {
@@ -2009,6 +2314,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)0,
+        1389248,
+        0,
     },
     // index: 152
     {
@@ -2022,6 +2329,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        131503,
+        0,
     },
     // index: 153
     {
@@ -2035,6 +2344,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        62338,
+        0,
     },
     // index: 154
     {
@@ -2048,6 +2359,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        15027,
+        0,
     },
     // index: 155
     {
@@ -2061,6 +2374,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        282438,
+        0,
     },
     // index: 156
     {
@@ -2074,6 +2389,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        134294,
+        0,
     },
     // index: 157
     {
@@ -2087,6 +2404,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        24570,
+        0,
     },
     // index: 158
     {
@@ -2100,6 +2419,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)0,
+        2061853,
+        0,
     },
     // index: 159
     {
@@ -2113,6 +2434,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        153575,
+        0,
     },
     // index: 160
     {
@@ -2126,6 +2449,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        75234,
+        0,
     },
     // index: 161
     {
@@ -2139,6 +2464,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        27418,
+        0,
     },
     // index: 162
     {
@@ -2152,6 +2479,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        285667,
+        0,
     },
     // index: 163
     {
@@ -2165,6 +2494,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        119878,
+        0,
     },
     // index: 164
     {
@@ -2178,6 +2509,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)6,
+        41906,
+        0,
     },
     // index: 165
     {
@@ -2191,6 +2524,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        142540,
+        0,
     },
     // index: 166
     {
@@ -2204,6 +2539,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)1,
         (avifTransferCharacteristics)13,
         (avifMatrixCoefficients)1,
+        3487,
+        4642,
     },
     // index: 167
     {
@@ -2217,6 +2554,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        141119,
+        0,
     },
     // index: 168
     {
@@ -2230,6 +2569,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        35097,
+        0,
     },
     // index: 169
     {
@@ -2243,6 +2584,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        86246,
+        0,
     },
     // index: 170
     {
@@ -2256,6 +2599,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        70551,
+        0,
     },
     // index: 171
     {
@@ -2269,6 +2614,8 @@ constexpr ExpectedImageInfo kExpectedImageInfos[] = {
         (avifColorPrimaries)2,
         (avifTransferCharacteristics)2,
         (avifMatrixCoefficients)2,
+        64582,
+        0,
     },
 };
 

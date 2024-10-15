@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::image::*;
 
 use std::os::raw::c_char;
@@ -126,78 +140,6 @@ pub type avifBool = c_int;
 pub const AVIF_TRUE: c_int = 1;
 pub const AVIF_FALSE: c_int = 0;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum avifPixelFormat {
-    None,
-    Yuv444,
-    Yuv422,
-    Yuv420,
-    Yuv400,
-    Count,
-}
-
-impl From<PixelFormat> for avifPixelFormat {
-    fn from(format: PixelFormat) -> Self {
-        match format {
-            PixelFormat::Yuv444 => Self::Yuv444,
-            PixelFormat::Yuv422 => Self::Yuv422,
-            PixelFormat::Yuv420 => Self::Yuv420,
-            PixelFormat::Monochrome => Self::Yuv400,
-        }
-    }
-}
-
-impl From<avifPixelFormat> for PixelFormat {
-    fn from(format: avifPixelFormat) -> Self {
-        match format {
-            avifPixelFormat::Yuv444 => Self::Yuv444,
-            avifPixelFormat::Yuv422 => Self::Yuv422,
-            avifPixelFormat::Yuv420 => Self::Yuv420,
-            avifPixelFormat::Yuv400 => Self::Monochrome,
-            _ => PixelFormat::Yuv420,
-        }
-    }
-}
-
-impl avifPixelFormat {
-    // TODO: these functions can be removed if avifPixelFormat can be aliased to PixelFormat (with
-    // constants None and Count.
-    pub fn is_monochrome(&self) -> bool {
-        matches!(self, Self::Yuv400)
-    }
-
-    pub fn chroma_shift_x(&self) -> u32 {
-        match self {
-            Self::Yuv422 | Self::Yuv420 => 1,
-            _ => 0,
-        }
-    }
-
-    pub fn chroma_shift_y(&self) -> u32 {
-        match self {
-            Self::Yuv420 => 1,
-            _ => 0,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum avifRange {
-    Limited = 0,
-    Full = 1,
-}
-
-impl From<bool> for avifRange {
-    fn from(full_range: bool) -> Self {
-        match full_range {
-            true => Self::Full,
-            false => Self::Limited,
-        }
-    }
-}
-
 pub const AVIF_STRICT_DISABLED: u32 = 0;
 pub const AVIF_STRICT_PIXI_REQUIRED: u32 = 1 << 0;
 pub const AVIF_STRICT_CLAP_VALID: u32 = 1 << 1;
@@ -301,7 +243,7 @@ pub unsafe extern "C" fn crabby_avifCropRectConvertCleanApertureBox(
     clap: *const avifCleanApertureBox,
     imageW: u32,
     imageH: u32,
-    yuvFormat: avifPixelFormat,
+    yuvFormat: PixelFormat,
     _diag: *mut avifDiagnostics,
 ) -> avifBool {
     let rust_clap: CleanAperture = unsafe { (&(*clap)).into() };
@@ -353,7 +295,7 @@ pub struct avifPixelFormatInfo {
 
 #[no_mangle]
 pub unsafe extern "C" fn crabby_avifGetPixelFormatInfo(
-    format: avifPixelFormat,
+    format: PixelFormat,
     info: *mut avifPixelFormatInfo,
 ) {
     if info.is_null() {
@@ -361,22 +303,22 @@ pub unsafe extern "C" fn crabby_avifGetPixelFormatInfo(
     }
     let info = unsafe { &mut (*info) };
     match format {
-        avifPixelFormat::Yuv444 => {
+        PixelFormat::Yuv444 => {
             info.chromaShiftX = 0;
             info.chromaShiftY = 0;
             info.monochrome = AVIF_FALSE;
         }
-        avifPixelFormat::Yuv422 => {
+        PixelFormat::Yuv422 => {
             info.chromaShiftX = 1;
             info.chromaShiftY = 0;
             info.monochrome = AVIF_FALSE;
         }
-        avifPixelFormat::Yuv420 => {
+        PixelFormat::Yuv420 => {
             info.chromaShiftX = 1;
             info.chromaShiftY = 1;
             info.monochrome = AVIF_FALSE;
         }
-        avifPixelFormat::Yuv400 => {
+        PixelFormat::Yuv400 => {
             info.chromaShiftX = 1;
             info.chromaShiftY = 1;
             info.monochrome = AVIF_TRUE;
@@ -401,14 +343,6 @@ pub enum avifCodecFlag {
     CanEncode = (1 << 1),
 }
 pub type avifCodecFlags = u32;
-
-// TODO: This can be moved into the rust layer and renamed.
-#[repr(C)]
-#[derive(Default)]
-pub struct avifIOStats {
-    colorOBUSize: usize,
-    alphaOBUSize: usize,
-}
 
 pub const AVIF_TRANSFORM_NONE: u32 = 0;
 pub const AVIF_TRANSFORM_PASP: u32 = 1 << 0;

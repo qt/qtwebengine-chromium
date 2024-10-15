@@ -3,6 +3,7 @@ on: pull_request
 
 jobs:
   rustfmt:
+    name: "Rustfmt"
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

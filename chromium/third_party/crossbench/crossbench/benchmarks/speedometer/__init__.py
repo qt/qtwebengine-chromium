@@ -4,9 +4,12 @@
 
 from __future__ import annotations
 
-from .speedometer_2_0 import Speedometer20Benchmark
-from .speedometer_2_1 import Speedometer21Benchmark
-from .speedometer_3_0 import Speedometer30Benchmark
+from crossbench.benchmarks.speedometer.speedometer_2_0 import \
+    Speedometer20Benchmark
+from crossbench.benchmarks.speedometer.speedometer_2_1 import \
+    Speedometer21Benchmark
+from crossbench.benchmarks.speedometer.speedometer_3_0 import \
+    Speedometer30Benchmark
 
 benchmark_classes = [
     Speedometer20Benchmark, Speedometer21Benchmark, Speedometer30Benchmark

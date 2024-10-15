@@ -7,25 +7,35 @@
 from __future__ import annotations
 
 import atexit
-
+import contextlib
 import locale
 import logging
 import os
-import pathlib
 import re
 import shlex
 import signal
 import subprocess
 import sys
-from typing import IO, List, Optional, Union
+from typing import IO, TYPE_CHECKING, Iterator, List, Optional, Union
+
+from crossbench import cli_helper, helper
+from crossbench.flags.base import Flags
+from crossbench.helper.path_finder import TsProxyFinder
+from crossbench.network.traffic_shaping.base import TrafficShaper
+
+if TYPE_CHECKING:
+  from crossbench.browsers.browser import Browser
+  from crossbench.network.base import Network
+  from crossbench.path import LocalPath
+  from crossbench.plt.base import ListCmdArgsT, Platform
+  from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 fnctl = None
 try:
   import fcntl
-except ModuleNotFoundError as e:
-  logging.debug("No fcntl support %s", e)
+except ModuleNotFoundError as not_found:
+  logging.debug("No fcntl support %s", not_found)
 
-from crossbench import cli_helper, helper
 
 
 class TsProxyServerError(Exception):
@@ -79,7 +89,7 @@ class TsProxyServer:
   """
 
   def __init__(self,
-               ts_proxy_path: pathlib.Path,
+               ts_proxy_path: LocalPath,
                host_ip: Optional[str] = None,
                socks_proxy_port: Optional[int] = None,
                http_port: Optional[int] = None,
@@ -110,7 +120,7 @@ class TsProxyServer:
       raise ValueError(
           "Both https and http-port should be specified or omitted, "
           f"but got http_port={http_port} and https_port={https_port}")
-    if http_port == https_port:
+    if http_port is not None and http_port == https_port:
       raise ValueError("http_port and https_port must be different, "
                        f"got {https_port} twice.")
     if http_port is not None:
@@ -165,7 +175,7 @@ class TsProxyProcess:
   """Separate wrapper around the ts_proxy to simplify pytype testing."""
 
   def __init__(self,
-               ts_proxy_path: pathlib.Path,
+               ts_proxy_path: LocalPath,
                host_ip: Optional[str] = None,
                socks_proxy_port: Optional[int] = None,
                http_port: Optional[int] = None,
@@ -177,7 +187,7 @@ class TsProxyProcess:
                verbose: bool = False,
                timeout: Union[int, float] = DEFAULT_TIMEOUT) -> None:
     """Start TsProxy server and verify that it started."""
-    cmd = [
+    cmd: ListCmdArgsT = [
         sys.executable,
         ts_proxy_path,
     ]
@@ -210,7 +220,7 @@ class TsProxyProcess:
     TsProxyServer.verify_ports(http_port, https_port)
     if http_port:
       cmd.append(f"--mapports=443:{https_port},*:{http_port}")
-    logging.info("TsProxy: commandline: %s", shlex.join(cmd))
+    logging.info("TsProxy: commandline: %s", shlex.join(map(str, cmd)))
     self._verify_default_encoding()
     # In python3 universal_newlines forces subprocess to encode/decode,
     # allowing per-line buffering.
@@ -270,6 +280,8 @@ class TsProxyProcess:
       return False
     self._stdout.flush()
     output_line = self._read_line_ts_proxy_stdout(timeout=5)
+    if not output_line:
+      return False
     logging.debug("TsProxy: output: %s", output_line)
     port = parse_ts_socks_proxy_port(output_line)
     self._socks_proxy_port = cli_helper.parse_port(port, "socks_proxy_port")
@@ -279,8 +291,8 @@ class TsProxyProcess:
     for _ in helper.wait_with_backoff(timeout):
       try:
         return self._stdout.readline().strip()
-      except IOError as e:
-        logging.debug("TsProxy: Error while reading tsproxy line: %s", e)
+      except IOError as io_error:
+        logging.debug("TsProxy: Error while reading tsproxy line: %s", io_error)
     return ""
 
   def _send_command(self,
@@ -339,3 +351,56 @@ class TsProxyProcess:
     _, err = self._proc.communicate()
     self._socks_proxy_port = self._initial_socks_proxy_port
     return err
+
+
+class TsProxyTrafficShaper(TrafficShaper):
+
+  def __init__(self,
+               browser_platform: Platform,
+               ts_proxy_path: Optional[LocalPath] = None,
+               rtt_ms: Optional[int] = None,
+               in_kbps: Optional[int] = None,
+               out_kbps: Optional[int] = None,
+               window: Optional[int] = None):
+    super().__init__(browser_platform)
+    if not ts_proxy_path:
+      if maybe_ts_proxy_path := TsProxyFinder(self.runner_platform).path:
+        ts_proxy_path = self.runner_platform.local_path(maybe_ts_proxy_path)
+    if not ts_proxy_path:
+      raise RuntimeError(
+          f"Could not find ts_proxy script on {self.runner_platform}")
+    # TODO; remap network port for remote browsers or when ports are occupied
+    # already.
+    self._ts_proxy = TsProxyServer(
+        ts_proxy_path,
+        rtt_ms=rtt_ms,
+        in_kbps=in_kbps,
+        out_kbps=out_kbps,
+        window=window)
+    # TODO: support custom name
+    self._name = "tsproxy"
+
+  @contextlib.contextmanager
+  def open(self, network: Network,
+           session: BrowserSessionRunGroup) -> Iterator[TrafficShaper]:
+    # TODO: support nested run with replay network
+    assert network.is_live, "Only live network is supported for now"
+    with super().open(network, session):
+      logging.debug("Starting TS Proxy")
+      with self._ts_proxy:
+        yield self
+
+  def extra_flags(self, browser: Browser) -> Flags:
+    if not browser.attributes.is_chromium_based:
+      raise ValueError(
+          "Only chromium-based browsers are supported with ts_proxy.")
+    # TODO: support port forwarding to remote device
+    assert browser.attributes.is_local, "Only local browsers supported for now"
+    assert self.is_running, "TrafficShaper is not running."
+    assert self._ts_proxy.socks_proxy_port, "ts_proxy is not running"
+    return Flags({
+        "--proxy-server": f"socks://localhost:{self._ts_proxy.socks_proxy_port}"
+    })
+
+  def __str__(self) -> str:
+    return self._name

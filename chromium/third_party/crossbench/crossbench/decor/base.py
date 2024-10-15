@@ -7,10 +7,12 @@ from __future__ import annotations
 import abc
 import argparse
 import datetime as dt
+import enum
 from typing import Any, Dict, Generic, Optional, Set, Type, TypeVar
 
 from crossbench import compat, plt
 from crossbench.config import ConfigParser
+from crossbench.helper.state import BaseState, StateMachine
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
 DecoratorT = TypeVar("DecoratorT", bound="Decorator")
@@ -29,10 +31,7 @@ class Decorator(abc.ABC, Generic[DecoratorTargetT]):
   temporarily modify Runs or BrowserSessions.
   """
 
-  @property
-  @abc.abstractmethod
-  def NAME(self) -> str:
-    pass
+  NAME: str = ""
 
   @classmethod
   def config_parser(cls) -> DecoratorConfigParser:
@@ -87,20 +86,21 @@ class DecoratorContext(abc.ABC, Generic[DecoratorT, DecoratorTargetT]):
   | |  Browser active / measured section.
   | +- stop()
   |
-  *- tear_down()
+  *- teardown()
   """
 
-  class _State(compat.StrEnum):
-    READY = "ready"
-    STARTING = "startup"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILURE = "failure"
+  @enum.unique
+  class _State(BaseState):
+    READY = enum.auto()
+    STARTING = enum.auto()
+    RUNNING = enum.auto()
+    SUCCESS = enum.auto()
+    FAILURE = enum.auto()
 
   def __init__(self, decorator: DecoratorT, target: DecoratorTargetT) -> None:
     self._decorator = decorator
     self._target = target
-    self._state = self._State.READY
+    self._state = StateMachine(self._State.READY)
     self._is_success: bool = False
     self._start_time: Optional[dt.datetime] = None
     self._stop_time: Optional[dt.datetime] = None
@@ -138,26 +138,24 @@ class DecoratorContext(abc.ABC, Generic[DecoratorT, DecoratorTargetT]):
     self._start_time = start_datetime
 
   def __enter__(self) -> None:
-    assert self._state is self._State.READY
-    self._state = self._State.STARTING
+    self._state.transition(self._State.READY, to=self._State.STARTING)
     with self._target.exception_handler(f"{self._label} start"):
       try:
         self.start()
-        self._state = self._State.RUNNING
+        self._state.transition(self._State.STARTING, to=self._State.RUNNING)
       except:
-        self._state = self._State.FAILURE
+        self._state.transition(self._State.STARTING, to=self._State.FAILURE)
         raise
 
   def __exit__(self, exc_type, exc_value, traceback) -> None:
-    assert (self._state is self._State.RUNNING or
-            self._state is self._State.FAILURE)
+    self._state.expect(self._State.RUNNING, self._State.FAILURE)
     with self._target.exception_handler(f"{self._label} stop"):
       try:
         self.stop()
         if self._state == self._State.RUNNING:
-          self._state = self._State.SUCCESS
+          self._state.transition(self._State.RUNNING, to=self._State.SUCCESS)
       except:
-        self._state = self._State.FAILURE
+        self._state.transition(to=self._State.FAILURE)
         raise
       finally:
         self._stop_time = dt.datetime.now()
@@ -181,10 +179,10 @@ class DecoratorContext(abc.ABC, Generic[DecoratorT, DecoratorTargetT]):
     Called immediately after finishing the given Target with the browser still
     running.
     This method should have as little overhead as possible.
-    If possible, delegate heavy computation to the "tear_down" method.
+    If possible, delegate heavy computation to the "teardown" method.
     """
 
-  def tear_down(self) -> ProbeResult:
+  def teardown(self) -> ProbeResult:
     """
     Non time-critical, called after stopping all Decorators and after stopping
     the target.

@@ -7,6 +7,30 @@
 import {hexToRgb} from '../helpers/helpers';
 
 /**
+ * The list of Sparkle illustration tokens. See the documentation comment for
+ * CROS_TOKENS below for more details.
+ */
+export const CROS_TOKENS_SPARKLE_ILLUSTRATION = [
+  'cros.sys.analog',
+  'cros.sys.analog-variant',
+  'cros.sys.muted',
+  'cros.sys.muted-variant',
+  'cros.sys.complement',
+  'cros.sys.complement-variant',
+] as const;
+
+/**
+ * The list of Sparkle system tokens. See the documentation comment for
+ * CROS_TOKENS below for more details.
+ */
+export const CROS_TOKENS_SPARKLE_SYSTEM = [
+  'cros.sys.illo.analog',
+  'cros.sys.illo.complement',
+  'cros.sys.illo.muted',
+  'cros.sys.illo.on_gradient',
+] as const;
+
+/**
  * The list of tokens that are used to identify shapes and colors in Lottie
  * animation data. If token names change, we will need to update this set.
  * Existing token names are very unlikely to change, it's more likely that new
@@ -31,10 +55,12 @@ export const CROS_TOKENS = [
   /**
    * Colors for gradient animatons.
    */
-  'cros.sys.illo.analog',
-  'cros.sys.illo.complement',
-  'cros.sys.illo.muted',
-  'cros.sys.illo.on_gradient',
+  ...CROS_TOKENS_SPARKLE_SYSTEM,
+
+  /**
+   * Colors for gradient illustrations.
+   */
+  ...CROS_TOKENS_SPARKLE_ILLUSTRATION,
 
   /**
    * These are colors outside of the standard illo palette. Some animations
@@ -44,6 +70,8 @@ export const CROS_TOKENS = [
   'cros.sys.app_base',
   'cros.sys.app_base_shaded',
   'cros.sys.base_elevated',
+  'cros.sys.illo.card.color5',
+  'cros.sys.illo.card.on_color5',
   'cros.sys.illo.card.color4',
   'cros.sys.illo.card.on_color4',
   'cros.sys.illo.card.color3',

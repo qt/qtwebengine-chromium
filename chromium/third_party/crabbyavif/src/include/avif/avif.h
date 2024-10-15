@@ -80,6 +80,7 @@ enum avifChromaSamplePosition {
     AVIF_CHROMA_SAMPLE_POSITION_UNKNOWN = 0,
     AVIF_CHROMA_SAMPLE_POSITION_VERTICAL = 1,
     AVIF_CHROMA_SAMPLE_POSITION_COLOCATED = 2,
+    AVIF_CHROMA_SAMPLE_POSITION_RESERVED = 3,
 };
 
 enum avifChromaUpsampling {
@@ -120,6 +121,7 @@ enum avifMatrixCoefficients : uint16_t {
     AVIF_MATRIX_COEFFICIENTS_IDENTITY = 0,
     AVIF_MATRIX_COEFFICIENTS_BT709 = 1,
     AVIF_MATRIX_COEFFICIENTS_UNSPECIFIED = 2,
+    AVIF_MATRIX_COEFFICIENTS_RESERVED = 3,
     AVIF_MATRIX_COEFFICIENTS_FCC = 4,
     AVIF_MATRIX_COEFFICIENTS_BT470BG = 5,
     AVIF_MATRIX_COEFFICIENTS_BT601 = 6,
@@ -133,6 +135,15 @@ enum avifMatrixCoefficients : uint16_t {
     AVIF_MATRIX_COEFFICIENTS_ICTCP = 14,
     AVIF_MATRIX_COEFFICIENTS_YCGCO_RE = 15,
     AVIF_MATRIX_COEFFICIENTS_YCGCO_RO = 16,
+};
+
+enum avifPixelFormat {
+    AVIF_PIXEL_FORMAT_NONE = 0,
+    AVIF_PIXEL_FORMAT_YUV444 = 1,
+    AVIF_PIXEL_FORMAT_YUV422 = 2,
+    AVIF_PIXEL_FORMAT_YUV420 = 3,
+    AVIF_PIXEL_FORMAT_YUV400 = 4,
+    AVIF_PIXEL_FORMAT_COUNT,
 };
 
 enum avifProgressiveState {
@@ -151,6 +162,7 @@ enum avifTransferCharacteristics : uint16_t {
     AVIF_TRANSFER_CHARACTERISTICS_UNKNOWN = 0,
     AVIF_TRANSFER_CHARACTERISTICS_BT709 = 1,
     AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED = 2,
+    AVIF_TRANSFER_CHARACTERISTICS_RESERVED = 3,
     AVIF_TRANSFER_CHARACTERISTICS_BT470M = 4,
     AVIF_TRANSFER_CHARACTERISTICS_BT470BG = 5,
     AVIF_TRANSFER_CHARACTERISTICS_BT601 = 6,
@@ -166,6 +178,11 @@ enum avifTransferCharacteristics : uint16_t {
     AVIF_TRANSFER_CHARACTERISTICS_PQ = 16,
     AVIF_TRANSFER_CHARACTERISTICS_SMPTE428 = 17,
     AVIF_TRANSFER_CHARACTERISTICS_HLG = 18,
+};
+
+enum avifRange {
+    AVIF_RANGE_LIMITED = 0,
+    AVIF_RANGE_FULL = 1,
 };
 
 enum avifChannelIndex {
@@ -195,24 +212,10 @@ enum avifHeaderFormat {
     AVIF_HEADER_REDUCED,
 };
 
-enum avifPixelFormat {
-    AVIF_PIXEL_FORMAT_NONE,
-    AVIF_PIXEL_FORMAT_YUV444,
-    AVIF_PIXEL_FORMAT_YUV422,
-    AVIF_PIXEL_FORMAT_YUV420,
-    AVIF_PIXEL_FORMAT_YUV400,
-    AVIF_PIXEL_FORMAT_COUNT,
-};
-
 enum avifPlanesFlag {
     AVIF_PLANES_YUV = (1 << 0),
     AVIF_PLANES_A = (1 << 1),
     AVIF_PLANES_ALL = 255,
-};
-
-enum avifRange {
-    AVIF_RANGE_LIMITED = 0,
-    AVIF_RANGE_FULL = 1,
 };
 
 enum avifResult {
@@ -311,7 +314,6 @@ struct avifGainMapMetadata {
     uint32_t baseHdrHeadroomD;
     uint32_t alternateHdrHeadroomN;
     uint32_t alternateHdrHeadroomD;
-    avifBool backwardDirection;
     avifBool useBaseColorSpace;
 };
 

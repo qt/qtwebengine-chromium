@@ -7,36 +7,41 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import itertools
-from typing import TYPE_CHECKING, List, Optional, Tuple
+import json
+import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import crossbench.probes.helper as probes_helper
-from crossbench.probes import metric
+from crossbench.benchmarks.base import BenchmarkProbeMixin
+from crossbench.benchmarks.motionmark.base import MotionMarkBenchmark
+from crossbench.helper import update_url_query
+from crossbench.probes import metric as cb_metric
 from crossbench.probes.json import JsonResultProbe
-from crossbench.probes.results import ProbeResult
+from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 
-from .base import MotionMarkBenchmark
-
 if TYPE_CHECKING:
+  from crossbench.path import LocalPath
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
   from crossbench.runner.run import Run
   from crossbench.types import JSON
 
 
-def _probe_skip_data_segments(path: Tuple[str, ...]) -> Optional[str]:
+def _clean_up_path_segments(path: Tuple[str, ...]) -> Optional[str]:
   name = path[-1]
   if name.startswith("segment") or name == "data":
     return None
+  if path[:2] == ("testsResults", "MotionMark"):
+    path = path[2:]
   return "/".join(path)
 
 
-class MotionMark1Probe(JsonResultProbe, abc.ABC):
+class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
   """
   MotionMark-specific Probe.
   Extracts all MotionMark times and scores.
   """
-  IS_GENERAL_PURPOSE = False
   JS = """
     return window.benchmarkRunnerClient.results.results;
   """
@@ -48,20 +53,63 @@ class MotionMark1Probe(JsonResultProbe, abc.ABC):
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
     return probes_helper.Flatten(
-        json_data[0], key_fn=_probe_skip_data_segments).data
+        json_data[0], key_fn=_clean_up_path_segments).data
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
-    merged = metric.MetricsMerger.merge_json_list(
+    merged = cb_metric.MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
     return self.write_group_result(group, merged, write_csv=True)
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
-    return self.merge_browsers_csv_list(group)
+    return self.merge_browsers_json_list(group).merge(
+        self.merge_browsers_csv_list(group))
+
+  def log_run_result(self, run: Run) -> None:
+    self._log_result(run.results, single_result=True)
+
+  def log_browsers_result(self, group: BrowsersRunGroup) -> None:
+    self._log_result(group.results, single_result=False)
+
+  def _log_result(self, result_dict: ProbeResultDict,
+                  single_result: bool) -> None:
+    if self not in result_dict:
+      return
+    results_json: LocalPath = result_dict[self].json
+    logging.info("-" * 80)
+    logging.critical("Motionmark results:")
+    if not single_result:
+      logging.critical("  %s", result_dict[self].csv)
+    logging.info("- " * 40)
+
+    with results_json.open(encoding="utf-8") as f:
+      data = json.load(f)
+      if single_result:
+        score = data.get("score") or data["Score"]
+        logging.critical("Score %s", score)
+      else:
+        self._log_result_metrics(data)
+
+  def _extract_result_metrics_table(self, metrics: Dict[str, Any],
+                                    table: Dict[str, List[str]]) -> None:
+    for metric_key, metric in metrics.items():
+      if not self._valid_metric_key(metric_key):
+        continue
+      table[metric_key].append(
+          cb_metric.format_metric(metric["average"], metric["stddev"]))
+    # Separate runs don't produce a score
+    if total_metric := metrics.get("score") or metrics.get("Score"):
+      table["Score"].append(
+          cb_metric.format_metric(total_metric["average"],
+                                  total_metric["stddev"]))
+
+  def _valid_metric_key(self, metric_key: str) -> bool:
+    parts = metric_key.split("/")
+    return len(parts) == 2 or parts[-1] == "score"
 
 
 class MotionMark1Story(PressBenchmarkStory):
-  URL_LOCAL = "http://localhost:8000/developer.html"
+  URL_LOCAL: str = "http://localhost:8000/"
   ALL_STORIES = {
       "MotionMark": (
           "Multiply",
@@ -156,6 +204,10 @@ class MotionMark1Story(PressBenchmarkStory):
       )
   }
   SUBSTORIES = tuple(itertools.chain.from_iterable(ALL_STORIES.values()))
+  DEVELOPER_READY_JS: str = (
+      "return document.querySelector('tree > li') !== undefined;")
+  # The default page is ready immediately.
+  READY_JS = "return true;"
 
   @classmethod
   def default_story_names(cls) -> Tuple[str, ...]:
@@ -165,33 +217,55 @@ class MotionMark1Story(PressBenchmarkStory):
   def substory_duration(self) -> dt.timedelta:
     return dt.timedelta(seconds=35)
 
+  @property
+  def url_params(self) -> Dict[str, str]:
+    return {}
+
+  def prepare_test_url(self) -> str:
+    if (url_params := self.url_params) or not self.has_default_substories:
+      updated_url = update_url_query(f"{self.url}/developer.html", url_params)
+      logging.info("CUSTOM URL: %s", updated_url)
+      return updated_url
+    return self.url
+
   def setup(self, run: Run) -> None:
+    test_url = self.prepare_test_url()
+    use_developer_url = test_url != self.url
     with run.actions("Setup") as actions:
-      actions.show_url(self._url)
-      actions.wait_js_condition(
-          """return document.querySelector("tree > li") !== undefined""", 0.1,
-          10)
-      num_enabled = actions.js(
-          """
-        let benchmarks = arguments[0];
-        const list = document.querySelectorAll(".tree li");
-        let counter = 0;
-        for (const row of list) {
-          const name = row.querySelector("label.tree-label").textContent.trim();
-          let checked = benchmarks.includes(name);
-          const labels = row.querySelectorAll("input[type=checkbox]");
-          for (const label of labels) {
-            if (checked) {
-              label.click()
-              counter++;
-            }
+      actions.show_url(test_url)
+      self._setup_wait_until_ready(actions, use_developer_url)
+      if use_developer_url:
+        self._setup_filter_stories(actions)
+
+  def _setup_wait_until_ready(self, actions, use_developer_url) -> None:
+    if use_developer_url:
+      wait_js = self.DEVELOPER_READY_JS
+    else:
+      wait_js = self.READY_JS
+    actions.wait_js_condition(wait_js, 0.2, 10)
+
+  def _setup_filter_stories(self, actions) -> None:
+    num_enabled = actions.js(
+        """
+      let benchmarks = arguments[0];
+      const list = document.querySelectorAll(".tree li");
+      let counter = 0;
+      for (const row of list) {
+        const name = row.querySelector("label.tree-label").textContent.trim();
+        let checked = benchmarks.includes(name);
+        const labels = row.querySelectorAll("input[type=checkbox]");
+        for (const label of labels) {
+          if (checked) {
+            label.click()
+            counter++;
           }
         }
-        return counter
-        """,
-          arguments=[self._substories])
-      assert num_enabled > 0, "No tests were enabled"
-      actions.wait(0.1)
+      }
+      return counter
+      """,
+        arguments=[self._substories])
+    assert num_enabled > 0, "No tests were enabled"
+    actions.wait(0.1)
 
   def run(self, run: Run) -> None:
     with run.actions("Running") as actions:

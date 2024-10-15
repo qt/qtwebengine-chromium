@@ -1,7 +1,23 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::decoder::*;
 use crate::internal_utils::stream::*;
 use crate::parser::mp4box::*;
 use crate::*;
+
+use std::collections::BTreeMap;
 
 #[derive(Debug, Default)]
 pub struct Item {
@@ -241,23 +257,23 @@ impl Item {
             || self.thumbnail_for_id != 0
     }
 
-    fn is_metadata(&self, item_type: &str, color_id: u32) -> bool {
+    fn is_metadata(&self, item_type: &str, color_id: Option<u32>) -> bool {
         self.size != 0
             && !self.has_unsupported_essential_property
-            && (color_id == 0 || self.desc_for_id == color_id)
+            && (color_id.is_none() || self.desc_for_id == color_id.unwrap())
             && self.item_type == *item_type
     }
 
-    pub fn is_exif(&self, color_id: u32) -> bool {
+    pub fn is_exif(&self, color_id: Option<u32>) -> bool {
         self.is_metadata("Exif", color_id)
     }
 
-    pub fn is_xmp(&self, color_id: u32) -> bool {
+    pub fn is_xmp(&self, color_id: Option<u32>) -> bool {
         self.is_metadata("mime", color_id) && self.content_type == "application/rdf+xml"
     }
 
     pub fn is_tmap(&self) -> bool {
-        self.is_metadata("tmap", 0) && self.thumbnail_for_id == 0
+        self.is_metadata("tmap", None) && self.thumbnail_for_id == 0
     }
 
     pub fn max_extent(&self, sample: &DecodeSample) -> AvifResult<Extent> {
@@ -274,7 +290,7 @@ impl Item {
             return Err(AvifError::TruncatedData);
         } else if self.extents.len() == 1 {
             min_offset = sample.offset;
-            max_offset = sample.offset + u64_from_usize(sample.size)?;
+            max_offset = checked_add!(sample.offset, u64_from_usize(sample.size)?)?;
         } else {
             let mut remaining_size = sample.size;
             for extent in &self.extents {
@@ -286,18 +302,14 @@ impl Item {
                         remaining_offset -= sizeu64;
                         continue;
                     } else {
-                        start_offset = start_offset
-                            .checked_add(remaining_offset)
-                            .ok_or(AvifError::BmffParseFailed("bad extent".into()))?;
-                        size -= usize_from_u64(remaining_offset)?;
+                        checked_incr!(start_offset, remaining_offset);
+                        checked_decr!(size, usize_from_u64(remaining_offset)?);
                         remaining_offset = 0;
                     }
                 }
                 // TODO(yguyon): Add comment to explain why it is fine to clip the extent size.
                 let used_extent_size = std::cmp::min(size, remaining_size);
-                let end_offset = start_offset
-                    .checked_add(u64_from_usize(used_extent_size)?)
-                    .ok_or(AvifError::BmffParseFailed("bad extent".into()))?;
+                let end_offset = checked_add!(start_offset, u64_from_usize(used_extent_size)?)?;
                 min_offset = std::cmp::min(min_offset, start_offset);
                 max_offset = std::cmp::max(max_offset, end_offset);
                 remaining_size -= used_extent_size;
@@ -311,15 +323,28 @@ impl Item {
         }
         Ok(Extent {
             offset: min_offset,
-            size: usize_from_u64(max_offset - min_offset)?,
+            size: usize_from_u64(checked_sub!(max_offset, min_offset)?)?,
         })
     }
 }
 
-pub type Items = HashMap<u32, Item>;
+pub type Items = BTreeMap<u32, Item>;
+
+fn insert_item_if_not_exists(id: u32, items: &mut Items) {
+    if items.contains_key(&id) {
+        return;
+    }
+    items.insert(
+        id,
+        Item {
+            id,
+            ..Item::default()
+        },
+    );
+}
 
 pub fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
-    let mut items: Items = HashMap::with_hasher(NonRandomHasherState);
+    let mut items: Items = BTreeMap::new();
     for iinf in &meta.iinf {
         items.insert(
             iinf.item_id,
@@ -332,28 +357,22 @@ pub fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
         );
     }
     for iloc in &meta.iloc.items {
-        let item = items
-            .get_mut(&iloc.item_id)
-            .ok_or(AvifError::BmffParseFailed(
-                "iloc entry has no corresponding iinf entry".into(),
-            ))?;
+        insert_item_if_not_exists(iloc.item_id, &mut items);
+        let item = items.get_mut(&iloc.item_id).unwrap();
         if !item.extents.is_empty() {
             return Err(AvifError::BmffParseFailed(
                 "item already has extents".into(),
             ));
         }
         if iloc.construction_method == 1 {
-            item.idat = meta.idat.clone();
+            item.idat.clone_from(&meta.idat);
         }
         for extent in &iloc.extents {
             item.extents.push(Extent {
-                offset: iloc.base_offset + extent.offset,
+                offset: checked_add!(iloc.base_offset, extent.offset)?,
                 size: extent.size,
             });
-            item.size = item
-                .size
-                .checked_add(extent.size)
-                .ok_or(AvifError::BmffParseFailed("".into()))?;
+            checked_incr!(item.size, extent.size);
         }
     }
     let mut ipma_seen: HashSet<u32> = HashSet::with_hasher(NonRandomHasherState);
@@ -368,9 +387,8 @@ pub fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
         }
         ipma_seen.insert(association.item_id);
 
-        let item = items
-            .get_mut(&association.item_id)
-            .ok_or(AvifError::BmffParseFailed("".into()))?;
+        insert_item_if_not_exists(association.item_id, &mut items);
+        let item = items.get_mut(&association.item_id).unwrap();
         for (property_index_ref, essential_ref) in &association.associations {
             let property_index: usize = *property_index_ref as usize;
             let essential = *essential_ref;
@@ -406,11 +424,8 @@ pub fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
     }
 
     for reference in &meta.iref {
-        let item = items
-            .get_mut(&reference.from_item_id)
-            .ok_or(AvifError::BmffParseFailed(
-                "iref from_item_id has no corresponding iinf entry".into(),
-            ))?;
+        insert_item_if_not_exists(reference.from_item_id, &mut items);
+        let item = items.get_mut(&reference.from_item_id).unwrap();
         match reference.reference_type.as_str() {
             "thmb" => item.thumbnail_for_id = reference.to_item_id,
             "auxl" => item.aux_for_id = reference.to_item_id,
@@ -418,12 +433,8 @@ pub fn construct_items(meta: &MetaBox) -> AvifResult<Items> {
             "prem" => item.prem_by_id = reference.to_item_id,
             "dimg" => {
                 // derived images refer in the opposite direction.
-                let dimg_item =
-                    items
-                        .get_mut(&reference.to_item_id)
-                        .ok_or(AvifError::BmffParseFailed(
-                            "iref to_item_id has no corresponding iinf entry".into(),
-                        ))?;
+                insert_item_if_not_exists(reference.to_item_id, &mut items);
+                let dimg_item = items.get_mut(&reference.to_item_id).unwrap();
                 dimg_item.dimg_for_id = reference.from_item_id;
                 dimg_item.dimg_index = reference.index;
             }

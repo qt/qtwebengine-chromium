@@ -4,73 +4,144 @@
 
 from __future__ import annotations
 
-import abc
 import argparse
 import copy
+import dataclasses
 import datetime as dt
 import json
-from typing import Any, Dict, List, Optional, TextIO, Type
-
-import hjson
+import logging
+from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
+                    Type)
+from urllib.parse import urlparse
 
 from crossbench import cli_helper, exception
+from crossbench import path as pth
+from crossbench.benchmarks.loading.action import (ACTIONS, Action, ActionType,
+                                                  ClickAction, GetAction,
+                                                  ReadyState, WaitAction)
+from crossbench.benchmarks.loading.page import PAGES
 from crossbench.benchmarks.loading.playback_controller import \
     PlaybackController
-from crossbench.types import JsonDict
+from crossbench.config import ConfigObject
 
-from . import action
-from .page import InteractivePage
+if TYPE_CHECKING:
+  from crossbench.types import JsonDict
 
 
-# TODO: migrate to config.ConfigObject
-class AbstractPageConfig(abc.ABC):
+@dataclasses.dataclass(frozen=True)
+class PageConfig(ConfigObject):
+  label: str = ""
+  url: str = ""
+  duration: dt.timedelta = dt.timedelta()
+  playback: Optional[PlaybackController] = None
+  actions: Tuple[Action, ...] = tuple()
 
   @classmethod
-  def parse(cls, path: str) -> List[InteractivePage]:
-    config_file = cli_helper.parse_file_path(path)
-    with config_file.open(encoding="utf-8") as f:
-      config = cls()
-      config.load(f)
-      return config.stories
+  def loads(cls: Type[PageConfig], value: str) -> PageConfig:
+    parts = value.rsplit(",", maxsplit=1)
+    if len(parts) == 1:
+      label, url = cls._parse_url(parts[0])
+      return PageConfig(label=label, url=url)
+    url, duration_str = parts
+    label, url = cls._parse_url(url)
+    return PageConfig(
+        label=label,
+        url=url,
+        duration=cli_helper.Duration.parse_non_zero(duration_str))
 
-  def __init__(self, raw_config_data: Optional[Dict] = None) -> None:
-    self.stories: List[InteractivePage] = []
-    if raw_config_data:
-      self.load_dict(raw_config_data)
+  @classmethod
+  def load_dict(cls: Type[PageConfig], config: Dict[str, Any]) -> PageConfig:
+    # TODO: use this method and move actions parsing to here from PagesConfig
+    url = config['url']
+    label, url = cls._parse_url(url)
+    duration = dt.timedelta()
+    if duration_str := config.get("duration"):
+      duration = cli_helper.Duration.parse_non_zero(duration_str)
+    return PageConfig(label=label, url=url, duration=duration)
 
-  def load(self, f: TextIO) -> None:
-    assert not self.stories
-    with exception.annotate_argparsing(f"Loading Pages config file: {f.name}"):
-      with exception.annotate(f"Parsing {hjson.__name__}"):
-        config = hjson.load(f)
-        self.load_dict(config)
+  @classmethod
+  def _parse_url(cls, value: str) -> Tuple[str, str]:
+    if value in PAGES:
+      return value, PAGES[value].url
+    url = urlparse(value)
+    if not url.scheme:
+      value = f"https://{value}"
+    return cls._url_extract_label(value), value
 
-  def load_dict(self, config: Dict[str, Any]) -> None:
-    assert not self.stories
-    with exception.annotate_argparsing(f"Parsing {type(self).__name__} dict:"):
-      if not config:
-        raise argparse.ArgumentTypeError("Expected non-empty config dict.")
-      self._load_dict(config)
+  @classmethod
+  def _url_extract_label(cls, value: str) -> str:
+    url = urlparse(value)
+    if url.scheme == "about":
+      return url.path
+    if url.scheme == "file":
+      return pth.LocalPath(url.path).name
+    if hostname := url.hostname:
+      if hostname.startswith("www."):
+        return hostname[len("www."):]
+      return hostname
+    return value
 
-  @abc.abstractmethod
-  def _load_dict(self, raw_config_data: Dict) -> None:
-    pass
 
+@dataclasses.dataclass(frozen=True)
+class PagesConfig(ConfigObject):
+  pages: Tuple[PageConfig, ...] = ()
 
-class PageConfig(AbstractPageConfig):
+  def __post_init__(self) -> None:
+    super().__post_init__()
+    for index, page in enumerate(self.pages):
+      assert isinstance(page, PageConfig), (
+          f"pages[{index}] is not a PageConfig but {type(page).__name__}")
 
-  def _load_dict(self, raw_config_data: Dict) -> None:
-    with exception.annotate("Parsing scenarios / pages"):
-      if "pages" not in raw_config_data:
+  @classmethod
+  def loads(cls, value: str) -> PagesConfig:
+    values: List[str] = []
+    previous_part: Optional[str] = None
+    for part in value.strip().split(","):
+      part = cli_helper.parse_non_empty_str(part, "url or duration")
+      try:
+        cli_helper.Duration.parse_non_zero(part)
+        if not previous_part:
+          raise argparse.ArgumentTypeError(
+              "Duration can only follow after url. "
+              f"Current value: {repr(part)}")
+        values[-1] = f"{previous_part},{part}"
+        previous_part = None
+      except cli_helper.DurationParseError:
+        previous_part = part
+        values.append(part)
+    return cls.load_sequence(values)
+
+  @classmethod
+  def parse_other(cls, value: Any) -> PagesConfig:
+    if isinstance(value, (list, tuple)):
+      return cls.load_sequence(value)
+    return super().parse_other(value)
+
+  @classmethod
+  def load_sequence(cls, values: Sequence[str]) -> PagesConfig:
+    if not values:
+      raise argparse.ArgumentTypeError("Got empty page list.")
+    pages: List[PageConfig] = []
+    for index, single_line_config in enumerate(values):
+      with exception.annotate_argparsing(
+          f"Parsing pages[{index}]: {repr(single_line_config)}"):
+        pages.append(PageConfig.parse(single_line_config))
+    return PagesConfig(pages=tuple(pages))
+
+  @classmethod
+  def load_dict(cls, config: Dict) -> PagesConfig:
+    with exception.annotate_argparsing("Parsing scenarios / pages"):
+      if "pages" not in config:
         raise argparse.ArgumentTypeError(
             "Config does not provide a 'pages' dict.")
-      if not raw_config_data["pages"]:
-        raise argparse.ArgumentTypeError("Config contains empty 'pages' dict.")
-      with exception.annotate("Parsing config 'pages'"):
-        pages = copy.deepcopy(raw_config_data["pages"])
-        self._parse_pages(pages)
+      pages = cli_helper.parse_non_empty_dict(config["pages"], "pages")
+      with exception.annotate_argparsing("Parsing config 'pages'"):
+        pages = copy.deepcopy(pages)
+        return cls._parse_pages(pages)
+    raise exception.UnreachableError()
 
-  def _parse_pages(self, pages: Dict[str, Any]) -> None:
+  @classmethod
+  def _parse_pages(cls, data: Dict[str, Any]) -> PagesConfig:
     """
     Behaviour to be aware
 
@@ -82,76 +153,94 @@ class PageConfig(AbstractPageConfig):
     least include: {action: "GET", value/url: google.com} in the specific
     scenario.
 
-    As an example look at: page.config.example.hjson
+    As an example look at: config/doc/page.config.hjson
     """
-    playback: PlaybackController = PlaybackController.parse(
-        pages.get("playback", "1x"))
-    for scenario_name, actions in pages.items():
+    pages = []
+    for scenario_name, actions in data.items():
       with exception.annotate_argparsing(
           f"Parsing scenario ...['{scenario_name}']"):
-        actions = self._parse_actions(actions, scenario_name)
-        self.stories.append(InteractivePage(actions, scenario_name, playback))
+        actions = cls._parse_actions(actions, scenario_name)
+        url = cls._extract_first_actions_url(actions)
+        pages.append(
+            PageConfig(
+                label=scenario_name, url=url, playback=None, actions=actions))
+    return PagesConfig(tuple(pages))
 
-  def _parse_actions(self, actions: List[Dict[str, Any]],
-                     scenario_name: str) -> List[action.Action]:
+  @classmethod
+  def _parse_actions(cls, actions: List[Dict[str, Any]],
+                     scenario_name: str) -> Tuple[Action, ...]:
     if not actions:
       raise ValueError(f"Scenario '{scenario_name}' has no action")
     if not isinstance(actions, list):
       raise ValueError(f"Expected list, got={type(actions)}, '{actions}'")
-    actions_list: List[action.Action] = []
-    get_action_found = False
+    actions_list: List[Action] = []
     for i, action_config in enumerate(actions):
-      with exception.annotate(f"Parsing action   ...['{scenario_name}'][{i}]"):
-        action_step = self._parse_action(i, action_config)
-        if action_step.TYPE == action.ActionType.GET:
-          get_action_found = True
+      with exception.annotate_argparsing(
+          f"Parsing action   ...['{scenario_name}'][{i}]"):
+        action_step = cls._parse_action(i, action_config)
         actions_list.append(action_step)
-    assert get_action_found, ("Not a valid entry for scenario: "
-                              f"{scenario_name}. No 'get' action found.")
-    assert actions_list, (f"Not valid entry for scenario {scenario_name} "
-                          "does not contain any valid actions")
-    return actions_list
+    if not actions_list:
+      raise argparse.ArgumentTypeError(
+          f"Expect non-empty actions for {scenario_name}")
+    return tuple(actions_list)
 
-  def _parse_action(self, i, action_config: JsonDict) -> action.Action:
+  @classmethod
+  def _parse_action(cls, i, action_config: JsonDict) -> Action:
     if "action" not in action_config:
       raise argparse.ArgumentTypeError(
           f"Missing 'action' property in {json.dumps(action_config)}")
-    action_type = action.ActionType.parse(action_config.get("action"))
-    action_cls: Type[action.Action] = action.ACTIONS[action_type]
-    with exception.annotate(
+    action_type: ActionType = ActionType.parse(action_config.get("action"))
+    action_cls: Type[Action] = ACTIONS[action_type]
+    with exception.annotate_argparsing(
         f"Parsing details  ...[{i}]{{ action: \"{action_type}\", ...}}:"):
       kwargs = action_cls.kwargs_from_dict(action_config)
       return action_cls(**kwargs)
-    # make mypy happy
-    raise RuntimeError("Should not happen")
+    raise exception.UnreachableError()
+
+  @classmethod
+  def _extract_first_actions_url(cls, actions: Sequence[Action]) -> str:
+    for action in actions:
+      if isinstance(action, GetAction):
+        return action.url
+    raise argparse.ArgumentTypeError("Actions must contain at least one GET.")
 
 
-class DevToolsRecorderPageConfig(AbstractPageConfig):
+class DevToolsRecorderPagesConfig(PagesConfig):
 
-  def _load_dict(self, raw_config_data: Dict) -> None:
-    playback: PlaybackController = PlaybackController.once()
-    with exception.annotate("Loading DevTools recording file"):
-      title = raw_config_data["title"]
+  @classmethod
+  def loads(cls: Type[PagesConfig], value: str) -> PagesConfig:
+    raise NotImplementedError()
+
+  @classmethod
+  def load_dict(cls, config: Dict[str, Any]) -> DevToolsRecorderPagesConfig:
+    config = cli_helper.parse_non_empty_dict(config)
+    with exception.annotate_argparsing("Loading DevTools recording file"):
+      title = config["title"]
       assert title, "No title provided"
-      actions = self._parse_steps(raw_config_data["steps"])
-      self.stories.append(InteractivePage(actions, title, playback))
+      actions = tuple(cls._parse_steps(config["steps"]))
+      url = cls._extract_first_actions_url(actions)
+      pages = (PageConfig(label=title, url=url, actions=actions),)
+      return DevToolsRecorderPagesConfig(pages)
+    raise exception.UnreachableError()
 
-  def _parse_steps(self, steps: List[Dict[str, Any]]) -> List[action.Action]:
-    actions: List[action.Action] = []
+  @classmethod
+  def _parse_steps(cls, steps: List[Dict[str, Any]]) -> List[Action]:
+    actions: List[Action] = []
     for step in steps:
-      maybe_actions: Optional[action.Action] = self._parse_step(step)
+      maybe_actions: Optional[Action] = cls._parse_step(step)
       if maybe_actions:
         actions.append(maybe_actions)
         # TODO(cbruni): make this configurable
-        actions.append(action.WaitAction(duration=dt.timedelta(seconds=1)))
+        actions.append(WaitAction(duration=dt.timedelta(seconds=1)))
     return actions
 
-  def _parse_step(self, step: Dict[str, Any]) -> Optional[action.Action]:
+  @classmethod
+  def _parse_step(cls, step: Dict[str, Any]) -> Optional[Action]:
     step_type: str = step["type"]
     default_timeout = dt.timedelta(seconds=10)
     if step_type == "navigate":
-      return action.GetAction(  # type: ignore
-          step["url"], ready_state=action.ReadyState.COMPLETE)
+      return GetAction(  # type: ignore
+          step["url"], ready_state=ReadyState.COMPLETE)
     if step_type == "click":
       selectors: List[List[str]] = step["selectors"]
       xpath: Optional[str] = None
@@ -161,9 +250,50 @@ class DevToolsRecorderPageConfig(AbstractPageConfig):
             xpath = selector
             break
       assert xpath, "Need xpath selector for click action"
-      return action.ClickAction(
-          xpath, scroll_into_view=True, timeout=default_timeout)
+      return ClickAction(xpath, scroll_into_view=True, timeout=default_timeout)
     if step_type == "setViewport":
       # Resizing is ignored for now.
       return None
     raise ValueError(f"Unsupported step: {step_type}")
+
+
+class ListPagesConfig(PagesConfig):
+
+  VALID_EXTENSIONS: Tuple[str, ...] = (".txt", ".list")
+
+  @classmethod
+  def loads(cls, value: str) -> PagesConfig:
+    raise argparse.ArgumentTypeError(
+        f"URL list file {repr(value)} does not exist.")
+
+  @classmethod
+  def load_path(cls, path: pth.LocalPath) -> PagesConfig:
+    pages: List[PageConfig] = []
+    with exception.annotate_argparsing(f"Loading Pages list file: {path.name}"):
+      line: int = 0
+      with path.open() as f:
+        for single_line_config in f.readlines():
+          with exception.annotate_argparsing(f"Parsing line {line}"):
+            line += 1
+            single_line_config = single_line_config.strip()
+            if not single_line_config:
+              logging.warning("Skipping empty line %s", line)
+              continue
+            pages.append(PageConfig.parse(single_line_config))
+    return PagesConfig(pages=tuple(pages))
+
+  @classmethod
+  def load_dict(cls, config: Dict) -> PagesConfig:
+    config = cli_helper.parse_non_empty_dict(config, "pages")
+    with exception.annotate_argparsing("Parsing scenarios / pages"):
+      if "pages" not in config:
+        raise argparse.ArgumentTypeError(
+            "Config does not provide a 'pages' dict.")
+      pages = config['pages']
+      if isinstance(pages, str):
+        pages = [pages]
+      if not isinstance(pages, (list, tuple)):
+        raise argparse.ArgumentTypeError(
+            f"Expected list/tuple for pages, but got {type(pages)}")
+      return cls.load_sequence(pages)
+    raise exception.UnreachableError()

@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::decoder::Category;
 use crate::image::*;
 use crate::internal_utils::*;
@@ -17,41 +31,27 @@ impl Image {
             Category::Color | Category::Gainmap => &YUV_PLANES,
             Category::Alpha => &A_PLANE,
         };
-        for plane in planes {
-            if self.planes[plane.to_usize()].is_some()
-                && !self.planes[plane.to_usize()].unwrap_ref().is_pointer()
-            {
-                // TODO: implement this function for non-pointer inputs.
-                return Err(AvifError::NotImplemented);
-            }
-        }
         let src = image::Image {
             width: self.width,
             height: self.height,
             depth: self.depth,
             yuv_format: self.yuv_format,
-            planes: [
-                if self.planes[0].is_some() {
-                    self.planes[0].unwrap_ref().clone_pointer()
-                } else {
-                    None
-                },
-                if self.planes[1].is_some() {
-                    self.planes[1].unwrap_ref().clone_pointer()
-                } else {
-                    None
-                },
-                if self.planes[2].is_some() {
-                    self.planes[2].unwrap_ref().clone_pointer()
-                } else {
-                    None
-                },
-                if self.planes[3].is_some() {
-                    self.planes[3].unwrap_ref().clone_pointer()
-                } else {
-                    None
-                },
-            ],
+            planes: self
+                .planes
+                .as_ref()
+                .iter()
+                .map(
+                    |plane| {
+                        if plane.is_some() {
+                            Some(plane.unwrap_ref().clone())
+                        } else {
+                            None
+                        }
+                    },
+                )
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap(),
             row_bytes: self.row_bytes,
             ..image::Image::default()
         };
@@ -70,7 +70,7 @@ impl Image {
             }
         }
         for plane in planes {
-            if !src.has_plane(*plane) {
+            if !src.has_plane(*plane) || !self.has_plane(*plane) {
                 continue;
             }
             let src_pd = src.plane_data(*plane).unwrap();
@@ -120,8 +120,8 @@ mod tests {
     use crate::internal_utils::pixels::Pixels;
     use test_case::test_matrix;
 
-    #[test_matrix([PixelFormat::Yuv444, PixelFormat::Yuv422, PixelFormat::Yuv420, PixelFormat::Monochrome], [false, true])]
-    fn scale_pointer(yuv_format: PixelFormat, use_alpha: bool) {
+    #[test_matrix([PixelFormat::Yuv444, PixelFormat::Yuv422, PixelFormat::Yuv420, PixelFormat::Yuv400], [false, true], [false, true])]
+    fn scale(yuv_format: PixelFormat, use_alpha: bool, is_pointer_input: bool) {
         let mut yuv = image::Image {
             width: 2,
             height: 2,
@@ -131,8 +131,8 @@ mod tests {
         };
 
         let planes: &[Plane] = match (yuv_format, use_alpha) {
-            (PixelFormat::Monochrome, false) => &[Plane::Y],
-            (PixelFormat::Monochrome, true) => &[Plane::Y, Plane::A],
+            (PixelFormat::Yuv400, false) => &[Plane::Y],
+            (PixelFormat::Yuv400, true) => &[Plane::Y, Plane::A],
             (_, false) => &YUV_PLANES,
             (_, true) => &ALL_PLANES,
         };
@@ -141,9 +141,13 @@ mod tests {
             30, 40,
         ];
         for plane in planes {
-            yuv.planes[plane.to_usize()] = Some(Pixels::Pointer(values.as_mut_ptr()));
+            yuv.planes[plane.to_usize()] = Some(if is_pointer_input {
+                Pixels::Pointer(values.as_mut_ptr())
+            } else {
+                Pixels::Buffer(values.to_vec())
+            });
             yuv.row_bytes[plane.to_usize()] = 2;
-            yuv.image_owns_planes[plane.to_usize()] = true;
+            yuv.image_owns_planes[plane.to_usize()] = !is_pointer_input;
         }
         let categories: &[Category] =
             if use_alpha { &[Category::Color, Category::Alpha] } else { &[Category::Color] };
@@ -180,25 +184,5 @@ mod tests {
                 _ => panic!(),
             }
         }
-    }
-
-    #[test]
-    fn scale_buffer() {
-        let mut yuv = image::Image {
-            width: 2,
-            height: 2,
-            depth: 8,
-            yuv_format: PixelFormat::Monochrome,
-            ..Default::default()
-        };
-
-        yuv.planes[0] = Some(Pixels::Buffer(vec![
-            1, 2, //
-            3, 4,
-        ]));
-        assert_eq!(
-            yuv.scale(4, 4, Category::Color),
-            Err(AvifError::NotImplemented)
-        );
     }
 }

@@ -286,7 +286,11 @@ export class MenuItem extends LitElement implements MenuItemType {
    * `headline` property.
    */
   get typeaheadText() {
-    return this.renderRoot?.querySelector('md-menu-item')?.typeaheadText ?? '';
+    const item = this.renderRoot?.querySelector('md-menu-item');
+    if (item) {
+      return item.typeaheadText;
+    }
+    return this.missedPropertySets.typeaheadText ?? '';
   }
 
   set typeaheadText(text: string) {
@@ -302,7 +306,11 @@ export class MenuItem extends LitElement implements MenuItemType {
    * Whether or not to display the menu item in the selected visual state.
    */
   get selected() {
-    return this.renderRoot?.querySelector('md-menu-item')?.selected ?? false;
+    const item = this.renderRoot?.querySelector('md-menu-item');
+    if (item) {
+      return item.selected;
+    }
+    return this.missedPropertySets.selected ?? false;
   }
 
   set selected(selected: boolean) {
@@ -315,12 +323,15 @@ export class MenuItem extends LitElement implements MenuItemType {
   }
 
   get switchSelected() {
-    return this.renderRoot?.querySelector('cros-switch')?.selected ?? false;
+    const crosSwitch = this.renderRoot?.querySelector('cros-switch');
+    if (crosSwitch) {
+      return crosSwitch.selected;
+    }
+    return this.missedPropertySets.switchSelected ?? false;
   }
 
   set switchSelected(value: boolean) {
-    if (!this.renderRoot) return;
-    const crosSwitch = this.renderRoot.querySelector('cros-switch');
+    const crosSwitch = this.renderRoot?.querySelector('cros-switch');
     if (!crosSwitch) {
       this.missedPropertySets.switchSelected = value;
     } else {

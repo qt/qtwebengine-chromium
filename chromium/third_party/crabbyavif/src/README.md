@@ -2,6 +2,9 @@
 
 Avif parser/decoder implementation in Rust.
 
+Feel free to file an issue for any question, suggestion or bug report.
+Contributions are also welcome, see [CONTRIBUTING](CONTRIBUTING.md).
+
 ## Features
  * Supports dav1d, libgav1 or android mediacodec as the underlying AV1 decoder.
  * C API compatible with [libavif](https://github.com/aomediacodec/libavif)
@@ -81,3 +84,7 @@ rustup target add aarch64-linux-android
 # Make sure the device/emulator is available via adb.
 cargo dinghy -d android test --no-default-features --features android_mediacodec,libyuv --target aarch64-linux-android --test decoder_tests
 ```
+
+## License
+
+See the [Apache v2.0 license](LICENSE) file.

@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::image::*;
 use super::types::*;
 
@@ -83,7 +97,7 @@ impl From<*const avifImage> for image::Image {
             height: image.height,
             depth: image.depth as u8,
             yuv_format: image.yuvFormat.into(),
-            full_range: image.yuvRange == avifRange::Full,
+            yuv_range: image.yuvRange,
             alpha_present: !image.alphaPlane.is_null(),
             alpha_premultiplied: image.alphaPremultiplied == AVIF_TRUE,
             planes: [

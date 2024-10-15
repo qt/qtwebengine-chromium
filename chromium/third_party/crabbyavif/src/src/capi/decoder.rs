@@ -1,3 +1,17 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::gainmap::*;
 use super::image::*;
 use super::io::*;
@@ -37,7 +51,7 @@ pub struct avifDecoder {
 
     pub alphaPresent: avifBool,
 
-    pub ioStats: avifIOStats,
+    pub ioStats: IOStats,
     pub diag: avifDiagnostics,
     //avifIO * io;
     pub data: *mut avifDecoderData,
@@ -200,6 +214,10 @@ fn rust_decoder_to_avifDecoder(src: &Decoder, dst: &mut avifDecoder) {
         RepetitionCount::Infinite => AVIF_REPETITION_COUNT_INFINITE,
         RepetitionCount::Finite(x) => x,
     };
+    dst.timescale = src.timescale();
+    dst.durationInTimescales = src.duration_in_timescales();
+    dst.duration = src.duration();
+    dst.ioStats = src.io_stats();
 
     if src.gainmap_present() {
         dst.gainMapPresent = AVIF_TRUE;

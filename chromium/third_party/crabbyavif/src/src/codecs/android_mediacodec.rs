@@ -1,6 +1,21 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::codecs::Decoder;
 use crate::decoder::Category;
 use crate::image::Image;
+use crate::image::YuvRange;
 use crate::internal_utils::pixels::*;
 use crate::internal_utils::*;
 use crate::*;
@@ -206,7 +221,7 @@ impl Decoder for MediaCodec {
                 image.width = width as u32;
                 image.height = height as u32;
                 image.depth = 8; // TODO: 10?
-                image.full_range = color_range == 1;
+                image.yuv_range = if color_range == 0 { YuvRange::Limited } else { YuvRange::Full };
                 image.planes[3] = Some(Pixels::Pointer(buffer));
                 image.row_bytes[3] = stride as u32;
             }
@@ -228,7 +243,7 @@ impl Decoder for MediaCodec {
                         )));
                     }
                 };
-                image.full_range = color_range == 1;
+                image.yuv_range = if color_range == 0 { YuvRange::Limited } else { YuvRange::Full };
                 image.chroma_sample_position = ChromaSamplePosition::Unknown;
 
                 image.color_primaries = ColorPrimaries::Unspecified;

@@ -14,6 +14,7 @@ from typing import (TYPE_CHECKING, Any, Dict, Generic, List, Optional, Sequence,
 from ordered_set import OrderedSet
 
 from crossbench import cli_helper, helper
+from crossbench.cli.parser import CrossBenchArgumentParser
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 from crossbench.stories.story import Story
 
@@ -21,9 +22,25 @@ if TYPE_CHECKING:
   from crossbench.runner.runner import Runner
 
 
+class BenchmarkProbeMixin:
+  NAME: str = ""
+  IS_GENERAL_PURPOSE: bool = False
+
+  def __init__(self, *args, **kwargs):
+    self._benchmark = kwargs.pop("benchmark")
+    assert isinstance(self._benchmark, Benchmark)
+    super().__init__(*args, **kwargs)
+
+  @property
+  def benchmark(self) -> Benchmark:
+    return self._benchmark
+
+
+
 class Benchmark(abc.ABC):
   NAME: str = ""
   DEFAULT_STORY_CLS: Type[Story] = Story
+  PROBES: Tuple[Type[BenchmarkProbeMixin], ...] = ()
 
   @classmethod
   def cli_help(cls) -> str:
@@ -46,8 +63,7 @@ class Benchmark(abc.ABC):
 
   @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()
-  ) -> cli_helper.CrossBenchArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()) -> CrossBenchArgumentParser:
     parser = subparsers.add_parser(
         cls.NAME,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -55,7 +71,7 @@ class Benchmark(abc.ABC):
         description=cls.cli_description(),
         epilog=cls.cli_epilog(),
         aliases=aliases)
-    assert isinstance(parser, cli_helper.CrossBenchArgumentParser)
+    assert isinstance(parser, CrossBenchArgumentParser)
     return parser
 
   @classmethod
@@ -65,9 +81,11 @@ class Benchmark(abc.ABC):
         "description": "\n".join(helper.wrap_lines(cls.cli_description(), 70)),
         "stories": [],
         "probes-default": {
-            probe_cls.NAME: "\n".join(
-                list(helper.wrap_lines((probe_cls.__doc__ or "").strip(), 70)))
-            for probe_cls in cls.DEFAULT_STORY_CLS.PROBES
+            probe_cls.NAME:
+                "\n".join(
+                    list(
+                        helper.wrap_lines((probe_cls.__doc__ or "").strip(),
+                                          70))) for probe_cls in cls.PROBES
         }
     }
 
@@ -93,11 +111,6 @@ class Benchmark(abc.ABC):
       assert isinstance(story, self.DEFAULT_STORY_CLS), (
           f"story={story} should be a subclass/the same "
           f"class as {self.DEFAULT_STORY_CLS}")
-    first_story = stories[0]
-    expected_probes_cls_list = first_story.PROBES
-    for story in stories:
-      assert story.PROBES == expected_probes_cls_list, (
-          f"story={story} has different PROBES than {first_story}")
     return list(stories)
 
   def setup(self, runner: Runner) -> None:
@@ -135,6 +148,7 @@ class StoryFilter(Generic[StoryT], metaclass=abc.ABCMeta):
     self._known_names: Dict[str,
                             None] = dict.fromkeys(story_cls.all_story_names())
     self.stories: Sequence[StoryT] = []
+    # TODO: only use one method.
     self.process_all(patterns)
     self.stories = self.create_stories(separate)
 
@@ -152,8 +166,7 @@ class SubStoryBenchmark(Benchmark, metaclass=abc.ABCMeta):
 
   @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()
-  ) -> cli_helper.CrossBenchArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
     # TODO: move these args to a dedicated SubStoryFilter class.
     parser.add_argument(
@@ -379,27 +392,40 @@ class PressBenchmark(SubStoryBenchmark):
 
   @classmethod
   def add_cli_parser(
-      cls, subparsers, aliases: Sequence[str] = ()
-  ) -> cli_helper.CrossBenchArgumentParser:
+      cls, subparsers, aliases: Sequence[str] = ()) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
     # TODO: Move story-related args to dedicated PressBenchmarkStoryFilter class
     benchmark_url_group = parser.add_mutually_exclusive_group()
-    default_live_url = cls.DEFAULT_STORY_CLS.URL
-    default_local_url = cls.DEFAULT_STORY_CLS.URL_LOCAL
+    live_url = cls.DEFAULT_STORY_CLS.URL
+    local_url = cls.DEFAULT_STORY_CLS.URL_LOCAL
+    official_url = cls.DEFAULT_STORY_CLS.URL_OFFICIAL
     benchmark_url_group.add_argument(
         "--live",
+        "--live-url",
+        "--browser-ben",
         dest="custom_benchmark_url",
         const=None,
         action="store_const",
-        help=f"Use live/online benchmark url ({default_live_url}).")
+        help=(f"Use chrome live benchmark url ({live_url}) "
+              "on https://browserben.ch."))
+    benchmark_url_group.add_argument(
+        "--official",
+        "--official-url",
+        dest="custom_benchmark_url",
+        const=official_url,
+        action="store_const",
+        help=(f"Use officially hosted live/online benchmark url "
+              f"({official_url})."))
     benchmark_url_group.add_argument(
         "--local",
+        "--local-url",
+        "--url",
         "--custom-benchmark-url",
         type=cli_helper.parse_httpx_url_str,
         nargs="?",
         dest="custom_benchmark_url",
-        const=default_local_url,
-        help=(f"Use custom or locally (default={default_local_url}) "
+        const=local_url,
+        help=(f"Use custom or locally (default={local_url}) "
               "hosted benchmark url."))
     cls.STORY_FILTER_CLS.add_cli_parser(parser)
     return parser
@@ -415,6 +441,7 @@ class PressBenchmark(SubStoryBenchmark):
     data = super().describe()
     assert issubclass(cls.DEFAULT_STORY_CLS, PressBenchmarkStory)
     data["url"] = cls.DEFAULT_STORY_CLS.URL
+    data["url-official"] = cls.DEFAULT_STORY_CLS.URL_OFFICIAL
     data["url-local"] = cls.DEFAULT_STORY_CLS.URL_LOCAL
     return data
 
@@ -434,7 +461,8 @@ class PressBenchmark(SubStoryBenchmark):
 
   def validate_url(self, runner: Runner) -> None:
     if self.custom_url:
-      self._validate_custom_url(runner, self.custom_url)
+      if runner.has_any_live_network():
+        self._validate_custom_url(runner, self.custom_url)
       return
     first_story = cast(PressBenchmarkStory, self.stories[0])
     url = first_story.url
