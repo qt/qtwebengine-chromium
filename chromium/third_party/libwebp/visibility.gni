@@ -11,6 +11,7 @@ allowed_visibility = [
   "//media/gpu/vaapi/*",
   "//skia:*",
   "//third_party/blink/renderer/*",
+  "//third_party/libavif:libavif_enc",
   "//third_party/libwebp/*",
 ]
 

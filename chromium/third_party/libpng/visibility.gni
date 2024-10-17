@@ -51,6 +51,10 @@ visibility += [
   "//third_party/angle/util:angle_png_utils",
 ]
 
+visibility += [
+  "//third_party/blink/renderer/platform/image-decoders:*"
+]
+
 # Test/tool-only dependencies.
 libpng_testonly_visibility = [
   "//chrome/test:accessibility_live_site_tests",

@@ -8,6 +8,26 @@ import("//build/config/sanitizers/sanitizers.gni")
 import("//third_party/harfbuzz-ng/harfbuzz.gni")
 
 assert(enable_freetype)
+
+if (use_system_freetype) {
+  assert(!is_chromeos)
+
+  # Only provided for distributions which prefer to keep linking to FreeType on
+  # the system, use with caution,for details see build/config/freetype/BUILD.gn.
+  import("//build/config/linux/pkg_config.gni")
+  pkg_config("freetype_from_pkgconfig") {
+    visibility = [
+      "//build/config/freetype:freetype",
+      "//third_party:freetype_harfbuzz",
+      "//third_party/harfbuzz-ng:harfbuzz-ng",
+      "//third_party/harfbuzz-ng:harfbuzz_source",
+    ]
+    packages = [ "freetype2" ]
+  }
+} else if (use_qt_freetype) {
+  # see root BUILD.gn
+} else {
+
 assert(!use_system_freetype, "Not used when using system freetype.")
 
 visibility = [ ":*" ]
@@ -18,6 +38,7 @@ config("freetype_component_config") {
     "include/freetype-custom",
     "src/include",
   ]
+  visibility += [ "//third_party/harfbuzz-ng:*" ]
 
   defines = [
     # Long directory name to avoid accidentally using wrong headers.
@@ -158,6 +179,8 @@ component("freetype") {
 
   if (use_system_harfbuzz) {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_pkgconfig" ]
+  } else if (use_qt_harfbuzz) {
+    configs += [ qt_harfbuzz_config ]
   } else {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_config" ]
   }
@@ -169,4 +192,5 @@ component("freetype") {
   public_configs = [ ":freetype_config" ]
 
   deps = [ "//third_party/zlib" ]
+}
 }
