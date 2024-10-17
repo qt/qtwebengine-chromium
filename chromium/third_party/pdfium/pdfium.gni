@@ -72,13 +72,13 @@ declare_args() {
   use_system_libopenjpeg2 = false
 
   # Don't build against bundled libpng.
-  use_system_libpng = false
+  pdfium_use_system_libpng = false
 
   # Don't build against bundled libtiff.
-  use_system_libtiff = false
+  pdfium_use_system_libtiff = false
 
   # Don't build against bundled zlib.
-  use_system_zlib = false
+  pdfium_use_system_zlib = false
 }
 
 assert(!pdf_is_complete_lib || !is_component_build,

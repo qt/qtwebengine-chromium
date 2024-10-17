@@ -5,10 +5,16 @@
 import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/linux/pkg_config.gni")
+import("//build/shim_headers.gni")
 import("//testing/test.gni")
 import("//third_party/libvpx/libvpx_srcs.gni")
 import("//third_party/libvpx/libvpx_test_srcs.gni")
 import("//third_party/nasm/nasm_assemble.gni")
+
+declare_args() {
+  use_system_libvpx = false
+}
 
 # Sets the architecture name for building libvpx.
 if (current_cpu == "x86") {
@@ -514,7 +520,7 @@ source_set("libvpx_generic_headers") {
   sources = libvpx_srcs_generic_headers
 }
 
-static_library("libvpx") {
+static_library("bundled_libvpx") {
   if (!is_debug && (is_win || is_chromeos)) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
@@ -611,7 +617,7 @@ static_library("libvpx") {
   public_configs = [ ":libvpx_public_config" ]
 }
 
-static_library("libvpxrc") {
+static_library("bundled_libvpxrc") {
   if (!is_debug && is_win) {
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_max" ]
@@ -639,6 +645,46 @@ static_library("libvpxrc") {
     # Currently disable clang module for target to enable clang module by
     # default in other places first.
     use_libcxx_modules = false
+  }
+}
+
+if (use_system_libvpx) {
+  pkg_config("system_libvpx") {
+    packages = [ "vpx" ]
+    defines = ["USE_SYSTEM_LIBVPX=true"]
+  }
+}
+
+shim_headers("libvpx_shim") {
+  root_path = "source/libvpx/vpx"
+  prefix = "vpx/"
+  headers = [
+    "vp8.h",
+    "vp8cx.h",
+    "vp8dx.h",
+    "vpx_codec.h",
+    "vpx_decoder.h",
+    "vpx_encoder.h",
+    "vpx_frame_buffer.h",
+    "vpx_image.h",
+    "vpx_integer.h",
+  ]
+}
+
+group("libvpx") {
+  if (use_system_libvpx) {
+    deps = [ ":libvpx_shim" ]
+    public_configs = [ ":system_libvpx" ]
+  } else {
+    public_deps = [ ":bundled_libvpx" ]
+  }
+}
+
+group("libvpxrc") {
+  if (use_system_libvpx) {
+    public_deps = [ ":libvpx" ]
+  } else {
+    public_deps = [ ":bundled_libvpxrc" ]
   }
 }
 

@@ -349,7 +349,7 @@ config("system_zlib_config") {
 }
 
 group("zlib") {
-  if (use_system_zlib) {
+  if (pdfium_use_system_zlib) {
     public_configs = [ ":system_zlib_config" ]
   } else {
     public_deps = [ "//third_party/zlib" ]
@@ -441,7 +441,7 @@ config("system_libpng_config") {
 }
 
 group("png") {
-  if (use_system_libpng) {
+  if (pdfium_use_system_libpng) {
     public_configs = [ ":system_libpng_config" ]
   } else {
     public_deps = [ "//third_party/libpng" ]
@@ -449,7 +449,7 @@ group("png") {
 }
 
 if (pdf_enable_xfa_tiff) {
-  if (use_system_libtiff) {
+  if (pdfium_use_system_libtiff) {
     config("system_tiff_config") {
       libs = [ "tiff" ]
       defines = [ "USE_SYSTEM_LIBTIFF" ]
@@ -513,7 +513,7 @@ if (pdf_enable_xfa_tiff) {
   }
 
   group("tiff") {
-    if (use_system_libtiff) {
+    if (pdfium_use_system_libtiff) {
       public_configs = [ ":system_tiff_config" ]
     } else {
       public_deps = [ ":fx_tiff" ]
