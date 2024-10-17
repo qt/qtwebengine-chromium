@@ -468,7 +468,16 @@ RUNTIME_FUNCTION(Runtime_TierUpWasmToJSWrapper) {
                                       isolate);
   if (IsTuple2(*origin)) {
     Handle<Tuple2> tuple = Handle<Tuple2>::cast(origin);
-    instance = handle(WasmInstanceObject::cast(tuple->value1()), isolate);
+    Handle<WasmInstanceObject> call_origin_instance(handle(WasmInstanceObject::cast(tuple->value1()), isolate));
+    if (call_origin_instance->module() != instance->module()) {
+      for (wasm::ValueType type : sig.all()) {
+        if (type.has_index()) {
+          ref->set_wrapper_budget(Smi::kMaxValue);
+          return ReadOnlyRoots(isolate).undefined_value();
+        }
+      }
+    }
+    instance = call_origin_instance;
     origin = handle(tuple->value2(), isolate);
   }
 
