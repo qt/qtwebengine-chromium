@@ -25,4 +25,7 @@ declare_args() {
   # //pdf/features.gni, but for layering reasons,
   # we can't import pdf's features.gni here.
   enable_freetype = !is_android && !is_ios && !is_castos && !is_fuchsia
+
+  use_qt_freetype = false
+  qt_freetype_config = ""
 }

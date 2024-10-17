@@ -4,6 +4,7 @@
 
 import("//build/config/buildflags_paint_preview.gni")
 import("//build/config/chrome_build.gni")
+import("//build/config/freetype/freetype.gni")
 import("//build/config/ui.gni")
 import("//third_party/harfbuzz/harfbuzz.gni")
 
@@ -13,6 +14,7 @@ if (use_system_harfbuzz) {
     visibility = [
       "//third_party/freetype",
       "//third_party/harfbuzz",
+      "//third_party:freetype_harfbuzz",
     ]
     packages = [
       "harfbuzz",
@@ -22,6 +24,10 @@ if (use_system_harfbuzz) {
 
   component("harfbuzz") {
     public_configs = [ ":harfbuzz_from_pkgconfig" ]
+  }
+} else if (use_qt_harfbuzz) {
+  # see root BUILD.gn
+  component("harfbuzz") {
   }
 } else {
   import("//build/rust/cargo_crate.gni")
@@ -537,6 +543,13 @@ if (use_system_harfbuzz) {
       }
     }
 
+    if (use_system_freetype) {
+      configs += [ "//third_party/freetype:freetype_from_pkgconfig" ]
+    } else if (use_qt_freetype) {
+      configs += [ qt_freetype_config ]
+    } else {
+      configs += [ "//third_party/freetype:freetype_component_config" ]
+    }
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [
       "//build/config/compiler:no_chromium_code",
