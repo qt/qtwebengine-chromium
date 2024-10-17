@@ -589,14 +589,29 @@ RUNTIME_FUNCTION(Runtime_TierUpWasmToJSWrapper) {
 
   Handle<WasmInstanceObject> instance_object(
       WasmInstanceObject::cast(ref->instance()), isolate);
-  if (IsTuple2(*origin)) {
-    Handle<Tuple2> tuple = Handle<Tuple2>::cast(origin);
-    instance_object =
-        handle(WasmInstanceObject::cast(tuple->value1()), isolate);
-    origin = handle(tuple->value2(), isolate);
-  }
   Handle<WasmTrustedInstanceData> trusted_data(
       instance_object->trusted_data(isolate), isolate);
+  if (IsTuple2(*origin)) {
+    Handle<Tuple2> tuple = Handle<Tuple2>::cast(origin);
+    Handle<WasmTrustedInstanceData> call_origin_trusted_data(
+        WasmInstanceObject::cast(tuple->value1())->trusted_data(isolate),
+        isolate);
+    // TODO(371565065): We do not tier up the wrapper if the JS function wasn't
+    // imported in the current instance but the signature is specific to the
+    // importing instance. Remove this bailout again.
+    if (trusted_data->module() != call_origin_trusted_data->module()) {
+      for (wasm::ValueType type : sig.all()) {
+        if (type.has_index()) {
+          // Reset the tiering budget, so that we don't have to deal with the
+          // underflow.
+          ref->set_wrapper_budget(Smi::kMaxValue);
+          return ReadOnlyRoots(isolate).undefined_value();
+        }
+      }
+    }
+    trusted_data = call_origin_trusted_data;
+    origin = handle(tuple->value2(), isolate);
+  }
 
   // Get the function's canonical signature index.
   uint32_t canonical_sig_index = std::numeric_limits<uint32_t>::max();
