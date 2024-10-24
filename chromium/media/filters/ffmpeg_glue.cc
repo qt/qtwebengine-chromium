@@ -241,6 +241,24 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
   CHECK_NE(container_, container_names::MediaContainerName::kContainerUnknown);
   LogContainer(is_local_file, container_);
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  // Sometimes FFmpeg is not aware of the whitelisted codecs and
+  // configures streams and demuxers with unsupported codecs/params.
+  // Force the correct codecs to avoid problems later.
+  // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#a52f39351b15890ef57cc6ff0ec9ab42d
+  // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#ae5e087f4623b907517c0f7dd8327387d
+
+  // Note: don't forget to update FFmpeg[Audio|Video]Decoder::ConfigureDecoder
+
+  if (strcmp(format_context_->iformat->name, "mp3") == 0) {
+    const AVCodec* mp3_codec = avcodec_find_decoder_by_name("mp3");
+    if (mp3_codec) {
+      format_context_->audio_codec = mp3_codec;
+    } else {
+      LOG(ERROR) << "No supported codec for mp3";
+    }
+  }
+#endif
   return true;
 }
 

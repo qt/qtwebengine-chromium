@@ -368,6 +368,9 @@ bool FFmpegAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
   const AVCodec* codec = [&config, this]() {
     if (config.codec() == AudioCodec::kOpus)
       return avcodec_find_decoder_by_name("libopus");
+    if (config.codec() == AudioCodec::kMP3) {
+      return avcodec_find_decoder_by_name("mp3");
+    }
     return avcodec_find_decoder(codec_context_->codec_id);
   }();
 #else
