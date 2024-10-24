@@ -1143,7 +1143,7 @@ def GenerateLicenseFile(args: argparse.Namespace, root_dir=_REPOSITORY_ROOT):
     ]
 
   if args.gn_target is not None:
-    third_party_dirs = FindThirdPartyDeps(args.gn_out_dir, args.gn_target,
+    third_party_dirs = FindThirdPartyDeps(args.gn_binary, args.gn_out_dir, args.gn_target,
                                           args.gn_generate,
                                           args.target_os,
                                           extra_third_party_dirs,
