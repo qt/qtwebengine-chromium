@@ -266,4 +266,10 @@ void SerialPortUnderlyingSink::PipeClosed() {
   abort_handle_.Clear();
 }
 
+void SerialPortUnderlyingSink::Dispose() {
+  // Ensure that `watcher_` is disarmed so that `OnHandleReady()` is not called
+  // after this object becomes garbage.
+  PipeClosed();
+}
+
 }  // namespace blink
