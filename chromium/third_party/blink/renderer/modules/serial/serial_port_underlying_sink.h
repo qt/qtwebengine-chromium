@@ -17,6 +17,8 @@ class ScriptPromiseResolver;
 class SerialPort;
 
 class SerialPortUnderlyingSink final : public UnderlyingSinkBase {
+  USING_PRE_FINALIZER(SerialPortUnderlyingSink, Dispose);
+
  public:
   SerialPortUnderlyingSink(SerialPort*, mojo::ScopedDataPipeProducerHandle);
 
@@ -44,6 +46,7 @@ class SerialPortUnderlyingSink final : public UnderlyingSinkBase {
   void OnFlushOrDrain();
   void WriteData();
   void PipeClosed();
+  void Dispose();
 
   mojo::ScopedDataPipeProducerHandle data_pipe_;
   mojo::SimpleWatcher watcher_;
