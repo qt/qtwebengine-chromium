@@ -178,7 +178,7 @@ void SampleVectorBase::Accumulate(Sample value, Count count) {
   Count old_bucket_count = new_bucket_count - count;
   bool record_negative_sample =
       (new_bucket_count >= 0) != (old_bucket_count >= 0) && count > 0;
-  if (UNLIKELY(record_negative_sample)) {
+  if (record_negative_sample) [[unlikely]] {
     RecordNegativeSample(SAMPLES_ACCUMULATE_OVERFLOW, count);
   }
 }
@@ -651,11 +651,7 @@ PersistentSampleVector::~PersistentSampleVector() = default;
 
 bool PersistentSampleVector::IsDefinitelyEmpty() const {
   // Not implemented.
-  NOTREACHED_IN_MIGRATION();
-
-  // Always return false. If we are wrong, this will just make the caller
-  // perform some extra work thinking that |this| is non-empty.
-  return false;
+  NOTREACHED();
 }
 
 bool PersistentSampleVector::MountExistingCountsStorage() const {

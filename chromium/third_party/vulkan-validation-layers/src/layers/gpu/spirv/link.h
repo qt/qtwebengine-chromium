@@ -16,13 +16,15 @@
 
 #include <stdint.h>
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 // Functions name match those found in the GLSL for ease of searching
 enum class LinkFunctions {
     inst_buffer_device_address,
     inst_bindless_descriptor,
+    inst_non_bindless_oob_buffer,
+    inst_non_bindless_oob_texel_buffer,
     inst_ray_query,
 };
 
@@ -40,4 +42,4 @@ struct LinkInfo {
 };
 
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

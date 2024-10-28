@@ -41,7 +41,7 @@ class BrowserVersionChannel(_BrowserVersionChannelMixin, enum.Enum):
     return hash(self.name)
 
   def matches(self, other: BrowserVersionChannel) -> bool:
-    if self == BrowserVersionChannel.ANY or other == BrowserVersionChannel.ANY:
+    if BrowserVersionChannel.ANY in (self, other):
       return True
     return self == other
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Tuple, Type
 
+from crossbench.probes.android_logcat import AndroidLogcatProbe
 from crossbench.probes.debugger import DebuggerProbe
 from crossbench.probes.dtrace import DTraceProbe
 from crossbench.probes.helper import INTERNAL_NAME_PREFIX
@@ -22,6 +23,7 @@ from crossbench.probes.powermetrics import PowerMetricsProbe
 from crossbench.probes.probe import Probe
 from crossbench.probes.profiling.browser_profiling import BrowserProfilingProbe
 from crossbench.probes.profiling.system_profiling import ProfilingProbe
+from crossbench.probes.screenshot import ScreenshotProbe
 from crossbench.probes.shell import ShellProbe
 from crossbench.probes.system_stats import SystemStatsProbe
 from crossbench.probes.trace_processor.trace_processor import \
@@ -56,6 +58,7 @@ assert INTERNAL_PROBES[1] == DurationsProbe
 
 # Probes that can be used on arbitrary stories and may be user configurable.
 GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
+    AndroidLogcatProbe,
     BrowserProfilingProbe,
     DTraceProbe,
     DebuggerProbe,
@@ -65,6 +68,7 @@ GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
     PowerMetricsProbe,
     PowerSamplerProbe,
     ProfilingProbe,
+    ScreenshotProbe,
     ShellPollingProbe,
     ShellProbe,
     SystemStatsProbe,

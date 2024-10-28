@@ -5,17 +5,28 @@
  */
 
 import {SelectOption} from '@material/web/select/select-option.js';
-import {css} from 'lit';
+import {css, PropertyValues} from 'lit';
 
-import {MenuItem, MenuItemTriggeredEvent} from '../menu/menu_item';
+import {MenuItem} from '../menu/menu_item';
+
+/**
+ * Event type for when an option is triggered.
+ * @export
+ */
+export type OptionTriggeredEvent = CustomEvent<{menuItem: IconDropdownOption}>;
 
 /** A chromeOS compliant option to be used in cros-icon-dropdown. */
 export class IconDropdownOption extends MenuItem implements SelectOption {
   /** @nocollapse */
+  static override shadowRootOptions = {
+    ...MenuItem.shadowRootOptions,
+  };
+
+  /** @nocollapse */
   static override styles = [
     MenuItem.styles, css`
       md-menu-item {
-        --md-menu-item-label-text-font: var(--cros-dropdown-option-text-font, var(--cros-button-2-font-family));
+        --md-menu-item-label-text-font: var(--cros-icon-dropdown-option-text-font, var(--cros-button-2-font-family));
       }
     `
   ];
@@ -25,6 +36,12 @@ export class IconDropdownOption extends MenuItem implements SelectOption {
     ...MenuItem.properties,
     value: {type: String, reflect: true},
   };
+
+  /** @nocollapse */
+  static override events = {
+    ...MenuItem.events,
+    OPTION_TRIGGERED: 'cros-icon-dropdown-option-triggered',
+  } as const;
 
   /**
    * Internal value associated with the option.
@@ -60,6 +77,36 @@ export class IconDropdownOption extends MenuItem implements SelectOption {
     }
   }
 
+  override get switchSelected() {
+    const crosSwitch = this.renderRoot?.querySelector('cros-switch');
+    if (crosSwitch) {
+      return crosSwitch.selected;
+    }
+    return this.missedPropertySets.switchSelected ?? false;
+  }
+
+  override set switchSelected(value: boolean) {
+    const crosSwitch = this.renderRoot?.querySelector('cros-switch');
+    if (!crosSwitch) {
+      this.missedPropertySets.switchSelected = value;
+    } else {
+      crosSwitch.selected = value;
+    }
+  }
+
+  override get typeaheadText() {
+    return this.renderRoot?.querySelector('md-menu-item')?.typeaheadText ?? '';
+  }
+
+  override set typeaheadText(text: string) {
+    const item = this.renderRoot?.querySelector('md-menu-item');
+    if (!item) {
+      this.missedPropertySets.typeaheadText = text;
+    } else {
+      item.typeaheadText = text;
+    }
+  }
+
   // SelectOption implementation:
   get displayText() {
     return this.headline;
@@ -68,10 +115,11 @@ export class IconDropdownOption extends MenuItem implements SelectOption {
   constructor() {
     super();
 
+    // Default type to 'option' to match cros-icon-dropdown default menutype of
+    // 'listbox'.
     this.type = 'option';
     this.internalValue = '';
     this.keepOpen = false;
-    this.selected = false;
   }
 
   override connectedCallback() {
@@ -86,6 +134,15 @@ export class IconDropdownOption extends MenuItem implements SelectOption {
     this.removeEventListener('keydown', this.onKeyDownHandler);
   }
 
+  override updated(changedProperties: PropertyValues<this>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('checked')) {
+      const ariaSelected = this.checked ? 'true' : 'false';
+      this.renderRoot?.querySelector('md-menu-item')
+          ?.setAttribute('aria-selected', ariaSelected);
+    }
+  }
+
   private onClickHandler = () => {
     this.onItemTriggered();
   };
@@ -98,9 +155,14 @@ export class IconDropdownOption extends MenuItem implements SelectOption {
 
   // Notifies the parent icon-dropdown that this option was triggered.
   protected onItemTriggered() {
-    this.selected = true;
+    // If the itemEnd is "switch" then do not notify the parent icon-dropdown
+    // that this option was triggered.
+    if (this.itemEnd === 'switch') {
+      return;
+    }
+    this.checked = true;
     this.dispatchEvent(
-        new CustomEvent(IconDropdownOption.events.MENU_ITEM_TRIGGERED, {
+        new CustomEvent(IconDropdownOption.events.OPTION_TRIGGERED, {
           bubbles: true,
           composed: true,
           detail: {menuItem: this},
@@ -112,7 +174,7 @@ customElements.define('cros-icon-dropdown-option', IconDropdownOption);
 
 declare global {
   interface HTMLElementEventMap {
-    [MenuItem.events.MENU_ITEM_TRIGGERED]: MenuItemTriggeredEvent;
+    [IconDropdownOption.events.OPTION_TRIGGERED]: OptionTriggeredEvent;
   }
 
   interface HTMLElementTagNameMap {

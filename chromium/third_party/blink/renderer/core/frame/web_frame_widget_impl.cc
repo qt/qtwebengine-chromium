@@ -38,6 +38,7 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/callback_helpers.h"
 #include "base/functional/function_ref.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -152,7 +153,7 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-blink.h"
-#include "ui/base/ui_base_types.h"
+#include "ui/base/mojom/window_show_state.mojom-blink.h"
 #include "ui/gfx/geometry/point_conversions.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -362,6 +363,9 @@ bool WebFrameWidgetImpl::ForTopMostMainFrame() const {
 }
 
 void WebFrameWidgetImpl::Close() {
+  TRACE_EVENT0("navigation", "WebFrameWidgetImpl::Close");
+  base::ScopedUmaHistogramTimer histogram_timer(
+      "Navigation.WebFrameWidgetImpl.Close");
   // TODO(bokan): This seems wrong since the page may have other still-active
   // frame widgets. See also: https://crbug.com/1344531.
   GetPage()->WillStopCompositing();
@@ -634,6 +638,17 @@ void WebFrameWidgetImpl::OnStartStylusWriting(
 
   std::move(callback).Run(std::nullopt, std::nullopt);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+void WebFrameWidgetImpl::PassImeRenderWidgetHost(
+    mojo::PendingRemote<mojom::blink::ImeRenderWidgetHost> pending_remote) {
+  ime_render_widget_host_ =
+      HeapMojoRemote<mojom::blink::ImeRenderWidgetHost>(nullptr);
+  ime_render_widget_host_.Bind(
+      std::move(pending_remote),
+      local_root_->GetTaskRunner(TaskType::kInternalDefault));
+}
+#endif  // BUILDFLAG(IS_ANDROID)
 
 void WebFrameWidgetImpl::NotifyClearedDisplayedGraphics() {
   if (!LocalRootImpl() || !LocalRootImpl()->GetFrame() ||
@@ -1345,8 +1360,10 @@ void WebFrameWidgetImpl::SendScrollSnapChangingEventIfNeeded(
 void WebFrameWidgetImpl::UpdateCompositorScrollState(
     const cc::CompositorCommitData& commit_data) {
   is_scroll_gesture_active_ = commit_data.is_scroll_active;
-  if (WebDevToolsAgentImpl* devtools = LocalRootImpl()->DevToolsAgentImpl())
+  if (WebDevToolsAgentImpl* devtools =
+          LocalRootImpl()->DevToolsAgentImpl(/*create_if_necessary=*/false)) {
     devtools->SetPageIsScrolling(is_scroll_gesture_active_);
+  }
 
   RecordManipulationTypeCounts(commit_data.manipulation_info);
 
@@ -1680,7 +1697,8 @@ bool WebFrameWidgetImpl::ShouldAckSyntheticInputImmediately() {
 
 void WebFrameWidgetImpl::UpdateVisualProperties(
     const VisualProperties& visual_properties) {
-  SetZoomLevel(visual_properties.zoom_level);
+  SetZoomInternal(visual_properties.zoom_level,
+                  visual_properties.css_zoom_factor);
 
   // TODO(danakj): In order to synchronize updates between local roots, the
   // display mode should be propagated to RenderFrameProxies and down through
@@ -1953,7 +1971,7 @@ mojom::blink::DisplayMode WebFrameWidgetImpl::DisplayMode() const {
   return display_mode_;
 }
 
-ui::WindowShowState WebFrameWidgetImpl::WindowShowState() const {
+ui::mojom::blink::WindowShowState WebFrameWidgetImpl::WindowShowState() const {
   return window_show_state_;
 }
 
@@ -2172,35 +2190,39 @@ double WebFrameWidgetImpl::GetZoomLevel() {
   return zoom_level_;
 }
 
+void WebFrameWidgetImpl::SetZoomLevel(double zoom_level) {
+  SetZoomInternal(zoom_level, css_zoom_factor_);
+}
+
 // There are four main values that go into zoom arithmetic:
 //
-// - "zoom level", a log-based value which represents browser zoom level and
-//   also the effects of the CSS "zoom" property.
-// - kTextSizeMultiplierRatio, a hard-coded constant used as the log base for
-//   zoom level.
-// - Hardware device pixel ratio, which is stored on WebView as
+// - "zoom level", a log-based value which represents the zoom level from the
+//   browser UI. The log base for zoom level is kTextSizeMultiplierRatio.
+// - "css zoom factor", which represents the effect of the CSS "zoom" property
+//   applied to the embedding point (e.g. <iframe>) of this widget, if any. For
+//   a top-level widget this is 1.0.
+// - Hardware device scale factor, which is stored on WebViewImpl as
 //   zoom_factor_for_device_scale_factor_.
-// - "zoom factor" (AKA "layout zoom factor"), which is calculated from the
-//   first three values, with override mechanisms for testing and device
-//   emulation.
-//
-// Here and elsewhere, the code tries to be consistent in its naming conventions
-// with respect to "zoom level" vs. "zoom factor".
-void WebFrameWidgetImpl::SetZoomLevel(double zoom_level) {
-  if (ForMainFrame()) {
-    zoom_level = View()->ClampZoomLevel(zoom_level);
-  }
-  // Override the zoom level with the testing one if necessary.
-  if (zoom_level_for_testing_ != -INFINITY)
+// - "layout zoom factor", which is calculated from the previous three values,
+//   with override mechanisms for testing and device emulation. This is the
+//   value that is used by the rendering system.
+void WebFrameWidgetImpl::SetZoomInternal(double zoom_level,
+                                         double css_zoom_factor) {
+  zoom_level = View()->ClampZoomLevel(zoom_level);
+  if (zoom_level_for_testing_ != -INFINITY) {
     zoom_level = zoom_level_for_testing_;
-  bool zoom_level_changed = (zoom_level != zoom_level_);
+  }
+  bool zoom_changed =
+      (zoom_level != zoom_level_ || css_zoom_factor != css_zoom_factor_);
   zoom_level_ = zoom_level;
+  css_zoom_factor_ = css_zoom_factor;
 
   if (auto* local_frame = LocalRootImpl()->GetFrame()) {
     if (Document* document = local_frame->GetDocument()) {
-      double zoom_factor =
-          View()->ZoomLevelToZoomFactor(zoom_level, ForMainFrame());
-      if (zoom_level_changed) {
+      double layout_zoom_factor = View()->ZoomFactorForViewportLayout() *
+                                  View()->ZoomLevelToZoomFactor(zoom_level) *
+                                  css_zoom_factor;
+      if (zoom_changed) {
         // Set the layout shift exclusion window for the zoom level change.
         if (LocalFrameView* view = document->View()) {
           view->GetLayoutShiftTracker().NotifyZoomLevelChanged();
@@ -2213,19 +2235,19 @@ void WebFrameWidgetImpl::SetZoomLevel(double zoom_level) {
             // factor.
             UMA_HISTOGRAM_CUSTOM_EXACT_LINEAR(
                 "Accessibility.Android.PageZoom.MainFrameZoomFactor",
-                zoom_factor * 100, 50, 300, 52);
+                layout_zoom_factor * 100, 50, 300, 52);
           }
 #endif
         }
       }
 
-      // zoom_factor may have changed even if zoom_level did not, so we
+      // layout_zoom_factor may have changed even if !zoom_changed, so we
       // unconditionally propagate to the local root frame.
       auto* plugin_document = DynamicTo<PluginDocument>(document);
       if (!plugin_document || !plugin_document->GetPluginView()) {
         // The local root is responsible for propagating to its connected tree
-        // of LocalFrame descendants.
-        local_frame->SetLayoutZoomFactor(zoom_factor);
+        // of Frame descendants.
+        local_frame->SetLayoutZoomFactor(layout_zoom_factor);
       }
     }
   }
@@ -2305,7 +2327,7 @@ bool WebFrameWidgetImpl::ScrollFocusedEditableElementIntoView() {
   // ScrollRectToVisible will stop bubbling when it reaches the layout viewport
   // so that can be animated by the PageScaleAnimation.
   mojom::blink::ScrollIntoViewParamsPtr params =
-      ScrollAlignment::CreateScrollIntoViewParams(
+      scroll_into_view_util::CreateScrollIntoViewParams(
           ScrollAlignment::CenterIfNeeded(), ScrollAlignment::CenterIfNeeded(),
           mojom::blink::ScrollType::kProgrammatic,
           /*make_visible_in_visual_viewport=*/false,
@@ -2633,42 +2655,6 @@ WebFrameWidgetImpl::GetBeginMainFrameMetrics() {
       ->GetBeginMainFrameMetrics();
 }
 
-std::unique_ptr<cc::WebVitalMetrics> WebFrameWidgetImpl::GetWebVitalMetrics() {
-  if (!LocalRootImpl())
-    return nullptr;
-
-  // This class should be called at most once per commit.
-  WebPerformanceMetricsForReporting perf =
-      LocalRootImpl()->PerformanceMetricsForReporting();
-  auto metrics = std::make_unique<cc::WebVitalMetrics>();
-  if (perf.FirstInputDelay().has_value()) {
-    metrics->first_input_delay = perf.FirstInputDelay().value();
-    metrics->has_fid = true;
-  }
-
-  base::TimeTicks start = perf.NavigationStartAsMonotonicTime();
-  base::TimeTicks largest_contentful_paint =
-      perf.LargestContentfulDetailsForMetrics().paint_time;
-  if (largest_contentful_paint >= start) {
-    metrics->largest_contentful_paint = largest_contentful_paint - start;
-    metrics->has_lcp = true;
-  }
-
-  double layout_shift = LocalRootImpl()
-                            ->GetFrame()
-                            ->View()
-                            ->GetLayoutShiftTracker()
-                            .WeightedScore();
-  if (layout_shift > 0.f) {
-    metrics->layout_shift = layout_shift;
-    metrics->has_cls = true;
-  }
-
-  if (!metrics->HasValue())
-    return nullptr;
-
-  return metrics;
-}
 
 void WebFrameWidgetImpl::BeginUpdateLayers() {
   if (LocalRootImpl())
@@ -2809,7 +2795,8 @@ void WebFrameWidgetImpl::SetDisplayMode(mojom::blink::DisplayMode mode) {
   }
 }
 
-void WebFrameWidgetImpl::SetWindowShowState(ui::WindowShowState state) {
+void WebFrameWidgetImpl::SetWindowShowState(
+    ui::mojom::blink::WindowShowState state) {
   if (state == window_show_state_) {
     return;
   }
@@ -2885,8 +2872,10 @@ void WebFrameWidgetImpl::ProcessInputEventSynchronouslyForTesting(
 WebInputEventResult WebFrameWidgetImpl::DispatchBufferedTouchEvents() {
   CHECK(LocalRootImpl());
 
-  if (WebDevToolsAgentImpl* devtools = LocalRootImpl()->DevToolsAgentImpl())
+  if (WebDevToolsAgentImpl* devtools =
+          LocalRootImpl()->DevToolsAgentImpl(/*create_if_necessary=*/false)) {
     devtools->DispatchBufferedTouchEvents();
+  }
 
   return LocalRootImpl()
       ->GetFrame()
@@ -2923,10 +2912,16 @@ WebInputEventResult WebFrameWidgetImpl::HandleInputEvent(
     return WebInputEventResult::kNotHandled;
   }
 
-  if (WebDevToolsAgentImpl* devtools = LocalRootImpl()->DevToolsAgentImpl()) {
+  if (WebDevToolsAgentImpl* devtools =
+          LocalRootImpl()->DevToolsAgentImpl(/*create_if_necessary=*/false)) {
     auto result = devtools->HandleInputEvent(input_event);
     if (result != WebInputEventResult::kNotHandled)
       return result;
+  }
+
+  // If we are a mouse down potentially activate the paused debugger window.
+  if (input_event.GetType() == WebInputEvent::Type::kMouseDown) {
+    WebDevToolsAgentImpl::ActivatePausedDebuggerWindow(LocalRootImpl());
   }
 
   // Report the event to be NOT processed by WebKit, so that the browser can
@@ -3163,6 +3158,10 @@ const display::ScreenInfos& WebFrameWidgetImpl::GetOriginalScreenInfos() {
 
 gfx::Rect WebFrameWidgetImpl::WindowRect() {
   return widget_base_->WindowRect();
+}
+
+double WebFrameWidgetImpl::GetCSSZoomFactor() const {
+  return css_zoom_factor_;
 }
 
 gfx::Rect WebFrameWidgetImpl::ViewRect() {
@@ -3749,36 +3748,6 @@ void WebFrameWidgetImpl::ClearKeyboardTriggeredTooltip() {
   widget_base_->ClearKeyboardTriggeredTooltip();
 }
 
-void WebFrameWidgetImpl::DidOverscroll(
-    const gfx::Vector2dF& overscroll_delta,
-    const gfx::Vector2dF& accumulated_overscroll,
-    const gfx::PointF& position,
-    const gfx::Vector2dF& velocity) {
-#if BUILDFLAG(IS_MAC)
-  // On OSX the user can disable the elastic overscroll effect. If that's the
-  // case, don't forward the overscroll notification.
-  if (!widget_base_->LayerTreeHost()->GetSettings().enable_elastic_overscroll)
-    return;
-#endif
-
-  cc::OverscrollBehavior overscroll_behavior =
-      widget_base_->LayerTreeHost()->overscroll_behavior();
-  if (!widget_base_->input_handler().DidOverscrollFromBlink(
-          overscroll_delta, accumulated_overscroll, position, velocity,
-          overscroll_behavior))
-    return;
-
-  // If we're currently handling an event, stash the overscroll data such that
-  // it can be bundled in the event ack.
-  if (mojom::blink::WidgetInputHandlerHost* host =
-          widget_base_->widget_input_handler_manager()
-              ->GetWidgetInputHandlerHost()) {
-    host->DidOverscroll(mojom::blink::DidOverscrollParams::New(
-        accumulated_overscroll, overscroll_delta, velocity, position,
-        overscroll_behavior));
-  }
-}
-
 void WebFrameWidgetImpl::InjectScrollbarGestureScroll(
     const gfx::Vector2dF& delta,
     ui::ScrollGranularity granularity,
@@ -3985,19 +3954,6 @@ void WebFrameWidgetImpl::NotifyAutoscrollForSelectionInMainFrame(
     host->SetAutoscrollSelectionActiveInMainFrame(autoscroll_selection);
   }
 }
-
-#if BUILDFLAG(IS_ANDROID)
-void WebFrameWidgetImpl::PassImeRenderWidgetHost(
-    mojo::PendingRemote<mojom::blink::ImeRenderWidgetHost> pending_remote) {
-  // TODO(crbug.com/330385378): Could the renderer send this endpoint to the
-  // browser?
-  ime_render_widget_host_ =
-      HeapMojoRemote<mojom::blink::ImeRenderWidgetHost>(nullptr);
-  ime_render_widget_host_.Bind(
-      std::move(pending_remote),
-      local_root_->GetTaskRunner(TaskType::kInternalDefault));
-}
-#endif
 
 gfx::Range WebFrameWidgetImpl::CompositionRange() {
   WebLocalFrame* focused_frame = FocusedWebLocalFrameInWidget();
@@ -4680,13 +4636,16 @@ void WebFrameWidgetImpl::UpdateViewportDescription(
 bool WebFrameWidgetImpl::UpdateScreenRects(
     const gfx::Rect& widget_screen_rect,
     const gfx::Rect& window_screen_rect) {
-  bool should_send = WindowRect().origin() != window_screen_rect.origin();
 
   if (device_emulator_) {
     device_emulator_->OnUpdateScreenRects(widget_screen_rect,
                                           window_screen_rect);
   }
-  if (should_send) {
+
+  // Check movement from the committed `WindowScreenRect()`, not `WindowRect()`,
+  // which may include pending updates from renderer-initiated moveTo|By calls.
+  if (widget_base_->WindowScreenRect().origin() !=
+      window_screen_rect.origin()) {
     EnqueueMoveEvent();
   }
 
@@ -5017,6 +4976,10 @@ void WebFrameWidgetImpl::UpdateNavigationStateForCompositor(
     ukm::SourceId source_id,
     const KURL& url) {
   LayerTreeHost()->SetSourceURL(source_id, GURL(url));
+  PropagateHistorySequenceNumberToCompositor();
+}
+
+void WebFrameWidgetImpl::PropagateHistorySequenceNumberToCompositor() {
   DocumentLoader* loader =
       local_root_->GetFrame()->Loader().GetDocumentLoader();
   CHECK(loader->GetHistoryItem());
@@ -5127,6 +5090,14 @@ bool WebFrameWidgetImpl::ShouldAutoDetermineCompositingToLCDTextSetting() {
 
 bool WebFrameWidgetImpl::WillBeDestroyed() const {
   return widget_base_->WillBeDestroyed();
+}
+
+void WebFrameWidgetImpl::DispatchNonBlockingEventForTesting(
+    std::unique_ptr<WebCoalescedInputEvent> event) {
+  widget_base_->widget_input_handler_manager()
+      ->DispatchEventOnInputThreadForTesting(
+          std::move(event),
+          mojom::blink::WidgetInputHandler::DispatchEventCallback());
 }
 
 }  // namespace blink

@@ -4188,7 +4188,7 @@ static void demo_init_connection(struct demo *demo) {
 
     demo->registry = wl_display_get_registry(demo->display);
     wl_registry_add_listener(demo->registry, &registry_listener, demo);
-    wl_display_dispatch(demo->display);
+    wl_display_roundtrip(demo->display);
 #endif
 }
 
@@ -4505,7 +4505,7 @@ void android_main(struct android_app *app) {
     while (1) {
         int events;
         struct android_poll_source *source;
-        while (ALooper_pollAll(active ? 0 : -1, NULL, &events, (void **)&source) >= 0) {
+        while (ALooper_pollOnce(active ? 0 : -1, NULL, &events, (void **)&source) >= 0) {
             if (source) {
                 source->process(app, source);
             }

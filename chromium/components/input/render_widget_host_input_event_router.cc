@@ -675,8 +675,8 @@ void RenderWidgetHostInputEventRouter::DispatchMouseEvent(
 
   if (target) {
     ui::EventType type = mouse_event.GetTypeAsUiEventType();
-    bool hovering = (type ^ ui::EventType::kMouseDragged) &&
-                    (type ^ ui::EventType::kMousePressed);
+    bool hovering = (type != ui::EventType::kMouseDragged) &&
+                    (type != ui::EventType::kMousePressed);
     ForwardDelegatedInkPoint(target, root_view, mouse_event, mouse_event,
                              hovering);
   }
@@ -1205,8 +1205,13 @@ bool RenderWidgetHostInputEventRouter::BubbleScrollEvent(
     if (target_view == touchscreen_gesture_target_.get() ||
         target_view == touchpad_gesture_target_ ||
         target_view == touch_target_) {
-      TRACE_EVENT_INSTANT0("input", "EarlyOut-GestureInProgress",
-                           TRACE_EVENT_SCOPE_THREAD);
+      TRACE_EVENT_INSTANT("input", "EarlyOut-GestureInProgress", "target_view",
+                          static_cast<void*>(target_view),
+                          "touchscreen_gesture_target_",
+                          static_cast<void*>(touchscreen_gesture_target_.get()),
+                          "touchpad_gesture_target_",
+                          static_cast<void*>(touchpad_gesture_target_),
+                          "touch_target_", static_cast<void*>(touch_target_));
       return false;
     }
 

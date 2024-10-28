@@ -22,6 +22,8 @@ from crossbench.helper.state import BaseState, StateMachine
 from crossbench.probes import all as all_probes
 from crossbench.probes.internal import ResultsSummaryProbe
 from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
+from crossbench.probes.trace_processor.trace_processor import \
+    TraceProcessorProbe
 from crossbench.runner.groups import (BrowserSessionRunGroup, BrowsersRunGroup,
                                       CacheTemperatureRunGroup,
                                       RepetitionsRunGroup, RunThreadGroup,
@@ -70,7 +72,10 @@ class ThreadMode(compat.StrEnumWithHelp):
       groups = helper.group_by(runs, lambda run: run.browser, sort_key=None)
     else:
       raise ValueError(f"Unexpected thread mode: {self}")
-    return [RunThreadGroup(runs) for runs in groups.values()]
+    return [
+        RunThreadGroup(runs, index=index)
+        for index, runs in enumerate(groups.values())
+    ]
 
 
 @enum.unique
@@ -178,22 +183,21 @@ class Runner:
         "create_symlinks": args.create_symlinks,
     }
 
-  def __init__(
-      self,
-      out_dir: pth.LocalPath,
-      browsers: Sequence[Browser],
-      benchmark: Benchmark,
-      additional_probes: Iterable[Probe] = (),
-      platform: plt.Platform = plt.PLATFORM,
-      env_config: Optional[HostEnvironmentConfig] = None,
-      env_validation_mode: ValidationMode = ValidationMode.THROW,  # pytype: disable=annotation-type-mismatch
-      repetitions: int = 1,
-      warmup_repetitions: int = 0,
-      cache_temperatures: Iterable[str] = ("default",),
-      timing: Timing = Timing(),
-      thread_mode: ThreadMode = ThreadMode.NONE,
-      throw: bool = False,
-      create_symlinks: bool = True):
+  def __init__(self,
+               out_dir: pth.LocalPath,
+               browsers: Sequence[Browser],
+               benchmark: Benchmark,
+               additional_probes: Iterable[Probe] = (),
+               platform: plt.Platform = plt.PLATFORM,
+               env_config: Optional[HostEnvironmentConfig] = None,
+               env_validation_mode: ValidationMode = ValidationMode.THROW,
+               repetitions: int = 1,
+               warmup_repetitions: int = 0,
+               cache_temperatures: Iterable[str] = ("default",),
+               timing: Timing = Timing(),
+               thread_mode: ThreadMode = ThreadMode.NONE,
+               throw: bool = False,
+               create_symlinks: bool = True):
     self._state = StateMachine(RunnerState.INITIAL)
     self.out_dir = out_dir
     assert not self.out_dir.exists(), f"out_dir={self.out_dir} exists already"
@@ -229,6 +233,7 @@ class Runner:
     self._create_symlinks: bool = create_symlinks
 
   def _prepare_benchmark(self) -> None:
+    benchmark_probe_cls: Type[BenchmarkProbeMixin]
     for benchmark_probe_cls in self._benchmark.PROBES:
       assert inspect.isclass(benchmark_probe_cls), (
           f"{self._benchmark}.PROBES must contain classes only, "
@@ -255,7 +260,10 @@ class Runner:
       default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
       self.attach_probe(default_probe)
       self._default_probes.append(default_probe)
-    for probe in probe_list:
+    for index, probe in enumerate(probe_list):
+      assert (not isinstance(probe, TraceProcessorProbe) or index == 0), (
+          f"TraceProcessorProbe must be first in the list to be able "
+          f"to process other probes data. Found it at index: {index}")
       self.attach_probe(probe)
     # Results probe must be first in the list, and thus last to be processed
     # so all other probes have data by the time we write the results summary.
@@ -306,6 +314,10 @@ class Runner:
   @property
   def default_probes(self) -> Iterable[Probe]:
     return iter(self._default_probes)
+
+  @property
+  def benchmark(self) -> Benchmark:
+    return self._benchmark
 
   @property
   def repetitions(self) -> int:
@@ -446,7 +458,8 @@ class Runner:
     index = 0
     session_index = 0
     throw = self._exceptions.throw
-    for repetition in range(self.repetitions + self.warmup_repetitions):
+    total_repetitions = self.repetitions + self.warmup_repetitions
+    for repetition in range(total_repetitions):
       is_warmup: bool = repetition < self.warmup_repetitions
       for story in self.stories:
         for browser in self.browsers:
@@ -454,15 +467,21 @@ class Runner:
           browser_session = BrowserSessionRunGroup(self, browser, session_index,
                                                    self.out_dir, throw)
           session_index += 1
-          for temp_index, temperature in enumerate(self.cache_temperatures):
+          for t_index, temperature in enumerate(self.cache_temperatures):
+            name_parts = [f"story={story.name}"]
+            if total_repetitions > 1:
+              name_parts.append(f"repetition={repetition}")
+            if len(self.cache_temperatures) > 1:
+              name_parts.append(f"cache={temperature}")
+            name_parts.append(f"index={index}")
             yield self.create_run(
                 browser_session,
                 story,
                 repetition,
                 is_warmup,
-                f"{temp_index}_{temperature}",
+                f"{t_index}_{temperature}",
                 index,
-                name=f"{story.name}[rep={repetition}, cache={temperature}]",
+                name=", ".join(name_parts),
                 timeout=self.timing.run_timeout,
                 throw=throw)
             index += 1

@@ -12,6 +12,8 @@ from crossbench.benchmarks.loading.action_runner.basic_action_runner import \
     BasicActionRunner
 from crossbench.benchmarks.loading.action_runner.android_input_action_runner import \
     AndroidInputActionRunner
+from crossbench.benchmarks.loading.action_runner.chromeos_input_action_runner import \
+    ChromeOSInputActionRunner
 
 
 # TODO: migrate to full config.ConfigObject
@@ -25,5 +27,9 @@ class ActionRunnerConfig:
       return BasicActionRunner()
     if value == "android":
       return AndroidInputActionRunner()
+    if value == "chromeos":
+      return ChromeOSInputActionRunner()
     raise argparse.ArgumentTypeError(
-        f"Invalid choice '{value}', allowed values are 'basic'")
+      f"Invalid choice '{value}', allowed values are 'basic', 'android', "
+      "'chromeos'"
+    )

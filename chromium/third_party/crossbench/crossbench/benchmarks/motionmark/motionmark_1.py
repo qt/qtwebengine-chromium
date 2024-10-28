@@ -25,7 +25,7 @@ if TYPE_CHECKING:
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
   from crossbench.runner.run import Run
-  from crossbench.types import JSON
+  from crossbench.types import Json
 
 
 def _clean_up_path_segments(path: Tuple[str, ...]) -> Optional[str]:
@@ -46,10 +46,10 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
     return window.benchmarkRunnerClient.results.results;
   """
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.js(self.JS)
 
-  def flatten_json_data(self, json_data: List) -> JSON:
+  def flatten_json_data(self, json_data: List) -> Json:
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
     return probes_helper.Flatten(

@@ -185,9 +185,12 @@ bool BestPractices::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPi
         }
     }
     if (VendorCheckEnabled(kBPVendorAMD)) {
-        if (num_pso_ > kMaxRecommendedNumberOfPSOAMD) {
+        const uint32_t pso_count = num_pso_.load();
+        if (pso_count > kMaxRecommendedNumberOfPSOAMD) {
             skip |= LogPerformanceWarning("BestPractices-AMD-CreatePipelines-TooManyPipelines", device, error_obj.location,
-                                          "%s Too many pipelines created, consider consolidation", VendorSpecificTag(kBPVendorAMD));
+                                          "%s Too many pipelines created (%" PRIu32 " but max recommended is %" PRIu32
+                                          "), consider consolidation",
+                                          VendorSpecificTag(kBPVendorAMD), pso_count, kMaxRecommendedNumberOfPSOAMD);
         }
     }
 
@@ -212,7 +215,7 @@ static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(bp_state::Pipel
             if (create_info.pColorBlendState->pAttachments[j].colorWriteMask != 0) {
                 uint32_t attachment = subpass.pColorAttachments[j].attachment;
                 if (attachment != VK_ATTACHMENT_UNUSED) {
-                    result.push_back({attachment, VK_IMAGE_ASPECT_COLOR_BIT});
+                    result.emplace_back(attachment, VK_IMAGE_ASPECT_COLOR_BIT);
                 }
             }
         }
@@ -230,26 +233,24 @@ static std::vector<bp_state::AttachmentInfo> GetAttachmentAccess(bp_state::Pipel
             if (create_info.pDepthStencilState->stencilTestEnable) {
                 aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
             }
-            result.push_back({attachment, aspects});
+            result.emplace_back(attachment, aspects);
         }
     }
     return result;
 }
 
-bp_state::Pipeline::Pipeline(const ValidationStateTracker& state_data, const VkGraphicsPipelineCreateInfo* pCreateInfo,
+bp_state::Pipeline::Pipeline(const ValidationStateTracker& state_data, const VkGraphicsPipelineCreateInfo* create_info,
                              std::shared_ptr<const vvl::PipelineCache>&& pipe_cache,
-                             std::shared_ptr<const vvl::RenderPass>&& rpstate, std::shared_ptr<const vvl::PipelineLayout>&& layout,
-                             ShaderModuleUniqueIds* shader_unique_id_map)
-    : vvl::Pipeline(state_data, pCreateInfo, std::move(pipe_cache), std::move(rpstate), std::move(layout), nullptr,
-                    shader_unique_id_map),
+                             std::shared_ptr<const vvl::RenderPass>&& rpstate, std::shared_ptr<const vvl::PipelineLayout>&& layout)
+    : vvl::Pipeline(state_data, create_info, std::move(pipe_cache), std::move(rpstate), std::move(layout), nullptr),
       access_framebuffer_attachments(GetAttachmentAccess(*this)) {}
 
 std::shared_ptr<vvl::Pipeline> BestPractices::CreateGraphicsPipelineState(
-    const VkGraphicsPipelineCreateInfo* pCreateInfo, std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
+    const VkGraphicsPipelineCreateInfo* create_info, std::shared_ptr<const vvl::PipelineCache> pipeline_cache,
     std::shared_ptr<const vvl::RenderPass>&& render_pass, std::shared_ptr<const vvl::PipelineLayout>&& layout,
-    spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages], ShaderModuleUniqueIds* shader_unique_id_map) const {
+    spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) const {
     return std::static_pointer_cast<vvl::Pipeline>(std::make_shared<bp_state::Pipeline>(
-        *this, pCreateInfo, std::move(pipeline_cache), std::move(render_pass), std::move(layout), shader_unique_id_map));
+        *this, create_info, std::move(pipeline_cache), std::move(render_pass), std::move(layout)));
 }
 
 void BestPractices::ManualPostCallRecordCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,

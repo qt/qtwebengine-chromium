@@ -8,7 +8,7 @@ import abc
 import html
 import urllib.parse
 from argparse import ArgumentTypeError
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from crossbench import path as pth
 
@@ -44,7 +44,8 @@ class SplashScreen:
 
 
 _BLANK_PAGE_HTML = "<html></html>"
-_BLANK_PAGE_DATA_URL = f"data:text/html;charset=utf-8,{urllib.parse.quote(_BLANK_PAGE_HTML)}"
+_BLANK_PAGE_DATA_URL = (
+    f"data:text/html;charset=utf-8,{urllib.parse.quote(_BLANK_PAGE_HTML)}")
 
 
 class BaseURLSplashScreen(SplashScreen, metaclass=abc.ABCMeta):
@@ -98,7 +99,7 @@ class DetailedSplashScreen(BaseURLSplashScreen):
     data_url = f"data:text/html;charset=utf-8,{urllib.parse.quote(page)}"
     return data_url
 
-  def _render_properties(self, title: str, properties: Dict[str, str]) -> str:
+  def _render_properties(self, title: str, properties: Dict[str, Any]) -> str:
     section = f"<h2>{html.escape(title)}</h2><dl>"
     for property_name, value in properties.items():
       section += f"<dt>{html.escape(property_name)}</dt>"

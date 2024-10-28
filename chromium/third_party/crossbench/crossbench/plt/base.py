@@ -35,10 +35,10 @@ if TYPE_CHECKING:
   from crossbench.types import JsonDict
 
 
-CmdArgT = pth.RemotePathLike
-ListCmdArgsT = List[CmdArgT]
-TupleCmdArgsT = Tuple[CmdArgT, ...]
-CmdArgsT = Union[ListCmdArgsT, TupleCmdArgsT]
+CmdArg = pth.RemotePathLike
+ListCmdArgs = List[CmdArg]
+TupleCmdArgs = Tuple[CmdArg, ...]
+CmdArgs = Union[ListCmdArgs, TupleCmdArgs]
 
 
 class Environ(collections.abc.MutableMapping, metaclass=abc.ABCMeta):
@@ -248,14 +248,14 @@ class Platform(abc.ABC):
 
   @abc.abstractmethod
   def search_binary(self,
-                    app_or_bin: pth.RemotePath) -> Optional[pth.RemotePath]:
+                    app_or_bin: pth.RemotePathLike) -> Optional[pth.RemotePath]:
     """Look up a binary in the common search paths based of a path or a single
     segment path with just the binary name.
     Returns the location of the binary (and not the .app bundle on macOS).
     """
 
   @abc.abstractmethod
-  def app_version(self, app_or_bin: pth.RemotePath) -> str:
+  def app_version(self, app_or_bin: pth.RemotePathLike) -> str:
     pass
 
   @property
@@ -287,19 +287,19 @@ class Platform(abc.ABC):
     return self._binary_lookup_override.get(str(binary_name))
 
   def set_binary_lookup_override(self, binary_name: pth.RemotePathLike,
-                                 result: Optional[pth.RemotePath]):
+                                 new_path: Optional[pth.RemotePath]):
     name = str(binary_name)
-    if result is None:
+    if new_path is None:
       prev_result = self._binary_lookup_override.pop(name, None)
       if prev_result is None:
         logging.debug(
             "Could not remove binary override for %s as it was never set",
             binary_name)
       return
-    if self.search_binary(result) is None:
+    if self.search_binary(new_path) is None:
       raise ValueError(f"Suggested binary override for {repr(name)} "
-                       f"does not exist: {result}")
-    self._binary_lookup_override[name] = result
+                       f"does not exist: {new_path}")
+    self._binary_lookup_override[name] = new_path
 
   @contextlib.contextmanager
   def override_binary(self, binary: Union[pth.RemotePathLike, Binary],
@@ -378,6 +378,10 @@ class Platform(abc.ABC):
   def reverse_port_forward(self, remote_port: int, local_port: int) -> None:
     if remote_port != local_port:
       raise ValueError("Cannot forward a remote port on a local platform.")
+    assert self.is_local, "Unsupported operation on remote platform"
+
+  def stop_reverse_port_forward(self, remote_port: int) -> None:
+    del remote_port
     assert self.is_local, "Unsupported operation on remote platform"
 
   def cat(self, file: pth.RemotePathLike, encoding: str = "utf-8") -> str:
@@ -505,7 +509,7 @@ class Platform(abc.ABC):
     return self.local_path(path).stat().st_size
 
   def sh_stdout(self,
-                *args: CmdArgT,
+                *args: CmdArg,
                 shell: bool = False,
                 quiet: bool = False,
                 encoding: str = "utf-8",
@@ -521,7 +525,7 @@ class Platform(abc.ABC):
     return completed_process.stdout.decode(encoding)
 
   def popen(self,
-            *args: CmdArgT,
+            *args: CmdArg,
             shell: bool = False,
             stdout=None,
             stderr=None,
@@ -541,7 +545,7 @@ class Platform(abc.ABC):
         env=env)
 
   def sh(self,
-         *args: CmdArgT,
+         *args: CmdArg,
          shell: bool = False,
          capture_output: bool = False,
          stdout=None,
@@ -689,5 +693,10 @@ class Platform(abc.ABC):
         "Implementation is only available on MacOS for now")
 
   def check_autobrightness(self) -> bool:
+    raise NotImplementedError(
+        "Implementation is only available on MacOS for now")
+
+  def screenshot(self, result_path: pth.RemotePath) -> None:
+    # TODO: support screen coordinates
     raise NotImplementedError(
         "Implementation is only available on MacOS for now")

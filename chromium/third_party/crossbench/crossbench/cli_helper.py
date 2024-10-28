@@ -15,8 +15,8 @@ import re
 import shlex
 import sys
 from typing import (Any, Dict, Final, Iterable, Iterator, List, Optional,
-                    Sequence, Type, TypeVar, cast)
-from urllib.parse import urlparse
+                    Sequence, Type, TypeVar, Union, cast)
+from urllib import parse as urlparse
 
 import colorama
 import hjson
@@ -30,67 +30,73 @@ def type_str(value: Any) -> str:
   return type(value).__name__
 
 
-def parse_path(value: pth.RemotePathLike) -> pth.LocalPath:
+def parse_path(value: pth.RemotePathLike, name: str = "value") -> pth.LocalPath:
   value = parse_not_none(value, "path")
   if not value:
     raise argparse.ArgumentTypeError("Invalid empty path.")
   try:
     path = pth.LocalPath(value).expanduser()
   except RuntimeError as e:
-    raise argparse.ArgumentTypeError(f"Invalid Path '{value}': {e}") from e
+    raise argparse.ArgumentTypeError(
+        f"Invalid Path {name} {repr(value)}': {e}") from e
   return path
 
 
 def parse_existing_file_path(value: pth.RemotePathLike,
-                             name: str = "File") -> pth.LocalPath:
+                             name: str = "value") -> pth.LocalPath:
   path = parse_existing_path(value, name)
   if not path.is_file():
-    raise argparse.ArgumentTypeError(f"{name} '{path}' is not a file.")
+    raise argparse.ArgumentTypeError(f"{name} is not a file: {repr(str(path))}")
   return path
 
 
 def parse_non_empty_file_path(value: pth.RemotePathLike,
-                              name: str = "File") -> pth.LocalPath:
+                              name: str = "value") -> pth.LocalPath:
   path: pth.LocalPath = parse_existing_file_path(value, name)
   if path.stat().st_size == 0:
-    raise argparse.ArgumentTypeError(f"{name} '{path}' is an empty file.")
+    raise argparse.ArgumentTypeError(
+        f"{name} is an empty file: {repr(str(path))}")
   return path
 
 
 def parse_file_path(value: pth.RemotePathLike,
-                    name: str = "Path") -> pth.LocalPath:
+                    name: str = "value") -> pth.LocalPath:
   return parse_non_empty_file_path(value, name)
 
 
 def parse_dir_path(value: pth.RemotePathLike,
-                   name: str = "Path") -> pth.LocalPath:
+                   name: str = "value") -> pth.LocalPath:
   path = parse_existing_path(value, name)
   if not path.is_dir():
-    raise argparse.ArgumentTypeError(f"{name} '{path}', is not a folder.")
+    raise argparse.ArgumentTypeError(
+        f"{name} is not a folder: '{repr(str(path))}'")
   return path
 
 
 def parse_non_empty_dir_path(value: pth.RemotePathLike,
-                             name: str = "Path") -> pth.LocalPath:
+                             name: str = "value") -> pth.LocalPath:
   dir_path = parse_dir_path(value, name)
   for _ in dir_path.iterdir():
     return dir_path
-  raise argparse.ArgumentTypeError(f"{name} '{dir_path}', must be non empty.")
+  raise argparse.ArgumentTypeError(
+      f"{name} dir must be non empty: {repr(str(dir_path))}")
 
 
 def parse_existing_path(value: pth.RemotePathLike,
-                        name: str = "Path") -> pth.LocalPath:
+                        name: str = "value") -> pth.LocalPath:
   path = parse_path(value)
   if not path.exists():
-    raise argparse.ArgumentTypeError(f"{name} '{path}' does not exist.")
+    raise argparse.ArgumentTypeError(
+        f"{name} path does not exist: {repr(str(path))}")
   return path
 
 
 def parse_not_existing_path(value: pth.RemotePathLike,
-                            name: str = "Path") -> pth.LocalPath:
+                            name: str = "value") -> pth.LocalPath:
   path = parse_path(value)
   if path.exists():
-    raise argparse.ArgumentTypeError(f"{name} '{path}' already exist.")
+    raise argparse.ArgumentTypeError(
+        f"{name} path already exists: {repr(str(path))}")
   return path
 
 
@@ -109,10 +115,10 @@ def parse_binary_path(
 
 
 def parse_remote_path(value: Optional[pth.RemotePathLike],
-                      name: str = "path") -> pth.RemotePath:
-  some_value = parse_not_none(value, name)
+                      name: str = "value") -> pth.RemotePath:
+  some_value: pth.RemotePathLike = parse_not_none(value, name)
   if not some_value:
-    raise argparse.ArgumentTypeError(f"Expected non empty {name}.")
+    raise argparse.ArgumentTypeError(f"Expected non empty path {name}.")
   return pth.RemotePath(some_value)
 
 
@@ -126,14 +132,14 @@ EnumT = TypeVar("EnumT", bound=enum.Enum)
 
 
 def parse_enum(label: str, enum_cls: Type[EnumT], data: Any,
-               choices: Iterable[EnumT]) -> EnumT:
+               choices: Union[Type[EnumT], Iterable[EnumT]]) -> EnumT:
   try:
     # Try direct conversion, relying on the Enum._missing_ hook:
     enum_value = enum_cls(data)
     assert isinstance(enum_value, enum.Enum)
     assert isinstance(enum_value, enum_cls)
     return enum_value
-  except Exception as e:
+  except Exception as e:  # pylint: disable=broad-except
     logging.debug("Could not auto-convert data '%s' to enum %s: %s", data,
                   enum_cls, e)
 
@@ -172,7 +178,8 @@ def _extract_decoding_error(message: str, value: pth.RemotePathLike,
       return f"{message}\n    {str(e)}"
     return f"{message}: {value}\n    {str(e)}"
   if isinstance(value, pth.RemotePath):
-    line = pth.LocalPath(value).open().readlines()[lineno]
+    with pth.LocalPath(value).open(encoding="utf-8") as f:
+      line = f.readlines()[lineno]
   else:
     line = value.splitlines()[lineno]
   if len(line) > _MAX_LEN:
@@ -258,22 +265,37 @@ def parse_dict_hjson_file(value: pth.RemotePathLike) -> Any:
   if not isinstance(data, dict):
     raise argparse.ArgumentTypeError(
         f"Expected object in {hjson.__name__} config '{value}', "
-        f"but got {type_str(data)}: {data}")
+        f"but got {type_str(data)}: {repr(data)}")
   return data
 
 
-def parse_dict(value: Any) -> Dict:
+def parse_dict(value: Any, name: str = "value") -> Dict:
   if isinstance(value, dict):
     return value
   raise argparse.ArgumentTypeError(
-      f"Expected dict, but got {type_str(value)}: {value}")
+      f"Expected dict, but {name} is {type_str(value)}: {repr(value)}")
 
 
-def parse_non_empty_dict(value: Any, name: str = "dict") -> Dict:
+def parse_non_empty_dict(value: Any, name: str = "value") -> Dict:
   dict_value = parse_dict(value)
   if not dict_value:
-    raise argparse.ArgumentTypeError(f"Expected non-empty {name}.")
+    raise argparse.ArgumentTypeError(f"Expected {name} to be a non-empty dict.")
   return dict_value
+
+
+def parse_sequence(value: Any, name: str = "value") -> Sequence[Any]:
+  if isinstance(value, (list, tuple)):
+    return value
+  raise argparse.ArgumentTypeError(
+      f"Expected sequence, but {name} is {type_str(value)}: {repr(value)}")
+
+
+def parse_non_empty_sequence(value: Any, name: str = "value") -> Sequence[Any]:
+  sequence_value = parse_sequence(value)
+  if not sequence_value:
+    raise argparse.ArgumentTypeError(
+        f"Expected {name} to be a non-empty sequence.")
+  return sequence_value
 
 
 def try_resolve_existing_path(value: str) -> Optional[pth.LocalPath]:
@@ -292,7 +314,7 @@ def parse_float(value: Any, name: str = "float") -> float:
   try:
     return float(value)
   except ValueError as e:
-    raise argparse.ArgumentTypeError(f"Invalid {name}: '{value}'") from e
+    raise argparse.ArgumentTypeError(f"Invalid {name}: {repr(value)}") from e
 
 
 def parse_positive_zero_float(value: Any, name: str = "float") -> float:
@@ -303,68 +325,147 @@ def parse_positive_zero_float(value: Any, name: str = "float") -> float:
   return value_f
 
 
-def parse_int(value: Any, name: str = "integer") -> int:
+def parse_int(value: Any, name: str = "value") -> int:
   try:
     return int(value)
   except ValueError as e:
-    raise argparse.ArgumentTypeError(f"Invalid {name}: '{value}'") from e
+    raise argparse.ArgumentTypeError(
+        f"Invalid integer {name}: {repr(value)}") from e
 
 
-def parse_positive_zero_int(value: Any, name: str = "integer") -> int:
+def parse_positive_zero_int(value: Any, name: str = "value") -> int:
   value_i = parse_int(value, name)
   if value_i < 0:
     raise argparse.ArgumentTypeError(
-        f"Expected {name} >= 0, but got: {value_i}")
+        f"Expected integer {name} >= 0, but got: {value_i}")
   return value_i
 
 
-def parse_positive_int(value: Any, name: str = "integer") -> int:
+def parse_positive_int(value: Any, name: str = "value") -> int:
   value_i = parse_int(value, name)
   if not math.isfinite(value_i) or value_i <= 0:
-    raise argparse.ArgumentTypeError(f"Expected {name} > 0, but got: {value_i}")
+    raise argparse.ArgumentTypeError(
+        f"Expected integer {name} > 0, but got: {value_i}")
   return value_i
 
 
-def parse_port(value: Any, msg: str = "port") -> int:
-  port = parse_int(value, msg)
+def parse_port(value: Any, name: str = "port") -> int:
+  port = parse_int(value, name)
   if 1 <= port <= 65535:
     return port
   raise argparse.ArgumentTypeError(
-      f"Expected 1 <= {port} <= 65535, but got: {port}")
+      f"Invalid Port: expected 1 <= {name} <= 65535, but got: {repr(port)}")
 
 
-def parse_non_empty_str(value: Any, name: str = "string") -> str:
-  value = parse_not_none(value, f"non-empty {name}")
+def parse_str(value: Any, name: str = "value") -> str:
+  value = parse_not_none(value, name)
+  if isinstance(value, str):
+    return value
+  raise argparse.ArgumentTypeError(
+      f"Expected str, but got {type_str(value)}: {value}")
+
+
+def parse_non_empty_str(value: Any, name: str = "value") -> str:
+  value = parse_str(value, name)
   if not isinstance(value, str):
     raise argparse.ArgumentTypeError(
-        f"Expected non-empty {name}, but got {type_str(value)}: {value}")
+        f"Expected non-empty string {name}, "
+        f"but got {type_str(value)}: {repr(value)}")
   if not value:
-    raise argparse.ArgumentTypeError(f"Non-empty {name} expected.")
+    raise argparse.ArgumentTypeError(f"Non-empty string {name} expected.")
   return value
 
 
-def parse_url_str(value: str) -> str:
-  # TODO: improve
-  url_str: str = parse_non_empty_str(value, "url")
-  return url_str
+def parse_url_str(value: str,
+                  name: str = "url",
+                  schemes: Optional[Sequence[str]] = None) -> str:
+  parse_url(value, name, schemes)
+  return value
 
 
-def parse_httpx_url_str(value: Any) -> str:
+def parse_httpx_url_str(value: Any, name: str = "url") -> str:
+  parse_url(value, name, schemes=("http", "https"))
+  return value
+
+
+def parse_base_url(value: str, name: str = "url") -> urlparse.ParseResult:
+  url_str: str = parse_non_empty_str(value, name)
   try:
-    url_str: str = parse_url_str(value)
-    parsed = urlparse(url_str)
-    if parsed.scheme not in ("http", "https"):
-      raise argparse.ArgumentTypeError(
-          "Expected 'http' or 'https' scheme, "
-          f"but got '{parsed.scheme}' for url '{value}'")
-    if not parsed.hostname:
-      raise argparse.ArgumentTypeError(f"Missing hostname in url: '{value}'")
+    return urlparse.urlparse(url_str)
   except ValueError as e:
-    raise argparse.ArgumentTypeError(f"Invalid URL: {value}, {e}") from e
-  return value
+    raise argparse.ArgumentTypeError(
+        f"Invalid {name}: {repr(value)}, {e}") from e
 
 
-def parse_bool(value: Any) -> bool:
+PATH_PREFIX = re.compile(r"^(?:"
+                         r"(?:\.\.?|~)?|"
+                         r"[a-zA-Z]:"
+                         r")(\\|/)[^\\/]")
+PORT_URL_PATH_RE = re.compile(r"^[0-9]+(?:/|$)")
+
+
+def parse_fuzzy_url_str(value: str,
+                        name: str = "url",
+                        schemes: Sequence[str] = ("http", "https", "about",
+                                                  "file"),
+                        default_scheme: str = "https") -> str:
+  parsed = parse_fuzzy_url(value, name, schemes, default_scheme)
+  return urlparse.urlunparse(parsed)
+
+
+def parse_fuzzy_url(value: str,
+                    name: str = "url",
+                    schemes: Sequence[str] = ("http", "https", "about", "file"),
+                    default_scheme: str = "https") -> urlparse.ParseResult:
+  assert default_scheme, "missing default scheme value"
+  value = parse_non_empty_str(value, name)
+  if PATH_PREFIX.match(value):
+    value = f"file://{value}"
+  else:
+    parsed = parse_base_url(value)
+    if not parsed.scheme:
+      value = f"{default_scheme}://{value}"
+    # Check if this was a url without a scheme but with ports, which gets
+    # "wrongly" parsed and the host ends up in result.scheme and port and path
+    # are merged into result.path.
+    if parsed.scheme not in schemes and not parsed.netloc:
+      if PORT_URL_PATH_RE.match(parsed.path):
+        # foo.com:8080/test => https://foo.com:8080/test
+        value = f"{default_scheme}://{value}"
+    schemes = tuple(schemes) + (default_scheme,)
+  return parse_url(value, name, schemes)
+
+
+def parse_url(value: str,
+              name: str = "url",
+              schemes: Optional[Sequence[str]] = None) -> urlparse.ParseResult:
+  parsed = parse_base_url(value)
+  try:
+    scheme = parsed.scheme
+    if schemes and scheme not in schemes:
+      schemes_str = ",".join(map(repr, schemes))
+      raise argparse.ArgumentTypeError(
+          f"Invalid {name}: Expected scheme to be one of {schemes_str}, "
+          f"but got {repr(parsed.scheme)} for url {repr(value)}")
+    if port := parsed.port:
+      _ = parse_port(port, f"{name} port")
+    if scheme in ("file", "about"):
+      return parsed
+    hostname = parsed.hostname
+    if not hostname:
+      raise argparse.ArgumentTypeError(
+          f"Missing hostname in {name}: {repr(value)}")
+    if " " in hostname:
+      raise argparse.ArgumentTypeError(
+          f"Hostname in {name} contains invalid space: {repr(value)}")
+  except ValueError as e:
+    # Some ParseResult properties trigger errors, wrap all of them
+    raise argparse.ArgumentTypeError(
+        f"Invalid {name}: {repr(value)}, {e}") from e
+  return parsed
+
+
+def parse_bool(value: Any, name: str = "value") -> bool:
   if isinstance(value, bool):
     return value
   value = str(value).lower()
@@ -373,16 +474,15 @@ def parse_bool(value: Any) -> bool:
   if value == "false":
     return False
   raise argparse.ArgumentTypeError(
-      f"Expected bool but got {type_str(value)}: {value}")
+      f"Expected bool {name} but got {type_str(value)}: {repr(value)}")
 
 
 NotNoneT = TypeVar("NotNoneT")
 
 
-def parse_not_none(value: Optional[NotNoneT],
-                   name: str = "not None") -> NotNoneT:
+def parse_not_none(value: Optional[NotNoneT], name: str = "value") -> NotNoneT:
   if value is None:
-    raise argparse.ArgumentTypeError(f"Expected {name}, but got None")
+    raise argparse.ArgumentTypeError(f"Expected {name} to be not None.")
   return value
 
 

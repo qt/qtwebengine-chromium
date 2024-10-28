@@ -105,12 +105,15 @@ DeprecationData GetDeprecatedData(vvl::Extension extension_name) {
         {vvl::Extension::_VK_EXT_inline_uniform_block, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_3}}},
         {vvl::Extension::_VK_EXT_descriptor_indexing, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_2}}},
         {vvl::Extension::_VK_EXT_shader_viewport_index_layer, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_2}}},
+        {vvl::Extension::_VK_NV_ray_tracing, {DeprecationReason::Deprecated, {vvl::Extension::_VK_KHR_ray_tracing_pipeline}}},
         {vvl::Extension::_VK_EXT_global_priority, {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_global_priority}}},
         {vvl::Extension::_VK_EXT_calibrated_timestamps,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_calibrated_timestamps}}},
         {vvl::Extension::_VK_EXT_vertex_attribute_divisor,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_vertex_attribute_divisor}}},
         {vvl::Extension::_VK_EXT_pipeline_creation_feedback, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_3}}},
+        {vvl::Extension::_VK_NV_compute_shader_derivatives,
+         {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_compute_shader_derivatives}}},
         {vvl::Extension::_VK_NV_fragment_shader_barycentric,
          {DeprecationReason::Promoted, {vvl::Extension::_VK_KHR_fragment_shader_barycentric}}},
         {vvl::Extension::_VK_EXT_scalar_block_layout, {DeprecationReason::Promoted, {vvl::Version::_VK_VERSION_1_2}}},
@@ -1776,6 +1779,42 @@ void BestPractices::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submit
     PostCallRecordQueueSubmit2(queue, submitCount, pSubmits, fence, record_obj);
 }
 
+void BestPractices::PostCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            VkPipelineBinaryHandlesInfoKHR* pBinaries,
+                                                            const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordCreatePipelineBinariesKHR(device, pCreateInfo, pAllocator, pBinaries, record_obj);
+
+    if (record_obj.result > VK_SUCCESS) {
+        LogPositiveSuccessCode(record_obj);
+        return;
+    }
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
+
+void BestPractices::PostCallRecordGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo,
+                                                    VkPipelineBinaryKeyKHR* pPipelineKey, const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordGetPipelineKeyKHR(device, pPipelineCreateInfo, pPipelineKey, record_obj);
+
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
+
+void BestPractices::PostCallRecordGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
+                                                           VkPipelineBinaryKeyKHR* pPipelineBinaryKey,
+                                                           size_t* pPipelineBinaryDataSize, void* pPipelineBinaryData,
+                                                           const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordGetPipelineBinaryDataKHR(device, pInfo, pPipelineBinaryKey, pPipelineBinaryDataSize,
+                                                                   pPipelineBinaryData, record_obj);
+
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
+
 void BestPractices::PostCallRecordGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice,
                                                                                   uint32_t* pPropertyCount,
                                                                                   VkCooperativeMatrixPropertiesKHR* pProperties,
@@ -3075,12 +3114,11 @@ void BestPractices::PostCallRecordWriteAccelerationStructuresPropertiesKHR(
     }
 }
 
-void BestPractices::PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation,
-                                                               VkPipelineCache pipelineCache, uint32_t createInfoCount,
-                                                               const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
-                                                               const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
-                                                               const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                               chassis::CreateRayTracingPipelinesKHR& chassis_state) {
+void BestPractices::PostCallRecordCreateRayTracingPipelinesKHR(
+    VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t createInfoCount,
+    const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+    const RecordObject& record_obj, PipelineStates& pipeline_states,
+    std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state) {
     ValidationStateTracker::PostCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount,
                                                                        pCreateInfos, pAllocator, pPipelines, record_obj,
                                                                        pipeline_states, chassis_state);

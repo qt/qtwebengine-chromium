@@ -23,12 +23,8 @@ if TYPE_CHECKING:
 
   from selenium.webdriver.common.timeouts import Timeouts
 
-  from crossbench import plt
-  from crossbench.browsers.splash_screen import SplashScreen
-  from crossbench.browsers.viewport import Viewport
+  from crossbench.browsers.settings import Settings
   from crossbench.env import HostEnvironment
-  from crossbench.flags.base import Flags
-  from crossbench.network.base import Network
   from crossbench.path import LocalPath, RemotePath
   from crossbench.runner.groups import BrowserSessionRunGroup
   from crossbench.runner.runner import Runner
@@ -60,17 +56,9 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
   def __init__(self,
                label: str,
                path: Optional[RemotePath] = None,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.Platform] = None):
-    super().__init__(label, path, flags, js_flags, cache_dir, network, None,
-                     viewport, splash_screen, platform)
-    self._driver_path = driver_path
+               settings: Optional[Settings] = None):
+    super().__init__(label, path, settings)
+    self._driver_path = self._settings.driver_path
 
   @property
   def type_name(self) -> str:
@@ -192,13 +180,21 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
     logging.debug("WebDriverBrowser.show_url(%s, %s)", url, target)
     handles = self._driver.window_handles
     assert handles, "Browser has no more opened windows."
-    self._driver.switch_to.window(handles[0])
+    self._driver.switch_to.window(handles[-1])
     try:
       self._driver.get(url)
     except selenium.common.exceptions.WebDriverException as e:
       if msg := e.msg:
         self._wrap_webdriver_exception(e, msg, url)
       raise
+
+  def switch_to_new_tab(self) -> None:
+    self._driver.switch_to.new_window("tab")
+
+  def screenshot(self, path: LocalPath) -> None:
+    if not self._driver.get_screenshot_as_file(path.as_posix()):
+      raise DriverException(
+          f"Browser failed to get_screenshot_as_file to file '{path}'", self)
 
   def _wrap_webdriver_exception(
       self, e: selenium.common.exceptions.WebDriverException, msg: str,
@@ -232,8 +228,15 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
       # pylint: disable=raise-missing-from
       raise ValueError(f"Could not execute JS: {e.msg}")
 
+  def close_all_tabs(self) -> None:
+    if len(self._driver.window_handles) > 1:
+      for handle in self._driver.window_handles:
+        self._driver.switch_to.window(handle)
+        self._driver.close()
+
   def quit(self, runner: Runner) -> None:
     assert self._is_running
+    self.close_all_tabs()
     self.force_quit()
 
   def force_quit(self) -> None:
@@ -249,6 +252,9 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
       except selenium.common.exceptions.NoSuchWindowException:
         # No window is good.
         pass
+      except selenium.common.exceptions.InvalidSessionIdException:
+        # Closing the last tab will close the session as well.
+        return
       try:
         self._driver.quit()
       except selenium.common.exceptions.InvalidSessionIdException:
@@ -284,7 +290,7 @@ class RemoteWebDriver(WebDriverBrowser, Browser):
     return BrowserAttributes.WEBDRIVER | BrowserAttributes.REMOTE
 
   def _validate_driver_version(self) -> None:
-    raise NotImplementedError()
+    pass
 
   def _extract_version(self) -> str:
     raise NotImplementedError()

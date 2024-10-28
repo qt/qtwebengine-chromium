@@ -20,7 +20,6 @@
 #include "generated/chassis.h"
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "core_validation.h"
-#include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/shader_object_state.h"
 #include "state_tracker/descriptor_sets.h"
@@ -81,16 +80,18 @@ bool CoreChecks::ValidateCmdDrawInstance(const vvl::CommandBuffer &cb_state, uin
     if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)) {
         if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
             phys_dev_ext_props.vtx_attrib_divisor_props.supportsNonZeroFirstInstance == VK_FALSE && firstInstance != 0u) {
-            for (uint32_t i = 0; i < (uint32_t)cb_state.dynamic_state_value.vertex_binding_descriptions_divisor.size(); ++i) {
-                if (cb_state.dynamic_state_value.vertex_binding_descriptions_divisor[i] != 1u) {
+            for (const auto &binding_state : cb_state.dynamic_state_value.vertex_bindings) {
+                const auto &desc = binding_state.second.desc;
+                if (desc.divisor != 1u) {
                     LogObjectList objlist(cb_state.Handle());
                     if (pipeline_state) {
                         objlist.add(pipeline_state->Handle());
                     }
                     skip |= LogError(vuid.vertex_input_09462, objlist, loc,
-                                     "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "].divisor as %" PRIu32
-                                     ", but firstInstance is %" PRIu32 " and supportsNonZeroFirstInstance is VK_FALSE.",
-                                     i, cb_state.dynamic_state_value.vertex_binding_descriptions_divisor[i], firstInstance);
+                                     "vkCmdSetVertexInputEXT set pVertexBindingDivisors[%" PRIu32 "] (binding %" PRIu32
+                                     ") divisor as %" PRIu32 ", but firstInstance is %" PRIu32
+                                     " and supportsNonZeroFirstInstance is VK_FALSE.",
+                                     binding_state.second.index, desc.binding, desc.divisor, firstInstance);
                     break;
                 }
             }
@@ -238,7 +239,7 @@ bool CoreChecks::PreCallValidateCmdDrawIndexed(VkCommandBuffer commandBuffer, ui
     skip |= ValidateGraphicsIndexedCmd(cb_state, error_obj.location);
     skip |= ValidateActionState(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS, error_obj.location);
     skip |= ValidateCmdDrawIndexedBufferSize(cb_state, indexCount, firstIndex, error_obj.location,
-                                             "VUID-vkCmdDrawIndexed-robustBufferAccess2-07825");
+                                             "VUID-vkCmdDrawIndexed-robustBufferAccess2-08798");
     skip |= ValidateVTGShaderStages(cb_state, error_obj.location);
     return skip;
 }
@@ -284,7 +285,7 @@ bool CoreChecks::PreCallValidateCmdDrawMultiIndexedEXT(VkCommandBuffer commandBu
             const auto info_ptr = reinterpret_cast<const VkMultiDrawIndexedInfoEXT *>(info_bytes + i * stride);
             skip |= ValidateCmdDrawIndexedBufferSize(cb_state, info_ptr->indexCount, info_ptr->firstIndex,
                                                      error_obj.location.dot(Field::pIndexInfo, i),
-                                                     "VUID-vkCmdDrawMultiIndexedEXT-robustBufferAccess2-07825");
+                                                     "VUID-vkCmdDrawMultiIndexedEXT-robustBufferAccess2-08798");
         }
     }
     return skip;

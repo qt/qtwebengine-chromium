@@ -12,6 +12,10 @@
 
 namespace media {
 
+// Setting some default usage in order to get a mappable shared image.
+constexpr auto si_usage =
+    gpu::SHARED_IMAGE_USAGE_CPU_WRITE | gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
+
 CameraBufferFactory::CameraBufferFactory() = default;
 
 CameraBufferFactory::~CameraBufferFactory() = default;
@@ -32,6 +36,11 @@ CameraBufferFactory::CreateGpuMemoryBuffer(const gfx::Size& size,
     gfx::GpuMemoryBufferHandle gmb_handle;
     gpu_channel_host->CreateGpuMemoryBuffer(
         size, viz::GetSharedImageFormat(format), usage, &gmb_handle);
+    if (gmb_handle.is_null()) {
+      LOG(ERROR)
+          << "GpuChannelHost doesn't work. Probably the gpu channel lost.";
+      return nullptr;
+    }
     return gpu_memory_buffer_support_.CreateGpuMemoryBufferImplFromHandle(
         std::move(gmb_handle), size, format, usage, base::NullCallback());
   }
@@ -48,9 +57,53 @@ CameraBufferFactory::CreateGpuMemoryBuffer(const gfx::Size& size,
   return nullptr;
 }
 
-// There's no good way to resolve the HAL pixel format to the platform-specific
-// DRM format, other than to actually allocate the buffer and see if the
-// allocation succeeds.
+scoped_refptr<gpu::ClientSharedImage> CameraBufferFactory::CreateSharedImage(
+    const gfx::Size& size,
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage,
+    const gfx::ColorSpace& color_space) {
+  auto* sii = VideoCaptureDeviceFactoryChromeOS::GetSharedImageInterface();
+  if (!sii) {
+    LOG(ERROR) << "SharedImageInterface not set.";
+    return nullptr;
+  }
+
+  auto shared_image = sii->CreateSharedImage(
+      {viz::GetSharedImageFormat(format), size, color_space,
+       gpu::SharedImageUsageSet(si_usage), "CameraBufferFactory"},
+      gpu::kNullSurfaceHandle, usage);
+  if (!shared_image) {
+    LOG(ERROR) << "Failed to create a shared image.";
+  }
+  return shared_image;
+}
+
+scoped_refptr<gpu::ClientSharedImage>
+CameraBufferFactory::CreateSharedImageFromGmbHandle(
+    gfx::GpuMemoryBufferHandle buffer_handle,
+    const gfx::Size& size,
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage,
+    const gfx::ColorSpace& color_space) {
+  auto* sii = VideoCaptureDeviceFactoryChromeOS::GetSharedImageInterface();
+  if (!sii) {
+    LOG(ERROR) << "SharedImageInterface not set.";
+    return nullptr;
+  }
+
+  auto shared_image = sii->CreateSharedImage(
+      {viz::GetSharedImageFormat(format), size, color_space,
+       gpu::SharedImageUsageSet(si_usage), "CameraBufferFactory"},
+      gpu::kNullSurfaceHandle, usage, std::move(buffer_handle));
+  if (!shared_image) {
+    LOG(ERROR) << "Failed to create a shared image.";
+  }
+  return shared_image;
+}
+
+// There's no good way to resolve the HAL pixel format to the
+// platform-specific DRM format, other than to actually allocate the buffer
+// and see if the allocation succeeds.
 ChromiumPixelFormat CameraBufferFactory::ResolveStreamBufferFormat(
     cros::mojom::HalPixelFormat hal_format,
     gfx::BufferUsage usage) {

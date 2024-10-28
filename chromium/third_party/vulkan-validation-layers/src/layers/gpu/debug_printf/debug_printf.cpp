@@ -16,11 +16,11 @@
  */
 
 #include "gpu/debug_printf/debug_printf.h"
-#include "spirv-tools/instrument.hpp"
-#include <iostream>
 #include "generated/layer_chassis_dispatch.h"
-#include "state_tracker/shader_stage_state.h"
 #include "chassis/chassis_modification_state.h"
+#include "gpu/shaders/gpu_error_header.h"
+
+#include <iostream>
 
 namespace debug_printf {
 
@@ -40,122 +40,30 @@ void Validator::PostCreateDevice(const VkDeviceCreateInfo *pCreateInfo, const Lo
     verbose = printf_settings.verbose;
     use_stdout = printf_settings.to_stdout;
 
-    // This option was published when Debug PrintF came out, leave to not break people's flow
+    // This option was published when DebugPrintf came out, leave to not break people's flow
     // Deprecated right after the 1.3.280 SDK release
     if (!GetEnvironment("DEBUG_PRINTF_TO_STDOUT").empty()) {
         InternalWarning(device, loc, "DEBUG_PRINTF_TO_STDOUT was set, this is deprecated, please use VK_LAYER_PRINTF_TO_STDOUT");
         use_stdout = true;
     }
 
-    const uint32_t kDebugOutputPrintfStream = 3;  // from instrument.hpp
-    VkDescriptorSetLayoutBinding binding = {kDebugOutputPrintfStream, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
-                                            kShaderStageAllGraphics | VK_SHADER_STAGE_COMPUTE_BIT | kShaderStageAllRayTracing,
-                                            nullptr};
-    instrumentation_bindings_.push_back(binding);
+    debug_printf_binding_slot_ = (uint32_t)instrumentation_bindings_.size();  // get next free binding
+    instrumentation_bindings_.emplace_back(
+        VkDescriptorSetLayoutBinding{debug_printf_binding_slot_, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+                                     kShaderStageAllGraphics | VK_SHADER_STAGE_COMPUTE_BIT | kShaderStageAllRayTracing, nullptr});
 
-    BaseClass::PostCreateDevice(pCreateInfo, loc);  // will set up bindings
-
-    if (api_version < VK_API_VERSION_1_1) {
-        InternalError(device, loc, "Debug Printf requires Vulkan 1.1 or later.");
-        return;
-    }
-
-    VkPhysicalDeviceFeatures supported_features{};
-    DispatchGetPhysicalDeviceFeatures(physical_device, &supported_features);
-    if (!supported_features.fragmentStoresAndAtomics) {
-        InternalError(device, loc, "Debug Printf requires fragmentStoresAndAtomics.");
-        return;
-    }
-    if (!supported_features.vertexPipelineStoresAndAtomics) {
-        InternalError(device, loc, "Debug Printf requires vertexPipelineStoresAndAtomics.");
-        return;
-    }
+    // Currently, both GPU-AV and DebugPrintf set their own instrumentation_bindings_ that this call will use
+    BaseClass::PostCreateDevice(pCreateInfo, loc);
+    // We might fail in parent class device creation if global requirements are not met
+    if (aborted_) return;
 }
 
-// Free the device memory and descriptor set associated with a command buffer.
-void Validator::DestroyBuffer(BufferInfo &buffer_info) {
-    vmaDestroyBuffer(vma_allocator_, buffer_info.output_mem_block.buffer, buffer_info.output_mem_block.allocation);
-    if (buffer_info.desc_set != VK_NULL_HANDLE) {
-        desc_set_manager_->PutBackDescriptorSet(buffer_info.desc_pool, buffer_info.desc_set);
-    }
-}
-
-// Call the SPIR-V Optimizer to run the instrumentation pass on the shader.
-bool Validator::InstrumentShader(const vvl::span<const uint32_t> &input, uint32_t unique_shader_id, const Location &loc,
-                                 std::vector<uint32_t> &out_instrumented_spirv) {
-    if (input[0] != spv::MagicNumber) return false;
-
-    // Load original shader SPIR-V
-    out_instrumented_spirv.clear();
-    out_instrumented_spirv.reserve(input.size());
-    out_instrumented_spirv.insert(out_instrumented_spirv.end(), &input.front(), &input.back() + 1);
-
-    // Call the optimizer to instrument the shader.
-    // Use the unique_shader_module_id as a shader ID so we can look up its handle later in the shader_map.
-    // If descriptor indexing is enabled, enable length checks and updated descriptor checks
-    using namespace spvtools;
-    spv_target_env target_env = PickSpirvEnv(api_version, IsExtEnabled(device_extensions.vk_khr_spirv_1_4));
-    spvtools::ValidatorOptions val_options;
-    AdjustValidatorOptions(device_extensions, enabled_features, val_options, nullptr);
-    spvtools::OptimizerOptions opt_options;
-    opt_options.set_run_validator(true);
-    opt_options.set_validator_options(val_options);
-    Optimizer optimizer(target_env);
-    const spvtools::MessageConsumer debug_printf_console_message_consumer =
-        [this, loc](spv_message_level_t level, const char *, const spv_position_t &position, const char *message) -> void {
-        switch (level) {
-            case SPV_MSG_FATAL:
-            case SPV_MSG_INTERNAL_ERROR:
-            case SPV_MSG_ERROR:
-                this->LogError("UNASSIGNED-Debug-Printf", this->device, loc,
-                               "Error during shader instrumentation in spirv-opt: line %zu: %s", position.index, message);
-                break;
-            default:
-                break;
-        }
-    };
-    optimizer.SetMessageConsumer(debug_printf_console_message_consumer);
-    optimizer.RegisterPass(CreateInstDebugPrintfPass(desc_set_bind_index_, unique_shader_id));
-    const bool pass =
-        optimizer.Run(out_instrumented_spirv.data(), out_instrumented_spirv.size(), &out_instrumented_spirv, opt_options);
-    if (!pass) {
-        InternalError(device, loc, "Failure to instrument shader in spirv-opt. Proceeding with non-instrumented shader.");
-    }
-    return pass;
-}
-// Create the instrumented shader data to provide to the driver.
-void Validator::PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
-                                                const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule,
-                                                const RecordObject &record_obj, chassis::CreateShaderModule &chassis_state) {
-    ValidationStateTracker::PreCallRecordCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule, record_obj,
-                                                            chassis_state);
-    chassis_state.unique_shader_id = unique_shader_module_id_++;
-    const bool pass = InstrumentShader(vvl::make_span(pCreateInfo->pCode, pCreateInfo->codeSize / sizeof(uint32_t)),
-                                       chassis_state.unique_shader_id, record_obj.location, chassis_state.instrumented_spirv);
-    if (pass) {
-        chassis_state.instrumented_create_info.pCode = chassis_state.instrumented_spirv.data();
-        chassis_state.instrumented_create_info.codeSize = chassis_state.instrumented_spirv.size() * sizeof(uint32_t);
-    }
-}
-
-void Validator::PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT *pCreateInfos,
-                                              const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders,
-                                              const RecordObject &record_obj, chassis::ShaderObject &chassis_state) {
-    ValidationStateTracker::PreCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders, record_obj,
-                                                          chassis_state);
-    BaseClass::PreCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders, record_obj,
-                                             chassis_state);
-    for (uint32_t i = 0; i < createInfoCount; ++i) {
-        chassis_state.unique_shader_ids[i] = unique_shader_module_id_++;
-        const bool pass = InstrumentShader(
-            vvl::make_span(static_cast<const uint32_t *>(pCreateInfos[i].pCode), pCreateInfos[i].codeSize / sizeof(uint32_t)),
-            chassis_state.unique_shader_ids[i], record_obj.location, chassis_state.instrumented_spirv[i]);
-        if (pass) {
-            chassis_state.instrumented_create_info[i].pCode = chassis_state.instrumented_spirv[i].data();
-            chassis_state.instrumented_create_info[i].codeSize = chassis_state.instrumented_spirv[i].size() * sizeof(uint32_t);
-        }
-    }
-}
+enum NumericType {
+    NumericTypeUnknown = 0,
+    NumericTypeFloat = 1,
+    NumericTypeSint = 2,
+    NumericTypeUint = 4,
+};
 
 static NumericType NumericTypeLookup(char specifier) {
     switch (specifier) {
@@ -184,7 +92,14 @@ static NumericType NumericTypeLookup(char specifier) {
     }
 }
 
-std::vector<Substring> Validator::ParseFormatString(const std::string &format_string) {
+struct Substring {
+    std::string string;
+    bool needs_value = false;  // if value from buffer needed to print arguments
+    NumericType type = NumericTypeUnknown;
+    bool is_64_bit = false;
+};
+
+static std::vector<Substring> ParseFormatString(const std::string &format_string) {
     const char types[] = {'d', 'i', 'o', 'u', 'x', 'X', 'a', 'A', 'e', 'E', 'f', 'F', 'g', 'G', 'v', '\0'};
     std::vector<Substring> parsed_strings;
     size_t pos = 0;
@@ -199,7 +114,7 @@ std::vector<Substring> Validator::ParseFormatString(const std::string &format_st
         if (pos == std::string::npos) {
             // End of the format string   Push the rest of the characters
             substring.string = format_string.substr(begin, format_string.length());
-            parsed_strings.push_back(substring);
+            parsed_strings.emplace_back(substring);
             break;
         }
         pos++;
@@ -241,14 +156,14 @@ std::vector<Substring> Validator::ParseFormatString(const std::string &format_st
                 substring.string = format_string.substr(begin, percent - begin);
                 substring.string += specifier;
                 substring.type = NumericTypeLookup(specifier.back());
-                parsed_strings.push_back(substring);
+                parsed_strings.emplace_back(substring);
 
                 // Continue with a comma separated list
                 char temp_string[32];
                 snprintf(temp_string, sizeof(temp_string), ", %s", specifier.c_str());
                 substring.string = temp_string;
                 for (int i = 0; i < (vec_size - 1); i++) {
-                    parsed_strings.push_back(substring);
+                    parsed_strings.emplace_back(substring);
                 }
             } else {
                 // Single non-vector value
@@ -260,7 +175,7 @@ std::vector<Substring> Validator::ParseFormatString(const std::string &format_st
                 }
                 substring.string = format_string.substr(begin, pos - begin + 1);
                 substring.type = NumericTypeLookup(format_string[pos]);
-                parsed_strings.push_back(substring);
+                parsed_strings.emplace_back(substring);
             }
             begin = pos + 1;
         }
@@ -268,9 +183,9 @@ std::vector<Substring> Validator::ParseFormatString(const std::string &format_st
     return parsed_strings;
 }
 
-std::string Validator::FindFormatString(const std::vector<spirv::Instruction> &instructions, uint32_t string_id) {
+static std::string FindFormatString(const std::vector<gpu::spirv::Instruction> &instructions, uint32_t string_id) {
     std::string format_string;
-    for (const spirv::Instruction &insn : instructions) {
+    for (const auto &insn : instructions) {
         if (insn.Opcode() == spv::OpString && insn.Word(1) == string_id) {
             format_string = insn.GetAsString(2);
             break;
@@ -288,20 +203,28 @@ std::string Validator::FindFormatString(const std::vector<spirv::Instruction> &i
 #pragma GCC diagnostic ignored "-Wformat-security"
 #endif
 
-void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueue queue, BufferInfo &buffer_info,
-                                          uint32_t operation_index, uint32_t *const debug_output_buffer, const Location &loc) {
-    // Word         Content
-    //    0         Must be zero
-    //    1         Size of output record, including this word
-    //    2         Shader ID
-    //    3         Instruction Position
-    //    4         Printf Format String Id
-    //    5         Printf Values Word 0 (optional)
-    //    6         Printf Values Word 1 (optional)
-    uint32_t expect = debug_output_buffer[1];
-    if (!expect) return;
+// The contents each "printf" is writting to the output buffer streams
+struct OutputRecord {
+    uint32_t size;
+    uint32_t shader_id;
+    uint32_t instruction_position;
+    uint32_t format_string_id;
+    uint32_t double_bitmask;  // used to distinguish if float is 1 or 2 dwords
+    uint32_t signed_8_bitmask;   // used to distinguish if signed int is a int8_t
+    uint32_t signed_16_bitmask;  // used to distinguish if signed int is a int16_t
+    uint32_t stage_id;
+    uint32_t stage_info_0;
+    uint32_t stage_info_1;
+    uint32_t stage_info_2;
+    uint32_t values;  // place holder to be casted to get rest of items in record
+};
 
-    uint32_t index = spvtools::kDebugOutputDataOffset;
+void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueue queue, BufferInfo &buffer_info,
+                                          uint32_t *const debug_output_buffer, const Location &loc) {
+    uint32_t output_record_counts = debug_output_buffer[gpuav::kDebugPrintfOutputBufferSize];
+    if (!output_record_counts) return;
+
+    uint32_t index = gpuav::kDebugPrintfOutputBufferData;  // get first OutputRecord index
     while (debug_output_buffer[index]) {
         std::stringstream shader_message;
 
@@ -320,23 +243,23 @@ void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueu
             return;
         }
 
-        std::vector<spirv::Instruction> instructions;
-        spirv::GenerateInstructions(tracker_info->instrumented_spirv, instructions);
+        std::vector<gpu::spirv::Instruction> instructions;
+        gpu::spirv::GenerateInstructions(tracker_info->instrumented_spirv, instructions);
 
         // Search through the shader source for the printf format string for this invocation
         const std::string format_string = FindFormatString(instructions, debug_record->format_string_id);
         // Break the format string into strings with 1 or 0 value
         auto format_substrings = ParseFormatString(format_string);
-        void *values = static_cast<void *>(&debug_record->values);
+        void *current_value = static_cast<void *>(&debug_record->values);
         // Sprintf each format substring into a temporary string then add that to the message
-        for (auto &substring : format_substrings) {
+        for (size_t i = 0; i < format_substrings.size(); i++) {
+            auto &substring = format_substrings[i];
             std::string temp_string;
             size_t needed = 0;
 
             if (substring.needs_value) {
                 if (substring.is_64_bit) {
                     assert(substring.type != NumericTypeSint);  // not supported
-
                     if (substring.type == NumericTypeUint) {
                         std::vector<std::string> format_strings = {"%ul", "%lu", "%lx"};
                         for (const auto &ul_string : format_strings) {
@@ -350,36 +273,61 @@ void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueu
                             break;
                         }
 
-                        uint64_t longval = *static_cast<uint64_t *>(values);
+                        const uint64_t value = *static_cast<uint64_t *>(current_value);
                         // +1 for null terminator
-                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), longval) + 1;
+                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
                         temp_string.resize(needed);
-                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), longval);
-
-                    } else if (substring.type == NumericTypeFloat) {
-                        // TODO - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/7143
+                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
                     }
                 } else {
                     if (substring.type == NumericTypeUint) {
                         // +1 for null terminator
-                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<uint32_t *>(values)) + 1;
+                        const uint32_t value = *static_cast<uint32_t *>(current_value);
+                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
                         temp_string.resize(needed);
-                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<uint32_t *>(values));
+                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
 
                     } else if (substring.type == NumericTypeSint) {
-                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<int32_t *>(values)) + 1;
-                        temp_string.resize(needed);
-                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<int32_t *>(values));
+                        // When dealing with signed int, we need to know which size the int was to print the correct value
+                        if (debug_record->signed_8_bitmask & (1 << i)) {
+                            const int8_t value = *static_cast<int8_t *>(current_value);
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
+                        } else if (debug_record->signed_16_bitmask & (1 << i)) {
+                            const int16_t value = *static_cast<int16_t *>(current_value);
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
+                        } else {
+                            const int32_t value = *static_cast<int32_t *>(current_value);
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
+                        }
 
                     } else if (substring.type == NumericTypeFloat) {
-                        needed = std::snprintf(nullptr, 0, substring.string.c_str(), *static_cast<float *>(values)) + 1;
-                        temp_string.resize(needed);
-                        std::snprintf(&temp_string[0], needed, substring.string.c_str(), *static_cast<float *>(values));
+                        // On the CPU printf the "%f" is used for 16, 32, and 64-bit floats,
+                        // but we need to store the 64-bit floats in 2 dwords in our GPU side buffer.
+                        // Using the bitmask, we know if the incoming float was 64-bit or not.
+                        // This is much simpler than enforcing a %lf which doesn't line up with how the CPU side works
+                        if (debug_record->double_bitmask & (1 << i)) {
+                            substring.is_64_bit = true;
+                            const double value = *static_cast<double *>(current_value);
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
+                        } else {
+                            const float value = *static_cast<float *>(current_value);
+                            needed = std::snprintf(nullptr, 0, substring.string.c_str(), value) + 1;
+                            temp_string.resize(needed);
+                            std::snprintf(&temp_string[0], needed, substring.string.c_str(), value);
+                        }
                     }
                 }
 
                 const uint32_t offset = substring.is_64_bit ? 2 : 1;
-                values = static_cast<uint32_t *>(values) + offset;
+                current_value = static_cast<uint32_t *>(current_value) + offset;
 
             } else {
                 // incase where someone just printing a string with no arguments to it
@@ -393,10 +341,11 @@ void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueu
 
         if (verbose) {
             std::string debug_info_message =
-                GenerateDebugInfoMessage(command_buffer, instructions, debug_record->instruction_position, tracker_info,
-                                         buffer_info.pipeline_bind_point, operation_index);
+                GenerateDebugInfoMessage(command_buffer, instructions, debug_record->stage_id, debug_record->stage_info_0,
+                                         debug_record->stage_info_1, debug_record->stage_info_2, debug_record->instruction_position,
+                                         tracker_info, buffer_info.pipeline_bind_point, buffer_info.action_command_index);
             if (use_stdout) {
-                std::cout << "WARNING-DEBUG-PRINTF " << shader_message.str() << "\n" << debug_info_message;
+                std::cout << "WARNING-DEBUG-PRINTF " << shader_message.str() << '\n' << debug_info_message;
             } else {
                 LogInfo("WARNING-DEBUG-PRINTF", queue, loc, "%s\n%s", shader_message.str().c_str(), debug_info_message.c_str());
             }
@@ -411,46 +360,31 @@ void Validator::AnalyzeAndGenerateMessage(VkCommandBuffer command_buffer, VkQueu
         }
         index += debug_record->size;
     }
-    if ((index - spvtools::kDebugOutputDataOffset) != expect) {
+    if ((index - gpuav::kDebugPrintfOutputBufferData) != output_record_counts) {
         std::stringstream message;
         message << "Debug Printf message was truncated due to a buffer size (" << printf_settings.buffer_size
                 << ") being too small for the messages. (This can be adjusted with VK_LAYER_PRINTF_BUFFER_SIZE or vkconfig)";
         InternalWarning(queue, loc, message.str().c_str());
     }
-    memset(debug_output_buffer, 0, 4 * (debug_output_buffer[spvtools::kDebugOutputSizeOffset] + spvtools::kDebugOutputDataOffset));
+
+    // Only memset what is needed, in case we are only using a small portion of a large buffer_size.
+    // At the same time we want to make sure we don't memset past the actual VkBuffer allocation
+    uint32_t clear_size =
+        sizeof(uint32_t) * (debug_output_buffer[gpuav::kDebugPrintfOutputBufferSize] + gpuav::kDebugPrintfOutputBufferData);
+    clear_size = std::min(printf_settings.buffer_size, clear_size);
+    memset(debug_output_buffer, 0, clear_size);
 }
 
 // For the given command buffer, map its debug data buffers and read their contents for analysis.
 void CommandBuffer::PostProcess(VkQueue queue, const Location &loc) {
     auto *device_state = static_cast<Validator *>(&dev_data);
-    if (has_draw_cmd || has_trace_rays_cmd || has_dispatch_cmd) {
-        auto &gpu_buffer_list = buffer_infos;
-        uint32_t draw_index = 0;
-        uint32_t compute_index = 0;
-        uint32_t ray_trace_index = 0;
+    for (auto &buffer_info : buffer_infos) {
+        char *data;
 
-        for (auto &buffer_info : gpu_buffer_list) {
-            char *data;
-
-            uint32_t operation_index = 0;
-            if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
-                operation_index = draw_index;
-                draw_index++;
-            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-                operation_index = compute_index;
-                compute_index++;
-            } else if (buffer_info.pipeline_bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
-                operation_index = ray_trace_index;
-                ray_trace_index++;
-            } else {
-                assert(false);
-            }
-
-            VkResult result = vmaMapMemory(device_state->vma_allocator_, buffer_info.output_mem_block.allocation, (void **)&data);
-            if (result == VK_SUCCESS) {
-                device_state->AnalyzeAndGenerateMessage(VkHandle(), queue, buffer_info, operation_index, (uint32_t *)data, loc);
-                vmaUnmapMemory(device_state->vma_allocator_, buffer_info.output_mem_block.allocation);
-            }
+        VkResult result = vmaMapMemory(device_state->vma_allocator_, buffer_info.output_mem_block.allocation, (void **)&data);
+        if (result == VK_SUCCESS) {
+            device_state->AnalyzeAndGenerateMessage(VkHandle(), queue, buffer_info, (uint32_t *)data, loc);
+            vmaUnmapMemory(device_state->vma_allocator_, buffer_info.output_mem_block.allocation);
         }
     }
 }
@@ -633,22 +567,8 @@ void Validator::PreCallRecordCmdTraceRaysIndirect2KHR(VkCommandBuffer commandBuf
 
 void Validator::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, const VkPipelineBindPoint bind_point,
                                              const Location &loc) {
-    if (bind_point != VK_PIPELINE_BIND_POINT_GRAPHICS && bind_point != VK_PIPELINE_BIND_POINT_COMPUTE &&
-        bind_point != VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR) {
-        return;
-    }
-    VkResult result;
-
-    std::vector<VkDescriptorSet> desc_sets;
-    VkDescriptorPool desc_pool = VK_NULL_HANDLE;
-    result = desc_set_manager_->GetDescriptorSets(1, &desc_pool, GetDebugDescriptorSetLayout(), &desc_sets);
-    if (result != VK_SUCCESS) {
-        InternalError(cmd_buffer, loc, "Unable to allocate descriptor sets.");
-        return;
-    }
-
-    VkDescriptorBufferInfo output_desc_buffer_info = {};
-    output_desc_buffer_info.range = printf_settings.buffer_size;
+    assert(bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS || bind_point == VK_PIPELINE_BIND_POINT_COMPUTE ||
+           bind_point == VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 
     auto cb_state = GetWrite<CommandBuffer>(cmd_buffer);
     if (!cb_state) {
@@ -660,13 +580,31 @@ void Validator::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, c
     const auto &last_bound = cb_state->lastBound[lv_bind_point];
     const auto *pipeline_state = last_bound.pipeline_state;
 
-    if (!pipeline_state && !last_bound.HasShaderObjects()) {
+    // If there is no DebugPrintf instrumented, there is no reason to allocate buffers
+    if (pipeline_state) {
+        if (!pipeline_state->instrumentation_data.was_instrumented && (pipeline_state->linking_shaders == 0)) {
+            cb_state->action_command_count++;
+            return;
+        }
+    } else if (last_bound.HasShaderObjects()) {
+        // TODO - Add same skip for shader object
+    } else {
         InternalError(cmd_buffer, loc, "Neither pipeline state nor shader object states were found.");
         return;
     }
 
+    // TODO - use the following when we combine the two command buffer classes
+    // VkDescriptorSet printf_desc_set = cb_state->gpu_resources_manager.GetManagedDescriptorSet(GetDebugDescriptorSetLayout());
+    std::vector<VkDescriptorSet> desc_sets;
+    VkDescriptorPool desc_pool = VK_NULL_HANDLE;
+    VkResult result = desc_set_manager_->GetDescriptorSets(1, &desc_pool, GetDebugDescriptorSetLayout(), &desc_sets);
+    if (result != VK_SUCCESS) {
+        InternalError(cmd_buffer, loc, "Unable to allocate descriptor sets.");
+        return;
+    }
+
     // Allocate memory for the output block that the gpu will use to return values for printf
-    DeviceMemoryBlock output_block = {};
+    gpu::DeviceMemoryBlock output_block = {};
     VkBufferCreateInfo buffer_info = vku::InitStructHelper();
     buffer_info.size = printf_settings.buffer_size;
     buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
@@ -674,31 +612,33 @@ void Validator::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, c
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
     result = vmaCreateBuffer(vma_allocator_, &buffer_info, &alloc_info, &output_block.buffer, &output_block.allocation, nullptr);
     if (result != VK_SUCCESS) {
-        InternalError(cmd_buffer, loc, "Unable to allocate device memory.");
+        InternalError(cmd_buffer, loc, "Unable to allocate device memory.", true);
         return;
     }
 
     // Clear the output block to zeros so that only printf values from the gpu will be present
     uint32_t *data;
     result = vmaMapMemory(vma_allocator_, output_block.allocation, reinterpret_cast<void **>(&data));
-    if (result == VK_SUCCESS) {
-        memset(data, 0, printf_settings.buffer_size);
-        vmaUnmapMemory(vma_allocator_, output_block.allocation);
+    if (result != VK_SUCCESS) {
+        InternalError(cmd_buffer, loc, "Unable to allocate map memory.", true);
+        return;
     }
-
-    VkWriteDescriptorSet desc_writes = vku::InitStructHelper();
-    const uint32_t desc_count = 1;
+    memset(data, 0, printf_settings.buffer_size);
+    vmaUnmapMemory(vma_allocator_, output_block.allocation);
 
     // Write the descriptor
+    VkDescriptorBufferInfo output_desc_buffer_info = {};
+    output_desc_buffer_info.range = printf_settings.buffer_size;
     output_desc_buffer_info.buffer = output_block.buffer;
     output_desc_buffer_info.offset = 0;
 
+    VkWriteDescriptorSet desc_writes = vku::InitStructHelper();
     desc_writes.descriptorCount = 1;
     desc_writes.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     desc_writes.pBufferInfo = &output_desc_buffer_info;
     desc_writes.dstSet = desc_sets[0];
-    desc_writes.dstBinding = 3;
-    DispatchUpdateDescriptorSets(device, desc_count, &desc_writes, 0, nullptr);
+    desc_writes.dstBinding = debug_printf_binding_slot_;
+    DispatchUpdateDescriptorSets(device, 1, &desc_writes, 0, nullptr);
 
     const auto pipeline_layout =
         pipeline_state ? pipeline_state->PipelineLayoutState() : Get<vvl::PipelineLayout>(last_bound.desc_set_pipeline_layout);
@@ -722,23 +662,26 @@ void Validator::AllocateDebugPrintfResources(const VkCommandBuffer cmd_buffer, c
                                       0, nullptr);
     }
     // Record buffer and memory info in CB state tracking
-    cb_state->buffer_infos.emplace_back(output_block, desc_sets[0], desc_pool, bind_point);
+    cb_state->buffer_infos.emplace_back(output_block, desc_sets[0], desc_pool, bind_point, cb_state->action_command_count++);
 }
 
 std::shared_ptr<vvl::CommandBuffer> Validator::CreateCmdBufferState(VkCommandBuffer handle,
-                                                                    const VkCommandBufferAllocateInfo *pCreateInfo,
+                                                                    const VkCommandBufferAllocateInfo *allocate_info,
                                                                     const vvl::CommandPool *pool) {
-    return std::static_pointer_cast<vvl::CommandBuffer>(std::make_shared<CommandBuffer>(*this, handle, pCreateInfo, pool));
+    return std::static_pointer_cast<vvl::CommandBuffer>(std::make_shared<CommandBuffer>(*this, handle, allocate_info, pool));
 }
 
-CommandBuffer::CommandBuffer(Validator &dp, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *pCreateInfo,
+CommandBuffer::CommandBuffer(Validator &dp, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *allocate_info,
                              const vvl::CommandPool *pool)
-    : gpu_tracker::CommandBuffer(dp, handle, pCreateInfo, pool) {}
+    : gpu_tracker::CommandBuffer(dp, handle, allocate_info, pool) {}
 
 CommandBuffer::~CommandBuffer() { Destroy(); }
 
 void CommandBuffer::Destroy() {
-    ResetCBState();
+    {
+        auto guard = WriteLock();
+        ResetCBState();
+    }
     vvl::CommandBuffer::Destroy();
 }
 
@@ -748,10 +691,15 @@ void CommandBuffer::Reset(const Location &loc) {
 }
 
 void CommandBuffer::ResetCBState() {
+    action_command_count = 0;
     auto debug_printf = static_cast<Validator *>(&dev_data);
     // Free the device memory and descriptor set(s) associated with a command buffer.
     for (auto &buffer_info : buffer_infos) {
-        debug_printf->DestroyBuffer(buffer_info);
+        vmaDestroyBuffer(debug_printf->vma_allocator_, buffer_info.output_mem_block.buffer,
+                         buffer_info.output_mem_block.allocation);
+        if (buffer_info.desc_set != VK_NULL_HANDLE) {
+            debug_printf->desc_set_manager_->PutBackDescriptorSet(buffer_info.desc_pool, buffer_info.desc_set);
+        }
     }
     buffer_infos.clear();
 }

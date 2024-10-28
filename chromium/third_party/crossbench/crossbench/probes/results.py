@@ -6,13 +6,14 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set,
-                    Tuple, cast)
+from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
+                    cast)
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
 
-from crossbench import cli_helper, path as pth
+from crossbench import cli_helper
+from crossbench import path as pth
 from crossbench.probes.helper import INTERNAL_NAME_PREFIX
 
 if TYPE_CHECKING:
@@ -26,20 +27,36 @@ class DuplicateProbeResult(ValueError):
 
 
 class ProbeResult(abc.ABC):
+  """
+  Collection of result files for a given Probe. These can be URLs or any file.
+
+  We distinguish between two types of files, files that can be fed to Perfetto
+  TraceProcessor (trace) and any other file (file). Trace files will be fed to
+  the trace_processor probe if present.
+  """
 
   def __init__(self,
                url: Optional[Iterable[str]] = None,
                file: Optional[Iterable[pth.LocalPath]] = None,
+               trace: Optional[Iterable[pth.LocalPath]] = None,
                **kwargs: Iterable[pth.LocalPath]):
     self._url_list: Tuple[str, ...] = ()
     if url:
       self._url_list = cli_helper.parse_unique_sequence(
           tuple(url), "urls", DuplicateProbeResult)
+    self._trace_list: Tuple[pth.LocalPath, ...] = ()
+    if trace:
+      self._trace_list = cli_helper.parse_unique_sequence(
+          tuple(trace), "traces", DuplicateProbeResult)
     tmp_files: Dict[str, OrderedSet[pth.LocalPath]] = {}
     if file:
-      self._extend(tmp_files, file)
+      self._extend(tmp_files, file, suffix=None, allow_duplicates=False)
     for suffix, files in kwargs.items():
-      self._extend(tmp_files, files, suffix)
+      self._extend(tmp_files, files, suffix=suffix, allow_duplicates=False)
+
+    # Do last and allow duplicated
+    self._extend(
+        tmp_files, self._trace_list, suffix=None, allow_duplicates=True)
     self._files: immutabledict[str, Tuple[pth.LocalPath, ...]] = immutabledict({
         suffix: tuple(files) for suffix, files in tmp_files.items()
     })
@@ -49,9 +66,10 @@ class ProbeResult(abc.ABC):
     self._validate()
 
   def _append(self,
-              tmp_files,
+              tmp_files: Dict[str, OrderedSet[pth.LocalPath]],
               file: pth.LocalPath,
-              suffix: Optional[str] = None) -> None:
+              suffix: Optional[str] = None,
+              allow_duplicates: bool = False) -> None:
     file_suffix_name = file.suffix[1:]
     if not suffix:
       suffix = file_suffix_name
@@ -60,19 +78,22 @@ class ProbeResult(abc.ABC):
           f"Expected '.{suffix}' suffix, but got {repr(file.suffix)} "
           f"for {file}")
     if files_with_suffix := tmp_files.get(suffix):
-      if file in files_with_suffix:
+      if file not in files_with_suffix:
+        files_with_suffix.add(file)
+      elif not allow_duplicates:
         raise DuplicateProbeResult(
             f"Cannot append file twice to ProbeResult: {file}")
-      files_with_suffix.add(file)
     else:
       tmp_files[suffix] = OrderedSet((file,))
 
   def _extend(self,
-              tmp_files,
+              tmp_files: Dict[str, OrderedSet[pth.LocalPath]],
               files: Iterable[pth.LocalPath],
-              suffix: Optional[str] = None) -> None:
+              suffix: Optional[str] = None,
+              allow_duplicates=False) -> None:
     for file in files:
-      self._append(tmp_files, file, suffix)
+      self._append(
+          tmp_files, file, suffix=suffix, allow_duplicates=allow_duplicates)
 
   def get(self, suffix: str) -> pth.LocalPath:
     if files_with_suffix := self._files.get(suffix):
@@ -115,7 +136,8 @@ class ProbeResult(abc.ABC):
       return self
     return LocalProbeResult(
         url=self.url_list + other.url_list,
-        file=self.file_list + other.file_list)
+        file=self.file_list + other.file_list,
+        trace=self.trace_list + other.trace_list)
 
   def _validate(self) -> None:
     for path in self.all_files():
@@ -150,15 +172,25 @@ class ProbeResult(abc.ABC):
 
   @property
   def file(self) -> pth.LocalPath:
-    if len(self._files) > 1:
+    if sum(len(files) for files in self._files.values()) > 1:
       raise ValueError("ProbeResult has more than one file.")
-    for suffix in self._files:
-      return self.get(suffix)
+    for files in self._files.values():
+      return files[0]
     raise ValueError("ProbeResult has no files.")
 
   @property
   def file_list(self) -> List[pth.LocalPath]:
     return list(self.all_files())
+
+  @property
+  def trace(self) -> pth.LocalPath:
+    if len(self._trace_list) != 1:
+      raise ValueError("ProbeResult has multiple traces.")
+    return self._trace_list[0]
+
+  @property
+  def trace_list(self) -> List[pth.LocalPath]:
+    return list(self._trace_list)
 
   @property
   def json(self) -> pth.LocalPath:
@@ -189,12 +221,6 @@ class EmptyProbeResult(ProbeResult):
 class LocalProbeResult(ProbeResult):
   """LocalProbeResult can be used for files that are always available on the
   runner/local machine."""
-
-  def __init__(self,
-               url: Optional[Iterable[str]] = None,
-               file: Optional[Iterable[pth.LocalPath]] = None,
-               **kwargs: Iterable[pth.LocalPath]):
-    super().__init__(url, file, **kwargs)
 
 
 class BrowserProbeResult(ProbeResult):
@@ -301,3 +327,7 @@ class ProbeResultDict:
         else:
           data[probe_name] = results.to_json()
     return data
+
+  def all_traces(self) -> Iterable[pth.LocalPath]:
+    for probe_result in self._dict.values():
+      yield from probe_result.trace_list

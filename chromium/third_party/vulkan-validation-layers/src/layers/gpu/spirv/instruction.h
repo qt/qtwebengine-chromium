@@ -22,15 +22,19 @@
 
 struct OperandInfo;
 
-namespace gpuav {
+// Need to use until we have native std::span in c++20
+using spirv_iterator = vvl::enumeration<const uint32_t, const uint32_t*>::iterator;
+
+namespace gpu {
 namespace spirv {
+
+static constexpr uint32_t kLinkedInstruction = std::numeric_limits<uint32_t>::max();
 
 class Module;
 
 // Represents a single Spv::Op instruction
 struct Instruction {
-    Instruction(std::vector<uint32_t>::const_iterator it, uint32_t position = 0);
-    Instruction(const uint32_t* words);
+    Instruction(spirv_iterator it, uint32_t position);
 
     // Assumes caller will fill remaining words
     Instruction(uint32_t length, spv::Op opcode);
@@ -61,6 +65,12 @@ struct Instruction {
     void ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swap_map);
 
     bool IsArray() const { return (Opcode() == spv::OpTypeArray || Opcode() == spv::OpTypeRuntimeArray); }
+
+    // SPIR-V spec: "A string is interpreted as a nul-terminated stream of characters"
+    char const* GetAsString(uint32_t index) const {
+        assert(index < Length());
+        return (char const*)&words_[index];
+    }
 
     void ToBinary(std::vector<uint32_t>& out);
 
@@ -97,5 +107,7 @@ struct Instruction {
 #endif
 };
 
+void GenerateInstructions(const vvl::span<const uint32_t>& spirv, std::vector<Instruction>& instructions);
+
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

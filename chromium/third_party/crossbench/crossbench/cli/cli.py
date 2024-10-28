@@ -25,10 +25,11 @@ from crossbench import plt
 from crossbench.benchmarks.base import Benchmark
 from crossbench.browsers import splash_screen, viewport
 from crossbench.browsers.browser_helper import BROWSERS_CACHE
+from crossbench.browsers.secrets import SecretsConfig
 from crossbench.cli import ui
+from crossbench.cli.parser import CrossBenchArgumentParser
 from crossbench.cli.subcommand.devtools_recorder_proxy.default import \
     CrossbenchDevToolsRecorderProxy
-from crossbench.cli.parser import CrossBenchArgumentParser
 from crossbench.env import (HostEnvironment, HostEnvironmentConfig,
                             ValidationMode)
 from crossbench.probes.all import GENERAL_PURPOSE_PROBES, DebuggerProbe
@@ -144,19 +145,22 @@ class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
 
 class CrossBenchCLI:
   BENCHMARKS: Tuple[BenchmarkClsT, ...] = (
-      benchmarks.Speedometer30Benchmark,
-      benchmarks.Speedometer21Benchmark,
-      benchmarks.Speedometer20Benchmark,
-      benchmarks.JetStream22Benchmark,
-      benchmarks.JetStream21Benchmark,
       benchmarks.JetStream20Benchmark,
-      benchmarks.MotionMark13Benchmark,
-      benchmarks.MotionMark12Benchmark,
-      benchmarks.MotionMark11Benchmark,
-      benchmarks.MotionMark10Benchmark,
-      benchmarks.PageLoadBenchmark,
-      benchmarks.PowerBenchmark,
+      benchmarks.JetStream21Benchmark,
+      benchmarks.JetStream22Benchmark,
+      benchmarks.JetStream30Benchmark,
       benchmarks.ManualBenchmark,
+      benchmarks.MotionMark10Benchmark,
+      benchmarks.MotionMark11Benchmark,
+      benchmarks.MotionMark12Benchmark,
+      benchmarks.MotionMark13Benchmark,
+      benchmarks.PageLoadBenchmark,
+      benchmarks.PageLoadPhoneBenchmark,
+      benchmarks.PageLoadTabletBenchmark,
+      benchmarks.PowerBenchmark,
+      benchmarks.Speedometer20Benchmark,
+      benchmarks.Speedometer21Benchmark,
+      benchmarks.Speedometer30Benchmark,
   )
 
   RUNNER_CLS: Type[Runner] = Runner
@@ -441,20 +445,19 @@ class CrossBenchCLI:
     network_settings_group.add_argument(
         "--network",
         type=cli_config.NetworkConfig.parse,
-        default=cli_config.NetworkConfig.default(),
         help=("Either an inline network config or an file path to full "
               "network config hjson file (see --network-config)."))
     network_settings_group.add_argument(
         "--network-config",
         metavar="DIR",
-        type=cli_config.NetworkConfig.load_config_path,
+        type=cli_config.NetworkConfig.parse_config_path,
         help=cli_config.NetworkConfig.help())
     network_settings_group.add_argument(
         "--local-file-server",
         "--local-fileserver",
         "--file-server",
         "--fileserver",
-        default=cli_config.NetworkConfig.parse_local,
+        type=cli_config.NetworkConfig.parse_local,
         metavar="DIR",
         dest="network",
         help="Start a local http file server at the given directory.")
@@ -552,6 +555,11 @@ class CrossBenchCLI:
         type=cli_helper.parse_hjson_file_path,
         help=("Specify a common config for --probe-config, --browser-config, "
               "--network-config and --env-config."))
+    browser_group.add_argument(
+        "--secrets",
+        dest="secrets",
+        type=SecretsConfig.parse,
+        help="Path to file containing login secrets")
 
     splashscreen_group = browser_group.add_mutually_exclusive_group()
     splashscreen_group.add_argument(
@@ -646,6 +654,7 @@ class CrossBenchCLI:
     probe_config_group.add_argument(
         "--probe-config",
         type=cli_helper.parse_hjson_file_path,
+        default=benchmark_cls.default_probe_config_path(),
         help=("Browser configuration.json file. "
               "Use this config file to specify more complex Probe settings."
               "See config/doc/probe.config.hjson on how to set up a complex "
@@ -730,15 +739,27 @@ class CrossBenchCLI:
       self.describe_subcommand(args)
       sys.exit(0)
 
+  def _process_network_args(self, args) -> None:
+    # The order of preference of flags is as follows:
+    # Explicitly specified network config > explicitly specified network >
+    # benchmark-specific network config > default network.
+    if network_config := args.network_config:
+      args.network = network_config
+    elif args.network:
+      pass
+    elif network_config := args.benchmark_cls.default_network_config_path():
+      args.network = network_config
+    else:
+      args.network = cli_config.NetworkConfig.default()
+
   def _benchmark_subcommand_process_args(self, args) -> None:
     if args.config:
       self._process_config_args(args)
     else:
-      # We keep separate *_config args so we can throw in case they conflict with
-      # --config. Since we don't use argparse's dest, we have to manually copy
-      # the args.*_config back.
-      if network_config := args.network_config:
-        args.network = network_config
+      # We keep separate *_config args so we can throw in case they conflict
+      # with --config. Since we don't use argparse's dest, we have to manually
+      # copy the args.*_config back.
+      self._process_network_args(args)
 
   def _process_config_args(self, args) -> None:
     if args.env_config:
@@ -772,6 +793,8 @@ class CrossBenchCLI:
     else:
       logging.warning("Skipping network config: no 'network' property in %s",
                       config_file)
+    if not args.network:
+      args.network = cli_config.NetworkConfig.default()
 
     if config_data.get("browsers"):
       args.browser_config = config_file
@@ -847,7 +870,7 @@ class CrossBenchCLI:
     for log_file in candidates[:limit]:
       try:
         log_file = log_file.relative_to(pth.LocalPath.cwd())
-      except Exception as e:
+      except Exception as e:  # pylint: disable=broad-except
         logging.debug("Could not create relative log_file: %s", e)
       logging.error("  - %s", log_file)
     if (pending := len(candidates) - limit) > 0:
@@ -859,7 +882,7 @@ class CrossBenchCLI:
       runner.run(is_dry_run=args.dry_run)
       logging.info("")
       self._log_results(args, runner, is_success=runner.is_success)
-    except:  # pylint disable=broad-except
+    except:  # pylint: disable=broad-except
       self._log_results(args, runner, is_success=False)
       raise
     finally:
@@ -935,10 +958,10 @@ class CrossBenchCLI:
     for probe in runner.probes:
       try:
         probe.log_browsers_result(browser_group)
-      except Exception as e:  # pylint disable=broad-except
+      except Exception as e:  # pylint: disable=broad-except
         if args.throw:
           raise
-        logging.debug("log_result_summary failed: %s", e)
+        logging.warning("log_result_summary failed: %s", e)
 
   def _get_browsers(self, args: argparse.Namespace) -> Sequence[Browser]:
     # TODO: move browser instance create to separate method.

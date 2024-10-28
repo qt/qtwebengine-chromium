@@ -7,7 +7,6 @@ from __future__ import annotations
 import abc
 import atexit
 import enum
-from functools import cached_property
 import io
 import json
 import logging
@@ -15,6 +14,7 @@ import multiprocessing
 import signal
 import subprocess
 import time
+from functools import cached_property
 from typing import (TYPE_CHECKING, Dict, Final, Iterable, List, Optional,
                     Sequence, Tuple, cast)
 
@@ -25,7 +25,7 @@ from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.chrome.version import ChromeVersion
 from crossbench.browsers.chromium.chromium import Chromium
 from crossbench.compat import StrEnumWithHelp
-from crossbench.plt.base import ListCmdArgsT
+from crossbench.plt.base import ListCmdArgs
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
                                      ProbeIncompatibleBrowser, ProbeKeyT,
                                      ResultLocation)
@@ -147,51 +147,49 @@ class ProfilingProbe(Probe):
         "target",
         type=TargetMode,
         default=TargetMode.BROWSER_APP_ONLY,
-        help=(
-            "Chrome-on-Android-only: Profile either Renderer main/process only, "
-            "or all processes of the Browser App, or system-wide. If "
-            "Renderer main/process profiling is selected, profiling begins "
-            "**after** browser has started and the benchmark story has been setup."
-        ))
+        help=("Chrome-on-Android-only: "
+              "Profile either Renderer main/process only, "
+              "or all processes of the Browser App, or system-wide. "
+              "If Renderer main/process profiling is selected, "
+              "profiling begins **after** browser has started "
+              "and the benchmark story has been setup."))
     parser.add_argument(
         "pin_renderer_main_core",
         type=int,
         default=None,
-        help="Chrome-on-Android-only: Whether to pin the renderer main thread to a given core"
-    )
+        help=("Chrome-on-Android-only: "
+              "Whether to pin the renderer main thread to a given core"))
     parser.add_argument(
         "call_graph_mode",
         type=CallGraphMode,
         default=CallGraphMode.FRAME_POINTER,
-        help=(
-            "Android-only: Specify whether to record a call graph, and, if yes, "
-            "which kind of stack unwinding to run."))
-    # Advanced Android/simpleperf-specific arguments. Generally, the defaults should suffice.
+        help=("Android-only: Specify whether to record a call graph, "
+              "and, if yes, which kind of stack unwinding to run."))
+    # Advanced Android/simpleperf-specific arguments.
+    # Generally, the defaults should suffice.
     parser.add_argument(
         "frequency",
         type=int,
         default=None,
-        help=(
-            "Android-only: Event sampling frequency (record at most `frequency` "
-            "samples every second). Please refer to the simpleperf documentation "
-            "for `freq` for more details."))
+        help=("Android-only: Event sampling frequency "
+              "(record at most `frequency` samples every second). "
+              "Please refer to the simpleperf documentation "
+              "for `freq` for more details."))
     parser.add_argument(
         "count",
         type=int,
         default=None,
-        help=(
-            "Android-only: Event sampling period (record one sample every `count` "
-            "events). Please refer to simpleperf documentation for more details."
-        ))
+        help=("Android-only: Event sampling period "
+              "(record one sample every `count` events). "
+              "Please refer to simpleperf documentation for more details."))
     parser.add_argument(
         "cpu",
         type=int,
         is_list=True,
         default=tuple(),
-        help=(
-            "Android-only: Sample only on the selected cpus, specified as a list "
-            "of 0-indexed cpu indices. Please refer to simpleperf documentation "
-            "for more details."))
+        help=("Android-only: Sample only on the selected cpus, "
+              "specified as a list of 0-indexed cpu indices. "
+              "Please refer to simpleperf documentation for more details."))
     parser.add_argument(
         "events",
         type=str,
@@ -204,11 +202,11 @@ class ProfilingProbe(Probe):
         type=str,
         is_list=True,
         default=tuple(),
-        help=(
-            "Android-only: Events to record as a single group. These events are "
-            "monitored as a group, and and scheduled in and out together. Please "
-            "refer to simpleperf documentation for `--group` for more details."
-        ))
+        help=("Android-only: Events to record as a single group. "
+              "These events are monitored as a group, "
+              "and scheduled in and out together. "
+              "Please refer to simpleperf documentation for `--group` "
+              "for more details."))
     parser.add_argument(
         "add_counters",
         type=str,
@@ -339,7 +337,8 @@ class ProfilingProbe(Probe):
   def attach(self, browser: Browser) -> None:
     super().attach(browser)
     if browser.platform.is_linux or browser.platform.is_android:
-      assert browser.attributes.is_chromium_based, f"Expected Chromium-based browser, found {type(browser)}."
+      assert browser.attributes.is_chromium_based, (
+          f"Expected Chromium-based browser, found {type(browser)}.")
     if browser.attributes.is_chromium_based:
       chromium = cast(Chromium, browser)
       if not self._spare_renderer_process:
@@ -358,7 +357,8 @@ class ProfilingProbe(Probe):
       raise ProbeIncompatibleBrowser(self, browser)
     if self.run_pprof:
       self._validate_pprof(env, browser)
-    # Check that certain Android-only options are not provided by on other platforms.
+    # Check that certain Android-only options are
+    # not provided by on other platforms.
     if not browser_platform.is_android:
       assert self._frequency is None, (
           "`frequency` is currently only supported on Android")
@@ -629,7 +629,7 @@ class LinuxProfilingContext(ProfilingContext):
                    "for interactive analysis:")
       logging.info("   pprof --http=localhost:1984 %s",
                    " ".join(map(str, perf_files)))
-    return self.browser_result(file=perf_files)
+    return self.browser_result(trace=perf_files)
 
   def _inject_v8_symbols(
       self, run: Run, perf_files: List[pth.RemotePath]) -> List[pth.RemotePath]:
@@ -712,6 +712,9 @@ def prepare_linux_perf_env(platform: plt.Platform,
   return env
 
 
+KB = 1024
+
+
 def linux_perf_probe_inject_v8_symbols(
     perf_data_file: pth.RemotePath,
     platform: Optional[plt.Platform] = None) -> Optional[pth.RemotePath]:
@@ -730,7 +733,6 @@ def linux_perf_probe_inject_v8_symbols(
         f"--output={output_file}",
         env=env)
   except plt.SubprocessError as e:
-    KB = 1024
     if platform.file_size(perf_data_file) > 200 * KB:
       logging.warning("Failed processing: %s\n%s", perf_data_file, e)
     else:
@@ -820,7 +822,7 @@ class AndroidProfilingContext(ProfilingContext):
       raise ValueError(error_message)
     return renderer_pid, renderer_main_tid
 
-  def _generate_command_line(self) -> ListCmdArgsT:
+  def _generate_command_line(self) -> ListCmdArgs:
     renderer_pid: Optional[int] = None
     renderer_main_tid: Optional[int] = None
     if self.probe.target in (TargetMode.RENDERER_MAIN_ONLY,
@@ -881,7 +883,7 @@ class AndroidProfilingContext(ProfilingContext):
 
   def _pin_renderer_main_core(self, cpu: int):
     _, renderer_main_tid = self._renderer_pid_tid
-    self.browser_platform.sh('taskset', '-p', self._cpu_mask([cpu]),
+    self.browser_platform.sh("taskset", "-p", self._cpu_mask([cpu]),
                              str(renderer_main_tid))
 
   def get_default_result_path(self) -> pth.RemotePath:
@@ -895,7 +897,8 @@ class AndroidProfilingContext(ProfilingContext):
     if (self.browser.platform.is_android and
         self.browser.attributes.is_chromium_based):
       chromium = cast(Chromium, self.browser)
-      # Set `--enable-benchmarking` explicitly for retrieving Renderer PID, if needed.
+      # Set `--enable-benchmarking` explicitly for
+      # retrieving Renderer PID, if needed.
       chromium.flags.set("--enable-benchmarking")
     self._stop_existing_simpleperf()
 
@@ -923,7 +926,7 @@ class AndroidProfilingContext(ProfilingContext):
                                     "crossbench-probe-profiling-stop")
 
   def teardown(self) -> ProbeResult:
-    return self.browser_result(file=[self.result_path])
+    return self.browser_result(trace=[self.result_path])
 
 
 def generate_simpleperf_command_line(
@@ -939,8 +942,8 @@ def generate_simpleperf_command_line(
     grouped_events: Tuple[str, ...],
     add_counters: Tuple[str, ...],
     output_path: pth.RemotePath,
-) -> ListCmdArgsT:
-  command_line: ListCmdArgsT = ["simpleperf", "record"]
+) -> ListCmdArgs:
+  command_line: ListCmdArgs = ["simpleperf", "record"]
   if target == TargetMode.RENDERER_MAIN_ONLY:
     assert renderer_main_tid is not None
     command_line.extend(["-t", str(renderer_main_tid)])
@@ -956,7 +959,7 @@ def generate_simpleperf_command_line(
   elif call_graph_mode == CallGraphMode.DWARF:
     # Use "--post-unwind=yes" while unwinding with DWARF, to reduce
     # unwinding overhead during profiling.
-    command_line.append("--post-unwind=yes")
+    command_line.extend(["--call-graph", "dwarf", "--post-unwind=yes"])
   else:
     assert call_graph_mode == CallGraphMode.NO_CALL_GRAPH, (
         f"Invalid call_graph_mode: {call_graph_mode}")

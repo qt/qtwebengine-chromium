@@ -107,28 +107,28 @@ static bool GetMetalExport(const VkEventCreateInfo *info) {
 
 namespace vvl {
 
-Event::Event(VkEvent handle, const VkEventCreateInfo *pCreateInfo)
+Event::Event(VkEvent handle, const VkEventCreateInfo *create_info)
     : StateObject(handle, kVulkanObjectTypeEvent),
-      flags(pCreateInfo->flags)
+      flags(create_info->flags)
 #ifdef VK_USE_PLATFORM_METAL_EXT
       ,
-      metal_event_export(GetMetalExport(pCreateInfo))
+      metal_event_export(GetMetalExport(create_info))
 #endif  // VK_USE_PLATFORM_METAL_EXT
 {
 }
 
-CommandPool::CommandPool(ValidationStateTracker &dev, VkCommandPool handle, const VkCommandPoolCreateInfo *pCreateInfo,
+CommandPool::CommandPool(ValidationStateTracker &dev, VkCommandPool handle, const VkCommandPoolCreateInfo *create_info,
                          VkQueueFlags flags)
     : StateObject(handle, kVulkanObjectTypeCommandPool),
       dev_data(dev),
-      createFlags(pCreateInfo->flags),
-      queueFamilyIndex(pCreateInfo->queueFamilyIndex),
+      createFlags(create_info->flags),
+      queueFamilyIndex(create_info->queueFamilyIndex),
       queue_flags(flags),
-      unprotected((pCreateInfo->flags & VK_COMMAND_POOL_CREATE_PROTECTED_BIT) == 0) {}
+      unprotected((create_info->flags & VK_COMMAND_POOL_CREATE_PROTECTED_BIT) == 0) {}
 
-void CommandPool::Allocate(const VkCommandBufferAllocateInfo *create_info, const VkCommandBuffer *command_buffers) {
-    for (uint32_t i = 0; i < create_info->commandBufferCount; i++) {
-        auto new_cb = dev_data.CreateCmdBufferState(command_buffers[i], create_info, this);
+void CommandPool::Allocate(const VkCommandBufferAllocateInfo *allocate_info, const VkCommandBuffer *command_buffers) {
+    for (uint32_t i = 0; i < allocate_info->commandBufferCount; i++) {
+        auto new_cb = dev_data.CreateCmdBufferState(command_buffers[i], allocate_info, this);
         commandBuffers.emplace(command_buffers[i], new_cb.get());
         dev_data.Add(std::move(new_cb));
     }
@@ -165,10 +165,10 @@ void CommandBuffer::SetActiveSubpass(uint32_t subpass) {
     active_subpass_sample_count_ = std::nullopt;
 }
 
-CommandBuffer::CommandBuffer(ValidationStateTracker &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *pAllocateInfo,
+CommandBuffer::CommandBuffer(ValidationStateTracker &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *allocate_info,
                              const vvl::CommandPool *pool)
     : RefcountedStateObject(handle, kVulkanObjectTypeCommandBuffer),
-      allocate_info(*pAllocateInfo),
+      allocate_info(*allocate_info),
       command_pool(pool),
       dev_data(dev),
       unprotected(pool->unprotected),
@@ -1710,10 +1710,10 @@ bool CommandBuffer::HasExternalFormatResolveAttachment() const {
 }
 
 void CommandBuffer::BindShader(VkShaderStageFlagBits shader_stage, vvl::ShaderObject *shader_object_state) {
-    auto &lastBoundState = lastBound[ConvertToPipelineBindPoint(shader_stage)];
+    auto &last_bound_state = lastBound[ConvertToPipelineBindPoint(shader_stage)];
     const auto stage_index = static_cast<uint32_t>(ConvertToShaderObjectStage(shader_stage));
-    lastBoundState.shader_object_bound[stage_index] = true;
-    lastBoundState.shader_object_states[stage_index] = shader_object_state;
+    last_bound_state.shader_object_bound[stage_index] = true;
+    last_bound_state.shader_object_states[stage_index] = shader_object_state;
 }
 
 void CommandBuffer::UnbindResources() {
@@ -1805,19 +1805,19 @@ void CommandBuffer::GetCurrentPipelineAndDesriptorSets(VkPipelineBindPoint pipel
 
 void CommandBuffer::BeginLabel(const char *label_name) {
     ++label_stack_depth_;
-    label_commands_.push_back(LabelCommand{true, label_name});
+    label_commands_.emplace_back(LabelCommand{true, label_name});
 }
 
 void CommandBuffer::EndLabel() {
     --label_stack_depth_;
-    label_commands_.push_back(LabelCommand{false, std::string()});
+    label_commands_.emplace_back(LabelCommand{false, std::string()});
 }
 
 void CommandBuffer::ReplayLabelCommands(const vvl::span<const LabelCommand> &label_commands,
                                         std::vector<std::string> &label_stack) {
     for (const LabelCommand &command : label_commands) {
         if (command.begin) {
-            label_stack.push_back(command.label_name.empty() ? "(empty label)" : command.label_name);
+            label_stack.emplace_back(command.label_name.empty() ? "(empty label)" : command.label_name);
         } else if (!label_stack.empty()) {
             // The above condition is needed for several reasons. On the primary command buffer level
             // the labels are not necessary balanced. And if the empty stack is detected in the context

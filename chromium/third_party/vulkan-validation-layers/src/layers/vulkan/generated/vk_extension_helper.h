@@ -366,7 +366,9 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_khr_shader_maximal_reconvergence{kNotEnabled};
     ExtEnabled vk_khr_maintenance5{kNotEnabled};
     ExtEnabled vk_khr_ray_tracing_position_fetch{kNotEnabled};
+    ExtEnabled vk_khr_pipeline_binary{kNotEnabled};
     ExtEnabled vk_khr_cooperative_matrix{kNotEnabled};
+    ExtEnabled vk_khr_compute_shader_derivatives{kNotEnabled};
     ExtEnabled vk_khr_video_decode_av1{kNotEnabled};
     ExtEnabled vk_khr_video_maintenance1{kNotEnabled};
     ExtEnabled vk_khr_vertex_attribute_divisor{kNotEnabled};
@@ -585,6 +587,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_legacy_dithering{kNotEnabled};
     ExtEnabled vk_ext_pipeline_protected_access{kNotEnabled};
     ExtEnabled vk_android_external_format_resolve{kNotEnabled};
+    ExtEnabled vk_amd_anti_lag{kNotEnabled};
     ExtEnabled vk_ext_shader_object{kNotEnabled};
     ExtEnabled vk_qcom_tile_properties{kNotEnabled};
     ExtEnabled vk_sec_amigo_profiling{kNotEnabled};
@@ -608,6 +611,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_msft_layered_driver{kNotEnabled};
     ExtEnabled vk_nv_descriptor_pool_overallocation{kNotEnabled};
     ExtEnabled vk_nv_raw_access_chains{kNotEnabled};
+    ExtEnabled vk_nv_command_buffer_inheritance{kNotEnabled};
     ExtEnabled vk_nv_shader_atomic_float16_vector{kNotEnabled};
     ExtEnabled vk_ext_shader_replicated_composites{kNotEnabled};
     ExtEnabled vk_nv_ray_tracing_validation{kNotEnabled};
@@ -913,9 +917,16 @@ struct DeviceExtensions : public InstanceExtensions {
             {vvl::Extension::_VK_KHR_ray_tracing_position_fetch,
              Info(&DeviceExtensions::vk_khr_ray_tracing_position_fetch,
                   {{{&DeviceExtensions::vk_khr_acceleration_structure, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_KHR_pipeline_binary,
+             Info(&DeviceExtensions::vk_khr_pipeline_binary,
+                  {{{&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_KHR_cooperative_matrix,
              Info(&DeviceExtensions::vk_khr_cooperative_matrix, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_KHR_compute_shader_derivatives,
+             Info(&DeviceExtensions::vk_khr_compute_shader_derivatives,
+                  {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_KHR_video_decode_av1,
              Info(&DeviceExtensions::vk_khr_video_decode_av1,
                   {{{&DeviceExtensions::vk_khr_video_decode_queue, VK_KHR_VIDEO_DECODE_QUEUE_EXTENSION_NAME}}})},
@@ -1572,6 +1583,7 @@ struct DeviceExtensions : public InstanceExtensions {
                   {{{&DeviceExtensions::vk_android_external_memory_android_hardware_buffer,
                      VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME}}})},
 #endif  // VK_USE_PLATFORM_ANDROID_KHR
+            {vvl::Extension::_VK_AMD_anti_lag, Info(&DeviceExtensions::vk_amd_anti_lag, {})},
             {vvl::Extension::_VK_EXT_shader_object,
              Info(&DeviceExtensions::vk_ext_shader_object,
                   {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
@@ -1612,8 +1624,7 @@ struct DeviceExtensions : public InstanceExtensions {
                     {&DeviceExtensions::vk_khr_dynamic_rendering, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_NV_low_latency2,
              Info(&DeviceExtensions::vk_nv_low_latency2,
-                  {{{&DeviceExtensions::vk_feature_version_1_2, "VK_VERSION_1_2"},
-                    {&DeviceExtensions::vk_khr_timeline_semaphore, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME}}})},
+                  {{{&DeviceExtensions::vk_khr_timeline_semaphore, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_QCOM_multiview_per_view_render_areas,
              Info(&DeviceExtensions::vk_qcom_multiview_per_view_render_areas, {})},
             {vvl::Extension::_VK_NV_per_stage_descriptor_set,
@@ -1629,7 +1640,6 @@ struct DeviceExtensions : public InstanceExtensions {
             {vvl::Extension::_VK_QCOM_filter_cubic_clamp,
              Info(&DeviceExtensions::vk_qcom_filter_cubic_clamp,
                   {{{&DeviceExtensions::vk_ext_filter_cubic, VK_EXT_FILTER_CUBIC_EXTENSION_NAME},
-                    {&DeviceExtensions::vk_feature_version_1_2, "VK_VERSION_1_2"},
                     {&DeviceExtensions::vk_ext_sampler_filter_minmax, VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_EXT_attachment_feedback_loop_dynamic_state,
              Info(&DeviceExtensions::vk_ext_attachment_feedback_loop_dynamic_state,
@@ -1652,6 +1662,7 @@ struct DeviceExtensions : public InstanceExtensions {
              Info(&DeviceExtensions::vk_nv_descriptor_pool_overallocation,
                   {{{&DeviceExtensions::vk_feature_version_1_1, "VK_VERSION_1_1"}}})},
             {vvl::Extension::_VK_NV_raw_access_chains, Info(&DeviceExtensions::vk_nv_raw_access_chains, {})},
+            {vvl::Extension::_VK_NV_command_buffer_inheritance, Info(&DeviceExtensions::vk_nv_command_buffer_inheritance, {})},
             {vvl::Extension::_VK_NV_shader_atomic_float16_vector, Info(&DeviceExtensions::vk_nv_shader_atomic_float16_vector, {})},
             {vvl::Extension::_VK_EXT_shader_replicated_composites,
              Info(&DeviceExtensions::vk_ext_shader_replicated_composites, {})},
@@ -1833,7 +1844,9 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_KHR_shader_maximal_reconvergence:
         case vvl::Extension::_VK_KHR_maintenance5:
         case vvl::Extension::_VK_KHR_ray_tracing_position_fetch:
+        case vvl::Extension::_VK_KHR_pipeline_binary:
         case vvl::Extension::_VK_KHR_cooperative_matrix:
+        case vvl::Extension::_VK_KHR_compute_shader_derivatives:
         case vvl::Extension::_VK_KHR_video_decode_av1:
         case vvl::Extension::_VK_KHR_video_maintenance1:
         case vvl::Extension::_VK_KHR_vertex_attribute_divisor:
@@ -2052,6 +2065,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_legacy_dithering:
         case vvl::Extension::_VK_EXT_pipeline_protected_access:
         case vvl::Extension::_VK_ANDROID_external_format_resolve:
+        case vvl::Extension::_VK_AMD_anti_lag:
         case vvl::Extension::_VK_EXT_shader_object:
         case vvl::Extension::_VK_QCOM_tile_properties:
         case vvl::Extension::_VK_SEC_amigo_profiling:
@@ -2075,6 +2089,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_MSFT_layered_driver:
         case vvl::Extension::_VK_NV_descriptor_pool_overallocation:
         case vvl::Extension::_VK_NV_raw_access_chains:
+        case vvl::Extension::_VK_NV_command_buffer_inheritance:
         case vvl::Extension::_VK_NV_shader_atomic_float16_vector:
         case vvl::Extension::_VK_EXT_shader_replicated_composites:
         case vvl::Extension::_VK_NV_ray_tracing_validation:

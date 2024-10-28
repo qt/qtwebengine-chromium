@@ -20,7 +20,7 @@ from crossbench import compat, helper, plt
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.plt.base import CmdArgT
+  from crossbench.plt.base import CmdArg
   from crossbench.probes.probe import Probe
   from crossbench.runner.runner import Runner
 
@@ -37,11 +37,11 @@ def merge_bool(name: str, left: Optional[bool],
   return left
 
 
-NumberT = Union[float, int]
+Number = Union[float, int]
 
 
-def merge_number_max(name: str, left: Optional[NumberT],
-                     right: Optional[NumberT]) -> Optional[NumberT]:
+def merge_number_max(name: str, left: Optional[Number],
+                     right: Optional[Number]) -> Optional[Number]:
   del name
   if left is None:
     return right
@@ -50,8 +50,8 @@ def merge_number_max(name: str, left: Optional[NumberT],
   return max(left, right)
 
 
-def merge_number_min(name: str, left: Optional[NumberT],
-                     right: Optional[NumberT]) -> Optional[NumberT]:
+def merge_number_min(name: str, left: Optional[Number],
+                     right: Optional[Number]) -> Optional[Number]:
   del name
   if left is None:
     return right
@@ -404,8 +404,8 @@ class HostEnvironment:
         logging.debug("proc(pid=%s, name=%s, cmd=%s)", proc_info["pid"],
                       proc_info["name"], cmdline)
         self.handle_validation_warning(
-            f"{browser.app_name} {browser.version} seems to be already running on {platform}."
-        )
+            f"{browser.app_name} {browser.version} "
+            f"seems to be already running on {platform}.")
         # Avoid re-checking the same binary once we've allowed it to be running.
         del browser_binaries[binary]
 
@@ -536,7 +536,7 @@ class HostEnvironment:
       self.handle_validation_warning(message.format(missing_binaries))
 
   def check_sh_success(self,
-                       *args: CmdArgT,
+                       *args: CmdArg,
                        message: str = "Could not execute: {}") -> None:
     assert args, "Missing sh arguments"
     try:

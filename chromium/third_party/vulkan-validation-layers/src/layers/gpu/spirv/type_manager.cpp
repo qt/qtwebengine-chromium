@@ -16,7 +16,7 @@
 #include "type_manager.h"
 #include "module.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 // Simplest way to check if same type is see if items line up.
@@ -38,7 +38,7 @@ bool Type::operator==(Type const& other) const {
 //   %B = OpTypePointer Input %A
 //   %C = OpVariable %B Input
 const Type* Variable::PointerType(TypeManager& type_manager_) const {
-    assert(type_.inst_.Opcode() == spv::OpTypePointer);
+    assert(type_.spv_type_ == SpvType::kPointer || type_.spv_type_ == SpvType::kForwardPointer);
     uint32_t type_id = type_.inst_.Word(3);
     return type_manager_.FindTypeById(type_id);
 }
@@ -111,6 +111,27 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
 const Type* TypeManager::FindTypeById(uint32_t id) const {
     auto type = id_to_type_.find(id);
     return (type == id_to_type_.end()) ? nullptr : type->second.get();
+}
+
+const Type* TypeManager::FindFunctionType(const Instruction& inst) const {
+    const uint32_t inst_length = inst.Length();
+    for (const auto& type : function_types_) {
+        if (type->inst_.Length() != inst_length) {
+            continue;
+        }
+        // Start at the Result Type ID (skip ResultID and the base word)
+        bool found = true;
+        for (uint32_t i = 2; i < inst_length; i++) {
+            if (type->inst_.Word(i) != inst.Word(i)) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return type;
+        }
+    }
+    return nullptr;
 }
 
 const Type& TypeManager::GetTypeVoid() {
@@ -526,5 +547,47 @@ const Variable* TypeManager::FindVariableById(uint32_t id) const {
     return (variable == id_to_variable_.end()) ? nullptr : variable->second.get();
 }
 
+uint32_t TypeManager::FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride, bool col_major, bool in_matrix) {
+    const Type& type = *FindTypeById(type_id);
+    switch (type.spv_type_) {
+        case SpvType::kPointer:
+            return 8;  // Assuming PhysicalStorageBuffer pointer
+            break;
+        case SpvType::kMatrix: {
+            if (matrix_stride == 0) {
+                module_.InternalError("FindTypeByteSize", "missing matrix stride");
+            }
+            if (col_major) {
+                return type.inst_.Word(3) * matrix_stride;
+            } else {
+                const Type* vector_type = FindTypeById(type.inst_.Word(2));
+                return vector_type->inst_.Word(3) * matrix_stride;
+            }
+        }
+        case SpvType::kVector: {
+            uint32_t size = type.inst_.Word(3);
+            const Type* component_type = FindTypeById(type.inst_.Word(2));
+            // if vector in row major matrix, the vector is strided so return the number of bytes spanned by the vector
+            if (in_matrix && !col_major && matrix_stride > 0) {
+                return (size - 1) * matrix_stride + FindTypeByteSize(component_type->Id());
+            } else if (component_type->spv_type_ == SpvType::kFloat || component_type->spv_type_ == SpvType::kInt) {
+                const uint32_t width = component_type->inst_.Word(2);
+                size *= width;
+            } else {
+                module_.InternalError("FindTypeByteSize", "unexpected vector type");
+            }
+            return size / 8;
+        }
+        case SpvType::kFloat:
+        case SpvType::kInt: {
+            const uint32_t width = type.inst_.Word(2);
+            return width / 8;
+        }
+        default:
+            break;
+    }
+    return 1;
+}
+
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

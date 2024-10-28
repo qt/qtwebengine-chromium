@@ -26,7 +26,6 @@
 #include "state_tracker/state_object.h"
 #include "state_tracker/sampler_state.h"
 #include <spirv/unified1/spirv.hpp>
-#include "spirv-tools/optimizer.hpp"
 
 namespace vvl {
 class Pipeline;
@@ -568,11 +567,6 @@ struct StatelessData {
     // simpler to just track all OpExecutionModeId and parse things needed later
     std::vector<const Instruction *> execution_mode_id_inst;
 
-    // OpExtInstImport "NonSemantic.DebugPrintf"
-    uint32_t debug_printf_import_id = 0;
-    std::vector<const Instruction *> debug_printf_inst;
-    std::vector<const Instruction *> string_inst;
-
     bool has_builtin_fully_covered{false};
     bool has_invocation_repack_instruction{false};
     bool has_group_decoration{false};
@@ -716,6 +710,7 @@ struct Module {
     std::string DescribeType(uint32_t type) const;
     std::string DescribeVariable(uint32_t id) const;
 
+    // Note that some shaders can have an input and output topology
     std::optional<VkPrimitiveTopology> GetTopology(const EntryPoint &entrypoint) const;
 
     std::shared_ptr<const EntryPoint> FindEntrypoint(char const *name, VkShaderStageFlagBits stageBits) const;
@@ -753,15 +748,13 @@ struct Module {
 // Represents a VkShaderModule handle
 namespace vvl {
 struct ShaderModule : public StateObject {
-    ShaderModule(VkShaderModule handle, std::shared_ptr<spirv::Module> &spirv_module, uint32_t unique_shader_id)
-        : StateObject(handle, kVulkanObjectTypeShaderModule), spirv(spirv_module), gpu_validation_shader_id(unique_shader_id) {
+    ShaderModule(VkShaderModule handle, std::shared_ptr<spirv::Module> &spirv_module)
+        : StateObject(handle, kVulkanObjectTypeShaderModule), spirv(spirv_module) {
         spirv->handle_ = handle_;
     }
 
     // For when we need to create a module with no SPIR-V backing it
-    ShaderModule(uint32_t unique_shader_id)
-        : StateObject(static_cast<VkShaderModule>(VK_NULL_HANDLE), kVulkanObjectTypeShaderModule),
-          gpu_validation_shader_id(unique_shader_id) {}
+    ShaderModule() : StateObject(static_cast<VkShaderModule>(VK_NULL_HANDLE), kVulkanObjectTypeShaderModule) {}
 
     VkShaderModule VkHandle() const { return handle_.Cast<VkShaderModule>(); }
 
@@ -769,8 +762,5 @@ struct ShaderModule : public StateObject {
     // TODO - This (and vvl::ShaderObject) could be unique, but need handle multiple ValidationObjects
     // https://github.com/KhronosGroup/Vulkan-ValidationLayers/pull/6265/files
     std::shared_ptr<spirv::Module> spirv;
-
-    // Used as way to match instrumented GPU-AV shader to a VkShaderModule handle
-    uint32_t gpu_validation_shader_id = 0;
 };
 }  // namespace vvl

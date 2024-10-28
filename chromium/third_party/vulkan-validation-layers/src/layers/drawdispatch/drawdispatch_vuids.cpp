@@ -4335,7 +4335,8 @@ struct DispatchVuidsCmdDispatchBase: DrawDispatchVuid {
 
 using Func = vvl::Func;
 // This LUT is created to allow a static listing of each VUID that is covered by drawdispatch commands
-static const std::map<Func, DrawDispatchVuid> kDrawdispatchVuid = {
+const auto &GetDrawDispatchVuid() {
+static const std::pair<Func, DrawDispatchVuid> pairs[] = {
     {Func::vkCmdDraw, DispatchVuidsCmdDraw()},
     {Func::vkCmdDrawMultiEXT, DispatchVuidsCmdDrawMultiEXT()},
     {Func::vkCmdDrawIndexed, DispatchVuidsCmdDrawIndexed()},
@@ -4364,15 +4365,19 @@ static const std::map<Func, DrawDispatchVuid> kDrawdispatchVuid = {
     // Used if invalid function is used
     {Func::Empty, DrawDispatchVuid(Func::Empty)}
 };
+static const auto kDrawdispatchVuid = std::map<Func, DrawDispatchVuid>{std::begin(pairs), std::end(pairs)};
+
+  return kDrawdispatchVuid;
+}
 // clang-format on
 
 // Getter function to provide kVUIDUndefined in case an invalid function is passed in. Likely if new extension adds command and
 // VUIDs are not added yet
 const DrawDispatchVuid& GetDrawDispatchVuid(Func function) {
-    if (kDrawdispatchVuid.find(function) != kDrawdispatchVuid.cend()) {
-        return kDrawdispatchVuid.at(function);
+    if (GetDrawDispatchVuid().find(function) != GetDrawDispatchVuid().cend()) {
+        return GetDrawDispatchVuid().at(function);
     } else {
-        return kDrawdispatchVuid.at(Func::Empty);
+        return GetDrawDispatchVuid().at(Func::Empty);
     }
 }
-} // namespace vvl
+}  // namespace vvl

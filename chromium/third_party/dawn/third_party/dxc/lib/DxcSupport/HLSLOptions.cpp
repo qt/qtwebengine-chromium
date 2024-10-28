@@ -327,7 +327,7 @@ static bool hasUnsupportedSpirvOption(const InputArgList &args,
   // available options and their current compatibility is needed to generate a
   // complete list.
   std::vector<OptSpecifier> unsupportedOpts = {OPT_Fd, OPT_Fre, OPT_Gec,
-                                               OPT_Gis, OPT_Qstrip_reflect};
+                                               OPT_Qstrip_reflect};
 
   for (const auto &id : unsupportedOpts) {
     if (Arg *arg = args.getLastArg(id)) {
@@ -1053,6 +1053,8 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_fvk_use_dx_position_w, OPT_INVALID, false);
   opts.SpirvOptions.supportNonzeroBaseInstance =
       Args.hasFlag(OPT_fvk_support_nonzero_base_instance, OPT_INVALID, false);
+  opts.SpirvOptions.supportNonzeroBaseVertex =
+      Args.hasFlag(OPT_fvk_support_nonzero_base_vertex, OPT_INVALID, false);
   opts.SpirvOptions.useGlLayout =
       Args.hasFlag(OPT_fvk_use_gl_layout, OPT_INVALID, false);
   opts.SpirvOptions.useDxLayout =
@@ -1081,10 +1083,10 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_fspv_preserve_bindings, OPT_INVALID, false);
   opts.SpirvOptions.preserveInterface =
       Args.hasFlag(OPT_fspv_preserve_interface, OPT_INVALID, false);
-  opts.SpirvOptions.allowRWStructuredBufferArrays =
-      Args.hasFlag(OPT_fvk_allow_rwstructuredbuffer_arrays, OPT_INVALID, false);
   opts.SpirvOptions.enableMaximalReconvergence =
       Args.hasFlag(OPT_fspv_enable_maximal_reconvergence, OPT_INVALID, false);
+  opts.SpirvOptions.useVulkanMemoryModel =
+      Args.hasFlag(OPT_fspv_use_vulkan_memory_model, OPT_INVALID, false);
 
   if (!handleVkShiftArgs(Args, OPT_fvk_b_shift, "b", &opts.SpirvOptions.bShift,
                          errors) ||
@@ -1233,8 +1235,6 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
       Args.hasFlag(OPT_Wno_vk_ignored_features, OPT_INVALID, false) ||
       Args.hasFlag(OPT_Wno_vk_emulated_features, OPT_INVALID, false) ||
       Args.hasFlag(OPT_fvk_auto_shift_bindings, OPT_INVALID, false) ||
-      Args.hasFlag(OPT_fvk_allow_rwstructuredbuffer_arrays, OPT_INVALID,
-                   false) ||
       !Args.getLastArgValue(OPT_fvk_stage_io_order_EQ).empty() ||
       !Args.getLastArgValue(OPT_fspv_debug_EQ).empty() ||
       !Args.getLastArgValue(OPT_fspv_extension_EQ).empty() ||

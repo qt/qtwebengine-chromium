@@ -18,7 +18,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
-  from crossbench.types import JSON
+  from crossbench.types import Json
 
 
 def parse_javascript(value: str) -> str:
@@ -40,9 +40,10 @@ class JSProbe(JsonResultProbe):
     parser.add_argument(
         "setup",
         type=parse_javascript,
-        help=("Optional JavaScript code that is run immediately before a story. "
-              "This can be used for setting up some JS tracking code or patch "
-              "existing code for custom metric tracking."))
+        help=(
+            "Optional JavaScript code that is run immediately before a story. "
+            "This can be used for setting up some JS tracking code or patch "
+            "existing code for custom metric tracking."))
     parser.add_argument(
         "js",
         type=parse_javascript,
@@ -72,7 +73,7 @@ class JSProbe(JsonResultProbe):
         ("metric_js", self._metric_js),
     )
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     data = actions.js(self._metric_js)
     return cli_helper.parse_non_empty_dict(data, "JS metric data")
 

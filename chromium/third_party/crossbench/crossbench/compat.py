@@ -17,7 +17,7 @@ if TYPE_CHECKING:
   from crossbench.path import RemotePath
 
 if sys.version_info >= (3, 11):
-  from enum import StrEnum
+  from enum import StrEnum  # pylint: disable=unused-import
 else:
 
   class StrEnum(str, enum.Enum):

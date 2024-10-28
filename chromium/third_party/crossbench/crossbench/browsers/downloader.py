@@ -204,7 +204,7 @@ class Downloader(abc.ABC):
 
   def _extracted_path(self) -> pth.LocalPath:
     # TODO: support local vs remote
-    return self._out_dir / str(self._requested_version)
+    return self._out_dir / str(self._requested_version).replace(" ", "_")
 
   @abc.abstractmethod
   def _installed_app_path(self) -> pth.LocalPath:

@@ -55,7 +55,7 @@ struct SharedTraceRaysValidationResources final {
         pipeline_layout_ci.pSetLayouts = &error_output_desc_layout;
         result = DispatchCreatePipelineLayout(gpuav.device, &pipeline_layout_ci, nullptr, &pipeline_layout);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to create pipeline layout. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Unable to create pipeline layout.");
             return;
         }
 
@@ -65,7 +65,7 @@ struct SharedTraceRaysValidationResources final {
         VkShaderModule validation_shader = VK_NULL_HANDLE;
         result = DispatchCreateShaderModule(gpuav.device, &shader_module_ci, nullptr, &validation_shader);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to create ray tracing shader module. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Unable to create ray tracing shader module.");
             return;
         }
 
@@ -95,8 +95,7 @@ struct SharedTraceRaysValidationResources final {
         DispatchDestroyShaderModule(gpuav.device, validation_shader, nullptr);
 
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc,
-                                "Failed to create ray tracing pipeline for pre trace rays validation. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Failed to create ray tracing pipeline for pre trace rays validation.");
             return;
         }
 
@@ -112,7 +111,7 @@ struct SharedTraceRaysValidationResources final {
         result = DispatchGetRayTracingShaderGroupHandlesKHR(gpuav.device, pipeline, 0, rt_pipeline_create_info.groupCount, sbt_size,
                                                             sbt_host_storage.data());
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Failed to call vkGetRayTracingShaderGroupHandlesKHR. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Failed to call vkGetRayTracingShaderGroupHandlesKHR.");
             return;
         }
 
@@ -133,15 +132,14 @@ struct SharedTraceRaysValidationResources final {
         pool_create_info.flags = VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT;
         result = vmaCreatePool(vma_allocator, &pool_create_info, &sbt_pool);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to create VMA memory pool for SBT. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Unable to create VMA memory pool for SBT.", true);
             return;
         }
 
         alloc_info.pool = sbt_pool;
         result = vmaCreateBuffer(vma_allocator, &buffer_info, &alloc_info, &sbt_buffer, &sbt_allocation, nullptr);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for shader binding table. Aborting GPU-AV.",
-                                true);
+            gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for shader binding table.", true);
             return;
         }
 
@@ -149,9 +147,8 @@ struct SharedTraceRaysValidationResources final {
         result = vmaMapMemory(vma_allocator, sbt_allocation, reinterpret_cast<void **>(&mapped_sbt));
 
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(
-                gpuav.device, loc,
-                "Failed to map shader binding table when creating trace rays validation resources. Aborting GPU-AV.", true);
+            gpuav.InternalError(gpuav.device, loc,
+                                "Failed to map shader binding table when creating trace rays validation resources.", true);
             return;
         }
 
@@ -162,10 +159,10 @@ struct SharedTraceRaysValidationResources final {
         shader_group_handle_size_aligned = shader_group_size_aligned;
 
         // Retrieve SBT address
-        const VkDeviceAddress sbt_address = GetBufferDeviceAddress(gpuav, sbt_buffer, loc);
+        const VkDeviceAddress sbt_address = gpuav.GetBufferDeviceAddressHelper(sbt_buffer);
         assert(sbt_address != 0);
         if (sbt_address == 0) {
-            gpuav.InternalError(gpuav.device, loc, "Retrieved SBT buffer device address is null. Aborting GPU-AV.");
+            gpuav.InternalError(gpuav.device, loc, "Retrieved SBT buffer device address is null.");
             return;
         }
         assert(sbt_address == Align(sbt_address, static_cast<VkDeviceAddress>(rt_pipeline_props.shaderGroupBaseAlignment)));
@@ -203,20 +200,14 @@ struct SharedTraceRaysValidationResources final {
     }
 };
 
-void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, VkCommandBuffer cmd_buffer,
+void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, CommandBuffer &cb_state,
                                        VkDeviceAddress indirect_data_address) {
     if (!gpuav.gpuav_settings.validate_indirect_trace_rays_buffers) {
         return;
     }
 
-    auto cb_state = gpuav.GetWrite<CommandBuffer>(cmd_buffer);
-    if (!cb_state) {
-        gpuav.InternalError(cmd_buffer, loc, "Unrecognized command buffer. Aborting GPU-AV.");
-        return;
-    }
-
     auto &shared_trace_rays_resources = gpuav.shared_resources_manager.Get<SharedTraceRaysValidationResources>(
-        gpuav, cb_state->GetValidationCmdCommonDescriptorSetLayout(), loc);
+        gpuav, cb_state.GetValidationCmdCommonDescriptorSetLayout(), loc);
 
     assert(shared_trace_rays_resources.IsValid());
     if (!shared_trace_rays_resources.IsValid()) {
@@ -224,7 +215,7 @@ void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, Vk
     }
 
     // Save current ray tracing pipeline state
-    RestorablePipelineState restorable_state(*cb_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
+    RestorablePipelineState restorable_state(cb_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
 
     // Push info needed for validation:
     // - the device address indirect data is read from
@@ -243,10 +234,11 @@ void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, Vk
     push_constants[3] = static_cast<uint32_t>(std::min<uint64_t>(ray_query_dimension_max_height, vvl::kU32Max));
     push_constants[4] = static_cast<uint32_t>(std::min<uint64_t>(ray_query_dimension_max_depth, vvl::kU32Max));
 
-    DispatchCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, shared_trace_rays_resources.pipeline);
-    BindValidationCmdsCommonDescSet(cb_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, shared_trace_rays_resources.pipeline_layout,
-                                    cb_state->trace_rays_index, static_cast<uint32_t>(cb_state->per_command_error_loggers.size()));
-    DispatchCmdPushConstants(cmd_buffer, shared_trace_rays_resources.pipeline_layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0,
+    DispatchCmdBindPipeline(cb_state.VkHandle(), VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, shared_trace_rays_resources.pipeline);
+    BindValidationCmdsCommonDescSet(gpuav, cb_state, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                    shared_trace_rays_resources.pipeline_layout, cb_state.trace_rays_index,
+                                    static_cast<uint32_t>(cb_state.per_command_error_loggers.size()));
+    DispatchCmdPushConstants(cb_state.VkHandle(), shared_trace_rays_resources.pipeline_layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0,
                              sizeof(push_constants), push_constants);
     VkStridedDeviceAddressRegionKHR ray_gen_sbt{};
     assert(shared_trace_rays_resources.sbt_address != 0);
@@ -255,7 +247,7 @@ void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, Vk
     ray_gen_sbt.size = shared_trace_rays_resources.shader_group_handle_size_aligned;
 
     VkStridedDeviceAddressRegionKHR empty_sbt{};
-    DispatchCmdTraceRaysKHR(cmd_buffer, &ray_gen_sbt, &empty_sbt, &empty_sbt, &empty_sbt, 1, 1, 1);
+    DispatchCmdTraceRaysKHR(cb_state.VkHandle(), &ray_gen_sbt, &empty_sbt, &empty_sbt, &empty_sbt, 1, 1, 1);
 
     CommandBuffer::ErrorLoggerFunc error_logger = [loc](Validator &gpuav, const uint32_t *error_record,
                                                         const LogObjectList &objlist) {
@@ -308,7 +300,7 @@ void InsertIndirectTraceRaysValidation(Validator &gpuav, const Location &loc, Vk
         return skip;
     };
 
-    cb_state->per_command_error_loggers.emplace_back(std::move(error_logger));
+    cb_state.per_command_error_loggers.emplace_back(std::move(error_logger));
 }
 
 }  // namespace gpuav

@@ -54,7 +54,7 @@ class WinPlatform(Platform):
     if app_or_bin_path.suffix != ".exe":
       raise ValueError("Expected executable path with '.exe' suffix, "
                        f"but got: '{app_or_bin_path.name}'")
-    if result_path := self.which(str(app_or_bin)):
+    if result_path := self.which(app_or_bin):
       assert self.exists(result_path), f"{result_path} does not exist."
       return result_path
     for path in self.SEARCH_PATHS:

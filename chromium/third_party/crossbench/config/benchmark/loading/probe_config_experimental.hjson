@@ -3,20 +3,25 @@
 {
   probes: {
     trace_processor: {
-      probes: ["perfetto"],
-      metrics: ["lcp_metric"],
       queries: [
-        "loading/cpu",
-        "loading/dom",
-        "loading/interaction_latency",
-        "loading/mojo",
-        "loading/resources",
-        "loading/sequence_manager",
-        "loading/tlp",
-        "loading/v8",
-        "loading/v8_rcs",
-        "loading/web_features",
-        "loading/worker",
+        "loading/lcp_metric",
+        "loading/amazon_page_load_metric",
+        "loading/cnn_desktop_page_load_metric",
+        "loading/cnn_mobile_page_load_metric",
+        "loading/globo_page_load_metric",
+        "loading/wikipedia_page_load_metric",
+        "loading/youtube_page_load_metric",
+        "loading/experimental/cpu",
+        "loading/experimental/dom",
+        "loading/experimental/interaction_latency",
+        "loading/experimental/mojo",
+        "loading/experimental/resources",
+        "loading/experimental/sequence_manager",
+        "loading/experimental/tlp",
+        "loading/experimental/v8",
+        "loading/experimental/v8_rcs",
+        "loading/experimental/web_features",
+        "loading/experimental/worker",
       ],
     },
     perfetto: {
@@ -34,12 +39,13 @@
           config {
             name: "track_event"
             chrome_config {
-                trace_config: "{\"record_mode\":\"record-until-full\",\"included_categories\":[\"loading\",\"toplevel\",\"toplevel.flow\",\"devtools.timeline\",\"interactions\",\"v8\",\"v8.execute\",\"blink\",\"blink.worker\",\"navigation\",\"gpu\",\"scheduler\",\"disabled-by-default-v8.compile\",\"disabled-by-default-v8.runtime_stats\",\"disabled-by-default-histogram_samples\",\"disabled-by-default-devtools.timeline\"],\"excluded_categories\":[\"*\"],\"histogram_names\":[\"Blink.UseCounter.Features\"]}"
+                trace_config: "{\"record_mode\":\"record-until-full\",\"included_categories\":[\"benchmark\",\"loading\",\"toplevel\",\"toplevel.flow\",\"devtools.timeline\",\"interactions\",\"v8\",\"v8.execute\",\"blink\",\"blink.user_timing\",\"blink.worker\",\"navigation\",\"gpu\",\"scheduler\",\"disabled-by-default-v8.compile\",\"disabled-by-default-v8.runtime_stats\",\"disabled-by-default-histogram_samples\",\"disabled-by-default-devtools.timeline\"],\"excluded_categories\":[\"*\"],\"histogram_names\":[\"Blink.UseCounter.Features\"]}"
                 privacy_filtering_enabled: false
                 client_priority: USER_INITIATED
             }
             track_event_config {
               disabled_categories: "*"
+              enabled_categories: "benchmark"
               enabled_categories: "loading"
               enabled_categories: "toplevel"
               enabled_categories: "toplevel.flow"
@@ -48,6 +54,7 @@
               enabled_categories: "v8"
               enabled_categories: "v8.execute"
               enabled_categories: "blink"
+              enabled_categories: "blink.user_timing"
               enabled_categories: "blink.worker"
               enabled_categories: "navigation"
               enabled_categories: "gpu"

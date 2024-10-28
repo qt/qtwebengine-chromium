@@ -21,7 +21,6 @@
 #include "gpu/resources/gpu_resources.h"
 #include "gpu/instrumentation/gpu_shader_instrumentor.h"
 
-#include <unordered_map>
 #include <memory>
 
 namespace chassis {
@@ -37,7 +36,6 @@ class Queue;
 class Sampler;
 class DescriptorSet;
 struct DescSetState;
-struct CmdIndirectState;
 }  // namespace gpuav
 
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkBuffer, gpuav::Buffer, vvl::Buffer)
@@ -57,39 +55,34 @@ class Validator : public gpu::GpuShaderInstrumentor {
     using Field = vvl::Field;
 
   public:
-    Validator() {
-        container_type = LayerObjectTypeGpuAssisted;
-        force_buffer_device_address_ = true;
-    }
-
-    // gpuav_instrumentation.cpp
-    // -------------------------
-  public:
-    bool InstrumentShader(const vvl::span<const uint32_t>& input, uint32_t unique_shader_id, const Location& loc,
-                          std::vector<uint32_t>& out_instrumented_spirv) final;
+    Validator() { container_type = LayerObjectTypeGpuAssisted; }
 
     // gpuav_setup.cpp
     // -------------
   public:
-    std::shared_ptr<vvl::Buffer> CreateBufferState(VkBuffer buf, const VkBufferCreateInfo* pCreateInfo) final;
-    std::shared_ptr<vvl::BufferView> CreateBufferViewState(const std::shared_ptr<vvl::Buffer>& bf, VkBufferView bv,
-                                                           const VkBufferViewCreateInfo* ci, VkFormatFeatureFlags2KHR buf_ff) final;
-    std::shared_ptr<vvl::ImageView> CreateImageViewState(const std::shared_ptr<vvl::Image>& image_state, VkImageView iv,
-                                                         const VkImageViewCreateInfo* ci, VkFormatFeatureFlags2KHR ff,
+    std::shared_ptr<vvl::Buffer> CreateBufferState(VkBuffer handle, const VkBufferCreateInfo* create_info) final;
+    std::shared_ptr<vvl::BufferView> CreateBufferViewState(const std::shared_ptr<vvl::Buffer>& buffer, VkBufferView handle,
+                                                           const VkBufferViewCreateInfo* create_info,
+                                                           VkFormatFeatureFlags2 format_features) final;
+    std::shared_ptr<vvl::ImageView> CreateImageViewState(const std::shared_ptr<vvl::Image>& image_state, VkImageView handle,
+                                                         const VkImageViewCreateInfo* create_info,
+                                                         VkFormatFeatureFlags2 format_features,
                                                          const VkFilterCubicImageViewImageFormatPropertiesEXT& cubic_props) final;
-    std::shared_ptr<vvl::Sampler> CreateSamplerState(VkSampler s, const VkSamplerCreateInfo* ci) final;
-    std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer cb, const VkCommandBufferAllocateInfo* create_info,
+    std::shared_ptr<vvl::Sampler> CreateSamplerState(VkSampler handle, const VkSamplerCreateInfo* create_info) final;
+    std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer handle,
+                                                             const VkCommandBufferAllocateInfo* allocate_info,
                                                              const vvl::CommandPool* pool) final;
-    std::shared_ptr<vvl::DescriptorSet> CreateDescriptorSet(VkDescriptorSet, vvl::DescriptorPool*,
+    std::shared_ptr<vvl::DescriptorSet> CreateDescriptorSet(VkDescriptorSet handle, vvl::DescriptorPool* pool,
                                                             const std::shared_ptr<vvl::DescriptorSetLayout const>& layout,
                                                             uint32_t variable_count) final;
-    std::shared_ptr<vvl::Queue> CreateQueue(VkQueue q, uint32_t family_index, uint32_t queue_index, VkDeviceQueueCreateFlags flags,
-                                            const VkQueueFamilyProperties& queueFamilyProperties) final;
 
     void PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo* pCreateInfo,
                                    const VkAllocationCallbacks* pAllocator, VkDevice* pDevice, const RecordObject& record_obj,
                                    vku::safe_VkDeviceCreateInfo* modified_create_info) final;
     void PostCreateDevice(const VkDeviceCreateInfo* pCreateInfo, const Location& loc) final;
+
+  private:
+    void InitSettings(const Location& loc);
 
     // gpuav_record.cpp
     // --------------
@@ -100,12 +93,6 @@ class Validator : public gpu::GpuShaderInstrumentor {
     void PreCallRecordDestroyRenderPass(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks* pAllocator,
                                         const RecordObject& record_obj) final;
 
-    void PreCallRecordCreateShaderModule(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
-                                         const VkAllocationCallbacks* pAllocator, VkShaderModule* pShaderModule,
-                                         const RecordObject& record_obj, chassis::CreateShaderModule& chassis_state) final;
-    void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos,
-                                       const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders,
-                                       const RecordObject& record_obj, chassis::ShaderObject& chassis_state) final;
     void RecordCmdBeginRenderPassLayouts(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                          const VkSubpassContents contents);
     void RecordCmdEndRenderPassLayouts(VkCommandBuffer commandBuffer);
@@ -335,7 +322,6 @@ class Validator : public gpu::GpuShaderInstrumentor {
   public:
     std::optional<DescriptorHeap> desc_heap_{};  // optional only to defer construction
     gpu::SharedResourcesManager shared_resources_manager;
-    bool bda_validation_possible = false;
 
   private:
     std::string instrumented_shader_cache_path_{};

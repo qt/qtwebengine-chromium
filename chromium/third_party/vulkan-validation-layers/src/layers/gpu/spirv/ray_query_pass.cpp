@@ -16,10 +16,11 @@
 #include "ray_query_pass.h"
 #include "module.h"
 #include <spirv/unified1/spirv.hpp>
+#include <iostream>
 
 #include "generated/instrumentation_ray_query_comp.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 static LinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, LinkFunctions::inst_ray_query, 0,
@@ -66,5 +67,7 @@ bool RayQueryPass::AnalyzeInstruction(const Function& function, const Instructio
     return true;
 }
 
+void RayQueryPass::PrintDebugInfo() { std::cout << "RayQueryPass\n\tinstrumentation count: " << instrumented_count_ << '\n'; }
+
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

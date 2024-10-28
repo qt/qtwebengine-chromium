@@ -884,6 +884,21 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateGetImageSubresourceLayout2KHR,
     InterceptIdPreCallRecordGetImageSubresourceLayout2KHR,
     InterceptIdPostCallRecordGetImageSubresourceLayout2KHR,
+    InterceptIdPreCallValidateCreatePipelineBinariesKHR,
+    InterceptIdPreCallRecordCreatePipelineBinariesKHR,
+    InterceptIdPostCallRecordCreatePipelineBinariesKHR,
+    InterceptIdPreCallValidateDestroyPipelineBinaryKHR,
+    InterceptIdPreCallRecordDestroyPipelineBinaryKHR,
+    InterceptIdPostCallRecordDestroyPipelineBinaryKHR,
+    InterceptIdPreCallValidateGetPipelineKeyKHR,
+    InterceptIdPreCallRecordGetPipelineKeyKHR,
+    InterceptIdPostCallRecordGetPipelineKeyKHR,
+    InterceptIdPreCallValidateGetPipelineBinaryDataKHR,
+    InterceptIdPreCallRecordGetPipelineBinaryDataKHR,
+    InterceptIdPostCallRecordGetPipelineBinaryDataKHR,
+    InterceptIdPreCallValidateReleaseCapturedPipelineDataKHR,
+    InterceptIdPreCallRecordReleaseCapturedPipelineDataKHR,
+    InterceptIdPostCallRecordReleaseCapturedPipelineDataKHR,
     InterceptIdPreCallValidateCmdSetLineStippleKHR,
     InterceptIdPreCallRecordCmdSetLineStippleKHR,
     InterceptIdPostCallRecordCmdSetLineStippleKHR,
@@ -1598,6 +1613,9 @@ typedef enum InterceptId {
     InterceptIdPreCallValidateCmdOpticalFlowExecuteNV,
     InterceptIdPreCallRecordCmdOpticalFlowExecuteNV,
     InterceptIdPostCallRecordCmdOpticalFlowExecuteNV,
+    InterceptIdPreCallValidateAntiLagUpdateAMD,
+    InterceptIdPreCallRecordAntiLagUpdateAMD,
+    InterceptIdPostCallRecordAntiLagUpdateAMD,
     InterceptIdPreCallValidateDestroyShaderEXT,
     InterceptIdPreCallRecordDestroyShaderEXT,
     InterceptIdPostCallRecordDestroyShaderEXT,
@@ -2630,6 +2648,21 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateGetImageSubresourceLayout2KHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordGetImageSubresourceLayout2KHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordGetImageSubresourceLayout2KHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateCreatePipelineBinariesKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordCreatePipelineBinariesKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordCreatePipelineBinariesKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateDestroyPipelineBinaryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordDestroyPipelineBinaryKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordDestroyPipelineBinaryKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineKeyKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineKeyKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineKeyKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateGetPipelineBinaryDataKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordGetPipelineBinaryDataKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordGetPipelineBinaryDataKHR);
+    BUILD_DISPATCH_VECTOR(PreCallValidateReleaseCapturedPipelineDataKHR);
+    BUILD_DISPATCH_VECTOR(PreCallRecordReleaseCapturedPipelineDataKHR);
+    BUILD_DISPATCH_VECTOR(PostCallRecordReleaseCapturedPipelineDataKHR);
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdSetLineStippleKHR);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdSetLineStippleKHR);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdSetLineStippleKHR);
@@ -3356,6 +3389,9 @@ void ValidationObject::InitObjectDispatchVectors() {
     BUILD_DISPATCH_VECTOR(PreCallValidateCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PreCallRecordCmdOpticalFlowExecuteNV);
     BUILD_DISPATCH_VECTOR(PostCallRecordCmdOpticalFlowExecuteNV);
+    BUILD_DISPATCH_VECTOR(PreCallValidateAntiLagUpdateAMD);
+    BUILD_DISPATCH_VECTOR(PreCallRecordAntiLagUpdateAMD);
+    BUILD_DISPATCH_VECTOR(PostCallRecordAntiLagUpdateAMD);
     BUILD_DISPATCH_VECTOR(PreCallValidateDestroyShaderEXT);
     BUILD_DISPATCH_VECTOR(PreCallRecordDestroyShaderEXT);
     BUILD_DISPATCH_VECTOR(PostCallRecordDestroyShaderEXT);

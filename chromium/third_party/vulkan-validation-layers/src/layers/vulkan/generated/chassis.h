@@ -93,6 +93,8 @@ using PipelineStates = std::vector<std::shared_ptr<vvl::Pipeline>>;
 
 extern vvl::concurrent_unordered_map<uint64_t, uint64_t, 4, HashedUint64> unique_id_mapping;
 
+std::vector<std::pair<uint32_t, uint32_t>>& GetCustomStypeInfo();
+
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetPhysicalDeviceProcAddr(VkInstance instance, const char* funcName);
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
@@ -1160,6 +1162,23 @@ VKAPI_ATTR void VKAPI_CALL GetDeviceImageSubresourceLayoutKHR(VkDevice device, c
 VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2KHR* pSubresource,
                                                          VkSubresourceLayout2KHR* pLayout);
 
+VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                                         const VkAllocationCallbacks* pAllocator,
+                                                         VkPipelineBinaryHandlesInfoKHR* pBinaries);
+
+VKAPI_ATTR void VKAPI_CALL DestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary,
+                                                    const VkAllocationCallbacks* pAllocator);
+
+VKAPI_ATTR VkResult VKAPI_CALL GetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo,
+                                                 VkPipelineBinaryKeyKHR* pPipelineKey);
+
+VKAPI_ATTR VkResult VKAPI_CALL GetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
+                                                        VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize,
+                                                        void* pPipelineBinaryData);
+
+VKAPI_ATTR VkResult VKAPI_CALL ReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
+                                                              const VkAllocationCallbacks* pAllocator);
+
 VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice,
                                                                                uint32_t* pPropertyCount,
                                                                                VkCooperativeMatrixPropertiesKHR* pProperties);
@@ -2029,6 +2048,8 @@ VKAPI_ATTR VkResult VKAPI_CALL BindOpticalFlowSessionImageNV(VkDevice device, Vk
 VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(VkCommandBuffer commandBuffer, VkOpticalFlowSessionNV session,
                                                    const VkOpticalFlowExecuteInfoNV* pExecuteInfo);
 
+VKAPI_ATTR void VKAPI_CALL AntiLagUpdateAMD(VkDevice device, const VkAntiLagDataAMD* pData);
+
 VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(VkDevice device, uint32_t createInfoCount,
                                                 const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator,
                                                 VkShaderEXT* pShaders);
@@ -2225,7 +2246,7 @@ class ValidationObject {
     DeviceExtensions device_extensions = {};
     CHECK_DISABLED disabled = {};
     CHECK_ENABLED enabled = {};
-    bool fine_grained_locking{true};
+    GlobalSettings global_settings = {};
     GpuAVSettings gpuav_settings = {};
     DebugPrintfSettings printf_settings = {};
     SyncValSettings syncval_settings = {};
@@ -2315,7 +2336,7 @@ class ValidationObject {
         LogError(std::string_view vuid_text, const LogObjectList& objlist, const Location& loc, const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kErrorBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kErrorBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2325,7 +2346,7 @@ class ValidationObject {
                                                  const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kWarningBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kWarningBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2334,7 +2355,7 @@ class ValidationObject {
         LogWarning(std::string_view vuid_text, const LogObjectList& objlist, const Location& loc, const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kWarningBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kWarningBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2343,7 +2364,7 @@ class ValidationObject {
                                                      const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kPerformanceWarningBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kPerformanceWarningBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2352,7 +2373,7 @@ class ValidationObject {
         LogInfo(std::string_view vuid_text, const LogObjectList& objlist, const Location& loc, const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kInformationBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kInformationBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2361,7 +2382,7 @@ class ValidationObject {
         LogVerbose(std::string_view vuid_text, const LogObjectList& objlist, const Location& loc, const char* format, ...) const {
         va_list argptr;
         va_start(argptr, format);
-        const bool result = debug_report->LogMsg(kVerboseBit, objlist, &loc, vuid_text, format, argptr);
+        const bool result = debug_report->LogMsg(kVerboseBit, objlist, loc, vuid_text, format, argptr);
         va_end(argptr);
         return result;
     }
@@ -2425,7 +2446,7 @@ class ValidationObject {
         display_id_reverse_mapping.insert_or_assign(handle, unique_id);
         return (VkDisplayKHR)unique_id;
     }
-    // We make many internal dispatch calls to VK_KHR_get_physical_device_properties2 functions which can depend on the API version
+    // We make many internal dispatch calls to extended query functions which can depend on the API version
     void DispatchGetPhysicalDeviceFeatures2Helper(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures) const;
     void DispatchGetPhysicalDeviceProperties2Helper(VkPhysicalDevice physicalDevice,
                                                     VkPhysicalDeviceProperties2* pProperties) const;
@@ -2442,6 +2463,15 @@ class ValidationObject {
                                                                      const VkPhysicalDeviceSparseImageFormatInfo2* pFormatInfo,
                                                                      uint32_t* pPropertyCount,
                                                                      VkSparseImageFormatProperties2* pProperties) const;
+    void DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(
+        VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalSemaphoreInfo* pExternalSemaphoreInfo,
+        VkExternalSemaphoreProperties* pExternalSemaphoreProperties) const;
+    void DispatchGetPhysicalDeviceExternalFencePropertiesHelper(VkPhysicalDevice physicalDevice,
+                                                                const VkPhysicalDeviceExternalFenceInfo* pExternalFenceInfo,
+                                                                VkExternalFenceProperties* pExternalFenceProperties) const;
+    void DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(VkPhysicalDevice physicalDevice,
+                                                                 const VkPhysicalDeviceExternalBufferInfo* pExternalBufferInfo,
+                                                                 VkExternalBufferProperties* pExternalBufferProperties) const;
 
     // clang-format off
         // Pre/post hook point declarations
@@ -3550,6 +3580,21 @@ class ValidationObject {
         virtual bool PreCallValidateGetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2KHR* pSubresource, VkSubresourceLayout2KHR* pLayout, const ErrorObject& error_obj) const { return false; };
         virtual void PreCallRecordGetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2KHR* pSubresource, VkSubresourceLayout2KHR* pLayout, const RecordObject& record_obj) {};
         virtual void PostCallRecordGetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2KHR* pSubresource, VkSubresourceLayout2KHR* pLayout, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries, const RecordObject& record_obj) {};
+        virtual void PostCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateDestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary, const VkAllocationCallbacks* pAllocator, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordDestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary, const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {};
+        virtual void PostCallRecordDestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary, const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo, VkPipelineBinaryKeyKHR* pPipelineKey, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo, VkPipelineBinaryKeyKHR* pPipelineKey, const RecordObject& record_obj) {};
+        virtual void PostCallRecordGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo, VkPipelineBinaryKeyKHR* pPipelineKey, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo, VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize, void* pPipelineBinaryData, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo, VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize, void* pPipelineBinaryData, const RecordObject& record_obj) {};
+        virtual void PostCallRecordGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo, VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize, void* pPipelineBinaryData, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo, const VkAllocationCallbacks* pAllocator, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo, const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {};
+        virtual void PostCallRecordReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo, const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {};
         virtual bool PreCallValidateGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixPropertiesKHR* pProperties, const ErrorObject& error_obj) const { return false; };
         virtual void PreCallRecordGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixPropertiesKHR* pProperties, const RecordObject& record_obj) {};
         virtual void PostCallRecordGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixPropertiesKHR* pProperties, const RecordObject& record_obj) {};
@@ -4404,6 +4449,9 @@ class ValidationObject {
         virtual bool PreCallValidateCmdOpticalFlowExecuteNV(VkCommandBuffer commandBuffer, VkOpticalFlowSessionNV session, const VkOpticalFlowExecuteInfoNV* pExecuteInfo, const ErrorObject& error_obj) const { return false; };
         virtual void PreCallRecordCmdOpticalFlowExecuteNV(VkCommandBuffer commandBuffer, VkOpticalFlowSessionNV session, const VkOpticalFlowExecuteInfoNV* pExecuteInfo, const RecordObject& record_obj) {};
         virtual void PostCallRecordCmdOpticalFlowExecuteNV(VkCommandBuffer commandBuffer, VkOpticalFlowSessionNV session, const VkOpticalFlowExecuteInfoNV* pExecuteInfo, const RecordObject& record_obj) {};
+        virtual bool PreCallValidateAntiLagUpdateAMD(VkDevice device, const VkAntiLagDataAMD* pData, const ErrorObject& error_obj) const { return false; };
+        virtual void PreCallRecordAntiLagUpdateAMD(VkDevice device, const VkAntiLagDataAMD* pData, const RecordObject& record_obj) {};
+        virtual void PostCallRecordAntiLagUpdateAMD(VkDevice device, const VkAntiLagDataAMD* pData, const RecordObject& record_obj) {};
         virtual bool PreCallValidateCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders, const ErrorObject& error_obj) const { return false; };
         virtual void PreCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders, const RecordObject& record_obj) {};
         virtual void PostCallRecordCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders, const RecordObject& record_obj) {};
@@ -4565,7 +4613,7 @@ class ValidationObject {
         virtual void PreCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines, const RecordObject& record_obj, PipelineStates& pipeline_states, chassis::CreateRayTracingPipelinesKHR& chassis_state) {
             PreCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines, record_obj);
         };
-        virtual void PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines, const RecordObject& record_obj, PipelineStates& pipeline_states, chassis::CreateRayTracingPipelinesKHR& chassis_state) {
+        virtual void PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache, uint32_t createInfoCount, const VkRayTracingPipelineCreateInfoKHR* pCreateInfos, const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines, const RecordObject& record_obj, PipelineStates& pipeline_states, std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state) {
             PostCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines, record_obj);
         };
 

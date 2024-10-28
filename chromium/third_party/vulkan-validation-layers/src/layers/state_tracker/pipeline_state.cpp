@@ -57,113 +57,118 @@ static vku::safe_VkGraphicsPipelineCreateInfo MakeGraphicsCreateInfo(const VkGra
 
 // static
 std::vector<ShaderStageState> Pipeline::GetStageStates(const ValidationStateTracker &state_data, const Pipeline &pipe_state,
-                                                       spirv::StatelessData *stateless_data,
-                                                       ShaderModuleUniqueIds *shader_unique_id_map) {
+                                                       spirv::StatelessData *stateless_data) {
     std::vector<ShaderStageState> stage_states;
 
-    // stages such as VK_SHADER_STAGE_ALL are find as this code is only looking for exact matches, not bool logic
-    for (const auto &stage : AllVkShaderStageFlags) {
-        bool stage_found = false;
-        // shader stages need to be recorded in pipeline order
+    std::vector<VkShaderStageFlagBits> lookup_in_library_stages = {VK_SHADER_STAGE_VERTEX_BIT,
+                                                                   VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                                   VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                                                   VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT,
+                                                                   VK_SHADER_STAGE_GEOMETRY_BIT,
+                                                                   VK_SHADER_STAGE_TASK_BIT_EXT,
+                                                                   VK_SHADER_STAGE_MESH_BIT_EXT};
 
-        for (size_t stage_index = 0; stage_index < pipe_state.shader_stages_ci.size(); ++stage_index) {
-            if (pipe_state.pipeline_type == VK_PIPELINE_BIND_POINT_GRAPHICS &&
-                !pipe_state.OwnsSubState(pipe_state.fragment_shader_state) &&
-                !pipe_state.OwnsSubState(pipe_state.pre_raster_state)) {
-                break;  // pStages are ignored if not using one of these substates
-            }
+    for (size_t stage_index = 0; stage_index < pipe_state.shader_stages_ci.size(); ++stage_index) {
+        if (pipe_state.pipeline_type == VK_PIPELINE_BIND_POINT_GRAPHICS &&
+            !pipe_state.OwnsSubState(pipe_state.fragment_shader_state) && !pipe_state.OwnsSubState(pipe_state.pre_raster_state)) {
+            continue;  // pStages are ignored if not using one of these sub-states
+        }
 
-            const auto &stage_ci = pipe_state.shader_stages_ci[stage_index];
-            if (stage_ci.stage == stage) {
-                auto module_state = state_data.Get<vvl::ShaderModule>(stage_ci.module);
-                if (!module_state && pipe_state.pipeline_cache) {
-                    // Attempt to look up the pipeline cache for shader module data
-                    module_state = pipe_state.pipeline_cache->GetStageModule(pipe_state, stage_index);
+        const auto &stage_ci = pipe_state.shader_stages_ci[stage_index];
+        auto module_state = state_data.Get<vvl::ShaderModule>(stage_ci.module);
+        if (!module_state && pipe_state.pipeline_cache) {
+            // Attempt to look up the pipeline cache for shader module data
+            module_state = pipe_state.pipeline_cache->GetStageModule(pipe_state, stage_index);
+        }
+        if (!module_state) {
+            // See if the module is referenced in a library sub state
+            module_state = pipe_state.GetSubStateShader(stage_ci.stage);
+        }
+
+        if (!module_state || !module_state->spirv) {
+            // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
+            // module is part of a library and the state must be created
+            // This support was also added in VK_KHR_maintenance5
+            if (const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(stage_ci.pNext)) {
+                // don't need to worry about GroupDecoration in GPL
+                auto spirv_module = std::make_shared<spirv::Module>(shader_ci->codeSize, shader_ci->pCode, stateless_data);
+                module_state = std::make_shared<vvl::ShaderModule>(VK_NULL_HANDLE, spirv_module);
+                if (stateless_data) {
+                    stateless_data->pipeline_pnext_module = spirv_module;
                 }
-                if (!module_state) {
-                    // See if the module is referenced in a library sub state
-                    module_state = pipe_state.GetSubStateShader(stage_ci.stage);
-                }
-
-                if (!module_state || !module_state->spirv) {
-                    // If module is null and there is a VkShaderModuleCreateInfo in the pNext chain of the stage info, then this
-                    // module is part of a library and the state must be created
-                    // This support was also added in VK_KHR_maintenance5
-                    const uint32_t unique_shader_id = (shader_unique_id_map) ? (*shader_unique_id_map)[stage] : 0;
-                    if (const auto shader_ci = vku::FindStructInPNextChain<VkShaderModuleCreateInfo>(stage_ci.pNext)) {
-                        // don't need to worry about GroupDecoration in GPL
-                        auto spirv_module = std::make_shared<spirv::Module>(shader_ci->codeSize, shader_ci->pCode, stateless_data);
-                        module_state = std::make_shared<vvl::ShaderModule>(VK_NULL_HANDLE, spirv_module, unique_shader_id);
-                        if (stateless_data) {
-                            stateless_data->pipeline_pnext_module = spirv_module;
-                        }
-                    } else {
-                        // VK_EXT_shader_module_identifier could legally provide a null module handle
-                        module_state = std::make_shared<vvl::ShaderModule>(unique_shader_id);
-                    }
-                }
-
-                stage_states.emplace_back(&stage_ci, nullptr, module_state, module_state->spirv);
-                stage_found = true;
+            } else {
+                // VK_EXT_shader_module_identifier could legally provide a null module handle
+                module_state = std::make_shared<vvl::ShaderModule>();
             }
         }
-        if (!stage_found) {
-            // Check if stage has been supplied by a library
-            std::shared_ptr<const vvl::ShaderModule> module_state = nullptr;
-            const vku::safe_VkPipelineShaderStageCreateInfo *stage_ci = nullptr;
-            switch (stage) {
-                case VK_SHADER_STAGE_VERTEX_BIT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->vertex_shader) {
-                        module_state = pipe_state.pre_raster_state->vertex_shader;
-                        stage_ci = pipe_state.pre_raster_state->vertex_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->tessc_shader) {
-                        module_state = pipe_state.pre_raster_state->tessc_shader;
-                        stage_ci = pipe_state.pre_raster_state->tessc_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->tesse_shader) {
-                        module_state = pipe_state.pre_raster_state->tesse_shader;
-                        stage_ci = pipe_state.pre_raster_state->tesse_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_GEOMETRY_BIT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->geometry_shader) {
-                        module_state = pipe_state.pre_raster_state->geometry_shader;
-                        stage_ci = pipe_state.pre_raster_state->geometry_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_TASK_BIT_EXT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->task_shader) {
-                        module_state = pipe_state.pre_raster_state->task_shader;
-                        stage_ci = pipe_state.pre_raster_state->task_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_MESH_BIT_EXT:
-                    if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->mesh_shader) {
-                        module_state = pipe_state.pre_raster_state->mesh_shader;
-                        stage_ci = pipe_state.pre_raster_state->mesh_shader_ci;
-                    }
-                    break;
-                case VK_SHADER_STAGE_FRAGMENT_BIT:
-                    if (pipe_state.fragment_shader_state && pipe_state.fragment_shader_state->fragment_shader) {
-                        module_state = pipe_state.fragment_shader_state->fragment_shader;
-                        stage_ci = pipe_state.fragment_shader_state->fragment_shader_ci.get();
-                    }
-                    break;
-                default:
-                    // no-op
-                    break;
-            }
-            if (!stage_ci) {
-                continue;
-            }
 
-            stage_states.emplace_back(stage_ci, nullptr, module_state, module_state->spirv);
+        stage_states.emplace_back(&stage_ci, nullptr, module_state, module_state->spirv);
+
+        // If stage was found, do not try to look for it in library
+        auto found_stage = std::find(lookup_in_library_stages.begin(), lookup_in_library_stages.end(), stage_ci.stage);
+        if (found_stage != lookup_in_library_stages.end()) {
+            const size_t last_library_stage_i = lookup_in_library_stages.size() - 1;
+            std::swap(*found_stage, lookup_in_library_stages[last_library_stage_i]);
+            lookup_in_library_stages.resize(last_library_stage_i);
         }
+    }
+
+    for (const auto &stage_flag : lookup_in_library_stages) {
+        // Check if stage has been supplied by a library
+        std::shared_ptr<const vvl::ShaderModule> module_state = nullptr;
+        const vku::safe_VkPipelineShaderStageCreateInfo *stage_ci = nullptr;
+        switch (stage_flag) {
+            case VK_SHADER_STAGE_VERTEX_BIT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->vertex_shader) {
+                    module_state = pipe_state.pre_raster_state->vertex_shader;
+                    stage_ci = pipe_state.pre_raster_state->vertex_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->tessc_shader) {
+                    module_state = pipe_state.pre_raster_state->tessc_shader;
+                    stage_ci = pipe_state.pre_raster_state->tessc_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->tesse_shader) {
+                    module_state = pipe_state.pre_raster_state->tesse_shader;
+                    stage_ci = pipe_state.pre_raster_state->tesse_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_GEOMETRY_BIT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->geometry_shader) {
+                    module_state = pipe_state.pre_raster_state->geometry_shader;
+                    stage_ci = pipe_state.pre_raster_state->geometry_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_TASK_BIT_EXT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->task_shader) {
+                    module_state = pipe_state.pre_raster_state->task_shader;
+                    stage_ci = pipe_state.pre_raster_state->task_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_MESH_BIT_EXT:
+                if (pipe_state.pre_raster_state && pipe_state.pre_raster_state->mesh_shader) {
+                    module_state = pipe_state.pre_raster_state->mesh_shader;
+                    stage_ci = pipe_state.pre_raster_state->mesh_shader_ci;
+                }
+                break;
+            case VK_SHADER_STAGE_FRAGMENT_BIT:
+                if (pipe_state.fragment_shader_state && pipe_state.fragment_shader_state->fragment_shader) {
+                    module_state = pipe_state.fragment_shader_state->fragment_shader;
+                    stage_ci = pipe_state.fragment_shader_state->fragment_shader_ci.get();
+                }
+                break;
+            default:
+                // no-op
+                break;
+        }
+        if (!stage_ci) {
+            continue;
+        }
+
+        stage_states.emplace_back(stage_ci, nullptr, module_state, module_state->spirv);
     }
     return stage_states;
 }
@@ -682,7 +687,7 @@ std::shared_ptr<const vvl::ShaderModule> Pipeline::GetSubStateShader(VkShaderSta
 Pipeline::Pipeline(const ValidationStateTracker &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
                    std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
                    std::shared_ptr<const vvl::PipelineLayout> &&layout,
-                   spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages], ShaderModuleUniqueIds *shader_unique_id_map)
+                   spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages])
     : StateObject(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
       rp_state(rpstate),
       create_info(MakeGraphicsCreateInfo(*pCreateInfo, rpstate, state_data)),
@@ -699,7 +704,7 @@ Pipeline::Pipeline(const ValidationStateTracker &state_data, const VkGraphicsPip
       fragment_shader_state(
           CreateFragmentShaderState(*this, state_data, *pCreateInfo, GraphicsCreateInfo(), rpstate, stateless_data)),
       fragment_output_state(CreateFragmentOutputState(*this, state_data, *pCreateInfo, GraphicsCreateInfo(), rpstate)),
-      stage_states(GetStageStates(state_data, *this, stateless_data, shader_unique_id_map)),
+      stage_states(GetStageStates(state_data, *this, stateless_data)),
       create_info_shaders(GetCreateInfoShaders(*this)),
       linking_shaders(GetLinkingShaders(library_create_info, state_data)),
       active_shaders(create_info_shaders | linking_shaders),
@@ -747,7 +752,7 @@ Pipeline::Pipeline(const ValidationStateTracker &state_data, const VkComputePipe
       create_flags(GetPipelineCreateFlags(ComputeCreateInfo().pNext, ComputeCreateInfo().flags)),
       shader_stages_ci(&ComputeCreateInfo().stage, 1),
       uses_shader_module_id(UsesShaderModuleId(*this)),
-      stage_states(GetStageStates(state_data, *this, stateless_data, nullptr)),
+      stage_states(GetStageStates(state_data, *this, stateless_data)),
       create_info_shaders(GetCreateInfoShaders(*this)),
       active_shaders(create_info_shaders),  // compute has no linking shaders
       active_slots(GetActiveSlots(stage_states)),
@@ -772,7 +777,7 @@ Pipeline::Pipeline(const ValidationStateTracker &state_data, const VkRayTracingP
       shader_stages_ci(RayTracingCreateInfo().pStages, RayTracingCreateInfo().stageCount),
       ray_tracing_library_ci(RayTracingCreateInfo().pLibraryInfo),
       uses_shader_module_id(UsesShaderModuleId(*this)),
-      stage_states(GetStageStates(state_data, *this, stateless_data, nullptr)),
+      stage_states(GetStageStates(state_data, *this, stateless_data)),
       create_info_shaders(GetCreateInfoShaders(*this)),
       active_shaders(create_info_shaders),  // RTX has no linking shaders
       active_slots(GetActiveSlots(stage_states)),
@@ -797,7 +802,7 @@ Pipeline::Pipeline(const ValidationStateTracker &state_data, const VkRayTracingP
       shader_stages_ci(RayTracingCreateInfo().pStages, RayTracingCreateInfo().stageCount),
       ray_tracing_library_ci(RayTracingCreateInfo().pLibraryInfo),
       uses_shader_module_id(UsesShaderModuleId(*this)),
-      stage_states(GetStageStates(state_data, *this, stateless_data, nullptr)),
+      stage_states(GetStageStates(state_data, *this, stateless_data)),
       create_info_shaders(GetCreateInfoShaders(*this)),
       active_shaders(create_info_shaders),  // RTX has no linking shaders
       active_slots(GetActiveSlots(stage_states)),

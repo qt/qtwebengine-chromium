@@ -98,15 +98,21 @@ void SyncValidator::ApplyAcquireWait(const AcquiredImage &acquired) {
 
 template <typename BatchOp>
 void SyncValidator::ForAllQueueBatchContexts(BatchOp &&op) {
-    // Often we need to go through every queue batch context and apply synchronization operations
-    // As usual -- two groups, the "last batch" and the signaled semaphores
+    // Get last batch from each queue
     std::vector<QueueBatchContext::Ptr> batch_contexts = GetLastBatches([](auto) { return true; });
 
+    // Get batches from signaled binary semaphores
     for (auto &[_, signal_info] : signaled_semaphores_) {
         if (!vvl::Contains(batch_contexts, signal_info.batch)) {
             batch_contexts.emplace_back(signal_info.batch);
         }
     }
+
+    // Get present batches
+    ForEachShared<vvl::Swapchain>([&batch_contexts](const std::shared_ptr<vvl::Swapchain> &swapchain) {
+        auto sync_swapchain = std::static_pointer_cast<syncval_state::Swapchain>(swapchain);
+        sync_swapchain->GetPresentBatches(batch_contexts);
+    });
 
     // Note: The const is to force the reference to const be on all platforms.
     //
@@ -168,9 +174,9 @@ std::shared_ptr<const QueueSyncState> SyncValidator::GetQueueSyncStateShared(VkQ
 }
 
 std::shared_ptr<vvl::CommandBuffer> SyncValidator::CreateCmdBufferState(VkCommandBuffer handle,
-                                                                        const VkCommandBufferAllocateInfo *pCreateInfo,
+                                                                        const VkCommandBufferAllocateInfo *allocate_info,
                                                                         const vvl::CommandPool *cmd_pool) {
-    auto cb_state = std::make_shared<syncval_state::CommandBuffer>(*this, handle, pCreateInfo, cmd_pool);
+    auto cb_state = std::make_shared<syncval_state::CommandBuffer>(*this, handle, allocate_info, cmd_pool);
     if (cb_state) {
         cb_state->access_context.SetSelfReference();
     }
@@ -182,20 +188,20 @@ std::shared_ptr<vvl::Swapchain> SyncValidator::CreateSwapchainState(const VkSwap
     return std::static_pointer_cast<vvl::Swapchain>(std::make_shared<syncval_state::Swapchain>(*this, create_info, handle));
 }
 
-std::shared_ptr<vvl::Image> SyncValidator::CreateImageState(VkImage handle, const VkImageCreateInfo *pCreateInfo,
-                                                            VkFormatFeatureFlags2KHR features) {
-    return std::make_shared<ImageState>(*this, handle, pCreateInfo, features);
+std::shared_ptr<vvl::Image> SyncValidator::CreateImageState(VkImage handle, const VkImageCreateInfo *create_info,
+                                                            VkFormatFeatureFlags2 features) {
+    return std::make_shared<ImageState>(*this, handle, create_info, features);
 }
 
-std::shared_ptr<vvl::Image> SyncValidator::CreateImageState(VkImage handle, const VkImageCreateInfo *pCreateInfo,
+std::shared_ptr<vvl::Image> SyncValidator::CreateImageState(VkImage handle, const VkImageCreateInfo *create_info,
                                                             VkSwapchainKHR swapchain, uint32_t swapchain_index,
-                                                            VkFormatFeatureFlags2KHR features) {
-    return std::make_shared<ImageState>(*this, handle, pCreateInfo, swapchain, swapchain_index, features);
+                                                            VkFormatFeatureFlags2 features) {
+    return std::make_shared<ImageState>(*this, handle, create_info, swapchain, swapchain_index, features);
 }
 std::shared_ptr<vvl::ImageView> SyncValidator::CreateImageViewState(
-    const std::shared_ptr<vvl::Image> &image_state, VkImageView iv, const VkImageViewCreateInfo *ci, VkFormatFeatureFlags2KHR ff,
-    const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props) {
-    return std::make_shared<ImageViewState>(image_state, iv, ci, ff, cubic_props);
+    const std::shared_ptr<vvl::Image> &image_state, VkImageView handle, const VkImageViewCreateInfo *create_info,
+    VkFormatFeatureFlags2 format_features, const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props) {
+    return std::make_shared<ImageViewState>(image_state, handle, create_info, format_features, cubic_props);
 }
 
 bool SyncValidator::PreCallValidateCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer,

@@ -8,7 +8,7 @@ import sys
 from typing import Final
 
 from crossbench.plt.arch import MachineArch
-from crossbench.plt.base import Platform, SubprocessError, TupleCmdArgsT
+from crossbench.plt.base import Platform, SubprocessError, TupleCmdArgs
 from crossbench.plt.linux import LinuxPlatform
 from crossbench.plt.linux_ssh import LinuxSshPlatform
 from crossbench.plt.macos import MacOSPlatform

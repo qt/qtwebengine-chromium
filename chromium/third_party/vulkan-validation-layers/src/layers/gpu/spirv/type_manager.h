@@ -15,11 +15,10 @@
 #pragma once
 
 #include <vector>
-#include <list>
 #include "instruction.h"
 #include "generated/spirv_grammar_helper.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 class Module;
@@ -95,6 +94,7 @@ class TypeManager {
 
     const Type& AddType(std::unique_ptr<Instruction> new_inst, SpvType spv_type);
     const Type* FindTypeById(uint32_t id) const;
+    const Type* FindFunctionType(const Instruction& inst) const;
     // There shouldn't be a case where we need to query for a specific type, but then not add it if not found.
     const Type& GetTypeVoid();
     const Type& GetTypeBool();
@@ -126,6 +126,8 @@ class TypeManager {
 
     const Variable& AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type);
     const Variable* FindVariableById(uint32_t id) const;
+
+    uint32_t FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride = 0, bool col_major = false, bool in_matrix = false);
 
   private:
     Module& module_;
@@ -166,4 +168,4 @@ class TypeManager {
 };
 
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

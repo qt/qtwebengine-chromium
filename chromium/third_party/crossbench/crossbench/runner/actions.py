@@ -85,7 +85,7 @@ class Actions(helper.TimeScope):
 
   def js(self,
          js_code: str,
-         timeout: Union[float, int] = 10,
+         timeout: Union[int, float, dt.timedelta] = 10,
          arguments: Sequence[object] = (),
          **kwargs) -> Any:
     self._assert_is_active()

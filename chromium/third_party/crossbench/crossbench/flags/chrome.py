@@ -38,6 +38,19 @@ class ChromeFlags(Flags):
     self._blink_features.freeze()
     return self
 
+  def __getitem__(self, key):
+    if key == self._JS_FLAG and self._js_flags:
+      return self._js_flags
+    if key == ChromeFeatures.ENABLE_FLAG and self._features.enabled:
+      return self._features.enabled_str()
+    if key == ChromeFeatures.DISABLE_FLAG and self._features.disabled:
+      return self._features.disabled_str()
+    if key == ChromeBlinkFeatures.ENABLE_FLAG and self._blink_features.enabled:
+      return self._blink_features.enabled_str()
+    if key == ChromeBlinkFeatures.DISABLE_FLAG and self._blink_features.disabled:
+      return self._blink_features.disabled_str()
+    return super().__getitem__(key)
+
   def _set(self,
            flag_name: str,
            flag_value: Optional[str] = None,
@@ -156,6 +169,10 @@ class ChromeFlags(Flags):
     yield from self.features.items()
     yield from self.blink_features.items()
 
+  def __bool__(self) -> bool:
+    return bool(self.data) or bool(self._js_flags) or bool(
+        self._features) or bool(self._blink_features)
+
 
 class ChromeBaseFeatures(Freezable, abc.ABC):
   ENABLE_FLAG: str = ""
@@ -229,16 +246,23 @@ class ChromeBaseFeatures(Freezable, abc.ABC):
 
   def items(self) -> Iterable[Tuple[str, str]]:
     if self._enabled:
-      joined = ",".join(
-          k if v is None else f"{k}{v}" for k, v in self._enabled.items())
-      yield (self.ENABLE_FLAG, joined)
+      yield (self.ENABLE_FLAG, self.enabled_str())
     if self._disabled:
-      joined = ",".join(self._disabled)
-      yield (self.DISABLE_FLAG, joined)
+      yield (self.DISABLE_FLAG, self.disabled_str())
+
+  def enabled_str(self) -> str:
+    return ",".join(
+        k if v is None else f"{k}{v}" for k, v in self._enabled.items())
+
+  def disabled_str(self) -> str:
+    return ",".join(self._disabled)
 
   def __iter__(self) -> Iterator[str]:
     for flag_name, features_str in self.items():
       yield f"{flag_name}={features_str}"
+
+  def __bool__(self):
+    return bool(self._enabled) or bool(self._disabled)
 
   def __str__(self) -> str:
     return " ".join(self)

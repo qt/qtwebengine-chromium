@@ -201,7 +201,8 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkP
         skip |= ValidateRayTracingPipeline(*pipeline, create_info, pCreateInfos[i].flags, create_info_loc);
         uint32_t stage_index = 0;
         for (const auto &stage_ci : pipeline->shader_stages_ci) {
-            skip |= ValidatePipelineShaderStage(*pipeline, stage_ci, create_info_loc.dot(Field::pStages, stage_index++));
+            skip |= ValidatePipelineShaderStage(*pipeline, stage_ci, pCreateInfos[i].pNext,
+                                                create_info_loc.dot(Field::pStages, stage_index++));
         }
         skip |= ValidatePipelineCacheControlFlags(pCreateInfos[i].flags, create_info_loc.dot(Field::flags),
                                                   "VUID-VkRayTracingPipelineCreateInfoNV-pipelineCreationCacheControl-02905");
@@ -249,7 +250,8 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, Vk
         skip |= ValidateRayTracingPipeline(*pipeline, create_info, pCreateInfos[i].flags, create_info_loc);
         uint32_t stage_index = 0;
         for (const auto &stage_ci : pipeline->shader_stages_ci) {
-            skip |= ValidatePipelineShaderStage(*pipeline, stage_ci, create_info_loc.dot(Field::pStages, stage_index++));
+            skip |= ValidatePipelineShaderStage(*pipeline, stage_ci, pCreateInfos[i].pNext,
+                                                create_info_loc.dot(Field::pStages, stage_index++));
         }
         skip |= ValidatePipelineCacheControlFlags(pCreateInfos[i].flags, create_info_loc.dot(Field::flags),
                                                   "VUID-VkRayTracingPipelineCreateInfoKHR-pipelineCreationCacheControl-02905");
@@ -295,7 +297,7 @@ bool CoreChecks::PreCallValidateCreateRayTracingPipelinesKHR(VkDevice device, Vk
                 } else if (uses_descriptor_buffer != lib->descriptor_buffer_mode) {
                     skip |= LogError(
                         "VUID-VkPipelineLibraryCreateInfoKHR-pLibraries-08096", device, library_loc,
-                        "%s created with VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT which is opopposite of pLibraries[0].",
+                        "%s created with VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT which is opposite of pLibraries[0].",
                         lib->descriptor_buffer_mode ? "was" : "was not");
                     break;  // no point keep checking as might have many of same error
                 }

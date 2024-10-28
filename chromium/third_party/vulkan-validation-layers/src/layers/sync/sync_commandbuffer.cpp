@@ -574,21 +574,18 @@ bool CommandBufferAccessContext::ValidateDrawVertex(const std::optional<uint32_t
         return skip;
     }
 
-    // TODO - doesn't consider dynamic vertex binding input
-    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5281
     const auto &binding_buffers = cb_state_->current_vertex_buffer_binding_info;
-    const auto &binding_buffers_size = binding_buffers.size();
-    const auto &binding_descriptions_size = pipe->vertex_input_state->binding_descriptions.size();
+    const auto &vertex_bindings = pipe->IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)
+                                      ? cb_state_->dynamic_state_value.vertex_bindings
+                                      : pipe->vertex_input_state->bindings;
 
-    for (size_t i = 0; i < binding_descriptions_size; ++i) {
-        const auto &binding_description = pipe->vertex_input_state->binding_descriptions[i];
-        if (binding_description.binding < binding_buffers_size) {
-            const auto &binding_buffer = binding_buffers.at(binding_description.binding);
-
-            const auto buf_state = sync_state_->Get<vvl::Buffer>(binding_buffer.buffer);
+    for (const auto &binding_state : vertex_bindings) {
+        const auto &binding_desc = binding_state.second.desc;
+        if (const auto *vertex_buffer = vvl::Find(binding_buffers, binding_desc.binding)) {
+            const auto buf_state = sync_state_->Get<vvl::Buffer>(vertex_buffer->buffer);
             if (!buf_state) continue;  // also skips if using nullDescriptor
 
-            const ResourceAccessRange range = MakeRange(binding_buffer, firstVertex, vertexCount, binding_description.stride);
+            const ResourceAccessRange range = MakeRange(*vertex_buffer, firstVertex, vertexCount, binding_desc.stride);
             auto hazard = current_context_->DetectHazard(*buf_state, SYNC_VERTEX_ATTRIBUTE_INPUT_VERTEX_ATTRIBUTE_READ, range);
             if (hazard.IsHazard()) {
                 skip |= sync_state_->LogError(string_SyncHazardVUID(hazard.Hazard()), buf_state->Handle(), loc,
@@ -607,21 +604,18 @@ void CommandBufferAccessContext::RecordDrawVertex(const std::optional<uint32_t> 
     if (!pipe) {
         return;
     }
-    // TODO - doesn't consider dynamic vertex binding input
-    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5281
     const auto &binding_buffers = cb_state_->current_vertex_buffer_binding_info;
-    const auto &binding_buffers_size = binding_buffers.size();
-    const auto &binding_descriptions_size = pipe->vertex_input_state->binding_descriptions.size();
+    const auto &vertex_bindings = pipe->IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)
+                                      ? cb_state_->dynamic_state_value.vertex_bindings
+                                      : pipe->vertex_input_state->bindings;
 
-    for (size_t i = 0; i < binding_descriptions_size; ++i) {
-        const auto &binding_description = pipe->vertex_input_state->binding_descriptions[i];
-        if (binding_description.binding < binding_buffers_size) {
-            const auto &binding_buffer = binding_buffers.at(binding_description.binding);
-
-            const auto buf_state = sync_state_->Get<vvl::Buffer>(binding_buffer.buffer);
+    for (const auto &binding_state : vertex_bindings) {
+        const auto &binding_desc = binding_state.second.desc;
+        if (const auto *vertex_buffer = vvl::Find(binding_buffers, binding_desc.binding)) {
+            const auto buf_state = sync_state_->Get<vvl::Buffer>(vertex_buffer->buffer);
             if (!buf_state) continue;  // also skips if using nullDescriptor
 
-            const ResourceAccessRange range = MakeRange(binding_buffer, firstVertex, vertexCount, binding_description.stride);
+            const ResourceAccessRange range = MakeRange(*vertex_buffer, firstVertex, vertexCount, binding_desc.stride);
             const ResourceUsageTagEx tag_ex = AddCommandHandle(tag, buf_state->Handle());
             current_context_->UpdateAccessState(*buf_state, SYNC_VERTEX_ATTRIBUTE_INPUT_VERTEX_ATTRIBUTE_READ,
                                                 SyncOrdering::kNonAttachment, range, tag_ex);
@@ -1199,17 +1193,18 @@ std::ostream &operator<<(std::ostream &out, const ResourceUsageRecord::Formatter
         out << ", reset_no: " << std::to_string(record.reset_count);
 
         // Associated resource
-        // TODO: Fix issue in submit-time validation resource reporting.
-        // Some cases of false-positives lead to stale resource indices.
-        // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8291
-        // This can be related to command buffer Reset.
-        /*
         if (formatter.handle_index != vvl::kNoIndex32) {
             auto cb_context = static_cast<const syncval_state::CommandBuffer *>(record.cb_state);
-            const HandleRecord &handle_record = cb_context->access_context.GetHandleRecord(formatter.handle_index);
-            out << ", resource: " << handle_record.Formatter(formatter.sync_state);
+            const auto handle_records = cb_context->access_context.GetHandleRecords();
+
+            // Command buffer can be in inconsistent state due to unhandled core validation error (core validation is disabled).
+            // In this case the goal is not to crash, no guarantees that reported information (handle index) makes sense.
+            const bool valid_handle_index = formatter.handle_index < handle_records.size();
+
+            if (valid_handle_index) {
+                out << ", resource: " << handle_records[formatter.handle_index].Formatter(formatter.sync_state);
+            }
         }
-        */
         // Report debug region name. Empty name means that we are not inside any debug region.
         if (formatter.debug_name_provider) {
             const std::string debug_region_name = formatter.debug_name_provider->GetDebugRegionName(record);
@@ -1263,8 +1258,8 @@ std::string SyncValidationInfo::FormatHazard(const HazardResult &hazard) const {
 }
 
 syncval_state::CommandBuffer::CommandBuffer(SyncValidator &dev, VkCommandBuffer handle,
-                                            const VkCommandBufferAllocateInfo *pCreateInfo, const vvl::CommandPool *pool)
-    : vvl::CommandBuffer(dev, handle, pCreateInfo, pool), access_context(dev, this) {}
+                                            const VkCommandBufferAllocateInfo *allocate_info, const vvl::CommandPool *pool)
+    : vvl::CommandBuffer(dev, handle, allocate_info, pool), access_context(dev, this) {}
 
 void syncval_state::CommandBuffer::Destroy() {
     access_context.Destroy();  // must be first to clean up self references correctly.

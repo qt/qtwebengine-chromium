@@ -27,7 +27,7 @@
 extern bool wrap_handles;
 
 class ValidationObject;
-void WrapPnextChainHandles(ValidationObject* layer_data, const void* pNext);
+void UnwrapPnextChainHandles(ValidationObject* layer_data, const void* pNext);
 
 VkResult DispatchCreateInstance(const VkInstanceCreateInfo* pCreateInfo, const VkAllocationCallbacks* pAllocator,
                                 VkInstance* pInstance);
@@ -650,6 +650,16 @@ void DispatchGetDeviceImageSubresourceLayoutKHR(VkDevice device, const VkDeviceI
                                                 VkSubresourceLayout2KHR* pLayout);
 void DispatchGetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2KHR* pSubresource,
                                            VkSubresourceLayout2KHR* pLayout);
+VkResult DispatchCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                           const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries);
+void DispatchDestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary, const VkAllocationCallbacks* pAllocator);
+VkResult DispatchGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo,
+                                   VkPipelineBinaryKeyKHR* pPipelineKey);
+VkResult DispatchGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
+                                          VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize,
+                                          void* pPipelineBinaryData);
+VkResult DispatchReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
+                                                const VkAllocationCallbacks* pAllocator);
 VkResult DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                  VkCooperativeMatrixPropertiesKHR* pProperties);
 void DispatchCmdSetLineStippleKHR(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor, uint16_t lineStipplePattern);
@@ -1150,6 +1160,7 @@ VkResult DispatchBindOpticalFlowSessionImageNV(VkDevice device, VkOpticalFlowSes
                                                VkImageLayout layout);
 void DispatchCmdOpticalFlowExecuteNV(VkCommandBuffer commandBuffer, VkOpticalFlowSessionNV session,
                                      const VkOpticalFlowExecuteInfoNV* pExecuteInfo);
+void DispatchAntiLagUpdateAMD(VkDevice device, const VkAntiLagDataAMD* pData);
 VkResult DispatchCreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT* pCreateInfos,
                                   const VkAllocationCallbacks* pAllocator, VkShaderEXT* pShaders);
 void DispatchDestroyShaderEXT(VkDevice device, VkShaderEXT shader, const VkAllocationCallbacks* pAllocator);

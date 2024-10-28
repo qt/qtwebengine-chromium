@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import TYPE_CHECKING, Final, Iterator, Optional, Tuple
+from typing import TYPE_CHECKING, Iterator, Optional, Tuple
 
 from crossbench import path as pth
-from crossbench.plt.base import Platform
 
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
@@ -22,10 +21,10 @@ class BaseToolFinder(abc.ABC):
       platform: Platform,
       candidates: Tuple[pth.RemotePath, ...] = tuple()) -> None:
     self._platform = platform
-    self._candidates = candidates + self._default_candidates()
+    self._candidates = candidates + self.default_candidates()
     self._path: Optional[pth.RemotePath] = self._find_path()
     if self._path:
-      assert self._is_valid_path(self._path)
+      assert self.is_valid_path(self._path)
 
   @property
   def platform(self) -> Platform:
@@ -39,18 +38,18 @@ class BaseToolFinder(abc.ABC):
   def candidates(self) -> Tuple[pth.RemotePath, ...]:
     return self._candidates
 
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+  def default_candidates(self) -> Tuple[pth.RemotePath, ...]:
     return tuple()
 
   def _find_path(self) -> Optional[pth.RemotePath]:
     # Try potential build location
-    for candidate_dir in self._candidates:
-      if self._is_valid_path(candidate_dir):
-        return candidate_dir
+    for candidate_path in self._candidates:
+      if self.is_valid_path(candidate_path):
+        return candidate_path
     return None
 
   @abc.abstractmethod
-  def _is_valid_path(self, candidate: pth.RemotePath) -> bool:
+  def is_valid_path(self, candidate: pth.RemotePath) -> bool:
     pass
 
 
@@ -61,10 +60,7 @@ def default_chromium_candidates(
   if chromium_src := platform.environ.get("CHROMIUM_SRC"):
     candidates.append(platform.path(chromium_src))
   if platform.is_local:
-    # Assume that crossbench is in chrome's third_party dir:
-    # Input:   chromium/src/third_party/crossbench/crossbench/probes/helper.py
-    # Output:  chromium/src
-    candidates.append(pth.LocalPath(__file__).parents[4])
+    candidates.append(chromium_src_relative_local_path())
   home_dir = platform.home()
   candidates += [
       # Guessing default locations
@@ -78,6 +74,14 @@ def default_chromium_candidates(
   return tuple(candidates)
 
 
+def chromium_src_relative_local_path():
+  """Gets the local relative path of `chromium/src`.
+
+  Assuming the cli.py path is `third_party/crossbench/crossbench/cli/cli.py`.
+  """
+  return pth.LocalPath(__file__).parents[4]
+
+
 def is_chromium_checkout_dir(platform: Platform,
                              dir_path: pth.RemotePath) -> bool:
   return (platform.is_dir(dir_path / "v8") and
@@ -89,10 +93,10 @@ class ChromiumCheckoutFinder(BaseToolFinder):
   """Finds a chromium src checkout at either given locations or at
   some preset known checkout locations."""
 
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+  def default_candidates(self) -> Tuple[pth.RemotePath, ...]:
     return default_chromium_candidates(self.platform)
 
-  def _is_valid_path(self, candidate: pth.RemotePath) -> bool:
+  def is_valid_path(self, candidate: pth.RemotePath) -> bool:
     return is_chromium_checkout_dir(self.platform, candidate)
 
 
@@ -126,11 +130,11 @@ class ChromiumBuildBinaryFinder(BaseToolFinder):
 
   def _find_path(self) -> Optional[pth.RemotePath]:
     for candidate in self._iterate_candidate_bin_paths():
-      if self._is_valid_path(candidate):
+      if self.is_valid_path(candidate):
         return candidate
     return None
 
-  def _is_valid_path(self, candidate: pth.RemotePath) -> bool:
+  def is_valid_path(self, candidate: pth.RemotePath) -> bool:
     assert candidate.name == self._binary_name
     if not self.platform.is_file(candidate):
       return False
@@ -142,7 +146,7 @@ class ChromiumBuildBinaryFinder(BaseToolFinder):
 
 class V8CheckoutFinder(BaseToolFinder):
 
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+  def default_candidates(self) -> Tuple[pth.RemotePath, ...]:
     home_dir = self._platform.home()
     return (
         # V8 Checkouts
@@ -164,11 +168,11 @@ class V8CheckoutFinder(BaseToolFinder):
     if not maybe_d8_path:
       return None
     for candidate_dir in self.platform.path(maybe_d8_path).parents:
-      if self._is_valid_path(candidate_dir):
+      if self.is_valid_path(candidate_dir):
         return candidate_dir
     return None
 
-  def _is_valid_path(self, candidate: pth.RemotePath) -> bool:
+  def is_valid_path(self, candidate: pth.RemotePath) -> bool:
     v8_header_file = candidate / "include/v8.h"
     return (self.platform.is_file(v8_header_file) and
             (self.platform.is_dir(candidate / ".git")))
@@ -249,47 +253,68 @@ class V8ToolsFinder:
     return None
 
 
-class BaseBinaryToolFinder(BaseToolFinder):
+class BaseChromiumBinaryToolFinder(BaseToolFinder):
 
-  def _is_valid_path(self, candidate: pth.RemotePath) -> bool:
+  def is_valid_path(self, candidate: pth.RemotePath) -> bool:
     return self._platform.is_file(candidate)
 
+  @classmethod
+  def chrome_path(cls) -> pth.RemotePath:
+    raise NotImplementedError()
 
-class TraceconvFinder(BaseBinaryToolFinder):
-  _TRACECONV: Final = pth.RemotePath("third_party/perfetto/tools/traceconv")
-
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
-    if chrome_checkout := ChromiumCheckoutFinder(self._platform).path:
-      return (chrome_checkout / self._TRACECONV,)
-    return tuple()
-
-
-class TraceProcessorFinder(BaseBinaryToolFinder):
-
-  _TRACE_PROCESSOR: Final = pth.RemotePath(
-      "third_party/perfetto/tools/trace_processor")
-
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
-    if chrome_checkout := ChromiumCheckoutFinder(self._platform).path:
-      return (chrome_checkout / self._TRACE_PROCESSOR,)
-    return tuple()
-
-
-class WprGoToolFinder(BaseBinaryToolFinder):
-  _WPR_GO: Final = pth.RemotePath(
-      "third_party/catapult/web_page_replay_go/src/wpr.go")
-
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+  def default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+    relative_path = chromium_src_relative_local_path() / self.chrome_path()
     if maybe_chrome := ChromiumCheckoutFinder(self._platform).path:
-      return (maybe_chrome / self._WPR_GO,)
-    return tuple()
+      return (relative_path, maybe_chrome / self.chrome_path(),)
+    return (relative_path,)
 
 
-class TsProxyFinder(BaseBinaryToolFinder):
-  _TS_PROXY: Final = pth.RemotePath(
-      "third_party/catapult/third_party/tsproxy/tsproxy.py")
+class TraceconvFinder(BaseChromiumBinaryToolFinder):
 
-  def _default_candidates(self) -> Tuple[pth.RemotePath, ...]:
-    if maybe_chrome := ChromiumCheckoutFinder(self._platform).path:
-      return (maybe_chrome / self._TS_PROXY,)
-    return tuple()
+  @classmethod
+  def chrome_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/perfetto/tools/traceconv")
+
+
+class TraceProcessorFinder(BaseChromiumBinaryToolFinder):
+
+  @classmethod
+  def chrome_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/perfetto/tools/trace_processor")
+
+
+CROSSBENCH_DIR = pth.LocalPath(__file__).parents[2]
+
+
+class BaseCrossbenchBinaryToolFinder(BaseChromiumBinaryToolFinder):
+
+  def default_candidates(self) -> Tuple[pth.RemotePath, ...]:
+    candidates = super().default_candidates()
+    return (CROSSBENCH_DIR / self.crossbench_path(),) + candidates
+
+  @classmethod
+  @abc.abstractmethod
+  def crossbench_path(cls) -> pth.RemotePath:
+    pass
+
+
+class WprGoToolFinder(BaseCrossbenchBinaryToolFinder):
+
+  @classmethod
+  def chrome_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/catapult/web_page_replay_go/src/wpr.go")
+
+  @classmethod
+  def crossbench_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/webpagereplay/src/wpr.go")
+
+
+class TsProxyFinder(BaseCrossbenchBinaryToolFinder):
+
+  @classmethod
+  def chrome_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/catapult/third_party/tsproxy/tsproxy.py")
+
+  @classmethod
+  def crossbench_path(cls) -> pth.RemotePath:
+    return pth.RemotePath("third_party/tsproxy/tsproxy.py")

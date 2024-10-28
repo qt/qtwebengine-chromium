@@ -21,6 +21,7 @@
 #include "gpu/resources/gpuav_subclasses.h"
 #include "state_tracker/render_pass_state.h"
 #include "gpu/shaders/gpu_error_header.h"
+#include "gpu/shaders/gpu_shaders_constants.h"
 #include "generated/cmd_validation_draw_vert.h"
 
 // See gpu/shaders/cmd_validation/draw.vert
@@ -51,8 +52,7 @@ struct SharedDrawValidationResources final {
         ds_layout_ci.pBindings = bindings.data();
         result = DispatchCreateDescriptorSetLayout(device, &ds_layout_ci, nullptr, &ds_layout);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(device, loc,
-                                "Unable to create descriptor set layout for SharedDrawValidationResources. Aborting GPU-AV.");
+            gpuav.InternalError(device, loc, "Unable to create descriptor set layout for SharedDrawValidationResources.");
             return;
         }
 
@@ -69,8 +69,7 @@ struct SharedDrawValidationResources final {
         pipeline_layout_ci.pSetLayouts = set_layouts.data();
         result = DispatchCreatePipelineLayout(device, &pipeline_layout_ci, nullptr, &pipeline_layout);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(device, loc,
-                                "Unable to create pipeline layout for SharedDrawValidationResources. Aborting GPU-AV.");
+            gpuav.InternalError(device, loc, "Unable to create pipeline layout for SharedDrawValidationResources.");
             return;
         }
 
@@ -81,13 +80,13 @@ struct SharedDrawValidationResources final {
             shader_ci.codeSize = cmd_validation_draw_vert_size * sizeof(uint32_t);
             shader_ci.pCode = cmd_validation_draw_vert;
             shader_ci.pName = "main";
-            shader_ci.setLayoutCount = 1u;
-            shader_ci.pSetLayouts = &ds_layout;
+            shader_ci.setLayoutCount = static_cast<uint32_t>(set_layouts.size());
+            shader_ci.pSetLayouts = set_layouts.data();
             shader_ci.pushConstantRangeCount = 1;
             shader_ci.pPushConstantRanges = &push_constant_range;
             result = DispatchCreateShadersEXT(device, 1u, &shader_ci, nullptr, &shader_object);
             if (result != VK_SUCCESS) {
-                gpuav.InternalError(device, loc, "Unable to create shader object. Aborting GPU-AV.");
+                gpuav.InternalError(device, loc, "Unable to create shader object.");
                 return;
             }
         } else {
@@ -96,7 +95,7 @@ struct SharedDrawValidationResources final {
             shader_module_ci.pCode = cmd_validation_draw_vert;
             result = DispatchCreateShaderModule(device, &shader_module_ci, nullptr, &shader_module);
             if (result != VK_SUCCESS) {
-                gpuav.InternalError(device, loc, "Unable to create shader module. Aborting GPU-AV.");
+                gpuav.InternalError(device, loc, "Unable to create shader module.");
                 return;
             }
         }
@@ -126,10 +125,7 @@ struct SharedDrawValidationResources final {
         }
     }
 
-    bool IsValid() const {
-        return (shader_module != VK_NULL_HANDLE || shader_object != VK_NULL_HANDLE) && ds_layout != VK_NULL_HANDLE &&
-               pipeline_layout != VK_NULL_HANDLE && device != VK_NULL_HANDLE;
-    }
+    bool IsValid() const { return shader_module != VK_NULL_HANDLE || shader_object != VK_NULL_HANDLE; }
 };
 
 // This function will add the returned VkPipeline handle to another object incharge of destroying it. Caller does NOT have to
@@ -171,7 +167,7 @@ static VkPipeline GetDrawValidationPipeline(Validator &gpuav, SharedDrawValidati
 
     VkResult result = DispatchCreateGraphicsPipelines(gpuav.device, VK_NULL_HANDLE, 1, &pipeline_ci, nullptr, &validation_pipeline);
     if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Unable to create graphics pipeline. Aborting GPU-AV.");
+        gpuav.InternalError(gpuav.device, loc, "Unable to create graphics pipeline.");
         return VK_NULL_HANDLE;
     }
 
@@ -192,26 +188,20 @@ void DestroyRenderPassMappedResources(Validator &gpuav, VkRenderPass render_pass
     }
 }
 
-void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkCommandBuffer cmd_buffer, VkBuffer indirect_buffer,
+void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, CommandBuffer &cb_state, VkBuffer indirect_buffer,
                                   VkDeviceSize indirect_offset, uint32_t draw_count, VkBuffer count_buffer,
                                   VkDeviceSize count_buffer_offset, uint32_t stride) {
     if (!gpuav.gpuav_settings.validate_indirect_draws_buffers) {
         return;
     }
 
-    auto cb_state = gpuav.GetWrite<CommandBuffer>(cmd_buffer);
-    if (!cb_state) {
-        gpuav.InternalError(cmd_buffer, loc, "Unrecognized command buffer. Aborting GPU-AV.");
-        return;
-    }
-
     const auto lv_bind_point = ConvertToLvlBindPoint(VK_PIPELINE_BIND_POINT_GRAPHICS);
-    auto const &last_bound = cb_state->lastBound[lv_bind_point];
+    auto const &last_bound = cb_state.lastBound[lv_bind_point];
     const auto *pipeline_state = last_bound.pipeline_state;
     const bool use_shader_objects = pipeline_state == nullptr;
 
     auto &shared_draw_resources = gpuav.shared_resources_manager.Get<SharedDrawValidationResources>(
-        gpuav, cb_state->GetValidationCmdCommonDescriptorSetLayout(), use_shader_objects, loc);
+        gpuav, cb_state.GetValidationCmdCommonDescriptorSetLayout(), use_shader_objects, loc);
 
     assert(shared_draw_resources.IsValid());
     if (!shared_draw_resources.IsValid()) {
@@ -221,17 +211,17 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
     VkPipeline validation_pipeline = VK_NULL_HANDLE;
     if (!use_shader_objects) {
         validation_pipeline =
-            GetDrawValidationPipeline(gpuav, shared_draw_resources, cb_state->activeRenderPass.get()->VkHandle(), loc);
+            GetDrawValidationPipeline(gpuav, shared_draw_resources, cb_state.activeRenderPass.get()->VkHandle(), loc);
         if (validation_pipeline == VK_NULL_HANDLE) {
-            gpuav.InternalError(cmd_buffer, loc, "Could not find or create a pipeline. Aborting GPU-AV.");
+            gpuav.InternalError(cb_state.VkHandle(), loc, "Could not find or create a pipeline.");
             return;
         }
     }
 
     const VkDescriptorSet draw_validation_desc_set =
-        cb_state->gpu_resources_manager.GetManagedDescriptorSet(shared_draw_resources.ds_layout);
+        cb_state.gpu_resources_manager.GetManagedDescriptorSet(shared_draw_resources.ds_layout);
     if (draw_validation_desc_set == VK_NULL_HANDLE) {
-        gpuav.InternalError(cmd_buffer, loc, "Unable to allocate descriptor set. Aborting GPU-AV.");
+        gpuav.InternalError(cb_state.VkHandle(), loc, "Unable to allocate descriptor set.");
         return;
     }
 
@@ -260,7 +250,7 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
 
     // Save current graphics pipeline state
     const vvl::Func command = loc.function;
-    RestorablePipelineState restorable_state(*cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS);
+    RestorablePipelineState restorable_state(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS);
     using vvl::Func;
     const bool is_mesh_call =
         (command == Func::vkCmdDrawMeshTasksIndirectCountEXT || command == Func::vkCmdDrawMeshTasksIndirectCountNV ||
@@ -276,8 +266,8 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
     if (is_count_call) {
         // Validate count buffer
         if (count_buffer_offset > std::numeric_limits<uint32_t>::max()) {
-            gpuav.InternalError(cmd_buffer, loc,
-                                "Count buffer offset is larger than can be contained in an unsigned int. Aborting GPU-AV.");
+            gpuav.InternalError(cb_state.VkHandle(), loc,
+                                "Count buffer offset is larger than can be contained in an unsigned int.");
             return;
         }
 
@@ -348,19 +338,28 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
 
     // Insert diagnostic draw
     if (use_shader_objects) {
-        VkShaderStageFlagBits stage = VK_SHADER_STAGE_VERTEX_BIT;
-        DispatchCmdBindShadersEXT(cmd_buffer, 1u, &stage, &shared_draw_resources.shader_object);
+        std::array<VkShaderStageFlagBits, 5> stages{{VK_SHADER_STAGE_VERTEX_BIT, VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT,
+                                                     VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT, VK_SHADER_STAGE_GEOMETRY_BIT,
+                                                     VK_SHADER_STAGE_FRAGMENT_BIT}};
+        std::array<VkShaderEXT, 5> shaders{{
+            shared_draw_resources.shader_object,
+            VK_NULL_HANDLE,
+            VK_NULL_HANDLE,
+            VK_NULL_HANDLE,
+            VK_NULL_HANDLE,
+        }};
+        DispatchCmdBindShadersEXT(cb_state.VkHandle(), static_cast<uint32_t>(stages.size()), stages.data(), shaders.data());
     } else {
-        DispatchCmdBindPipeline(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, validation_pipeline);
+        DispatchCmdBindPipeline(cb_state.VkHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, validation_pipeline);
     }
     static_assert(sizeof(push_constants) <= 128, "push_constants buffer size >128, need to consider maxPushConstantsSize.");
-    DispatchCmdPushConstants(cmd_buffer, shared_draw_resources.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+    DispatchCmdPushConstants(cb_state.VkHandle(), shared_draw_resources.pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
                              static_cast<uint32_t>(sizeof(push_constants)), push_constants);
-    BindValidationCmdsCommonDescSet(cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
-                                    cb_state->draw_index, static_cast<uint32_t>(cb_state->per_command_error_loggers.size()));
-    DispatchCmdBindDescriptorSets(cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
+    BindValidationCmdsCommonDescSet(gpuav, cb_state, VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
+                                    cb_state.draw_index, static_cast<uint32_t>(cb_state.per_command_error_loggers.size()));
+    DispatchCmdBindDescriptorSets(cb_state.VkHandle(), VK_PIPELINE_BIND_POINT_GRAPHICS, shared_draw_resources.pipeline_layout,
                                   glsl::kDiagPerCmdDescriptorSet, 1, &draw_validation_desc_set, 0, nullptr);
-    DispatchCmdDraw(cmd_buffer, 3, 1, 0, 0);  // TODO: this 3 assumes triangles I think, probably could be 1?
+    DispatchCmdDraw(cb_state.VkHandle(), 3, 1, 0, 0);  // TODO: this 3 assumes triangles I think, probably could be 1?
 
     CommandBuffer::ErrorLoggerFunc error_logger = [loc, indirect_buffer, indirect_offset, stride, indirect_buffer_size,
                                                    emit_task_error](Validator &gpuav, const uint32_t *error_record,
@@ -468,7 +467,7 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, VkComma
         return skip;
     };
 
-    cb_state->per_command_error_loggers.emplace_back(std::move(error_logger));
+    cb_state.per_command_error_loggers.emplace_back(std::move(error_logger));
 }
 
 }  // namespace gpuav

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Optional
 
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe import ProbeContext
@@ -13,8 +13,8 @@ from crossbench.probes.results import LocalProbeResult
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.probes.results import ProbeResult
+  from crossbench.runner.groups import RepetitionsRunGroup, StoriesRunGroup
   from crossbench.runner.run import Run
-  from crossbench.runner.groups import (RepetitionsRunGroup, StoriesRunGroup)
 
 
 class V8BuiltinsPGOProbe(ChromiumProbe):

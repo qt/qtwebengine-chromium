@@ -26,8 +26,8 @@ from crossbench.network.traffic_shaping.base import TrafficShaper
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.network.base import Network
-  from crossbench.path import LocalPath
-  from crossbench.plt.base import ListCmdArgsT, Platform
+  from crossbench.path import LocalPath, RemotePath
+  from crossbench.plt.base import ListCmdArgs, Platform
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 fnctl = None
@@ -90,7 +90,7 @@ class TsProxyServer:
 
   def __init__(self,
                ts_proxy_path: LocalPath,
-               host_ip: Optional[str] = None,
+               host: Optional[str] = None,
                socks_proxy_port: Optional[int] = None,
                http_port: Optional[int] = None,
                https_port: Optional[int] = None,
@@ -98,11 +98,11 @@ class TsProxyServer:
                in_kbps: Optional[int] = None,
                out_kbps: Optional[int] = None,
                window: Optional[int] = None,
-               verbose: bool = False):
+               verbose: bool = True):
     self._proc: Optional[TsProxyProcess] = None
     self._ts_proxy_path = cli_helper.parse_existing_file_path(ts_proxy_path)
     self._socks_proxy_port = socks_proxy_port
-    self._host_ip = host_ip
+    self._host = host
     self._http_port = http_port
     self._https_port = https_port
     self._rtt_ms = rtt_ms
@@ -116,10 +116,8 @@ class TsProxyServer:
   def verify_ports(cls,
                    http_port: Optional[int] = None,
                    https_port: Optional[int] = None) -> None:
-    if bool(http_port) != bool(https_port):
-      raise ValueError(
-          "Both https and http-port should be specified or omitted, "
-          f"but got http_port={http_port} and https_port={https_port}")
+    if https_port and not bool(http_port):
+      raise ValueError(f"Got https_port={https_port} without a http port")
     if http_port is not None and http_port == https_port:
       raise ValueError("http_port and https_port must be different, "
                        f"got {https_port} twice.")
@@ -146,9 +144,29 @@ class TsProxyServer:
     assert self._proc, "ts_proxy is not running."
     return self._proc.socks_proxy_port
 
+  @property
+  def ts_proxy_path(self) -> LocalPath:
+    return self._ts_proxy_path
+
+  @property
+  def rtt_ms(self) -> Optional[int]:
+    return self._rtt_ms
+
+  @property
+  def in_kbps(self) -> Optional[int]:
+    return self._in_kbps
+
+  @property
+  def out_kbps(self) -> Optional[int]:
+    return self._out_kbps
+
+  @property
+  def window(self) -> Optional[int]:
+    return self._window
+
   def start(self) -> None:
     assert not self._proc, "ts_proxy is already running."
-    self._proc = TsProxyProcess(self._ts_proxy_path, self._host_ip,
+    self._proc = TsProxyProcess(self._ts_proxy_path, self._host,
                                 self._socks_proxy_port, self._http_port,
                                 self._https_port, self._rtt_ms, self._in_kbps,
                                 self._out_kbps, self._window, self._verbose)
@@ -176,7 +194,7 @@ class TsProxyProcess:
 
   def __init__(self,
                ts_proxy_path: LocalPath,
-               host_ip: Optional[str] = None,
+               host: Optional[str] = None,
                socks_proxy_port: Optional[int] = None,
                http_port: Optional[int] = None,
                https_port: Optional[int] = None,
@@ -187,7 +205,7 @@ class TsProxyProcess:
                verbose: bool = False,
                timeout: Union[int, float] = DEFAULT_TIMEOUT) -> None:
     """Start TsProxy server and verify that it started."""
-    cmd: ListCmdArgsT = [
+    cmd: ListCmdArgs = [
         sys.executable,
         ts_proxy_path,
     ]
@@ -212,23 +230,27 @@ class TsProxyProcess:
     self._rtt_ms: Optional[int] = rtt_ms
     if rtt_ms:
       cmd.append(f"--rtt={rtt_ms}")
-    self._host_ip: Optional[str] = host_ip
-    if host_ip:
-      cmd.append(f"--desthost={host_ip}")
+    self._host: Optional[str] = host
+    if host:
+      cmd.append(f"--desthost={host}")
     self._http_port: Optional[int] = http_port
     self._https_port: Optional[int] = https_port
     TsProxyServer.verify_ports(http_port, https_port)
+    mapports = []
+    if https_port:
+      mapports.append(f"443:{https_port}")
     if http_port:
-      cmd.append(f"--mapports=443:{https_port},*:{http_port}")
+      mapports.append(f"*:{http_port}")
+    cmd.append(f"--mapports={','.join(mapports)}")
     logging.info("TsProxy: commandline: %s", shlex.join(map(str, cmd)))
     self._verify_default_encoding()
     # In python3 universal_newlines forces subprocess to encode/decode,
     # allowing per-line buffering.
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # pylint: disable=consider-using-with
         cmd,
         stdout=subprocess.PIPE,
         stdin=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # stderr=subprocess.PIPE,
         bufsize=1,
         universal_newlines=True)
     assert proc and proc.stdout and proc.stdin, "Could not start ts_proxy"
@@ -241,7 +263,7 @@ class TsProxyProcess:
       self._stdin: IO[str] = stdin
     else:
       raise RuntimeError("Missing stdin")
-    if fcntl:
+    if fcntl:  # pylint: disable=using-constant-test
       self._setup_non_blocking_io()
     self._wait_for_startup(timeout)
 
@@ -357,7 +379,7 @@ class TsProxyTrafficShaper(TrafficShaper):
 
   def __init__(self,
                browser_platform: Platform,
-               ts_proxy_path: Optional[LocalPath] = None,
+               ts_proxy_path: Optional[RemotePath] = None,
                rtt_ms: Optional[int] = None,
                in_kbps: Optional[int] = None,
                out_kbps: Optional[int] = None,
@@ -369,10 +391,9 @@ class TsProxyTrafficShaper(TrafficShaper):
     if not ts_proxy_path:
       raise RuntimeError(
           f"Could not find ts_proxy script on {self.runner_platform}")
-    # TODO; remap network port for remote browsers or when ports are occupied
-    # already.
+    # Early instantiation to validate inputs.
     self._ts_proxy = TsProxyServer(
-        ts_proxy_path,
+        self.runner_platform.local_path(ts_proxy_path),
         rtt_ms=rtt_ms,
         in_kbps=in_kbps,
         out_kbps=out_kbps,
@@ -383,12 +404,39 @@ class TsProxyTrafficShaper(TrafficShaper):
   @contextlib.contextmanager
   def open(self, network: Network,
            session: BrowserSessionRunGroup) -> Iterator[TrafficShaper]:
-    # TODO: support nested run with replay network
-    assert network.is_live, "Only live network is supported for now"
+    if not network.is_live:
+      self._ts_proxy = self._create_remapping_ts_proxy(network)
+
     with super().open(network, session):
       logging.debug("Starting TS Proxy")
       with self._ts_proxy:
-        yield self
+        with self._forward_ports(network, session):
+          yield self
+
+  def _create_remapping_ts_proxy(self, network) -> TsProxyServer:
+    return TsProxyServer(
+        self._ts_proxy.ts_proxy_path,
+        rtt_ms=self._ts_proxy.rtt_ms,
+        in_kbps=self._ts_proxy.in_kbps,
+        out_kbps=self._ts_proxy.out_kbps,
+        window=self._ts_proxy.window,
+        host=network.host,
+        http_port=network.http_port,
+        https_port=network.https_port)
+
+  @contextlib.contextmanager
+  def _forward_ports(self, network: Network,
+                     session: BrowserSessionRunGroup) -> Iterator:
+    del network
+    browser_platform = session.browser_platform
+    ts_proxy_port = self._ts_proxy.socks_proxy_port
+    # TODO; remap network port for remote browsers or when ports are occupied
+    # already.
+    if browser_platform.is_remote:
+      browser_platform.reverse_port_forward(ts_proxy_port, ts_proxy_port)
+    yield
+    if browser_platform.is_remote:
+      browser_platform.stop_reverse_port_forward(ts_proxy_port)
 
   def extra_flags(self, browser: Browser) -> Flags:
     if not browser.attributes.is_chromium_based:
@@ -399,7 +447,10 @@ class TsProxyTrafficShaper(TrafficShaper):
     assert self.is_running, "TrafficShaper is not running."
     assert self._ts_proxy.socks_proxy_port, "ts_proxy is not running"
     return Flags({
-        "--proxy-server": f"socks://localhost:{self._ts_proxy.socks_proxy_port}"
+        "--proxy-server":
+            f"socks://127.0.0.1:{self._ts_proxy.socks_proxy_port}",
+        "--proxy-bypass-list":
+            "<-loopback>"
     })
 
   def __str__(self) -> str:

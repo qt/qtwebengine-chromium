@@ -62,6 +62,8 @@ enum class Feature {
     reportAddressBinding,
     // VkPhysicalDeviceAmigoProfilingFeaturesSEC
     amigoProfiling,
+    // VkPhysicalDeviceAntiLagFeaturesAMD
+    antiLag,
     // VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT
     attachmentFeedbackLoopDynamicState,
     // VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT
@@ -86,9 +88,11 @@ enum class Feature {
     deviceCoherentMemory,
     // VkPhysicalDeviceColorWriteEnableFeaturesEXT
     colorWriteEnable,
-    // VkPhysicalDeviceComputeShaderDerivativesFeaturesNV
+    // VkPhysicalDeviceCommandBufferInheritanceFeaturesNV
+    commandBufferInheritance,
+    // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
     computeDerivativeGroupLinear,
-    // VkPhysicalDeviceComputeShaderDerivativesFeaturesNV
+    // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
     computeDerivativeGroupQuads,
     // VkPhysicalDeviceConditionalRenderingFeaturesEXT
     conditionalRendering,
@@ -560,6 +564,8 @@ enum class Feature {
     performanceCounterMultipleQueryPools,
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
     performanceCounterQueryPools,
+    // VkPhysicalDevicePipelineBinaryFeaturesKHR
+    pipelineBinaries,
     // VkPhysicalDevicePipelineCreationCacheControlFeatures, VkPhysicalDeviceVulkan13Features
     pipelineCreationCacheControl,
     // VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR

@@ -8,9 +8,9 @@ import abc
 import argparse
 import datetime as dt
 import enum
-from typing import Any, Dict, Generic, Optional, Set, Type, TypeVar
+from typing import Dict, Generic, Optional, Set, Type, TypeVar
 
-from crossbench import compat, plt
+from crossbench import plt
 from crossbench.config import ConfigParser
 from crossbench.helper.state import BaseState, StateMachine
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
@@ -22,7 +22,8 @@ DecoratorTargetT = TypeVar("DecoratorTargetT")
 class DecoratorConfigParser(ConfigParser[DecoratorT]):
 
   def __init__(self, probe_cls: Type[DecoratorT]) -> None:
-    super().__init__(probe_cls.__name__, probe_cls)
+    super().__init__(
+        probe_cls.__name__, probe_cls, allow_unused_config_data=False)
     self._probe_cls = probe_cls
 
 
@@ -39,13 +40,7 @@ class Decorator(abc.ABC, Generic[DecoratorTargetT]):
 
   @classmethod
   def from_config(cls: Type[DecoratorT], config_data: Dict) -> DecoratorT:
-    config_parser = cls.config_parser()
-    kwargs: Dict[str, Any] = config_parser.kwargs_from_config(config_data)
-    if config_data:
-      raise argparse.ArgumentTypeError(
-          f"Config for {cls.__name__}={cls.NAME} contains unused properties: "
-          f"{', '.join(config_data.keys())}")
-    return cls(**kwargs)
+    return cls.config_parser().parse(config_data)
 
   @classmethod
   def help_text(cls) -> str:

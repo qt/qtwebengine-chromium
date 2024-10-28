@@ -11,12 +11,11 @@ from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
 from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import LocalProbeResult, ProbeResult
-from crossbench.runner.run import Run
 
 if TYPE_CHECKING:
   from crossbench import path as pth
   from crossbench.env import HostEnvironment
-  from crossbench.plt.base import CmdArgT, TupleCmdArgsT
+  from crossbench.plt.base import CmdArg, TupleCmdArgs
   from crossbench.runner.run import Run
 
 
@@ -75,21 +74,21 @@ class ShellProbe(Probe):
     return parser
 
   def __init__(self,
-               setup_cmd: Optional[Iterable[CmdArgT]] = None,
-               start_cmd: Optional[Iterable[CmdArgT]] = None,
-               start_story_run_cmd: Optional[Iterable[CmdArgT]] = None,
-               stop_story_run_cmd: Optional[Iterable[CmdArgT]] = None,
-               stop_cmd: Optional[Iterable[CmdArgT]] = None,
-               teardown_cmd: Optional[Iterable[CmdArgT]] = None) -> None:
+               setup_cmd: Optional[Iterable[CmdArg]] = None,
+               start_cmd: Optional[Iterable[CmdArg]] = None,
+               start_story_run_cmd: Optional[Iterable[CmdArg]] = None,
+               stop_story_run_cmd: Optional[Iterable[CmdArg]] = None,
+               stop_cmd: Optional[Iterable[CmdArg]] = None,
+               teardown_cmd: Optional[Iterable[CmdArg]] = None) -> None:
     super().__init__()
-    self._setup_cmd: TupleCmdArgsT = tuple(setup_cmd) if setup_cmd else ()
-    self._start_cmd: TupleCmdArgsT = tuple(start_cmd) if start_cmd else ()
-    self._start_story_run_cmd: TupleCmdArgsT = (
+    self._setup_cmd: TupleCmdArgs = tuple(setup_cmd) if setup_cmd else ()
+    self._start_cmd: TupleCmdArgs = tuple(start_cmd) if start_cmd else ()
+    self._start_story_run_cmd: TupleCmdArgs = (
         tuple(start_story_run_cmd) if start_story_run_cmd else ())
-    self._stop_story_run_cmd: TupleCmdArgsT = (
+    self._stop_story_run_cmd: TupleCmdArgs = (
         tuple(stop_story_run_cmd) if stop_story_run_cmd else ())
-    self._stop_cmd: TupleCmdArgsT = tuple(stop_cmd) if stop_cmd else ()
-    self._teardown_cmd: TupleCmdArgsT = (
+    self._stop_cmd: TupleCmdArgs = tuple(stop_cmd) if stop_cmd else ()
+    self._teardown_cmd: TupleCmdArgs = (
         tuple(teardown_cmd) if teardown_cmd else ())
 
   @property
@@ -104,27 +103,27 @@ class ShellProbe(Probe):
     )
 
   @property
-  def setup_cmd(self) -> TupleCmdArgsT:
+  def setup_cmd(self) -> TupleCmdArgs:
     return self._setup_cmd
 
   @property
-  def start_cmd(self) -> TupleCmdArgsT:
+  def start_cmd(self) -> TupleCmdArgs:
     return self._start_cmd
 
   @property
-  def start_story_run_cmd(self) -> TupleCmdArgsT:
+  def start_story_run_cmd(self) -> TupleCmdArgs:
     return self._start_story_run_cmd
 
   @property
-  def stop_story_run_cmd(self) -> TupleCmdArgsT:
+  def stop_story_run_cmd(self) -> TupleCmdArgs:
     return self._stop_story_run_cmd
 
   @property
-  def stop_cmd(self) -> TupleCmdArgsT:
+  def stop_cmd(self) -> TupleCmdArgs:
     return self._stop_cmd
 
   @property
-  def teardown_cmd(self) -> TupleCmdArgsT:
+  def teardown_cmd(self) -> TupleCmdArgs:
     return self._teardown_cmd
 
   def validate_env(self, env: HostEnvironment) -> None:
@@ -143,7 +142,7 @@ class ShellProbeContext(ProbeContext[ShellProbe]):
     super().__init__(probe, run)
     self._result_files: List[pth.LocalPath] = []
 
-  def _maybe_run_cmd(self, name: str, cmd: TupleCmdArgsT) -> None:
+  def _maybe_run_cmd(self, name: str, cmd: TupleCmdArgs) -> None:
     if not cmd:
       return
     stdout_path = self.local_result_path / f"{name}.stdout.txt"

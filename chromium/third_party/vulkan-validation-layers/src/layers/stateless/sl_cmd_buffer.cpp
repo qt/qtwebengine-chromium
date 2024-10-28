@@ -228,17 +228,18 @@ bool StatelessValidation::manual_PreCallValidateCmdBindVertexBuffers2(VkCommandB
     // Check VUID-vkCmdBindVertexBuffers2-bindingCount-arraylength
     // This is a special case and generator currently skips it
     {
-        const bool vuidCondition = (pSizes != nullptr) || (pStrides != nullptr);
-        const bool vuidExpectation = bindingCount > 0;
-        if (vuidCondition) {
-            if (!vuidExpectation) {
+        const bool vuid_condition = (pSizes != nullptr) || (pStrides != nullptr);
+        const bool vuid_expectation = bindingCount > 0;
+        if (vuid_condition) {
+            if (!vuid_expectation) {
                 const char *not_null_msg = "";
-                if ((pSizes != nullptr) && (pStrides != nullptr))
+                if ((pSizes != nullptr) && (pStrides != nullptr)) {
                     not_null_msg = "pSizes and pStrides are not NULL";
-                else if (pSizes != nullptr)
+                } else if (pSizes != nullptr) {
                     not_null_msg = "pSizes is not NULL";
-                else
+                } else {
                     not_null_msg = "pStrides is not NULL";
+                }
                 skip |= LogError("VUID-vkCmdBindVertexBuffers2-bindingCount-arraylength", commandBuffer, error_obj.location,
                                  "%s, so bindingCount must be greater than 0.", not_null_msg);
             }
@@ -504,7 +505,7 @@ bool StatelessValidation::manual_PreCallValidateCmdBindDescriptorBuffersEXT(VkCo
         if (!vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfoKHR>(pBindingInfos[i].pNext)) {
             skip |= ValidateFlags(error_obj.location.dot(Field::pBindingInfos, i).dot(Field::usage),
                                   vvl::FlagBitmask::VkBufferUsageFlagBits, AllVkBufferUsageFlagBits, pBindingInfos[i].usage,
-                                  kRequiredFlags, "VUID-VkDescriptorBufferBindingInfoEXT-None-09499",
+                                  kRequiredFlags, VK_NULL_HANDLE, "VUID-VkDescriptorBufferBindingInfoEXT-None-09499",
                                   "VUID-VkDescriptorBufferBindingInfoEXT-None-09500");
         }
     }
@@ -520,7 +521,7 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceExternalBufferP
     if (!vku::FindStructInPNextChain<VkBufferUsageFlags2CreateInfoKHR>(pExternalBufferInfo->pNext)) {
         skip |= ValidateFlags(error_obj.location.dot(Field::pExternalBufferInfo).dot(Field::usage),
                               vvl::FlagBitmask::VkBufferUsageFlagBits, AllVkBufferUsageFlagBits, pExternalBufferInfo->usage,
-                              kRequiredFlags, "VUID-VkPhysicalDeviceExternalBufferInfo-None-09499",
+                              kRequiredFlags, VK_NULL_HANDLE, "VUID-VkPhysicalDeviceExternalBufferInfo-None-09499",
                               "VUID-VkPhysicalDeviceExternalBufferInfo-None-09500");
     }
 
@@ -736,7 +737,7 @@ bool StatelessValidation::manual_PreCallValidateBeginCommandBuffer(VkCommandBuff
 
         if (enabled_features.inheritedQueries) {
             skip |= ValidateFlags(inheritance_loc.dot(Field::queryFlags), vvl::FlagBitmask::VkQueryControlFlagBits,
-                                  AllVkQueryControlFlagBits, info->queryFlags, kOptionalFlags,
+                                  AllVkQueryControlFlagBits, info->queryFlags, kOptionalFlags, VK_NULL_HANDLE,
                                   "VUID-VkCommandBufferInheritanceInfo-queryFlags-00057");
         } else {  // !inheritedQueries
             skip |= ValidateReservedFlags(inheritance_loc.dot(Field::queryFlags), info->queryFlags,
@@ -746,7 +747,7 @@ bool StatelessValidation::manual_PreCallValidateBeginCommandBuffer(VkCommandBuff
         if (enabled_features.pipelineStatisticsQuery) {
             skip |=
                 ValidateFlags(inheritance_loc.dot(Field::pipelineStatistics), vvl::FlagBitmask::VkQueryPipelineStatisticFlagBits,
-                              AllVkQueryPipelineStatisticFlagBits, info->pipelineStatistics, kOptionalFlags,
+                              AllVkQueryPipelineStatisticFlagBits, info->pipelineStatistics, kOptionalFlags, VK_NULL_HANDLE,
                               "VUID-VkCommandBufferInheritanceInfo-pipelineStatistics-02789");
         } else {  // !pipelineStatisticsQuery
             skip |= ValidateReservedFlags(inheritance_loc.dot(Field::pipelineStatistics), info->pipelineStatistics,

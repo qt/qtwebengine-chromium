@@ -59,6 +59,8 @@ struct DeviceFeatures {
     bool reportAddressBinding;
     // VkPhysicalDeviceAmigoProfilingFeaturesSEC
     bool amigoProfiling;
+    // VkPhysicalDeviceAntiLagFeaturesAMD
+    bool antiLag;
     // VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT
     bool attachmentFeedbackLoopDynamicState;
     // VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT
@@ -91,9 +93,11 @@ struct DeviceFeatures {
     bool deviceCoherentMemory;
     // VkPhysicalDeviceColorWriteEnableFeaturesEXT
     bool colorWriteEnable;
-    // VkPhysicalDeviceComputeShaderDerivativesFeaturesNV
+    // VkPhysicalDeviceCommandBufferInheritanceFeaturesNV
+    bool commandBufferInheritance;
+    // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
     bool computeDerivativeGroupLinear;
-    // VkPhysicalDeviceComputeShaderDerivativesFeaturesNV
+    // VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR
     bool computeDerivativeGroupQuads;
     // VkPhysicalDeviceConditionalRenderingFeaturesEXT
     bool conditionalRendering;
@@ -565,6 +569,8 @@ struct DeviceFeatures {
     bool performanceCounterMultipleQueryPools;
     // VkPhysicalDevicePerformanceQueryFeaturesKHR
     bool performanceCounterQueryPools;
+    // VkPhysicalDevicePipelineBinaryFeaturesKHR
+    bool pipelineBinaries;
     // VkPhysicalDevicePipelineCreationCacheControlFeatures, VkPhysicalDeviceVulkan13Features
     bool pipelineCreationCacheControl;
     // VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR

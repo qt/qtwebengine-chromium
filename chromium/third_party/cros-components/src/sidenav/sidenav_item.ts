@@ -6,6 +6,7 @@
 
 import '@material/web/ripple/ripple.js';
 import '@material/web/focus/md-focus-ring.js';
+import '../tooltip/tooltip';
 
 import {css, CSSResultGroup, html, LitElement, nothing, PropertyValues} from 'lit';
 import {classMap} from 'lit/directives/class-map';
@@ -560,7 +561,6 @@ export class SidenavItem extends LitElement {
             aria-expanded=${showExpandIcon ? this.expanded : nothing}
             aria-disabled=${this.disabled}
             tabindex=${this.tabIndex}
-            title="${this.label}"
             @click=${this.onRowClicked}
             @keydown=${this.onKeyDown}
             class=${classMap(treeRowClasses)}
@@ -599,6 +599,7 @@ export class SidenavItem extends LitElement {
             role="group">
           <slot @slotchange=${this.onSlotChanged}></slot>
         </ul>
+        ${this.renderTooltip()}
        </li>
      `;
   }
@@ -654,6 +655,20 @@ export class SidenavItem extends LitElement {
       class="tree-label"
       id="tree-label"
     >${this.label || ''}</span>`;
+  }
+
+  /**
+   * Renders a tooltip if the label is truncated.
+   */
+  private renderTooltip() {
+    return html`
+        <cros-tooltip
+          ?hidden=${!this.isLabelTruncated()}
+          anchor="tree-row"
+          label=${this.label}
+          follow-anchor>
+        </cros-tooltip>
+      `;
   }
 
   private onIconSlotChanged() {
@@ -809,6 +824,12 @@ export class SidenavItem extends LitElement {
   }
 
   private onRenameInputBlur() {
+    // Renaming is already false then the rename input element is not available
+    // and castExists will throw an error. This can occur in tests which
+    // programmatically call blur() on the input element.
+    if (!this.renaming) {
+      return;
+    }
     this.renaming = false;
     if (this.shouldRenameOnBlur) {
       this.commitRename(this.renameInputElement?.value || '');
@@ -832,6 +853,14 @@ export class SidenavItem extends LitElement {
           detail: {item: this, oldLabel, newLabel: newName},
         });
     this.dispatchEvent(renameEvent);
+  }
+
+  private isLabelTruncated(): boolean {
+    const treeLabel = this.shadowRoot?.querySelector('.tree-label');
+    if (!treeLabel) {
+      return false;
+    }
+    return treeLabel.scrollWidth > treeLabel.clientWidth;
   }
 }
 

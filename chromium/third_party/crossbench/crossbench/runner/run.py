@@ -24,7 +24,11 @@ from crossbench.runner.timing import Timing
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import ArgOptions
 
+  from typing import Iterable
+
+  from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
+  from crossbench.browsers.secrets import SecretType
   from crossbench.env import HostEnvironment
   from crossbench.probes.probe import Probe
   from crossbench.runner.groups import BrowserSessionRunGroup
@@ -107,17 +111,31 @@ class Run(ResultOrigin):
 
   def details_json(self) -> JsonDict:
     return {
+        "cwd": str(self.out_dir),
         "name": self.name,
-        "index": self.index,
-        "repetition": self.repetition,
-        "is_warmup": self.is_warmup,
-        "browser_session": self.browser_session.index,
-        "temperature": self.temperature,
-        "story": str(self.story),
-        "probes": [probe.name for probe in self.probes],
-        "duration": self.story.duration.total_seconds(),
-        "startDateTime": str(self.start_datetime),
-        "timeout": self.timeout.total_seconds(),
+        "story": self.story.details_json(),
+        "browser": self.get_browser_details_json(),
+        "run": {
+            "name": self.name,
+            "index": self.index,
+            "repetition": self.repetition,
+            "temperature": self.temperature,
+            "isWarmup": self.is_warmup,
+        },
+        "session": {
+            "index": self.browser_session.index,
+            "cwd": str(self.browser_session.path)
+        },
+        "probes": self.results.to_json(),
+        "timing": {
+            "startDateTime": str(self.start_datetime),
+            "duration": self.story.duration.total_seconds(),
+            "durations": self.durations.to_json(),
+            "timeout": self.timeout.total_seconds(),
+            "global": self.timing.to_json(),
+        },
+        "success": self.is_success,
+        "errors": self.exceptions.error_messages()
     }
 
   @property
@@ -166,6 +184,10 @@ class Run(ResultOrigin):
   @property
   def runner(self) -> Runner:
     return self._runner
+
+  @property
+  def benchmark(self) -> Benchmark:
+    return self._runner.benchmark
 
   @property
   def browser_session(self) -> BrowserSessionRunGroup:
@@ -241,6 +263,12 @@ class Run(ResultOrigin):
       self._probe_context_manager.setup(self.probes, is_dry_run)
     self._log_setup()
 
+  def do_logins(self, logins: Iterable[SecretType]) -> None:
+    for secret_type in logins:
+      if secret_type not in self.browser.secrets:
+        raise ValueError(f"Requested {secret_type.name} secret not provided")
+      self.browser.secrets[secret_type].login(self)
+
   def setup_selenium_options(self, options: ArgOptions):
     # TODO: move explicitly to session.
     self._probe_context_manager.setup_selenium_options(options)
@@ -270,7 +298,11 @@ class Run(ResultOrigin):
 
   def _log_setup(self) -> None:
     logging.debug("SETUP")
-    logging.info("PROBES: %s", ", ".join(probe.NAME for probe in self.probes))
+    logging.info(
+        "PROBES: %s",
+        ", ".join(probe.NAME for probe in self.probes if not probe.is_internal))
+    logging.debug("PROBES ALL: %s",
+                  ", ".join(probe.NAME for probe in self.probes))
     self.story.log_run_details(self)
     logging.info("RUN DIR: %s", self._out_dir)
     logging.debug("CWD %s", self._out_dir)

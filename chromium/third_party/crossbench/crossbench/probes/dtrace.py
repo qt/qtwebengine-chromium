@@ -89,14 +89,15 @@ class DTraceProbeContext(ProbeContext[DTraceProbe]):
   def __init__(self, probe: DTraceProbe, run: Run) -> None:
     super().__init__(probe, run)
     self._script_path: LocalPath = probe.script_path
-    self._output_path: RemotePath = self.result_path.with_suffix(".output.txt")
-    self._log_path: RemotePath = self.result_path.with_suffix(".log")
+    self._output_path: LocalPath = (
+        self.local_result_path.with_suffix(".output.txt"))
+    self._log_path: LocalPath = self.local_result_path.with_suffix(".log")
     self._dtrace_process: Optional[subprocess.Popen] = None
     self._log_file: Optional[TextIO] = None
     atexit.register(self.stop_dtrace_process)
 
   def start(self) -> None:
-    self._log_file = open(self._log_path, "w")
+    self._log_file = self._log_path.open("w", encoding="utf-8")
     # TODO: copy over script to remote machine
     assert self.browser_platform.is_local, "Remote dtrace not supported yet"
     self._dtrace_process = self.browser_platform.popen(

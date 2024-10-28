@@ -137,6 +137,10 @@ export class Textfield extends LitElement {
       --md-outlined-field-leading-space: ${MD_FIELD_LEFT_RIGHT_SPACE_PX};
       --md-outlined-field-top-space: ${MD_FIELD_TOP_BOTTOM_SPACE_PX};
       --md-outlined-field-trailing-space: ${MD_FIELD_LEFT_RIGHT_SPACE_PX};
+      /** Leading/trailing spacing */
+      --md-outlined-field-content-space: 8px;
+      --md-outlined-field-with-leading-content-leading-space: 12px;
+      --md-outlined-field-with-trailing-content-trailing-space: 14px;
       /** Disabled */
       --md-outlined-field-disabled-supporting-text-color: var(--cros-sys-on_surface);
       --md-outlined-text-field-disabled-input-text-color: var(--cros-sys-on_surface);
@@ -205,6 +209,16 @@ export class Textfield extends LitElement {
 
     :host([shaded]) #textfield-background {
       background-color: ${TEXTFIELD_CONTAINER_ON_SHADED};
+    }
+
+    /**
+     * This adjustment updates the trailing icon to match the spec. This cannot
+     * be achieved with the md-outlined-field spacing tokens because the inner
+     * spacing is symmetric.
+     */
+    ::slotted([slot="trailing"]) {
+      position: relative;
+      inset-inline-start: 4px;
     }
 
     /**

@@ -253,6 +253,17 @@ export class MenuItem extends LitElement implements MenuItemType {
     return this.renderRoot.querySelector('slot[name="end"]');
   }
 
+  get mdMenuItem() {
+    return this.renderRoot?.querySelector('md-menu-item');
+  }
+
+  // List item is the interactive element of the menu item and thus the element
+  // in focus by Chromevox. To ensure 'switch' announces correctly we need to
+  // set attributes directly on the list item.
+  get listItem() {
+    return this.mdMenuItem?.renderRoot.querySelector('.list-item');
+  }
+
   override updated(changedProperties: PropertyValues<this>) {
     super.updated(changedProperties);
     if (changedProperties.has('keepOpen') && this.keepOpen) {
@@ -261,8 +272,6 @@ export class MenuItem extends LitElement implements MenuItemType {
     }
     if (changedProperties.has('itemEnd') && this.itemEnd === 'switch') {
       this.addEventListener('keydown', this.keyDownListener);
-      this.setAttribute('role', 'menuitemcheckbox');
-      this.setAttribute('aria-checked', 'false');
       this.addEventListener('click', this.clickListener);
     }
     if (changedProperties.has('itemStart') && this.itemStart === 'icon' &&
@@ -278,6 +287,14 @@ export class MenuItem extends LitElement implements MenuItemType {
       endItems.forEach((endItem) => {
         endItem.setAttribute('slot', 'end');
       });
+    }
+
+    // MdMenuItem sets the list item role via its controller on update, we need
+    // to do the same here to correct it when itemEnd is 'switch'.
+    if (this.itemEnd === 'switch') {
+      this.listItem?.setAttribute('role', 'menuitemcheckbox');
+      this.listItem?.setAttribute(
+          'aria-checked', this.switchSelected ? 'true' : 'false');
     }
   }
 
@@ -373,9 +390,9 @@ export class MenuItem extends LitElement implements MenuItemType {
       if (this.disabled) return;
       crosSwitch.selected = !crosSwitch.selected;
       if (crosSwitch.selected) {
-        this.setAttribute('aria-checked', 'true');
+        this.listItem?.setAttribute('aria-checked', 'true');
       } else {
-        this.setAttribute('aria-checked', 'false');
+        this.listItem?.setAttribute('aria-checked', 'false');
       }
     }
     this.fireTriggerEvent();

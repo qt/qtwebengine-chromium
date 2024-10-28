@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Tuple
 
 from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
@@ -14,10 +14,9 @@ from crossbench.browsers.viewport import Viewport
 from crossbench.browsers.webdriver import WebDriverBrowser
 
 if TYPE_CHECKING:
-  from crossbench.browsers.splash_screen import SplashScreen
+  from crossbench.browsers.settings import Settings
   from crossbench.flags.base import Flags
-  from crossbench.network.base import Network
-  from crossbench.path import RemotePath, LocalPath
+  from crossbench.path import RemotePath
   from crossbench.runner.groups import BrowserSessionRunGroup
 
 
@@ -47,35 +46,14 @@ class Firefox(Browser):
         linux=["firefox-nightly", "firefox-trunk"],
         win=["Firefox Nightly/firefox.exe"])
 
-  def __init__(self,
-               label: str,
-               path: RemotePath,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.Platform] = None):
+  def _setup_cache_dir(self, settings: Settings) -> None:
+    cache_dir = settings.cache_dir
     if cache_dir:
       self.cache_dir = cache_dir
       self.clear_cache_dir = False
     else:
-      platform = platform or plt.PLATFORM
-      self.cache_dir: RemotePath = platform.mkdtemp(prefix="firefox")
+      self.cache_dir: RemotePath = settings.platform.mkdtemp(prefix="firefox")
       self.clear_cache_dir = True
-    super().__init__(
-        label,
-        path,
-        flags,
-        js_flags=None,
-        network=network,
-        driver_path=driver_path,
-        viewport=viewport,
-        splash_screen=splash_screen,
-        platform=platform)
-    assert not js_flags, "Firefox doesn't support custom js_flags"
 
   @property
   def type_name(self) -> str:

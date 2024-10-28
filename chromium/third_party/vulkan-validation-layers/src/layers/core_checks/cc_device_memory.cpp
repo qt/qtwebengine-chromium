@@ -363,7 +363,7 @@ bool CoreChecks::HasExternalMemoryImportSupport(const vvl::Buffer &buffer, VkExt
     info.usage = buffer.create_info.usage;
     info.handleType = handle_type;
     VkExternalBufferProperties properties = vku::InitStructHelper();
-    DispatchGetPhysicalDeviceExternalBufferProperties(physical_device, &info, &properties);
+    DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(physical_device, &info, &properties);
     return (properties.externalMemoryProperties.externalMemoryFeatures & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT) != 0;
 }
 
@@ -877,7 +877,7 @@ bool CoreChecks::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory memory
 
             auto validate_export_handle_types = [&](VkExternalMemoryHandleTypeFlagBits flag) {
                 external_info.handleType = flag;
-                DispatchGetPhysicalDeviceExternalBufferProperties(physical_device, &external_info, &external_properties);
+                DispatchGetPhysicalDeviceExternalBufferPropertiesHelper(physical_device, &external_info, &external_properties);
                 const auto external_features = external_properties.externalMemoryProperties.externalMemoryFeatures;
                 if ((external_features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) == 0) {
                     export_supported = false;
@@ -2092,6 +2092,62 @@ bool CoreChecks::PreCallValidateBindImageMemory2KHR(VkDevice device, uint32_t bi
 void CoreChecks::PostCallRecordBindImageMemory2KHR(VkDevice device, uint32_t bindInfoCount, const VkBindImageMemoryInfo *pBindInfos,
                                                    const RecordObject &record_obj) {
     PostCallRecordBindImageMemory2(device, bindInfoCount, pBindInfos, record_obj);
+}
+
+bool CoreChecks::ValidateBufferSparseMemoryBindAlignments(const VkSparseMemoryBind &bind, const vvl::Buffer &buffer,
+                                                          const Location &bind_loc, const Location &buffer_bind_info_loc) const {
+    bool skip = false;
+
+    if (SafeModulo(bind.resourceOffset, buffer.requirements.alignment) != 0) {
+        const LogObjectList objlist(bind.memory, buffer.Handle());
+        skip |=
+            LogError("VUID-VkSparseMemoryBind-resourceOffset-09491", objlist, buffer_bind_info_loc.dot(Field::buffer),
+                     "(%s) is being bound, but %s.resourceOffset (%" PRIu64
+                     ") is not a multiple of required memory alignment (%" PRIu64 ").",
+                     FormatHandle(buffer).c_str(), bind_loc.Fields().c_str(), bind.resourceOffset, buffer.requirements.alignment);
+    }
+
+    if (SafeModulo(bind.memoryOffset, buffer.requirements.alignment) != 0) {
+        const LogObjectList objlist(bind.memory, buffer.Handle());
+        skip |= LogError("VUID-VkSparseMemoryBind-resourceOffset-09491", objlist, buffer_bind_info_loc.dot(Field::buffer),
+                         "(%s) is being bound, but %s.memoryOffset (%" PRIu64
+                         ") is not a multiple of required memory alignment (%" PRIu64 ").",
+                         FormatHandle(buffer).c_str(), bind_loc.Fields().c_str(), bind.memoryOffset, buffer.requirements.alignment);
+    }
+
+    if (SafeModulo(bind.size, buffer.requirements.alignment) != 0) {
+        const LogObjectList objlist(bind.memory, buffer.Handle());
+        skip |=
+            LogError("VUID-VkSparseMemoryBind-resourceOffset-09491", objlist, buffer_bind_info_loc.dot(Field::buffer),
+                     "(%s) is being bound, but %s.size (%" PRIu64 ") is not a multiple of required memory alignment (%" PRIu64 ").",
+                     FormatHandle(buffer).c_str(), bind_loc.Fields().c_str(), bind.size, buffer.requirements.alignment);
+    }
+
+    return skip;
+}
+
+bool CoreChecks::ValidateImageSparseMemoryBindAlignments(const VkSparseMemoryBind &bind, const vvl::Image &image,
+                                                         const Location &bind_loc, const Location &image_bind_info_loc) const {
+    bool skip = false;
+
+    if (SafeModulo(bind.resourceOffset, image.requirements[0].alignment) != 0) {
+        const LogObjectList objlist(bind.memory, image.Handle());
+        skip |=
+            LogError("VUID-VkSparseMemoryBind-resourceOffset-09492", objlist, image_bind_info_loc.dot(Field::image),
+                     "(%s) is being bound, but %s.resourceOffset (%" PRIu64
+                     ") is not a multiple of required memory alignment (%" PRIu64 ").",
+                     FormatHandle(image).c_str(), bind_loc.Fields().c_str(), bind.resourceOffset, image.requirements[0].alignment);
+    }
+
+    if (SafeModulo(bind.memoryOffset, image.requirements[0].alignment) != 0) {
+        const LogObjectList objlist(bind.memory, image.Handle());
+        skip |= LogError(
+            "VUID-VkSparseMemoryBind-resourceOffset-09492", objlist, image_bind_info_loc.dot(Field::image),
+            "(%s) is being bound, but %s.memoryOffset (%" PRIu64 ") is not a multiple of required memory alignment (%" PRIu64 ").",
+            FormatHandle(image).c_str(), bind_loc.Fields().c_str(), bind.memoryOffset, image.requirements[0].alignment);
+    }
+
+    return skip;
 }
 
 bool CoreChecks::ValidateSparseMemoryBind(const VkSparseMemoryBind &bind, const VkMemoryRequirements &requirements,

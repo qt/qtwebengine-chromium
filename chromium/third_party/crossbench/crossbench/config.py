@@ -13,8 +13,8 @@ import inspect
 import logging
 import re
 import textwrap
-from typing import (TYPE_CHECKING, Any, Callable, Dict, Generic, Iterable, List,
-                    Optional, Set, Tuple, Type, TypeVar, Union, cast)
+from typing import (TYPE_CHECKING, Any, Callable, Dict, Generic, Iterable,
+                    List, Optional, Set, Tuple, Type, TypeVar, Union, cast)
 from urllib.parse import urlparse
 
 import tabulate
@@ -57,7 +57,12 @@ class _ConfigArgParser:
     self.help: Optional[str] = help
     self.is_list: bool = is_list
     self.required: bool = required
-    self.is_enum: bool = inspect.isclass(type) and issubclass(type, enum.Enum)
+    type_is_class = inspect.isclass(type)
+    self.type_is_class: bool = type_is_class
+    self.is_enum: bool = type_is_class and issubclass(type, enum.Enum)
+    self.config_object_type: Optional[Type[ConfigObject]] = None
+    if type_is_class and issubclass(type, ConfigObject):
+      self.config_object_type = type
     self.depends_on = frozenset(depends_on) if depends_on else frozenset()
     self.choices: Optional[frozenset] = self._validate_choices(choices)
     if self.type:
@@ -71,9 +76,7 @@ class _ConfigArgParser:
     if not callable(self.type):
       raise TypeError(
           f"Expected type to be a class or a callable, but got: {self.type}")
-    maybe_config_class = self.type
-    if inspect.isclass(maybe_config_class) and issubclass(
-        maybe_config_class, ConfigObject):
+    if self.config_object_type:
       # Config objects and depends_on are handled specially.
       return
 
@@ -165,15 +168,14 @@ class _ConfigArgParser:
       assert isinstance(default, enum_type), (
           f"Default must be a {enum_type} enum, but got: {self.default}")
 
-  def _validate_depends_on(self,
-                           original_value: Optional[Iterable[str]]) -> None:
-    if not self.depends_on:
+  def _validate_depends_on(self, depends_on: Optional[Iterable[str]]) -> None:
+    if not depends_on:
       return
-    if not self._is_iterable_non_str(original_value):
+    if not self._is_iterable_non_str(depends_on):
       raise TypeError(f"Expected depends_on to be a collection of str, "
-                      f"but got {type(original_value).__name__}: "
-                      f"{repr(original_value)}")
-    for i, value in enumerate(original_value):
+                      f"but got {type(depends_on).__name__}: "
+                      f"{repr(depends_on)}")
+    for i, value in enumerate(depends_on):
       if not isinstance(value, str):
         raise TypeError(f"Expected depends_on[{i}] to be a str, but got "
                         f"{type(value).__name__}: {repr(value)}")
@@ -332,18 +334,21 @@ class _ConfigArgParser:
       if not isinstance(data, (float, int)):
         raise ValueError(
             f"{self.cls_name}.{self.name}: Expected number, got {data}")
-    config_object_cls = self.type  # pytype needs a local for inspect.isclass.
-    if (inspect.isclass(config_object_cls) and
-        issubclass(config_object_cls, ConfigObject)):
+    if self.config_object_type:
       # TODO: support custom depending kwargs with ConfigObject
       self._validate_type_without_depending_kwargs(depending_kwargs)
-      return config_object_cls.parse(data)
+      return self.parse_config_object(data)
     return self.type(data, **depending_kwargs)
+
+  def parse_config_object(self, data) -> Any:
+    config_object: ConfigObject = self.config_object_type.parse(data)
+    return config_object.to_argument_value()
 
   def parse_enum_data(self, data: Any) -> enum.Enum:
     assert self.is_enum
     assert self.choices
     assert self.type
+    assert isinstance(self.type, type), "type for enum has to be a Class."
     if issubclass(self.type, ConfigEnum):
       return self.type.parse(data)
     assert issubclass(self.type, enum.Enum)
@@ -362,10 +367,6 @@ class ConfigEnum(compat.StrEnumWithHelp):
     return cli_helper.parse_enum(cls.__name__, cls, value, cls)
 
 
-_PATH_PREFIX = re.compile(r"("
-                          r"((\.\.?|~)?/)|"
-                          r"[a-zA-Z]:(\\|/)"
-                          r")[^\\/]")
 ConfigObjectT = TypeVar("ConfigObjectT", bound="ConfigObject")
 
 class ConfigObject(abc.ABC):
@@ -379,7 +380,7 @@ class ConfigObject(abc.ABC):
 
   @classmethod
   def value_has_path_prefix(cls, value: str) -> bool:
-    return _PATH_PREFIX.match(value) is not None
+    return cli_helper.PATH_PREFIX.match(value) is not None
 
   def __post_init__(self) -> None:
     self.validate()
@@ -389,35 +390,42 @@ class ConfigObject(abc.ABC):
     checked individually (aka depend on each other).
     """
 
+  def to_argument_value(self) -> Any:
+    """ Called to convert a ConfigObject to the value stored in ConfigParser
+     result. """
+    return self
+
   @classmethod
-  def parse(cls: Type[ConfigObjectT], value: Any) -> ConfigObjectT:
+  def parse(cls: Type[ConfigObjectT], value: Any, **kwargs) -> ConfigObjectT:
     # Quick return for default values used by parsers.
     if isinstance(value, cls):
       return value
     # Make sure we wrap any exception in a argparse.ArgumentTypeError)
     with exception.annotate_argparsing(f"Parsing {cls.__name__}"):
-      return cls._parse(value)
+      return cls._parse(value, **kwargs)
 
   @classmethod
-  def _parse(cls: Type[ConfigObjectT], value: Any) -> ConfigObjectT:
+  def _parse(cls: Type[ConfigObjectT], value: Any, **kwargs) -> ConfigObjectT:
     if isinstance(value, dict):
-      return cls.load_dict(value)
+      return cls.parse_dict(value, **kwargs)
     if not value:
       raise ConfigError(f"{cls.__name__}: Empty config value")
     if isinstance(value, pth.LocalPath):
-      return cls.load_path(value)
+      return cls.parse_path(value, **kwargs)
     if isinstance(value, str):
       if urlparse(value).scheme:
-        # TODO(346197734): use load_url here
-        return cls.loads(value)
+        # TODO(346197734): use parse_url here
+        return cls.parse_str(value, **kwargs)
       try:
         maybe_path = pth.LocalPath(value).expanduser()
         if cls.is_valid_path(maybe_path):
-          return cls.load_path(maybe_path)
+          return cls.parse_path(maybe_path, **kwargs)
+        if cls.value_has_path_prefix(value):
+          return cls.parse_unknown_path(maybe_path, **kwargs)
       except OSError:
         pass
-      return cls.loads(value)
-    return cls.parse_other(value)
+      return cls.parse_str(value, **kwargs)
+    return cls.parse_other(value, **kwargs)
 
   @classmethod
   def parse_other(cls: Type[ConfigObjectT], value: Any) -> ConfigObjectT:
@@ -425,7 +433,7 @@ class ConfigObject(abc.ABC):
 
   @classmethod
   @abc.abstractmethod
-  def loads(cls: Type[ConfigObjectT], value: str) -> ConfigObjectT:
+  def parse_str(cls: Type[ConfigObjectT], value: str) -> ConfigObjectT:
     """Custom implementation for parsing config values that are
     not handled by the default .parse(...) method."""
     raise NotImplementedError()
@@ -437,28 +445,36 @@ class ConfigObject(abc.ABC):
     return path.suffix in cls.VALID_EXTENSIONS
 
   @classmethod
-  def load_path(cls: Type[ConfigObjectT], path: pth.LocalPath) -> ConfigObjectT:
-    return cls.load_config_path(path)
+  def parse_unknown_path(cls: Type[ConfigObjectT], path: pth.LocalPath,
+                         **kwargs) -> ConfigObjectT:
+    # TODO: this should be redirected to parse_config_path
+    return cls.parse_str(str(path), **kwargs)
 
   @classmethod
-  def load_inline_hjson(cls: Type[ConfigObjectT], value: str) -> ConfigObjectT:
+  def parse_path(cls: Type[ConfigObjectT], path: pth.LocalPath,
+                 **kwargs) -> ConfigObjectT:
+    return cls.parse_config_path(path, **kwargs)
+
+  @classmethod
+  def parse_inline_hjson(cls: Type[ConfigObjectT], value: str,
+                         **kwargs) -> ConfigObjectT:
     with exception.annotate(f"Parsing inline {cls.__name__}"):
       data = cli_helper.parse_inline_hjson(value)
-      return cls.load_dict(data)
+      return cls.parse_dict(data, **kwargs)
 
   @classmethod
-  def load_config_path(cls: Type[ConfigObjectT],
-                       path: pth.LocalPathLike) -> ConfigObjectT:
+  def parse_config_path(cls: Type[ConfigObjectT], path: pth.LocalPathLike,
+                        **kwargs) -> ConfigObjectT:
     with exception.annotate_argparsing(f"Parsing {cls.__name__} file: {path}"):
       file_path = cli_helper.parse_existing_file_path(path)
       data = cli_helper.parse_dict_hjson_file(file_path)
       with ChangeCWD(file_path.parent):
-        return cls.load_dict(data)
+        return cls.parse_dict(data, **kwargs)
 
   @classmethod
   @abc.abstractmethod
-  def load_dict(cls: Type[ConfigObjectT], config: Dict[str,
-                                                       Any]) -> ConfigObjectT:
+  def parse_dict(cls: Type[ConfigObjectT], config: Dict[str,
+                                                        Any]) -> ConfigObjectT:
     raise NotImplementedError()
 
 
@@ -520,7 +536,8 @@ class ConfigParser(Generic[ConfigResultObjectT]):
   def __init__(self,
                title: str,
                cls: Type[ConfigResultObjectT],
-               default: Optional[ConfigResultObjectT] = None) -> None:
+               default: Optional[ConfigResultObjectT] = None,
+               allow_unused_config_data: bool = True) -> None:
     self.title = title
     assert title, "No title provided"
     self._cls = cls
@@ -531,6 +548,7 @@ class ConfigParser(Generic[ConfigResultObjectT]):
     self._default = default
     self._args: Dict[str, _ConfigArgParser] = {}
     self._arg_names: Set[str] = set()
+    self._allow_unused_config_data = allow_unused_config_data
 
   @property
   def default(self) -> Optional[ConfigResultObjectT]:
@@ -562,19 +580,50 @@ class ConfigParser(Generic[ConfigResultObjectT]):
   def get_argument(self, arg_name: str) -> _ConfigArgParser:
     return self._args[arg_name]
 
-  def kwargs_from_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
+  def kwargs_from_config(self, config_data: Dict[str, Any],
+                         **extra_kwargs) -> Dict[str, Any]:
+    with exception.annotate_argparsing(
+        f"Parsing {self._cls.__name__} extra config kwargs:"):
+      config_data = self._prepare_config_data(config_data, **extra_kwargs)
     with exception.annotate_argparsing(
         f"Parsing {self._cls.__name__} config dict:"):
       kwargs = _ConfigKwargsParser(self, config_data)
+      if config_data:
+        self._handle_unused_config_data(config_data)
       return kwargs.as_dict()
 
-  def parse(self, config_data: Dict[str, Any]) -> ConfigResultObjectT:
-    if self._default and config_data == {}:
+  def parse(self, config_data: Dict[str, Any], **kwargs) -> ConfigResultObjectT:
+    if self._default and config_data == {} and not kwargs:
       return self._default
-    kwargs = self.kwargs_from_config(config_data)
-    if config_data:
-      logging.debug("Got unused properties: %s", config_data.keys())
-    return self.cls(**kwargs)
+    kwargs = self.kwargs_from_config(config_data, **kwargs)
+    return self.new_instance_from_kwargs(kwargs)
+
+  def _prepare_config_data(self, config_data: Dict[str, Any],
+                           **extra_kwargs) -> Dict[str, Any]:
+    config_data = dict(config_data)
+    for extra_key, extra_data in extra_kwargs.items():
+      if extra_data is None:
+        continue
+      if extra_key in config_data and extra_data is not config_data[extra_key]:
+        raise ValueError(
+            f"Extra config data {repr(extra_key)}={repr(extra_data)} "
+            f"was already present in config_data[..]={repr(config_data[extra_key])}"
+        )
+      config_data[extra_key] = extra_data
+    return config_data
+
+  def new_instance_from_kwargs(self, kwargs: Dict[str,
+                                                  Any]) -> ConfigResultObjectT:
+    return self._cls(**kwargs)
+
+  def _handle_unused_config_data(self, unused_config_data: Dict[str,
+                                                                Any]) -> None:
+    logging.debug("Got unused properties: %s", unused_config_data.keys())
+    if not self._allow_unused_config_data:
+      unused_keys = ', '.join(map(repr, unused_config_data.keys()))
+      raise argparse.ArgumentTypeError(
+          f"Config for {self._cls.__name__} contains unused properties: "
+          f"{unused_keys}")
 
   @property
   def arg_parsers(self) -> Tuple[_ConfigArgParser]:

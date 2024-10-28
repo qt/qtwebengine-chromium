@@ -11,6 +11,12 @@ import {Corner, FocusState, MdMenu, Menu as MenuInterface} from '@material/web/m
 import {css, CSSResultGroup, html, LitElement, PropertyValues} from 'lit';
 
 /**
+ * Type used to set menuType property on cros-menu. Aligns with the `role`
+ * attribute of the `md-menu` component.
+ */
+export type MenuType = 'menu'|'listbox';
+
+/**
  * A chromeOS menu component.
  */
 export class Menu extends LitElement implements MenuInterface {
@@ -81,6 +87,7 @@ export class Menu extends LitElement implements MenuInterface {
         {type: Boolean, attribute: 'stay-open-on-outside-click'},
     isSubmenu: {type: Boolean, attribute: 'is-submenu'},
     usePopover: {type: Boolean, attribute: 'use-popover'},
+    type: {type: String}
   };
 
   /** @nocollapse */
@@ -173,6 +180,12 @@ export class Menu extends LitElement implements MenuInterface {
    */
   usePopover: boolean;
 
+  /**
+   * Determines which role menu should use thus adjusting keyboard navigation.
+   * @export
+   */
+  type: MenuType;
+
   get mdMenu(): MdMenu {
     return this.renderRoot.querySelector('md-menu') as MdMenu;
   }
@@ -211,6 +224,7 @@ export class Menu extends LitElement implements MenuInterface {
     this.skipRestoreFocus = false;
     this.isSubmenu = false;
     this.usePopover = true;
+    this.type = 'menu';
   }
 
   override firstUpdated() {
@@ -265,6 +279,7 @@ export class Menu extends LitElement implements MenuInterface {
       <md-menu
           id="menu"
           tabindex="0"
+          role=${this.type}
           .anchorElement=${this.anchorElement}
           .open=${this.open}
           .hasOverflow=${this.hasOverflow}
@@ -275,7 +290,7 @@ export class Menu extends LitElement implements MenuInterface {
           .skipRestoreFocus=${this.skipRestoreFocus}
           .isSubmenu=${this.isSubmenu}
           .positioning=${this.usePopover ? 'popover' : 'absolute'}
-          @closed=${this.close}
+          @closed=${this.onMdMenuClosed}
           @opened=${this.show}
           @closing=${this.onClosing}
           @opening=${this.onOpening}
@@ -286,6 +301,10 @@ export class Menu extends LitElement implements MenuInterface {
     `;
   }
 
+  /**
+   * Opens the menu.
+   * @export
+   */
   show() {
     this.open = true;
     // these non-bubbling events need to be re-dispatched for keyboard
@@ -294,14 +313,31 @@ export class Menu extends LitElement implements MenuInterface {
     this.anchorElement?.setAttribute('aria-expanded', 'true');
   }
 
+  /**
+   * Closes the menu.
+   * @export
+   */
   close() {
+    this.performClose();
+  }
+
+  private performClose() {
     this.open = false;
-    this.dispatchEvent(new Event('closed'));
     // Set default focus back correctly (in case keyboard arrow nav has
     // changed it temporarily). We avoid doing this in focusFirstItem() to
     // avoid race conditions with menu open.
     this.renderRoot.querySelector('md-menu')!.defaultFocus = this.defaultFocus;
     this.anchorElement?.setAttribute('aria-expanded', 'false');
+  }
+
+  /**
+   * Handles the md-menu closed event. Dispatch the 'closed' event here to
+   * ensure that only a single 'closed' event is dispatched regardless of
+   * whether the menu is closed via UI interaction or via the `close()` method.
+   */
+  private onMdMenuClosed() {
+    this.dispatchEvent(new Event('closed'));
+    this.performClose();
   }
 
   private onClosing() {

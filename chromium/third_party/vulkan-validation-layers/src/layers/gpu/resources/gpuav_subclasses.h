@@ -18,14 +18,11 @@
 #pragma once
 
 #include <vector>
-#include <mutex>
 
 #include "external/inplace_function.h"
 #include "gpu/core/gpu_state_tracker.h"
 #include "gpu/descriptor_validation/gpuav_descriptor_set.h"
 #include "gpu/resources/gpu_resources.h"
-#include "generated/vk_object_types.h"
-#include "gpu/shaders/gpu_shaders_constants.h"
 
 // We pull in most the core state tracking files
 // gpuav_subclasses.h should NOT be included by any other header file
@@ -38,36 +35,7 @@
 namespace gpuav {
 
 class Validator;
-
-struct DescSetState {
-    uint32_t num;
-    std::shared_ptr<DescriptorSet> state;
-    BindingVariableMap binding_req;
-    // State that will be used by the GPU-AV shader instrumentation
-    // For update-after-bind, this will be set during queue submission
-    // Otherwise it will be set when the DescriptorSet is bound.
-    std::shared_ptr<DescriptorSet::State> gpu_state;
-    std::shared_ptr<DescriptorSet::State> output_state;
-};
-
-struct DescBindingInfo {
-    VkBuffer bindless_state_buffer;
-    VmaAllocation bindless_state_buffer_allocation;
-    // Hold a buffer for each descriptor set
-    // Note: The index here is from vkCmdBindDescriptorSets::firstSet
-    std::vector<DescSetState> descriptor_set_buffers;
-};
-
-// Used for draws/dispatch/traceRays indirect
-struct CmdIndirectState {
-    VkBuffer buffer;
-    VkDeviceSize offset;
-    uint32_t draw_count;
-    uint32_t stride;
-    VkBuffer count_buffer;
-    VkDeviceSize count_buffer_offset;
-    VkDeviceAddress indirectDeviceAddress;
-};
+struct DescBindingInfo;
 
 class CommandBuffer : public gpu_tracker::CommandBuffer {
   public:
@@ -155,15 +123,6 @@ class CommandBuffer : public gpu_tracker::CommandBuffer {
     uint32_t bda_ranges_snapshot_version_ = 0;
 };
 
-class Queue : public gpu_tracker::Queue {
-  public:
-    Queue(Validator &state, VkQueue q, uint32_t family_index, uint32_t queue_index, VkDeviceQueueCreateFlags flags,
-          const VkQueueFamilyProperties &qfp);
-
-  protected:
-    vvl::PreSubmitResult PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) override;
-};
-
 class Buffer : public vvl::Buffer {
   public:
     Buffer(ValidationStateTracker &dev_data, VkBuffer buff, const VkBufferCreateInfo *pCreateInfo, DescriptorHeap &desc_heap_);
@@ -234,20 +193,5 @@ class AccelerationStructureNV : public vvl::AccelerationStructureNV {
     DescriptorHeap &desc_heap;
     const DescriptorId id;
 };
-
-namespace glsl {
-
-struct DescriptorSetRecord {
-    VkDeviceAddress layout_data;
-    VkDeviceAddress in_data;
-    VkDeviceAddress out_data;
-};
-
-struct BindlessStateBuffer {
-    VkDeviceAddress global_state;
-    DescriptorSetRecord desc_sets[kDebugInputBindlessMaxDescSets];
-};
-
-}  // namespace glsl
 
 }  // namespace gpuav

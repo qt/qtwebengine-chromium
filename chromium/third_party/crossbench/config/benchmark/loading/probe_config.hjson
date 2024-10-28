@@ -3,8 +3,10 @@
     // Uncomment the following line to record a WPR archive.
     // wpr: {},
     trace_processor: {
-      probes: ["perfetto"],
-      metrics: ["lcp_metric"],
+      queries: [
+        "loading/loading_benchmark",
+      ],
+      batch: true
     },
     perfetto: {
       textproto: '''
@@ -22,7 +24,12 @@
             name: "track_event"
             track_event_config {
               disabled_categories: "*"
+              enabled_categories: "benchmark"
+              enabled_categories: "blink.user_timing"
+              enabled_categories: "devtools.timeline"
+              enabled_categories: "disabled-by-default-devtools.timeline"
               enabled_categories: "loading"
+              enabled_categories: "v8"
               enabled_categories: "__metadata"
               timestamp_unit_multiplier: 1000
               enable_thread_time_sampling: true

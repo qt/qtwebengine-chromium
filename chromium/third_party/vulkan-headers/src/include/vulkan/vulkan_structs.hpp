@@ -8,6 +8,9 @@
 #ifndef VULKAN_STRUCTS_HPP
 #define VULKAN_STRUCTS_HPP
 
+// include-what-you-use: make sure, vulkan.hpp is used by code-completers
+// IWYU pragma: private; include "vulkan.hpp"
+
 #include <cstring>  // strcmp
 
 namespace VULKAN_HPP_NAMESPACE
@@ -23635,7 +23638,7 @@ namespace VULKAN_HPP_NAMESPACE
 #if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
     VULKAN_HPP_CONSTEXPR DescriptorBufferBindingInfoEXT( VULKAN_HPP_NAMESPACE::DeviceAddress    address_ = {},
                                                          VULKAN_HPP_NAMESPACE::BufferUsageFlags usage_   = {},
-                                                         void *                                 pNext_   = nullptr ) VULKAN_HPP_NOEXCEPT
+                                                         const void *                           pNext_   = nullptr ) VULKAN_HPP_NOEXCEPT
       : pNext{ pNext_ }
       , address{ address_ }
       , usage{ usage_ }
@@ -23659,7 +23662,7 @@ namespace VULKAN_HPP_NAMESPACE
     }
 
 #if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
-    VULKAN_HPP_CONSTEXPR_14 DescriptorBufferBindingInfoEXT & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    VULKAN_HPP_CONSTEXPR_14 DescriptorBufferBindingInfoEXT & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
     {
       pNext = pNext_;
       return *this;
@@ -23693,7 +23696,7 @@ namespace VULKAN_HPP_NAMESPACE
     auto
 #  else
     std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &,
-               void * const &,
+               const void * const &,
                VULKAN_HPP_NAMESPACE::DeviceAddress const &,
                VULKAN_HPP_NAMESPACE::BufferUsageFlags const &>
 #  endif
@@ -23723,7 +23726,7 @@ namespace VULKAN_HPP_NAMESPACE
 
   public:
     VULKAN_HPP_NAMESPACE::StructureType    sType   = StructureType::eDescriptorBufferBindingInfoEXT;
-    void *                                 pNext   = {};
+    const void *                           pNext   = {};
     VULKAN_HPP_NAMESPACE::DeviceAddress    address = {};
     VULKAN_HPP_NAMESPACE::BufferUsageFlags usage   = {};
   };
@@ -23743,7 +23746,7 @@ namespace VULKAN_HPP_NAMESPACE
 
 #if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
     VULKAN_HPP_CONSTEXPR DescriptorBufferBindingPushDescriptorBufferHandleEXT( VULKAN_HPP_NAMESPACE::Buffer buffer_ = {},
-                                                                               void *                       pNext_  = nullptr ) VULKAN_HPP_NOEXCEPT
+                                                                               const void *                 pNext_  = nullptr ) VULKAN_HPP_NOEXCEPT
       : pNext{ pNext_ }
       , buffer{ buffer_ }
     {
@@ -23768,7 +23771,7 @@ namespace VULKAN_HPP_NAMESPACE
     }
 
 #if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
-    VULKAN_HPP_CONSTEXPR_14 DescriptorBufferBindingPushDescriptorBufferHandleEXT & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    VULKAN_HPP_CONSTEXPR_14 DescriptorBufferBindingPushDescriptorBufferHandleEXT & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
     {
       pNext = pNext_;
       return *this;
@@ -23795,7 +23798,7 @@ namespace VULKAN_HPP_NAMESPACE
 #  if 14 <= VULKAN_HPP_CPP_VERSION
     auto
 #  else
-    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::Buffer const &>
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, const void * const &, VULKAN_HPP_NAMESPACE::Buffer const &>
 #  endif
       reflect() const VULKAN_HPP_NOEXCEPT
     {
@@ -23823,7 +23826,7 @@ namespace VULKAN_HPP_NAMESPACE
 
   public:
     VULKAN_HPP_NAMESPACE::StructureType sType  = StructureType::eDescriptorBufferBindingPushDescriptorBufferHandleEXT;
-    void *                              pNext  = {};
+    const void *                        pNext  = {};
     VULKAN_HPP_NAMESPACE::Buffer        buffer = {};
   };
 
@@ -30280,6 +30283,104 @@ namespace VULKAN_HPP_NAMESPACE
 #  endif /*VULKAN_HPP_HAS_UNRESTRICTED_UNIONS*/
   };
 #endif /*VK_ENABLE_BETA_EXTENSIONS*/
+
+  struct DevicePipelineBinaryInternalCacheControlKHR
+  {
+    using NativeType = VkDevicePipelineBinaryInternalCacheControlKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::eDevicePipelineBinaryInternalCacheControlKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR DevicePipelineBinaryInternalCacheControlKHR( VULKAN_HPP_NAMESPACE::Bool32 disableInternalCache_ = {},
+                                                                      const void *                 pNext_                = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , disableInternalCache{ disableInternalCache_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR DevicePipelineBinaryInternalCacheControlKHR( DevicePipelineBinaryInternalCacheControlKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    DevicePipelineBinaryInternalCacheControlKHR( VkDevicePipelineBinaryInternalCacheControlKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : DevicePipelineBinaryInternalCacheControlKHR( *reinterpret_cast<DevicePipelineBinaryInternalCacheControlKHR const *>( &rhs ) )
+    {
+    }
+
+    DevicePipelineBinaryInternalCacheControlKHR & operator=( DevicePipelineBinaryInternalCacheControlKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    DevicePipelineBinaryInternalCacheControlKHR & operator=( VkDevicePipelineBinaryInternalCacheControlKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::DevicePipelineBinaryInternalCacheControlKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 DevicePipelineBinaryInternalCacheControlKHR & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 DevicePipelineBinaryInternalCacheControlKHR &
+      setDisableInternalCache( VULKAN_HPP_NAMESPACE::Bool32 disableInternalCache_ ) VULKAN_HPP_NOEXCEPT
+    {
+      disableInternalCache = disableInternalCache_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkDevicePipelineBinaryInternalCacheControlKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkDevicePipelineBinaryInternalCacheControlKHR *>( this );
+    }
+
+    operator VkDevicePipelineBinaryInternalCacheControlKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkDevicePipelineBinaryInternalCacheControlKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, const void * const &, VULKAN_HPP_NAMESPACE::Bool32 const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, disableInternalCache );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( DevicePipelineBinaryInternalCacheControlKHR const & ) const = default;
+#else
+    bool operator==( DevicePipelineBinaryInternalCacheControlKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( disableInternalCache == rhs.disableInternalCache );
+#  endif
+    }
+
+    bool operator!=( DevicePipelineBinaryInternalCacheControlKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType                = StructureType::eDevicePipelineBinaryInternalCacheControlKHR;
+    const void *                        pNext                = {};
+    VULKAN_HPP_NAMESPACE::Bool32        disableInternalCache = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::eDevicePipelineBinaryInternalCacheControlKHR>
+  {
+    using Type = DevicePipelineBinaryInternalCacheControlKHR;
+  };
 
   struct DevicePrivateDataCreateInfo
   {
@@ -58661,17 +58762,116 @@ namespace VULKAN_HPP_NAMESPACE
     using Type = PhysicalDeviceColorWriteEnableFeaturesEXT;
   };
 
-  struct PhysicalDeviceComputeShaderDerivativesFeaturesNV
+  struct PhysicalDeviceCommandBufferInheritanceFeaturesNV
   {
-    using NativeType = VkPhysicalDeviceComputeShaderDerivativesFeaturesNV;
+    using NativeType = VkPhysicalDeviceCommandBufferInheritanceFeaturesNV;
 
     static const bool                                  allowDuplicate = false;
-    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesNV;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDeviceCommandBufferInheritanceFeaturesNV;
 
 #if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
-    VULKAN_HPP_CONSTEXPR PhysicalDeviceComputeShaderDerivativesFeaturesNV( VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupQuads_  = {},
-                                                                           VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupLinear_ = {},
+    VULKAN_HPP_CONSTEXPR PhysicalDeviceCommandBufferInheritanceFeaturesNV( VULKAN_HPP_NAMESPACE::Bool32 commandBufferInheritance_ = {},
                                                                            void *                       pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , commandBufferInheritance{ commandBufferInheritance_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR
+      PhysicalDeviceCommandBufferInheritanceFeaturesNV( PhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PhysicalDeviceCommandBufferInheritanceFeaturesNV( VkPhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PhysicalDeviceCommandBufferInheritanceFeaturesNV( *reinterpret_cast<PhysicalDeviceCommandBufferInheritanceFeaturesNV const *>( &rhs ) )
+    {
+    }
+
+    PhysicalDeviceCommandBufferInheritanceFeaturesNV & operator=( PhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PhysicalDeviceCommandBufferInheritanceFeaturesNV & operator=( VkPhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDeviceCommandBufferInheritanceFeaturesNV const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceCommandBufferInheritanceFeaturesNV & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceCommandBufferInheritanceFeaturesNV &
+      setCommandBufferInheritance( VULKAN_HPP_NAMESPACE::Bool32 commandBufferInheritance_ ) VULKAN_HPP_NOEXCEPT
+    {
+      commandBufferInheritance = commandBufferInheritance_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPhysicalDeviceCommandBufferInheritanceFeaturesNV const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPhysicalDeviceCommandBufferInheritanceFeaturesNV *>( this );
+    }
+
+    operator VkPhysicalDeviceCommandBufferInheritanceFeaturesNV &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPhysicalDeviceCommandBufferInheritanceFeaturesNV *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::Bool32 const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, commandBufferInheritance );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PhysicalDeviceCommandBufferInheritanceFeaturesNV const & ) const = default;
+#else
+    bool operator==( PhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( commandBufferInheritance == rhs.commandBufferInheritance );
+#  endif
+    }
+
+    bool operator!=( PhysicalDeviceCommandBufferInheritanceFeaturesNV const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType                    = StructureType::ePhysicalDeviceCommandBufferInheritanceFeaturesNV;
+    void *                              pNext                    = {};
+    VULKAN_HPP_NAMESPACE::Bool32        commandBufferInheritance = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePhysicalDeviceCommandBufferInheritanceFeaturesNV>
+  {
+    using Type = PhysicalDeviceCommandBufferInheritanceFeaturesNV;
+  };
+
+  struct PhysicalDeviceComputeShaderDerivativesFeaturesKHR
+  {
+    using NativeType = VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PhysicalDeviceComputeShaderDerivativesFeaturesKHR( VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupQuads_  = {},
+                                                                            VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupLinear_ = {},
+                                                                            void *                       pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
       : pNext{ pNext_ }
       , computeDerivativeGroupQuads{ computeDerivativeGroupQuads_ }
       , computeDerivativeGroupLinear{ computeDerivativeGroupLinear_ }
@@ -58679,37 +58879,38 @@ namespace VULKAN_HPP_NAMESPACE
     }
 
     VULKAN_HPP_CONSTEXPR
-      PhysicalDeviceComputeShaderDerivativesFeaturesNV( PhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+      PhysicalDeviceComputeShaderDerivativesFeaturesKHR( PhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
 
-    PhysicalDeviceComputeShaderDerivativesFeaturesNV( VkPhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT
-      : PhysicalDeviceComputeShaderDerivativesFeaturesNV( *reinterpret_cast<PhysicalDeviceComputeShaderDerivativesFeaturesNV const *>( &rhs ) )
+    PhysicalDeviceComputeShaderDerivativesFeaturesKHR( VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PhysicalDeviceComputeShaderDerivativesFeaturesKHR( *reinterpret_cast<PhysicalDeviceComputeShaderDerivativesFeaturesKHR const *>( &rhs ) )
     {
     }
 
-    PhysicalDeviceComputeShaderDerivativesFeaturesNV & operator=( PhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+    PhysicalDeviceComputeShaderDerivativesFeaturesKHR &
+      operator=( PhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
 #endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
 
-    PhysicalDeviceComputeShaderDerivativesFeaturesNV & operator=( VkPhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) VULKAN_HPP_NOEXCEPT
+    PhysicalDeviceComputeShaderDerivativesFeaturesKHR & operator=( VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
     {
-      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDeviceComputeShaderDerivativesFeaturesNV const *>( &rhs );
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDeviceComputeShaderDerivativesFeaturesKHR const *>( &rhs );
       return *this;
     }
 
 #if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
-    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesNV & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
     {
       pNext = pNext_;
       return *this;
     }
 
-    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesNV &
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesKHR &
       setComputeDerivativeGroupQuads( VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupQuads_ ) VULKAN_HPP_NOEXCEPT
     {
       computeDerivativeGroupQuads = computeDerivativeGroupQuads_;
       return *this;
     }
 
-    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesNV &
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDeviceComputeShaderDerivativesFeaturesKHR &
       setComputeDerivativeGroupLinear( VULKAN_HPP_NAMESPACE::Bool32 computeDerivativeGroupLinear_ ) VULKAN_HPP_NOEXCEPT
     {
       computeDerivativeGroupLinear = computeDerivativeGroupLinear_;
@@ -58717,14 +58918,14 @@ namespace VULKAN_HPP_NAMESPACE
     }
 #endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
 
-    operator VkPhysicalDeviceComputeShaderDerivativesFeaturesNV const &() const VULKAN_HPP_NOEXCEPT
+    operator VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR const &() const VULKAN_HPP_NOEXCEPT
     {
-      return *reinterpret_cast<const VkPhysicalDeviceComputeShaderDerivativesFeaturesNV *>( this );
+      return *reinterpret_cast<const VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR *>( this );
     }
 
-    operator VkPhysicalDeviceComputeShaderDerivativesFeaturesNV &() VULKAN_HPP_NOEXCEPT
+    operator VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR &() VULKAN_HPP_NOEXCEPT
     {
-      return *reinterpret_cast<VkPhysicalDeviceComputeShaderDerivativesFeaturesNV *>( this );
+      return *reinterpret_cast<VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR *>( this );
     }
 
 #if defined( VULKAN_HPP_USE_REFLECT )
@@ -58740,9 +58941,9 @@ namespace VULKAN_HPP_NAMESPACE
 #endif
 
 #if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
-    auto operator<=>( PhysicalDeviceComputeShaderDerivativesFeaturesNV const & ) const = default;
+    auto operator<=>( PhysicalDeviceComputeShaderDerivativesFeaturesKHR const & ) const = default;
 #else
-    bool operator==( PhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) const VULKAN_HPP_NOEXCEPT
+    bool operator==( PhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
     {
 #  if defined( VULKAN_HPP_USE_REFLECT )
       return this->reflect() == rhs.reflect();
@@ -58752,23 +58953,110 @@ namespace VULKAN_HPP_NAMESPACE
 #  endif
     }
 
-    bool operator!=( PhysicalDeviceComputeShaderDerivativesFeaturesNV const & rhs ) const VULKAN_HPP_NOEXCEPT
+    bool operator!=( PhysicalDeviceComputeShaderDerivativesFeaturesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
     {
       return !operator==( rhs );
     }
 #endif
 
   public:
-    VULKAN_HPP_NAMESPACE::StructureType sType                        = StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesNV;
+    VULKAN_HPP_NAMESPACE::StructureType sType                        = StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesKHR;
     void *                              pNext                        = {};
     VULKAN_HPP_NAMESPACE::Bool32        computeDerivativeGroupQuads  = {};
     VULKAN_HPP_NAMESPACE::Bool32        computeDerivativeGroupLinear = {};
   };
 
   template <>
-  struct CppType<StructureType, StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesNV>
+  struct CppType<StructureType, StructureType::ePhysicalDeviceComputeShaderDerivativesFeaturesKHR>
   {
-    using Type = PhysicalDeviceComputeShaderDerivativesFeaturesNV;
+    using Type = PhysicalDeviceComputeShaderDerivativesFeaturesKHR;
+  };
+
+  using PhysicalDeviceComputeShaderDerivativesFeaturesNV = PhysicalDeviceComputeShaderDerivativesFeaturesKHR;
+
+  struct PhysicalDeviceComputeShaderDerivativesPropertiesKHR
+  {
+    using NativeType = VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDeviceComputeShaderDerivativesPropertiesKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PhysicalDeviceComputeShaderDerivativesPropertiesKHR( VULKAN_HPP_NAMESPACE::Bool32 meshAndTaskShaderDerivatives_ = {},
+                                                                              void *                       pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , meshAndTaskShaderDerivatives{ meshAndTaskShaderDerivatives_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR
+      PhysicalDeviceComputeShaderDerivativesPropertiesKHR( PhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PhysicalDeviceComputeShaderDerivativesPropertiesKHR( VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PhysicalDeviceComputeShaderDerivativesPropertiesKHR( *reinterpret_cast<PhysicalDeviceComputeShaderDerivativesPropertiesKHR const *>( &rhs ) )
+    {
+    }
+
+    PhysicalDeviceComputeShaderDerivativesPropertiesKHR &
+      operator=( PhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PhysicalDeviceComputeShaderDerivativesPropertiesKHR & operator=( VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDeviceComputeShaderDerivativesPropertiesKHR const *>( &rhs );
+      return *this;
+    }
+
+    operator VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR *>( this );
+    }
+
+    operator VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::Bool32 const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, meshAndTaskShaderDerivatives );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PhysicalDeviceComputeShaderDerivativesPropertiesKHR const & ) const = default;
+#else
+    bool operator==( PhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( meshAndTaskShaderDerivatives == rhs.meshAndTaskShaderDerivatives );
+#  endif
+    }
+
+    bool operator!=( PhysicalDeviceComputeShaderDerivativesPropertiesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType                        = StructureType::ePhysicalDeviceComputeShaderDerivativesPropertiesKHR;
+    void *                              pNext                        = {};
+    VULKAN_HPP_NAMESPACE::Bool32        meshAndTaskShaderDerivatives = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePhysicalDeviceComputeShaderDerivativesPropertiesKHR>
+  {
+    using Type = PhysicalDeviceComputeShaderDerivativesPropertiesKHR;
   };
 
   struct PhysicalDeviceConditionalRenderingFeaturesEXT
@@ -77204,6 +77492,257 @@ namespace VULKAN_HPP_NAMESPACE
     using Type = PhysicalDevicePerformanceQueryPropertiesKHR;
   };
 
+  struct PhysicalDevicePipelineBinaryFeaturesKHR
+  {
+    using NativeType = VkPhysicalDevicePipelineBinaryFeaturesKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDevicePipelineBinaryFeaturesKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PhysicalDevicePipelineBinaryFeaturesKHR( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaries_ = {},
+                                                                  void *                       pNext_            = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pipelineBinaries{ pipelineBinaries_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PhysicalDevicePipelineBinaryFeaturesKHR( PhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PhysicalDevicePipelineBinaryFeaturesKHR( VkPhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PhysicalDevicePipelineBinaryFeaturesKHR( *reinterpret_cast<PhysicalDevicePipelineBinaryFeaturesKHR const *>( &rhs ) )
+    {
+    }
+
+    PhysicalDevicePipelineBinaryFeaturesKHR & operator=( PhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PhysicalDevicePipelineBinaryFeaturesKHR & operator=( VkPhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDevicePipelineBinaryFeaturesKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryFeaturesKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryFeaturesKHR & setPipelineBinaries( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaries_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaries = pipelineBinaries_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPhysicalDevicePipelineBinaryFeaturesKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPhysicalDevicePipelineBinaryFeaturesKHR *>( this );
+    }
+
+    operator VkPhysicalDevicePipelineBinaryFeaturesKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPhysicalDevicePipelineBinaryFeaturesKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::Bool32 const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, pipelineBinaries );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PhysicalDevicePipelineBinaryFeaturesKHR const & ) const = default;
+#else
+    bool operator==( PhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pipelineBinaries == rhs.pipelineBinaries );
+#  endif
+    }
+
+    bool operator!=( PhysicalDevicePipelineBinaryFeaturesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType            = StructureType::ePhysicalDevicePipelineBinaryFeaturesKHR;
+    void *                              pNext            = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaries = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePhysicalDevicePipelineBinaryFeaturesKHR>
+  {
+    using Type = PhysicalDevicePipelineBinaryFeaturesKHR;
+  };
+
+  struct PhysicalDevicePipelineBinaryPropertiesKHR
+  {
+    using NativeType = VkPhysicalDevicePipelineBinaryPropertiesKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePhysicalDevicePipelineBinaryPropertiesKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PhysicalDevicePipelineBinaryPropertiesKHR( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryInternalCache_            = {},
+                                                                    VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryInternalCacheControl_     = {},
+                                                                    VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryPrefersInternalCache_     = {},
+                                                                    VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryPrecompiledInternalCache_ = {},
+                                                                    VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryCompressedData_           = {},
+                                                                    void *                       pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pipelineBinaryInternalCache{ pipelineBinaryInternalCache_ }
+      , pipelineBinaryInternalCacheControl{ pipelineBinaryInternalCacheControl_ }
+      , pipelineBinaryPrefersInternalCache{ pipelineBinaryPrefersInternalCache_ }
+      , pipelineBinaryPrecompiledInternalCache{ pipelineBinaryPrecompiledInternalCache_ }
+      , pipelineBinaryCompressedData{ pipelineBinaryCompressedData_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PhysicalDevicePipelineBinaryPropertiesKHR( PhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PhysicalDevicePipelineBinaryPropertiesKHR( VkPhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PhysicalDevicePipelineBinaryPropertiesKHR( *reinterpret_cast<PhysicalDevicePipelineBinaryPropertiesKHR const *>( &rhs ) )
+    {
+    }
+
+    PhysicalDevicePipelineBinaryPropertiesKHR & operator=( PhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PhysicalDevicePipelineBinaryPropertiesKHR & operator=( VkPhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PhysicalDevicePipelineBinaryPropertiesKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR &
+      setPipelineBinaryInternalCache( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryInternalCache_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryInternalCache = pipelineBinaryInternalCache_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR &
+      setPipelineBinaryInternalCacheControl( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryInternalCacheControl_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryInternalCacheControl = pipelineBinaryInternalCacheControl_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR &
+      setPipelineBinaryPrefersInternalCache( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryPrefersInternalCache_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryPrefersInternalCache = pipelineBinaryPrefersInternalCache_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR &
+      setPipelineBinaryPrecompiledInternalCache( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryPrecompiledInternalCache_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryPrecompiledInternalCache = pipelineBinaryPrecompiledInternalCache_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PhysicalDevicePipelineBinaryPropertiesKHR &
+      setPipelineBinaryCompressedData( VULKAN_HPP_NAMESPACE::Bool32 pipelineBinaryCompressedData_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryCompressedData = pipelineBinaryCompressedData_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPhysicalDevicePipelineBinaryPropertiesKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPhysicalDevicePipelineBinaryPropertiesKHR *>( this );
+    }
+
+    operator VkPhysicalDevicePipelineBinaryPropertiesKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPhysicalDevicePipelineBinaryPropertiesKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &,
+               void * const &,
+               VULKAN_HPP_NAMESPACE::Bool32 const &,
+               VULKAN_HPP_NAMESPACE::Bool32 const &,
+               VULKAN_HPP_NAMESPACE::Bool32 const &,
+               VULKAN_HPP_NAMESPACE::Bool32 const &,
+               VULKAN_HPP_NAMESPACE::Bool32 const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType,
+                       pNext,
+                       pipelineBinaryInternalCache,
+                       pipelineBinaryInternalCacheControl,
+                       pipelineBinaryPrefersInternalCache,
+                       pipelineBinaryPrecompiledInternalCache,
+                       pipelineBinaryCompressedData );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PhysicalDevicePipelineBinaryPropertiesKHR const & ) const = default;
+#else
+    bool operator==( PhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pipelineBinaryInternalCache == rhs.pipelineBinaryInternalCache ) &&
+             ( pipelineBinaryInternalCacheControl == rhs.pipelineBinaryInternalCacheControl ) &&
+             ( pipelineBinaryPrefersInternalCache == rhs.pipelineBinaryPrefersInternalCache ) &&
+             ( pipelineBinaryPrecompiledInternalCache == rhs.pipelineBinaryPrecompiledInternalCache ) &&
+             ( pipelineBinaryCompressedData == rhs.pipelineBinaryCompressedData );
+#  endif
+    }
+
+    bool operator!=( PhysicalDevicePipelineBinaryPropertiesKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType                                  = StructureType::ePhysicalDevicePipelineBinaryPropertiesKHR;
+    void *                              pNext                                  = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaryInternalCache            = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaryInternalCacheControl     = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaryPrefersInternalCache     = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaryPrecompiledInternalCache = {};
+    VULKAN_HPP_NAMESPACE::Bool32        pipelineBinaryCompressedData           = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePhysicalDevicePipelineBinaryPropertiesKHR>
+  {
+    using Type = PhysicalDevicePipelineBinaryPropertiesKHR;
+  };
+
   struct PhysicalDevicePipelineCreationCacheControlFeatures
   {
     using NativeType = VkPhysicalDevicePipelineCreationCacheControlFeatures;
@@ -92701,6 +93240,910 @@ namespace VULKAN_HPP_NAMESPACE
 
   using PhysicalDeviceZeroInitializeWorkgroupMemoryFeaturesKHR = PhysicalDeviceZeroInitializeWorkgroupMemoryFeatures;
 
+  struct PipelineBinaryKeyKHR
+  {
+    using NativeType = VkPipelineBinaryKeyKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineBinaryKeyKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeyKHR( uint32_t                                                         keySize_ = {},
+                                                  std::array<uint8_t, VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR> const & key_     = {},
+                                                  void *                                                           pNext_   = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , keySize{ keySize_ }
+      , key{ key_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeyKHR( PipelineBinaryKeyKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryKeyKHR( VkPipelineBinaryKeyKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryKeyKHR( *reinterpret_cast<PipelineBinaryKeyKHR const *>( &rhs ) )
+    {
+    }
+
+    PipelineBinaryKeyKHR & operator=( PipelineBinaryKeyKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryKeyKHR & operator=( VkPipelineBinaryKeyKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeyKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeyKHR & setKeySize( uint32_t keySize_ ) VULKAN_HPP_NOEXCEPT
+    {
+      keySize = keySize_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeyKHR & setKey( std::array<uint8_t, VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR> key_ ) VULKAN_HPP_NOEXCEPT
+    {
+      key = key_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryKeyKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryKeyKHR *>( this );
+    }
+
+    operator VkPipelineBinaryKeyKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryKeyKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &,
+               void * const &,
+               uint32_t const &,
+               VULKAN_HPP_NAMESPACE::ArrayWrapper1D<uint8_t, VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR> const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, keySize, key );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryKeyKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryKeyKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( keySize == rhs.keySize ) && ( key == rhs.key );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryKeyKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType                                                sType   = StructureType::ePipelineBinaryKeyKHR;
+    void *                                                                             pNext   = {};
+    uint32_t                                                                           keySize = {};
+    VULKAN_HPP_NAMESPACE::ArrayWrapper1D<uint8_t, VK_MAX_PIPELINE_BINARY_KEY_SIZE_KHR> key     = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineBinaryKeyKHR>
+  {
+    using Type = PipelineBinaryKeyKHR;
+  };
+
+  struct PipelineBinaryDataKHR
+  {
+    using NativeType = VkPipelineBinaryDataKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PipelineBinaryDataKHR( size_t dataSize_ = {}, void * pData_ = {} ) VULKAN_HPP_NOEXCEPT
+      : dataSize{ dataSize_ }
+      , pData{ pData_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PipelineBinaryDataKHR( PipelineBinaryDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryDataKHR( VkPipelineBinaryDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryDataKHR( *reinterpret_cast<PipelineBinaryDataKHR const *>( &rhs ) )
+    {
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    template <typename T>
+    PipelineBinaryDataKHR( VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<T> const & data_ ) : dataSize( data_.size() * sizeof( T ) ), pData( data_.data() )
+    {
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+
+    PipelineBinaryDataKHR & operator=( PipelineBinaryDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryDataKHR & operator=( VkPipelineBinaryDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryDataKHR & setDataSize( size_t dataSize_ ) VULKAN_HPP_NOEXCEPT
+    {
+      dataSize = dataSize_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryDataKHR & setPData( void * pData_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pData = pData_;
+      return *this;
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    template <typename T>
+    PipelineBinaryDataKHR & setData( VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<T> const & data_ ) VULKAN_HPP_NOEXCEPT
+    {
+      dataSize = data_.size() * sizeof( T );
+      pData    = data_.data();
+      return *this;
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+#endif   /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryDataKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryDataKHR *>( this );
+    }
+
+    operator VkPipelineBinaryDataKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryDataKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<size_t const &, void * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( dataSize, pData );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryDataKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryDataKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( dataSize == rhs.dataSize ) && ( pData == rhs.pData );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryDataKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    size_t dataSize = {};
+    void * pData    = {};
+  };
+
+  struct PipelineBinaryKeysAndDataKHR
+  {
+    using NativeType = VkPipelineBinaryKeysAndDataKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeysAndDataKHR( uint32_t                                            binaryCount_         = {},
+                                                          const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR *  pPipelineBinaryKeys_ = {},
+                                                          const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR * pPipelineBinaryData_ = {} ) VULKAN_HPP_NOEXCEPT
+      : binaryCount{ binaryCount_ }
+      , pPipelineBinaryKeys{ pPipelineBinaryKeys_ }
+      , pPipelineBinaryData{ pPipelineBinaryData_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeysAndDataKHR( PipelineBinaryKeysAndDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryKeysAndDataKHR( VkPipelineBinaryKeysAndDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryKeysAndDataKHR( *reinterpret_cast<PipelineBinaryKeysAndDataKHR const *>( &rhs ) )
+    {
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryKeysAndDataKHR(
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR> const &  pipelineBinaryKeys_,
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR> const & pipelineBinaryData_ = {} )
+      : binaryCount( static_cast<uint32_t>( pipelineBinaryKeys_.size() ) )
+      , pPipelineBinaryKeys( pipelineBinaryKeys_.data() )
+      , pPipelineBinaryData( pipelineBinaryData_.data() )
+    {
+#    ifdef VULKAN_HPP_NO_EXCEPTIONS
+      VULKAN_HPP_ASSERT( pipelineBinaryKeys_.size() == pipelineBinaryData_.size() );
+#    else
+      if ( pipelineBinaryKeys_.size() != pipelineBinaryData_.size() )
+      {
+        throw LogicError( VULKAN_HPP_NAMESPACE_STRING
+                          "::PipelineBinaryKeysAndDataKHR::PipelineBinaryKeysAndDataKHR: pipelineBinaryKeys_.size() != pipelineBinaryData_.size()" );
+      }
+#    endif /*VULKAN_HPP_NO_EXCEPTIONS*/
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+
+    PipelineBinaryKeysAndDataKHR & operator=( PipelineBinaryKeysAndDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryKeysAndDataKHR & operator=( VkPipelineBinaryKeysAndDataKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryKeysAndDataKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeysAndDataKHR & setBinaryCount( uint32_t binaryCount_ ) VULKAN_HPP_NOEXCEPT
+    {
+      binaryCount = binaryCount_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeysAndDataKHR &
+      setPPipelineBinaryKeys( const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR * pPipelineBinaryKeys_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pPipelineBinaryKeys = pPipelineBinaryKeys_;
+      return *this;
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryKeysAndDataKHR & setPipelineBinaryKeys(
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR> const & pipelineBinaryKeys_ ) VULKAN_HPP_NOEXCEPT
+    {
+      binaryCount         = static_cast<uint32_t>( pipelineBinaryKeys_.size() );
+      pPipelineBinaryKeys = pipelineBinaryKeys_.data();
+      return *this;
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryKeysAndDataKHR &
+      setPPipelineBinaryData( const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR * pPipelineBinaryData_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pPipelineBinaryData = pPipelineBinaryData_;
+      return *this;
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryKeysAndDataKHR & setPipelineBinaryData(
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR> const & pipelineBinaryData_ ) VULKAN_HPP_NOEXCEPT
+    {
+      binaryCount         = static_cast<uint32_t>( pipelineBinaryData_.size() );
+      pPipelineBinaryData = pipelineBinaryData_.data();
+      return *this;
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+#endif   /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryKeysAndDataKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryKeysAndDataKHR *>( this );
+    }
+
+    operator VkPipelineBinaryKeysAndDataKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryKeysAndDataKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<uint32_t const &, const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR * const &, const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( binaryCount, pPipelineBinaryKeys, pPipelineBinaryData );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryKeysAndDataKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryKeysAndDataKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( binaryCount == rhs.binaryCount ) && ( pPipelineBinaryKeys == rhs.pPipelineBinaryKeys ) && ( pPipelineBinaryData == rhs.pPipelineBinaryData );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryKeysAndDataKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    uint32_t                                            binaryCount         = {};
+    const VULKAN_HPP_NAMESPACE::PipelineBinaryKeyKHR *  pPipelineBinaryKeys = {};
+    const VULKAN_HPP_NAMESPACE::PipelineBinaryDataKHR * pPipelineBinaryData = {};
+  };
+
+  struct PipelineCreateInfoKHR
+  {
+    using NativeType = VkPipelineCreateInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineCreateInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PipelineCreateInfoKHR( void * pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT : pNext{ pNext_ } {}
+
+    VULKAN_HPP_CONSTEXPR PipelineCreateInfoKHR( PipelineCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineCreateInfoKHR( VkPipelineCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineCreateInfoKHR( *reinterpret_cast<PipelineCreateInfoKHR const *>( &rhs ) )
+    {
+    }
+
+    PipelineCreateInfoKHR & operator=( PipelineCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineCreateInfoKHR & operator=( VkPipelineCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineCreateInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineCreateInfoKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineCreateInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineCreateInfoKHR *>( this );
+    }
+
+    operator VkPipelineCreateInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineCreateInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineCreateInfoKHR const & ) const = default;
+#else
+    bool operator==( PipelineCreateInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext );
+#  endif
+    }
+
+    bool operator!=( PipelineCreateInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType = StructureType::ePipelineCreateInfoKHR;
+    void *                              pNext = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineCreateInfoKHR>
+  {
+    using Type = PipelineCreateInfoKHR;
+  };
+
+  struct PipelineBinaryCreateInfoKHR
+  {
+    using NativeType = VkPipelineBinaryCreateInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineBinaryCreateInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR( const VULKAN_HPP_NAMESPACE::PipelineBinaryKeysAndDataKHR * pKeysAndDataInfo_    = {},
+                                                         VULKAN_HPP_NAMESPACE::Pipeline                             pipeline_            = {},
+                                                         const VULKAN_HPP_NAMESPACE::PipelineCreateInfoKHR *        pPipelineCreateInfo_ = {},
+                                                         const void *                                               pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pKeysAndDataInfo{ pKeysAndDataInfo_ }
+      , pipeline{ pipeline_ }
+      , pPipelineCreateInfo{ pPipelineCreateInfo_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR( PipelineBinaryCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryCreateInfoKHR( VkPipelineBinaryCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryCreateInfoKHR( *reinterpret_cast<PipelineBinaryCreateInfoKHR const *>( &rhs ) )
+    {
+    }
+
+    PipelineBinaryCreateInfoKHR & operator=( PipelineBinaryCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryCreateInfoKHR & operator=( VkPipelineBinaryCreateInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryCreateInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR &
+      setPKeysAndDataInfo( const VULKAN_HPP_NAMESPACE::PipelineBinaryKeysAndDataKHR * pKeysAndDataInfo_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pKeysAndDataInfo = pKeysAndDataInfo_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR & setPipeline( VULKAN_HPP_NAMESPACE::Pipeline pipeline_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipeline = pipeline_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryCreateInfoKHR &
+      setPPipelineCreateInfo( const VULKAN_HPP_NAMESPACE::PipelineCreateInfoKHR * pPipelineCreateInfo_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pPipelineCreateInfo = pPipelineCreateInfo_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryCreateInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryCreateInfoKHR *>( this );
+    }
+
+    operator VkPipelineBinaryCreateInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryCreateInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &,
+               const void * const &,
+               const VULKAN_HPP_NAMESPACE::PipelineBinaryKeysAndDataKHR * const &,
+               VULKAN_HPP_NAMESPACE::Pipeline const &,
+               const VULKAN_HPP_NAMESPACE::PipelineCreateInfoKHR * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, pKeysAndDataInfo, pipeline, pPipelineCreateInfo );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryCreateInfoKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryCreateInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pKeysAndDataInfo == rhs.pKeysAndDataInfo ) && ( pipeline == rhs.pipeline ) &&
+             ( pPipelineCreateInfo == rhs.pPipelineCreateInfo );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryCreateInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType                        sType               = StructureType::ePipelineBinaryCreateInfoKHR;
+    const void *                                               pNext               = {};
+    const VULKAN_HPP_NAMESPACE::PipelineBinaryKeysAndDataKHR * pKeysAndDataInfo    = {};
+    VULKAN_HPP_NAMESPACE::Pipeline                             pipeline            = {};
+    const VULKAN_HPP_NAMESPACE::PipelineCreateInfoKHR *        pPipelineCreateInfo = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineBinaryCreateInfoKHR>
+  {
+    using Type = PipelineBinaryCreateInfoKHR;
+  };
+
+  struct PipelineBinaryDataInfoKHR
+  {
+    using NativeType = VkPipelineBinaryDataInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineBinaryDataInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PipelineBinaryDataInfoKHR( VULKAN_HPP_NAMESPACE::PipelineBinaryKHR pipelineBinary_ = {}, void * pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pipelineBinary{ pipelineBinary_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PipelineBinaryDataInfoKHR( PipelineBinaryDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryDataInfoKHR( VkPipelineBinaryDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryDataInfoKHR( *reinterpret_cast<PipelineBinaryDataInfoKHR const *>( &rhs ) )
+    {
+    }
+
+    PipelineBinaryDataInfoKHR & operator=( PipelineBinaryDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryDataInfoKHR & operator=( VkPipelineBinaryDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryDataInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryDataInfoKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryDataInfoKHR & setPipelineBinary( VULKAN_HPP_NAMESPACE::PipelineBinaryKHR pipelineBinary_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinary = pipelineBinary_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryDataInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryDataInfoKHR *>( this );
+    }
+
+    operator VkPipelineBinaryDataInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryDataInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::PipelineBinaryKHR const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, pipelineBinary );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryDataInfoKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryDataInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pipelineBinary == rhs.pipelineBinary );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryDataInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType     sType          = StructureType::ePipelineBinaryDataInfoKHR;
+    void *                                  pNext          = {};
+    VULKAN_HPP_NAMESPACE::PipelineBinaryKHR pipelineBinary = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineBinaryDataInfoKHR>
+  {
+    using Type = PipelineBinaryDataInfoKHR;
+  };
+
+  struct PipelineBinaryHandlesInfoKHR
+  {
+    using NativeType = VkPipelineBinaryHandlesInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineBinaryHandlesInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PipelineBinaryHandlesInfoKHR( uint32_t                                  pipelineBinaryCount_ = {},
+                                                       VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries_   = {},
+                                                       const void *                              pNext_               = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pipelineBinaryCount{ pipelineBinaryCount_ }
+      , pPipelineBinaries{ pPipelineBinaries_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PipelineBinaryHandlesInfoKHR( PipelineBinaryHandlesInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryHandlesInfoKHR( VkPipelineBinaryHandlesInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryHandlesInfoKHR( *reinterpret_cast<PipelineBinaryHandlesInfoKHR const *>( &rhs ) )
+    {
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryHandlesInfoKHR( VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<VULKAN_HPP_NAMESPACE::PipelineBinaryKHR> const & pipelineBinaries_,
+                                  const void *                                                                                   pNext_ = nullptr )
+      : pNext( pNext_ ), pipelineBinaryCount( static_cast<uint32_t>( pipelineBinaries_.size() ) ), pPipelineBinaries( pipelineBinaries_.data() )
+    {
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+
+    PipelineBinaryHandlesInfoKHR & operator=( PipelineBinaryHandlesInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryHandlesInfoKHR & operator=( VkPipelineBinaryHandlesInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryHandlesInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryHandlesInfoKHR & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryHandlesInfoKHR & setPipelineBinaryCount( uint32_t pipelineBinaryCount_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryCount = pipelineBinaryCount_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryHandlesInfoKHR &
+      setPPipelineBinaries( VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pPipelineBinaries = pPipelineBinaries_;
+      return *this;
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryHandlesInfoKHR & setPipelineBinaries(
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<VULKAN_HPP_NAMESPACE::PipelineBinaryKHR> const & pipelineBinaries_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipelineBinaryCount = static_cast<uint32_t>( pipelineBinaries_.size() );
+      pPipelineBinaries   = pipelineBinaries_.data();
+      return *this;
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+#endif   /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryHandlesInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryHandlesInfoKHR *>( this );
+    }
+
+    operator VkPipelineBinaryHandlesInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryHandlesInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, const void * const &, uint32_t const &, VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, pipelineBinaryCount, pPipelineBinaries );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryHandlesInfoKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryHandlesInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pipelineBinaryCount == rhs.pipelineBinaryCount ) &&
+             ( pPipelineBinaries == rhs.pPipelineBinaries );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryHandlesInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType       sType               = StructureType::ePipelineBinaryHandlesInfoKHR;
+    const void *                              pNext               = {};
+    uint32_t                                  pipelineBinaryCount = {};
+    VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries   = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineBinaryHandlesInfoKHR>
+  {
+    using Type = PipelineBinaryHandlesInfoKHR;
+  };
+
+  struct PipelineBinaryInfoKHR
+  {
+    using NativeType = VkPipelineBinaryInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::ePipelineBinaryInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR PipelineBinaryInfoKHR( uint32_t                                        binaryCount_       = {},
+                                                const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries_ = {},
+                                                const void *                                    pNext_             = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , binaryCount{ binaryCount_ }
+      , pPipelineBinaries{ pPipelineBinaries_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR PipelineBinaryInfoKHR( PipelineBinaryInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    PipelineBinaryInfoKHR( VkPipelineBinaryInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : PipelineBinaryInfoKHR( *reinterpret_cast<PipelineBinaryInfoKHR const *>( &rhs ) )
+    {
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryInfoKHR( VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR> const & pipelineBinaries_,
+                           const void *                                                                                         pNext_ = nullptr )
+      : pNext( pNext_ ), binaryCount( static_cast<uint32_t>( pipelineBinaries_.size() ) ), pPipelineBinaries( pipelineBinaries_.data() )
+    {
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+
+    PipelineBinaryInfoKHR & operator=( PipelineBinaryInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    PipelineBinaryInfoKHR & operator=( VkPipelineBinaryInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::PipelineBinaryInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryInfoKHR & setPNext( const void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryInfoKHR & setBinaryCount( uint32_t binaryCount_ ) VULKAN_HPP_NOEXCEPT
+    {
+      binaryCount = binaryCount_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 PipelineBinaryInfoKHR &
+      setPPipelineBinaries( const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pPipelineBinaries = pPipelineBinaries_;
+      return *this;
+    }
+
+#  if !defined( VULKAN_HPP_DISABLE_ENHANCED_MODE )
+    PipelineBinaryInfoKHR & setPipelineBinaries(
+      VULKAN_HPP_NAMESPACE::ArrayProxyNoTemporaries<const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR> const & pipelineBinaries_ ) VULKAN_HPP_NOEXCEPT
+    {
+      binaryCount       = static_cast<uint32_t>( pipelineBinaries_.size() );
+      pPipelineBinaries = pipelineBinaries_.data();
+      return *this;
+    }
+#  endif /*VULKAN_HPP_DISABLE_ENHANCED_MODE*/
+#endif   /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkPipelineBinaryInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkPipelineBinaryInfoKHR *>( this );
+    }
+
+    operator VkPipelineBinaryInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkPipelineBinaryInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, const void * const &, uint32_t const &, const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, binaryCount, pPipelineBinaries );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( PipelineBinaryInfoKHR const & ) const = default;
+#else
+    bool operator==( PipelineBinaryInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( binaryCount == rhs.binaryCount ) && ( pPipelineBinaries == rhs.pPipelineBinaries );
+#  endif
+    }
+
+    bool operator!=( PipelineBinaryInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType             sType             = StructureType::ePipelineBinaryInfoKHR;
+    const void *                                    pNext             = {};
+    uint32_t                                        binaryCount       = {};
+    const VULKAN_HPP_NAMESPACE::PipelineBinaryKHR * pPipelineBinaries = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::ePipelineBinaryInfoKHR>
+  {
+    using Type = PipelineBinaryInfoKHR;
+  };
+
   struct PipelineCacheCreateInfo
   {
     using NativeType = VkPipelineCacheCreateInfo;
@@ -102445,6 +103888,102 @@ namespace VULKAN_HPP_NAMESPACE
 
   public:
     uint64_t refreshDuration = {};
+  };
+
+  struct ReleaseCapturedPipelineDataInfoKHR
+  {
+    using NativeType = VkReleaseCapturedPipelineDataInfoKHR;
+
+    static const bool                                  allowDuplicate = false;
+    static VULKAN_HPP_CONST_OR_CONSTEXPR StructureType structureType  = StructureType::eReleaseCapturedPipelineDataInfoKHR;
+
+#if !defined( VULKAN_HPP_NO_STRUCT_CONSTRUCTORS )
+    VULKAN_HPP_CONSTEXPR ReleaseCapturedPipelineDataInfoKHR( VULKAN_HPP_NAMESPACE::Pipeline pipeline_ = {}, void * pNext_ = nullptr ) VULKAN_HPP_NOEXCEPT
+      : pNext{ pNext_ }
+      , pipeline{ pipeline_ }
+    {
+    }
+
+    VULKAN_HPP_CONSTEXPR ReleaseCapturedPipelineDataInfoKHR( ReleaseCapturedPipelineDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+
+    ReleaseCapturedPipelineDataInfoKHR( VkReleaseCapturedPipelineDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+      : ReleaseCapturedPipelineDataInfoKHR( *reinterpret_cast<ReleaseCapturedPipelineDataInfoKHR const *>( &rhs ) )
+    {
+    }
+
+    ReleaseCapturedPipelineDataInfoKHR & operator=( ReleaseCapturedPipelineDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT = default;
+#endif /*VULKAN_HPP_NO_STRUCT_CONSTRUCTORS*/
+
+    ReleaseCapturedPipelineDataInfoKHR & operator=( VkReleaseCapturedPipelineDataInfoKHR const & rhs ) VULKAN_HPP_NOEXCEPT
+    {
+      *this = *reinterpret_cast<VULKAN_HPP_NAMESPACE::ReleaseCapturedPipelineDataInfoKHR const *>( &rhs );
+      return *this;
+    }
+
+#if !defined( VULKAN_HPP_NO_STRUCT_SETTERS )
+    VULKAN_HPP_CONSTEXPR_14 ReleaseCapturedPipelineDataInfoKHR & setPNext( void * pNext_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pNext = pNext_;
+      return *this;
+    }
+
+    VULKAN_HPP_CONSTEXPR_14 ReleaseCapturedPipelineDataInfoKHR & setPipeline( VULKAN_HPP_NAMESPACE::Pipeline pipeline_ ) VULKAN_HPP_NOEXCEPT
+    {
+      pipeline = pipeline_;
+      return *this;
+    }
+#endif /*VULKAN_HPP_NO_STRUCT_SETTERS*/
+
+    operator VkReleaseCapturedPipelineDataInfoKHR const &() const VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<const VkReleaseCapturedPipelineDataInfoKHR *>( this );
+    }
+
+    operator VkReleaseCapturedPipelineDataInfoKHR &() VULKAN_HPP_NOEXCEPT
+    {
+      return *reinterpret_cast<VkReleaseCapturedPipelineDataInfoKHR *>( this );
+    }
+
+#if defined( VULKAN_HPP_USE_REFLECT )
+#  if 14 <= VULKAN_HPP_CPP_VERSION
+    auto
+#  else
+    std::tuple<VULKAN_HPP_NAMESPACE::StructureType const &, void * const &, VULKAN_HPP_NAMESPACE::Pipeline const &>
+#  endif
+      reflect() const VULKAN_HPP_NOEXCEPT
+    {
+      return std::tie( sType, pNext, pipeline );
+    }
+#endif
+
+#if defined( VULKAN_HPP_HAS_SPACESHIP_OPERATOR )
+    auto operator<=>( ReleaseCapturedPipelineDataInfoKHR const & ) const = default;
+#else
+    bool operator==( ReleaseCapturedPipelineDataInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+#  if defined( VULKAN_HPP_USE_REFLECT )
+      return this->reflect() == rhs.reflect();
+#  else
+      return ( sType == rhs.sType ) && ( pNext == rhs.pNext ) && ( pipeline == rhs.pipeline );
+#  endif
+    }
+
+    bool operator!=( ReleaseCapturedPipelineDataInfoKHR const & rhs ) const VULKAN_HPP_NOEXCEPT
+    {
+      return !operator==( rhs );
+    }
+#endif
+
+  public:
+    VULKAN_HPP_NAMESPACE::StructureType sType    = StructureType::eReleaseCapturedPipelineDataInfoKHR;
+    void *                              pNext    = {};
+    VULKAN_HPP_NAMESPACE::Pipeline      pipeline = {};
+  };
+
+  template <>
+  struct CppType<StructureType, StructureType::eReleaseCapturedPipelineDataInfoKHR>
+  {
+    using Type = ReleaseCapturedPipelineDataInfoKHR;
   };
 
   struct ReleaseSwapchainImagesInfoEXT

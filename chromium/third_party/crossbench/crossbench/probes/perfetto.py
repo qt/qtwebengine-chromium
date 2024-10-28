@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Iterable, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Iterable, Optional, cast
 
 from crossbench import helper
 from crossbench import path as pth
@@ -130,7 +130,8 @@ class AndroidPerfettoProbeContext(PerfettoProbeContext):
 
   def __init__(self, probe: PerfettoProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._host_config_file: pth.LocalPath = run.out_dir / "perfetto_config.textproto"
+    self._host_config_file: pth.LocalPath = (
+        run.out_dir / "perfetto_config.textproto")
     self._browser_config_file: pth.RemotePath = (
         _PERFETTO_CONFIG_REMOTE_DIR / "perfetto_config.textproto")
     self._pid: Optional[int] = None
@@ -208,4 +209,4 @@ class AndroidPerfettoProbeContext(PerfettoProbeContext):
     local_result_file = local_result_file.with_suffix(
         f"{local_result_file.suffix}.gz")
 
-    return LocalProbeResult(file=(local_result_file,))
+    return LocalProbeResult(trace=(local_result_file,))

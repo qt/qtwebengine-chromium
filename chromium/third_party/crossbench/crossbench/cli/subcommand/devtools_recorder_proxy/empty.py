@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
+
 import argparse
 
 
@@ -15,4 +16,4 @@ class CrossbenchDevToolsRecorderProxy:
     return subparsers.add_parser(
         "devtools-recorder-proxy",
         aliases=["devtools"],
-        help=("Unsupported operation"))
+        help="Unsupported operation")

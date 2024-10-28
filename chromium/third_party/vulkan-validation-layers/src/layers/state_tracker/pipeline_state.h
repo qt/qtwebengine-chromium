@@ -21,7 +21,6 @@
 
 #include <vulkan/utility/vk_safe_struct.hpp>
 
-#include "utils/hash_vk_types.h"
 #include "state_tracker/pipeline_sub_state.h"
 #include "generated/dynamic_state_helper.h"
 #include "utils/shader_utils.h"
@@ -131,12 +130,23 @@ class Pipeline : public StateObject {
     const bool uses_pipeline_vertex_robustness;
     bool ignore_color_attachments;
 
+    mutable bool binary_data_released = false;
+
+    // TODO - Because we have hack to create a pipeline at PreCallValidate time (for GPL) we have no proper way to create inherited
+    // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
+    // ment for GPU-AV
+    struct InstrumentationData {
+        // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
+        std::vector<VkShaderModule> instrumented_shader_module;
+        // TODO - For GPL, this doesn't get passed down from linked shaders
+        bool was_instrumented = false;
+    } instrumentation_data;
+
     // Executable or legacy pipeline
     Pipeline(const ValidationStateTracker &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
              std::shared_ptr<const vvl::PipelineLayout> &&layout,
-             spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages],
-             ShaderModuleUniqueIds *shader_unique_id_map = nullptr);
+             spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]);
 
     // Compute pipeline
     Pipeline(const ValidationStateTracker &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
@@ -409,8 +419,7 @@ class Pipeline : public StateObject {
     const VkPipelineRenderingCreateInfo *GetPipelineRenderingCreateInfo() const { return rendering_create_info; }
 
     static std::vector<ShaderStageState> GetStageStates(const ValidationStateTracker &state_data, const Pipeline &pipe_state,
-                                                        spirv::StatelessData *stateless_data,
-                                                        ShaderModuleUniqueIds *shader_unique_id_map);
+                                                        spirv::StatelessData *stateless_data);
 
     // Return true if for a given PSO, the given state enum is dynamic, else return false
     bool IsDynamic(const CBDynamicState state) const { return dynamic_state[state]; }

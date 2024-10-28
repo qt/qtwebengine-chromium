@@ -19,7 +19,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups import (BrowsersRunGroup, RepetitionsRunGroup,
                                         StoriesRunGroup)
   from crossbench.runner.run import Run
-  from crossbench.types import JSON, JsonDict, JsonList
+  from crossbench.types import Json, JsonDict, JsonList
 
 
 class InternalProbe(probe.Probe):
@@ -95,7 +95,7 @@ class SystemDetailsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.system.details"
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.run.browser_platform.system_details()
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
@@ -109,7 +109,7 @@ class ErrorsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.errors"
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.run.exceptions.to_json()
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
@@ -155,7 +155,7 @@ class DurationsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.durations"
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.run.durations.to_json()
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
@@ -187,17 +187,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
     return True
 
   def to_json(self, actions: Actions) -> JsonDict:
-    run = actions.run
-    return {
-        "name": run.name,
-        "cwd": str(run.out_dir),
-        "story": run.story.details_json(),
-        "browser": run.get_browser_details_json(),
-        "durations": run.durations.to_json(),
-        "probes": run.results.to_json(),
-        "success": run.is_success,
-        "errors": run.exceptions.error_messages()
-    }
+    return actions.run.details_json()
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     repetitions: JsonList = []
@@ -222,6 +212,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
         "cwd": str(group.path),
         "story": group.story.details_json(),
         "browser": browser,
+        "group": group.info,
         "repetitions": repetitions,
         "probes": group.results.to_json(),
         "success": group.is_success,
@@ -252,6 +243,7 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
         "cwd": str(group.path),
         "browser": browser,
         "stories": stories,
+        "group": group.info,
         "probes": group.results.to_json(),
         "success": group.is_success,
         "errors": group.exceptions.error_messages(),

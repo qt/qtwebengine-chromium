@@ -65,10 +65,10 @@ static inline bool RenderPassUsesAttachmentAsImageOnly(const vku::safe_VkRenderP
     }
 
     for (uint32_t subpass = 0; subpass < create_info.subpassCount; subpass++) {
-        const auto& subpassInfo = create_info.pSubpasses[subpass];
+        const auto& subpass_info = create_info.pSubpasses[subpass];
 
-        for (uint32_t i = 0; i < subpassInfo.inputAttachmentCount; i++) {
-            if (subpassInfo.pInputAttachments[i].attachment == attachment) {
+        for (uint32_t i = 0; i < subpass_info.inputAttachmentCount; i++) {
+            if (subpass_info.pInputAttachments[i].attachment == attachment) {
                 return true;
             }
         }
@@ -847,7 +847,7 @@ void BestPractices::RecordAttachmentAccess(bp_state::CommandBuffer& cb_state, ui
     if (itr != rp_state.touchesAttachments.end()) {
         itr->aspects |= aspects;
     } else {
-        rp_state.touchesAttachments.push_back({fb_attachment, aspects});
+        rp_state.touchesAttachments.emplace_back(fb_attachment, aspects);
     }
 }
 
@@ -866,7 +866,7 @@ void BestPractices::RecordAttachmentClearAttachments(bp_state::CommandBuffer& cm
         new_aspects = aspects & ~itr->aspects;
         itr->aspects |= aspects;
     } else {
-        rp_state.touchesAttachments.push_back({fb_attachment, aspects});
+        rp_state.touchesAttachments.emplace_back(fb_attachment, aspects);
     }
 
     if (new_aspects == 0) {

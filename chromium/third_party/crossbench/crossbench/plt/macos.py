@@ -12,7 +12,7 @@ import plistlib
 import re
 import traceback as tb
 from subprocess import SubprocessError
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import psutil
 
@@ -96,7 +96,7 @@ class MacOSPlatform(PosixPlatform):
     is_app = app_or_bin_path.suffix == ".app"
     if not is_app:
       # Look up basic binaries with `which` if possible.
-      if result_path := self.which(str(app_or_bin_path)):
+      if result_path := self.which(app_or_bin_path):
         assert self.exists(result_path), f"{result_path} does not exist."
         return result_path
     if app_path := self.lookup_binary_override(app_or_bin_path):
@@ -340,3 +340,6 @@ class MacOSPlatform(PosixPlatform):
         main_display, ctypes.byref(display_brightness))
     assert ret == 0
     return round(display_brightness.value * 100)
+
+  def screenshot(self, result_path: pth.RemotePath) -> None:
+    self.sh("screencapture", "-x", result_path)

@@ -18,7 +18,7 @@
 #include "gpu/resources/gpu_resources.h"
 
 #include "generated/layer_chassis_dispatch.h"
-#include "utils/vk_layer_utils.h"
+#include <vulkan/utility/vk_struct_helper.hpp>
 
 namespace gpu {
 
@@ -141,6 +141,14 @@ void SharedResourcesManager::Clear() {
         destructor(object);
     }
     shared_validation_resources_map_.clear();
+}
+
+void DeviceMemoryBlock::Destroy(VmaAllocator allocator) {
+    if (buffer != VK_NULL_HANDLE) {
+        vmaDestroyBuffer(allocator, buffer, allocation);
+        buffer = VK_NULL_HANDLE;
+        allocation = VK_NULL_HANDLE;
+    }
 }
 
 VkDescriptorSet GpuResourcesManager::GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout) {

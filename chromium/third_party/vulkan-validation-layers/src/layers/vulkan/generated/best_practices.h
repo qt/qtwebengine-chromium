@@ -545,6 +545,17 @@ void PostCallRecordGetEncodedVideoSessionParametersKHR(VkDevice device,
 void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
                                    const RecordObject& record_obj) override;
 
+void PostCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                             const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries,
+                                             const RecordObject& record_obj) override;
+
+void PostCallRecordGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR* pPipelineCreateInfo,
+                                     VkPipelineBinaryKeyKHR* pPipelineKey, const RecordObject& record_obj) override;
+
+void PostCallRecordGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
+                                            VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize,
+                                            void* pPipelineBinaryData, const RecordObject& record_obj) override;
+
 void PostCallRecordGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                    VkCooperativeMatrixPropertiesKHR* pProperties,
                                                                    const RecordObject& record_obj) override;
@@ -1014,7 +1025,7 @@ void PostCallRecordCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOpera
                                                 const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
                                                 const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
                                                 const RecordObject& record_obj, PipelineStates& pipeline_states,
-                                                chassis::CreateRayTracingPipelinesKHR& chassis_state) override;
+                                                std::shared_ptr<chassis::CreateRayTracingPipelinesKHR> chassis_state) override;
 
 void PostCallRecordGetRayTracingCaptureReplayShaderGroupHandlesKHR(VkDevice device, VkPipeline pipeline, uint32_t firstGroup,
                                                                    uint32_t groupCount, size_t dataSize, void* pData,

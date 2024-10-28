@@ -190,7 +190,9 @@ enum ExecutionMode {
     ExecutionModeOutputLinesNV = 5269,
     ExecutionModeOutputPrimitivesEXT = 5270,
     ExecutionModeOutputPrimitivesNV = 5270,
+    ExecutionModeDerivativeGroupQuadsKHR = 5289,
     ExecutionModeDerivativeGroupQuadsNV = 5289,
+    ExecutionModeDerivativeGroupLinearKHR = 5290,
     ExecutionModeDerivativeGroupLinearNV = 5290,
     ExecutionModeOutputTrianglesEXT = 5298,
     ExecutionModeOutputTrianglesNV = 5298,
@@ -377,6 +379,7 @@ enum ImageChannelDataType {
     ImageChannelDataTypeUnormInt101010_2 = 16,
     ImageChannelDataTypeUnsignedIntRaw10EXT = 19,
     ImageChannelDataTypeUnsignedIntRaw12EXT = 20,
+    ImageChannelDataTypeUnormInt2_101010EXT = 21,
     ImageChannelDataTypeMax = 0x7fffffff,
 };
 
@@ -1104,6 +1107,7 @@ enum Capability {
     CapabilityMeshShadingEXT = 5283,
     CapabilityFragmentBarycentricKHR = 5284,
     CapabilityFragmentBarycentricNV = 5284,
+    CapabilityComputeDerivativeGroupQuadsKHR = 5288,
     CapabilityComputeDerivativeGroupQuadsNV = 5288,
     CapabilityFragmentDensityEXT = 5291,
     CapabilityShadingRateNV = 5291,
@@ -1141,6 +1145,7 @@ enum Capability {
     CapabilityVulkanMemoryModelDeviceScopeKHR = 5346,
     CapabilityPhysicalStorageBufferAddresses = 5347,
     CapabilityPhysicalStorageBufferAddressesEXT = 5347,
+    CapabilityComputeDerivativeGroupLinearKHR = 5350,
     CapabilityComputeDerivativeGroupLinearNV = 5350,
     CapabilityRayTracingProvisionalKHR = 5353,
     CapabilityCooperativeMatrixNV = 5357,
@@ -1229,6 +1234,7 @@ enum Capability {
     CapabilityFPGAArgumentInterfacesINTEL = 6174,
     CapabilityGlobalVariableHostAccessINTEL = 6187,
     CapabilityGlobalVariableFPGADecorationsINTEL = 6189,
+    CapabilitySubgroupBufferPrefetchINTEL = 6220,
     CapabilityGroupUniformArithmeticKHR = 6400,
     CapabilityMaskedGatherScatterINTEL = 6427,
     CapabilityCacheControlsINTEL = 6441,
@@ -1782,6 +1788,7 @@ enum Op {
     OpUntypedPtrAccessChainKHR = 4423,
     OpUntypedInBoundsPtrAccessChainKHR = 4424,
     OpUntypedArrayLengthKHR = 4425,
+    OpUntypedPrefetchKHR = 4426,
     OpSubgroupAllKHR = 4428,
     OpSubgroupAnyKHR = 4429,
     OpSubgroupAllEqualKHR = 4430,
@@ -2159,6 +2166,7 @@ enum Op {
     OpConvertBF16ToFINTEL = 6117,
     OpControlBarrierArriveINTEL = 6142,
     OpControlBarrierWaitINTEL = 6143,
+    OpSubgroupBlockPrefetchINTEL = 6221,
     OpGroupIMulKHR = 6401,
     OpGroupFMulKHR = 6402,
     OpGroupBitwiseAndKHR = 6403,
@@ -2537,6 +2545,7 @@ inline void HasResultAndType(Op opcode, bool *hasResult, bool *hasResultType) {
     case OpUntypedPtrAccessChainKHR: *hasResult = true; *hasResultType = true; break;
     case OpUntypedInBoundsPtrAccessChainKHR: *hasResult = true; *hasResultType = true; break;
     case OpUntypedArrayLengthKHR: *hasResult = true; *hasResultType = true; break;
+    case OpUntypedPrefetchKHR: *hasResult = false; *hasResultType = false; break;
     case OpSubgroupAllKHR: *hasResult = true; *hasResultType = true; break;
     case OpSubgroupAnyKHR: *hasResult = true; *hasResultType = true; break;
     case OpSubgroupAllEqualKHR: *hasResult = true; *hasResultType = true; break;
@@ -2903,6 +2912,7 @@ inline void HasResultAndType(Op opcode, bool *hasResult, bool *hasResultType) {
     case OpConvertBF16ToFINTEL: *hasResult = true; *hasResultType = true; break;
     case OpControlBarrierArriveINTEL: *hasResult = false; *hasResultType = false; break;
     case OpControlBarrierWaitINTEL: *hasResult = false; *hasResultType = false; break;
+    case OpSubgroupBlockPrefetchINTEL: *hasResult = false; *hasResultType = false; break;
     case OpGroupIMulKHR: *hasResult = true; *hasResultType = true; break;
     case OpGroupFMulKHR: *hasResult = true; *hasResultType = true; break;
     case OpGroupBitwiseAndKHR: *hasResult = true; *hasResultType = true; break;
@@ -3044,8 +3054,8 @@ inline const char* ExecutionModeToString(ExecutionMode value) {
     case ExecutionModeRequireFullQuadsKHR: return "RequireFullQuadsKHR";
     case ExecutionModeOutputLinesEXT: return "OutputLinesEXT";
     case ExecutionModeOutputPrimitivesEXT: return "OutputPrimitivesEXT";
-    case ExecutionModeDerivativeGroupQuadsNV: return "DerivativeGroupQuadsNV";
-    case ExecutionModeDerivativeGroupLinearNV: return "DerivativeGroupLinearNV";
+    case ExecutionModeDerivativeGroupQuadsKHR: return "DerivativeGroupQuadsKHR";
+    case ExecutionModeDerivativeGroupLinearKHR: return "DerivativeGroupLinearKHR";
     case ExecutionModeOutputTrianglesEXT: return "OutputTrianglesEXT";
     case ExecutionModePixelInterlockOrderedEXT: return "PixelInterlockOrderedEXT";
     case ExecutionModePixelInterlockUnorderedEXT: return "PixelInterlockUnorderedEXT";
@@ -3237,6 +3247,7 @@ inline const char* ImageChannelDataTypeToString(ImageChannelDataType value) {
     case ImageChannelDataTypeUnormInt101010_2: return "UnormInt101010_2";
     case ImageChannelDataTypeUnsignedIntRaw10EXT: return "UnsignedIntRaw10EXT";
     case ImageChannelDataTypeUnsignedIntRaw12EXT: return "UnsignedIntRaw12EXT";
+    case ImageChannelDataTypeUnormInt2_101010EXT: return "UnormInt2_101010EXT";
     default: return "Unknown";
     }
 }
@@ -3716,7 +3727,7 @@ inline const char* CapabilityToString(Capability value) {
     case CapabilityImageFootprintNV: return "ImageFootprintNV";
     case CapabilityMeshShadingEXT: return "MeshShadingEXT";
     case CapabilityFragmentBarycentricKHR: return "FragmentBarycentricKHR";
-    case CapabilityComputeDerivativeGroupQuadsNV: return "ComputeDerivativeGroupQuadsNV";
+    case CapabilityComputeDerivativeGroupQuadsKHR: return "ComputeDerivativeGroupQuadsKHR";
     case CapabilityFragmentDensityEXT: return "FragmentDensityEXT";
     case CapabilityGroupNonUniformPartitionedNV: return "GroupNonUniformPartitionedNV";
     case CapabilityShaderNonUniform: return "ShaderNonUniform";
@@ -3737,7 +3748,7 @@ inline const char* CapabilityToString(Capability value) {
     case CapabilityVulkanMemoryModel: return "VulkanMemoryModel";
     case CapabilityVulkanMemoryModelDeviceScope: return "VulkanMemoryModelDeviceScope";
     case CapabilityPhysicalStorageBufferAddresses: return "PhysicalStorageBufferAddresses";
-    case CapabilityComputeDerivativeGroupLinearNV: return "ComputeDerivativeGroupLinearNV";
+    case CapabilityComputeDerivativeGroupLinearKHR: return "ComputeDerivativeGroupLinearKHR";
     case CapabilityRayTracingProvisionalKHR: return "RayTracingProvisionalKHR";
     case CapabilityCooperativeMatrixNV: return "CooperativeMatrixNV";
     case CapabilityFragmentShaderSampleInterlockEXT: return "FragmentShaderSampleInterlockEXT";
@@ -3820,6 +3831,7 @@ inline const char* CapabilityToString(Capability value) {
     case CapabilityFPGAArgumentInterfacesINTEL: return "FPGAArgumentInterfacesINTEL";
     case CapabilityGlobalVariableHostAccessINTEL: return "GlobalVariableHostAccessINTEL";
     case CapabilityGlobalVariableFPGADecorationsINTEL: return "GlobalVariableFPGADecorationsINTEL";
+    case CapabilitySubgroupBufferPrefetchINTEL: return "SubgroupBufferPrefetchINTEL";
     case CapabilityGroupUniformArithmeticKHR: return "GroupUniformArithmeticKHR";
     case CapabilityMaskedGatherScatterINTEL: return "MaskedGatherScatterINTEL";
     case CapabilityCacheControlsINTEL: return "CacheControlsINTEL";
@@ -4330,6 +4342,7 @@ inline const char* OpToString(Op value) {
     case OpUntypedPtrAccessChainKHR: return "OpUntypedPtrAccessChainKHR";
     case OpUntypedInBoundsPtrAccessChainKHR: return "OpUntypedInBoundsPtrAccessChainKHR";
     case OpUntypedArrayLengthKHR: return "OpUntypedArrayLengthKHR";
+    case OpUntypedPrefetchKHR: return "OpUntypedPrefetchKHR";
     case OpSubgroupAllKHR: return "OpSubgroupAllKHR";
     case OpSubgroupAnyKHR: return "OpSubgroupAnyKHR";
     case OpSubgroupAllEqualKHR: return "OpSubgroupAllEqualKHR";
@@ -4696,6 +4709,7 @@ inline const char* OpToString(Op value) {
     case OpConvertBF16ToFINTEL: return "OpConvertBF16ToFINTEL";
     case OpControlBarrierArriveINTEL: return "OpControlBarrierArriveINTEL";
     case OpControlBarrierWaitINTEL: return "OpControlBarrierWaitINTEL";
+    case OpSubgroupBlockPrefetchINTEL: return "OpSubgroupBlockPrefetchINTEL";
     case OpGroupIMulKHR: return "OpGroupIMulKHR";
     case OpGroupFMulKHR: return "OpGroupFMulKHR";
     case OpGroupBitwiseAndKHR: return "OpGroupBitwiseAndKHR";

@@ -331,7 +331,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // The following method allows to set subcommand handles independently of the main command.
     void AddSubcommandHandle(ResourceUsageTag tag, const VulkanTypedHandle &typed_handle, uint32_t index = vvl::kNoIndex32);
 
-    const HandleRecord &GetHandleRecord(uint32_t handle_index) const { return handles_[handle_index]; }
+    const std::vector<HandleRecord> &GetHandleRecords() const { return handles_; }
 
     std::shared_ptr<const vvl::CommandBuffer> GetCBStateShared() const { return cb_state_->shared_from_this(); }
 
@@ -411,7 +411,7 @@ class CommandBuffer : public vvl::CommandBuffer {
   public:
     CommandBufferAccessContext access_context;
 
-    CommandBuffer(SyncValidator &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *pCreateInfo,
+    CommandBuffer(SyncValidator &dev, VkCommandBuffer handle, const VkCommandBufferAllocateInfo *allocate_info,
                   const vvl::CommandPool *pool);
     ~CommandBuffer() { Destroy(); }
 

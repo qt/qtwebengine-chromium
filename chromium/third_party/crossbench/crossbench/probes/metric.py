@@ -9,7 +9,7 @@ import logging
 import math
 from math import floor, log10
 from typing import (TYPE_CHECKING, Any, Callable, Dict, Iterable, List,
-                    Optional, Sequence, Set, Tuple, Union)
+                    Optional, Sequence, Set, Tuple, Union, Hashable)
 
 from ordered_set import OrderedSet
 
@@ -17,7 +17,7 @@ from crossbench.probes import helper
 
 if TYPE_CHECKING:
   from crossbench.path import LocalPath
-  from crossbench.types import JsonDict
+  from crossbench.types import Json, JsonDict
 
 
 def format_metric(value: Union[float, int],
@@ -125,7 +125,9 @@ class Metric:
       else:
         json_data["stddevPercent"] = (stddev / average) * 100
       return json_data
-    # Simplify repeated non-numeric values
+    # Try to simplify repeated non-numeric values
+    if not isinstance(self.values[0], Hashable):
+      return json_data
     if len(set(self.values)) == 1:
       return self.values[0]
     return json_data
@@ -260,16 +262,16 @@ class MetricsMerger:
           values.append(value)
 
   def to_json(self,
-              value_fn: Optional[Callable[[Any], Any]] = None,
+              value_fn: Optional[Callable[[Any], Json]] = None,
               sort: bool = True) -> JsonDict:
     items = []
     for key, value in self._data.items():
       assert isinstance(value, Metric)
       if value_fn is None:
-        value = value.to_json()
+        json_value: Json = value.to_json()
       else:
-        value = value_fn(value)
-      items.append((key, value))
+        json_value = value_fn(value)
+      items.append((key, json_value))
     if sort:
       # Make sure the data is always in the same order, independent of the input
       # order

@@ -350,14 +350,17 @@ bool BestPractices::PreCallValidateCmdPipelineBarrier(
     }
 
     if (VendorCheckEnabled(kBPVendorAMD)) {
-        auto num = num_barriers_objects_.load();
-        if (num + imageMemoryBarrierCount + bufferMemoryBarrierCount > kMaxRecommendedBarriersSizeAMD) {
+        const uint32_t num = num_barriers_objects_.load();
+        const uint32_t total_barriers = num + imageMemoryBarrierCount + bufferMemoryBarrierCount;
+        if (total_barriers > kMaxRecommendedBarriersSizeAMD) {
             skip |= LogPerformanceWarning("BestPractices-AMD-CmdBuffer-highBarrierCount", commandBuffer, error_obj.location,
-                                          "%s In this frame, %" PRIu32
-                                          " barriers were already submitted. Barriers have a high cost and can "
+                                          "%s In this frame, %" PRIu32 " barriers were already submitted (%" PRIu32
+                                          " if you include image and buffer barriers too). Barriers have a high cost and can "
                                           "stall the GPU. "
+                                          "Total recommended max is %" PRIu32
+                                          ". "
                                           "Consider consolidating and re-organizing the frame to use fewer barriers.",
-                                          VendorSpecificTag(kBPVendorAMD), num);
+                                          VendorSpecificTag(kBPVendorAMD), num, total_barriers, kMaxRecommendedBarriersSizeAMD);
         }
     }
     if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
@@ -442,14 +445,14 @@ bool BestPractices::ValidateCmdPipelineBarrierImageBarrier(VkCommandBuffer comma
 
 template <typename Func>
 static void ForEachSubresource(const vvl::Image& image, const VkImageSubresourceRange& range, Func&& func) {
-    const uint32_t layerCount =
+    const uint32_t layer_count =
         (range.layerCount == VK_REMAINING_ARRAY_LAYERS) ? (image.full_range.layerCount - range.baseArrayLayer) : range.layerCount;
-    const uint32_t levelCount =
+    const uint32_t level_count =
         (range.levelCount == VK_REMAINING_MIP_LEVELS) ? (image.full_range.levelCount - range.baseMipLevel) : range.levelCount;
 
-    for (uint32_t i = 0; i < layerCount; ++i) {
+    for (uint32_t i = 0; i < layer_count; ++i) {
         const uint32_t layer = range.baseArrayLayer + i;
-        for (uint32_t j = 0; j < levelCount; ++j) {
+        for (uint32_t j = 0; j < level_count; ++j) {
             const uint32_t level = range.baseMipLevel + j;
             func(layer, level);
         }
@@ -466,9 +469,9 @@ void BestPractices::RecordCmdPipelineBarrierImageBarrier(VkCommandBuffer command
         auto image = Get<bp_state::Image>(barrier.image);
         ASSERT_AND_RETURN(image);
         auto subresource_range = barrier.subresourceRange;
-        cb_state->queue_submit_functions.push_back([image, subresource_range](const ValidationStateTracker& vst,
-                                                                              const vvl::Queue& qs,
-                                                                              const vvl::CommandBuffer& cbs) -> bool {
+        cb_state->queue_submit_functions.emplace_back([image, subresource_range](const ValidationStateTracker& vst,
+                                                                                 const vvl::Queue& qs,
+                                                                                 const vvl::CommandBuffer& cbs) -> bool {
             ForEachSubresource(*image, subresource_range, [&](uint32_t layer, uint32_t level) {
                 // Update queue family index without changing usage, signifying a correct queue family transfer
                 image->UpdateUsage(layer, level, image->GetUsageType(layer, level), qs.queue_family_index);
@@ -517,12 +520,16 @@ bool BestPractices::PreCallValidateCreateSemaphore(VkDevice device, const VkSema
                                                    const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
-        if (Count<vvl::Semaphore>() > kMaxRecommendedSemaphoreObjectsSizeAMD) {
+        const size_t count = Count<vvl::Semaphore>();
+        if (count > kMaxRecommendedSemaphoreObjectsSizeAMD) {
             skip |= LogPerformanceWarning("BestPractices-SyncObjects-HighNumberOfSemaphores", device, error_obj.location,
                                           "%s %s High number of vkSemaphore objects created. "
+                                          "%zu created, but recommended max is %" PRIu32
+                                          ". "
                                           "Minimize the amount of queue synchronization that is used. "
-                                          "Semaphores and fences have overhead. Each fence has a CPU and GPU cost with it.",
-                                          VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA));
+                                          "Each semaphore has a CPU and GPU overhead cost with it.",
+                                          VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA), count,
+                                          kMaxRecommendedSemaphoreObjectsSizeAMD);
         }
     }
 
@@ -534,12 +541,16 @@ bool BestPractices::PreCallValidateCreateFence(VkDevice device, const VkFenceCre
                                                const ErrorObject& error_obj) const {
     bool skip = false;
     if (VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorNVIDIA)) {
-        if (Count<vvl::Fence>() > kMaxRecommendedFenceObjectsSizeAMD) {
+        const size_t count = Count<vvl::Fence>();
+        if (count > kMaxRecommendedFenceObjectsSizeAMD) {
             skip |= LogPerformanceWarning("BestPractices-SyncObjects-HighNumberOfFences", device, error_obj.location,
-                                          "%s %s High number of VkFence objects created."
+                                          "%s %s High number of VkFence objects created. "
+                                          "%zu created, but recommended max is %" PRIu32
+                                          ". "
                                           "Minimize the amount of CPU-GPU synchronization that is used. "
-                                          "Semaphores and fences have overhead. Each fence has a CPU and GPU cost with it.",
-                                          VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA));
+                                          "Each fence has a CPU and GPU overhead cost with it.",
+                                          VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorNVIDIA), count,
+                                          kMaxRecommendedFenceObjectsSizeAMD);
         }
     }
 

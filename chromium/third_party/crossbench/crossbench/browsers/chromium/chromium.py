@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import logging
 import re
-from typing import TYPE_CHECKING, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Optional, TextIO, Tuple, cast
 
 from crossbench import path as pth
 from crossbench import plt
@@ -19,10 +19,9 @@ from crossbench.flags.chrome import ChromeFeatures, ChromeFlags
 from crossbench.types import JsonDict
 
 if TYPE_CHECKING:
-  from crossbench.browsers.splash_screen import SplashScreen
+  from crossbench.browsers.settings import Settings
   from crossbench.flags.base import Flags
   from crossbench.flags.js_flags import JSFlags
-  from crossbench.network.base import Network
   from crossbench.runner.groups import BrowserSessionRunGroup
   from crossbench.runner.runner import Runner
 
@@ -73,42 +72,14 @@ class Chromium(Browser):
   def __init__(self,
                label: str,
                path: pth.RemotePath,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[pth.RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[pth.RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.Platform] = None):
-    super().__init__(
-        label,
-        path,
-        flags=None,
-        network=network,
-        driver_path=driver_path,
-        viewport=viewport,
-        splash_screen=splash_screen,
-        platform=platform)
-    self._flags: ChromeFlags = self._create_flags(flags, js_flags)
-    if cache_dir is None:
-      maybe_cache_dir = self._flags.get("--user-data-dir", None)
-      if maybe_cache_dir:
-        cache_dir = pth.RemotePath(maybe_cache_dir)
-    if cache_dir is None:
-      self.cache_dir = self.platform.mkdtemp(prefix=self.type_name)
-      self.clear_cache_dir = True
-    else:
-      self.cache_dir = cache_dir
-      self.clear_cache_dir = False
-    self._stdout_log_file = None
+               settings: Optional[Settings] = None):
+    super().__init__(label, path, settings=settings)
+    self._stdout_log_file: Optional[TextIO] = None
+    assert isinstance(self._flags, ChromeFlags)
 
-  def _create_flags(self, flags: Flags.InitialDataType,
-                    js_flags: Flags.InitialDataType) -> ChromeFlags:
-    assert not isinstance(js_flags, str), (
-        f"js_flags should be a list, but got: {repr(js_flags)}")
-    assert not isinstance(
-        flags, str), (f"flags should be a list, but got: {repr(flags)}")
+  def _setup_flags(self, settings: Settings) -> ChromeFlags:
+    flags: Flags = settings.flags
+    js_flags: Flags = settings.js_flags
     self._flags = self.default_flags(self.DEFAULT_FLAGS)
     self._flags.update(flags)
 
@@ -153,6 +124,19 @@ class Chromium(Browser):
     self.flags.set("--disable-gpu-compositing")
     self.flags.set("--no-sandbox")
 
+  def _setup_cache_dir(self, settings: Settings) -> None:
+    cache_dir = settings.cache_dir
+    if cache_dir is None:
+      maybe_cache_dir = self._flags.get("--user-data-dir", None)
+      if maybe_cache_dir:
+        cache_dir = pth.RemotePath(maybe_cache_dir)
+    if cache_dir is None:
+      self.cache_dir = self.platform.mkdtemp(prefix=self.type_name)
+      self.clear_cache_dir = True
+    else:
+      self.cache_dir = cache_dir
+      self.clear_cache_dir = False
+
   def _extract_version(self) -> str:
     assert self.path
     version_string = self.platform.app_version(self.path)
@@ -183,15 +167,15 @@ class Chromium(Browser):
 
   @property
   def flags(self) -> ChromeFlags:
-    return self._flags
+    return cast(ChromeFlags, self._flags)
 
   @property
   def js_flags(self) -> JSFlags:
-    return self._flags.js_flags
+    return cast(ChromeFlags, self._flags).js_flags
 
   @property
   def features(self) -> ChromeFeatures:
-    return self._flags.features
+    return cast(ChromeFlags, self._flags).features
 
   def details_json(self) -> JsonDict:
     details: JsonDict = super().details_json()

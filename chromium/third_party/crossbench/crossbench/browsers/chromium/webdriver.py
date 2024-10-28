@@ -42,6 +42,7 @@ if TYPE_CHECKING:
   from crossbench.flags.base import FlagsT
   from crossbench.plt.base import Platform
   from crossbench.runner.groups import BrowserSessionRunGroup
+  from crossbench.runner.runner import Runner
 
 
 class ChromiumWebDriver(WebDriverBrowser, Chromium, metaclass=abc.ABCMeta):
@@ -101,7 +102,7 @@ class ChromiumWebDriver(WebDriverBrowser, Chromium, metaclass=abc.ABCMeta):
         # TODO: support clean logging of chrome stdout / stderr
         service_args=["--verbose"])
     # TODO: support remote platforms
-    service.log_file = pth.LocalPath(self.stdout_log_file).open(
+    service.log_file = pth.LocalPath(self.stdout_log_file).open(  # pylint: disable=consider-using-with
         "w", encoding="utf-8")
     driver: ChromiumDriver = self._create_driver(options, service)
     # pytype: enable=wrong-keyword-args
@@ -300,6 +301,10 @@ class ChromiumWebDriverAndroid(ChromiumWebDriver):
     options.add_experimental_option("androidDeviceSerial",
                                     self.platform.adb.serial_id)
     return options
+
+  def setup_binary(self, runner: Runner) -> None:
+    super().setup_binary(runner)
+    self.platform.adb.grant_notification_permissions(self.android_package)
 
 
 class ChromiumWebDriverSsh(ChromiumWebDriver):

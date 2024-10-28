@@ -19,10 +19,16 @@ target_sources(gpu_av_spirv PRIVATE
     # Passes
     bindless_descriptor_pass.h
     bindless_descriptor_pass.cpp
+    non_bindless_oob_buffer_pass.h
+    non_bindless_oob_buffer_pass.cpp
+    non_bindless_oob_texel_buffer_pass.h
+    non_bindless_oob_texel_buffer_pass.cpp
     buffer_device_address_pass.h
     buffer_device_address_pass.cpp
     ray_query_pass.h
     ray_query_pass.cpp
+    debug_printf_pass.h
+    debug_printf_pass.cpp
 
     # Framework
     instruction.h
@@ -34,12 +40,20 @@ target_sources(gpu_av_spirv PRIVATE
     module.cpp
     type_manager.h
     type_manager.cpp
+    inject_conditional_function_pass.h
+    inject_conditional_function_pass.cpp
+    inject_function_pass.h
+    inject_function_pass.cpp
     pass.h
     pass.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/spirv_grammar_helper.cpp
 
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_bindless_descriptor_comp.h
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_bindless_descriptor_comp.cpp
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_non_bindless_oob_buffer_comp.h
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_non_bindless_oob_buffer_comp.cpp
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_non_bindless_oob_texel_buffer_comp.h
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_non_bindless_oob_texel_buffer_comp.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_buffer_device_address_comp.h
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_buffer_device_address_comp.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_ray_query_comp.h

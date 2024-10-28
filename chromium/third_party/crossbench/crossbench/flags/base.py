@@ -80,17 +80,17 @@ class BasicFlags(Freezable, collections.UserDict):
     if isinstance(data, cls):
       return data
     if isinstance(data, str):
-      return cls.loads(data)
+      return cls.parse_str(data)
     return cls(data)
 
   @classmethod
-  def loads(cls: Type[BasicFlagsT], raw_flags: str) -> BasicFlagsT:
-    return cls._loads(raw_flags)
+  def parse_str(cls: Type[BasicFlagsT], raw_flags: str) -> BasicFlagsT:
+    return cls._parse_str(raw_flags)
 
   @classmethod
-  def _loads(cls: Type[BasicFlagsT],
-             raw_flags: str,
-             msg: str = "flag") -> BasicFlagsT:
+  def _parse_str(cls: Type[BasicFlagsT],
+                 raw_flags: str,
+                 msg: str = "flag") -> BasicFlagsT:
     raw_flags = raw_flags.strip()
     if not raw_flags:
       return cls()
@@ -228,6 +228,13 @@ class BasicFlags(Freezable, collections.UserDict):
         yield k
       else:
         yield f"{k}={v}"
+
+  def __bool__(self) -> bool:
+    return bool(self.data)
+
+  def __repr__(self) -> str:
+    dict_repr = repr(self.to_dict())
+    return f"{type(self).__name__}({dict_repr})"
 
   def __str__(self) -> str:
     return " ".join(self)

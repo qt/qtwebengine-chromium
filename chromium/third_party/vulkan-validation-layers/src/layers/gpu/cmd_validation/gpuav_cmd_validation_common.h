@@ -46,10 +46,7 @@ class RestorablePipelineState {
     std::vector<vvl::ShaderObject*> shader_objects_;
 };
 
-void BindValidationCmdsCommonDescSet(const LockedSharedPtr<CommandBuffer, WriteLockGuard>& cmd_buffer_state,
-                                     VkPipelineBindPoint bind_point, VkPipelineLayout pipeline_layout, uint32_t cmd_index,
-                                     uint32_t error_logger_index);
-
-VkDeviceAddress GetBufferDeviceAddress(Validator& gpuav, VkBuffer buffer, const Location& loc);
+void BindValidationCmdsCommonDescSet(Validator& gpuav, CommandBuffer& cb_state, VkPipelineBindPoint bind_point,
+                                     VkPipelineLayout pipeline_layout, uint32_t cmd_index, uint32_t error_logger_index);
 
 }  // namespace gpuav

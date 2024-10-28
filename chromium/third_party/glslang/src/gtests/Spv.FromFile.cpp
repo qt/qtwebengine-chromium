@@ -710,6 +710,7 @@ INSTANTIATE_TEST_SUITE_P(
 
         // SPV_NV_shader_execution_reorder
 
+        "spv.nv.hitobject-errors.rgen",
         "spv.nv.hitobject-allops.rgen",
         "spv.nv.hitobject-allops.rchit",
         "spv.nv.hitobject-allops.rmiss",
@@ -955,6 +956,7 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.debuginfo.rt_types.glsl.rgen",
         "spv.debuginfo.include.glsl.frag",
         "spv.debuginfo.multiline.glsl.frag",
+        "spv.debuginfo.implicit_br.glsl.frag",
     })),
     FileNameAsCustomTestSuffix
 );

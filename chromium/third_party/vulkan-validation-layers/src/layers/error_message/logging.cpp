@@ -27,6 +27,7 @@
 #include "generated/vk_validation_error_messages.h"
 #include "error_location.h"
 #include "utils/hash_util.h"
+#include "vk_layer_config.h"
 
 [[maybe_unused]] const char *kVUIDUndefined = "VUID_Undefined";
 
@@ -62,14 +63,14 @@ void DebugReport::SetDebugUtilsSeverityFlags(std::vector<VkLayerDbgFunctionState
     // For all callback in list, return their complete set of severities and modes
     for (const auto &item : callbacks) {
         if (item.IsUtils()) {
-            active_severities |= item.debug_utils_msg_flags;
-            active_types |= item.debug_utils_msg_type;
+            active_msg_severities |= item.debug_utils_msg_flags;
+            active_msg_types |= item.debug_utils_msg_type;
         } else {
             VkFlags severities = 0;
             VkFlags types = 0;
             DebugReportFlagsToAnnotFlags(item.debug_report_msg_flags, &severities, &types);
-            active_severities |= severities;
-            active_types |= types;
+            active_msg_severities |= severities;
+            active_msg_types |= types;
         }
     }
 }
@@ -106,15 +107,18 @@ bool DebugReport::UpdateLogMsgCounts(int32_t vuid_hash) const {
     }
 }
 
-bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, const char *message, const char *text_vuid) const {
+bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, const char *msg, const char *text_vuid) const {
     bool bail = false;
     std::vector<VkDebugUtilsLabelEXT> queue_labels;
     std::vector<VkDebugUtilsLabelEXT> cmd_buf_labels;
 
     // Convert the info to the VK_EXT_debug_utils format
-    VkDebugUtilsMessageTypeFlagsEXT types;
-    VkDebugUtilsMessageSeverityFlagsEXT severity;
-    DebugReportFlagsToAnnotFlags(msg_flags, &severity, &types);
+    VkDebugUtilsMessageTypeFlagsEXT msg_type;
+    VkDebugUtilsMessageSeverityFlagsEXT msg_severity;
+    DebugReportFlagsToAnnotFlags(msg_flags, &msg_severity, &msg_type);
+    if (!(active_msg_severities & msg_severity) || !(active_msg_types & msg_type)) {
+        return false;  // quick check again to make sure user wants these printed
+    }
 
     std::vector<std::string> object_labels;
     // Ensures that push_back will not reallocate, thereby providing pointer
@@ -220,7 +224,7 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
             oss << "Object " << index++ << ": VK_NULL_HANDLE, type = " << string_VkObjectType(src_object.objectType) << "; ";
         }
     }
-    oss << "| MessageID = 0x" << std::hex << message_id_number << " | " << message;
+    oss << "| MessageID = 0x" << std::hex << message_id_number << " | " << msg;
     std::string composite = oss.str();
 
     const auto callback_list = &debug_callback_list;
@@ -242,11 +246,12 @@ bool DebugReport::DebugLogMsg(VkFlags msg_flags, const LogObjectList &objects, c
         if (current_callback.IsDefault() && !use_default_callbacks) continue;
 
         // VK_EXT_debug_utils callback
-        if (current_callback.IsUtils() && (current_callback.debug_utils_msg_flags & severity) &&
-            (current_callback.debug_utils_msg_type & types)) {
+        if (current_callback.IsUtils() && (current_callback.debug_utils_msg_flags & msg_severity) &&
+            (current_callback.debug_utils_msg_type & msg_type)) {
             callback_data.pMessage = composite.c_str();
-            if (current_callback.debug_utils_callback_function_ptr(static_cast<VkDebugUtilsMessageSeverityFlagBitsEXT>(severity),
-                                                                   types, &callback_data, current_callback.pUserData)) {
+            if (current_callback.debug_utils_callback_function_ptr(
+                    static_cast<VkDebugUtilsMessageSeverityFlagBitsEXT>(msg_severity), msg_type, &callback_data,
+                    current_callback.pUserData)) {
                 bail = true;
             }
         } else if (!current_callback.IsUtils() && (current_callback.debug_report_msg_flags & msg_flags)) {
@@ -343,7 +348,7 @@ void DebugReport::BeginQueueDebugUtilsLabel(VkQueue queue, const VkDebugUtilsLab
     if (nullptr != label_info && nullptr != label_info->pLabelName) {
         auto *label_state = GetLoggingLabelState(&debug_utils_queue_labels, queue, /* insert */ true);
         assert(label_state);
-        label_state->labels.emplace_back(label_info);
+        label_state->labels.push_back(label_info);
 
         // TODO: Determine if this is the correct semantics for insert label vs. begin/end, perserving existing semantics for now
         label_state->insert_label.Reset();
@@ -377,7 +382,7 @@ void DebugReport::BeginCmdDebugUtilsLabel(VkCommandBuffer command_buffer, const 
     if (nullptr != label_info && nullptr != label_info->pLabelName) {
         auto *label_state = GetLoggingLabelState(&debug_utils_cmd_buffer_labels, command_buffer, /* insert */ true);
         assert(label_state);
-        label_state->labels.push_back(LoggingLabel(label_info));
+        label_state->labels.push_back(label_info);
 
         // TODO: Determine if this is the correct semantics for insert label vs. begin/end, perserving existing semantics for now
         label_state->insert_label.Reset();
@@ -527,9 +532,9 @@ VKAPI_ATTR void DeactivateInstanceDebugCallbacks(DebugReport *debug_report) {
 
 // helper for VUID based filtering. This needs to be separate so it can be called before incurring
 // the cost of sprintf()-ing the err_msg needed by LogMsgLocked().
-bool DebugReport::LogMsgEnabled(std::string_view vuid_text, VkDebugUtilsMessageSeverityFlagsEXT severity,
-                                VkDebugUtilsMessageTypeFlagsEXT type) {
-    if (!(active_severities & severity) || !(active_types & type)) {
+bool DebugReport::LogMsgEnabled(std::string_view vuid_text, VkDebugUtilsMessageSeverityFlagsEXT msg_severity,
+                                VkDebugUtilsMessageTypeFlagsEXT msg_type) {
+    if (!(active_msg_severities & msg_severity) || !(active_msg_types & msg_type)) {
         return false;
     }
     // If message is in filter list, bail out very early
@@ -544,17 +549,17 @@ bool DebugReport::LogMsgEnabled(std::string_view vuid_text, VkDebugUtilsMessageS
     return true;
 }
 
-bool DebugReport::LogMsg(VkFlags msg_flags, const LogObjectList &objects, const Location *loc, std::string_view vuid_text,
+bool DebugReport::LogMsg(VkFlags msg_flags, const LogObjectList &objects, const Location &loc, std::string_view vuid_text,
                          const char *format, va_list argptr) {
     assert(*(vuid_text.data() + vuid_text.size()) == '\0');
 
-    VkDebugUtilsMessageSeverityFlagsEXT severity;
-    VkDebugUtilsMessageTypeFlagsEXT type;
+    VkDebugUtilsMessageSeverityFlagsEXT msg_severity;
+    VkDebugUtilsMessageTypeFlagsEXT msg_type;
 
-    DebugReportFlagsToAnnotFlags(msg_flags, &severity, &type);
+    DebugReportFlagsToAnnotFlags(msg_flags, &msg_severity, &msg_type);
     std::unique_lock<std::mutex> lock(debug_output_mutex);
     // Avoid logging cost if msg is to be ignored
-    if (!LogMsgEnabled(vuid_text, severity, type)) {
+    if (!LogMsgEnabled(vuid_text, msg_severity, msg_type)) {
         return false;
     }
 
@@ -590,10 +595,7 @@ bool DebugReport::LogMsg(VkFlags msg_flags, const LogObjectList &objects, const 
         str_plus_spec_text.resize(result);
     }
 
-    // TODO - make Location a reference once old LogError is gone
-    if (loc) {
-        str_plus_spec_text = loc->Message() + " " + str_plus_spec_text;
-    }
+    str_plus_spec_text = loc.Message() + " " + str_plus_spec_text;
 
     // Append the spec error text to the error message, unless it contains a word treated as special
     if ((vuid_text.find("VUID-") != std::string::npos)) {
@@ -627,11 +629,15 @@ bool DebugReport::LogMsg(VkFlags msg_flags, const LogObjectList &objects, const 
 
             // Add period at end if forgotten
             // This provides better seperation between error message and spec text
-            if (str_plus_spec_text.back() != '.') {
+            if (str_plus_spec_text.back() != '.' && str_plus_spec_text.back() != '\n') {
                 str_plus_spec_text.append(".");
             }
 
-            str_plus_spec_text.append(" The Vulkan spec states: ");
+            // Start Vulkan spec text with a new line to make it easier visually
+            if (str_plus_spec_text.back() != '\n') {
+                str_plus_spec_text.append("\n");
+            }
+            str_plus_spec_text.append("The Vulkan spec states: ");
             str_plus_spec_text.append(spec_text);
             if (0 == spec_type.compare("default")) {
                 str_plus_spec_text.append(" (https://github.com/KhronosGroup/Vulkan-Docs/search?q=)");
@@ -681,14 +687,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MessengerLogCallback(VkDebugUtilsMessageSeverityF
     PrintMessageType(message_type, msg_type);
 
     msg_buffer << callback_data->pMessageIdName << "(" << msg_severity << " / " << msg_type
-        << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << "\n";
-    msg_buffer << "    Objects: " << callback_data->objectCount << "\n";
+               << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << '\n';
+    msg_buffer << "    Objects: " << callback_data->objectCount << '\n';
     for (uint32_t obj = 0; obj < callback_data->objectCount; ++obj) {
         msg_buffer << "        [" << obj << "] " << std::hex << std::showbase
-            << HandleToUint64(callback_data->pObjects[obj].objectHandle) << ", type: " << std::dec << std::noshowbase
-            << callback_data->pObjects[obj].objectType
-            << ", name: " << (callback_data->pObjects[obj].pObjectName ? callback_data->pObjects[obj].pObjectName : "NULL")
-            << "\n";
+                   << HandleToUint64(callback_data->pObjects[obj].objectHandle) << ", type: " << std::dec << std::noshowbase
+                   << callback_data->pObjects[obj].objectType
+                   << ", name: " << (callback_data->pObjects[obj].pObjectName ? callback_data->pObjects[obj].pObjectName : "NULL")
+                   << '\n';
     }
     const std::string tmp = msg_buffer.str();
     const char *cstr = tmp.c_str();
@@ -714,15 +720,15 @@ VKAPI_ATTR VkBool32 VKAPI_CALL MessengerWin32DebugOutputMsg(VkDebugUtilsMessageS
     PrintMessageType(message_type, msg_type);
 
     msg_buffer << callback_data->pMessageIdName << "(" << msg_severity << " / " << msg_type
-               << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << "\n";
-    msg_buffer << "    Objects: " << callback_data->objectCount << "\n";
+               << "): msgNum: " << callback_data->messageIdNumber << " - " << callback_data->pMessage << '\n';
+    msg_buffer << "    Objects: " << callback_data->objectCount << '\n';
 
     for (uint32_t obj = 0; obj < callback_data->objectCount; ++obj) {
         msg_buffer << "       [" << obj << "]  " << std::hex << std::showbase
                    << HandleToUint64(callback_data->pObjects[obj].objectHandle) << ", type: " << std::dec << std::noshowbase
                    << callback_data->pObjects[obj].objectType
                    << ", name: " << (callback_data->pObjects[obj].pObjectName ? callback_data->pObjects[obj].pObjectName : "NULL")
-                   << "\n";
+                   << '\n';
     }
     const std::string tmp = msg_buffer.str();
     [[maybe_unused]] const char *cstr = tmp.c_str();

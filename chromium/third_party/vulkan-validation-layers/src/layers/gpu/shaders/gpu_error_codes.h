@@ -34,6 +34,7 @@ const int kErrorGroupGpuPreDraw = 4;
 const int kErrorGroupGpuPreDispatch = 5;
 const int kErrorGroupGpuPreTraceRays = 6;
 const int kErrorGroupGpuCopyBufferToImage = 7;
+const int kErrorGroupInstNonBindlessOOB = 8;
 
 // Used for MultiEntry and there is no single stage set
 const int kHeaderStageIdMultiEntryPoint = 0x7fffffff;  // same as spv::ExecutionModelMax
@@ -44,6 +45,16 @@ const int kErrorSubCodeBindlessDescriptorBounds = 1;
 const int kErrorSubCodeBindlessDescriptorUninit = 2;
 const int kErrorSubCodeBindlessDescriptorOOB = 3;
 const int kErrorSubCodeBindlessDescriptorDestroyed = 4;
+const int kErrorSubCodeBindlessDescriptorNullPointer = 5;
+
+// Non-Bindless OOB
+//
+// Buffers
+const int kErrorSubCodeNonBindlessOOBBufferArrays = 1;
+const int kErrorSubCodeNonBindlessOOBBufferBounds = 2;
+// Texel Buffers
+const int kErrorSubCodeNonBindlessOOBTexelBufferArrays = 3;
+const int kErrorSubCodeNonBindlessOOBTexelBufferBounds = 4;
 
 // Buffer Device Address
 //

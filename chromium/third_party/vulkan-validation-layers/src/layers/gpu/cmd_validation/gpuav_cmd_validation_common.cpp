@@ -19,7 +19,6 @@
 
 #include "gpu/core/gpuav.h"
 #include "gpu/core/gpuav_constants.h"
-#include "gpu/resources/gpu_resources.h"
 #include "gpu/shaders/gpu_shaders_constants.h"
 
 #include "state_tracker/descriptor_sets.h"
@@ -27,16 +26,16 @@
 
 namespace gpuav {
 
-void BindValidationCmdsCommonDescSet(const LockedSharedPtr<CommandBuffer, WriteLockGuard> &cmd_buffer_state,
-                                     VkPipelineBindPoint bind_point, VkPipelineLayout pipeline_layout, uint32_t cmd_index,
-                                     uint32_t error_logger_index) {
+void BindValidationCmdsCommonDescSet(Validator &gpuav, CommandBuffer &cb_state, VkPipelineBindPoint bind_point,
+                                     VkPipelineLayout pipeline_layout, uint32_t cmd_index, uint32_t error_logger_index) {
     assert(cmd_index < cst::indices_count);
     assert(error_logger_index < cst::indices_count);
     std::array<uint32_t, 2> dynamic_offsets = {
-        {cmd_index * static_cast<uint32_t>(sizeof(uint32_t)), error_logger_index * static_cast<uint32_t>(sizeof(uint32_t))}};
-    DispatchCmdBindDescriptorSets(cmd_buffer_state->VkHandle(), bind_point, pipeline_layout, glsl::kDiagCommonDescriptorSet, 1,
-                                  &cmd_buffer_state->GetValidationCmdCommonDescriptorSet(),
-                                  static_cast<uint32_t>(dynamic_offsets.size()), dynamic_offsets.data());
+        {cmd_index * gpuav.indices_buffer_alignment_, error_logger_index * gpuav.indices_buffer_alignment_}};
+
+    DispatchCmdBindDescriptorSets(cb_state.VkHandle(), bind_point, pipeline_layout, glsl::kDiagCommonDescriptorSet, 1,
+                                  &cb_state.GetValidationCmdCommonDescriptorSet(), static_cast<uint32_t>(dynamic_offsets.size()),
+                                  dynamic_offsets.data());
 }
 
 void RestorablePipelineState::Create(vvl::CommandBuffer &cb_state, VkPipelineBindPoint bind_point) {
@@ -68,7 +67,7 @@ void RestorablePipelineState::Create(vvl::CommandBuffer &cb_state, VkPipelineBin
     for (std::size_t i = 0; i < last_bound.per_set.size(); i++) {
         const auto &bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
         if (bound_descriptor_set) {
-            descriptor_sets_.push_back(std::make_pair(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(i)));
+            descriptor_sets_.emplace_back(bound_descriptor_set->VkHandle(), static_cast<uint32_t>(i));
             if (bound_descriptor_set->IsPushDescriptor()) {
                 push_descriptor_set_index_ = static_cast<uint32_t>(i);
             }
@@ -115,31 +114,6 @@ void RestorablePipelineState::Restore() const {
                                  push_constant_range.offset, static_cast<uint32_t>(push_constant_range.values.size()),
                                  push_constant_range.values.data());
     }
-}
-
-VkDeviceAddress GetBufferDeviceAddress(Validator &gpuav, VkBuffer buffer, const Location &loc) {
-    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8001
-    // Setting enabled_features.bufferDeviceAddress to true in GpuShaderInstrumentor::PreCallRecordCreateDevice
-    // when adding missing features will modify another validator object, one associated to VkInstance,
-    // and "this" validator is associated to a device. enabled_features is not inherited, and besides
-    // would be reset in GetEnabledDeviceFeatures.
-    // The switch from the instance validator object to the device one happens in
-    // `state_tracker.cpp`, `ValidationStateTracker::PostCallRecordCreateDevice`
-    // TL;DR is the following type of sanity check is currently invalid, but it would be nice to have
-    // assert(enabled_features.bufferDeviceAddress);
-
-    VkBufferDeviceAddressInfo address_info = vku::InitStructHelper();
-    address_info.buffer = buffer;
-    if (gpuav.api_version >= VK_API_VERSION_1_2) {
-        return DispatchGetBufferDeviceAddress(gpuav.device, &address_info);
-    }
-    if (IsExtEnabled(gpuav.device_extensions.vk_ext_buffer_device_address)) {
-        return DispatchGetBufferDeviceAddressEXT(gpuav.device, &address_info);
-    }
-    if (IsExtEnabled(gpuav.device_extensions.vk_khr_buffer_device_address)) {
-        return DispatchGetBufferDeviceAddressKHR(gpuav.device, &address_info);
-    }
-    return 0;
 }
 
 }  // namespace gpuav

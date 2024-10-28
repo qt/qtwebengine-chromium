@@ -22,6 +22,8 @@ The included licenses apply to the following files:
 
 Place release notes for the upcoming release below this line and remove this line upon naming this release.
 
+- The incomplete WaveMatrix implementation has been removed.
+
 ### Version 1.8.2407
 
 This cumulative release contains numerous bug fixes and stability improvments.
@@ -33,7 +35,8 @@ Here are some highlights:
 - [SPIR-V] Implement WaveMutliPrefix* in [#6600](https://github.com/microsoft/DirectXShaderCompiler/issues/6600)
 - [SPIR-V] Implement SampleCmpLevel for SM6.7 in [#6613](https://github.com/microsoft/DirectXShaderCompiler/issues/6613)
 - Avoid adding types to default namespace in [#6646](https://github.com/microsoft/DirectXShaderCompiler/issues/6646)
-- Release notes once found in `README.md` can now be found in `docs/ReleaseNotes.md`
+- Release notes once found in `README.md` can now be found in `ReleaseNotes.md`
+- Fixed several bugs in the loop restructurizer. Shader developers who are using -opt-disable structurize-loop-exits-for-unroll to disable the loop restructurizer should consider removing that workaround.
 
 ### Version 1.8.2405
 

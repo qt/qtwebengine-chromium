@@ -16,10 +16,11 @@
 #include "buffer_device_address_pass.h"
 #include "module.h"
 #include <spirv/unified1/spirv.hpp>
+#include <iostream>
 
 #include "generated/instrumentation_buffer_device_address_comp.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 static LinkInfo link_info = {instrumentation_buffer_device_address_comp, instrumentation_buffer_device_address_comp_size,
@@ -110,5 +111,9 @@ bool BufferDeviceAddressPass::AnalyzeInstruction(const Function& function, const
     return true;
 }
 
+void BufferDeviceAddressPass::PrintDebugInfo() {
+    std::cout << "BufferDeviceAddressPass\n\tinstrumentation count: " << instrumented_count_ << '\n';
+}
+
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

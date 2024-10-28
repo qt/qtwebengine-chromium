@@ -105,7 +105,7 @@ SELECT
       union_track AS (
         SELECT track_id
         FROM slice
-        WHERE id IN (SELECT slice_id FROM _chrome_speedometer_mark)
+        WHERE id IN (SELECT slice_id FROM chrome_speedometer_measure)
         UNION ALL
         SELECT track_id
         FROM internal_ext_benchmark_slice_mark

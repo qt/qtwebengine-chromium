@@ -14,8 +14,8 @@ import tempfile
 from typing import TYPE_CHECKING, Dict, List, Optional, TextIO, Tuple, Union
 
 from crossbench import helper
-from crossbench.probes.probe import (Probe, ProbeContext, ProbeMissingDataError,
-                                     ResultLocation, ProbeConfigParser)
+from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
+                                     ProbeMissingDataError, ResultLocation)
 from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
                                        ProbeResult)
 
@@ -50,13 +50,21 @@ class VideoProbe(Probe):
         aliases=("timestrip",),
         type=bool,
         default=True,
-        help=("Produce a timestrip png"))
+        help="Produce a timestrip png")
+    parser.add_argument(
+        "merge_runs",
+        type=bool,
+        default=True,
+        help="Merge videos from multiple runs")
     return parser
 
-  def __init__(self, generate_timestrip: bool = True) -> None:
+  def __init__(self,
+               generate_timestrip: bool = True,
+               merge_runs: bool = True) -> None:
     super().__init__()
     self._duration = None
     self._generate_timestrip = generate_timestrip
+    self._merge_runs = merge_runs
 
   @property
   def result_path_name(self) -> str:
@@ -65,6 +73,10 @@ class VideoProbe(Probe):
   @property
   def generate_timestrip(self) -> bool:
     return self._generate_timestrip
+
+  @property
+  def merge_runs(self) -> bool:
+    return self._merge_runs
 
   def validate_env(self, env: HostEnvironment) -> None:
     super().validate_env(env)
@@ -108,6 +120,8 @@ class VideoProbe(Probe):
     return VideoProbeContext(self, run)
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
+    if not self.merge_runs:
+      return LocalProbeResult()
     runs = tuple(group.runs)
     if len(runs) == 1:
       # In the simple case just copy the files
@@ -151,6 +165,8 @@ class VideoProbe(Probe):
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     """Merge story videos from multiple browser/configurations"""
+    if not self.merge_runs:
+      return LocalProbeResult()
     groups = list(group.repetitions_groups)
     if len(groups) <= 1:
       return EmptyProbeResult()
@@ -290,7 +306,8 @@ class VideoProbeContext(ProbeContext[VideoProbe]):
   def _convert_to_constant_framerate(self):
     # On some platforms (android for certain) we get VFR videos which confuse
     # the next video extraction / conversion steps.
-    vrf_video_result = self.local_result_path.parent / f"vfr_{self.result_path.name}"
+    vrf_video_result = (
+        self.local_result_path.parent / f"vfr_{self.result_path.name}")
     self.local_result_path.rename(vrf_video_result)
     self.runner_platform.sh(
         "ffmpeg", "-hide_banner", \

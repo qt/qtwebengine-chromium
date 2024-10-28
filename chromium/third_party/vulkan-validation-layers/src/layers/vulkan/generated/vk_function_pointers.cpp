@@ -456,6 +456,11 @@ PFN_vkCmdBindIndexBuffer2KHR CmdBindIndexBuffer2KHR;
 PFN_vkGetRenderingAreaGranularityKHR GetRenderingAreaGranularityKHR;
 PFN_vkGetDeviceImageSubresourceLayoutKHR GetDeviceImageSubresourceLayoutKHR;
 PFN_vkGetImageSubresourceLayout2KHR GetImageSubresourceLayout2KHR;
+PFN_vkCreatePipelineBinariesKHR CreatePipelineBinariesKHR;
+PFN_vkDestroyPipelineBinaryKHR DestroyPipelineBinaryKHR;
+PFN_vkGetPipelineKeyKHR GetPipelineKeyKHR;
+PFN_vkGetPipelineBinaryDataKHR GetPipelineBinaryDataKHR;
+PFN_vkReleaseCapturedPipelineDataKHR ReleaseCapturedPipelineDataKHR;
 PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR GetPhysicalDeviceCooperativeMatrixPropertiesKHR;
 PFN_vkCmdSetLineStippleKHR CmdSetLineStippleKHR;
 PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR GetPhysicalDeviceCalibrateableTimeDomainsKHR;
@@ -766,6 +771,7 @@ PFN_vkCreateOpticalFlowSessionNV CreateOpticalFlowSessionNV;
 PFN_vkDestroyOpticalFlowSessionNV DestroyOpticalFlowSessionNV;
 PFN_vkBindOpticalFlowSessionImageNV BindOpticalFlowSessionImageNV;
 PFN_vkCmdOpticalFlowExecuteNV CmdOpticalFlowExecuteNV;
+PFN_vkAntiLagUpdateAMD AntiLagUpdateAMD;
 PFN_vkCreateShadersEXT CreateShadersEXT;
 PFN_vkDestroyShaderEXT DestroyShaderEXT;
 PFN_vkGetShaderBinaryDataEXT GetShaderBinaryDataEXT;
@@ -1748,6 +1754,15 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_KHR_pipeline_binary", [](VkInstance , VkDevice device) {
+                CreatePipelineBinariesKHR = reinterpret_cast<PFN_vkCreatePipelineBinariesKHR>(GetDeviceProcAddr(device, "vkCreatePipelineBinariesKHR"));
+                DestroyPipelineBinaryKHR = reinterpret_cast<PFN_vkDestroyPipelineBinaryKHR>(GetDeviceProcAddr(device, "vkDestroyPipelineBinaryKHR"));
+                GetPipelineKeyKHR = reinterpret_cast<PFN_vkGetPipelineKeyKHR>(GetDeviceProcAddr(device, "vkGetPipelineKeyKHR"));
+                GetPipelineBinaryDataKHR = reinterpret_cast<PFN_vkGetPipelineBinaryDataKHR>(GetDeviceProcAddr(device, "vkGetPipelineBinaryDataKHR"));
+                ReleaseCapturedPipelineDataKHR = reinterpret_cast<PFN_vkReleaseCapturedPipelineDataKHR>(GetDeviceProcAddr(device, "vkReleaseCapturedPipelineDataKHR"));
+            }
+        },
+        {
             "VK_KHR_cooperative_matrix", [](VkInstance instance, VkDevice ) {
                 GetPhysicalDeviceCooperativeMatrixPropertiesKHR = reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"));
             }
@@ -2300,6 +2315,11 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
         {
+            "VK_AMD_anti_lag", [](VkInstance , VkDevice device) {
+                AntiLagUpdateAMD = reinterpret_cast<PFN_vkAntiLagUpdateAMD>(GetDeviceProcAddr(device, "vkAntiLagUpdateAMD"));
+            }
+        },
+        {
             "VK_EXT_shader_object", [](VkInstance , VkDevice device) {
                 CreateShadersEXT = reinterpret_cast<PFN_vkCreateShadersEXT>(GetDeviceProcAddr(device, "vkCreateShadersEXT"));
                 DestroyShaderEXT = reinterpret_cast<PFN_vkDestroyShaderEXT>(GetDeviceProcAddr(device, "vkDestroyShaderEXT"));
@@ -2593,6 +2613,11 @@ void ResetAllExtensions() {
     GetRenderingAreaGranularityKHR = nullptr;
     GetDeviceImageSubresourceLayoutKHR = nullptr;
     GetImageSubresourceLayout2KHR = nullptr;
+    CreatePipelineBinariesKHR = nullptr;
+    DestroyPipelineBinaryKHR = nullptr;
+    GetPipelineKeyKHR = nullptr;
+    GetPipelineBinaryDataKHR = nullptr;
+    ReleaseCapturedPipelineDataKHR = nullptr;
     GetPhysicalDeviceCooperativeMatrixPropertiesKHR = nullptr;
     CmdSetLineStippleKHR = nullptr;
     GetPhysicalDeviceCalibrateableTimeDomainsKHR = nullptr;
@@ -2903,6 +2928,7 @@ void ResetAllExtensions() {
     DestroyOpticalFlowSessionNV = nullptr;
     BindOpticalFlowSessionImageNV = nullptr;
     CmdOpticalFlowExecuteNV = nullptr;
+    AntiLagUpdateAMD = nullptr;
     CreateShadersEXT = nullptr;
     DestroyShaderEXT = nullptr;
     GetShaderBinaryDataEXT = nullptr;

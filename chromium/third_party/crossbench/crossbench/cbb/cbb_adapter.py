@@ -27,7 +27,7 @@ from crossbench.runner.run import Run
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 from crossbench.stories.story import Story
 
-press_benchmarks = [
+press_benchmarks: List[Type[PressBenchmark]] = [
     benchmarks.Speedometer20Benchmark,
     benchmarks.Speedometer21Benchmark,
     benchmarks.Speedometer30Benchmark,
@@ -36,13 +36,14 @@ press_benchmarks = [
     benchmarks.JetStream20Benchmark,
     benchmarks.JetStream21Benchmark,
     benchmarks.JetStream22Benchmark,
+    benchmarks.JetStream30Benchmark,
 ]
 
 press_benchmarks_dict = {cls.NAME: cls for cls in press_benchmarks}
 
 
 def get_pressbenchmark_cls(
-    benchmark_name: str) -> Optional[Type[TypeVar("T", bound=PressBenchmark)]]:
+    benchmark_name: str) -> Optional[Type[PressBenchmark]]:
   """Returns the class of the specified pressbenchmark.
 
   Args:
@@ -55,8 +56,7 @@ def get_pressbenchmark_cls(
 
 
 def get_pressbenchmark_story_cls(
-    benchmark_name: str
-) -> Optional[Type[TypeVar("T", bound=PressBenchmarkStory)]]:
+    benchmark_name: str) -> Optional[Type[PressBenchmarkStory]]:
   """Returns the class of the specified pressbenchmark story.
 
   Args:

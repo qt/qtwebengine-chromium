@@ -14,10 +14,7 @@ from crossbench.browsers.browser import Browser
 
 if TYPE_CHECKING:
   from crossbench import plt
-  from crossbench.browsers.splash_screen import SplashScreen
-  from crossbench.browsers.viewport import Viewport
-  from crossbench.flags.base import Flags
-  from crossbench.network.base import Network
+  from crossbench.browsers.settings import Settings
   from crossbench.runner.runner import Runner
 
 
@@ -49,29 +46,20 @@ class Safari(Browser):
   def __init__(self,
                label: str,
                path: pth.RemotePath,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[pth.RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[pth.RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.MacOSPlatform] = None):
-    super().__init__(
-        label,
-        path,
-        flags,
-        js_flags=None,
-        network=network,
-        driver_path=driver_path,
-        viewport=viewport,
-        splash_screen=splash_screen,
-        platform=platform)
-    assert not js_flags, "Safari doesn't support custom js_flags"
+               settings: Optional[Settings] = None):
+    super().__init__(label, path, settings=settings)
     assert self.platform.is_macos, "Safari only works on MacOS"
+    self.bundle_name: str = ""
+
+  def _setup_path(self, path: Optional[pth.RemotePath] = None) -> None:
+    super()._setup_path(path)
     assert self.path
-    self.bundle_name: str = self.path.stem.replace(" ", "")
-    assert cache_dir is None, "Cannot set custom cache dir for Safari"
+    self.bundle_name = self.path.stem.replace(" ", "")
+
+  def _setup_cache_dir(self, settings: Settings) -> None:
+    assert settings.cache_dir is None, (
+        "Cannot set custom cache dir for Safari")
+    assert self.bundle_name, "Missing bundle_name"
     self.cache_dir = self.platform.home() / (
         f"Library/Containers/com.apple.{self.bundle_name}/Data/Library/Caches")
 

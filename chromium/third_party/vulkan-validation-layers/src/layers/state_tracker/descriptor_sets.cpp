@@ -273,7 +273,7 @@ std::string DescriptorSetLayoutDef::DescribeDifference(uint32_t index, const Des
             }
         }
     }
-    ss << "\n";
+    ss << '\n';
     return ss.str();
 }
 
@@ -542,7 +542,7 @@ vvl::DescriptorSet::DescriptorSet(const VkDescriptorSet handle, vvl::DescriptorP
                 auto binding = MakeBinding<BufferBinding>(free_binding++, *create_info, descriptor_count, flags);
                 if (IsDynamicDescriptor(type)) {
                     for (uint32_t di = 0; di < descriptor_count; ++di) {
-                        dynamic_offset_idx_to_descriptor_list_.push_back({i, di});
+                        dynamic_offset_idx_to_descriptor_list_.emplace_back(i, di);
                     }
                 }
                 bindings_.push_back(std::move(binding));
@@ -630,7 +630,7 @@ void vvl::DescriptorSet::PerformWriteUpdate(const VkWriteDescriptorSet &update) 
         if (iter.AtEnd() || !orig_binding.IsConsistent(iter.CurrentBinding())) {
             break;
         }
-        iter->WriteUpdate(*this, *state_data_, update, i, iter.CurrentBinding().IsBindless());
+        iter->WriteUpdate(*this, *state_data_, update, i, IsBindless(iter.CurrentBinding().binding_flags));
         iter.updated(true);
     }
     if (update.descriptorCount) {
@@ -657,7 +657,7 @@ void vvl::DescriptorSet::PerformCopyUpdate(const VkCopyDescriptorSet &update, co
                 const auto &mutable_src = static_cast<const MutableDescriptor &>(src);
                 type = mutable_src.ActiveType();
             }
-            dst.CopyUpdate(*this, *state_data_, src, src_iter.CurrentBinding().IsBindless(), type);
+            dst.CopyUpdate(*this, *state_data_, src, IsBindless(src_iter.CurrentBinding().binding_flags), type);
             some_update_ = true;
             ++change_count_;
             dst_iter.updated(true);
@@ -942,6 +942,17 @@ void vvl::BufferDescriptor::RemoveParent(StateObject *state_object) {
 }
 bool vvl::BufferDescriptor::Invalid() const { return !buffer_state_ || buffer_state_->Invalid(); }
 
+VkDeviceSize vvl::BufferDescriptor::GetEffectiveRange() const {
+    // The buffer can be null if using nullDescriptors, if that is the case, the size/range will not be accessed
+    if (range_ == VK_WHOLE_SIZE && buffer_state_) {
+        // When range is VK_WHOLE_SIZE the effective range is calculated at vkUpdateDescriptorSets is by taking the size of buffer
+        // minus the offset.
+        return buffer_state_->create_info.size - offset_;
+    } else {
+        return range_;
+    }
+}
+
 void vvl::TexelDescriptor::WriteUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data,
                                                    const VkWriteDescriptorSet &update, const uint32_t index, bool is_bindless) {
     auto buffer_view = dev_data.GetConstCastShared<vvl::BufferView>(update.pTexelBufferView[index]);
@@ -1089,6 +1100,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const Validat
             const auto &buffer_info = update.pBufferInfo[index];
             offset_ = buffer_info.offset;
             range_ = buffer_info.range;
+            // can be null if using nullDescriptors
             const auto buffer_state = dev_data.GetConstCastShared<vvl::Buffer>(update.pBufferInfo->buffer);
             if (buffer_state) {
                 buffer_size = buffer_state->create_info.size;
@@ -1097,6 +1109,7 @@ void vvl::MutableDescriptor::WriteUpdate(DescriptorSet &set_state, const Validat
             break;
         }
         case DescriptorClass::TexelBuffer: {
+            // can be null if using nullDescriptors
             const auto buffer_view = dev_data.GetConstCastShared<vvl::BufferView>(update.pTexelBufferView[index]);
             if (buffer_view) {
                 buffer_size = buffer_view->buffer_state->create_info.size;
@@ -1243,6 +1256,17 @@ void vvl::MutableDescriptor::SetDescriptorType(VkDescriptorType src_type, const 
         buffer_size_ = descriptor->GetBufferSize();
     } else {
         buffer_size_ = 0;
+    }
+}
+
+VkDeviceSize vvl::MutableDescriptor::GetEffectiveRange() const {
+    // The buffer can be null if using nullDescriptors, if that is the case, the size/range will not be accessed
+    if (range_ == VK_WHOLE_SIZE && buffer_state_) {
+        // When range is VK_WHOLE_SIZE the effective range is calculated at vkUpdateDescriptorSets is by taking the size of buffer
+        // minus the offset.
+        return buffer_state_->create_info.size - offset_;
+    } else {
+        return range_;
     }
 }
 

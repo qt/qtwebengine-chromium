@@ -679,6 +679,13 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkGetDeviceImageSubresourceLayoutKHR GetDeviceImageSubresourceLayoutKHR;
     PFN_vkGetImageSubresourceLayout2KHR GetImageSubresourceLayout2KHR;
 
+    // ---- VK_KHR_pipeline_binary extension commands
+    PFN_vkCreatePipelineBinariesKHR CreatePipelineBinariesKHR;
+    PFN_vkDestroyPipelineBinaryKHR DestroyPipelineBinaryKHR;
+    PFN_vkGetPipelineKeyKHR GetPipelineKeyKHR;
+    PFN_vkGetPipelineBinaryDataKHR GetPipelineBinaryDataKHR;
+    PFN_vkReleaseCapturedPipelineDataKHR ReleaseCapturedPipelineDataKHR;
+
     // ---- VK_KHR_line_rasterization extension commands
     PFN_vkCmdSetLineStippleKHR CmdSetLineStippleKHR;
 
@@ -1103,6 +1110,9 @@ typedef struct VkLayerDispatchTable_ {
     PFN_vkDestroyOpticalFlowSessionNV DestroyOpticalFlowSessionNV;
     PFN_vkBindOpticalFlowSessionImageNV BindOpticalFlowSessionImageNV;
     PFN_vkCmdOpticalFlowExecuteNV CmdOpticalFlowExecuteNV;
+
+    // ---- VK_AMD_anti_lag extension commands
+    PFN_vkAntiLagUpdateAMD AntiLagUpdateAMD;
 
     // ---- VK_EXT_shader_object extension commands
     PFN_vkCreateShadersEXT CreateShadersEXT;

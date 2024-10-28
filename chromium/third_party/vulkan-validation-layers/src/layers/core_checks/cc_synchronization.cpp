@@ -42,7 +42,7 @@ using sync_utils::MemoryBarrier;
 using sync_utils::QueueFamilyBarrier;
 
 ReadLockGuard CoreChecks::ReadLock() const {
-    if (fine_grained_locking) {
+    if (global_settings.fine_grained_locking) {
         return ReadLockGuard(validation_object_mutex, std::defer_lock);
     } else {
         return ReadLockGuard(validation_object_mutex);
@@ -50,7 +50,7 @@ ReadLockGuard CoreChecks::ReadLock() const {
 }
 
 WriteLockGuard CoreChecks::WriteLock() {
-    if (fine_grained_locking) {
+    if (global_settings.fine_grained_locking) {
         return WriteLockGuard(validation_object_mutex, std::defer_lock);
     } else {
         return WriteLockGuard(validation_object_mutex);
@@ -448,7 +448,7 @@ bool CoreChecks::PreCallValidateCreateFence(VkDevice device, const VkFenceCreate
         auto check_export_support = [&](VkExternalFenceHandleTypeFlagBits flag) {
             VkPhysicalDeviceExternalFenceInfo external_info = vku::InitStructHelper();
             external_info.handleType = flag;
-            DispatchGetPhysicalDeviceExternalFenceProperties(physical_device, &external_info, &external_properties);
+            DispatchGetPhysicalDeviceExternalFencePropertiesHelper(physical_device, &external_info, &external_properties);
             if ((external_properties.externalFenceFeatures & VK_EXTERNAL_FENCE_FEATURE_EXPORTABLE_BIT) == 0) {
                 export_supported = false;
                 skip |= LogError("VUID-VkExportFenceCreateInfo-handleTypes-01446", device,
@@ -500,7 +500,7 @@ bool CoreChecks::PreCallValidateCreateSemaphore(VkDevice device, const VkSemapho
         auto check_export_support = [&](VkExternalSemaphoreHandleTypeFlagBits flag) {
             VkPhysicalDeviceExternalSemaphoreInfo external_info = vku::InitStructHelper();
             external_info.handleType = flag;
-            DispatchGetPhysicalDeviceExternalSemaphoreProperties(physical_device, &external_info, &external_properties);
+            DispatchGetPhysicalDeviceExternalSemaphorePropertiesHelper(physical_device, &external_info, &external_properties);
             if ((external_properties.externalSemaphoreFeatures & VK_EXTERNAL_SEMAPHORE_FEATURE_EXPORTABLE_BIT) == 0) {
                 export_supported = false;
                 skip |= LogError("VUID-VkExportSemaphoreCreateInfo-handleTypes-01124", device,
@@ -603,7 +603,7 @@ bool CoreChecks::PreCallValidateCmdSetEvent(VkCommandBuffer commandBuffer, VkEve
                                             const ErrorObject &error_obj) const {
     auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
     bool skip = false;
-    skip |= ValidateExtendedDynamicState(*cb_state, error_obj.location, VK_TRUE, nullptr, nullptr);
+    skip |= ValidateCmd(*cb_state, error_obj.location);
     const Location stage_mask_loc = error_obj.location.dot(Field::stageMask);
     const LogObjectList objlist(commandBuffer);
     skip |= ValidatePipelineStage(objlist, stage_mask_loc, cb_state->GetQueueFlags(), stageMask);
@@ -617,8 +617,11 @@ bool CoreChecks::PreCallValidateCmdSetEvent2(VkCommandBuffer commandBuffer, VkEv
 
     auto cb_state = GetRead<vvl::CommandBuffer>(commandBuffer);
     bool skip = false;
-    skip |= ValidateExtendedDynamicState(*cb_state, error_obj.location, enabled_features.synchronization2,
-                                         "VUID-vkCmdSetEvent2-synchronization2-03824", "synchronization2");
+    if (!enabled_features.synchronization2) {
+        skip |= LogError("VUID-vkCmdSetEvent2-synchronization2-03824", commandBuffer, error_obj.location,
+                         "synchronization2 feature was not enabled.");
+    }
+    skip |= ValidateCmd(*cb_state, error_obj.location);
     const Location dep_info_loc = error_obj.location.dot(Field::pDependencyInfo);
     if (pDependencyInfo->dependencyFlags != 0) {
         skip |= LogError("VUID-vkCmdSetEvent2-dependencyFlags-03825", objlist, dep_info_loc.dot(Field::dependencyFlags),
@@ -794,7 +797,8 @@ bool CoreChecks::ValidateRenderPassPipelineBarriers(const Location &outer_loc, c
                                                     VkDependencyFlags dependency_flags, uint32_t mem_barrier_count,
                                                     const VkMemoryBarrier *mem_barriers, uint32_t buffer_mem_barrier_count,
                                                     const VkBufferMemoryBarrier *buffer_mem_barriers,
-                                                    uint32_t image_mem_barrier_count, const VkImageMemoryBarrier *image_barriers) const {
+                                                    uint32_t image_mem_barrier_count,
+                                                    const VkImageMemoryBarrier *image_barriers) const {
     bool skip = false;
     const auto &rp_state = cb_state.activeRenderPass;
     RenderPassDepState state(*this, "VUID-vkCmdPipelineBarrier-None-07889", cb_state.GetActiveSubpass(), rp_state->VkHandle(),
@@ -976,8 +980,9 @@ bool CoreChecks::ValidatePipelineStageFeatureEnables(const LogObjectList &objlis
         VkPipelineStageFlags2KHR bit = 1ULL << i;
         if (bit & bad_bits) {
             const auto &vuid = sync_vuid_maps::GetBadFeatureVUID(stage_mask_loc, bit, device_extensions);
-            skip |= LogError(vuid, objlist, stage_mask_loc, "includes %s when the device does not have %s feature enabled.",
-                             sync_utils::StringPipelineStageFlags(bit).c_str(), sync_vuid_maps::kFeatureNameMap.at(bit).c_str());
+            skip |=
+                LogError(vuid, objlist, stage_mask_loc, "includes %s when the device does not have %s feature enabled.",
+                         sync_utils::StringPipelineStageFlags(bit).c_str(), sync_vuid_maps::GetFeatureNameMap().at(bit).c_str());
         }
     }
     return skip;
@@ -1528,8 +1533,8 @@ bool CoreChecks::ValidateBarrierLayoutToImageUsage(const Location &layout_loc, V
 
     if (is_error) {
         const auto &vuid = sync_vuid_maps::GetBadImageLayoutVUID(layout_loc, layout);
-        skip |= LogError(vuid, image, layout_loc, "(%s) is not compatible with %s usage flags %s.",
-                         string_VkImageLayout(layout), FormatHandle(image).c_str(), string_VkImageUsageFlags(usage_flags).c_str());
+        skip |= LogError(vuid, image, layout_loc, "(%s) is not compatible with %s usage flags %s.", string_VkImageLayout(layout),
+                         FormatHandle(image).c_str(), string_VkImageUsageFlags(usage_flags).c_str());
     }
     return skip;
 }
@@ -2070,7 +2075,7 @@ bool CoreChecks::ValidateQFOTransferBarrierUniqueness(const Location &barrier_lo
 
 namespace barrier_queue_families {
 using sync_vuid_maps::GetBarrierQueueVUID;
-using sync_vuid_maps::kQueueErrorSummary;
+using sync_vuid_maps::GetQueueErrorSummaryMap;
 using sync_vuid_maps::QueueError;
 
 class ValidatorState {
@@ -2092,7 +2097,7 @@ class ValidatorState {
         return device_data_.LogError(val_code, objects_, loc_,
                                      "barrier using %s %s created with sharingMode %s, has %s %" PRIu32 "%s. %s", GetTypeString(),
                                      device_data_.FormatHandle(barrier_handle_).c_str(), GetModeString(), param_name, family,
-                                     annotation, kQueueErrorSummary.at(vu_index).c_str());
+                                     annotation, GetQueueErrorSummaryMap().at(vu_index).c_str());
     }
 
     bool LogMsg(QueueError vu_index, uint32_t src_family, uint32_t dst_family) const {
@@ -2104,7 +2109,7 @@ class ValidatorState {
                                      "%s and dstQueueFamilyIndex %" PRIu32 "%s. %s",
                                      GetTypeString(), device_data_.FormatHandle(barrier_handle_).c_str(), GetModeString(),
                                      src_family, src_annotation, dst_family, dst_annotation,
-                                     kQueueErrorSummary.at(vu_index).c_str());
+                                     GetQueueErrorSummaryMap().at(vu_index).c_str());
     }
 
     // This abstract Vu can only be tested at submit time, thus we need a callback from the closure containing the needed
@@ -2519,8 +2524,7 @@ bool CoreChecks::ValidateShaderTileImageCommon(const LogObjectList &objlist, con
 
     // Check shader tile image features
     const bool features_enabled = enabled_features.shaderTileImageColorReadAccess ||
-                                  enabled_features.shaderTileImageDepthReadAccess ||
-                                  enabled_features.dynamicRenderingLocalRead;
+                                  enabled_features.shaderTileImageDepthReadAccess || enabled_features.dynamicRenderingLocalRead;
     if (!features_enabled) {
         const auto &feature_error_vuid =
             sync_vuid_maps::GetShaderTileImageVUID(outer_loc, sync_vuid_maps::ShaderTileImageError::kShaderTileImageFeatureError);

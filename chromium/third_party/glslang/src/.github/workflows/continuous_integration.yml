@@ -18,12 +18,12 @@ jobs:
         cmake_build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
+      - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # v5.2.0
         with:
           python-version: '3.7'
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: ubuntu-22-${{ matrix.cmake_build_type }}-${{ matrix.compiler.cc }}-${{matrix.compiler.cxx}}
       - run: ./update_glslang_sources.py
@@ -41,8 +41,8 @@ jobs:
         run: cmake --install build --prefix build/install
       - name: Test
         run: ctest --output-on-failure --test-dir build
-      - name: Test (standalone)
-        run: cd Test && ./runtests
+      - name: Check known validation failure list
+        run: grep -l 'Validation failed' Test/baseResults/* | sort -fd | diff -u Test/baseResults/validation_fails.txt -
 
   linux-asan:
     runs-on: ubuntu-22.04
@@ -54,12 +54,12 @@ jobs:
         flags: ['-fsanitize=address', '-fsanitize=thread', '-fsanitize=undefined']
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
+      - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # v5.2.0
         with:
           python-version: '3.7'
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: ubuntu-22-${{ matrix.cmake_build_type }}-${{ matrix.compiler.cc }}-${{matrix.compiler.cxx}}-${{matrix.flags}}
       # This is to combat a bug when using 6.6 linux kernels with thread/address sanitizer
@@ -85,10 +85,6 @@ jobs:
         env:
           UBSAN_OPTIONS: 'halt_on_error=1:print_stacktrace=1'
         run: ctest --output-on-failure --test-dir build
-      - name: Test (standalone)
-        env:
-          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: cd Test && ./runtests
 
   # Ensure we can compile/run on an older distro
   linux_min:
@@ -96,14 +92,14 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # v5.2.0
         with:
           python-version: '3.7'
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
         with:
           cmakeVersion: 3.17.2
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: linux_backcompat
       - run: ./update_glslang_sources.py
@@ -118,8 +114,6 @@ jobs:
         run: cmake --install build --prefix build/install
       - name: Test
         run: ctest --output-on-failure --test-dir build
-      - name: Test (standalone)
-        run: cd Test && ./runtests
 
   macos:
     runs-on: ${{matrix.os}}
@@ -131,7 +125,7 @@ jobs:
         cmake_build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
       - run: ./update_glslang_sources.py
       - run: cmake -S . -B build -D CMAKE_BUILD_TYPE=${{matrix.cmake_build_type}} -G Ninja -DBUILD_WERROR=ON -D GLSLANG_TESTS=ON
         env:
@@ -140,9 +134,6 @@ jobs:
       - run: cmake --build build
       - run: cmake --install build --prefix build/install
       - run: ctest --output-on-failure --test-dir build
-      - name: Test Script (standalone)
-        run: ./runtests
-        working-directory: Test
 
   windows:
     runs-on: ${{matrix.os.genus}}
@@ -155,8 +146,8 @@ jobs:
           cmake_build_type: [Debug, Release]
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
+      - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # v5.2.0
         with:
           python-version: '3.7'
       - run: python update_glslang_sources.py
@@ -166,16 +157,14 @@ jobs:
           cmake --build build --config ${{matrix.cmake_build_type}} --target install
       - name: Test
         run: ctest -C ${{matrix.cmake_build_type}} --output-on-failure --test-dir build
-      - name: Test (standalone)
-        run: bash -c 'cd ./Test && ./runtests'
 
   iOS:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: IOS
       - run: ./update_glslang_sources.py
@@ -202,9 +191,9 @@ jobs:
         LEGACY: [ON, OFF]
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: android-${{ matrix.LEGACY }}
       - run: ./update_glslang_sources.py
@@ -225,12 +214,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+      - uses: actions/setup-python@f677139bbe7f9c59b41e40162b753c062f5d49a3 # v5.2.0
         with:
           python-version: '3.7'
-      - uses: lukka/get-cmake@983956e4a5edce90f0dfcc38c1543077e668402b # v3.30.0
+      - uses: lukka/get-cmake@070a0507a7abe157ef918deec391da1be197d2d1 # v3.30.3
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@c92f40bee50034e84c763e33b317c77adaa81c92 # v1.2.13
+        uses: hendrikmuhs/ccache-action@ed74d11c0b343532753ecead8a951bb09bb34bc9 # v1.2.14
         with:
           key: ubuntu-emscripten
       - uses: mymindstorm/setup-emsdk@6ab9eb1bda2574c4ddb79809fc9247783eaf9021 # v14

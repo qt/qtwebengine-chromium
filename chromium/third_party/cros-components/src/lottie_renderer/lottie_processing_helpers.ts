@@ -11,12 +11,10 @@ import {hexToRgb} from '../helpers/helpers';
  * CROS_TOKENS below for more details.
  */
 export const CROS_TOKENS_SPARKLE_ILLUSTRATION = [
-  'cros.sys.analog',
-  'cros.sys.analog-variant',
-  'cros.sys.muted',
-  'cros.sys.muted-variant',
-  'cros.sys.complement',
-  'cros.sys.complement-variant',
+  'cros.sys.illo.analog',
+  'cros.sys.illo.complement',
+  'cros.sys.illo.muted',
+  'cros.sys.illo.on_gradient',
 ] as const;
 
 /**
@@ -24,10 +22,12 @@ export const CROS_TOKENS_SPARKLE_ILLUSTRATION = [
  * CROS_TOKENS below for more details.
  */
 export const CROS_TOKENS_SPARKLE_SYSTEM = [
-  'cros.sys.illo.analog',
-  'cros.sys.illo.complement',
-  'cros.sys.illo.muted',
-  'cros.sys.illo.on_gradient',
+  'cros.sys.analog',
+  'cros.sys.analog-variant',
+  'cros.sys.muted',
+  'cros.sys.muted-variant',
+  'cros.sys.complement',
+  'cros.sys.complement-variant',
 ] as const;
 
 /**

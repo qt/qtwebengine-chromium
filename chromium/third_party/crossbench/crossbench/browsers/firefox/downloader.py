@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import abc
 import urllib.parse
-from typing import TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple, Type, Union
+from typing import (TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple, Type,
+                    Union)
 
 from crossbench.browsers.downloader import DMGArchiveHelper, Downloader
 from crossbench.browsers.firefox.version import FirefoxVersion
@@ -86,7 +87,8 @@ class FirefoxDownloader(Downloader):
     raise NotImplementedError("Only full-release versions supported.")
 
   def _find_exact_archive_url(self) -> Tuple[BrowserVersion, Optional[str]]:
-    folder_url = f"{self.STORAGE_URL}{self._requested_version.parts_str}/mac/en-GB"
+    folder_url = (
+        f"{self.STORAGE_URL}{self._requested_version.parts_str}/mac/en-GB")
     return tuple(self._archive_urls(folder_url, self._requested_version))[0]
 
   def _download_archive(self, archive_url: str, tmp_dir: LocalPath) -> None:

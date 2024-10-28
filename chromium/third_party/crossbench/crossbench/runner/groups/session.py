@@ -65,7 +65,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     self._root_dir: LocalPath = root_dir
     self._browser_tmp_dir: Optional[RemotePath] = None
     self._extra_js_flags = JSFlags()
-    self._extra_flags = Flags()
+    self._extra_flags = runner.benchmark.extra_flags(browser)
     # Temporary objects, reset after all runs are ready (see set_ready).
     self._probe_results = ProbeResultDict(root_dir)
     self._probe_context_manager = ProbeSessionContextManager(
@@ -181,9 +181,9 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self._extra_flags
 
   def add_flag_details(self, details_json: JsonDict) -> None:
-    assert isinstance(details_json["js_flags"], (list, tuple))
+    assert isinstance(details_json["js_flags"], tuple)
     details_json["js_flags"] += tuple(self._extra_js_flags)
-    assert isinstance(details_json["flags"], (list, tuple))
+    assert isinstance(details_json["flags"], tuple)
     details_json["flags"] += tuple(self._extra_flags)
 
   def setup_selenium_options(self, options: ArgOptions):

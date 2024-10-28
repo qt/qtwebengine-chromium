@@ -29,10 +29,8 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include "generated/chassis.h"
 #include "core_validation.h"
-#include "state_tracker/shader_stage_state.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/device_state.h"
-#include "state_tracker/buffer_state.h"
 #include "state_tracker/render_pass_state.h"
 #include <spirv-tools/libspirv.h>
 
@@ -389,7 +387,7 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
             if (shader_image_atomic_int64_features->sparseImageInt64Atomics &&
                 !shader_image_atomic_int64_features->shaderImageInt64Atomics) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-None-04896", pd_state->Handle(), error_obj.location,
-                                 "if shaderImageInt64Atomics feature is enabled then sparseImageInt64Atomics "
+                                 "if sparseImageInt64Atomics feature is enabled then shaderImageInt64Atomics "
                                  "feature must also be enabled.");
             }
         }
@@ -434,6 +432,20 @@ bool CoreChecks::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkDevic
             }
         }
     }
+
+    const auto *cache_control = vku::FindStructInPNextChain<VkDevicePipelineBinaryInternalCacheControlKHR>(pCreateInfo->pNext);
+    if (cache_control && cache_control->disableInternalCache) {
+        VkPhysicalDevicePipelineBinaryPropertiesKHR pipeline_binary_props = vku::InitStructHelper();
+        VkPhysicalDeviceProperties2 props2 = vku::InitStructHelper(&pipeline_binary_props);
+        DispatchGetPhysicalDeviceProperties2(gpu, &props2);
+
+        if (!pipeline_binary_props.pipelineBinaryInternalCacheControl) {
+            skip |= LogError("VUID-VkDevicePipelineBinaryInternalCacheControlKHR-disableInternalCache-09602", pd_state->Handle(),
+                             error_obj.location,
+                             "if disableInternalCache is VK_TRUE then pipelineBinaryInternalCacheControl must also be VK_TRUE");
+        }
+    }
+
     return skip;
 }
 
@@ -709,7 +721,7 @@ bool CoreChecks::PreCallValidateCmdSetDeviceMask(VkCommandBuffer commandBuffer, 
     }
     const vvl::CommandBuffer &cb_state = *cb_state_ptr;
     const LogObjectList objlist(commandBuffer);
-    skip |= ValidateExtendedDynamicState(cb_state, error_obj.location, VK_TRUE, nullptr, nullptr);
+    skip |= ValidateCmd(cb_state, error_obj.location);
     const Location loc = error_obj.location.dot(Field::deviceMask);
     skip |= ValidateDeviceMaskToPhysicalDeviceCount(deviceMask, objlist, loc, "VUID-vkCmdSetDeviceMask-deviceMask-00108");
     skip |= ValidateDeviceMaskToZero(deviceMask, objlist, loc, "VUID-vkCmdSetDeviceMask-deviceMask-00109");
@@ -942,5 +954,72 @@ bool CoreChecks::PreCallValidateGetDeviceFaultInfoEXT(VkDevice device, VkDeviceF
         skip |= LogError("VUID-vkGetDeviceFaultInfoEXT-device-07336", device, error_obj.location,
                          "device has not been found to be in a lost state.");
     }
+    return skip;
+}
+
+bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR *pCreateInfo,
+                                                          const VkAllocationCallbacks *pAllocator,
+                                                          VkPipelineBinaryHandlesInfoKHR *pBinaries,
+                                                          const ErrorObject &error_obj) const {
+
+    bool skip = false;
+
+    uint32_t pointerCount = 0;
+    const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
+
+    if (pCreateInfo->pipeline != VK_NULL_HANDLE) {
+        auto pipeline = pCreateInfo->pipeline;
+        auto pipeline_state = Get<vvl::Pipeline>(pipeline);
+
+        ASSERT_AND_RETURN_SKIP(pipeline_state);
+
+        if (!(pipeline_state->create_flags & VK_PIPELINE_CREATE_2_CAPTURE_DATA_BIT_KHR)) {
+            skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-pipeline-09607", pipeline, create_info_loc.dot(Field::pipeline),
+                             "called on a pipeline created without the "
+                             "VK_PIPELINE_CREATE_2_CAPTURE_DATA_BIT_KHR flag set. (Make sure you set it with "
+                             "VkPipelineCreateFlags2CreateInfoKHR)");
+        }
+
+        if (pipeline_state->binary_data_released) {
+            skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-pipeline-09608", pipeline, create_info_loc.dot(Field::pipeline),
+                             "called on a pipeline after vkReleaseCapturedPipelineDataKHR was called on it.");
+        }
+
+        pointerCount++;
+    }
+
+    if (pCreateInfo->pPipelineCreateInfo != nullptr) {
+        auto *props = &phys_dev_ext_props.pipeline_binary_props;
+
+        if (!props->pipelineBinaryInternalCache) {
+            skip |=
+                LogError("VUID-VkPipelineBinaryCreateInfoKHR-pipelineBinaryInternalCache-09609", device,
+                         create_info_loc.dot(Field::pPipelineCreateInfo), "is not NULL, but pipelineBinaryInternalCache is false.");
+        }
+
+        if (props->pipelineBinaryInternalCacheControl && disable_internal_pipeline_cache) {
+            skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-device-09610", device,
+                             create_info_loc.dot(Field::pPipelineCreateInfo), "is not NULL, but disableInternalCache is true.");
+        }
+
+        const auto *binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(pCreateInfo->pPipelineCreateInfo);
+        if (binary_info && (binary_info->binaryCount > 0)) {
+            skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-pPipelineCreateInfo-09606", device,
+                             create_info_loc.dot(Field::pPipelineCreateInfo).dot(Field::binaryCount), "(%" PRIu32 ") is not zero",
+                             binary_info->binaryCount);
+        }
+
+        pointerCount++;
+    }
+
+    if (pCreateInfo->pKeysAndDataInfo != nullptr) {
+        pointerCount++;
+    }
+
+    if (pointerCount != 1) {
+        skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-pKeysAndDataInfo-09619", device, create_info_loc,
+                         "One and only one of pKeysAndDataInfo, pipeline, or pPipelineCreateInfo must be non_NULL.");
+    }
+
     return skip;
 }

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import Final, Optional
+from typing import Optional
 
 from crossbench.flags.base import Flags
 
@@ -31,8 +31,8 @@ class JSFlags(Flags):
                          fr"{_END_OR_SEPARATOR_PATTERN}")
 
   @classmethod
-  def loads(cls, raw_flags: str) -> JSFlags:
-    return cls._loads(raw_flags, "--js-flags")
+  def parse_str(cls, raw_flags: str) -> JSFlags:
+    return cls._parse_str(raw_flags, "--js-flags")
 
   def copy(self) -> JSFlags:
     return self.__class__(self)

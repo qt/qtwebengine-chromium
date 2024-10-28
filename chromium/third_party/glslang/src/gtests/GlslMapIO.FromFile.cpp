@@ -39,6 +39,7 @@
 
 #include "TestFixture.h"
 
+#include "glslang/MachineIndependent/localintermediate.h"
 #include "glslang/MachineIndependent/iomapper.h"
 #include "glslang/MachineIndependent/reflection.h"
 
@@ -311,7 +312,6 @@ TEST_P(GlslMapIOTest, FromFile)
                     spirv_binary, &logger, &options());
 
                 std::ostringstream disassembly_stream;
-                spv::Parameterize();
                 spv::Disassemble(disassembly_stream, spirv_binary);
                 result.spirvWarningsErrors += logger.getAllMessages();
                 result.spirv += disassembly_stream.str();
@@ -345,6 +345,7 @@ INSTANTIATE_TEST_SUITE_P(
         {{"iomap.variableOutBlockIn.2.vert", "iomap.variableOutBlockIn.geom"}, Semantics::OpenGL},
         // vulkan semantics
         {{"iomap.crossStage.vk.vert", "iomap.crossStage.vk.geom", "iomap.crossStage.vk.frag" }, Semantics::Vulkan},
+        {{"iomap.crossStage.vk.2.vert", "iomap.crossStage.vk.2.geom", "iomap.crossStage.vk.2.frag" }, Semantics::Vulkan},
     }))
 );
 // clang-format on

@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import enum
 import json
-from typing import TYPE_CHECKING, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 from selenium.webdriver.safari.options import Options as SafariOptions
 
@@ -70,11 +70,11 @@ class MozProfilerStartupFeatures(compat.StrEnumWithHelp):
 class FirefoxProfilerEnvVars(compat.StrEnum):
   # If set to any value other than '' or '0'/'N'/'n', starts the
   # profiler immediately on start-up.
-  STARTUP: "FirefoxProfilerEnvVars" = "MOZ_PROFILER_STARTUP"
+  STARTUP = "MOZ_PROFILER_STARTUP"
   # Contains a comma-separated list of MozProfilerStartupFeatures.
-  STARTUP_FEATURES: "FirefoxProfilerEnvVars" = "MOZ_PROFILER_STARTUP_FEATURES"
+  STARTUP_FEATURES = "MOZ_PROFILER_STARTUP_FEATURES"
   # If set, the profiler saves a profile to the named file on shutdown.
-  SHUTDOWN: "FirefoxProfilerEnvVars" = "MOZ_PROFILER_SHUTDOWN"
+  SHUTDOWN = "MOZ_PROFILER_SHUTDOWN"
 
 
 class BrowserProfilingProbe(Probe):

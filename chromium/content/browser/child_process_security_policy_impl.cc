@@ -362,8 +362,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
       BrowsingInstanceDefaultIsolationStatesMap;
 
   explicit SecurityState(BrowserContext* browser_context)
-      : enabled_bindings_(0),
-        can_read_raw_cookies_(false),
+      : can_read_raw_cookies_(false),
         can_send_midi_(false),
         can_send_midi_sysex_(false),
         browser_context_(browser_context),
@@ -464,8 +463,8 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   }
 #endif
 
-  void GrantBindings(int bindings) {
-    enabled_bindings_ |= bindings;
+  void GrantBindings(BindingsPolicySet bindings) {
+    enabled_bindings_.PutAll(bindings);
   }
 
   void GrantReadRawCookies() {
@@ -638,7 +637,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   }
 
   bool has_web_ui_bindings() const {
-    return enabled_bindings_ & kWebUIBindingsPolicyMask;
+    return enabled_bindings_.HasAny(kWebUIBindingsPolicySet);
   }
 
   bool can_read_raw_cookies() const {
@@ -728,7 +727,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
   // allow_universal_access_from_file_urls.
   OriginSet webview_origin_exemption_set_;
 
-  int enabled_bindings_;
+  BindingsPolicySet enabled_bindings_;
 
   bool can_read_raw_cookies_;
 
@@ -931,7 +930,7 @@ void ChildProcessSecurityPolicyImpl::Remove(int child_id) {
 
 void ChildProcessSecurityPolicyImpl::RegisterWebSafeScheme(
     const std::string& scheme) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
   DCHECK_EQ(0U, schemes_okay_to_request_in_any_process_.count(scheme))
       << "Add schemes at most once.";
   DCHECK_EQ(0U, pseudo_schemes_.count(scheme))
@@ -944,7 +943,7 @@ void ChildProcessSecurityPolicyImpl::RegisterWebSafeScheme(
 void ChildProcessSecurityPolicyImpl::RegisterWebSafeIsolatedScheme(
     const std::string& scheme,
     bool always_allow_in_origin_headers) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
   DCHECK_EQ(0U, schemes_okay_to_request_in_any_process_.count(scheme))
       << "Add schemes at most once.";
   DCHECK_EQ(0U, pseudo_schemes_.count(scheme))
@@ -957,14 +956,14 @@ void ChildProcessSecurityPolicyImpl::RegisterWebSafeIsolatedScheme(
 
 bool ChildProcessSecurityPolicyImpl::IsWebSafeScheme(
     const std::string& scheme) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
 
   return base::Contains(schemes_okay_to_request_in_any_process_, scheme);
 }
 
 void ChildProcessSecurityPolicyImpl::RegisterPseudoScheme(
     const std::string& scheme) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
   DCHECK_EQ(0U, pseudo_schemes_.count(scheme)) << "Add schemes at most once.";
   DCHECK_EQ(0U, schemes_okay_to_request_in_any_process_.count(scheme))
       << "Pseudo implies not web-safe.";
@@ -976,14 +975,14 @@ void ChildProcessSecurityPolicyImpl::RegisterPseudoScheme(
 
 bool ChildProcessSecurityPolicyImpl::IsPseudoScheme(
     const std::string& scheme) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
 
   return base::Contains(pseudo_schemes_, scheme);
 }
 
 void ChildProcessSecurityPolicyImpl::ClearRegisteredSchemeForTesting(
     const std::string& scheme) {
-  base::AutoLock lock(lock_);
+  base::AutoLock lock(schemes_lock_);
   schemes_okay_to_request_in_any_process_.erase(scheme);
   schemes_okay_to_commit_in_any_process_.erase(scheme);
   pseudo_schemes_.erase(scheme);
@@ -1196,17 +1195,19 @@ void ChildProcessSecurityPolicyImpl::GrantRequestScheme(
   state->second->GrantRequestScheme(scheme);
 }
 
-void ChildProcessSecurityPolicyImpl::GrantWebUIBindings(int child_id,
-                                                        int bindings) {
+void ChildProcessSecurityPolicyImpl::GrantWebUIBindings(
+    int child_id,
+    BindingsPolicySet bindings) {
   // Only WebUI bindings should come through here.
-  CHECK(bindings & kWebUIBindingsPolicyMask);
-  CHECK_EQ(0, bindings & ~kWebUIBindingsPolicyMask);
+  CHECK(bindings.HasAny(kWebUIBindingsPolicySet));
+  CHECK(Difference(bindings, kWebUIBindingsPolicySet).empty());
 
   base::AutoLock lock(lock_);
 
   auto state = security_state_.find(child_id);
-  if (state == security_state_.end())
+  if (state == security_state_.end()) {
     return;
+  }
 
   state->second->GrantBindings(bindings);
 }
@@ -1417,8 +1418,11 @@ bool ChildProcessSecurityPolicyImpl::CanCommitURL(int child_id,
     //
     // TODO(creis, nick): https://crbug.com/515309: The line below does not
     // enforce that http pages cannot commit in an extension process.
-    if (base::Contains(schemes_okay_to_commit_in_any_process_, scheme)) {
-      return true;
+    {
+      base::AutoLock schemes_lock(schemes_lock_);
+      if (base::Contains(schemes_okay_to_commit_in_any_process_, scheme)) {
+        return true;
+      }
     }
 
     auto* state = GetSecurityState(child_id);
@@ -2676,8 +2680,7 @@ bool ChildProcessSecurityPolicyImpl::GetMatchingProcessIsolatedOrigin(
         // https://a.b.c.isolated.com must be returned.
         if (isolated_origin_entry.isolate_all_subdomains()) {
           *result = origin;
-          uint16_t default_port = url::DefaultPortForScheme(
-              origin.scheme().data(), origin.scheme().length());
+          uint16_t default_port = url::DefaultPortForScheme(origin.scheme());
 
           if (origin.port() != default_port) {
             *result = url::Origin::Create(GURL(origin.scheme() +

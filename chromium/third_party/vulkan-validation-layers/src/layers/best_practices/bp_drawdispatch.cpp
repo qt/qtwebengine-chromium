@@ -100,7 +100,7 @@ void BestPractices::RecordCmdDrawType(bp_state::CommandBuffer& cb_state, uint32_
     }
 
     const auto* pipeline_state = cb_state.GetCurrentPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS);
-    if (pipeline_state && pipeline_state->vertex_input_state && !pipeline_state->vertex_input_state->binding_descriptions.empty()) {
+    if (pipeline_state && pipeline_state->vertex_input_state && !pipeline_state->vertex_input_state->bindings.empty()) {
         cb_state.uses_vertex_buffer = true;
     }
 }
@@ -109,12 +109,13 @@ void BestPractices::RecordCmdDrawTypeArm(bp_state::CommandBuffer& cb_state, uint
     auto& render_pass_state = cb_state.render_pass_state;
     // Each TBDR vendor requires a depth pre-pass draw call to have a minimum number of vertices/indices before it counts towards
     // depth prepass warnings First find the lowest enabled draw count
-    uint32_t lowestEnabledMinDrawCount = 0;
-    lowestEnabledMinDrawCount = VendorCheckEnabled(kBPVendorArm) * kDepthPrePassMinDrawCountArm;
-    if (VendorCheckEnabled(kBPVendorIMG) && kDepthPrePassMinDrawCountIMG < lowestEnabledMinDrawCount)
-        lowestEnabledMinDrawCount = kDepthPrePassMinDrawCountIMG;
+    uint32_t lowest_enabled_min_draw_count = 0;
+    lowest_enabled_min_draw_count = VendorCheckEnabled(kBPVendorArm) * kDepthPrePassMinDrawCountArm;
+    if (VendorCheckEnabled(kBPVendorIMG) && kDepthPrePassMinDrawCountIMG < lowest_enabled_min_draw_count) {
+        lowest_enabled_min_draw_count = kDepthPrePassMinDrawCountIMG;
+    }
 
-    if (draw_count >= lowestEnabledMinDrawCount) {
+    if (draw_count >= lowest_enabled_min_draw_count) {
         if (render_pass_state.depthOnly) render_pass_state.numDrawCallsDepthOnly++;
         if (render_pass_state.depthEqualComparison) render_pass_state.numDrawCallsDepthEqualCompare++;
     }

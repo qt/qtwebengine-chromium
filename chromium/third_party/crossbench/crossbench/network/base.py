@@ -46,7 +46,24 @@ class Network(abc.ABC):
 
   @property
   def is_live(self) -> bool:
+    """Return True if the network is the default live/direct connection, as
+    opposed to a replay network or local file server."""
     return False
+
+  @property
+  def http_port(self) -> Optional[int]:
+    """HTTP port for non-live server-based networks."""
+    return None
+
+  @property
+  def https_port(self) -> Optional[int]:
+    """HTTPS port for non-live server-based networks."""
+    return None
+
+  @property
+  def host(self) -> Optional[str]:
+    """Host for non-live server-based networks."""
+    return None
 
   def extra_flags(self, browser: Browser) -> Flags:
     assert self.is_running, "Network is not running."

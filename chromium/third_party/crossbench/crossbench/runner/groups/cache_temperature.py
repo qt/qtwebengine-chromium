@@ -76,9 +76,12 @@ class CacheTemperatureRunGroup(RunGroup):
 
   @property
   def info_stack(self) -> exception.TInfoStack:
-    return ("Merging results from multiple cache temperatures",
-            f"browser={self.browser.unique_name}", f"story={self.story}",
-            f"repetition={self.repetition}")
+    return (
+        "Merging results from multiple cache temperatures",
+        f"browser={self.browser.unique_name}",
+        f"story={self.story}",
+        f"repetition={self.repetition}",
+    )
 
   @property
   def info(self) -> JsonDict:
@@ -90,4 +93,4 @@ class CacheTemperatureRunGroup(RunGroup):
     return info
 
   def _merge_probe_results(self, probe: Probe) -> ProbeResult:
-    return probe.merge_cache_temperatures(self)  # pytype: disable=wrong-arg-types
+    return probe.merge_cache_temperatures(self)

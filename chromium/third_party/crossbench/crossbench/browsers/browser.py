@@ -7,21 +7,22 @@ from __future__ import annotations
 import abc
 import logging
 import shlex
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from ordered_set import OrderedSet
 
 from crossbench import path as pth
 from crossbench import plt
-from crossbench.browsers.splash_screen import SplashScreen
-from crossbench.browsers.viewport import Viewport
+from crossbench.browsers.settings import Settings
 from crossbench.flags.base import Flags, FlagsT
-from crossbench.network.live import LiveNetwork
 
 if TYPE_CHECKING:
   import datetime as dt
 
   from crossbench.browsers.attributes import BrowserAttributes
+  from crossbench.browsers.secrets import SecretT, SecretType
+  from crossbench.browsers.splash_screen import SplashScreen
+  from crossbench.browsers.viewport import Viewport
   from crossbench.env import HostEnvironment
   from crossbench.flags.chrome import ChromeFeatures
   from crossbench.flags.js_flags import JSFlags
@@ -41,46 +42,47 @@ class Browser(abc.ABC):
   def __init__(self,
                label: str,
                path: Optional[pth.RemotePath] = None,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[pth.RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[pth.RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.Platform] = None):
-    self._platform = platform or plt.PLATFORM
-    assert not driver_path, "driver_path not supported by base Browser"
+               settings: Optional[Settings] = None):
+    self._settings = settings or Settings()
+    self._platform = self._settings.platform
     self.label: str = label
     self._unique_name: str = ""
     self.app_name: str = self.type_name
     self.version: str = "custom"
     self.major_version: int = 0
     self.app_path: pth.RemotePath = pth.RemotePath()
-    if path:
-      self.path = self._resolve_binary(path)
-      # TODO clean up
-      if not self.platform.is_android:
-        assert self.path.is_absolute()
-      self.version = self._extract_version()
-      self.major_version = int(self.version.split(".")[0])
-      self.unique_name = f"{self.type_name}_v{self.major_version}_{self.label}"
-    else:
-      # TODO: separate class for remote browser (selenium) without an explicit
-      # binary path.
-      self.path = pth.RemotePath()
-      self.unique_name = f"{self.type_name}_{self.label}".lower()
-    self._network: Network = network or LiveNetwork()
-    self._viewport: Viewport = viewport or Viewport.DEFAULT
-    self._splash_screen: SplashScreen = splash_screen or SplashScreen.DEFAULT
+    self.path = pth.RemotePath()
+    self._setup_path(path)
     self._is_running: bool = False
-    self.cache_dir: Optional[pth.RemotePath] = cache_dir
-    self.clear_cache_dir: bool = True
     self._pid: Optional[int] = None
     self._probes: OrderedSet[Probe] = OrderedSet()
-    self._flags: Flags = self.default_flags(flags)
-    assert not js_flags, "Base Browser doesn't support js_flags directly"
+    self._flags: Flags = self._setup_flags(self._settings)
     self.log_file: Optional[pth.RemotePath] = None
+    self.cache_dir: Optional[pth.RemotePath] = self._settings.cache_dir
+    self.clear_cache_dir: bool = True
+    self._setup_cache_dir(self._settings)
+
+  def _setup_path(self, path: Optional[pth.RemotePath] = None) -> None:
+    if not path:
+      # TODO: separate class for remote browser (selenium) without an explicit
+      # binary path.
+      self.unique_name = f"{self.type_name}_{self.label}".lower()
+      return
+    self.path = self._resolve_binary(path)
+    # TODO clean up
+    if not self.platform.is_android:
+      assert self.path.is_absolute()
+    self.version = self._extract_version()
+    self.major_version = int(self.version.split(".")[0])
+    self.unique_name = f"{self.type_name}_v{self.major_version}_{self.label}"
+
+  def _setup_flags(self, settings: Settings) -> Flags:
+    assert not self._settings.js_flags, (
+        f"{self} doesn't support custom js_flags")
+    return self.default_flags(settings.flags)
+
+  def _setup_cache_dir(self, settings: Settings) -> None:
+    pass
 
   @property
   @abc.abstractmethod
@@ -108,20 +110,23 @@ class Browser(abc.ABC):
 
   @property
   def network(self) -> Network:
-    return self._network
+    return self._settings.network
+
+  @property
+  def secrets(self) -> Dict[SecretType, SecretT]:
+    return self._settings.secrets
 
   @property
   def splash_screen(self) -> SplashScreen:
-    return self._splash_screen
+    return self._settings.splash_screen
 
   @property
   def viewport(self) -> Viewport:
-    return self._viewport
+    return self._settings.viewport
 
   @viewport.setter
   def viewport(self, value: Viewport) -> None:
-    assert self._viewport.is_default
-    self._viewport = value
+    self._settings.viewport = value
 
   @property
   def probes(self) -> Iterable[Probe]:
@@ -147,7 +152,8 @@ class Browser(abc.ABC):
     return self._pid
 
   @property
-  def is_running(self) -> Optional[bool]:
+  def is_running_process(self) -> Optional[bool]:
+    # TODO: activate this method again
     if self.pid is None:
       return None
     info = self.platform.process_info(self.pid)
@@ -215,7 +221,7 @@ class Browser(abc.ABC):
         "app_name": self.app_name,
         "version": self.version,
         "flags": tuple(self.flags),
-        "js_flags": [],
+        "js_flags": tuple(),
         "path": str(self.path),
         "clear_cache_dir": self.clear_cache_dir,
         "major_version": self.major_version,
@@ -312,6 +318,13 @@ class Browser(abc.ABC):
                url: str,
                target: Optional[str] = None) -> None:
     pass
+
+  def switch_to_new_tab(self) -> None:
+    raise NotImplementedError(f"New tab is not supported by {self}")
+
+  def screenshot(self, path: pth.LocalPath) -> None:
+    # TODO: implement screenshot on browser and platform.
+    raise NotImplementedError(f"Taking screenshots is not supported by {self}")
 
   def _sync_viewport_flag(self, flags: Flags, flag: str,
                           is_requested_by_viewport: bool,

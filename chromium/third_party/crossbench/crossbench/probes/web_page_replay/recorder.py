@@ -185,8 +185,8 @@ class WprRecorderProbeContext(ProbeContext[WebPageReplayProbe]):
       self.session.extra_flags[
           "--ignore-certificate-errors-spki-list"] = cert_skip_list
     # TODO: support ts_proxy traffic shaping
-    # session.extra_flags[
-    #     "--proxy-server"] = "socks://{self._ts_proxy_host}:{self._ts_proxy_port}"
+    # session.extra_flags["--proxy-server"] =  (
+    #   "socks://{self._ts_proxy_host}:{self._ts_proxy_port}")
     # session.extra_flags["--proxy-bypass-list"] = "<-loopback>"
     self.session.extra_flags["--host-resolver-rules"] = (
         f"MAP *:80 {self._host}:{self._recorder.http_port},"

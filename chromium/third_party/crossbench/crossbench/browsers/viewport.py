@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from argparse import ArgumentTypeError
 import enum
+from argparse import ArgumentTypeError
 from typing import Any, Tuple
 
 from crossbench import compat
@@ -13,10 +13,10 @@ from crossbench import compat
 
 @enum.unique
 class ViewportMode(compat.StrEnum):
-  SIZE: "ViewportMode" = "size"
-  MAXIMIZED: "ViewportMode" = "maximized"
-  FULLSCREEN: "ViewportMode" = "fullscreen"
-  HEADLESS: "ViewportMode" = "headless"
+  SIZE = "size"
+  MAXIMIZED = "maximized"
+  FULLSCREEN = "fullscreen"
+  HEADLESS = "headless"
 
 
 class Viewport:

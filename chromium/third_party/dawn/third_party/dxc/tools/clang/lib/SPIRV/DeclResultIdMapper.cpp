@@ -320,6 +320,15 @@ bool shouldSkipInStructLayout(const Decl *decl) {
   // $Globals' "struct" is the TranslationUnit, so we should ignore resources
   // in the TranslationUnit "struct" and its child namespaces.
   if (declContext->isTranslationUnit() || declContext->isNamespace()) {
+
+    if (decl->hasAttr<VKConstantIdAttr>()) {
+      return true;
+    }
+
+    if (decl->hasAttr<VKPushConstantAttr>()) {
+      return true;
+    }
+
     // External visibility
     if (const auto *declDecl = dyn_cast<DeclaratorDecl>(decl))
       if (!declDecl->hasExternalFormalLinkage())
@@ -3383,19 +3392,52 @@ SpirvVariable *DeclResultIdMapper::getInstanceIdFromIndexAndBase(
   return instanceIdVar;
 }
 
-SpirvVariable *DeclResultIdMapper::getBaseInstanceVariable(
-    SemanticInfo *semantic, const hlsl::SigPoint *sigPoint, QualType type) {
+SpirvVariable *
+DeclResultIdMapper::getVertexIdFromIndexAndBase(SpirvVariable *vertexIndexVar,
+                                                SpirvVariable *baseVertexVar) {
+  QualType type = vertexIndexVar->getAstResultType();
+  auto *vertexIdVar = spvBuilder.addFnVar(
+      type, vertexIndexVar->getSourceLocation(), "SV_VertexID");
+  auto *vertexIndexValue = spvBuilder.createLoad(
+      type, vertexIndexVar, vertexIndexVar->getSourceLocation());
+  auto *baseVertexValue = spvBuilder.createLoad(
+      type, baseVertexVar, vertexIndexVar->getSourceLocation());
+  auto *vertexIdValue = spvBuilder.createBinaryOp(
+      spv::Op::OpISub, type, vertexIndexValue, baseVertexValue,
+      vertexIndexVar->getSourceLocation());
+  spvBuilder.createStore(vertexIdVar, vertexIdValue,
+                         vertexIndexVar->getSourceLocation());
+  return vertexIdVar;
+}
+
+SpirvVariable *
+DeclResultIdMapper::getBaseInstanceVariable(const hlsl::SigPoint *sigPoint,
+                                            QualType type) {
   assert(type->isSpecificBuiltinType(BuiltinType::Kind::Int) ||
          type->isSpecificBuiltinType(BuiltinType::Kind::UInt));
   auto *baseInstanceVar = spvBuilder.addStageBuiltinVar(
-      type, spv::StorageClass::Input, spv::BuiltIn::BaseInstance, false,
-      semantic->loc);
-  StageVar var(sigPoint, *semantic, nullptr, type,
+      type, spv::StorageClass::Input, spv::BuiltIn::BaseInstance, false, {});
+  StageVar var(sigPoint, {}, nullptr, type,
                getLocationAndComponentCount(astContext, type));
   var.setSpirvInstr(baseInstanceVar);
   var.setIsSpirvBuiltin();
   stageVars.push_back(var);
   return baseInstanceVar;
+}
+
+SpirvVariable *
+DeclResultIdMapper::getBaseVertexVariable(const hlsl::SigPoint *sigPoint,
+                                          QualType type) {
+  assert(type->isSpecificBuiltinType(BuiltinType::Kind::Int) ||
+         type->isSpecificBuiltinType(BuiltinType::Kind::UInt));
+  auto *baseVertexVar = spvBuilder.addStageBuiltinVar(
+      type, spv::StorageClass::Input, spv::BuiltIn::BaseVertex, false, {});
+  StageVar var(sigPoint, {}, nullptr, type,
+               getLocationAndComponentCount(astContext, type));
+  var.setSpirvInstr(baseVertexVar);
+  var.setIsSpirvBuiltin();
+  stageVars.push_back(var);
+  return baseVertexVar;
 }
 
 SpirvVariable *DeclResultIdMapper::createSpirvInterfaceVariable(
@@ -3484,11 +3526,22 @@ SpirvVariable *DeclResultIdMapper::createSpirvInterfaceVariable(
     // The above call to createSpirvStageVar creates the gl_InstanceIndex.
     // We should now manually create the gl_BaseInstance variable and do the
     // subtraction.
-    auto *baseInstanceVar = getBaseInstanceVariable(
-        stageVarData.semantic, stageVarData.sigPoint, stageVarData.type);
+    auto *baseInstanceVar =
+        getBaseInstanceVariable(stageVarData.sigPoint, stageVarData.type);
 
     // SPIR-V code for 'SV_InstanceID = gl_InstanceIndex - gl_BaseInstance'
     varInstr = getInstanceIdFromIndexAndBase(varInstr, baseInstanceVar);
+  }
+
+  if (spirvOptions.supportNonzeroBaseVertex &&
+      stageVarData.semantic->getKind() == hlsl::Semantic::Kind::VertexID &&
+      stageVarData.sigPoint->GetKind() == hlsl::SigPoint::Kind::VSIn) {
+
+    auto *baseVertexVar =
+        getBaseVertexVariable(stageVarData.sigPoint, stageVarData.type);
+
+    // SPIR-V code for 'SV_VertexID = gl_VertexIndex - gl_BaseVertex'
+    varInstr = getVertexIdFromIndexAndBase(varInstr, baseVertexVar);
   }
 
   // We have semantics attached to this decl, which means it must be a
@@ -3658,7 +3711,7 @@ bool DeclResultIdMapper::createStageVars(StageVarDataBundle &stageVarData,
         return true;
       // Negate SV_Position.y if requested
       if (semanticKind == hlsl::Semantic::Kind::Position)
-        *value = invertYIfRequested(*value, thisSemantic.loc);
+        *value = theEmitter.invertYIfRequested(*value, thisSemantic.loc);
       storeToShaderOutputVariable(varInstr, *value, stageVarData);
     }
 
@@ -3847,7 +3900,7 @@ bool DeclResultIdMapper::writeBackOutputStream(const NamedDecl *decl,
 
     // Negate SV_Position.y if requested
     if (semanticInfo.semantic->GetKind() == hlsl::Semantic::Kind::Position)
-      value = invertYIfRequested(value, loc, range);
+      value = theEmitter.invertYIfRequested(value, loc, range);
 
     // Boolean stage output variables are represented as unsigned integers.
     if (isBooleanStageIOVar(decl, type, semanticInfo.semantic->GetKind(),
@@ -3895,22 +3948,6 @@ bool DeclResultIdMapper::writeBackOutputStream(const NamedDecl *decl,
   }
 
   return true;
-}
-
-SpirvInstruction *
-DeclResultIdMapper::invertYIfRequested(SpirvInstruction *position,
-                                       SourceLocation loc, SourceRange range) {
-  // Negate SV_Position.y if requested
-  if (spirvOptions.invertY) {
-    const auto oldY = spvBuilder.createCompositeExtract(
-        astContext.FloatTy, position, {1}, loc, range);
-    const auto newY = spvBuilder.createUnaryOp(
-        spv::Op::OpFNegate, astContext.FloatTy, oldY, loc, range);
-    position = spvBuilder.createCompositeInsert(
-        astContext.getExtVectorType(astContext.FloatTy, 4), position, {1}, newY,
-        loc, range);
-  }
-  return position;
 }
 
 SpirvInstruction *
@@ -4224,6 +4261,22 @@ SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
     default:
       llvm_unreachable("invalid usage of SV_InstanceID sneaked in");
     }
+  }
+  // According to DXIL spec, the StartVertexLocation SV can only be used by
+  // VSIn. According to Vulkan spec, the BaseVertex BuiltIn can only be used by
+  // VSIn.
+  case hlsl::Semantic::Kind::StartVertexLocation: {
+    stageVar->setIsSpirvBuiltin();
+    return spvBuilder.addStageBuiltinVar(type, sc, BuiltIn::BaseVertex,
+                                         isPrecise, srcLoc);
+  }
+  // According to DXIL spec, the StartInstanceLocation SV can only be used by
+  // VSIn. According to Vulkan spec, the BaseInstance BuiltIn can only be used
+  // by VSIn.
+  case hlsl::Semantic::Kind::StartInstanceLocation: {
+    stageVar->setIsSpirvBuiltin();
+    return spvBuilder.addStageBuiltinVar(type, sc, BuiltIn::BaseInstance,
+                                         isPrecise, srcLoc);
   }
   // According to DXIL spec, the Depth{|GreaterEqual|LessEqual} SV can only be
   // used by PSOut.

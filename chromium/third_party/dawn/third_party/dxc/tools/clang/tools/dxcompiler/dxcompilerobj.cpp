@@ -63,6 +63,7 @@
 // SPIRV change starts
 #ifdef ENABLE_SPIRV_CODEGEN
 #include "clang/SPIRV/EmitSpirvAction.h"
+#include "clang/SPIRV/FeatureManager.h"
 #endif
 // SPIRV change ends
 
@@ -76,17 +77,6 @@ using namespace llvm;
 using namespace clang;
 using namespace hlsl;
 using std::string;
-
-// This declaration is used for the locally-linked validator.
-HRESULT CreateDxcValidator(REFIID riid, LPVOID *ppv);
-
-// This internal call allows the validator to avoid having to re-deserialize
-// the module. It trusts that the caller didn't make any changes and is
-// kept internal because the layout of the module class may change based
-// on changes across modules, or picking a different compiler version or CRT.
-HRESULT RunInternalValidator(IDxcValidator *pValidator, llvm::Module *pModule,
-                             llvm::Module *pDebugModule, IDxcBlob *pShader,
-                             UINT32 Flags, IDxcOperationResult **ppResult);
 
 static bool ShouldBeCopiedIntoPDB(UINT32 FourCC) {
   switch (FourCC) {
@@ -955,6 +945,7 @@ public:
         opts.SpirvOptions.codeGenHighLevel = opts.CodeGenHighLevel;
         opts.SpirvOptions.defaultRowMajor = opts.DefaultRowMajor;
         opts.SpirvOptions.disableValidation = opts.DisableValidation;
+        opts.SpirvOptions.IEEEStrict = opts.IEEEStrict;
         // Save a string representation of command line options and
         // input file name.
         if (opts.DebugInfo) {
@@ -1049,7 +1040,7 @@ public:
 
           dxcutil::AssembleInputs inputs(
               std::move(serializeModule), pOutputBlob, m_pMalloc,
-              SerializeFlags, pOutputStream, opts.GetPDBName(),
+              SerializeFlags, pOutputStream, 0, opts.GetPDBName(),
               &compiler.getDiagnostics(), &ShaderHashContent, pReflectionStream,
               pRootSigStream, pRootSignatureBlob, pPrivateBlob,
               opts.SelectValidator);
@@ -1461,6 +1452,22 @@ public:
 // SPIRV change starts
 #ifdef ENABLE_SPIRV_CODEGEN
     compiler.getLangOpts().SPIRV = Opts.GenSPIRV;
+    llvm::Optional<spv_target_env> spirvTargetEnv =
+        spirv::FeatureManager::stringToSpvEnvironment(
+            Opts.SpirvOptions.targetEnv);
+
+    // If we do not have a valid target environment, the error will be handled
+    // later.
+    if (spirvTargetEnv.hasValue()) {
+      VersionTuple spirvVersion =
+          spirv::FeatureManager::getSpirvVersion(spirvTargetEnv.getValue());
+      compiler.getLangOpts().SpirvMajorVersion = spirvVersion.getMajor();
+      assert(spirvVersion.getMinor().hasValue() &&
+             "There must always be a major and minor version number when "
+             "targeting SPIR-V.");
+      compiler.getLangOpts().SpirvMinorVersion =
+          spirvVersion.getMinor().getValue();
+    }
 #endif
     // SPIRV change ends
 

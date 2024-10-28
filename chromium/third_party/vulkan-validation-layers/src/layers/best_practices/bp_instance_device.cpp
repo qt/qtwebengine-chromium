@@ -143,7 +143,7 @@ bool BestPractices::PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice,
                 VK_SUCCESS) {
                 extensions.reserve(property_list.size());
                 for (const VkExtensionProperties& properties : property_list) {
-                    extensions.push_back(properties.extensionName);
+                    extensions.emplace_back(properties.extensionName);
                 }
             }
         }
@@ -331,6 +331,7 @@ void BestPractices::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount
 namespace {
 struct EventValidator {
     const ValidationStateTracker& state_tracker;
+
     vvl::unordered_map<VkEvent, bool> signaling_state;
 
     EventValidator(const ValidationStateTracker& state_tracker) : state_tracker(state_tracker) {}

@@ -29,7 +29,6 @@
 #include "drawdispatch/drawdispatch_vuids.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
-#include "state_tracker/shader_object_state.h"
 #include "chassis/chassis_modification_state.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/render_pass_state.h"
@@ -45,7 +44,7 @@ bool CoreChecks::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipel
     skip |= ValidateDeviceQueueSupport(error_obj.location);
     for (uint32_t i = 0; i < count; i++) {
         const Location create_info_loc = error_obj.location.dot(Field::pCreateInfos, i);
-        skip |= ValidateGraphicsPipeline(*pipeline_states[i].get(), create_info_loc);
+        skip |= ValidateGraphicsPipeline(*pipeline_states[i].get(), pCreateInfos[i].pNext, create_info_loc);
         skip |= ValidateGraphicsPipelineDerivatives(pipeline_states, i, create_info_loc);
 
         // From dumping traces, we found almost all apps only create one pipeline at a time. To greatly simplify the logic, only
@@ -65,7 +64,8 @@ bool CoreChecks::PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipel
     return skip;
 }
 
-bool CoreChecks::ValidateGraphicsPipeline(const vvl::Pipeline &pipeline, const Location &create_info_loc) const {
+bool CoreChecks::ValidateGraphicsPipeline(const vvl::Pipeline &pipeline, const void *pipeline_ci_pnext,
+                                          const Location &create_info_loc) const {
     bool skip = false;
     // It would be ideal to split all pipeline checks into Dynamic and Non-Dynamic renderpasses, but with GPL it gets a bit tricky.
     // Also you might be deep in a function and it is easier to do a if/else check if it is dynamic rendering or not there.
@@ -140,7 +140,8 @@ bool CoreChecks::ValidateGraphicsPipeline(const vvl::Pipeline &pipeline, const L
     if (pipeline.OwnsSubState(pipeline.fragment_shader_state) || pipeline.OwnsSubState(pipeline.pre_raster_state)) {
         uint32_t stage_index = 0;
         for (const auto &stage_ci : pipeline.shader_stages_ci) {
-            skip |= ValidatePipelineShaderStage(pipeline, stage_ci, create_info_loc.dot(Field::pStages, stage_index++));
+            skip |= ValidatePipelineShaderStage(pipeline, stage_ci, pipeline_ci_pnext,
+                                                create_info_loc.dot(Field::pStages, stage_index++));
         }
     }
 
@@ -181,7 +182,8 @@ bool CoreChecks::ValidateGraphicsPipelinePortability(const vvl::Pipeline &pipeli
     if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
         !pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)) {
         // Validate vertex inputs
-        for (const auto &desc : pipeline.vertex_input_state->binding_descriptions) {
+        for (const auto &state : pipeline.vertex_input_state->bindings) {
+            const auto &desc = state.second.desc;
             const uint32_t min_alignment = phys_dev_ext_props.portability_props.minVertexInputBindingStrideAlignment;
             if (min_alignment != 0 && (desc.stride % min_alignment != 0)) {
                 skip |= LogError(
@@ -196,10 +198,10 @@ bool CoreChecks::ValidateGraphicsPipelinePortability(const vvl::Pipeline &pipeli
 
         // Validate vertex attributes
         if (!enabled_features.vertexAttributeAccessBeyondStride) {
-            for (const auto &attrib : pipeline.vertex_input_state->vertex_attribute_descriptions) {
-                const auto vertex_binding_map_it = pipeline.vertex_input_state->binding_to_index_map.find(attrib.binding);
-                if (vertex_binding_map_it != pipeline.vertex_input_state->binding_to_index_map.cend()) {
-                    const auto &desc = pipeline.vertex_input_state->binding_descriptions[vertex_binding_map_it->second];
+            for (const auto &binding_state : pipeline.vertex_input_state->bindings) {
+                for (const auto &attrib_state : binding_state.second.locations) {
+                    const auto &attrib = attrib_state.second.desc;
+                    const auto &desc = binding_state.second.desc;
                     if ((attrib.offset + vkuFormatElementSize(attrib.format)) > desc.stride) {
                         skip |= LogError("VUID-VkVertexInputAttributeDescription-vertexAttributeAccessBeyondStride-04457", device,
                                          create_info_loc,
@@ -403,7 +405,7 @@ bool CoreChecks::ValidatePipelineLibraryCreateInfo(const vvl::Pipeline &pipeline
             uses_descriptor_buffer = lib->descriptor_buffer_mode;
         } else if (uses_descriptor_buffer != lib->descriptor_buffer_mode) {
             skip |= LogError("VUID-VkPipelineLibraryCreateInfoKHR-pLibraries-08096", device, library_loc,
-                             "%s created with VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT which is opopposite of pLibraries[0].",
+                             "%s created with VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT which is opposite of pLibraries[0].",
                              lib->descriptor_buffer_mode ? "was" : "was not");
             break;  // no point keep checking as might have many of same error
         }
@@ -1198,7 +1200,8 @@ bool CoreChecks::ValidateGraphicsPipelineMeshTask(const vvl::Pipeline &pipeline,
     const bool has_task = (pipeline.active_shaders & VK_SHADER_STAGE_TASK_BIT_EXT) != 0;
     if (has_mesh && has_task) {
         for (const auto &stage : pipeline.stage_states) {
-            if (stage.GetStage() == VK_SHADER_STAGE_MESH_BIT_EXT && stage.spirv_state->static_data_.has_builtin_draw_index) {
+            if (stage.GetStage() == VK_SHADER_STAGE_MESH_BIT_EXT && stage.spirv_state &&
+                stage.spirv_state->static_data_.has_builtin_draw_index) {
                 skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-pStages-09631", device, create_info_loc,
                                  "The pipeline is being created with a Task and Mesh shader bound, but the Mesh Shader "
                                  "uses DrawIndex (gl_DrawID) which will be an undefined value when reading.");
@@ -3922,7 +3925,8 @@ bool CoreChecks::ValidatePipelineVertexDivisors(const vvl::Pipeline &pipeline, c
     const Location vertex_input_loc = create_info_loc.dot(Field::pVertexInputState);
     // Can use raw Pipeline state values because not using the stride (which can be dynamic with
     // VK_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)
-    const auto &binding_descriptions = pipeline.vertex_input_state->binding_descriptions;
+    const auto &binding_descriptions = pipeline.GraphicsCreateInfo().pVertexInputState->pVertexBindingDescriptions;
+    const auto &binding_desc_count = pipeline.GraphicsCreateInfo().pVertexInputState->vertexBindingDescriptionCount;
     const VkPhysicalDeviceLimits *device_limits = &phys_dev_props.limits;
     for (uint32_t j = 0; j < divisor_state_info->vertexBindingDivisorCount; j++) {
         const Location divisor_loc =
@@ -3952,7 +3956,7 @@ bool CoreChecks::ValidatePipelineVertexDivisors(const vvl::Pipeline &pipeline, c
 
         // Find the corresponding binding description and validate input rate setting
         bool found_input_rate = false;
-        for (size_t k = 0; k < binding_descriptions.size(); k++) {
+        for (size_t k = 0; k < binding_desc_count; k++) {
             if ((vibdd->binding == binding_descriptions[k].binding) &&
                 (VK_VERTEX_INPUT_RATE_INSTANCE == binding_descriptions[k].inputRate)) {
                 found_input_rate = true;
@@ -4061,7 +4065,7 @@ bool CoreChecks::ValidateMultiViewShaders(const vvl::Pipeline &pipeline, const L
                                              : "VUID-VkGraphicsPipelineCreateInfo-renderPass-06047";
         skip |= LogError(vuid, device, multiview_loc,
                          "is %" PRIu32
-                         " and pStages contains tesselation shaders, but the multiviewTessellationShader feature was not enabled.",
+                         " and pStages contains tessellation shaders, but the multiviewTessellationShader feature was not enabled.",
                          view_mask);
     }
 
@@ -4104,71 +4108,78 @@ bool CoreChecks::ValidateDrawPipelineVertexAttribute(const vvl::CommandBuffer &c
         return skip;
     }
 
-    const auto &vertex_attribute_descriptions = pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)
-                                                    ? cb_state.dynamic_state_value.vertex_attribute_descriptions
-                                                    : pipeline.vertex_input_state->vertex_attribute_descriptions;
+    const auto &vertex_bindings = pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT)
+                                      ? cb_state.dynamic_state_value.vertex_bindings
+                                      : pipeline.vertex_input_state->bindings;
     // Verify vertex attribute address alignment
-    for (uint32_t i = 0; i < vertex_attribute_descriptions.size(); i++) {
-        const auto &attribute_description = vertex_attribute_descriptions[i];
-        const uint32_t vertex_binding = attribute_description.binding;
+    for (const auto &binding_state : vertex_bindings) {
+        const auto &binding_index = binding_state.second.index;
+        const auto &binding_desc = binding_state.second.desc;
+        const auto binding_num = binding_desc.binding;
 
-        const auto &vertex_binding_map_it = cb_state.current_vertex_buffer_binding_info.find(vertex_binding);
-        if (vertex_binding_map_it == cb_state.current_vertex_buffer_binding_info.cend()) {
-            const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
-            skip |=
-                LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
-                         "pVertexAttributeDescriptions[%" PRIu32 "].binding (%" PRIu32 ") is an invalid value.", vertex_binding, i);
-            break;
-        } else if (vertex_binding_map_it->second.buffer == VK_NULL_HANDLE && !enabled_features.nullDescriptor) {
+        const auto *vertex_buffer = vvl::Find(cb_state.current_vertex_buffer_binding_info, binding_num);
+        if (!vertex_buffer) {
             const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
             skip |= LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
-                             "pVertexAttributeDescriptions[%" PRIu32 "].binding (%" PRIu32 ") points to a VK_NULL_HANDLE buffer.",
-                             vertex_binding, i);
+                             "pVertexBindingDescriptions[%" PRIu32 "] (binding %" PRIu32 " ) was not bound to a buffer.",
+                             binding_index, binding_num);
             break;
         }
-        auto const buffer_state = Get<vvl::Buffer>(vertex_binding_map_it->second.buffer);
+        if (vertex_buffer->buffer == VK_NULL_HANDLE && !enabled_features.nullDescriptor) {
+            const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
+            skip |= LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
+                             "pVertexBindingDescriptions[%" PRIu32 "] (binding %" PRIu32 ") points to a VK_NULL_HANDLE buffer.",
+                             binding_index, binding_num);
+            break;
+        }
+        auto const buffer_state = Get<vvl::Buffer>(vertex_buffer->buffer);
         if (!buffer_state) {
             const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
             skip |= LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
-                             "pVertexAttributeDescriptions[%" PRIu32 "].binding (%" PRIu32 ") points to an invalid buffer.",
-                             vertex_binding, i);
+                             "pVertexBindingDescriptions[%" PRIu32 "] (binding %" PRIu32 ") points to an invalid buffer.",
+                             binding_index, binding_num);
             break;
         }
+        for (const auto &location : binding_state.second.locations) {
+            const auto attr_index = location.second.index;
+            const auto &attr_desc = location.second.desc;
 
-        const VkDeviceSize attribute_offset = attribute_description.offset;
-        const VkFormat attribute_format = attribute_description.format;
-        const VkDeviceSize vertex_buffer_stride = vertex_binding_map_it->second.stride;
-        if (pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)) {
-            const VkDeviceSize attribute_binding_extent = attribute_offset + vkuFormatElementSize(attribute_format);
-            if (vertex_buffer_stride != 0 && vertex_buffer_stride < attribute_binding_extent) {
-                const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
-                skip |= LogError("VUID-vkCmdBindVertexBuffers2-pStrides-06209", objlist, vuid.loc(),
-                                 "The pStrides[%" PRIu32 "] (%" PRIu64
-                                 ") parameter in the last call to %s is not 0 "
-                                 "and less than the extent of the binding for attribute %" PRIu32 " (%" PRIu64 ").",
-                                 vertex_binding, vertex_buffer_stride, String(vuid.function), i, attribute_binding_extent);
+            const VkDeviceSize attribute_offset = attr_desc.offset;
+            const VkFormat attribute_format = attr_desc.format;
+            const VkDeviceSize vertex_buffer_stride = vertex_buffer->stride;
+            if (pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_BINDING_STRIDE)) {
+                const VkDeviceSize attribute_binding_extent = attribute_offset + vkuFormatElementSize(attribute_format);
+                if (vertex_buffer_stride != 0 && vertex_buffer_stride < attribute_binding_extent) {
+                    const LogObjectList objlist(cb_state.Handle(), pipeline.Handle());
+                    skip |= LogError("VUID-vkCmdBindVertexBuffers2-pStrides-06209", objlist, vuid.loc(),
+                                     "(binding %" PRIu32 "location %" PRIu32 ") The pStrides value (%" PRIu64
+                                     ") parameter in the last call to %s is not 0 "
+                                     "and less than the extent of the binding for the attribute (%" PRIu64 ").",
+                                     attr_desc.binding, attr_desc.location, vertex_buffer_stride, String(vuid.function),
+                                     attribute_binding_extent);
+                }
             }
-        }
-        const VkDeviceSize vertex_buffer_offset = vertex_binding_map_it->second.offset;
+            const VkDeviceSize vertex_buffer_offset = vertex_buffer->offset;
 
-        // Use 1 as vertex/instance index to use buffer stride as well
-        const VkDeviceSize attrib_address = vertex_buffer_offset + vertex_buffer_stride + attribute_offset;
+            // Use 1 as vertex/instance index to use buffer stride as well
+            const VkDeviceSize attrib_address = vertex_buffer_offset + vertex_buffer_stride + attribute_offset;
 
-        VkDeviceSize vtx_attrib_req_alignment = vkuFormatElementSize(attribute_format);
-        if (vkuFormatElementIsTexel(attribute_format)) {
-            vtx_attrib_req_alignment = SafeDivision(vtx_attrib_req_alignment, vkuFormatComponentCount(attribute_format));
-        }
+            VkDeviceSize vtx_attrib_req_alignment = vkuFormatElementSize(attribute_format);
+            if (vkuFormatElementIsTexel(attribute_format)) {
+                vtx_attrib_req_alignment = SafeDivision(vtx_attrib_req_alignment, vkuFormatComponentCount(attribute_format));
+            }
 
-        if (SafeModulo(attrib_address, vtx_attrib_req_alignment) != 0) {
-            const LogObjectList objlist(buffer_state->Handle(), pipeline.Handle());
-            skip |= LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
+            if (SafeModulo(attrib_address, vtx_attrib_req_alignment) != 0) {
+                const LogObjectList objlist(buffer_state->Handle(), pipeline.Handle());
+                skip |=
+                    LogError(vuid.vertex_binding_attribute_02721, objlist, vuid.loc(),
                              "Format %s has an alignment of %" PRIu64 " but the alignment of attribAddress (%" PRIu64
-                             ") is not aligned in pVertexAttributeDescriptions[%" PRIu32
-                             "]"
-                             "(binding=%" PRIu32 " location=%" PRIu32 ") where attribAddress = vertex buffer offset (%" PRIu64
-                             ") + binding stride (%" PRIu64 ") + attribute offset (%" PRIu64 ").",
-                             string_VkFormat(attribute_format), vtx_attrib_req_alignment, attrib_address, i, vertex_binding,
-                             attribute_description.location, vertex_buffer_offset, vertex_buffer_stride, attribute_offset);
+                             ") is not aligned in pVertexAttributeDescriptions[%" PRIu32 "] (binding=%" PRIu32 " location=%" PRIu32
+                             ") where attribAddress = vertex buffer offset (%" PRIu64 ") + binding stride (%" PRIu64
+                             ") + attribute offset (%" PRIu64 ").",
+                             string_VkFormat(attribute_format), vtx_attrib_req_alignment, attrib_address, attr_index,
+                             attr_desc.binding, attr_desc.location, vertex_buffer_offset, vertex_buffer_stride, attribute_offset);
+            }
         }
     }
     return skip;
@@ -4218,15 +4229,11 @@ bool CoreChecks::ValidateDrawPipelineVertexBinding(const vvl::CommandBuffer &cb_
     bool skip = false;
     if (!pipeline.vertex_input_state) return skip;
 
-    vvl::unordered_set<uint32_t> bound_pipeline_bindings;
-    for (const auto &description : pipeline.vertex_input_state->binding_descriptions) {
-        bound_pipeline_bindings.insert(description.binding);
-    }
+    const auto &vertex_bindings = pipeline.vertex_input_state->bindings;
 
     for (const auto &vertex_buffer_binding : cb_state.current_vertex_buffer_binding_info) {
         // Only validate the bindings from the last bound pipeline (unlesss it used VK_DYNAMIC_STATE_VERTEX_INPUT_EXT)
-        if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) &&
-            bound_pipeline_bindings.find(vertex_buffer_binding.first) == bound_pipeline_bindings.end()) {
+        if (!pipeline.IsDynamic(CB_DYNAMIC_STATE_VERTEX_INPUT_EXT) && !vvl::Find(vertex_bindings, vertex_buffer_binding.first)) {
             continue;
         }
 

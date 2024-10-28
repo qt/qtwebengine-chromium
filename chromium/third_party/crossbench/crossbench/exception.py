@@ -205,7 +205,8 @@ class ExceptionAnnotator:
                *stack_entries,
                exceptions: TExceptionTypes = (Exception,),
                ignore: TExceptionTypes = tuple()):
-    """Sets info stack entries and rethrows an annotated MultiException by default ."""
+    """Sets info stack entries and rethrows an annotated
+      MultiException by default ."""
     with self.capture(*stack_entries, exceptions=exceptions, ignore=ignore):
       yield self
     self.assert_success()

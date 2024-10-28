@@ -23,11 +23,11 @@ from crossbench.stories.press_benchmark import PressBenchmarkStory
 if TYPE_CHECKING:
   import argparse
 
+  from crossbench.path import LocalPath
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
   from crossbench.runner.run import Run
-  from crossbench.path import LocalPath
-  from crossbench.types import JSON
+  from crossbench.types import Json
 
 
 def _probe_remove_tests_segments(path: Tuple[str, ...]) -> str:
@@ -43,10 +43,10 @@ class SpeedometerProbe(
   JS: str = "return window.suiteValues;"
   SORT_KEYS: bool = False
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.js(self.JS)
 
-  def flatten_json_data(self, json_data: Any) -> JSON:
+  def flatten_json_data(self, json_data: Any) -> Json:
     # json_data may contain multiple iterations, merge those first
     assert isinstance(json_data, list), f"Expected list got {type(json_data)}"
     merged = cb_metric.MetricsMerger(

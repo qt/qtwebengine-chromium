@@ -10,6 +10,7 @@ from typing import Union
 # A path that can refer to files on a remote platform with potentially
 # a different Path flavour (e.g. Win vs Posix).
 RemotePath = pathlib.PurePath
+RemotePosixPath = pathlib.PurePosixPath
 
 RemotePathLike = Union[str, RemotePath]
 
@@ -17,6 +18,7 @@ RemotePathLike = Union[str, RemotePath]
 # Not that Path inherits from PurePath, and thus we can use a LocalPath in
 # all places a RemotePath is expected.
 LocalPath = pathlib.Path
+LocalPosixPath = pathlib.PosixPath
 
 LocalPathLike = Union[str, LocalPath]
 

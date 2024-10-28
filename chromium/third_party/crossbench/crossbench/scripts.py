@@ -5,6 +5,7 @@
 import sys
 
 from crossbench.cli.cli import CrossBenchCLI
+from crossbench.cli.btp import BTPUtil
 
 
 def crossbench(argv=None):
@@ -12,3 +13,10 @@ def crossbench(argv=None):
     argv = sys.argv
   cli = CrossBenchCLI()
   cli.run(argv[1:])
+
+
+def cb_btp(argv=None):
+  if not argv:
+    argv = sys.argv
+  btp = BTPUtil()
+  btp.run(argv[1:])

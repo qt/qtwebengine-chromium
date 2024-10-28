@@ -41,6 +41,7 @@ SHORT_FORM_RE = re.compile(r"((?P<driver>\w{3,}):)??"
 ANDROID_PACKAGE_RE = re.compile(r"[a-z]+(\.[a-z]+){2,}")
 VERSION_FOR_RANGE_RE = re.compile(r"(?P<prefix>[^\d]*)(?P<milestone>\d+)")
 
+
 @dataclasses.dataclass(frozen=True)
 class BrowserConfig(ConfigObject):
   browser: pth.RemotePathLike
@@ -62,7 +63,7 @@ class BrowserConfig(ConfigObject):
         browsers.Chrome.stable_path(plt.PLATFORM), DriverConfig.default())
 
   @classmethod
-  def loads(cls, value: str) -> BrowserConfig:
+  def parse_str(cls, value: str) -> BrowserConfig:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     network: Optional[NetworkConfig] = None
@@ -76,7 +77,7 @@ class BrowserConfig(ConfigObject):
       driver, path, network = cls._parse_inline_short_form(value)
     else:
       # Variant 3: Full inline hjson
-      return cls.load_inline_hjson(value)
+      return cls.parse_inline_hjson(value)
     assert path, "Invalid path"
     return cls(path, driver, network)
 
@@ -201,6 +202,9 @@ class BrowserConfig(ConfigObject):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.RemotePath("com.android.chrome")
       return browsers.Chrome.stable_path(platform)
+    if identifier in ("chrome-app"):
+      if driver_type == BrowserDriverType.ANDROID:
+        return pth.RemotePath("com.google.android.apps.chrome")
     if identifier in ("chrome-beta", "chr-beta"):
       if driver_type == BrowserDriverType.ANDROID:
         return pth.RemotePath("com.chrome.beta")
@@ -269,25 +273,25 @@ class BrowserConfig(ConfigObject):
         path_or_identifier, driver.type)
     network = None
     if network_identifier is not None:
-      network = NetworkConfig.loads(network_identifier)
+      network = NetworkConfig.parse_str(network_identifier)
     return (driver, path, network)
 
   @classmethod
-  def load(cls, f: TextIO) -> BrowserConfig:
+  def parse_text_io(cls, f: TextIO) -> BrowserConfig:
     with exception.annotate(f"Loading browser config file: {f.name}"):
       config = {}
       with exception.annotate(f"Parsing {hjson.__name__}"):
         config = hjson.load(f)
       with exception.annotate(f"Parsing config file: {f.name}"):
-        return cls.load_dict(config)
+        return cls.parse_dict(config)
     raise argparse.ArgumentTypeError(f"Could not parse : '{f.name}'")
 
   @classmethod
-  def load_dict(cls, config: Dict[str, Any]) -> BrowserConfig:
-    return cls.config_parse().parse(config)
+  def parse_dict(cls, config: Dict[str, Any]) -> BrowserConfig:
+    return cls.config_parser().parse(config)
 
   @classmethod
-  def config_parse(cls) -> ConfigParser[BrowserConfig]:
+  def config_parser(cls) -> ConfigParser[BrowserConfig]:
     parser = ConfigParser("BrowserConfig parser", cls)
     parser.add_argument(
         "browser",

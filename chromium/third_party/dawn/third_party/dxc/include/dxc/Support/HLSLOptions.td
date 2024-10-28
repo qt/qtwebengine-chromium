@@ -370,6 +370,8 @@ def fvk_use_dx_position_w: Flag<["-"], "fvk-use-dx-position-w">, Group<spirv_Gro
   HelpText<"Reciprocate SV_Position.w after reading from stage input in PS to accommodate the difference between Vulkan and DirectX">;
 def fvk_support_nonzero_base_instance: Flag<["-"], "fvk-support-nonzero-base-instance">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Follow Vulkan spec to use gl_BaseInstance as the first vertex instance, which makes SV_InstanceID = gl_InstanceIndex - gl_BaseInstance (without this option, SV_InstanceID = gl_InstanceIndex)">;
+def fvk_support_nonzero_base_vertex: Flag<["-"], "fvk-support-nonzero-base-vertex">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
+  HelpText<"Follow Vulkan spec to use gl_BaseVertex as the first vertex, which makes SV_VertexID = gl_VertexIndex - gl_BaseVertex (without this option, SV_VertexID = gl_VertexIndex)">;
 def fvk_use_gl_layout: Flag<["-"], "fvk-use-gl-layout">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Use strict OpenGL std140/std430 memory layout for Vulkan resources">;
 def fvk_use_dx_layout: Flag<["-"], "fvk-use-dx-layout">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
@@ -396,6 +398,8 @@ def fspv_entrypoint_name_EQ : Joined<["-"], "fspv-entrypoint-name=">, Group<spir
   HelpText<"Specify the SPIR-V entry point name. Defaults to the HLSL entry point name.">;
 def fspv_enable_maximal_reconvergence: Flag<["-"], "fspv-enable-maximal-reconvergence">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Enables the MaximallyReconvergesKHR execution mode for this module.">;
+def fspv_use_vulkan_memory_model: Flag<["-"], "fspv-use-vulkan-memory-model">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
+  HelpText<"Generates SPIR-V modules that use the Vulkan memory model instead of GLSL450.">;
 def fvk_auto_shift_bindings: Flag<["-"], "fvk-auto-shift-bindings">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Apply fvk-*-shift to resources without an explicit register assignment.">;
 def Wno_vk_ignored_features : Joined<["-"], "Wno-vk-ignored-features">, Group<spirv_Group>, Flags<[CoreOption, DriverOption, HelpHidden]>,
@@ -410,8 +414,6 @@ def fspv_preserve_bindings : Flag<["-"], "fspv-preserve-bindings">, Group<spirv_
   HelpText<"Preserves all bindings declared within the module, even when those bindings are unused">;
 def fspv_preserve_interface : Flag<["-"], "fspv-preserve-interface">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Preserves all interface variables in the entry point, even when those variables are unused">;
-def fvk_allow_rwstructuredbuffer_arrays: Flag<["-"], "fvk-allow-rwstructuredbuffer-arrays">, Group<spirv_Group>, Flags<[CoreOption, DriverOption, HelpHidden]>,
-  HelpText<"Allow arrays of RWStructuredBuffers, AppendStructuredBuffers, and ConsumeStructuredBuffers. This is in development, and the option will be removed when the feature is complete.">;
 def fspv_max_id : MultiArg<["-"], "fspv-max-id", 1>, MetaVarName<"<shift> <space>">, Group<spirv_Group>, Flags<[CoreOption, DriverOption]>,
   HelpText<"Set the maximum value for an id in the SPIR-V binary. Default is 0x3FFFFF, which is the largest value all drivers must support.">;
 // SPIRV Change Ends

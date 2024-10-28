@@ -2,7 +2,6 @@
 {
   probes: {
     trace_processor: {
-      probes: ["perfetto"],
       queries: ["speedometer_cpu_time"],
       metrics: ["trace_stats"],
     },

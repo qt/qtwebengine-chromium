@@ -173,8 +173,8 @@ void BestPractices::QueueValidateImage(QueueCallbacks& funcs, Func command, std:
 
 void BestPractices::QueueValidateImage(QueueCallbacks& funcs, Func command, std::shared_ptr<bp_state::Image>& state,
                                        IMAGE_SUBRESOURCE_USAGE_BP usage, uint32_t array_layer, uint32_t mip_level) {
-    funcs.push_back([this, command, state, usage, array_layer, mip_level](const ValidationStateTracker& vst, const vvl::Queue& qs,
-                                                                          const vvl::CommandBuffer& cbs) -> bool {
+    funcs.emplace_back([this, command, state, usage, array_layer, mip_level](
+                           const ValidationStateTracker& vst, const vvl::Queue& qs, const vvl::CommandBuffer& cbs) -> bool {
         ValidateImageInQueue(qs, cbs, command, *state, usage, array_layer, mip_level);
         return false;
     });
@@ -294,13 +294,13 @@ void BestPractices::ValidateImageInQueue(const vvl::Queue& qs, const vvl::Comman
     }
 }
 
-std::shared_ptr<vvl::Image> BestPractices::CreateImageState(VkImage handle, const VkImageCreateInfo* pCreateInfo,
-                                                            VkFormatFeatureFlags2KHR features) {
-    return std::make_shared<bp_state::Image>(*this, handle, pCreateInfo, features);
+std::shared_ptr<vvl::Image> BestPractices::CreateImageState(VkImage handle, const VkImageCreateInfo* create_info,
+                                                            VkFormatFeatureFlags2 features) {
+    return std::make_shared<bp_state::Image>(*this, handle, create_info, features);
 }
 
-std::shared_ptr<vvl::Image> BestPractices::CreateImageState(VkImage handle, const VkImageCreateInfo* pCreateInfo,
+std::shared_ptr<vvl::Image> BestPractices::CreateImageState(VkImage handle, const VkImageCreateInfo* create_info,
                                                             VkSwapchainKHR swapchain, uint32_t swapchain_index,
-                                                            VkFormatFeatureFlags2KHR features) {
-    return std::make_shared<bp_state::Image>(*this, handle, pCreateInfo, swapchain, swapchain_index, features);
+                                                            VkFormatFeatureFlags2 features) {
+    return std::make_shared<bp_state::Image>(*this, handle, create_info, swapchain, swapchain_index, features);
 }

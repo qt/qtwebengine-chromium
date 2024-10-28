@@ -367,8 +367,10 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_EXT_pipeline_protected_access", 1},
     {"VK_ANDROID_external_format_resolve", 1},
     {"VK_KHR_maintenance5", 1},
+    {"VK_AMD_anti_lag", 1},
     {"VK_KHR_ray_tracing_position_fetch", 1},
     {"VK_EXT_shader_object", 1},
+    {"VK_KHR_pipeline_binary", 1},
     {"VK_QCOM_tile_properties", 1},
     {"VK_SEC_amigo_profiling", 1},
     {"VK_QCOM_multiview_per_view_viewports", 1},
@@ -382,6 +384,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_low_latency2", 2},
     {"VK_KHR_cooperative_matrix", 2},
     {"VK_QCOM_multiview_per_view_render_areas", 1},
+    {"VK_KHR_compute_shader_derivatives", 1},
     {"VK_KHR_video_decode_av1", 1},
     {"VK_KHR_video_maintenance1", 1},
     {"VK_NV_per_stage_descriptor_set", 1},
@@ -403,6 +406,7 @@ static const std::unordered_map<std::string, uint32_t> device_extension_map = {
     {"VK_NV_descriptor_pool_overallocation", 1},
     {"VK_NV_raw_access_chains", 1},
     {"VK_KHR_shader_relaxed_extended_instruction", 1},
+    {"VK_NV_command_buffer_inheritance", 1},
     {"VK_KHR_maintenance7", 1},
     {"VK_NV_shader_atomic_float16_vector", 1},
     {"VK_EXT_shader_replicated_composites", 1},
@@ -2507,10 +2511,40 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2KHR(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineBinariesKHR(
+    VkDevice                                    device,
+    const VkPipelineBinaryCreateInfoKHR*        pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkPipelineBinaryHandlesInfoKHR*             pBinaries);
+
+static VKAPI_ATTR void VKAPI_CALL DestroyPipelineBinaryKHR(
+    VkDevice                                    device,
+    VkPipelineBinaryKHR                         pipelineBinary,
+    const VkAllocationCallbacks*                pAllocator);
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetPipelineKeyKHR(
+    VkDevice                                    device,
+    const VkPipelineCreateInfoKHR*              pPipelineCreateInfo,
+    VkPipelineBinaryKeyKHR*                     pPipelineKey);
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetPipelineBinaryDataKHR(
+    VkDevice                                    device,
+    const VkPipelineBinaryDataInfoKHR*          pInfo,
+    VkPipelineBinaryKeyKHR*                     pPipelineBinaryKey,
+    size_t*                                     pPipelineBinaryDataSize,
+    void*                                       pPipelineBinaryData);
+
+static VKAPI_ATTR VkResult VKAPI_CALL ReleaseCapturedPipelineDataKHR(
+    VkDevice                                    device,
+    const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
+    const VkAllocationCallbacks*                pAllocator);
+
+
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
     uint32_t*                                   pPropertyCount,
     VkCooperativeMatrixPropertiesKHR*           pProperties);
+
 
 
 
@@ -4266,6 +4300,11 @@ static VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
 #endif /* VK_USE_PLATFORM_ANDROID_KHR */
 
 
+static VKAPI_ATTR void VKAPI_CALL AntiLagUpdateAMD(
+    VkDevice                                    device,
+    const VkAntiLagDataAMD*                     pData);
+
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(
     VkDevice                                    device,
     uint32_t                                    createInfoCount,
@@ -4355,6 +4394,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetScreenBufferPropertiesQNX(
     const struct _screen_buffer*                buffer,
     VkScreenBufferPropertiesQNX*                pProperties);
 #endif /* VK_USE_PLATFORM_SCREEN_QNX */
+
 
 
 
@@ -4922,6 +4962,11 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkGetRenderingAreaGranularityKHR", (void*)GetRenderingAreaGranularityKHR},
     {"vkGetDeviceImageSubresourceLayoutKHR", (void*)GetDeviceImageSubresourceLayoutKHR},
     {"vkGetImageSubresourceLayout2KHR", (void*)GetImageSubresourceLayout2KHR},
+    {"vkCreatePipelineBinariesKHR", (void*)CreatePipelineBinariesKHR},
+    {"vkDestroyPipelineBinaryKHR", (void*)DestroyPipelineBinaryKHR},
+    {"vkGetPipelineKeyKHR", (void*)GetPipelineKeyKHR},
+    {"vkGetPipelineBinaryDataKHR", (void*)GetPipelineBinaryDataKHR},
+    {"vkReleaseCapturedPipelineDataKHR", (void*)ReleaseCapturedPipelineDataKHR},
     {"vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR", (void*)GetPhysicalDeviceCooperativeMatrixPropertiesKHR},
     {"vkCmdSetLineStippleKHR", (void*)CmdSetLineStippleKHR},
     {"vkGetPhysicalDeviceCalibrateableTimeDomainsKHR", (void*)GetPhysicalDeviceCalibrateableTimeDomainsKHR},
@@ -5276,6 +5321,7 @@ static const std::unordered_map<std::string, void*> name_to_funcptr_map = {
     {"vkDestroyOpticalFlowSessionNV", (void*)DestroyOpticalFlowSessionNV},
     {"vkBindOpticalFlowSessionImageNV", (void*)BindOpticalFlowSessionImageNV},
     {"vkCmdOpticalFlowExecuteNV", (void*)CmdOpticalFlowExecuteNV},
+    {"vkAntiLagUpdateAMD", (void*)AntiLagUpdateAMD},
     {"vkCreateShadersEXT", (void*)CreateShadersEXT},
     {"vkDestroyShaderEXT", (void*)DestroyShaderEXT},
     {"vkGetShaderBinaryDataEXT", (void*)GetShaderBinaryDataEXT},

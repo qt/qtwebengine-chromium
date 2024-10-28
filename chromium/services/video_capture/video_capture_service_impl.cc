@@ -135,12 +135,14 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
 #if BUILDFLAG(IS_CHROMEOS_ASH)
       media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(
           viz_gpu_->GetGpuChannel());
+      media::VideoCaptureDeviceFactoryChromeOS::SetSharedImageInterface(
+          viz_gpu_->GetGpuChannel()->CreateClientSharedImageInterface());
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     }
   }
   ~VizGpuContextProvider() override {
     // Ensure destroy context provider and not receive callbacks before clear up
-    // |viz_gpu_|
+    // |viz_gpu_|.
     if (context_provider_) {
       // Ensure there are no dangling pointers.
       media::VideoCaptureGpuChannelHost::GetInstance()
@@ -149,6 +151,8 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
           nullptr);
 #if BUILDFLAG(IS_CHROMEOS_ASH)
       media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(nullptr);
+      media::VideoCaptureDeviceFactoryChromeOS::SetSharedImageInterface(
+          nullptr);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
       context_provider_.reset();
     }
@@ -168,6 +172,8 @@ class VideoCaptureServiceImpl::VizGpuContextProvider
           nullptr);
 #if BUILDFLAG(IS_CHROMEOS_ASH)
       media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(nullptr);
+      media::VideoCaptureDeviceFactoryChromeOS::SetSharedImageInterface(
+          nullptr);
     } else {
       media::VideoCaptureDeviceFactoryChromeOS::SetGpuChannelHost(
           viz_gpu_->GetGpuChannel());

@@ -373,21 +373,26 @@ void LocalFrameClientImpl::Detached(FrameDetachType type) {
   web_frame_->SetCoreFrame(nullptr);
 }
 
-void LocalFrameClientImpl::DispatchWillSendRequest(ResourceRequest& request) {
-  // Set upstream url based on the request's redirect info.
-  KURL upstream_url;
-  if (request.GetRedirectInfo().has_value()) {
-    upstream_url = KURL(request.GetRedirectInfo()->previous_url);
-  }
-
+void LocalFrameClientImpl::DispatchFinalizeRequest(ResourceRequest& request) {
   // Give the WebLocalFrameClient a crack at the request.
   if (web_frame_->Client()) {
     WrappedResourceRequest webreq(request);
-    web_frame_->Client()->WillSendRequest(
-        webreq,
-        WebLocalFrameClient::ForRedirect(request.GetRedirectInfo().has_value()),
-        upstream_url);
+    web_frame_->Client()->FinalizeRequest(webreq);
   }
+}
+
+std::optional<KURL> LocalFrameClientImpl::DispatchWillSendRequest(
+    const KURL& requested_url,
+    const scoped_refptr<const SecurityOrigin>& requestor_origin,
+    const net::SiteForCookies& site_for_cookies,
+    bool has_redirect_info,
+    const KURL& upstream_url) {
+  if (!web_frame_->Client()) {
+    return std::nullopt;
+  }
+  return web_frame_->Client()->WillSendRequest(
+      requested_url, requestor_origin, site_for_cookies,
+      WebLocalFrameClient::ForRedirect(has_redirect_info), upstream_url);
 }
 
 void LocalFrameClientImpl::DispatchDidDispatchDOMContentLoadedEvent() {
@@ -430,33 +435,41 @@ void LocalFrameClientImpl::DidFinishSameDocumentNavigation(
     // not history-traversable).
     // Exclude the WebView not being composited because we won't present any
     // frame if it is not being actively drawn.
+    // Exclude cases with prefers-reduced-motion. Back forward transitions are
+    // disabled in this case so no screenshots are necessary.
+    // We however always propagate the history sequence number for correctness
+    // in CompositedOuterMainFrame cases.
     bool navigation_with_screenshot = false;
-    if (IsCompositedOutermostMainFrame(web_frame_) &&
-        commit_type != kWebHistoryInertCommit) {
-      navigation_with_screenshot = true;
+    if (IsCompositedOutermostMainFrame(web_frame_)) {
       WebFrameWidgetImpl* frame_widget = web_frame_->FrameWidgetImpl();
       // The outermost mainframe must have a frame widget.
       CHECK(frame_widget);
-      if (RuntimeEnabledFeatures::
-              IncrementLocalSurfaceIdForMainframeSameDocNavigationEnabled()) {
-        frame_widget->RequestNewLocalSurfaceId();
-        if (RuntimeEnabledFeatures::BackForwardTransitionsEnabled()) {
-          screenshot_destination = base::UnguessableToken::Create();
-          frame_widget->RequestViewportScreenshot(screenshot_destination);
-        }
-      }
+      frame_widget->PropagateHistorySequenceNumberToCompositor();
 
-      frame_widget->NotifyPresentationTime(WTF::BindOnce(
-          [](base::TimeTicks start,
-             const viz::FrameTimingDetails& frame_timing_details) {
-            base::TimeDelta duration =
-                frame_timing_details.presentation_feedback.timestamp - start;
-            base::UmaHistogramTimes(
-                "Navigation."
-                "MainframeSameDocumentNavigationCommitToPresentFirstFrame",
-                duration);
-          },
-          base::TimeTicks::Now()));
+      if (commit_type != kWebHistoryInertCommit &&
+          !web_frame_->GetFrame()->GetSettings()->GetPrefersReducedMotion()) {
+        navigation_with_screenshot = true;
+        if (RuntimeEnabledFeatures::
+                IncrementLocalSurfaceIdForMainframeSameDocNavigationEnabled()) {
+          frame_widget->RequestNewLocalSurfaceId();
+          if (RuntimeEnabledFeatures::BackForwardTransitionsEnabled()) {
+            screenshot_destination = base::UnguessableToken::Create();
+            frame_widget->RequestViewportScreenshot(screenshot_destination);
+          }
+        }
+
+        frame_widget->NotifyPresentationTime(WTF::BindOnce(
+            [](base::TimeTicks start,
+               const viz::FrameTimingDetails& frame_timing_details) {
+              base::TimeDelta duration =
+                  frame_timing_details.presentation_feedback.timestamp - start;
+              base::UmaHistogramTimes(
+                  "Navigation."
+                  "MainframeSameDocumentNavigationCommitToPresentFirstFrame",
+                  duration);
+            },
+            base::TimeTicks::Now()));
+      }
     }
     base::UmaHistogramBoolean("Navigation.SameDocumentNavigationWithScreenshot",
                               navigation_with_screenshot);
@@ -549,8 +562,10 @@ void LocalFrameClientImpl::DispatchDidCommitLoad(
       }
     }
   }
-  if (WebDevToolsAgentImpl* dev_tools = DevToolsAgent())
+  if (WebDevToolsAgentImpl* dev_tools =
+          DevToolsAgent(/*create_if_necessary=*/false)) {
     dev_tools->DidCommitLoadForLocalFrame(web_frame_->GetFrame());
+  }
 
   web_frame_->DidCommitLoad();
 }
@@ -729,7 +744,8 @@ void LocalFrameClientImpl::BeginNavigation(
     }
   }
 
-  if (WebDevToolsAgentImpl* devtools = DevToolsAgent()) {
+  if (WebDevToolsAgentImpl* devtools =
+          DevToolsAgent(/*create_if_necessary=*/false)) {
     navigation_info->devtools_initiator_info =
         devtools->NavigationInitiatorInfo(web_frame_->GetFrame());
   }
@@ -1009,9 +1025,10 @@ unsigned LocalFrameClientImpl::BackForwardLength() {
   return webview ? webview->HistoryListLength() : 0;
 }
 
-WebDevToolsAgentImpl* LocalFrameClientImpl::DevToolsAgent() {
+WebDevToolsAgentImpl* LocalFrameClientImpl::DevToolsAgent(
+    bool create_if_necessary) {
   return WebLocalFrameImpl::FromFrame(web_frame_->GetFrame()->LocalFrameRoot())
-      ->DevToolsAgentImpl();
+      ->DevToolsAgentImpl(create_if_necessary);
 }
 
 KURL LocalFrameClientImpl::OverrideFlashEmbedWithHTML(const KURL& url) {
@@ -1023,9 +1040,10 @@ void LocalFrameClientImpl::NotifyUserActivation() {
     autofill_client->UserGestureObserved();
 }
 
-void LocalFrameClientImpl::AbortClientNavigation() {
-  if (web_frame_->Client())
-    web_frame_->Client()->AbortClientNavigation();
+void LocalFrameClientImpl::AbortClientNavigation(bool for_new_navigation) {
+  if (web_frame_->Client()) {
+    web_frame_->Client()->AbortClientNavigation(for_new_navigation);
+  }
 }
 
 WebSpellCheckPanelHostClient* LocalFrameClientImpl::SpellCheckPanelHostClient()
@@ -1067,8 +1085,10 @@ base::UnguessableToken LocalFrameClientImpl::GetDevToolsFrameToken() const {
 
 String LocalFrameClientImpl::evaluateInInspectorOverlayForTesting(
     const String& script) {
-  if (WebDevToolsAgentImpl* devtools = DevToolsAgent())
+  if (WebDevToolsAgentImpl* devtools =
+          DevToolsAgent(/*create_if_necessary=*/true)) {
     return devtools->EvaluateInOverlayForTesting(script);
+  }
   return g_empty_string;
 }
 
@@ -1186,8 +1206,10 @@ LocalFrameClientImpl::CreateResourceLoadInfoNotifierWrapper() {
 void LocalFrameClientImpl::BindDevToolsAgent(
     mojo::PendingAssociatedRemote<mojom::blink::DevToolsAgentHost> host,
     mojo::PendingAssociatedReceiver<mojom::blink::DevToolsAgent> receiver) {
-  if (WebDevToolsAgentImpl* devtools = DevToolsAgent())
+  if (WebDevToolsAgentImpl* devtools =
+          DevToolsAgent(/*create_if_necessary=*/true)) {
     devtools->BindReceiver(std::move(host), std::move(receiver));
+  }
 }
 
 bool LocalFrameClientImpl::IsDomStorageDisabled() const {

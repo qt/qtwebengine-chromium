@@ -21,10 +21,10 @@ class BinaryNotFoundError(RuntimeError):
     super().__init__(self._create_message())
 
   def _create_message(self) -> str:
-    return (
-        f"Could not find binary '{self.binary}' on {self.platform}. "
-        f"Please install {self.binary.name} or use the --bin-{self.binary.name} "
-        "command line flag to manually specify a path.")
+    return (f"Could not find binary '{self.binary}' on {self.platform}. "
+            f"Please install {self.binary.name} or use the "
+            f"--bin-{self.binary.name} "
+            "command line flag to manually specify a path.")
 
 
 class UnsupportedPlatformError(BinaryNotFoundError):
@@ -78,7 +78,7 @@ class Binary:
   def __str__(self) -> str:
     return self._name
 
-  @functools.lru_cache(maxsize=None)
+  @functools.lru_cache(maxsize=None)  # pylint: disable=method-cache-max-size-none
   def resolve_cached(self, platform: Platform) -> pth.RemotePath:
     return self.resolve(platform)
 

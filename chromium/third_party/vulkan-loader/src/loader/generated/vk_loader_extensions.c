@@ -720,6 +720,13 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->GetDeviceImageSubresourceLayoutKHR = (PFN_vkGetDeviceImageSubresourceLayoutKHR)gdpa(dev, "vkGetDeviceImageSubresourceLayoutKHR");
     table->GetImageSubresourceLayout2KHR = (PFN_vkGetImageSubresourceLayout2KHR)gdpa(dev, "vkGetImageSubresourceLayout2KHR");
 
+    // ---- VK_KHR_pipeline_binary extension commands
+    table->CreatePipelineBinariesKHR = (PFN_vkCreatePipelineBinariesKHR)gdpa(dev, "vkCreatePipelineBinariesKHR");
+    table->DestroyPipelineBinaryKHR = (PFN_vkDestroyPipelineBinaryKHR)gdpa(dev, "vkDestroyPipelineBinaryKHR");
+    table->GetPipelineKeyKHR = (PFN_vkGetPipelineKeyKHR)gdpa(dev, "vkGetPipelineKeyKHR");
+    table->GetPipelineBinaryDataKHR = (PFN_vkGetPipelineBinaryDataKHR)gdpa(dev, "vkGetPipelineBinaryDataKHR");
+    table->ReleaseCapturedPipelineDataKHR = (PFN_vkReleaseCapturedPipelineDataKHR)gdpa(dev, "vkReleaseCapturedPipelineDataKHR");
+
     // ---- VK_KHR_line_rasterization extension commands
     table->CmdSetLineStippleKHR = (PFN_vkCmdSetLineStippleKHR)gdpa(dev, "vkCmdSetLineStippleKHR");
 
@@ -1145,6 +1152,9 @@ VKAPI_ATTR void VKAPI_CALL loader_init_device_extension_dispatch_table(struct lo
     table->BindOpticalFlowSessionImageNV = (PFN_vkBindOpticalFlowSessionImageNV)gdpa(dev, "vkBindOpticalFlowSessionImageNV");
     table->CmdOpticalFlowExecuteNV = (PFN_vkCmdOpticalFlowExecuteNV)gdpa(dev, "vkCmdOpticalFlowExecuteNV");
 
+    // ---- VK_AMD_anti_lag extension commands
+    table->AntiLagUpdateAMD = (PFN_vkAntiLagUpdateAMD)gdpa(dev, "vkAntiLagUpdateAMD");
+
     // ---- VK_EXT_shader_object extension commands
     table->CreateShadersEXT = (PFN_vkCreateShadersEXT)gdpa(dev, "vkCreateShadersEXT");
     table->DestroyShaderEXT = (PFN_vkDestroyShaderEXT)gdpa(dev, "vkDestroyShaderEXT");
@@ -1497,7 +1507,7 @@ void init_extension_device_proc_terminator_dispatch(struct loader_device *dev) {
        dispatch->CmdInsertDebugUtilsLabelEXT = (PFN_vkCmdInsertDebugUtilsLabelEXT)gpda(dev->icd_device, "vkCmdInsertDebugUtilsLabelEXT");
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     // ---- VK_EXT_full_screen_exclusive extension commands
-    if (dev->driver_extensions.ext_full_screen_exclusive_enabled && dev->driver_extensions.khr_device_group_enabled)
+    if (dev->driver_extensions.ext_full_screen_exclusive_enabled && (dev->driver_extensions.khr_device_group_enabled || dev->driver_extensions.version_1_1_enabled))
        dispatch->GetDeviceGroupSurfacePresentModes2EXT = (PFN_vkGetDeviceGroupSurfacePresentModes2EXT)gpda(dev->icd_device, "vkGetDeviceGroupSurfacePresentModes2EXT");
 #endif // VK_USE_PLATFORM_WIN32_KHR
 }
@@ -2475,6 +2485,13 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "GetDeviceImageSubresourceLayoutKHR")) return (void *)table->GetDeviceImageSubresourceLayoutKHR;
     if (!strcmp(name, "GetImageSubresourceLayout2KHR")) return (void *)table->GetImageSubresourceLayout2KHR;
 
+    // ---- VK_KHR_pipeline_binary extension commands
+    if (!strcmp(name, "CreatePipelineBinariesKHR")) return (void *)table->CreatePipelineBinariesKHR;
+    if (!strcmp(name, "DestroyPipelineBinaryKHR")) return (void *)table->DestroyPipelineBinaryKHR;
+    if (!strcmp(name, "GetPipelineKeyKHR")) return (void *)table->GetPipelineKeyKHR;
+    if (!strcmp(name, "GetPipelineBinaryDataKHR")) return (void *)table->GetPipelineBinaryDataKHR;
+    if (!strcmp(name, "ReleaseCapturedPipelineDataKHR")) return (void *)table->ReleaseCapturedPipelineDataKHR;
+
     // ---- VK_KHR_line_rasterization extension commands
     if (!strcmp(name, "CmdSetLineStippleKHR")) return (void *)table->CmdSetLineStippleKHR;
 
@@ -2899,6 +2916,9 @@ VKAPI_ATTR void* VKAPI_CALL loader_lookup_device_dispatch_table(const VkLayerDis
     if (!strcmp(name, "DestroyOpticalFlowSessionNV")) return (void *)table->DestroyOpticalFlowSessionNV;
     if (!strcmp(name, "BindOpticalFlowSessionImageNV")) return (void *)table->BindOpticalFlowSessionImageNV;
     if (!strcmp(name, "CmdOpticalFlowExecuteNV")) return (void *)table->CmdOpticalFlowExecuteNV;
+
+    // ---- VK_AMD_anti_lag extension commands
+    if (!strcmp(name, "AntiLagUpdateAMD")) return (void *)table->AntiLagUpdateAMD;
 
     // ---- VK_EXT_shader_object extension commands
     if (!strcmp(name, "CreateShadersEXT")) return (void *)table->CreateShadersEXT;
@@ -4863,6 +4883,82 @@ VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2KHR(
         abort(); /* Intentionally fail so user can correct issue. */
     }
     disp->GetImageSubresourceLayout2KHR(device, image, pSubresource, pLayout);
+}
+
+
+// ---- VK_KHR_pipeline_binary extension trampoline/terminators
+
+VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineBinariesKHR(
+    VkDevice                                    device,
+    const VkPipelineBinaryCreateInfoKHR*        pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkPipelineBinaryHandlesInfoKHR*             pBinaries) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkCreatePipelineBinariesKHR: Invalid device "
+                   "[VUID-vkCreatePipelineBinariesKHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->CreatePipelineBinariesKHR(device, pCreateInfo, pAllocator, pBinaries);
+}
+
+VKAPI_ATTR void VKAPI_CALL DestroyPipelineBinaryKHR(
+    VkDevice                                    device,
+    VkPipelineBinaryKHR                         pipelineBinary,
+    const VkAllocationCallbacks*                pAllocator) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkDestroyPipelineBinaryKHR: Invalid device "
+                   "[VUID-vkDestroyPipelineBinaryKHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->DestroyPipelineBinaryKHR(device, pipelineBinary, pAllocator);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetPipelineKeyKHR(
+    VkDevice                                    device,
+    const VkPipelineCreateInfoKHR*              pPipelineCreateInfo,
+    VkPipelineBinaryKeyKHR*                     pPipelineKey) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPipelineKeyKHR: Invalid device "
+                   "[VUID-vkGetPipelineKeyKHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetPipelineKeyKHR(device, pPipelineCreateInfo, pPipelineKey);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetPipelineBinaryDataKHR(
+    VkDevice                                    device,
+    const VkPipelineBinaryDataInfoKHR*          pInfo,
+    VkPipelineBinaryKeyKHR*                     pPipelineBinaryKey,
+    size_t*                                     pPipelineBinaryDataSize,
+    void*                                       pPipelineBinaryData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkGetPipelineBinaryDataKHR: Invalid device "
+                   "[VUID-vkGetPipelineBinaryDataKHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->GetPipelineBinaryDataKHR(device, pInfo, pPipelineBinaryKey, pPipelineBinaryDataSize, pPipelineBinaryData);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL ReleaseCapturedPipelineDataKHR(
+    VkDevice                                    device,
+    const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
+    const VkAllocationCallbacks*                pAllocator) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkReleaseCapturedPipelineDataKHR: Invalid device "
+                   "[VUID-vkReleaseCapturedPipelineDataKHR-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    return disp->ReleaseCapturedPipelineDataKHR(device, pInfo, pAllocator);
 }
 
 
@@ -9193,6 +9289,22 @@ VKAPI_ATTR void VKAPI_CALL CmdOpticalFlowExecuteNV(
 }
 
 
+// ---- VK_AMD_anti_lag extension trampoline/terminators
+
+VKAPI_ATTR void VKAPI_CALL AntiLagUpdateAMD(
+    VkDevice                                    device,
+    const VkAntiLagDataAMD*                     pData) {
+    const VkLayerDispatchTable *disp = loader_get_dispatch(device);
+    if (NULL == disp) {
+        loader_log(NULL, VULKAN_LOADER_FATAL_ERROR_BIT | VULKAN_LOADER_ERROR_BIT | VULKAN_LOADER_VALIDATION_BIT, 0,
+                   "vkAntiLagUpdateAMD: Invalid device "
+                   "[VUID-vkAntiLagUpdateAMD-device-parameter]");
+        abort(); /* Intentionally fail so user can correct issue. */
+    }
+    disp->AntiLagUpdateAMD(device, pData);
+}
+
+
 // ---- VK_EXT_shader_object extension trampoline/terminators
 
 VKAPI_ATTR VkResult VKAPI_CALL CreateShadersEXT(
@@ -10351,6 +10463,28 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
     }
     if (!strcmp("vkGetImageSubresourceLayout2KHR", name)) {
         *addr = (void *)GetImageSubresourceLayout2KHR;
+        return true;
+    }
+
+    // ---- VK_KHR_pipeline_binary extension commands
+    if (!strcmp("vkCreatePipelineBinariesKHR", name)) {
+        *addr = (void *)CreatePipelineBinariesKHR;
+        return true;
+    }
+    if (!strcmp("vkDestroyPipelineBinaryKHR", name)) {
+        *addr = (void *)DestroyPipelineBinaryKHR;
+        return true;
+    }
+    if (!strcmp("vkGetPipelineKeyKHR", name)) {
+        *addr = (void *)GetPipelineKeyKHR;
+        return true;
+    }
+    if (!strcmp("vkGetPipelineBinaryDataKHR", name)) {
+        *addr = (void *)GetPipelineBinaryDataKHR;
+        return true;
+    }
+    if (!strcmp("vkReleaseCapturedPipelineDataKHR", name)) {
+        *addr = (void *)ReleaseCapturedPipelineDataKHR;
         return true;
     }
 
@@ -11640,6 +11774,12 @@ bool extension_instance_gpa(struct loader_instance *ptr_instance, const char *na
         return true;
     }
 
+    // ---- VK_AMD_anti_lag extension commands
+    if (!strcmp("vkAntiLagUpdateAMD", name)) {
+        *addr = (void *)AntiLagUpdateAMD;
+        return true;
+    }
+
     // ---- VK_EXT_shader_object extension commands
     if (!strcmp("vkCreateShadersEXT", name)) {
         *addr = (void *)CreateShadersEXT;
@@ -11947,7 +12087,7 @@ PFN_vkVoidFunction get_extension_device_proc_terminator(struct loader_device *de
     // ---- VK_EXT_full_screen_exclusive extension commands
     if (!strcmp(name, "GetDeviceGroupSurfacePresentModes2EXT")) {
         *found_name = true;
-        return dev->driver_extensions.ext_full_screen_exclusive_enabled && dev->driver_extensions.khr_device_group_enabled ?
+        return (dev->driver_extensions.ext_full_screen_exclusive_enabled && (dev->driver_extensions.khr_device_group_enabled || dev->driver_extensions.version_1_1_enabled)) ?
             (PFN_vkVoidFunction)terminator_GetDeviceGroupSurfacePresentModes2EXT : NULL;
     }
 #endif // VK_USE_PLATFORM_WIN32_KHR

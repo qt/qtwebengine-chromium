@@ -25,8 +25,9 @@ class RunThreadGroup(threading.Thread):
   - If runs are executed in parallel, multiple RunThreadGroup are used
   """
 
-  def __init__(self, runs: Iterable[Run], throw: bool = False) -> None:
+  def __init__(self, runs: Iterable[Run], index=0, throw: bool = False) -> None:
     super().__init__()
+    self._index = index
     self._exceptions = exception.Annotator(throw)
     self._runs = tuple(runs)
     assert self._runs, "Got unexpected empty runs list"
@@ -51,6 +52,10 @@ class RunThreadGroup(threading.Thread):
   def _verify_same_runner(self) -> None:
     for run in self._runs:
       assert run.runner is self._runner, "All Runs must have the same Runner."
+
+  @property
+  def index(self) -> int:
+    return self._index
 
   @property
   def runner(self) -> Runner:
@@ -81,8 +86,9 @@ class RunThreadGroup(threading.Thread):
     logging.info("=" * 80)
     label = ""
     if run.is_warmup:
-      label = " WARMUP, ignoring results"
+      label = " | WARMUP, ignoring results"
     logging.info("RUN %s/%s%s", run.index + 1, self._total_run_count, label)
+    logging.info("🏃  %s", run.name)
     logging.info("=" * 80)
 
   def run(self) -> None:

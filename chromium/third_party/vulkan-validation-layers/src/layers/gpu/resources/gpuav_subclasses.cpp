@@ -17,10 +17,10 @@
 
 #include "gpu/resources/gpuav_subclasses.h"
 
+#include "gpu/resources/gpu_shader_resources.h"
 #include "gpu/core/gpuav.h"
 #include "gpu/core/gpuav_constants.h"
 #include "gpu/descriptor_validation/gpuav_image_layout.h"
-#include "gpu/error_message/gpuav_vuids.h"
 #include "gpu/descriptor_validation/gpuav_descriptor_validation.h"
 #include "gpu/shaders/gpu_error_header.h"
 
@@ -138,7 +138,7 @@ static bool AllocateErrorLogsBuffer(Validator &gpuav, gpu::DeviceMemoryBlock &er
     VkResult result = vmaCreateBuffer(gpuav.vma_allocator_, &buffer_info, &alloc_info, &error_logs_mem.buffer,
                                       &error_logs_mem.allocation, nullptr);
     if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for error output buffer. Aborting GPU-AV.", true);
+        gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for error output buffer.", true);
         return false;
     }
 
@@ -146,13 +146,12 @@ static bool AllocateErrorLogsBuffer(Validator &gpuav, gpu::DeviceMemoryBlock &er
     result = vmaMapMemory(gpuav.vma_allocator_, error_logs_mem.allocation, reinterpret_cast<void **>(&output_buffer_ptr));
     if (result == VK_SUCCESS) {
         memset(output_buffer_ptr, 0, glsl::kErrorBufferByteSize);
-        if (gpuav.gpuav_settings.validate_descriptors) {
+        if (gpuav.gpuav_settings.shader_instrumentation.bindless_descriptor) {
             output_buffer_ptr[cst::stream_output_flags_offset] = cst::inst_buffer_oob_enabled;
         }
         vmaUnmapMemory(gpuav.vma_allocator_, error_logs_mem.allocation);
     } else {
-        gpuav.InternalError(gpuav.device, loc, "Unable to map device memory allocated for error output buffer. Aborting GPU-AV.",
-                            true);
+        gpuav.InternalError(gpuav.device, loc, "Unable to map device memory allocated for error output buffer.", true);
         return false;
     }
 
@@ -173,7 +172,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
         result = DispatchCreateDescriptorSetLayout(gpuav->device, &instrumentation_desc_set_layout_ci, nullptr,
                                                    &instrumentation_desc_set_layout_);
         if (result != VK_SUCCESS) {
-            gpuav->InternalError(gpuav->device, loc, "Unable to create instrumentation descriptor set layout. Aborting GPU-AV.");
+            gpuav->InternalError(gpuav->device, loc, "Unable to create instrumentation descriptor set layout.");
             return;
         }
     }
@@ -194,8 +193,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
         result = vmaCreateBuffer(gpuav->vma_allocator_, &buffer_info, &alloc_info, &cmd_errors_counts_buffer_.buffer,
                                  &cmd_errors_counts_buffer_.allocation, nullptr);
         if (result != VK_SUCCESS) {
-            gpuav->InternalError(gpuav->device, loc,
-                                 "Unable to allocate device memory for commands errors counts buffer. Aborting GPU-AV.", true);
+            gpuav->InternalError(gpuav->device, loc, "Unable to allocate device memory for commands errors counts buffer.", true);
             return;
         }
 
@@ -204,7 +202,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
     }
 
     // BDA snapshot
-    if (gpuav->gpuav_settings.validate_bda) {
+    if (gpuav->gpuav_settings.shader_instrumentation.buffer_device_address) {
         VkBufferCreateInfo buffer_info = vku::InitStructHelper();
         buffer_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         VmaAllocationCreateInfo alloc_info = {};
@@ -215,8 +213,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
         result = vmaCreateBuffer(gpuav->vma_allocator_, &buffer_info, &alloc_info, &bda_ranges_snapshot_.buffer,
                                  &bda_ranges_snapshot_.allocation, nullptr);
         if (result != VK_SUCCESS) {
-            gpuav->InternalError(gpuav->device, loc,
-                                 "Unable to allocate device memory for buffer device address data. Aborting GPU-AV.", true);
+            gpuav->InternalError(gpuav->device, loc, "Unable to allocate device memory for buffer device address data.", true);
             return;
         }
     }
@@ -241,8 +238,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
             result = DispatchCreateDescriptorSetLayout(gpuav->device, &validation_cmd_desc_set_layout_ci, nullptr,
                                                        &validation_cmd_desc_set_layout_);
             if (result != VK_SUCCESS) {
-                gpuav->InternalError(gpuav->device, loc,
-                                     "Unable to create descriptor set layout used for validation commands. Aborting GPU-AV.");
+                gpuav->InternalError(gpuav->device, loc, "Unable to create descriptor set layout used for validation commands.");
                 return;
             }
         }
@@ -252,8 +248,7 @@ void CommandBuffer::AllocateResources(const Location &loc) {
         result = gpuav->desc_set_manager_->GetDescriptorSet(&validation_cmd_desc_pool_, validation_cmd_desc_set_layout_,
                                                             &validation_cmd_desc_set_);
         if (result != VK_SUCCESS) {
-            gpuav->InternalError(gpuav->device, loc,
-                                 "Unable to create descriptor set used for validation commands. Aborting GPU-AV.");
+            gpuav->InternalError(gpuav->device, loc, "Unable to create descriptor set used for validation commands.");
             return;
         }
 
@@ -312,7 +307,8 @@ bool CommandBuffer::UpdateBdaRangesBuffer(const Location &loc) {
     auto gpuav = static_cast<Validator *>(&dev_data);
 
     // By supplying a "date"
-    if (!gpuav->gpuav_settings.validate_bda || bda_ranges_snapshot_version_ == gpuav->buffer_device_address_ranges_version) {
+    if (!gpuav->gpuav_settings.shader_instrumentation.buffer_device_address ||
+        bda_ranges_snapshot_version_ == gpuav->buffer_device_address_ranges_version) {
         return true;
     }
 
@@ -323,7 +319,7 @@ bool CommandBuffer::UpdateBdaRangesBuffer(const Location &loc) {
     VkResult result =
         vmaMapMemory(gpuav->vma_allocator_, bda_ranges_snapshot_.allocation, reinterpret_cast<void **>(&bda_table_ptr));
     if (result != VK_SUCCESS) {
-        gpuav->InternalError(gpuav->device, loc, "Unable to map device memory in UpdateBdaRangesBuffer. Aborting GPU-AV.", true);
+        gpuav->InternalError(gpuav->device, loc, "Unable to map device memory in UpdateBdaRangesBuffer.", true);
         return false;
     }
 
@@ -348,7 +344,7 @@ bool CommandBuffer::UpdateBdaRangesBuffer(const Location &loc) {
         problem_string << "Number of buffer device addresses ranges in use (" << total_address_ranges_count
                        << ") is greater than khronos_validation.gpuav_max_buffer_device_addresses ("
                        << gpuav->gpuav_settings.max_bda_in_use
-                       << "). Truncating buffer device address table could result in invalid validation. Aborting GPU-AV.";
+                       << "). Truncating buffer device address table could result in invalid validation.";
         gpuav->InternalError(gpuav->device, loc, problem_string.str().c_str());
         return false;
     }
@@ -398,7 +394,7 @@ void CommandBuffer::ResetCBState() {
     per_command_error_loggers.clear();
 
     for (auto &buffer_info : di_input_buffer_list) {
-        vmaDestroyBuffer(gpuav->vma_allocator_, buffer_info.bindless_state_buffer, buffer_info.bindless_state_buffer_allocation);
+        vmaDestroyBuffer(gpuav->vma_allocator_, buffer_info.bindless_state.buffer, buffer_info.bindless_state.allocation);
     }
     di_input_buffer_list.clear();
     current_bindless_buffer = VK_NULL_HANDLE;
@@ -435,8 +431,7 @@ void CommandBuffer::ClearCmdErrorsCountsBuffer(const Location &loc) const {
     VkResult result = vmaMapMemory(gpuav->vma_allocator_, cmd_errors_counts_buffer_.allocation,
                                    reinterpret_cast<void **>(&cmd_errors_counts_buffer_ptr));
     if (result != VK_SUCCESS) {
-        gpuav->InternalError(gpuav->device, loc, "Unable to map device memory for commands errors counts buffer. Aborting GPU-AV.",
-                             true);
+        gpuav->InternalError(gpuav->device, loc, "Unable to map device memory for commands errors counts buffer.", true);
         return;
     }
     std::memset(cmd_errors_counts_buffer_ptr, 0, static_cast<size_t>(GetCmdErrorsCountsBufferByteSize()));
@@ -446,7 +441,7 @@ void CommandBuffer::ClearCmdErrorsCountsBuffer(const Location &loc) const {
 bool CommandBuffer::PreProcess(const Location &loc) {
     auto gpuav = static_cast<Validator *>(&dev_data);
 
-    bool succeeded = UpdateBindlessStateBuffer(*gpuav, *this, state_.vma_allocator_, loc);
+    bool succeeded = UpdateBindlessStateBuffer(*gpuav, *this, loc);
     if (!succeeded) {
         return false;
     }
@@ -528,14 +523,6 @@ void CommandBuffer::PostProcess(VkQueue queue, const Location &loc) {
     if (gpuav_success) {
         UpdateCmdBufImageLayouts(state_, *this);
     }
-}
-
-Queue::Queue(Validator &state, VkQueue q, uint32_t family_index, uint32_t queue_index, VkDeviceQueueCreateFlags flags,
-             const VkQueueFamilyProperties &qfp)
-    : gpu_tracker::Queue(state, q, family_index, queue_index, flags, qfp) {}
-
-vvl::PreSubmitResult Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
-    return gpu_tracker::Queue::PreSubmit(std::move(submissions));
 }
 
 }  // namespace gpuav

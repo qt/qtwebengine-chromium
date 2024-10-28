@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import abc
 import argparse
+import dataclasses
 import datetime as dt
-import logging
 from typing import Iterator
 
 from crossbench import cli_helper
@@ -56,6 +56,7 @@ class PlaybackController(abc.ABC):
     pass
 
 
+@dataclasses.dataclass(frozen=True)
 class ForeverPlaybackController(PlaybackController):
 
   def __iter__(self) -> Iterator[None]:
@@ -63,14 +64,9 @@ class ForeverPlaybackController(PlaybackController):
       yield None
 
 
+@dataclasses.dataclass(frozen=True)
 class TimeoutPlaybackController(PlaybackController):
-
-  def __init__(self, duration: dt.timedelta) -> None:
-    self._duration = duration
-
-  @property
-  def duration(self) -> dt.timedelta:
-    return self._duration
+  duration : dt.timedelta
 
   def __iter__(self) -> Iterator[None]:
     end = dt.datetime.now() + self.duration
@@ -80,15 +76,13 @@ class TimeoutPlaybackController(PlaybackController):
         return
 
 
+@dataclasses.dataclass(frozen=True)
 class RepeatPlaybackController(PlaybackController):
+  count : int
 
-  def __init__(self, count: int) -> None:
-    self._count = cli_helper.parse_positive_int(count, " page playback count")
+  def __post_init__(self):
+    cli_helper.parse_positive_int(self.count, " page playback count")
 
   def __iter__(self) -> Iterator[None]:
-    for _ in range(self._count):
+    for _ in range(self.count):
       yield None
-
-  @property
-  def count(self) -> int:
-    return self._count

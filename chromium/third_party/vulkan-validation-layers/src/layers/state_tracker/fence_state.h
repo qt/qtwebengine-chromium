@@ -22,7 +22,6 @@
 #include "state_tracker/state_object.h"
 #include "state_tracker/submission_reference.h"
 #include <future>
-#include <mutex>
 
 class ValidationStateTracker;
 
@@ -31,14 +30,27 @@ namespace vvl {
 class Queue;
 class Swapchain;
 
-// present-based sync is when a fence from AcquireNextImage is used to synchronize
-// with submissions presented in one of the previous frames.
-// More common scheme is to use QueueSubmit fence for frame synchronization.
-struct PresentSync {
-    // Queue submissions that will be notified when WaitForFences is called.
-    small_vector<SubmissionReference, 2, uint32_t> submissions;
+//
+// AcquireFenceSync synchronization is when a fence from the AcquireNextImage call is used to
+// synchronize with queue submissions that generated one of the previous frames.
+// This is in contrast to a more common approach when the fence from QueueSubmit is used for
+// host synchronization.
+//
+// The sequence that connects image acquire fence to one of the previous submissions
+// (in chronologically backward order):
+//  a) the wait on the image acquire fence is finished ->
+//  b) the corresponding image is acquired ->
+//  c) the previous presentation of this image is finished (except for the first acquire) ->
+//  d) corresponding present request finished waiting on the queue submit semaphore ->
+//  e) corresponding queue batch finished execution and signaled that semaphore
+//
+// Acquire fence synchronization allows the use of the fence from step a) to wait on the submit batch from step e).
+//
+struct AcquireFenceSync {
+    // The queue submissions that will be notified when WaitForFences is called.
+    small_vector<SubmissionReference, 2, uint32_t> submission_refs;
 
-    // Swapchain associated with this PresentSync.
+    // The swapchain associated with this synchronization instance.
     std::shared_ptr<vvl::Swapchain> swapchain;
 };
 
@@ -50,22 +62,18 @@ class Fence : public RefcountedStateObject {
         kExternalTemporary,
         kExternalPermanent,
     };
-    // Default constructor
-    Fence(ValidationStateTracker &dev, VkFence handle, const VkFenceCreateInfo *pCreateInfo)
-        : RefcountedStateObject(handle, kVulkanObjectTypeFence),
-          flags(pCreateInfo->flags),
-          exportHandleTypes(GetExportHandleTypes(pCreateInfo)),
-          state_((pCreateInfo->flags & VK_FENCE_CREATE_SIGNALED_BIT) ? kRetired : kUnsignaled),
-          completed_(),
-          waiter_(completed_.get_future()),
-          dev_data_(dev) {}
+
+    Fence(ValidationStateTracker &dev, VkFence handle, const VkFenceCreateInfo *pCreateInfo);
 
     VkFence VkHandle() const { return handle_.Cast<VkFence>(); }
+    // TODO: apply ReadLock as Semaphore does, or consider reading enums without lock.
+    // Consider if more high-level operation should be exposed, because
+    // (State() == a && Scope() == b) can be racey, but this could be fine if the
+    // goal is not to crash and validity is based on external synchronization.
+    enum State State() const { return state_; }
+    enum Scope Scope() const { return scope_; }
 
     bool EnqueueSignal(Queue *queue_state, uint64_t next_seq);
-
-    void SetPresentSync(const PresentSync &present_sync);
-    bool IsPresentSyncSwapchainChanged(const std::shared_ptr<vvl::Swapchain> &current_swapchain) const;
 
     // Notify the queue that the fence has signalled and then wait for the queue
     // to update state.
@@ -74,35 +82,20 @@ class Fence : public RefcountedStateObject {
     // Update state of the completed fence. This should only be called by Queue.
     void Retire();
 
+    // vkResetFences
     void Reset();
 
     void Import(VkExternalFenceHandleTypeFlagBits handle_type, VkFenceImportFlags flags);
-
     void Export(VkExternalFenceHandleTypeFlagBits handle_type);
+    std::optional<VkExternalFenceHandleTypeFlagBits> ImportedHandleType() const;
+
+    void SetAcquireFenceSync(const AcquireFenceSync &acquire_fence_sync);
+    bool IsAcquireFenceSyncSwapchainChanged(const std::shared_ptr<vvl::Swapchain> &current_swapchain) const;
 
     const VkFenceCreateFlags flags;
-    const VkExternalFenceHandleTypeFlags exportHandleTypes;
-
-    enum State State() const { return state_; }
-    enum Scope Scope() const { return scope_; }
-
-    // used to catch if GetFence() is called multiple times
-    bool HasImportedHandleType() const {
-        auto guard = ReadLock();
-        return imported_handle_type_.has_value();
-    }
-
-    VkExternalFenceHandleTypeFlagBits ImportedHandleType() const {
-        auto guard = ReadLock();
-        assert(imported_handle_type_.has_value());
-        return imported_handle_type_.value();
-    }
+    const VkExternalFenceHandleTypeFlags export_handle_types;
 
   private:
-    static VkExternalFenceHandleTypeFlags GetExportHandleTypes(const VkFenceCreateInfo *info) {
-        auto export_info = vku::FindStructInPNextChain<VkExportFenceCreateInfo>(info->pNext);
-        return export_info ? export_info->handleTypes : 0;
-    }
     ReadLockGuard ReadLock() const { return ReadLockGuard(lock_); }
     WriteLockGuard WriteLock() { return WriteLockGuard(lock_); }
 
@@ -114,7 +107,7 @@ class Fence : public RefcountedStateObject {
     mutable std::shared_mutex lock_;
     std::promise<void> completed_;
     std::shared_future<void> waiter_;
-    PresentSync present_sync_;
+    AcquireFenceSync acquire_fence_sync_;
     ValidationStateTracker &dev_data_;
 };
 

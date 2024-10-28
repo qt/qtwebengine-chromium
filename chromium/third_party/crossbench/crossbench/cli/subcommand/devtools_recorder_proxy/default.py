@@ -24,7 +24,7 @@ from crossbench import path as pth
 from crossbench.helper.state import BaseState, StateMachine
 
 if TYPE_CHECKING:
-  from crossbench.plt.base import ListCmdArgsT
+  from crossbench.plt.base import ListCmdArgs
   from crossbench.types import JsonDict
 
 
@@ -36,8 +36,8 @@ class State(BaseState):
 
 @enum.unique
 class Response(compat.StrEnum):
-  STATUS: "Response" = "status"
-  OUTPUT: "Response" = "output"
+  STATUS = "status"
+  OUTPUT = "output"
 
 
 class AuthenticationError(ValueError):
@@ -89,7 +89,7 @@ class CrossbenchDevToolsRecorderProxy:
   async def run_server(self) -> None:
     try:
       serve = websockets.serve(self.handler, "localhost", self.DEFAULT_PORT)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
       logging.exception(e)
       serve = websockets.serve(self.handler, "localhost")
     async with serve as server:
@@ -125,12 +125,12 @@ class CrossbenchDevToolsRecorderProxy:
         response_type, payload = result
         response["payload"] = payload
         response["type"] = response_type.value
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
       logging.exception(e)
       response["error"] = str(type(e).__name__)
     try:
       response_json = json.dumps(response)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
       logging.exception(e)
       response["success"] = False
       response["error"] = "Failed to encode message"
@@ -174,7 +174,7 @@ class CrossbenchDevToolsRecorderProxy:
     assert self._crossbench_process is None
     cb_path = pth.LocalPath(__file__).parents[2] / "cb.py"
     os.environ["PYTHONUNBUFFERED"] = "1"
-    cmd: ListCmdArgsT = []
+    cmd: ListCmdArgs = []
     if args.get("cmd") == "--help":
       cmd = ["load", "--help"]
       self._print_cmd_output = False

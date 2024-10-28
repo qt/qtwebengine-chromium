@@ -54,7 +54,7 @@
 #include "components/history/core/browser/visit_database.h"
 #include "components/history/core/browser/visit_delegate.h"
 #include "components/history/core/browser/web_history_service.h"
-#include "components/sync/model/proxy_model_type_controller_delegate.h"
+#include "components/sync/model/proxy_data_type_controller_delegate.h"
 #include "components/visitedlink/core/visited_link.h"
 #include "net/base/schemeful_site.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -465,7 +465,6 @@ void HistoryService::RemoveObserver(HistoryServiceObserver* observer) {
 void HistoryService::SetDeviceInfoServices(
     syncer::DeviceInfoTracker* device_info_tracker,
     syncer::LocalDeviceInfoProvider* local_device_info_provider) {
-  CHECK(history::IsSyncSegmentsDataEnabled());
   CHECK(device_info_tracker != nullptr);
   CHECK(local_device_info_provider != nullptr);
 
@@ -487,7 +486,6 @@ void HistoryService::SetDeviceInfoServices(
 
 void HistoryService::SetCanAddForeignVisitsToSegmentsOnBackend(
     bool add_foreign_visits) {
-  CHECK(history::IsSyncSegmentsDataEnabled());
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   backend_task_runner_->PostTask(
@@ -498,7 +496,6 @@ void HistoryService::SetCanAddForeignVisitsToSegmentsOnBackend(
 
 void HistoryService::OnDeviceInfoChange() {
   TRACE_EVENT0("browser,startup", "HistoryService::OnDeviceInfoChange");
-  CHECK(history::IsSyncSegmentsDataEnabled());
   CHECK(device_info_tracker_ != nullptr);
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -528,7 +525,6 @@ void HistoryService::OnDeviceInfoShutdown() {
 }
 
 void HistoryService::SendLocalDeviceOriginatorCacheGuidToBackend() {
-  CHECK(history::IsSyncSegmentsDataEnabled());
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(local_device_info_provider_ != nullptr);
 
@@ -684,6 +680,11 @@ void HistoryService::AddPartitionedVisitedLinks(
   }
   // We require each element of the triple-partition key to be valid GURLs.
   if (!args.top_level_url->is_valid() || !args.referrer.is_valid()) {
+    return;
+  }
+  // When links are partitioned and the navigation comes from an ephemeral
+  // context we want to avoid adding it to the hashtable.
+  if (args.is_ephemeral) {
     return;
   }
   // Add the VisitedLink representing each navigation to the partitioned
@@ -1579,9 +1580,9 @@ void HistoryService::ScheduleTask(SchedulePriority priority,
   // TODO(brettw): Do prioritization.
   // NOTE(mastiz): If this implementation changes, be cautious with implications
   // for sync, because a) the sync engine (sync thread) post tasks directly to
-  // the task runner via ModelTypeProcessorProxy (which is subtle); and b)
+  // the task runner via DataTypeProcessorProxy (which is subtle); and b)
   // SyncServiceImpl (UI thread) does the same via
-  // ProxyModelTypeControllerDelegate.
+  // ProxyDataTypeControllerDelegate.
   backend_task_runner_->PostTask(FROM_HERE, std::move(task));
 }
 
@@ -1604,13 +1605,13 @@ HistoryService::GetDeleteDirectivesSyncableService() {
   return delete_directive_handler_->AsWeakPtr();
 }
 
-std::unique_ptr<syncer::ModelTypeControllerDelegate>
+std::unique_ptr<syncer::DataTypeControllerDelegate>
 HistoryService::GetHistorySyncControllerDelegate() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Note that a callback is bound for GetHistorySyncControllerDelegate()
   // because this getter itself must also run in the backend sequence, and the
   // proxy object below will take care of that.
-  return std::make_unique<syncer::ProxyModelTypeControllerDelegate>(
+  return std::make_unique<syncer::ProxyDataTypeControllerDelegate>(
       backend_task_runner_,
       base::BindRepeating(&HistoryBackend::GetHistorySyncControllerDelegate,
                           base::Unretained(history_backend_.get())));

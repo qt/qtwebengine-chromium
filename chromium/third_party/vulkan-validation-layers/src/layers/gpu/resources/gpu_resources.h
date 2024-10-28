@@ -18,15 +18,10 @@
 #pragma once
 
 #include "containers/custom_containers.h"
-#include "error_message/logging.h"
-#include "generated/error_location_helper.h"
 #include "vma/vma.h"
 
-#include <optional>
 #include <unordered_map>
-#include <utility>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 namespace gpu {
 
@@ -56,13 +51,7 @@ class DescriptorSetManager {
 struct DeviceMemoryBlock {
     VkBuffer buffer = VK_NULL_HANDLE;
     VmaAllocation allocation = VK_NULL_HANDLE;
-    void Destroy(VmaAllocator allocator) {
-        if (buffer != VK_NULL_HANDLE) {
-            vmaDestroyBuffer(allocator, buffer, allocation);
-            buffer = VK_NULL_HANDLE;
-            allocation = VK_NULL_HANDLE;
-        }
-    }
+    void Destroy(VmaAllocator allocator);
     bool IsNull() { return buffer == VK_NULL_HANDLE; }
 };
 
@@ -119,6 +108,7 @@ class SharedResourcesManager {
         bool operator()(TypeInfoRef lhs, TypeInfoRef rhs) const { return lhs.get() == rhs.get(); }
     };
 
+    // Tried to use vvl::unordered_map, but fails to compile on Windows currently
     std::unordered_map<TypeInfoRef, std::pair<void * /*object*/, void (*)(void *) /*object destructor*/>, Hasher, EqualTo>
         shared_validation_resources_map_;
 };

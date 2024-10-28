@@ -15,21 +15,19 @@
 #pragma once
 
 #include <stdint.h>
-#include "pass.h"
+#include "inject_conditional_function_pass.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
-
-class Module;
-struct Function;
-struct BasicBlock;
 
 // Create a pass to instrument physical buffer address checking
 // This pass instruments all physical buffer address references to check that
 // all referenced bytes fall in a valid buffer.
-class BufferDeviceAddressPass : public Pass {
+class BufferDeviceAddressPass : public InjectConditionalFunctionPass {
   public:
-    BufferDeviceAddressPass(Module& module) : Pass(module, true) {}
+    BufferDeviceAddressPass(Module& module) : InjectConditionalFunctionPass(module) {}
+    const char* Name() const final { return "BufferDeviceAddressPass"; }
+    void PrintDebugInfo() final;
 
   private:
     bool AnalyzeInstruction(const Function& function, const Instruction& inst) final;
@@ -44,4 +42,4 @@ class BufferDeviceAddressPass : public Pass {
 };
 
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

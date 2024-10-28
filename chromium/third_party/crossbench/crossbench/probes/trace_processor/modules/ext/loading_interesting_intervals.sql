@@ -142,4 +142,3 @@ CREATE VIEW interesting_slice_end
 AS
 SELECT interval_id, ts AS end_ts, original_ts, original_dur, name, arg_set_id, track_id
 FROM interesting_slice_end_span;
-

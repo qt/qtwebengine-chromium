@@ -85,7 +85,7 @@ def try_get_parent_app_name(platform: plt.Platform) -> str:
         if len(label_parts) <= 3:
           continue
         launched_apps[pid] = label_parts[3]
-  except Exception as e:
+  except Exception as e:  # pylint: disable=broad-except
     logging.debug("Could not list all parents: %s", e)
     return ""
   if not launched_apps:
@@ -95,7 +95,7 @@ def try_get_parent_app_name(platform: plt.Platform) -> str:
     for parent in psutil.Process(os.getpid()).parents():
       if label := launched_apps.get(str(parent.pid), ""):
         return label
-  except Exception as e:
+  except Exception as e:  # pylint: disable=broad-except
     logging.debug("Could not find parent parent app process: %s", e)
   return ""
 

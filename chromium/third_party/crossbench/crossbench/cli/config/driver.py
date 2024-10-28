@@ -92,7 +92,7 @@ class DriverConfig(ConfigObject):
     return cls(BrowserDriverType.default())
 
   @classmethod
-  def loads(cls, value: str) -> DriverConfig:
+  def parse_str(cls, value: str) -> DriverConfig:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     # Variant 1: $PATH
@@ -107,13 +107,13 @@ class DriverConfig(ConfigObject):
             f"Driver path does not exist: {repr(value)}")
       if value[0] == "{":
         # Variant 1: full hjson config
-        return cls.load_inline_hjson(value)
+        return cls.parse_inline_hjson(value)
       # Variant 2: $DRIVER_TYPE
       try:
         driver_type = BrowserDriverType.parse(value)
       except argparse.ArgumentTypeError as original_error:
         try:
-          return cls.load_short_settings(value, plt.PLATFORM)
+          return cls.parse_short_settings(value, plt.PLATFORM)
         except AmbiguousDriverIdentifier:  # pylint: disable=try-except-raise
           raise
         except ValueError as e:
@@ -122,22 +122,22 @@ class DriverConfig(ConfigObject):
     return DriverConfig(driver_type, path)
 
   @classmethod
-  def load_short_settings(cls, value: str,
-                          platform: plt.Platform) -> DriverConfig:
+  def parse_short_settings(cls, value: str,
+                           platform: plt.Platform) -> DriverConfig:
     """Check for short versions and multiple candidates"""
     logging.debug("Looking for driver candidates: %s", value)
     candidate: Optional[DriverConfig]
-    if candidate := cls.try_load_adb_settings(value, platform):
+    if candidate := cls.try_parse_adb_settings(value, platform):
       return candidate
     if platform.is_macos:
-      if candidate := cls.try_load_ios_settings(value, platform):
+      if candidate := cls.try_parse_ios_settings(value, platform):
         return candidate
     # TODO: add more custom parsing here
     raise ValueError("Unknown setting")
 
   @classmethod
-  def try_load_adb_settings(cls, value: str,
-                            platform: plt.Platform) -> Optional[DriverConfig]:
+  def try_parse_adb_settings(cls, value: str,
+                             platform: plt.Platform) -> Optional[DriverConfig]:
     candidate_serials: List[str] = []
     pattern: re.Pattern = cls.compile_search_pattern(value)
     for serial, info in adb_devices(platform).items():
@@ -162,8 +162,8 @@ class DriverConfig(ConfigObject):
         BrowserDriverType.ANDROID, device_id=candidate_serials[0])
 
   @classmethod
-  def try_load_ios_settings(cls, value: str,
-                            platform: plt.Platform) -> Optional[DriverConfig]:
+  def try_parse_ios_settings(cls, value: str,
+                             platform: plt.Platform) -> Optional[DriverConfig]:
     candidate_serials: List[str] = []
     pattern: re.Pattern = cls.compile_search_pattern(value)
     for uuid, device_info in ios_devices(platform).items():
@@ -187,14 +187,14 @@ class DriverConfig(ConfigObject):
   def compile_search_pattern(cls, maybe_pattern: str) -> re.Pattern:
     try:
       return re.compile(maybe_pattern)
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
       logging.debug(
           "Falling back to full string match for "
           "invalid regexp search pattern: %s %s", maybe_pattern, e)
       return re.compile(re.escape(maybe_pattern))
 
   @classmethod
-  def load_dict(cls, config: Dict[str, Any]) -> DriverConfig:
+  def parse_dict(cls, config: Dict[str, Any]) -> DriverConfig:
     return cls.config_parser().parse(config)
 
   @classmethod
@@ -260,7 +260,7 @@ class DriverConfig(ConfigObject):
 
   def validate_android(self) -> None:
     platform = plt.PLATFORM
-    devices = adb_devices(platform)
+    devices = adb_devices(platform, self.adb_bin)
     names = list(devices.keys())
     if not devices:
       raise argparse.ArgumentTypeError("No ADB devices attached.")
@@ -313,8 +313,8 @@ class DriverConfig(ConfigObject):
       # for attached simulators or devices. Currently only a single device
       # is supported
       pass
-    if (self.type == BrowserDriverType.LINUX_SSH or
-        self.type == BrowserDriverType.CHROMEOS_SSH):
+    if self.type in (BrowserDriverType.LINUX_SSH,
+                     BrowserDriverType.CHROMEOS_SSH):
       return self.get_ssh_platform()
     return plt.PLATFORM
 

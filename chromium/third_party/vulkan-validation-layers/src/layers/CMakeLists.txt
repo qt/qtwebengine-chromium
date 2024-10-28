@@ -218,6 +218,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/cmd_validation_trace_rays_rgen.h
     ${API_TYPE}/generated/cmd_validation_trace_rays_rgen.cpp
     gpu/core/gpu_settings.h
+    gpu/core/gpu_shader_cache_hash.h
     gpu/core/gpuav_constants.h
     gpu/cmd_validation/gpuav_cmd_validation_common.h
     gpu/cmd_validation/gpuav_cmd_validation_common.cpp
@@ -250,6 +251,7 @@ target_sources(vvl PRIVATE
     gpu/instrumentation/gpuav_instrumentation.cpp
     gpu/resources/gpuav_subclasses.cpp
     gpu/resources/gpuav_subclasses.h
+    gpu/resources/gpu_shader_resources.h
     gpu/resources/gpu_resources.h
     gpu/resources/gpu_resources.cpp
     gpu/shaders/gpu_error_codes.h
@@ -319,6 +321,8 @@ target_sources(vvl PRIVATE
     stateless/sl_shader_object.cpp
     stateless/sl_synchronization.cpp
     stateless/sl_utils.cpp
+    stateless/sl_vuid_maps.cpp
+    stateless/sl_vuid_maps.h
     stateless/sl_wsi.cpp
     stateless/stateless_validation.h
     sync/sync_access_context.cpp
@@ -351,6 +355,7 @@ target_sources(vvl PRIVATE
     utils/shader_utils.h
     layer_options.cpp
     layer_options.h
+    profiling/profiling.h
 )
 get_target_property(LAYER_SOURCES vvl SOURCES)
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${LAYER_SOURCES})
@@ -416,6 +421,26 @@ target_link_libraries(vvl PRIVATE
     gpu_av_spirv
     VkLayer_utils
 )
+
+if (VVL_ENABLE_TRACY)
+    # Rely on FetchContent to get Tracy, it is simple
+    # update_deps.py is too chaotic. Quite ok since Tracy is intended as a dev tool
+    include(FetchContent)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG v0.11.0
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE)
+
+    FetchContent_MakeAvailable(tracy)
+
+    target_sources(vvl PRIVATE
+        profiling/profiling.h
+        profiling/profiling.cpp
+    )
+    target_link_libraries(vvl PRIVATE TracyClient)
+endif()
 
 target_include_directories(vvl SYSTEM PRIVATE external)
 

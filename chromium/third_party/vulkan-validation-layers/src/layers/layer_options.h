@@ -27,8 +27,6 @@
 
 #define OBJECT_LAYER_NAME "VK_LAYER_KHRONOS_validation"
 
-extern std::vector<std::pair<uint32_t, uint32_t>> custom_stype_info;
-
 enum ValidationCheckDisables {
     VALIDATION_CHECK_DISABLE_COMMAND_BUFFER_STATE,
     VALIDATION_CHECK_DISABLE_OBJECT_IN_USE,
@@ -80,87 +78,41 @@ enum EnableFlags {
 using CHECK_DISABLED = std::array<bool, kMaxDisableFlags>;
 using CHECK_ENABLED = std::array<bool, kMaxEnableFlags>;
 
-// Process validation features, flags and settings specified through extensions, a layer settings file, or environment variables
+// General settings to be used by all parts of the Validation Layers
+struct GlobalSettings {
+    bool fine_grained_locking = true;
 
+    bool debug_disable_spirv_val = false;
+};
+
+class DebugReport;
 struct GpuAVSettings;
 struct DebugPrintfSettings;
 struct SyncValSettings;
 struct MessageFormatSettings;
 struct ConfigAndEnvSettings {
+    // Matches up with what is passed down to VK_EXT_layer_settings
     const char *layer_description;
+
+    // Used so we can find things like VkValidationFeaturesEXT
     const VkInstanceCreateInfo *create_info;
+
+    // Find grain way to turn off/on parts of validation
     CHECK_ENABLED &enables;
     CHECK_DISABLED &disables;
-    vvl::unordered_set<uint32_t> &message_filter_list;
-    uint32_t *duplicate_message_limit;
-    MessageFormatSettings *message_format_settings;
-    bool *fine_grained_locking;
+
+    // Settings for DebugReport
+    DebugReport *debug_report;
+
+    GlobalSettings* global_settings;
+
+    // Individual settings for different internal layers
     GpuAVSettings *gpuav_settings;
     DebugPrintfSettings *printf_settings;
     SyncValSettings *syncval_settings;
 };
+const std::vector<std::string> &GetDisableFlagNameHelper();
+const std::vector<std::string> &GetEnableFlagNameHelper();
 
-static const vvl::unordered_map<std::string, VkValidationFeatureDisableEXT> VkValFeatureDisableLookup = {
-    {"VK_VALIDATION_FEATURE_DISABLE_SHADERS_EXT", VK_VALIDATION_FEATURE_DISABLE_SHADERS_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_THREAD_SAFETY_EXT", VK_VALIDATION_FEATURE_DISABLE_THREAD_SAFETY_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_API_PARAMETERS_EXT", VK_VALIDATION_FEATURE_DISABLE_API_PARAMETERS_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_OBJECT_LIFETIMES_EXT", VK_VALIDATION_FEATURE_DISABLE_OBJECT_LIFETIMES_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_CORE_CHECKS_EXT", VK_VALIDATION_FEATURE_DISABLE_CORE_CHECKS_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_UNIQUE_HANDLES_EXT", VK_VALIDATION_FEATURE_DISABLE_UNIQUE_HANDLES_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_SHADER_VALIDATION_CACHE_EXT", VK_VALIDATION_FEATURE_DISABLE_SHADER_VALIDATION_CACHE_EXT},
-    {"VK_VALIDATION_FEATURE_DISABLE_ALL_EXT", VK_VALIDATION_FEATURE_DISABLE_ALL_EXT},
-};
-
-static const vvl::unordered_map<std::string, VkValidationFeatureEnableEXT> VkValFeatureEnableLookup = {
-    {"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT", VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT},
-    {"VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT",
-     VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT},
-    {"VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT", VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT},
-    {"VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT", VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT},
-    {"VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT", VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT},
-};
-
-static const vvl::unordered_map<std::string, ValidationCheckDisables> ValidationDisableLookup = {
-    {"VALIDATION_CHECK_DISABLE_COMMAND_BUFFER_STATE", VALIDATION_CHECK_DISABLE_COMMAND_BUFFER_STATE},
-    {"VALIDATION_CHECK_DISABLE_OBJECT_IN_USE", VALIDATION_CHECK_DISABLE_OBJECT_IN_USE},
-    {"VALIDATION_CHECK_DISABLE_QUERY_VALIDATION", VALIDATION_CHECK_DISABLE_QUERY_VALIDATION},
-    {"VALIDATION_CHECK_DISABLE_IMAGE_LAYOUT_VALIDATION", VALIDATION_CHECK_DISABLE_IMAGE_LAYOUT_VALIDATION},
-};
-
-static const vvl::unordered_map<std::string, ValidationCheckEnables> ValidationEnableLookup = {
-    {"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM", VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM},
-    {"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD", VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD},
-    {"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG", VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG},
-    {"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA", VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA},
-    {"VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ALL", VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ALL},
-};
-
-// This should mirror the 'DisableFlags' enumerated type
-static const std::vector<std::string> DisableFlagNameHelper = {
-    "VALIDATION_CHECK_DISABLE_COMMAND_BUFFER_STATE",                    // command_buffer_state,
-    "VALIDATION_CHECK_DISABLE_OBJECT_IN_USE",                           // object_in_use,
-    "VALIDATION_CHECK_DISABLE_QUERY_VALIDATION",                        // query_validation,
-    "VALIDATION_CHECK_DISABLE_IMAGE_LAYOUT_VALIDATION",                 // image_layout_validation,
-    "VK_VALIDATION_FEATURE_DISABLE_OBJECT_LIFETIMES_EXT",               // object_tracking,
-    "VK_VALIDATION_FEATURE_DISABLE_CORE_CHECKS_EXT",                    // core_checks,
-    "VK_VALIDATION_FEATURE_DISABLE_THREAD_SAFETY_EXT",                  // thread_safety,
-    "VK_VALIDATION_FEATURE_DISABLE_API_PARAMETERS_EXT",                 // stateless_checks,
-    "VK_VALIDATION_FEATURE_DISABLE_UNIQUE_HANDLES_EXT",                 // handle_wrapping,
-    "VK_VALIDATION_FEATURE_DISABLE_SHADERS_EXT",                        // shader_validation,
-    "VK_VALIDATION_FEATURE_DISABLE_SHADER_VALIDATION_CACHING_EXT",      // shader_validation_caching
-};
-
-// This should mirror the 'EnableFlags' enumerated type
-static const std::vector<std::string> EnableFlagNameHelper = {
-    "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT",                       // gpu_validation,
-    "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT",  // gpu_validation_reserve_binding_slot,
-    "VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT",                     // best_practices,
-    "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM",                         // vendor_specific_arm,
-    "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD",                         // vendor_specific_amd,
-    "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG",                         // vendor_specific_img,
-    "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA",                      // vendor_specific_nvidia,
-    "VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT",                       // debug_printf,
-    "VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT",         // sync_validation,
-};
-
+// Process validation features, flags and settings specified through extensions, a layer settings file, or environment variables
 void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data);

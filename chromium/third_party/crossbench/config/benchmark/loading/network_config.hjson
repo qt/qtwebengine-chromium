@@ -1,7 +1,0 @@
-{
-  type: "wpr",
-  url: "gs://chrome-partner-telemetry/loading_benchmark/archive.wprgo",
-  // Uncomment the following line and provide the path to the wpr.go executable
-  // in case crossbench can't find it automatically.
-  // wpr_go_bin: ".../catapult/web_page_replay_go/src/wpr.go",
-}

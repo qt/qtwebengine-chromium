@@ -74,6 +74,8 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
 
     void ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag);
     void ApplyAcquireWait(const AcquiredImage &acquired);
+
+     // Go through every queue batch context and apply synchronization operation
     template <typename BatchOp>
     void ForAllQueueBatchContexts(BatchOp &&op);
 
@@ -91,17 +93,19 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
     std::vector<QueueBatchContext::ConstPtr> GetLastBatches(std::function<bool(const QueueBatchContext::ConstPtr &)> filter) const;
     std::vector<QueueBatchContext::Ptr> GetLastBatches(std::function<bool(const QueueBatchContext::ConstPtr &)> filter);
 
-    std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer cb, const VkCommandBufferAllocateInfo *pCreateInfo,
+    std::shared_ptr<vvl::CommandBuffer> CreateCmdBufferState(VkCommandBuffer handle,
+                                                             const VkCommandBufferAllocateInfo *allocate_info,
                                                              const vvl::CommandPool *cmd_pool) override;
     std::shared_ptr<vvl::Swapchain> CreateSwapchainState(const VkSwapchainCreateInfoKHR *create_info,
                                                          VkSwapchainKHR swapchain) final;
-    std::shared_ptr<vvl::Image> CreateImageState(VkImage img, const VkImageCreateInfo *pCreateInfo,
-                                                 VkFormatFeatureFlags2KHR features) final;
+    std::shared_ptr<vvl::Image> CreateImageState(VkImage handle, const VkImageCreateInfo *create_info,
+                                                 VkFormatFeatureFlags2 features) final;
 
-    std::shared_ptr<vvl::Image> CreateImageState(VkImage img, const VkImageCreateInfo *pCreateInfo, VkSwapchainKHR swapchain,
-                                                 uint32_t swapchain_index, VkFormatFeatureFlags2KHR features) final;
-    std::shared_ptr<vvl::ImageView> CreateImageViewState(const std::shared_ptr<vvl::Image> &image_state, VkImageView iv,
-                                                         const VkImageViewCreateInfo *ci, VkFormatFeatureFlags2KHR ff,
+    std::shared_ptr<vvl::Image> CreateImageState(VkImage handle, const VkImageCreateInfo *create_info, VkSwapchainKHR swapchain,
+                                                 uint32_t swapchain_index, VkFormatFeatureFlags2 features) final;
+    std::shared_ptr<vvl::ImageView> CreateImageViewState(const std::shared_ptr<vvl::Image> &image_state, VkImageView handle,
+                                                         const VkImageViewCreateInfo *create_info,
+                                                         VkFormatFeatureFlags2 format_features,
                                                          const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props) final;
 
     void RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,

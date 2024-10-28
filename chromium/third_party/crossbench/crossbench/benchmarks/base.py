@@ -15,10 +15,13 @@ from ordered_set import OrderedSet
 
 from crossbench import cli_helper, helper
 from crossbench.cli.parser import CrossBenchArgumentParser
+from crossbench.flags.base import Flags
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
+  from crossbench import path as pth
+  from crossbench.browsers.browser import Browser
   from crossbench.runner.runner import Runner
 
 
@@ -90,6 +93,19 @@ class Benchmark(abc.ABC):
     }
 
   @classmethod
+  def default_probe_config_path(cls) -> Optional[pth.LocalPath]:
+    return None
+
+  @classmethod
+  def default_network_config_path(cls) -> Optional[pth.LocalPath]:
+    return None
+
+  @classmethod
+  def extra_flags(cls, browser: Browser) -> Flags:
+    del browser
+    return Flags()
+
+  @classmethod
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
     del args
     return {}
@@ -121,10 +137,32 @@ StoryT = TypeVar("StoryT", bound=Story)
 
 
 class StoryFilter(Generic[StoryT], metaclass=abc.ABCMeta):
+  CAN_COMBINE_STORIES: bool = True
 
   @classmethod
   def add_cli_parser(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument(
+        "--stories",
+        "--story",
+        dest="stories",
+        default="default",
+        help="Comma-separated list of story names. "
+        "Use 'all' for selecting all available stories. "
+        "Use 'default' for the standard selection of stories.")
+    if cls.CAN_COMBINE_STORIES:
+      is_combined_group = parser.add_mutually_exclusive_group()
+      is_combined_group.add_argument(
+          "--combined",
+          dest="separate",
+          default=False,
+          action="store_false",
+          help="Run each story in the same session. (default)")
+      is_combined_group.add_argument(
+          "--separate",
+          action="store_true",
+          help="Run each story in a fresh browser.")
+
     return parser
 
   @classmethod
@@ -168,26 +206,6 @@ class SubStoryBenchmark(Benchmark, metaclass=abc.ABCMeta):
   def add_cli_parser(
       cls, subparsers, aliases: Sequence[str] = ()) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
-    # TODO: move these args to a dedicated SubStoryFilter class.
-    parser.add_argument(
-        "--stories",
-        "--story",
-        dest="stories",
-        default="default",
-        help="Comma-separated list of story names. "
-        "Use 'all' for selecting all available stories. "
-        "Use 'default' for the standard selection of stories.")
-    is_combined_group = parser.add_mutually_exclusive_group()
-    is_combined_group.add_argument(
-        "--combined",
-        dest="separate",
-        default=False,
-        action="store_false",
-        help="Run each story in the same session. (default)")
-    is_combined_group.add_argument(
-        "--separate",
-        action="store_true",
-        help="Run each story in a fresh browser.")
     return parser
 
   @classmethod

@@ -13,13 +13,21 @@ To maintain reproducibility, the benchmark uses the [web page replay](https://ch
 With the "phone" workload:
 
 ```
-./cb.py loading --page-config config/benchmark/loading/page_config_phone.hjson --probe-config config/benchmark/loading/probe_config.hjson --network-config config/benchmark/loading/network_config.hjson --separate --browser <browser>
+./cb.py loading \
+  --page-config config/benchmark/loading/page_config_phone.hjson \
+  --probe-config config/benchmark/loading/probe_config.hjson \
+  --network-config config/benchmark/loading/network_config_phone.hjson \
+  --separate --browser <browser>
 ```
 
 With the "tablet" workload:
 
 ```
-./cb.py loading --page-config config/benchmark/loading/page_config_tablet.hjson --probe-config config/benchmark/loading/probe_config.hjson --network-config config/benchmark/loading/network_config.hjson --separate --browser <browser>  -- --request-desktop-sites
+./cb.py loading \
+  --page-config config/benchmark/loading/page_config_tablet.hjson \
+  --probe-config config/benchmark/loading/probe_config.hjson \
+  --network-config config/benchmark/loading/network_config_tablet.hjson \
+  --separate --browser <browser>  -- --request-desktop-sites
 ```
 
 The browser can be `android:chrome-canary`, `android:chrome-stable` etc. See crossbench docs for the full list of options.
@@ -38,20 +46,19 @@ If you see a `Could not find wpr.go binary` error:
 
 ### Running the benchmark without full chromium checkout
 
-Check out the [catapult](https://chromium.googlesource.com/catapult) repository:
-
-```
-git clone https://chromium.googlesource.com/catapult
-```
-
-Then modify the `wpr_go_bin` attribute in the `config/benchmark/loading/network_config.hjson` to point to the absolute location of the `wpr.go` file. You can find it at `web_page_replay_go/src/wpr.go` inside the catapult repository.
+Follow the [crossbench development instructions](https://chromium.googlesource.com/crossbench/#development)
+to check out code and run crossbench standalone.
 
 ### Problems accessing the cloud bucket
 
-In some cases you might need to download the web page archive manually. In this case, save the file `gs://chrome-partner-telemetry/loading_benchmark/archive.wprgo` locally and run the benchmark as follows:
+In some cases you might need to download the web page archive manually. In this case, save the archive file corresponding to the version you are running (`gs://chrome-partner-telemetry/loading_benchmark/archive_*.wprgo`) locally and run the benchmark as follows:
 
 ```
-./cb.py loading --page-config config/benchmark/loading/page_config_phone.hjson --probe-config config/benchmark/loading/probe_config.hjson --network <path to archive.wprgo> --separate --browser <browser>
+./cb.py loading \
+  --page-config config/benchmark/loading/page_config_phone.hjson \
+  --probe-config config/benchmark/loading/probe_config.hjson \
+  --network <path to archive.wprgo> \
+  --separate --browser <browser>
 ```
 
 ## Other running options
@@ -59,7 +66,10 @@ In some cases you might need to download the web page archive manually. In this 
 ### Run the benchmark on live sites
 
 ```
-./cb.py loading --page-config config/benchmark/loading/page_config_phone.hjson --probe-config config/benchmark/loading/probe_config.hjson --separate --browser <browser>
+./cb.py loading \
+  --page-config config/benchmark/loading/page_config_phone.hjson \
+  --probe-config config/benchmark/loading/probe_config.hjson \
+  --separate --browser <browser>
 ```
 
 ### Record a new WPR archive
@@ -69,7 +79,11 @@ Uncomment the `wpr: {},` line in the probe config and run the benchmark on live 
 ### Run the benchmark with full set of experimental metrics
 
 ```
-./cb.py loading --page-config config/benchmark/loading/page_config_phone.hjson --probe-config config/benchmark/loading/probe_config_experimental.hjson --network-config config/benchmark/loading/network_config.hjson --separate --browser <browser>
+./cb.py loading \
+  --page-config config/benchmark/loading/page_config_phone.hjson \
+  --probe-config config/benchmark/loading/probe_config_experimental.hjson \
+  --network-config config/benchmark/loading/network_config_phone.hjson \
+  --separate --browser <browser>
 ```
 
 Note that computing extra metrics takes additional time and the trace size can be quite large as well.

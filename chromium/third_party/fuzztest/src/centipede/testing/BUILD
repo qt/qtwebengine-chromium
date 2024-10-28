@@ -54,8 +54,8 @@ cc_binary(
     deps = [
         "@com_google_absl//absl/base:nullability",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
-        "@com_google_fuzztest//centipede:defs",
         "@com_google_fuzztest//centipede:mutation_input",
+        "@com_google_fuzztest//common:defs",
     ],
 )
 
@@ -90,14 +90,60 @@ cc_binary(
     deps = [
         "@com_google_absl//absl/base:nullability",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",
-        "@com_google_fuzztest//centipede:defs",
         "@com_google_fuzztest//centipede:mutation_input",
+        "@com_google_fuzztest//common:defs",
     ],
 )
 
 centipede_fuzz_target(
     name = "seeded_fuzz_target",
     fuzz_target = "_seeded_fuzz_target",
+)
+
+# Server binary for :external_target_test.
+cc_binary(
+    name = "_external_target_server",
+    srcs = ["external_target_server.cc"],
+    # Cannot be built directly - build :external_target_server instead.
+    tags = [
+        "local",
+        "manual",
+        "notap",
+    ],
+    deps = [
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//centipede:centipede_runner_no_main",
+    ],
+)
+
+centipede_fuzz_target(
+    name = "external_target_server",
+    fuzz_target = "_external_target_server",
+)
+
+cc_binary(
+    name = "_external_target",
+    srcs = ["external_target.cc"],
+    # Cannot be built directly - build :external_target instead.
+    tags = [
+        "local",
+        "manual",
+        "notap",
+    ],
+    deps = [
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/log:check",
+        "@com_google_absl//absl/strings",
+        "@com_google_fuzztest//centipede:centipede_runner_no_main",
+        "@com_google_fuzztest//centipede:mutation_input",
+        "@com_google_fuzztest//common:defs",
+    ],
+)
+
+centipede_fuzz_target(
+    name = "external_target",
+    fuzz_target = "_external_target",
 )
 
 # Target instrumented with -fsanitize-coverage=trace-pc.
@@ -348,6 +394,17 @@ sh_test(
     data = [
         "clusterfuzz_format_sanitized_target",
         "clusterfuzz_format_target",
+        "@com_google_fuzztest//centipede",
+        "@com_google_fuzztest//centipede:test_util_sh",
+    ],
+)
+
+sh_test(
+    name = "external_target_test",
+    srcs = ["external_target_test.sh"],
+    data = [
+        ":external_target",
+        ":external_target_server",
         "@com_google_fuzztest//centipede",
         "@com_google_fuzztest//centipede:test_util_sh",
     ],

@@ -49,11 +49,16 @@ void vvl::QueueSubmission::EndUse() {
     }
 }
 
-vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
-    if (!submissions.empty()) {
-        submissions.back().end_batch = true;
+void vvl::Queue::SetupSubmissions(std::vector<vvl::QueueSubmission> &submissions) {
+    assert(!submissions.empty());
+    for (auto &s : submissions) {
+        s.seq = ++seq_;
     }
-    PreSubmitResult result;
+    submissions.back().end_batch = true;
+}
+
+vvl::SubmitResult vvl::Queue::PostSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
+    SubmitResult result;
     for (auto &submission : submissions) {
         for (auto &cb_state : submission.cbs) {
             auto cb_guard = cb_state->WriteLock();
@@ -64,10 +69,7 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
             cb_state->IncrementResources();
             cb_state->Submit(VkHandle(), submission.perf_submit_pass, submission.loc.Get());
         }
-        // seq_ is atomic so we don't need a lock until updating the deque below.
-        // Note that this relies on the external synchonization requirements for the
-        // VkQueue
-        submission.seq = ++seq_;
+        assert(submission.seq != 0);
         submission.BeginUse();
         for (auto &wait : submission.wait_semaphores) {
             wait.semaphore->EnqueueWait(SubmissionReference(this, submission.seq), wait.payload);
@@ -85,7 +87,7 @@ vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&s
         }
         {
             auto guard = Lock();
-            result.last_submission_seq = submission.seq;
+            PostSubmit(submission);
             submissions_.emplace_back(std::move(submission));
             if (!thread_) {
                 thread_ = std::make_unique<std::thread>(&Queue::ThreadFunc, this);
@@ -150,13 +152,6 @@ void vvl::Queue::Destroy() {
     StateObject::Destroy();
 }
 
-void vvl::Queue::PostSubmit() {
-    auto guard = Lock();
-    if (!submissions_.empty()) {
-        PostSubmit(submissions_.back());
-    }
-}
-
 vvl::QueueSubmission *vvl::Queue::NextSubmission() {
     QueueSubmission *result = nullptr;
     // Find if the next submission is ready so that the thread function doesn't need to worry
@@ -197,7 +192,7 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
     };
     submission.EndUse();
     for (auto &wait : submission.wait_semaphores) {
-        wait.semaphore->Retire(this, submission.loc.Get(), wait.payload);
+        wait.semaphore->RetireWait(this, wait.payload, submission.loc.Get(), true);
     }
     for (auto &cb_state : submission.cbs) {
         auto cb_guard = cb_state->WriteLock();
@@ -208,7 +203,7 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
         cb_state->Retire(submission.perf_submit_pass, is_query_updated_after);
     }
     for (auto &signal : submission.signal_semaphores) {
-        signal.semaphore->Retire(this, submission.loc.Get(), signal.payload);
+        signal.semaphore->RetireSignal(this, signal.payload, submission.loc.Get());
     }
     if (submission.fence) {
         submission.fence->Retire();

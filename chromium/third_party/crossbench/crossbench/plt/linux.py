@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 from crossbench import path as pth
 from crossbench.plt.base import SubprocessError
 from crossbench.plt.posix import PosixPlatform
+from crossbench.plt.remote import RemotePlatformMixin
 
 
 class LinuxPlatform(PosixPlatform):
@@ -81,8 +82,9 @@ class LinuxPlatform(PosixPlatform):
     app_or_bin_path: pth.RemotePath = self.path(app_or_bin)
     if not app_or_bin_path.parts:
       raise ValueError("Got empty path")
-    if result_path := self.which(str(app_or_bin_path)):
-      assert self.exists(result_path), f"{result_path} does not exist."
+    if result_path := self.which(app_or_bin_path):
+      if not self.exists(result_path):
+        raise RuntimeError(f"{result_path} does not exist.")
       return result_path
     for path in self.SEARCH_PATHS:
       # Recreate Path object for easier pyfakefs testing
@@ -90,3 +92,11 @@ class LinuxPlatform(PosixPlatform):
       if self.exists(result_path):
         return result_path
     return None
+
+  def screenshot(self, result_path: pth.RemotePath) -> None:
+    # TODO: maybe use imagemagick's 'import' as more portable alternative
+    self.sh("gnome-screenshot", "--file", result_path)
+
+
+class RemoteLinuxPlatform(RemotePlatformMixin, LinuxPlatform):
+  pass

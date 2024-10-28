@@ -197,7 +197,22 @@ as filter.
 
 ## Development
 
-## Setup
+### Checking Out Code
+Don't just `git clone` the crossbench repo! Use depot_tools to set everything
+up correctly for you.
+
+- Install [Chromium depot_tools](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools_tutorial.html#_setting_up).
+- Get the crossbench code with all dependencies:
+```
+mkdir code
+cd code
+fetch crossbench
+cd crossbench
+```
+- Don't forget to run `gclient sync` every time you pull new changes from the
+crossbench repo.
+
+### Poetry Setup
 This project uses [poetry](https://python-poetry.org/) deps and package scripts
 to setup the correct environment for testing and debugging.
 
@@ -229,7 +244,7 @@ poetry env use 3.11
 poetry install --without=dev-pytype
 ```
 
-## Crossbench
+### Crossbench
 For local development / non-chromium installation you should
 use `poetry run cb ...` instead of `./cb.py ...`.
 
@@ -242,7 +257,7 @@ Side-note, beware that poetry eats up an empty `--`:
 poetry run cb speedometer ... -- -- --custom-chrome-flag ...
 ```
 
-## Tests
+### Tests
 ```
 poetry run pytest
 ```

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-
 from typing import TYPE_CHECKING
 
 from crossbench import path as pth
@@ -14,6 +13,7 @@ from crossbench.plt.linux_ssh import LinuxSshPlatform
 
 if TYPE_CHECKING:
   from typing import Optional
+
   from crossbench.flags.chrome import ChromeFlags
 
 
@@ -32,7 +32,7 @@ class ChromeOsSshPlatform(LinuxSshPlatform):
     logging.info("Attempting autologin into a test session.")
     try:
       if browser_flags:
-        self.sh(self.AUTOLOGIN_PATH, '--', *browser_flags)
+        self.sh(self.AUTOLOGIN_PATH, "--", *browser_flags)
       else:
         self.sh(self.AUTOLOGIN_PATH)
     except plt.SubprocessError as e:

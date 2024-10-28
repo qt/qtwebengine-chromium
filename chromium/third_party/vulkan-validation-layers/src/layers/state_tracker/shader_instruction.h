@@ -17,7 +17,6 @@
 #pragma once
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -104,7 +103,5 @@ class Instruction {
     uint32_t d_words_[12];
 #endif
 };
-
-void GenerateInstructions(const vvl::span<const uint32_t>& spirv, std::vector<spirv::Instruction>& instructions);
 
 }  // namespace spirv

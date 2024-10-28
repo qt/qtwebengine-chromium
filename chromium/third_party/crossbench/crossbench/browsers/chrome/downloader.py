@@ -41,6 +41,10 @@ class ChromeDownloader(Downloader):
       ("android", "arm64"): "android",
   }
 
+  def __init__(self, *args, **kwargs):
+    self._gsutil: Optional[pth.RemotePath] = None
+    super().__init__(*args, **kwargs)
+
   @classmethod
   def is_valid_version(cls, path_or_identifier: str):
     return ChromeVersion.is_valid_unique(path_or_identifier)
@@ -71,13 +75,21 @@ class ChromeDownloader(Downloader):
 
   def _pre_check(self) -> None:
     super()._pre_check()
-    if self._requested_version and not self.host_platform.which("gsutil"):
+    if not self._requested_version:
+      return
+    self._gsutil = self.host_platform.which("gsutil")
+    if not self._gsutil:
       raise ValueError(
           f"Cannot download chrome version {self._requested_version}: "
           "please install gsutil.\n"
           "- https://cloud.google.com/storage/docs/gsutil_install\n"
           "- Run 'gcloud auth login' to get access to the archives "
           "(googlers only).")
+
+  @property
+  def gsutil(self) -> pth.RemotePath:
+    assert self._gsutil, "gsutil not be found."
+    return self._gsutil
 
   def _requested_version_validation(self) -> None:
     pass
@@ -153,8 +165,7 @@ class ChromeDownloader(Downloader):
         continue
       for archive_version, archive_url in self._archive_urls(url, version):
         try:
-          gsutil = self.host_platform.which("gsutil")
-          result = self.host_platform.sh_stdout(gsutil, "ls", archive_url)
+          result = self.host_platform.sh_stdout(self.gsutil, "ls", archive_url)
         except SubprocessError as e:
           logging.debug("gsutil failed: %s", e)
           continue
@@ -163,8 +174,7 @@ class ChromeDownloader(Downloader):
     return self._requested_version, None
 
   def _download_archive(self, archive_url: str, tmp_dir: pth.LocalPath) -> None:
-    gsutil = self.host_platform.which("gsutil")
-    self.host_platform.sh(gsutil, "cp", archive_url, tmp_dir)
+    self.host_platform.sh(self.gsutil, "cp", archive_url, tmp_dir)
     archive_candidates = list(tmp_dir.glob("*"))
     assert len(archive_candidates) == 1, (
         f"Download tmp dir contains more than one file: {tmp_dir}: "
@@ -199,7 +209,12 @@ class ChromeDownloaderLinux(ChromeDownloader):
                      browser_platform, cache_dir)
 
   def _installed_app_path(self) -> pth.LocalPath:
-    return self._extracted_path() / "opt/google/chrome-unstable/chrome"
+    dir_name = "chrome-unstable"
+    if self._requested_version.is_stable or self._requested_version.is_unknown:
+      dir_name = "chrome"
+    if self._requested_version.is_beta:
+      dir_name = "chrome-beta"
+    return self._extracted_path() / "opt/google" / dir_name / "chrome"
 
   def _archive_urls(
       self, folder_url: str,
@@ -319,7 +334,7 @@ class ChromeDownloaderAndroid(ChromeDownloader):
   ARM_64_BUILD: Final[str] = "arm_64"
   ARM_64_HIGH_BUILD: Final[str] = "high-arm_64"
 
-  CHANNEL_PACKAGE_LOOKUP = {
+  CHANNEL_PACKAGE_LOOKUP: Dict[str, Tuple[str, BrowserVersionChannel]] = {
       "Beta": (
           "com.chrome.beta",
           BrowserVersionChannel.BETA,
@@ -515,7 +530,7 @@ class ChromeDownloaderWin(ChromeDownloader):
   def _install_archive(self, archive_path: pth.LocalPath) -> None:
     extracted_path = self._extracted_path()
     tmp_path = self.host_platform.mkdtemp()
-    with zipfile.ZipFile(archive_path, 'r') as zip_file:
+    with zipfile.ZipFile(archive_path, "r") as zip_file:
       zip_file.extractall(tmp_path)
     self.host_platform.rename(tmp_path / self.ARCHIVE_STEM, extracted_path)
     assert self.host_platform.is_dir(extracted_path), "Could not extract"

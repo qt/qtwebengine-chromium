@@ -32,7 +32,7 @@ ProbeT = TypeVar("ProbeT", bound="Probe")
 class ProbeConfigParser(ConfigParser[ProbeT]):
 
   def __init__(self, probe_cls: Type[ProbeT]) -> None:
-    super().__init__("Probe", probe_cls)
+    super().__init__("Probe", probe_cls, allow_unused_config_data=False)
     self._probe_cls: Type[ProbeT] = probe_cls
 
   @property
@@ -96,13 +96,7 @@ class Probe(abc.ABC):
 
   @classmethod
   def from_config(cls: Type[ProbeT], config_data: Dict) -> ProbeT:
-    config_parser = cls.config_parser()
-    kwargs: Dict[str, Any] = config_parser.kwargs_from_config(config_data)
-    if config_data:
-      raise argparse.ArgumentTypeError(
-          f"Config for Probe={cls.NAME} contains unused properties: "
-          f"{', '.join(config_data.keys())}")
-    return cls(**kwargs)
+    return cls.config_parser().parse(config_data)
 
   @classmethod
   def help_text(cls) -> str:
@@ -244,7 +238,6 @@ class Probe(abc.ABC):
       self: ProbeT,
       session: BrowserSessionRunGroup) -> Optional[ProbeSessionContext[ProbeT]]:
     del session
-    return None
 
   def log_run_result(self, run: Run) -> None:
     """

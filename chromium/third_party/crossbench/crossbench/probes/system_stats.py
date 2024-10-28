@@ -7,13 +7,12 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING
 
-from crossbench.probes.polling import PollingProbe, PollingProbeContext
+from crossbench.probes.polling import PollingProbe
 from crossbench.probes.probe import ProbeValidationError
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
-  from crossbench.runner.run import Run
 
 
 class SystemStatsProbe(PollingProbe):

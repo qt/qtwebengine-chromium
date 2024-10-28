@@ -18,11 +18,7 @@ from crossbench.browsers.safari.safari import Safari, find_safaridriver
 from crossbench.browsers.webdriver import DriverException, WebDriverBrowser
 
 if TYPE_CHECKING:
-  from crossbench import plt
-  from crossbench.browsers.splash_screen import SplashScreen
-  from crossbench.browsers.viewport import Viewport
-  from crossbench.flags.base import Flags
-  from crossbench.network.base import Network
+  from crossbench.browsers.settings import Settings
   from crossbench.path import RemotePath
   from crossbench.runner.groups import BrowserSessionRunGroup
   from crossbench.runner.runner import Runner
@@ -35,16 +31,8 @@ class SafariWebDriver(WebDriverBrowser, Safari):
   def __init__(self,
                label: str,
                path: RemotePath,
-               flags: Optional[Flags.InitialDataType] = None,
-               js_flags: Optional[Flags.InitialDataType] = None,
-               cache_dir: Optional[RemotePath] = None,
-               network: Optional[Network] = None,
-               driver_path: Optional[RemotePath] = None,
-               viewport: Optional[Viewport] = None,
-               splash_screen: Optional[SplashScreen] = None,
-               platform: Optional[plt.MacOSPlatform] = None):
-    super().__init__(label, path, flags, js_flags, cache_dir, network,
-                     driver_path, viewport, splash_screen, platform)
+               settings: Optional[Settings] = None):
+    super().__init__(label, path, settings)
     assert self.platform.is_macos
 
   @property
@@ -108,9 +96,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
         min=2, timeout=self.MAX_STARTUP_TIMEOUT).wait_with_backoff():
       try:
         return webdriver.Safari(**driver_kwargs)
-      except KeyboardInterrupt:  # pylint: disable=try-except-raise
-        raise
-      except Exception as e:
+      except Exception as e:  # pylint: disable=broad-except
         retries += 1
         exception_type = type(e)
         logging.warning("SafariWebDriver: startup failed (%s), retrying...",

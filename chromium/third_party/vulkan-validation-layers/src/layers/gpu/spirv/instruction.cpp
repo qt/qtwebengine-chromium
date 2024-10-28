@@ -15,9 +15,8 @@
 
 #include "instruction.h"
 #include "generated/spirv_grammar_helper.h"
-#include "module.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
 
 void Instruction::UpdateDebugInfo() {
@@ -48,23 +47,12 @@ void Instruction::SetResultTypeIndex() {
     }
 }
 
-Instruction::Instruction(std::vector<uint32_t>::const_iterator it, uint32_t position)
+Instruction::Instruction(spirv_iterator it, uint32_t position)
     : position_index_(position), operand_info_(GetOperandInfo(*it & 0x0ffffu)) {
     words_.emplace_back(*it++);
     words_.reserve(Length());
     for (uint32_t i = 1; i < Length(); i++) {
         words_.emplace_back(*it++);
-    }
-
-    SetResultTypeIndex();
-    UpdateDebugInfo();
-}
-
-Instruction::Instruction(const uint32_t* words) : operand_info_(GetOperandInfo(words[0] & 0x0ffffu)) {
-    words_.emplace_back(words[0]);
-    words_.reserve(Length());
-    for (uint32_t i = 1; i < Length(); i++) {
-        words_.emplace_back(words[i]);
     }
 
     SetResultTypeIndex();
@@ -269,6 +257,8 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
         case spv::OpAccessChain:
         case spv::OpConstantComposite:
         case spv::OpSpecConstantComposite:
+        case spv::OpSelect:
+        case spv::OpCompositeConstruct:
             swap(1);
             swap_to_end(3);
             break;
@@ -288,5 +278,20 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
     UpdateDebugInfo();
 }
 
+// All post SPIR-V processing we do is just needing to inspect single instructions without knowledge of the rest of the module.
+// We turn the saved vector of uint32_t into the Instruction class to make it easier to use
+void GenerateInstructions(const vvl::span<const uint32_t>& spirv, std::vector<Instruction>& instructions) {
+    spirv_iterator it = spirv.begin();
+    it += 5;  // skip first 5 word of header
+    instructions.reserve(spirv.size() * 4);
+
+    uint32_t instruction_count = 0;
+    while (it != spirv.end()) {
+        auto new_insn = instructions.emplace_back(it, instruction_count++);
+        it += new_insn.Length();
+    }
+    instructions.shrink_to_fit();
+}
+
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

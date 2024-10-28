@@ -19,49 +19,53 @@
 
 #include "gpu/core/gpuav.h"
 #include "gpu/resources/gpuav_subclasses.h"
+#include "gpu/resources/gpu_shader_resources.h"
 #include "gpu/shaders/gpu_shaders_constants.h"
 
 using vvl::DescriptorClass;
 
 namespace gpuav {
-namespace glsl {
 
-struct BindingLayout {
-    uint32_t count;
-    uint32_t state_start;
-};
-
-struct DescriptorState {
-    DescriptorState() : id(0), extra_data(0) {}
-    DescriptorState(vvl::DescriptorClass dc, uint32_t id_, uint32_t extra_data_ = 1)
-        : id(ClassToShaderBits(dc) | id_), extra_data(extra_data_) {}
-    uint32_t id;
-    uint32_t extra_data;
-
-    static uint32_t ClassToShaderBits(DescriptorClass dc) {
-        switch (dc) {
-            case DescriptorClass::PlainSampler:
-                return (kSamplerDesc << kDescBitShift);
-            case DescriptorClass::ImageSampler:
-                return (kImageSamplerDesc << kDescBitShift);
-            case DescriptorClass::Image:
-                return (kImageDesc << kDescBitShift);
-            case DescriptorClass::TexelBuffer:
-                return (kTexelDesc << kDescBitShift);
-            case DescriptorClass::GeneralBuffer:
-                return (kBufferDesc << kDescBitShift);
-            case DescriptorClass::InlineUniform:
-                return (kInlineUniformDesc << kDescBitShift);
-            case DescriptorClass::AccelerationStructure:
-                return (kAccelDesc << kDescBitShift);
-            default:
-                assert(false);
-        }
-        return 0;
+void AddressBuffer::MapMemory(const Location &loc, void **data) const {
+    VkResult result = vmaMapMemory(gpuav.vma_allocator_, allocation, data);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Unable to map device memory.", true);
     }
-};
+}
 
-}  // namespace glsl
+void AddressBuffer::UnmapMemory() const { vmaUnmapMemory(gpuav.vma_allocator_, allocation); }
+
+void AddressBuffer::FlushAllocation(const Location &loc, VkDeviceSize offset, VkDeviceSize size) const {
+    VkResult result = vmaFlushAllocation(gpuav.vma_allocator_, allocation, offset, size);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Unable to flush device memory.", true);
+    }
+}
+
+void AddressBuffer::InvalidateAllocation(const Location &loc, VkDeviceSize offset, VkDeviceSize size) const {
+    VkResult result = vmaInvalidateAllocation(gpuav.vma_allocator_, allocation, offset, size);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Unable to invalidate device memory.", true);
+    }
+}
+
+void AddressBuffer::CreateBuffer(const Location &loc, const VkBufferCreateInfo *buffer_create_info,
+                                 const VmaAllocationCreateInfo *allocation_create_info) {
+    VkResult result =
+        vmaCreateBuffer(gpuav.vma_allocator_, buffer_create_info, allocation_create_info, &buffer, &allocation, nullptr);
+    if (result != VK_SUCCESS) {
+        gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for internal buffer.", true);
+    }
+
+    assert(buffer_create_info->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    // After creating the buffer, get the address right away
+    device_addr = gpuav.GetBufferDeviceAddressHelper(buffer);
+    if (device_addr == 0) {
+        gpuav.InternalError(gpuav.device, loc, "Failed to get address with DispatchGetBufferDeviceAddress.");
+    }
+}
+
+void AddressBuffer::DestroyBuffer() { vmaDestroyBuffer(gpuav.vma_allocator_, buffer, allocation); }
 
 // Returns the number of bytes to hold 32 bit aligned array of bits.
 static uint32_t BitBufferSize(uint32_t num_bits) {
@@ -72,21 +76,19 @@ static uint32_t BitBufferSize(uint32_t num_bits) {
 DescriptorSet::DescriptorSet(const VkDescriptorSet handle, vvl::DescriptorPool *pool,
                              const std::shared_ptr<vvl::DescriptorSetLayout const> &layout, uint32_t variable_count,
                              ValidationStateTracker *state_data)
-    : vvl::DescriptorSet(handle, pool, layout, variable_count, state_data) {}
+    : vvl::DescriptorSet(handle, pool, layout, variable_count, state_data), layout_(*static_cast<Validator *>(state_data)) {}
 
 DescriptorSet::~DescriptorSet() {
     Destroy();
-    Validator *gv_dev = static_cast<Validator *>(state_data_);
-    vmaDestroyBuffer(gv_dev->vma_allocator_, layout_.buffer, layout_.allocation);
+    layout_.DestroyBuffer();
 }
 
-VkDeviceAddress DescriptorSet::GetLayoutState() {
+VkDeviceAddress DescriptorSet::GetLayoutState(Validator &gpuav, const Location &loc) {
     auto guard = Lock();
     if (layout_.device_addr != 0) {
         return layout_.device_addr;
     }
     uint32_t num_bindings = (GetBindingCount() > 0) ? GetLayout()->GetMaxBinding() + 1 : 0;
-    Validator *gv_dev = static_cast<Validator *>(state_data_);
     VkBufferCreateInfo buffer_info = vku::InitStruct<VkBufferCreateInfo>();
     // 1 uvec2 to store num_bindings and 1 for each binding's data
     buffer_info.size = (1 + num_bindings) * sizeof(glsl::BindingLayout);
@@ -94,18 +96,14 @@ VkDeviceAddress DescriptorSet::GetLayoutState() {
 
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    VkResult result =
-        vmaCreateBuffer(gv_dev->vma_allocator_, &buffer_info, &alloc_info, &layout_.buffer, &layout_.allocation, nullptr);
-    if (result != VK_SUCCESS) {
-        return 0;
-    }
+    layout_.CreateBuffer(loc, &buffer_info, &alloc_info);
+
     glsl::BindingLayout *layout_data;
-    result = vmaMapMemory(gv_dev->vma_allocator_, layout_.allocation, reinterpret_cast<void **>(&layout_data));
-    assert(result == VK_SUCCESS);
+    layout_.MapMemory(loc, reinterpret_cast<void **>(&layout_data));
     memset(layout_data, 0, static_cast<size_t>(buffer_info.size));
 
     layout_data[0].count = num_bindings;
-    layout_data[0].state_start = 0;
+    layout_data[0].state_start = 0;  // padding
 
     // For each set, allocate an input buffer that describes the descriptor set and its update status as follows
     // Word 0 = the number of bindings in the descriptor set - note that the bindings can be sparse and this is the largest
@@ -137,23 +135,9 @@ VkDeviceAddress DescriptorSet::GetLayoutState() {
             state_start += binding->count;
         }
     }
-    auto buffer_device_address_info = vku::InitStruct<VkBufferDeviceAddressInfo>();
-    buffer_device_address_info.buffer = layout_.buffer;
 
-    // We cannot rely on device_extensions here, since we may be enabling BDA support even
-    // though the application has not requested it.
-    if (gv_dev->api_version >= VK_API_VERSION_1_2) {
-        layout_.device_addr = DispatchGetBufferDeviceAddress(gv_dev->device, &buffer_device_address_info);
-    } else {
-        layout_.device_addr = DispatchGetBufferDeviceAddressKHR(gv_dev->device, &buffer_device_address_info);
-    }
-    assert(layout_.device_addr != 0);
-
-    result = vmaFlushAllocation(gv_dev->vma_allocator_, layout_.allocation, 0, VK_WHOLE_SIZE);
-    // No good way to handle this error, we should still try to unmap.
-    assert(result == VK_SUCCESS);
-    vmaUnmapMemory(gv_dev->vma_allocator_, layout_.allocation);
-
+    layout_.FlushAllocation(loc);
+    layout_.UnmapMemory();
     return layout_.device_addr;
 }
 
@@ -162,8 +146,7 @@ static glsl::DescriptorState GetInData(const vvl::BufferDescriptor &desc) {
     if (!buffer_state) {
         return glsl::DescriptorState(DescriptorClass::GeneralBuffer, glsl::kDebugInputBindlessSkipId, vvl::kU32Max);
     }
-    return glsl::DescriptorState(DescriptorClass::GeneralBuffer, buffer_state->id,
-                                 static_cast<uint32_t>(buffer_state->create_info.size));
+    return glsl::DescriptorState(DescriptorClass::GeneralBuffer, buffer_state->id, static_cast<uint32_t>(desc.GetEffectiveRange()));
 }
 
 static glsl::DescriptorState GetInData(const vvl::TexelDescriptor &desc) {
@@ -274,17 +257,13 @@ void FillBindingInData(const vvl::InlineUniformBinding &binding, glsl::Descripto
     data[index++] = glsl::DescriptorState(DescriptorClass::InlineUniform, glsl::kDebugInputBindlessSkipId, vvl::kU32Max);
 }
 
-std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
+std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState(Validator &gpuav, const Location &loc) {
     auto guard = Lock();
-    Validator *gv_dev = static_cast<Validator *>(state_data_);
     uint32_t cur_version = current_version_.load();
     if (last_used_state_ && last_used_state_->version == cur_version) {
         return last_used_state_;
     }
-    auto next_state = std::make_shared<State>();
-    next_state->set = VkHandle();
-    next_state->version = cur_version;
-    next_state->allocator = gv_dev->vma_allocator_;
+    auto next_state = std::make_shared<State>(VkHandle(), cur_version, gpuav);
 
     uint32_t descriptor_count = 0;  // Number of descriptors, including all array elements
     if (GetBindingCount() > 0) {
@@ -312,14 +291,11 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
     // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    VkResult result =
-        vmaCreateBuffer(next_state->allocator, &buffer_info, &alloc_info, &next_state->buffer, &next_state->allocation, nullptr);
-    if (result != VK_SUCCESS) {
-        return nullptr;
-    }
+    next_state->buffer.CreateBuffer(loc, &buffer_info, &alloc_info);
+
     glsl::DescriptorState *data{nullptr};
-    result = vmaMapMemory(next_state->allocator, next_state->allocation, reinterpret_cast<void **>(&data));
-    assert(result == VK_SUCCESS);
+    next_state->buffer.MapMemory(loc, reinterpret_cast<void **>(&data));
+
     uint32_t index = 0;
     for (uint32_t i = 0; i < bindings_.size(); i++) {
         const auto &binding = *bindings_[i];
@@ -348,27 +324,14 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
             case DescriptorClass::AccelerationStructure:
                 FillBindingInData(static_cast<const vvl::AccelerationStructureBinding &>(binding), data, index);
                 break;
-            default:
-                assert(false);
+            case DescriptorClass::NoDescriptorClass:
+                gpuav.InternalError(gpuav.device, loc, "NoDescriptorClass not supported.");
         }
     }
-    VkBufferDeviceAddressInfo buffer_device_address_info = vku::InitStructHelper();
-    buffer_device_address_info.buffer = next_state->buffer;
-
-    // We cannot rely on device_extensions here, since we may be enabling BDA support even
-    // though the application has not requested it.
-    if (gv_dev->api_version >= VK_API_VERSION_1_2) {
-        next_state->device_addr = DispatchGetBufferDeviceAddress(gv_dev->device, &buffer_device_address_info);
-    } else {
-        next_state->device_addr = DispatchGetBufferDeviceAddressKHR(gv_dev->device, &buffer_device_address_info);
-    }
-    assert(next_state->device_addr != 0);
 
     // Flush the descriptor state buffer before unmapping so that the new state is visible to the GPU
-    result = vmaFlushAllocation(next_state->allocator, next_state->allocation, 0, VK_WHOLE_SIZE);
-    // No good way to handle this error, we should still try to unmap.
-    assert(result == VK_SUCCESS);
-    vmaUnmapMemory(next_state->allocator, next_state->allocation);
+    next_state->buffer.FlushAllocation(loc);
+    next_state->buffer.UnmapMemory();
 
     last_used_state_ = next_state;
     return next_state;
@@ -376,15 +339,11 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetCurrentState() {
 
 std::shared_ptr<DescriptorSet::State> DescriptorSet::GetOutputState(Validator &gpuav, const Location &loc) {
     auto guard = Lock();
-    Validator *gv_dev = static_cast<Validator *>(state_data_);
     uint32_t cur_version = current_version_.load();
     if (output_state_) {
         return output_state_;
     }
-    auto next_state = std::make_shared<State>();
-    next_state->set = VkHandle();
-    next_state->version = cur_version;
-    next_state->allocator = gv_dev->vma_allocator_;
+    auto next_state = std::make_shared<State>(VkHandle(), cur_version, gpuav);
 
     uint32_t descriptor_count = 0;  // Number of descriptors, including all array elements
     for (const auto &binding : *this) {
@@ -410,56 +369,33 @@ std::shared_ptr<DescriptorSet::State> DescriptorSet::GetOutputState(Validator &g
     // and manually flushing it at the end of the state updates is faster than using HOST_COHERENT.
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    VkResult result =
-        vmaCreateBuffer(next_state->allocator, &buffer_info, &alloc_info, &next_state->buffer, &next_state->allocation, nullptr);
-    if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for error output buffer. Aborting GPU-AV.", true);
-        return nullptr;
-    }
+    next_state->buffer.CreateBuffer(loc, &buffer_info, &alloc_info);
+
     uint32_t *data = nullptr;
-    result = vmaMapMemory(next_state->allocator, next_state->allocation, reinterpret_cast<void **>(&data));
-    assert(result == VK_SUCCESS);
+    next_state->buffer.MapMemory(loc, reinterpret_cast<void **>(&data));
     memset(data, 0, static_cast<size_t>(buffer_info.size));
 
-    VkBufferDeviceAddressInfo buffer_device_address_info = vku::InitStructHelper();
-    buffer_device_address_info.buffer = next_state->buffer;
-
-    // We cannot rely on device_extensions here, since we may be enabling BDA support even
-    // though the application has not requested it.
-    if (gv_dev->api_version >= VK_API_VERSION_1_2) {
-        next_state->device_addr = DispatchGetBufferDeviceAddress(gv_dev->device, &buffer_device_address_info);
-    } else {
-        next_state->device_addr = DispatchGetBufferDeviceAddressKHR(gv_dev->device, &buffer_device_address_info);
-    }
-    assert(next_state->device_addr != 0);
-
     // Flush the descriptor state buffer before unmapping so that the new state is visible to the GPU
-    result = vmaFlushAllocation(next_state->allocator, next_state->allocation, 0, VK_WHOLE_SIZE);
-    // No good way to handle this error, we should still try to unmap.
-    if (result != VK_SUCCESS) {
-        gpuav.InternalError(gpuav.device, loc, "Unable flush memory allocation. Aborting GPU-AV.", true);
-        vmaUnmapMemory(next_state->allocator, next_state->allocation);
-        return nullptr;
-    }
-    vmaUnmapMemory(next_state->allocator, next_state->allocation);
+    next_state->buffer.FlushAllocation(loc);
+    next_state->buffer.UnmapMemory();
 
     output_state_ = next_state;
     return next_state;
 }
 
-std::map<uint32_t, std::vector<uint32_t>> DescriptorSet::State::UsedDescriptors(const DescriptorSet &set,
+std::map<uint32_t, std::vector<uint32_t>> DescriptorSet::State::UsedDescriptors(const Location &loc, const DescriptorSet &set,
                                                                                 uint32_t shader_set) const {
     std::map<uint32_t, std::vector<uint32_t>> used_descs;
-    if (!allocation) {
+    if (!buffer.allocation) {
         return used_descs;
     }
 
     glsl::BindingLayout *layout_data = nullptr;
-    [[maybe_unused]] auto result = vmaMapMemory(allocator, set.layout_.allocation, reinterpret_cast<void **>(&layout_data));
+    set.layout_.MapMemory(loc, reinterpret_cast<void **>(&layout_data));
 
     uint32_t *data = nullptr;
-    result = vmaMapMemory(allocator, allocation, reinterpret_cast<void **>(&data));
-    result = vmaInvalidateAllocation(allocator, allocation, 0, VK_WHOLE_SIZE);
+    buffer.MapMemory(loc, reinterpret_cast<void **>(&data));
+    buffer.InvalidateAllocation(loc);
 
     uint32_t max_binding = layout_data[0].count;
     for (uint32_t binding = 0; binding < max_binding; binding++) {
@@ -474,12 +410,12 @@ std::map<uint32_t, std::vector<uint32_t>> DescriptorSet::State::UsedDescriptors(
         }
     }
 
-    vmaUnmapMemory(allocator, allocation);
-    vmaUnmapMemory(allocator, set.layout_.allocation);
+    buffer.UnmapMemory();
+    set.layout_.UnmapMemory();
     return used_descs;
 }
 
-DescriptorSet::State::~State() { vmaDestroyBuffer(allocator, buffer, allocation); }
+DescriptorSet::State::~State() { buffer.DestroyBuffer(); }
 
 void DescriptorSet::PerformPushDescriptorsUpdate(uint32_t write_count, const VkWriteDescriptorSet *write_descs) {
     vvl::DescriptorSet::PerformPushDescriptorsUpdate(write_count, write_descs);
@@ -496,8 +432,8 @@ void DescriptorSet::PerformCopyUpdate(const VkCopyDescriptorSet &copy_desc, cons
     current_version_++;
 }
 
-DescriptorHeap::DescriptorHeap(Validator &gpu_dev, uint32_t max_descriptors)
-    : max_descriptors_(max_descriptors), allocator_(gpu_dev.vma_allocator_) {
+DescriptorHeap::DescriptorHeap(Validator &gpuav, uint32_t max_descriptors, const Location &loc)
+    : max_descriptors_(max_descriptors), buffer_(gpuav) {
     // If max_descriptors_ is 0, GPU-AV aborted during vkCreateDevice(). We still need to
     // support calls into this class as no-ops if this happens.
     if (max_descriptors_ == 0) {
@@ -510,31 +446,17 @@ DescriptorHeap::DescriptorHeap(Validator &gpu_dev, uint32_t max_descriptors)
 
     VmaAllocationCreateInfo alloc_info{};
     alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    [[maybe_unused]] VkResult result;
-    result = vmaCreateBuffer(allocator_, &buffer_info, &alloc_info, &buffer_, &allocation_, nullptr);
-    assert(result == VK_SUCCESS);
+    buffer_.CreateBuffer(loc, &buffer_info, &alloc_info);
 
-    result = vmaMapMemory(allocator_, allocation_, reinterpret_cast<void **>(&gpu_heap_state_));
-    assert(result == VK_SUCCESS);
+    buffer_.MapMemory(loc, reinterpret_cast<void **>(&gpu_heap_state_));
     memset(gpu_heap_state_, 0, static_cast<size_t>(buffer_info.size));
-
-    auto buffer_device_address_info = vku::InitStruct<VkBufferDeviceAddressInfo>();
-    buffer_device_address_info.buffer = buffer_;
-    // We cannot rely on device_extensions here, since we may be enabling BDA support even
-    // though the application has not requested it.
-    if (gpu_dev.api_version >= VK_API_VERSION_1_2) {
-        device_address_ = DispatchGetBufferDeviceAddress(gpu_dev.device, &buffer_device_address_info);
-    } else {
-        device_address_ = DispatchGetBufferDeviceAddressKHR(gpu_dev.device, &buffer_device_address_info);
-    }
-    assert(device_address_ != 0);
 }
 
 DescriptorHeap::~DescriptorHeap() {
     if (max_descriptors_ > 0) {
-        vmaUnmapMemory(allocator_, allocation_);
+        buffer_.UnmapMemory();
+        buffer_.DestroyBuffer();
         gpu_heap_state_ = nullptr;
-        vmaDestroyBuffer(allocator_, buffer_, allocation_);
     }
 }
 

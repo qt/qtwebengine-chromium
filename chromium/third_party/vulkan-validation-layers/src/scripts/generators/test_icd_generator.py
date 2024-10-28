@@ -116,6 +116,8 @@ class TestIcdGenerator(BaseGenerator):
             'vkQueueSubmit',
             'vkGetMemoryWin32HandlePropertiesKHR',
             'vkRegisterDisplayEventEXT',
+            'vkCreatePipelineBinariesKHR',
+            'vkGetPipelineBinaryDataKHR',
         ]
 
     def generate(self):

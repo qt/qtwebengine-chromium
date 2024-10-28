@@ -91,7 +91,7 @@ void DispatchExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT 
     {
         if (pMetalObjectsInfo) {
             local_pMetalObjectsInfo.initialize(pMetalObjectsInfo);
-            WrapPnextChainHandles(layer_data, local_pMetalObjectsInfo.pNext);
+            UnwrapPnextChainHandles(layer_data, local_pMetalObjectsInfo.pNext);
         }
     }
     layer_data->device_dispatch_table.ExportMetalObjectsEXT(device, (VkExportMetalObjectsInfoEXT *)&local_pMetalObjectsInfo);
@@ -200,6 +200,14 @@ VkResult DispatchCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipeli
                 auto unwrapped_pipelines = const_cast<VkPipeline *>(device_generated_commands->pPipelines);
                 for (uint32_t idx1 = 0; idx1 < device_generated_commands->pipelineCount; ++idx1) {
                     unwrapped_pipelines[idx1] = layer_data->Unwrap(device_generated_commands->pPipelines[idx1]);
+                }
+            }
+
+            auto *binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(local_pCreateInfos[idx0].pNext);
+            if (binary_info) {
+                auto *unwrapped_binaries = const_cast<VkPipelineBinaryKHR *>(binary_info->pPipelineBinaries);
+                for (uint32_t idx1 = 0; idx1 < binary_info->binaryCount; ++idx1) {
+                    unwrapped_binaries[idx1] = layer_data->Unwrap(binary_info->pPipelineBinaries[idx1]);
                 }
             }
         }
@@ -403,7 +411,7 @@ VkResult DispatchQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPresent
                     local_pPresentInfo->pSwapchains[index1] = layer_data->Unwrap(pPresentInfo->pSwapchains[index1]);
                 }
             }
-            WrapPnextChainHandles(layer_data, local_pPresentInfo->pNext);
+            UnwrapPnextChainHandles(layer_data, local_pPresentInfo->pNext);
         }
     }
     VkResult result = layer_data->device_dispatch_table.QueuePresentKHR(queue, local_pPresentInfo->ptr());
@@ -1129,13 +1137,53 @@ VkResult DispatchCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
                 if (pCreateInfos[index0].basePipelineHandle) {
                     local_pCreateInfos[index0].basePipelineHandle = layer_data->Unwrap(pCreateInfos[index0].basePipelineHandle);
                 }
+
+                auto *binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(local_pCreateInfos[index0].pNext);
+                if (binary_info) {
+                    auto *unwrapped_binaries = const_cast<VkPipelineBinaryKHR *>(binary_info->pPipelineBinaries);
+                    for (uint32_t idx1 = 0; idx1 < binary_info->binaryCount; ++idx1) {
+                        unwrapped_binaries[idx1] = layer_data->Unwrap(binary_info->pPipelineBinaries[idx1]);
+                    }
+                }
             }
         }
     }
+
+    // For deferred pipeline creation, if handle wrapping is ON:
+    // VVL will return wrapped handles when vkCreateRayTracingPipelinesKHR returns.
+    // Even though the pipelines are not yet created, this is our only chance to return wrapped handles to the user
+    // But when performing the deferred operation, if we do nothing the driver will read the pPipelines paramater,
+    // thus will read wrapped handles
+    // => we need to give the driver the list of unwrapped handles,
+    // AND make sure this list has not been freed/reallocated before the driver is done.
+    // Done with this shared unwrapped_pipelines pointer
+    VkPipeline *returned_pipelines = pPipelines;
+    std::shared_ptr<std::vector<VkPipeline>> unwrapped_pipelines;
+    // Operation may be deffered, will know when looking at dispatch VkResult,
+    // still we need to prepare
+    if (deferredOperation != VK_NULL_HANDLE) {
+        unwrapped_pipelines = std::make_shared<std::vector<VkPipeline>>(createInfoCount);
+        returned_pipelines = unwrapped_pipelines->data();
+    }
+
     VkResult result = layer_data->device_dispatch_table.CreateRayTracingPipelinesKHR(
         device, deferredOperation, pipelineCache, createInfoCount, (const VkRayTracingPipelineCreateInfoKHR *)local_pCreateInfos,
-        pAllocator, pPipelines);
+        pAllocator, returned_pipelines);
+
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        if (deferredOperation != VK_NULL_HANDLE) {
+            // Need to copy back returned pipeline handles in app provided array
+            pPipelines[i] = unwrapped_pipelines->at(i);
+        }
+    }
+
     if (wrap_handles) {
+        for (uint32_t i = 0; i < createInfoCount; i++) {
+            if (pPipelines[i] != VK_NULL_HANDLE) {
+                pPipelines[i] = layer_data->WrapNew(pPipelines[i]);
+            }
+        }
+
         for (uint32_t i = 0; i < createInfoCount; ++i) {
             if (pCreateInfos[i].pNext != VK_NULL_HANDLE) {
                 CopyCreatePipelineFeedbackData(local_pCreateInfos[i].pNext, pCreateInfos[i].pNext);
@@ -1152,42 +1200,34 @@ VkResult DispatchCreateRayTracingPipelinesKHR(VkDevice device, VkDeferredOperati
         if (completion_find->first) {
             post_completion_fns = std::move(completion_find->second);
         }
+
         if (wrap_handles) {
-            auto cleanup_fn = [local_pCreateInfos, deferredOperation, pPipelines, createInfoCount, layer_data]() {
+            std::vector<VkPipeline> copied_wrapped_pipelines(createInfoCount);
+            for (uint32_t i = 0; i < createInfoCount; ++i) {
+                copied_wrapped_pipelines[i] = pPipelines[i];
+            }
+            auto cleanup_fn = [local_pCreateInfos, captured_copied_wrapped_pipelines = std::move(copied_wrapped_pipelines),
+                               deferredOperation, layer_data, unwrapped_pipelines]() {
+                (void)unwrapped_pipelines;
                 if (local_pCreateInfos) {
                     delete[] local_pCreateInfos;
                 }
-                std::vector<VkPipeline> pipes_wrapped;
-                for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
-                    if (pPipelines[index0] != VK_NULL_HANDLE) {
-                        pPipelines[index0] = layer_data->WrapNew(pPipelines[index0]);
-                        pipes_wrapped.emplace_back(pPipelines[index0]);
-                    }
-                }
-                layer_data->deferred_operation_pipelines.insert(deferredOperation, std::move(pipes_wrapped));
+                layer_data->deferred_operation_pipelines.insert(deferredOperation, std::move(captured_copied_wrapped_pipelines));
             };
             post_completion_fns.emplace_back(cleanup_fn);
         } else {
-            auto cleanup_fn = [deferredOperation, pPipelines, createInfoCount, layer_data]() {
-                std::vector<VkPipeline> pipes;
-                for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
-                    if (pPipelines[index0] != VK_NULL_HANDLE) {
-                        pipes.emplace_back(pPipelines[index0]);
-                    }
-                }
-                layer_data->deferred_operation_pipelines.insert(deferredOperation, std::move(pipes));
+            auto cleanup_fn = [deferredOperation, layer_data, unwrapped_pipelines]() {
+                layer_data->deferred_operation_pipelines.insert(deferredOperation, std::move(*unwrapped_pipelines));
             };
             post_completion_fns.emplace_back(cleanup_fn);
         }
         layer_data->deferred_operation_post_completion.insert(deferredOperation, std::move(post_completion_fns));
-    } else if (wrap_handles) {
+    }
+
+    // If operation is deferred, local resources free is postponed
+    if (!is_operation_deferred && wrap_handles) {
         if (local_pCreateInfos) {
             delete[] local_pCreateInfos;
-        }
-        for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
-            if (pPipelines[index0] != VK_NULL_HANDLE) {
-                pPipelines[index0] = layer_data->WrapNew(pPipelines[index0]);
-            }
         }
     }
 
@@ -1203,10 +1243,10 @@ VkResult DispatchDeferredOperationJoinKHR(VkDevice device, VkDeferredOperationKH
 
     // If this thread completed the operation, free any retained memory.
     if (result == VK_SUCCESS) {
-        auto iter = layer_data->deferred_operation_post_completion.pop(operation);
-        if (iter != layer_data->deferred_operation_post_completion.end()) {
-            for (auto &cleanup_fn : iter->second) {
-                cleanup_fn();
+        auto post_op_completion_fns = layer_data->deferred_operation_post_completion.pop(operation);
+        if (post_op_completion_fns != layer_data->deferred_operation_post_completion.end()) {
+            for (auto &post_op_completion_fn : post_op_completion_fns->second) {
+                post_op_completion_fn();
             }
         }
     }
@@ -1220,14 +1260,23 @@ VkResult DispatchGetDeferredOperationResultKHR(VkDevice device, VkDeferredOperat
         operation = layer_data->Unwrap(operation);
     }
     VkResult result = layer_data->device_dispatch_table.GetDeferredOperationResultKHR(device, operation);
-
     // Add created pipelines if successful
     if (result == VK_SUCCESS) {
-        auto iter_fn = layer_data->deferred_operation_post_check.pop(operation);
-        auto iter_pipes = layer_data->deferred_operation_pipelines.pop(operation);
-        if (iter_fn->first && iter_pipes->first) {
-            for (auto &cleanup_fn : iter_fn->second) {
-                cleanup_fn(iter_pipes->second);
+        // Perfectly valid to never call vkDeferredOperationJoin before getting the result,
+        // so we need to make sure functions associated to the current operation and
+        // stored in deferred_operation_post_completion have been called
+        auto post_op_completion_fns = layer_data->deferred_operation_post_completion.pop(operation);
+        if (post_op_completion_fns != layer_data->deferred_operation_post_completion.end()) {
+            for (auto &post_op__completion_fn : post_op_completion_fns->second) {
+                post_op__completion_fn();
+            }
+        }
+
+        auto post_check_fns = layer_data->deferred_operation_post_check.pop(operation);
+        auto pipelines_to_updates = layer_data->deferred_operation_pipelines.pop(operation);
+        if (post_check_fns->first && pipelines_to_updates->first) {
+            for (auto &post_check_fn : post_check_fns->second) {
+                post_check_fn(pipelines_to_updates->second);
             }
         }
     }
@@ -1327,7 +1376,7 @@ void DispatchGetAccelerationStructureBuildSizesKHR(VkDevice device, VkAccelerati
                     local_pBuildInfo.pGeometries != nullptr ? local_pBuildInfo.pGeometries[geometry_index]
                                                             : *(local_pBuildInfo.ppGeometries[geometry_index]);
                 if (geometry_info.geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
-                    WrapPnextChainHandles(layer_data, geometry_info.geometry.triangles.pNext);
+                    UnwrapPnextChainHandles(layer_data, geometry_info.geometry.triangles.pNext);
                 }
             }
         }
@@ -1449,11 +1498,11 @@ VkResult DispatchCreateComputePipelines(VkDevice device, VkPipelineCache pipelin
             local_pCreateInfos = new vku::safe_VkComputePipelineCreateInfo[createInfoCount];
             for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
                 local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
-                WrapPnextChainHandles(layer_data, local_pCreateInfos[index0].pNext);
+                UnwrapPnextChainHandles(layer_data, local_pCreateInfos[index0].pNext);
                 if (pCreateInfos[index0].stage.module) {
                     local_pCreateInfos[index0].stage.module = layer_data->Unwrap(pCreateInfos[index0].stage.module);
                 }
-                WrapPnextChainHandles(layer_data, local_pCreateInfos[index0].stage.pNext);
+                UnwrapPnextChainHandles(layer_data, local_pCreateInfos[index0].stage.pNext);
                 if (pCreateInfos[index0].layout) {
                     local_pCreateInfos[index0].layout = layer_data->Unwrap(pCreateInfos[index0].layout);
                 }
@@ -1512,6 +1561,14 @@ VkResult DispatchCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pi
                 if (pCreateInfos[index0].basePipelineHandle) {
                     local_pCreateInfos[index0].basePipelineHandle = layer_data->Unwrap(pCreateInfos[index0].basePipelineHandle);
                 }
+
+                auto *binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(local_pCreateInfos[index0].pNext);
+                if (binary_info) {
+                    auto *unwrapped_binaries = const_cast<VkPipelineBinaryKHR *>(binary_info->pPipelineBinaries);
+                    for (uint32_t idx1 = 0; idx1 < binary_info->binaryCount; ++idx1) {
+                        unwrapped_binaries[idx1] = layer_data->Unwrap(binary_info->pPipelineBinaries[idx1]);
+                    }
+                }
             }
         }
     }
@@ -1542,6 +1599,42 @@ VkResult DispatchReleasePerformanceConfigurationINTEL(VkDevice device, VkPerform
     if (!wrap_handles) return layer_data->device_dispatch_table.ReleasePerformanceConfigurationINTEL(device, configuration);
     { configuration = layer_data->Unwrap(configuration); }
     VkResult result = layer_data->device_dispatch_table.ReleasePerformanceConfigurationINTEL(device, configuration);
+
+    return result;
+}
+
+VkResult DispatchCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
+                                           const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries) {
+    auto layer_data = GetLayerDataPtr(GetDispatchKey(device), layer_data_map);
+    if (!wrap_handles)
+        return layer_data->device_dispatch_table.CreatePipelineBinariesKHR(device, pCreateInfo, pAllocator, pBinaries);
+    vku::safe_VkPipelineBinaryCreateInfoKHR var_local_pCreateInfo;
+    vku::safe_VkPipelineBinaryCreateInfoKHR* local_pCreateInfo = nullptr;
+    const uint32_t array_size = pBinaries->pipelineBinaryCount;
+    {
+        if (pCreateInfo) {
+            local_pCreateInfo = &var_local_pCreateInfo;
+            local_pCreateInfo->initialize(pCreateInfo);
+
+            if (pCreateInfo->pipeline) {
+                local_pCreateInfo->pipeline = layer_data->Unwrap(pCreateInfo->pipeline);
+            }
+            if (local_pCreateInfo->pPipelineCreateInfo) {
+                UnwrapPnextChainHandles(layer_data, local_pCreateInfo->pPipelineCreateInfo->pNext);
+            }
+        }
+    }
+    VkResult result = layer_data->device_dispatch_table.CreatePipelineBinariesKHR(
+        device, (const VkPipelineBinaryCreateInfoKHR *)local_pCreateInfo, pAllocator, (VkPipelineBinaryHandlesInfoKHR *)pBinaries);
+
+    if (pBinaries->pPipelineBinaries)
+    {
+        for (uint32_t index0 = 0; index0 < array_size; index0++) {
+            if (pBinaries->pPipelineBinaries[index0] != VK_NULL_HANDLE) {
+                pBinaries->pPipelineBinaries[index0] = layer_data->WrapNew(pBinaries->pPipelineBinaries[index0]);
+            }
+        }
+    }
 
     return result;
 }

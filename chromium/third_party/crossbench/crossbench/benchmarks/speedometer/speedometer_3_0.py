@@ -23,7 +23,7 @@ if TYPE_CHECKING:
   from crossbench.runner.run import Run
   ShuffleSeedT = Optional[Union[str, int]]
   from crossbench.runner.actions import Actions
-  from crossbench.types import JSON
+  from crossbench.types import Json
 
 
 class Speedometer30Probe(SpeedometerProbe):
@@ -38,7 +38,7 @@ class Speedometer30Probe(SpeedometerProbe):
   def speedometer(self) -> Speedometer30Benchmark:
     return cast(Speedometer30Benchmark, self.benchmark)
 
-  def to_json(self, actions: Actions) -> JSON:
+  def to_json(self, actions: Actions) -> Json:
     return actions.js(self.JS)
 
   def process_json_data(self, json_data) -> Any:
@@ -52,8 +52,8 @@ class Speedometer30Probe(SpeedometerProbe):
       json_data[metric_key] = json_data.pop(metric_key)
     return json_data
 
-  def flatten_json_data(self, json_data: Any) -> JSON:
-    result: Dict[str, float] = dict()
+  def flatten_json_data(self, json_data: Any) -> Json:
+    result: Dict[str, float] = {}
     assert isinstance(json_data, dict), f"Expected dict, got {type(json_data)}"
     for name, metric in json_data.items():
       result[name] = metric["mean"]

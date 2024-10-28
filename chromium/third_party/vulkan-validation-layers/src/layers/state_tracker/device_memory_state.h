@@ -62,7 +62,7 @@ class DeviceMemory : public StateObject {
     void *p_driver_data;                   // Pointer to application's actual memory
     const VkDeviceSize fake_base_address;  // To allow a unified view of allocations, useful to Synchronization Validation
 
-    DeviceMemory(VkDeviceMemory memory, const VkMemoryAllocateInfo *pAllocateInfo, uint64_t fake_address,
+    DeviceMemory(VkDeviceMemory memory, const VkMemoryAllocateInfo *allocate_info, uint64_t fake_address,
                  const VkMemoryType &memory_type, const VkMemoryHeap &memory_heap,
                  std::optional<DedicatedBinding> &&dedicated_binding, uint32_t physical_device_count);
 
@@ -100,8 +100,10 @@ struct MEM_BINDING {
 
 class BindableMemoryTracker {
   public:
+    using BufferRange = sparse_container::range<VkDeviceSize>;
     using MemoryRange = sparse_container::range<VkDeviceSize>;
     using BoundMemoryRange = std::map<VkDeviceMemory, std::vector<MemoryRange>>;
+    using BoundRanges = vvl::unordered_map<VkDeviceMemory, std::vector<std::pair<MemoryRange, BufferRange>>>;
     using DeviceMemoryState = unordered_set<std::shared_ptr<vvl::DeviceMemory>>;
 
     virtual ~BindableMemoryTracker() {}
@@ -113,6 +115,7 @@ class BindableMemoryTracker {
     virtual void BindMemory(StateObject *, std::shared_ptr<vvl::DeviceMemory> &, VkDeviceSize, VkDeviceSize, VkDeviceSize) = 0;
 
     virtual BoundMemoryRange GetBoundMemoryRange(const MemoryRange &) const = 0;
+    virtual BoundRanges GetBoundRanges(const BufferRange &ranges_bounds, const std::vector<BufferRange> &ranges) const = 0;
     virtual DeviceMemoryState GetBoundMemoryStates() const = 0;
 };
 
@@ -130,6 +133,9 @@ class BindableNoMemoryTracker : public BindableMemoryTracker {
     void BindMemory(StateObject *, std::shared_ptr<vvl::DeviceMemory> &, VkDeviceSize, VkDeviceSize, VkDeviceSize) override {}
 
     BoundMemoryRange GetBoundMemoryRange(const MemoryRange &) const override { return BoundMemoryRange{}; }
+    BoundRanges GetBoundRanges(const BufferRange &ranges_bounds, const std::vector<BufferRange> &ranges) const override {
+        return {};
+    }
     DeviceMemoryState GetBoundMemoryStates() const override { return DeviceMemoryState{}; }
 };
 
@@ -149,6 +155,8 @@ class BindableLinearMemoryTracker : public BindableMemoryTracker {
                     VkDeviceSize resource_offset, VkDeviceSize size) override;
 
     BoundMemoryRange GetBoundMemoryRange(const MemoryRange &range) const override;
+    // No need to have this overload for linear memory
+    BoundRanges GetBoundRanges(const BufferRange &ranges_bounds, const std::vector<BufferRange> &ranges) const override;
     DeviceMemoryState GetBoundMemoryStates() const override;
 
   private:
@@ -172,6 +180,13 @@ class BindableSparseMemoryTracker : public BindableMemoryTracker {
                     VkDeviceSize resource_offset, VkDeviceSize size) override;
 
     BoundMemoryRange GetBoundMemoryRange(const MemoryRange &range) const override;
+    // With a list of (VALID) buffer ranges as input, and `ranges_bounds` being a range that contains all of those buffer ranges,
+    // find what tracked VkDeviceMemory maps to what buffer range.
+    // Result is stored in a "VkDeviceMemory -> vector<(memory range, buffer range)>" map.
+    // Pairs in vector<(memory range, buffer range)> are sorted in ascending order with respect to memory ranges
+    // Note: The stored buffer range in the map are all subranges of the ranges listed in `buffer_ranges`,
+    // since an input range could be mapped to multiple VkDeviceMemory
+    BoundRanges GetBoundRanges(const BufferRange &ranges_bounds, const std::vector<BufferRange> &buffer_ranges) const override;
 
     DeviceMemoryState GetBoundMemoryStates() const override;
 
@@ -199,7 +214,11 @@ class BindableMultiplanarMemoryTracker : public BindableMemoryTracker {
                     VkDeviceSize resource_offset, VkDeviceSize size) override;
 
     BoundMemoryRange GetBoundMemoryRange(const MemoryRange &range) const override;
-
+    // No reason to have this function for multi planar memory
+    BoundRanges GetBoundRanges(const BufferRange &ranges_bounds, const std::vector<BufferRange> &ranges) const override {
+        assert(false);
+        return {};
+    }
     DeviceMemoryState GetBoundMemoryStates() const override;
 
   private:
@@ -292,6 +311,11 @@ class Bindable : public StateObject {
 
     BindableMemoryTracker::BoundMemoryRange GetBoundMemoryRange(const BindableMemoryTracker::MemoryRange &range) const {
         return memory_tracker_->GetBoundMemoryRange(range);
+    }
+
+    BindableLinearMemoryTracker::BoundRanges GetBoundRanges(const BindableMemoryTracker::BufferRange &ranges_bounds,
+                                                            const std::vector<BindableMemoryTracker::BufferRange> ranges) const {
+        return memory_tracker_->GetBoundRanges(ranges_bounds, ranges);
     }
 
     BindableMemoryTracker::DeviceMemoryState GetBoundMemoryStates() const {

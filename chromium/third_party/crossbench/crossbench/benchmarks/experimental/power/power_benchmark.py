@@ -66,7 +66,8 @@ class PowerBenchmarkStoryFilter(StoryFilter[PowerBenchmarkStory]):
       self.story_names = STORY_LIST
       return
     for story_name in patterns:
-      assert story_name in STORY_LIST, f"Could not find {story_name} in STORY_LIST"
+      assert story_name in STORY_LIST, (
+          f"Could not find {story_name} in STORY_LIST")
     self.story_names = patterns
 
   def create_stories(self, separate: bool) -> Sequence[PowerBenchmarkStory]:

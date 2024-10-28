@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import enum
 import logging
-from typing import TYPE_CHECKING, Dict, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Sequence, Set
 
 from crossbench import cli_helper
 from crossbench import path as pth
@@ -96,24 +96,22 @@ TRACE_PRESETS: Dict[str, frozenset[str]] = {
 
 @enum.unique
 class RecordMode(ConfigEnum):
-  CONTINUOUSLY: "RecordMode" = ("record-continuously",
-                                "Record until the trace buffer is full.")
-  UNTIL_FULL: "RecordMode" = (
-      "record-until-full", "Record until the user ends the trace. "
-      "The trace buffer is a fixed size and we use it as "
-      "a ring buffer during recording.")
-  AS_MUCH_AS_POSSIBLE: "RecordMode" = ("record-as-much-as-possible",
-                                       "Record until the trace buffer is full, "
-                                       "but with a huge buffer size.")
-  TRACE_TO_CONSOLE: "RecordMode" = ("trace-to-console",
-                                    "Echo to console. Events are discarded.")
+  CONTINUOUSLY = ("record-continuously",
+                  "Record until the trace buffer is full.")
+  UNTIL_FULL = ("record-until-full", "Record until the user ends the trace. "
+                "The trace buffer is a fixed size and we use it as "
+                "a ring buffer during recording.")
+  AS_MUCH_AS_POSSIBLE = ("record-as-much-as-possible",
+                         "Record until the trace buffer is full, "
+                         "but with a huge buffer size.")
+  TRACE_TO_CONSOLE = ("trace-to-console",
+                      "Echo to console. Events are discarded.")
 
 
 @enum.unique
 class RecordFormat(ConfigEnum):
-  JSON: "RecordFormat" = ("json", "Old about://tracing compatible file format.")
-  PROTO: "RecordFormat" = ("proto",
-                           "New https://ui.perfetto.dev/ compatible format")
+  JSON = ("json", "Old about://tracing compatible file format.")
+  PROTO = ("proto", "New https://ui.perfetto.dev/ compatible format")
 
 
 def parse_trace_config_file_path(value: str) -> pth.LocalPath:
@@ -305,4 +303,4 @@ class TracingProbeContext(ProbeContext[TracingProbe]):
     self.browser_platform.sh(self._traceconv, "json", self.result_path,
                              json_trace_file)
     return self.browser_result(
-        json=(json_trace_file,), file=(self.result_path,))
+        json=(json_trace_file,), trace=(self.result_path,))

@@ -15,30 +15,25 @@
 #pragma once
 
 #include <stdint.h>
-#include "pass.h"
+#include "inject_conditional_function_pass.h"
 
-namespace gpuav {
+namespace gpu {
 namespace spirv {
-
-class Module;
-struct Function;
-struct BasicBlock;
 
 // Create a pass to instrument bindless descriptor checking
 // This pass instruments all bindless references to check that descriptor
 // array indices are inbounds, and if the descriptor indexing extension is
 // enabled, that the descriptor has been initialized.
-class BindlessDescriptorPass : public Pass {
+class BindlessDescriptorPass : public InjectConditionalFunctionPass {
   public:
-    BindlessDescriptorPass(Module& module) : Pass(module, true) {}
+    BindlessDescriptorPass(Module& module) : InjectConditionalFunctionPass(module) {}
+    const char* Name() const final { return "BindlessDescriptorPass"; }
+    void PrintDebugInfo() final;
 
   private:
     bool AnalyzeInstruction(const Function& function, const Instruction& inst) final;
     uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data) final;
     void Reset() final;
-
-    uint32_t FindTypeByteSize(uint32_t type_id, uint32_t matrix_stride = 0, bool col_major = false, bool in_matrix = false);
-    uint32_t GetLastByte(BasicBlock& block, InstructionIt* inst_it);
 
     uint32_t link_function_id = 0;
     uint32_t GetLinkFunctionId();
@@ -57,4 +52,4 @@ class BindlessDescriptorPass : public Pass {
 };
 
 }  // namespace spirv
-}  // namespace gpuav
+}  // namespace gpu

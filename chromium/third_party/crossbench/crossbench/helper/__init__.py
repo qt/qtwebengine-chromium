@@ -292,6 +292,7 @@ def wrap_lines(body: str, width: int = 80, indent: str = "") -> Iterable[str]:
   for line in body.splitlines():
     if len(line) <= width:
       yield f"{indent}{line}"
+      continue
     for split in textwrap.wrap(line, width):
       yield f"{indent}{split}"
 
@@ -380,9 +381,6 @@ def wait_and_terminate(process,
       process.send_signal(signal)
     process.wait(timeout)
     return
-  except KeyboardInterrupt:  # pylint: disable=try-except-raise
-    # Propagate keyboard interrupts, unlike all other exceptions.
-    raise
   except TimeoutExpired as e:
     logging.debug("Got timeout while waiting "
                   "for process shutdown (%s): %s", process, e)

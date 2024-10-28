@@ -19,6 +19,18 @@ export type AccordionItemExpandedEvent = CustomEvent<{
 }>;
 
 /**
+ * Fired when an accordion item is collapsed.
+ */
+export type AccordionItemCollapsedEvent = CustomEvent<{
+  accordionItem: AccordionItem,
+}>;
+
+/**
+ * Variants control how the accordion-item should be styled.
+ */
+export type AccordionItemVariant = 'default'|'compact'|'title-only';
+
+/**
  * The SVG to use in the accordion item's icon button when the accordion row is
  * collapsed.
  */
@@ -54,6 +66,8 @@ const CHEVRON_UP_ICON = html`
           d="M5.41 14L10 9.05533L14.59 14L16 12.4777L10 6L4 12.4777L5.41 14Z" />
     </svg>`;
 
+const LEADING_PADDING =
+    css`var(--cros-accordion-item-leading-padding-inline-end, 16px)`;
 
 /** A chromeOS compliant accordion-item for use in <cros-accordion>. */
 export class AccordionItem extends LitElement {
@@ -78,13 +92,29 @@ export class AccordionItem extends LitElement {
       justify-content: center;
     }
 
+    :host([variant="title-only"]) .accordion-row {
+      padding-block: 8px;
+      padding-inline: 16px 12px;
+    }
+
+    :host([variant="compact"]) {
+      .accordion-row {
+        padding-block: 8px;
+        padding-inline: 14px 8px;
+      }
+
+      .title {
+        font: var(--cros-button-2-font);
+      }
+    }
+
     .title-and-subtitle {
       flex: 1;
-      padding-inline-end: 16px;
+      padding-inline-end: ${LEADING_PADDING};
     }
 
     .has-leading .title-and-subtitle {
-      padding-inline-start: 16px;
+      padding-inline-start: ${LEADING_PADDING};
     }
 
     .title {
@@ -102,6 +132,12 @@ export class AccordionItem extends LitElement {
       transition-duration: 300ms;
       transition-property: height;
       transition-timing-function: cubic-bezier(0.40, 0.00, 0.00, 0.97);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      section.content {
+        transition-duration: 0s;
+      }
     }
 
     .content:not([data-expanded]) {
@@ -124,6 +160,7 @@ export class AccordionItem extends LitElement {
     .content-inner {
       padding: 16px;
       padding-block-start: 0;
+      padding-inline-end: 12px;
     }
 
     .container::after {
@@ -139,24 +176,40 @@ export class AccordionItem extends LitElement {
     }
 
     md-focus-ring {
-      --md-focus-ring-color: var(--cros-sys-focus_ring);
-      --md-focus-ring-width: 2px;
       --md-focus-ring-active-width: 2px;
+      --md-focus-ring-color: var(--cros-sys-focus_ring);
+      --md-focus-ring-duration: 0s;
       --md-focus-ring-shape: 12px;
+      --md-focus-ring-width: 2px;
+    }
+
+    :host([disabled]) {
+      opacity: var(--cros-disabled-opacity);
+      pointer-events: none;
     }
   `;
 
   /** @nocollapse */
   static override properties = {
+    disabled: {type: Boolean, reflect: true},
     expanded: {type: Boolean, reflect: true},
     quick: {type: Boolean, reflect: true},
+    variant: {type: String, reflect: true}
   };
 
   /** @nocollapse */
   static events = {
     /** Triggers when an accordion item is expanded. */
     ACCORDION_ITEM_EXPANDED: 'cros-accordion-item-expanded',
+    /** Triggers when an accordion item is collapsed. */
+    ACCORDION_ITEM_COLLAPSED: 'cros-accordion-item-collapsed',
   } as const;
+
+  /**
+   * Whether or not the accordion item is disabled.
+   * @export
+   */
+  disabled: boolean;
 
   /**
    * Whether or not the accordion content is visible.
@@ -170,10 +223,21 @@ export class AccordionItem extends LitElement {
    */
   quick: boolean;
 
+  // TODO(b/352151998): The `compact` variant should also change the
+  // leading icon size.
+  /**
+   * How the accordion-item should be styled. One of {default, compact,
+   * title-only}.
+   * @export
+   */
+  variant: AccordionItemVariant;
+
   constructor() {
     super();
+    this.disabled = false;
     this.expanded = false;
     this.quick = false;
+    this.variant = 'default';
   }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -182,11 +246,12 @@ export class AccordionItem extends LitElement {
     if (changedProperties.has('expanded')) {
       this.setTransitioning(true);
 
-      if (this.expanded) {
-        this.dispatchEvent(new CustomEvent(
-            AccordionItem.events.ACCORDION_ITEM_EXPANDED,
-            {bubbles: true, composed: true, detail: {accordionItem: this}}));
-      }
+      const eventName = this.expanded ?
+          AccordionItem.events.ACCORDION_ITEM_EXPANDED :
+          AccordionItem.events.ACCORDION_ITEM_COLLAPSED;
+      this.dispatchEvent(new CustomEvent(
+          eventName,
+          {bubbles: true, composed: true, detail: {accordionItem: this}}));
     }
   }
 
@@ -199,43 +264,83 @@ export class AccordionItem extends LitElement {
       '--cros-accordion-item-content-height': `${this.contentHeight}px`
     };
 
+    // The aria-level="3" and role="heading" are used to conform to the WAI
+    // ARIA pattern on accordions:
+    // https://www.w3.org/WAI/ARIA/apg/patterns/accordion/examples/accordion/
     return html`
-      <div class="container ${classMap(containerClasses)}">
-        <div
-            class="accordion-row"
-            part="row"
-            @click=${this.onRowClick}
-            @keydown=${this.onRowKeyDown}
-            tabindex="0">
-          <div class="leading">
-            <slot name="leading" @slotchange=${this.onLeadingSlotChange}></slot>
+      <div class="container ${classMap(containerClasses)}" >
+        <div aria-level="3" role="heading">
+          <div
+              class="accordion-row"
+              id="accordion-row"
+              part="row"
+              aria-expanded=${this.expanded ? 'true' : 'false'}
+              aria-controls="content-inner"
+              aria-labelledby="title-and-subtitle"
+              role="button"
+              @click=${this.onRowClick}
+              @keydown=${this.onRowKeyDown}
+              tabindex=${this.disabled ? -1 : 0}>
+            ${this.renderLeading()}
+            <section
+                aria-hidden="true"
+                class="title-and-subtitle"
+                id="title-and-subtitle">
+              <div class="title">
+                <slot name="title"></slot>
+              </div>
+              ${this.renderSubtitle()}
+            </section>
+            <cros-icon-button
+              tabindex="-1"
+              aria-hidden="true"
+              buttonStyle="floating"
+              size=${this.variant === 'compact' ? 'small' : 'default'}
+              surface="base"
+              shape="square">
+              ${this.expanded ? CHEVRON_UP_ICON : CHEVRON_DOWN_ICON}
+            </cros-icon-button>
+            <md-focus-ring inward></md-focus-ring>
           </div>
-          <section class="title-and-subtitle">
-            <div class="title">
-              <slot name="title"></slot>
-            </div>
-            <div class="subtitle">
-              <slot name="subtitle"></slot>
-            </div>
-          </section>
-          <cros-icon-button
-            aria-expanded=${this.expanded ? 'true' : 'false'}
-            @keydown=${this.onButtonKeyDown}
-            buttonStyle="floating"
-            surface="base"
-            shape="square">
-            ${this.expanded ? CHEVRON_UP_ICON : CHEVRON_DOWN_ICON}
-          </cros-icon-button>
-          <md-focus-ring inward></md-focus-ring>
         </div>
         <section class="content"
             @transitionend=${this.onTransitionEnd}
             style=${styleMap(contentStyle)}
             ?data-expanded=${this.expanded ?? nothing}>
-          <div class="content-inner">
+          <div
+              aria-labelledby="title-and-subtitle"
+              class="content-inner"
+              id="content-inner"
+              part="content"
+              role="region">
             <slot></slot>
           </div>
         </section>
+      </div>
+    `;
+  }
+
+  private renderLeading() {
+    if (this.variant === 'title-only') {
+      return nothing;
+    }
+
+    return html`
+      <div class="leading">
+        <slot name="leading" @slotchange=${this.onLeadingSlotChange}>
+        </slot>
+      </div>
+    `;
+  }
+
+  private renderSubtitle() {
+    if (this.variant === 'title-only' || this.variant === 'compact') {
+      return nothing;
+    }
+
+    return html`
+      <div class="subtitle">
+        <slot name="subtitle"></slot>
       </div>
     `;
   }
@@ -263,16 +368,6 @@ export class AccordionItem extends LitElement {
     this.toggleExpanded();
   }
 
-  private onButtonKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      // Stop propagation so the row keydown handler doesn't also toggle the
-      // accordion.
-      e.stopPropagation();
-      this.toggleExpanded();
-    }
-  }
-
   private onRowKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -288,12 +383,21 @@ export class AccordionItem extends LitElement {
     return this.shadowRoot?.querySelector('.content-inner')?.clientHeight ?? 0;
   }
 
-  private onTransitionEnd(e: TransitionEvent) {
+  private onTransitionEnd() {
     this.setTransitioning(false);
   }
 
   private setTransitioning(isTransitioning: boolean) {
     if (this.quick) {
+      return;
+    }
+
+    // If the user has set their system to prefer reduced motion, we
+    // should skip applying the `data-transitioning` attribute. Note that
+    // the CSS above also has a media query to skip the transition.
+    const prefersReducedMotion =
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
       return;
     }
 
@@ -306,6 +410,10 @@ export class AccordionItem extends LitElement {
   }
 
   private toggleExpanded() {
+    if (this.disabled) {
+      return;
+    }
+
     this.expanded = !this.expanded;
   }
 }
@@ -315,6 +423,8 @@ customElements.define('cros-accordion-item', AccordionItem);
 declare global {
   interface HTMLElementEventMap {
     [AccordionItem.events.ACCORDION_ITEM_EXPANDED]: AccordionItemExpandedEvent;
+    [AccordionItem.events.ACCORDION_ITEM_COLLAPSED]:
+        AccordionItemCollapsedEvent;
   }
   interface HTMLElementTagNameMap {
     'cros-accordion-item': AccordionItem;

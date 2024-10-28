@@ -8,10 +8,9 @@
       {action: "get", url: "about:blank"},
     ],
     cnn_article: [
+      {action: "inject_new_document_script", script_path: "cnn_instrumentation.js", timeout: "5s"},
       {action: "get", url: "https://edition.cnn.com/2024/04/21/china/china-spy-agency-public-profile-intl-hnk/index.html"},
-      {action: "wait_for_element", selector: "button[id=onetrust-accept-btn-handler]", timeout: "3s"},
-      {action: "click", selector: "button[id=onetrust-accept-btn-handler]"},
-      {action: "wait", duration: "3s"},
+      {action: "wait", duration: "5s"},
       {action: "get", url: "about:blank"},
     ],
     wikipedia_article: [
@@ -20,15 +19,13 @@
       {action: "get", url: "about:blank"},
     ],
     globo_homepage: [
+      {action: "inject_new_document_script", script_path: "globo_instrumentation.js", timeout: "5s"},
       {action: "get", url: "https://globo.com"},
-      {action: "wait_for_element", selector: "button[aria-label=Consent]", timeout: "3s"},
-      {action: "click", selector: "button[aria-label=Consent]"},
-      {action: "wait", duration: "3s"},
+      {action: "wait", duration: "5s"},
       {action: "get", url: "about:blank"},
     ],
     google_search_result: [
       {action: "get", url: "https://www.google.com/search?q=cats"},
-      // TODO: close the cookies dialog
       {action: "wait", duration: "3s"},
       {action: "get", url: "about:blank"},
     ],
