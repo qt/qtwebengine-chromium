@@ -30,7 +30,7 @@ class Struct:
         print >>sys.stderr, '  Created struct: %s' % name
 
     def AddEntry(self, entry):
-        if self._tags.has_key(entry.Tag()):
+        if entry.Tag() in self._tags:
             print >>sys.stderr, ( 'Entry "%s" duplicates tag number '
                                   '%d from "%s" around line %d' ) % (
                 entry.Name(), entry.Tag(),

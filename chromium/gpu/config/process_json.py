@@ -606,7 +606,7 @@ def write_conditions(entry_id, is_exception, exception_id, entry,
                   'Intel' in driver_vendor)
       assert is_intel, 'Intel driver schema is only for Intel GPUs'
       valid_version = check_intel_driver_version(driver_version['value'])
-      if driver_version.has_key('value2'):
+      if 'value2' in driver_version:
         valid_version = (valid_version and
                          check_intel_driver_version(driver_version['value2']))
       assert valid_version, INTEL_DRIVER_VERSION_SCHEMA
