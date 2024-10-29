@@ -874,6 +874,7 @@ jumbo_static_library("browser") {
 
     deps = []
     deps = [
+      ":buildflags",
       "//base",
       "//base:i18n",
       "//build:branding_buildflags",
