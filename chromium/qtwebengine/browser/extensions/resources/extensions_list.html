@@ -1,0 +1,22 @@
+<template is="dom-if" if="[[!isLoading]]">
+<div style="display:grid;grid-template-columns: 1fr 1fr;gap:10px;margin-top:10px">
+  <template is="dom-repeat" items="[[extensionsInfo]]">
+    <div style="display:flex;flex-direction:column;gap:10px;border:1px solid #000;border-radius:8px;padding:8px;">
+        <div style="display:flex;gap:10px">
+            <div>[[item.name]]</div>
+            <span>[[item.version]]</span>
+        </div>
+
+        <div>
+            [[item.description]]
+        </div>
+        <div>
+            ID: [[item.id]]
+        </div>
+        <div>
+            State: [[isEnabled_(item.isEnabled)]]
+        </div>
+    </div>
+  </template>
+  </div>
+</template>
