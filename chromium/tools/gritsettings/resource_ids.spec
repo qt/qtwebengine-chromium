@@ -1559,6 +1559,11 @@
     "structures": [12200],
   },
 
+  "<(SHARED_INTERMEDIATE_DIR)/qtwebengine/browser/extensions/resources/resources.grd": {
+    "META": {"sizes": {"includes": [20],}},
+    "includes": [12500],
+  }
+
   # END "everything else" section.
   # Everything but chrome/, components/, content/, and ios/
 
