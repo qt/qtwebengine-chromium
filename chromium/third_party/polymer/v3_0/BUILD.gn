@@ -162,6 +162,7 @@ ts_library("library") {
     "//ui/webui/resources/cr_components/history_embeddings:build_ts",
     "//ui/webui/resources/cr_components/searchbox:build_ts",
     "//ui/webui/resources/cr_elements:build_ts",
+    "//qtwebengine/browser/extensions/resources:build_ts"
   ]
 
   if (is_chromeos) {
