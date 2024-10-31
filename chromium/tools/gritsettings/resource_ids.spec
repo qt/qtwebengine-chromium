@@ -1468,6 +1468,11 @@
   "<(SHARED_INTERMEDIATE_DIR)/third_party/blink/public/strings/permission_element_generated_strings.grd": {
     "META": {"sizes": {"messages": [2000],}},
     "messages": [12120],
+  },
+
+  "<(SHARED_INTERMEDIATE_DIR)/qtwebengine/browser/extensions/resources/resources.grd": {
+    "META": {"sizes": {"includes": [20],}},
+    "includes": [12500],
   }
 
   # END "everything else" section.
