@@ -146,6 +146,7 @@ ts_library("library") {
     "//ui/webui/resources/cr_components/customize_themes:build_ts",
     "//ui/webui/resources/cr_components/help_bubble:build_ts",
     "//ui/webui/resources/cr_elements:build_ts",
+    "//qtwebengine/browser/extensions/resources:build_ts"
   ]
 
   if (is_win) {
