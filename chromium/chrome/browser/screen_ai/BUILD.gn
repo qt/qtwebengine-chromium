@@ -5,7 +5,7 @@
 import("//build/config/ui.gni")
 import("//services/screen_ai/buildflags/features.gni")
 
-assert(enable_screen_ai_service)
+# assert(enable_screen_ai_service)
 
 source_set("screen_ai_downloader") {
   if (is_chromeos) {

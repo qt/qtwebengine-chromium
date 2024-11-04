@@ -39,6 +39,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "base/trace_event/trace_event.h"
+#include "components/ml/buildflags.h"
 #include "gpu/config/device_perf_info.h"
 #include "gpu/config/gpu_blocklist.h"
 #include "gpu/config/gpu_crash_keys.h"
@@ -52,7 +53,9 @@
 #include "gpu/config/gpu_preferences.h"
 #include "gpu/config/gpu_switches.h"
 #include "gpu/vulkan/buildflags.h"
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/features.mojom-features.h"
+#endif
 #include "skia/buildflags.h"
 #include "ui/gfx/extension_set.h"
 #include "ui/gl/buildflags.h"
@@ -363,6 +366,7 @@ GpuFeatureStatus GetSkiaGraphiteFeatureStatus(
   return kGpuFeatureStatusDisabled;
 }
 
+#if BUILDFLAG(USE_ML)
 GpuFeatureStatus GetWebNNFeatureStatus(
     const std::set<int>& blocklisted_features) {
   if (!base::FeatureList::IsEnabled(
@@ -374,6 +378,7 @@ GpuFeatureStatus GetWebNNFeatureStatus(
   }
   return kGpuFeatureStatusEnabled;
 }
+#endif
 
 GpuFeatureStatus GetDrDCFeatureStatus(const std::set<int>& blocklisted_features,
                                       GpuFeatureStatus graphite_status) {
@@ -709,8 +714,13 @@ GpuFeatureInfo ComputeGpuFeatureInfo(const GPUInfo& gpu_info,
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_SKIA_GRAPHITE] =
       GetSkiaGraphiteFeatureStatus(blocklisted_features, gpu_preferences,
                                    command_line, gpu_info);
+#if BUILDFLAG(USE_ML)
   gpu_feature_info.status_values[GPU_FEATURE_TYPE_WEBNN] =
       GetWebNNFeatureStatus(blocklisted_features);
+#else
+  gpu_feature_info.status_values[GPU_FEATURE_TYPE_WEBNN] =
+      kGpuFeatureStatusDisabled;
+#endif // BUILDFLAG(USE_ML)
   gpu_feature_info
       .status_values[GPU_FEATURE_TYPE_DIRECT_RENDERING_DISPLAY_COMPOSITOR] =
       GetDrDCFeatureStatus(

@@ -20,6 +20,7 @@
 #include "cc/base/features.h"
 #include "components/attribution_reporting/features.h"
 #include "components/content_settings/core/common/features.h"
+#include "components/ml/buildflags.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/features.h"
@@ -36,7 +37,9 @@
 #include "net/base/features.h"
 #include "services/device/public/cpp/device_features.h"
 #include "services/network/public/cpp/features.h"
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/features.mojom-features.h"
+#endif
 #include "third_party/blink/public/common/buildflags.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/features_generated.h"
@@ -320,9 +323,11 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(net::features::kHstsTopLevelNavigationsOnly)},
           {"KeyboardAccessibleTooltip",
            raw_ref(features::kKeyboardAccessibleTooltip)},
+#if BUILDFLAG(USE_ML)
           {"MachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::kWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
+#endif
           {"OriginIsolationHeader", raw_ref(features::kOriginIsolationHeader)},
           {"ReduceAcceptLanguage",
            raw_ref(network::features::kReduceAcceptLanguage)},
@@ -349,10 +354,12 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(features::kTrustedTypesFromLiteral)},
           {"MediaStreamTrackTransfer",
            raw_ref(features::kMediaStreamTrackTransfer)},
+#if BUILDFLAG(USE_ML)
           {"ExperimentalMachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::
                        kExperimentalWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
+#endif
           {"LocalNetworkAccessPermissionPolicy",
            raw_ref(network::features::kLocalNetworkAccessChecks)}};
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {

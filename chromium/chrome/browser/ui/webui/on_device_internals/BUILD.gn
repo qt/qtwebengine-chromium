@@ -39,7 +39,7 @@ source_set("on_device_internals") {
     "//components/update_client",
     "//content/public/browser",
     "//services/data_decoder/public/cpp",
-    "//services/on_device_model/ml:ml_no_internal",
+#    "//services/on_device_model/ml:ml_no_internal",
     "//services/preferences/public/cpp",
     "//ui/base",
     "//ui/webui",

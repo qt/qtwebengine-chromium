@@ -9,6 +9,7 @@ import("//build/config/chrome_build.gni")
 import("//build/config/chromebox_for_meetings/buildflags.gni")
 import("//build/config/compiler/pgo/pgo.gni")
 import("//build/config/features.gni")
+import("//build/config/ml.gni")
 import("//build/config/python.gni")
 import("//build/config/ui.gni")
 import("//chrome/browser/buildflags.gni")
@@ -2976,7 +2977,6 @@ source_set("browser") {
     "//services/service_manager/public/cpp",
     "//services/shape_detection/public/mojom",
     "//services/strings",
-    "//services/webnn/public/mojom",
     "//skia",
     "//sql",
     "//storage/browser",
@@ -3043,6 +3043,10 @@ source_set("browser") {
     "//chrome/browser/sharing/glic_experimental_triggering:impl",
     "//chrome/browser/ui/webauthn:impl",
   ]
+
+  if (use_ml) {
+    deps += [ "//services/webnn/public/mojom" ]
+  }
 
   if (enable_webui_ntp) {
     deps += [
