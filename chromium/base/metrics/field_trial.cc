@@ -1020,7 +1020,7 @@ std::string FieldTrialList::SerializeSharedMemoryRegionMetadata(
   // Tell the child process the name of the inherited HANDLE.
   uintptr_t uintptr_handle =
       reinterpret_cast<uintptr_t>(shm.GetPlatformHandle());
-  ss << uintptr_handle << ",";
+  ss << NumberToString(uintptr_handle) << ",";
   if (launch_options->elevated) {
     // Tell the child that it must open its parent and grab the handle.
     ss << "p,";
@@ -1061,8 +1061,8 @@ std::string FieldTrialList::SerializeSharedMemoryRegionMetadata(
 #endif
 
   UnguessableToken guid = shm.GetGUID();
-  ss << guid.GetHighForSerialization() << "," << guid.GetLowForSerialization();
-  ss << "," << shm.GetSize();
+  ss << NumberToString(guid.GetHighForSerialization()) << "," << NumberToString(guid.GetLowForSerialization());
+  ss << "," << NumberToString(shm.GetSize());
   return ss.str();
 }
 
