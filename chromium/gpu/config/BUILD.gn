@@ -4,6 +4,7 @@
 
 import("//build/config/cast.gni")
 import("//build/config/chrome_build.gni")
+import("//build/config/ml.gni")
 import("//build/config/ui.gni")
 import("//gpu/vulkan/features.gni")
 import("//skia/features.gni")
@@ -157,6 +158,7 @@ component("config") {
     "//build:branding_buildflags",
     "//build:chromecast_buildflags",
     "//components/miracle_parameter/common",
+    "//components/ml:buildflags",
     "//gpu/command_buffer/common",
     "//gpu/ipc/common:gpu_preferences_interface",
     "//gpu/vulkan:buildflags",
@@ -173,6 +175,12 @@ component("config") {
 
   if (enable_vulkan) {
     deps += [ "//gpu/ipc/common:vulkan_interface" ]
+  }
+
+  if (use_ml) {
+    deps += [
+      "//services/webnn/public/mojom:features",
+    ]
   }
 
   if (use_dawn || skia_use_dawn) {

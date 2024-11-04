@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//third_party/blink/renderer/config.gni")
+
 # Generated sources for production
 
 generated_async_iterator_sources_in_core = [
@@ -1896,8 +1898,6 @@ generated_union_sources_in_core = [
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_audiotrack_texttrack_videotrack.h",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_autokeyword_double.cc",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_autokeyword_double.h",
-  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_bigint_unrestricteddouble.cc",
-  "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_bigint_unrestricteddouble.h",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_blob_string.cc",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_blob_string.h",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_boolean_bytestringbytestringrecord.cc",
@@ -2071,6 +2071,13 @@ generated_union_sources_in_core = [
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_usvstring_usvstringsequencesequence_usvstringusvstringrecord.cc",
   "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_usvstring_usvstringsequencesequence_usvstringusvstringrecord.h",
 ]
+
+if (use_ml) {
+  generated_union_sources_in_core += [
+    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_bigint_unrestricteddouble.cc",
+    "$root_gen_dir/third_party/blink/renderer/bindings/core/v8/v8_union_bigint_unrestricteddouble.h",
+  ]
+}
 
 # Generated sources for testing
 

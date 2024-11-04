@@ -23,6 +23,7 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/ml/buildflags.h"
 #include "components/viz/service/display_embedder/compositor_gpu_thread.h"
 #include "components/viz/service/gl/exit_code.h"
 #include "components/viz/service/viz_service_export.h"
@@ -47,11 +48,14 @@
 #include "services/viz/privileged/mojom/gl/gpu_host.mojom.h"
 #include "services/viz/privileged/mojom/gl/gpu_service.mojom.h"
 #include "services/viz/privileged/mojom/viz_main.mojom.h"
-#include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "skia/buildflags.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/gfx/gpu_extra_info.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if BUILDFLAG(USE_ML)
+#include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
+#endif  // BUILDFLAG(USE_ML)
 
 #if BUILDFLAG(IS_WIN)
 #include "ui/gl/direct_composition_support.h"
@@ -196,10 +200,12 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
       mojo::PendingReceiver<media::mojom::VideoEncodeAcceleratorProvider>
           vea_provider_receiver) override;
 
+#if BUILDFLAG(USE_ML)
   void BindWebNNContextProvider(
       mojo::PendingReceiver<webnn::mojom::WebNNContextProvider>
           pending_receiver,
       int client_id) override;
+#endif  // BUILDFLAG(USE_ML)
 
   void GetVideoMemoryUsageStats(
       GetVideoMemoryUsageStatsCallback callback) override;
@@ -529,7 +535,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   std::unique_ptr<gpu::DawnContextProvider> dawn_context_provider_;
 #endif
 
+#if BUILDFLAG(USE_ML)
   std::unique_ptr<webnn::WebNNContextProviderImpl> webnn_context_provider_;
+#endif
 
   std::unique_ptr<gpu::GpuMemoryBufferFactory> gpu_memory_buffer_factory_;
 

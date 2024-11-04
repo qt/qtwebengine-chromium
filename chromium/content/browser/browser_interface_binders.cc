@@ -17,8 +17,9 @@
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "components/language_detection/content/common/language_detection.mojom.h"
-#include "components/optimization_guide/public/mojom/model_broker.mojom.h"
+// #include "components/optimization_guide/public/mojom/model_broker.mojom.h"
 #include "components/viz/host/gpu_client.h"
+#include "components/ml/buildflags.h"
 #include "content/browser/attribution_reporting/attribution_internals.mojom.h"
 #include "content/browser/attribution_reporting/attribution_internals_ui.h"
 #include "content/browser/background_fetch/background_fetch_service_impl.h"
@@ -128,8 +129,6 @@
 #include "services/shape_detection/public/mojom/facedetection_provider.mojom.h"
 #include "services/shape_detection/public/mojom/shape_detection_service.mojom.h"
 #include "services/shape_detection/public/mojom/textdetection.mojom.h"
-#include "services/webnn/public/mojom/features.mojom-features.h"
-#include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #include "storage/browser/quota/quota_internals.mojom.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
@@ -309,6 +308,7 @@ void BindTextDetection(
   GetShapeDetectionService()->BindTextDetection(std::move(receiver));
 }
 
+#if BUILDFLAG(USE_ML)
 void BindWebNNContextProviderForRenderFrame(
     RenderFrameHost* host,
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver) {
@@ -336,6 +336,7 @@ void BindWebNNContextProviderForWorker(
   process_host->GetGpuClient()->BindWebNNContextProvider(std::move(receiver));
 #endif
 }
+#endif // BUILDFLAG(USE_ML)
 
 #if BUILDFLAG(IS_MAC)
 void BindTextInputHost(
@@ -946,11 +947,13 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
   map->Add<handwriting::mojom::HandwritingRecognitionService>(
       &CreateHandwritingRecognitionService);
 
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(
           webnn::mojom::features::kWebMachineLearningNeuralNetwork)) {
     map->Add<webnn::mojom::WebNNContextProvider>(base::BindRepeating(
         &BindWebNNContextProviderForRenderFrame, base::Unretained(host)));
   }
+#endif // BUILDFLAG(USE_ML)
 
   map->Add<blink::mojom::WebBluetoothService>(base::BindRepeating(
       &WebBluetoothServiceImpl::BindIfAllowed, base::Unretained(host)));
@@ -1136,6 +1139,7 @@ void PopulateFrameBinders(RenderFrameHostImpl* host, mojo::BinderMap* map) {
                           base::Unretained(host->GetProcess())));
 #endif
 
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(blink::features::kBuiltInAIAPI)) {
     // We take the `document_associated_data` when the callback runs because
     // RenderFrameHosts live across multiple documents. Even though the current
@@ -1302,12 +1306,14 @@ void PopulateBinderMapWithContext(
       &OriginTrialStateHostImpl::Create);
   map->Add<blink::mojom::StorageAccessHandle>(&StorageAccessHandle::Create);
 
+#if BUILDFLAG(USE_ML)
   map->Add<optimization_guide::mojom::ModelBroker>(
       &EmptyBinderForFrame<optimization_guide::mojom::ModelBroker>);
   if (base::FeatureList::IsEnabled(blink::features::kBuiltInAIAPI)) {
     map->Add<blink::mojom::AIManager>(
         &EmptyBinderForFrame<blink::mojom::AIManager>);
   }
+#endif
 
   // This should be last to allow overrides of any interface.
   GetContentClient()->browser()->RegisterBrowserInterfaceBindersForFrame(host,
@@ -1356,6 +1362,7 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::USER_VISIBLE}));
 
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(
           webnn::mojom::features::kWebMachineLearningNeuralNetwork)) {
     // base::Unretained(host->GetProcessHost()) is safe because the map is owned
@@ -1364,6 +1371,7 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
         &BindWebNNContextProviderForWorker<DedicatedWorkerHost>,
         base::Unretained(host)));
   }
+#endif // BUILDFLAG(USE_ML)
 
 #if !BUILDFLAG(IS_ANDROID)
   map->Add<blink::mojom::DirectSocketsService>(
@@ -1437,6 +1445,7 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
       RenderProcessHost::NotificationServiceCreatorType::kDedicatedWorker,
       host));
 
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(blink::features::kBuiltInAIAPI)) {
     map->Add<blink::mojom::AIManager>(
         base::BindRepeating(&ContentBrowserClient::BindAIManager,
@@ -1552,6 +1561,7 @@ void PopulateSharedWorkerBinders(SharedWorkerHost* host, mojo::BinderMap* map) {
         &SharedWorkerHost::BindPressureService, base::Unretained(host)));
   }
 #endif  // BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(
           webnn::mojom::features::kWebMachineLearningNeuralNetwork)) {
     map->Add<webnn::mojom::WebNNContextProvider>(base::BindRepeating(
@@ -1729,6 +1739,7 @@ void PopulateServiceWorkerBinders(ServiceWorkerHost* host,
       &ServiceWorkerHost::CreateBucketManagerHost, base::Unretained(host)));
   map->Add<blink::mojom::WebUsbService>(base::BindRepeating(
       &ServiceWorkerHost::BindUsbService, base::Unretained(host)));
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(
           webnn::mojom::features::kWebMachineLearningNeuralNetwork)) {
     map->Add<webnn::mojom::WebNNContextProvider>(base::BindRepeating(
@@ -1768,6 +1779,7 @@ void PopulateServiceWorkerBinders(ServiceWorkerHost* host,
             },
             base::Unretained(host)));
   }
+#endif
 
   // RenderProcessHost binders
   map->Add<media::mojom::VideoDecodePerfHistory>(BindServiceWorkerReceiver(

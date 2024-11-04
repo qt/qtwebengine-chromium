@@ -99,6 +99,7 @@ base::WeakPtr<GpuClient> GpuClient::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
+#if BUILDFLAG(USE_ML)
 void GpuClient::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver) {
   if (auto* gpu_host = delegate_->EnsureGpuHost()) {
@@ -106,6 +107,7 @@ void GpuClient::BindWebNNContextProvider(
                                                       client_id_);
   }
 }
+#endif  // BUILDFLAG(USE_ML)
 
 void GpuClient::OnEstablishGpuChannel(
     mojo::ScopedMessagePipeHandle channel_handle,
