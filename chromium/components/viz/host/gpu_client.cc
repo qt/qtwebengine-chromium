@@ -101,6 +101,7 @@ base::WeakPtr<GpuClient> GpuClient::GetWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
 
+#if BUILDFLAG(USE_ML)
 void GpuClient::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver,
     bool is_incognito) {
@@ -109,6 +110,7 @@ void GpuClient::BindWebNNContextProvider(
                                                       client_id_, is_incognito);
   }
 }
+#endif  // BUILDFLAG(USE_ML)
 
 void GpuClient::OnEstablishGpuChannel(
     mojo::ScopedMessagePipeHandle channel_handle,

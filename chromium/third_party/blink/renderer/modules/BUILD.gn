@@ -4,6 +4,7 @@
 
 import("//build/config/cast.gni")
 import("//build/config/python.gni")
+import("//build/config/ml.gni")
 import("//media/media_options.gni")
 import("//services/device/public/cpp/compute_pressure/buildflags.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -57,7 +58,6 @@ jumbo_component("modules") {
     "//third_party/blink/renderer/bindings/modules/v8",
     "//third_party/blink/renderer/modules/accessibility",
     "//third_party/blink/renderer/modules/ad_auction",
-    "//third_party/blink/renderer/modules/ai",
     "//third_party/blink/renderer/modules/animationworklet",
     "//third_party/blink/renderer/modules/app_banner",
     "//third_party/blink/renderer/modules/audio_output_devices",
@@ -119,7 +119,6 @@ jumbo_component("modules") {
     "//third_party/blink/renderer/modules/mediasource",
     "//third_party/blink/renderer/modules/mediastream",
     "//third_party/blink/renderer/modules/media",
-    "//third_party/blink/renderer/modules/ml",
     "//third_party/blink/renderer/modules/navigatorcontentutils",
     "//third_party/blink/renderer/modules/netinfo",
     "//third_party/blink/renderer/modules/nfc",
@@ -165,6 +164,13 @@ jumbo_component("modules") {
     "//third_party/blink/renderer/modules/worklet",
     "//third_party/blink/renderer/modules/xr",
   ]
+
+  if (use_ml) {
+    sub_modules += [
+      "//third_party/blink/renderer/modules/ai",
+      "//third_party/blink/renderer/modules/ml",
+    ]
+  }
 
   # This uses target_os rather than current_os (which is what is_android is set
   # from) for the case of generating the v8 context snapshot for android. When
@@ -318,13 +324,19 @@ group("make_modules_generated") {
     "//services/device/public/mojom:mojom_blink_headers",
     "//services/device/public/mojom:usb_blink_headers",
     "//services/shape_detection/public/mojom:mojom_blink_headers",
-    "//services/webnn/public/mojom:mojom_blink_headers",
     "//third_party/blink/public/mojom:mojom_modules_blink_headers",
     "//third_party/blink/renderer/bindings/modules/v8:generated",
     "//third_party/blink/renderer/core:core_event_interfaces",
     "//ui/accessibility:ax_enums_mojo_blink_headers",
     "//ui/display/mojom:mojom_blink_headers",
   ]
+
+  if (use_ml) {
+    public_deps += [
+      "//components/ml/mojom:mojom_blink_headers",
+      "//services/webnn/public/mojom:mojom_blink_headers",
+    ]
+  }
 }
 
 # generate_event_interfaces ----------------------------------------------------
@@ -732,7 +744,6 @@ jumbo_source_set("unit_tests") {
     "//third_party/blink/renderer/modules/idle:unit_tests",
     "//third_party/blink/renderer/modules/indexeddb:unit_tests",
     "//third_party/blink/renderer/modules/mediastream:test_support",
-    "//third_party/blink/renderer/modules/ml:unit_tests",
     "//third_party/blink/renderer/modules/peerconnection:test_support",
     "//third_party/blink/renderer/modules/storage:unit_tests",
     "//third_party/blink/renderer/modules/storage_access:unit_tests",
@@ -751,6 +762,12 @@ jumbo_source_set("unit_tests") {
     "//ui/strings:ax_strings_grit",
     "//v8",
   ]
+
+  if (use_ml) {
+    deps += [
+      "//third_party/blink/renderer/modules/ml:unit_tests",
+    ]
+  }
 
   # This uses target_os rather than current_os (which is what is_android is set
   # from) for the case of generating the v8 context snapshot for android. When

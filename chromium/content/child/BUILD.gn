@@ -4,6 +4,7 @@
 
 import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
+import("//build/config/ml.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//third_party/blink/public/public_features.gni")
 if (is_android) {
@@ -77,6 +78,7 @@ target(link_target_type, "child") {
     "//components/discardable_memory/client",
     "//components/discardable_memory/public/mojom",
     "//components/metrics",
+    "//components/ml:buildflags",
     "//components/performance_manager/public/mojom",
     "//components/performance_manager/scenario_api",
     "//components/permissions:permissions_common",
@@ -103,7 +105,6 @@ target(link_target_type, "child") {
     "//services/tracing/public/cpp",
     "//services/tracing/public/cpp:traced_process",
     "//services/tracing/public/cpp/background_tracing",
-    "//services/webnn/public/mojom",
     "//skia",
     "//storage/common",
     "//third_party/blink/public:blink_headers",
@@ -125,6 +126,13 @@ target(link_target_type, "child") {
     "//url",
     "//v8",
   ]
+
+  if (use_ml) {
+    deps += [
+      "//services/webnn/public/mojom",
+      "//components/ml/webnn:features",
+    ]
+  }
 
   if (is_linux || is_chromeos) {
     sources += [

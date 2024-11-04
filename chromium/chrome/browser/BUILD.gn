@@ -9,6 +9,7 @@ import("//build/config/chrome_build.gni")
 import("//build/config/chromebox_for_meetings/buildflags.gni")
 import("//build/config/compiler/pgo/pgo.gni")
 import("//build/config/features.gni")
+import("//build/config/ml.gni")
 import("//build/config/python.gni")
 import("//build/config/ui.gni")
 import("//chrome/browser/buildflags.gni")
@@ -2509,7 +2510,6 @@ static_library("browser") {
     "//services/service_manager/public/cpp",
     "//services/shape_detection/public/mojom",
     "//services/strings",
-    "//services/webnn/public/mojom",
     "//skia",
     "//sql",
     "//storage/browser",
@@ -2580,6 +2580,10 @@ static_library("browser") {
       "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/webui/omnibox_popup/mojom",
     ]
+  }
+
+  if (use_ml) {
+    deps += [ "//services/webnn/public/mojom" ]
   }
 
   # Platforms that have a network diagnostics dialog. All others fall through

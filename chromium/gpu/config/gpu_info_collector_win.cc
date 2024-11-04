@@ -32,6 +32,7 @@
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_com_initializer.h"
 #include "build/branding_buildflags.h"
+#include "components/ml/buildflags.h"
 #include "gpu/config/gpu_util.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "third_party/microsoft_dxheaders/src/include/directx/d3d12.h"
@@ -226,6 +227,7 @@ void CollectNPUInformation(GPUInfo* gpu_info) {
     return;
   }
 
+#if BUILDFLAG(USE_ML)
   // Query all three attribute types to find NPUs. Different NPUs may be
   // exposed through different attributes, so we need to check all of them.
   // Note that `CreateAdapterList()` returns the logical intersection of all
