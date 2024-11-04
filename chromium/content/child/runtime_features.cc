@@ -18,6 +18,7 @@
 #include "build/build_config.h"
 #include "cc/base/features.h"
 #include "components/attribution_reporting/features.h"
+#include "components/ml/buildflags.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/features.h"
@@ -368,9 +369,11 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"FontationsFontBackend",
            raw_ref(blink::features::kFontationsFontBackend)},
           {"FontSrcLocalMatching", raw_ref(features::kFontSrcLocalMatching)},
+#if BUILDFLAG(USE_ML)
           {"MachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::kWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
+#endif
           {"OriginIsolationHeader", raw_ref(features::kOriginIsolationHeader)},
           {"ReduceAcceptLanguage",
            raw_ref(network::features::kReduceAcceptLanguage)},
@@ -397,10 +400,12 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"PrivateNetworkAccessPermissionPrompt",
            raw_ref(network::features::kPrivateNetworkAccessPermissionPrompt),
            kSetOnlyIfOverridden},
-          {"ExperimentalMachineLearningNeuralNetwork",
+#if BUILDFLAG(USE_ML)
+          ,{"ExperimentalMachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::
                        kExperimentalWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
+#endif
           {"WebAuthenticationNewBfCacheHandlingBlink",
            raw_ref(device::kWebAuthnNewBfCacheHandling)}};
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {

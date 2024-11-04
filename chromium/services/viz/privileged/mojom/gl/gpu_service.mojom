@@ -19,8 +19,6 @@ import "mojo/public/mojom/base/byte_string.mojom";
 import "mojo/public/mojom/base/memory_pressure_level.mojom";
 import "mojo/public/mojom/base/process_id.mojom";
 import "mojo/public/mojom/base/shared_memory.mojom";
-import "services/webnn/public/mojom/features.mojom";
-import "services/webnn/public/mojom/webnn_context_provider.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "ui/gfx/mojom/buffer_types.mojom";
 import "ui/gl/mojom/gpu_preference.mojom";
@@ -51,6 +49,10 @@ import "mojo/public/mojom/base/unguessable_token.mojom";
 
 [EnableIf=is_win]
 import "ui/gfx/mojom/dxgi_info.mojom";
+[EnableIf=use_ml]
+import "services/webnn/public/mojom/features.mojom";
+[EnableIf=use_ml]
+import "services/webnn/public/mojom/webnn_context_provider.mojom";
 
 interface GpuService {
   // Tells the GPU service to create a new channel for communication with a
@@ -145,7 +147,8 @@ interface GpuService {
 
   // Binds the pending receiver used to access the hardware accelerated OS
   // machine learning APIs.
-  [RuntimeFeature=webnn.mojom.features.kWebMachineLearningNeuralNetwork]
+  [EnableIf=use_ml,
+   RuntimeFeature=webnn.mojom.features.kWebMachineLearningNeuralNetwork]
   BindWebNNContextProvider(
       pending_receiver<webnn.mojom.WebNNContextProvider>? receiver,
       int32 client_id);

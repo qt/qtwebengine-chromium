@@ -89,6 +89,7 @@ component("gpu") {
     "//ui/gfx/geometry",
   ]
   deps = [
+    "//components/ml:buildflags",
     "//third_party/libyuv",
     "//ui/base",
     "//ui/display/types",

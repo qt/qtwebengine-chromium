@@ -12,7 +12,9 @@
 #include "base/memory/weak_ptr.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "pdf/pdf_view_web_plugin.h"
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 #include "services/screen_ai/public/mojom/screen_ai_service.mojom.h"
+#endif
 
 namespace blink {
 class WebLocalFrame;
@@ -87,11 +89,13 @@ class PdfViewWebPluginClient : public chrome_pdf::PdfViewWebPlugin::Client {
       chrome_pdf::PdfAccessibilityImageFetcher* image_fetcher,
       blink::WebPluginContainer* plugin_element,
       bool print_preview) override;
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   void PerformOcr(
       const SkBitmap& image,
       base::OnceCallback<void(screen_ai::mojom::VisualAnnotationPtr)> callback)
       override;
   void SetOcrDisconnectedCallback(base::RepeatingClosure callback) override;
+#endif
 
  private:
   blink::WebLocalFrame* GetFrame() const;
@@ -105,7 +109,9 @@ class PdfViewWebPluginClient : public chrome_pdf::PdfViewWebPlugin::Client {
 
   raw_ptr<blink::WebPluginContainer> plugin_container_;
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   mojo::Remote<screen_ai::mojom::ScreenAIAnnotator> screen_ai_annotator_;
+#endif
   base::RepeatingClosure ocr_disconnect_callback_;
 
   base::WeakPtrFactory<PdfViewWebPluginClient> weak_factory_{this};

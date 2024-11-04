@@ -203,6 +203,7 @@ PdfViewWebPluginClient::CreateAssociatedURLLoader(
   return GetFrame()->CreateAssociatedURLLoader(options);
 }
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 void PdfViewWebPluginClient::PerformOcr(
     const SkBitmap& image,
     base::OnceCallback<void(screen_ai::mojom::VisualAnnotationPtr)> callback) {
@@ -225,9 +226,12 @@ void PdfViewWebPluginClient::SetOcrDisconnectedCallback(
     base::RepeatingClosure callback) {
   ocr_disconnect_callback_ = std::move(callback);
 }
+#endif
 
 void PdfViewWebPluginClient::OnOcrDisconnected() {
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   screen_ai_annotator_.reset();
+#endif
   CHECK(ocr_disconnect_callback_);
   ocr_disconnect_callback_.Run();
 }
