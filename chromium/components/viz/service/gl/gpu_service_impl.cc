@@ -111,9 +111,9 @@
 
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 #include "services/webnn/webnn_context_provider_impl.h"
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
 #if BUILDFLAG(IS_WIN)
 #include "components/viz/common/overlay_state/win/overlay_state_service.h"
@@ -910,7 +910,7 @@ void GpuServiceImpl::BindClientGmbInterface(
       client_id, std::move(pending_receiver), this, io_runner_);
 }
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 void GpuServiceImpl::BindWebNNContextProvider(
     mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> pending_receiver,
     int client_id) {
@@ -932,7 +932,7 @@ void GpuServiceImpl::BindWebNNContextProvider(
   webnn_context_provider_->BindWebNNContextProvider(
       std::move(pending_receiver));
 }
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
 void GpuServiceImpl::CreateGpuMemoryBuffer(
     gfx::GpuMemoryBufferId id,

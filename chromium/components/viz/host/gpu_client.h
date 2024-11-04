@@ -13,6 +13,7 @@
 #include "base/process/process_handle.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/chromeos_buildflags.h"
+#include "components/ml/buildflags.h"
 #include "components/viz/host/gpu_client_delegate.h"
 #include "components/viz/host/gpu_host_impl.h"
 #include "components/viz/host/viz_host_export.h"
@@ -22,9 +23,9 @@
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "services/viz/public/mojom/gpu.mojom.h"
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
 namespace viz {
 
@@ -58,10 +59,10 @@ class VIZ_HOST_EXPORT GpuClient : public mojom::Gpu {
   void RemoveDiskCacheHandles();
 
   base::WeakPtr<GpuClient> GetWeakPtr();
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
   void BindWebNNContextProvider(
       mojo::PendingReceiver<webnn::mojom::WebNNContextProvider> receiver);
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
   // mojom::ClientGmbInterface is direct interface between renderer and GPU
   // process to create GpuMemoryBuffers.

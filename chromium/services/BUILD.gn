@@ -4,6 +4,7 @@
 
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
+import("//build/config/ml.gni")
 import("//services/screen_ai/buildflags/features.gni")
 import("//services/video_effects/args.gni")
 import("//testing/test.gni")
@@ -58,9 +59,13 @@ test("services_unittests") {
       "//services/viz/public/cpp/compositing:tests",
       "//services/viz/public/cpp/gpu:tests",
       "//services/viz/public/cpp/hit_test:tests",
-      "//services/webnn:tests",
-      "//services/webnn/public/mojom:tests",
     ]
+    if (use_ml) {
+      deps += [
+        "//services/webnn:tests",
+        "//services/webnn/public/mojom:tests",
+      ]
+    }
     if (is_ios) {
       bundle_deps =
           [ "//services/tracing:services_tracing_perfetto_bundle_data" ]

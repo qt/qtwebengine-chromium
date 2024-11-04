@@ -9,6 +9,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/compiler/pgo/pgo.gni")
 import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
+import("//build/config/ml.gni")
 import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
@@ -205,6 +206,7 @@ jumbo_source_set("browser") {
     "//components/offline_pages/core/request_header",
     "//components/optimization_guide/core:features",
     "//components/os_crypt/sync",
+    "//components/ml:buildflags",
     "//components/payments/content/icon",
     "//components/payments/mojom",
     "//components/power_monitor",
@@ -335,9 +337,6 @@ jumbo_source_set("browser") {
     "//services/viz/privileged/mojom",
     "//services/viz/public/cpp/gpu",
     "//services/viz/public/mojom",
-    "//services/webnn:webnn_service",
-    "//services/webnn:webnn_switches",
-    "//services/webnn/public/mojom",
     "//skia",
     "//skia/public/mojom",
     "//storage/browser",
@@ -2368,12 +2367,19 @@ jumbo_source_set("browser") {
       "//device/bluetooth:fake_bluetooth",
       "//device/bluetooth/public/mojom:fake_bluetooth_interfaces",
     ]
-
     sources += [
       "$target_gen_dir/devtools/protocol/bluetooth_emulation.cc",
       "$target_gen_dir/devtools/protocol/bluetooth_emulation.h",
       "devtools/protocol/bluetooth_emulation_handler.cc",
       "devtools/protocol/bluetooth_emulation_handler.h",
+    ]
+  }
+
+  if (use_ml) {
+    deps += [
+      "//services/webnn:webnn_service",
+      "//services/webnn:webnn_switches",
+      "//services/webnn/public/mojom",
     ]
   }
 

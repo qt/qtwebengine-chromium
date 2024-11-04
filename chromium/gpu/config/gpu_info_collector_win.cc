@@ -29,6 +29,7 @@
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_com_initializer.h"
 #include "build/branding_buildflags.h"
+#include "components/ml/buildflags.h"
 #include "gpu/config/gpu_util.h"
 #include "third_party/microsoft_dxheaders/src/include/directx/d3d12.h"
 #include "third_party/microsoft_dxheaders/src/include/directx/dxcore.h"
@@ -219,6 +220,7 @@ void CollectNPUInformation(GPUInfo* gpu_info) {
   if (FAILED(hr)) {
     return;
   }
+#if BUILDFLAG(USE_ML)
   // First query for NPU devices that satisfy the generic machine learning
   // property. Note this must be done as a separate query from core compute
   // because `CreateAdapterList()` returns the logical intersection of all
@@ -237,6 +239,10 @@ void CollectNPUInformation(GPUInfo* gpu_info) {
   // If no generic ML devices were found, then retry with the core compute
   // filter, getting an adapter list that only contains core-compute capable
   // devices.
+#else
+  Microsoft::WRL::ComPtr<IDXCoreAdapterList> adapter_list;
+  uint32_t adapter_count = 0;
+#endif  // BUILDFLAG(USE_ML)
   if (adapter_count == 0) {
     adapter_list.Reset();
 

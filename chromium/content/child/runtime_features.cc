@@ -19,6 +19,7 @@
 #include "build/chromeos_buildflags.h"
 #include "cc/base/features.h"
 #include "components/attribution_reporting/features.h"
+#include "components/ml/buildflags.h"
 #include "content/common/content_navigation_policy.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/features.h"
@@ -388,9 +389,11 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
           {"FontSrcLocalMatching", raw_ref(features::kFontSrcLocalMatching)},
           {"LegacyWindowsDWriteFontFallback",
            raw_ref(features::kLegacyWindowsDWriteFontFallback)},
+#if BUILDFLAG(USE_ML)
           {"MachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::kWebMachineLearningNeuralNetwork),
            kSetOnlyIfOverridden},
+#endif
           {"OriginIsolationHeader", raw_ref(features::kOriginIsolationHeader)},
           {"ReduceAcceptLanguage",
            raw_ref(network::features::kReduceAcceptLanguage)},
@@ -413,11 +416,14 @@ void SetRuntimeFeaturesFromChromiumFeatures() {
            raw_ref(features::kMediaStreamTrackTransfer)},
           {"PrivateNetworkAccessPermissionPrompt",
            raw_ref(network::features::kPrivateNetworkAccessPermissionPrompt),
-           kSetOnlyIfOverridden},
-          {"ExperimentalMachineLearningNeuralNetwork",
+           kSetOnlyIfOverridden}
+#if BUILDFLAG(USE_ML)
+          ,{"ExperimentalMachineLearningNeuralNetwork",
            raw_ref(webnn::mojom::features::
                        kExperimentalWebMachineLearningNeuralNetwork),
-           kSetOnlyIfOverridden}};
+           kSetOnlyIfOverridden}
+#endif
+          };
   for (const auto& mapping : runtimeFeatureNameToChromiumFeatureMapping) {
     SetRuntimeFeatureFromChromiumFeature(
         *mapping.chromium_feature, mapping.option, [&mapping](bool enabled) {

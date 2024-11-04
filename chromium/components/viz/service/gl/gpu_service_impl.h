@@ -26,6 +26,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/ml/buildflags.h"
 #include "components/viz/service/display_embedder/compositor_gpu_thread.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
@@ -58,9 +59,9 @@
 #if BUILDFLAG(IS_WIN)
 #include "ui/gl/direct_composition_support.h"
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
 #endif  // BUILDFLAG(IS_WIN)
 
@@ -90,7 +91,7 @@ namespace media {
 class MediaGpuChannelManager;
 }  // namespace media
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 namespace webnn {
 class WebNNContextProviderImpl;
 }  // namespace webnn
@@ -223,12 +224,12 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
       mojo::PendingReceiver<media::mojom::VideoEncodeAcceleratorProvider>
           vea_provider_receiver) override;
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
   void BindWebNNContextProvider(
       mojo::PendingReceiver<webnn::mojom::WebNNContextProvider>
           pending_receiver,
       int client_id) override;
-#endif  // !BUILDFLAG(IS_CHROMEOS)
+#endif  // !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
 
   void BindClientGmbInterface(
       mojo::PendingReceiver<gpu::mojom::ClientGmbInterface> pending_receiver,
@@ -632,7 +633,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl
   std::unique_ptr<gpu::DawnContextProvider> dawn_context_provider_;
 #endif
 
-#if !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_CHROMEOS) && BUILDFLAG(USE_ML)
   std::unique_ptr<webnn::WebNNContextProviderImpl> webnn_context_provider_;
 #endif
 

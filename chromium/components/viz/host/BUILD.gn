@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/ui.gni")
+import("//build/config/ml.gni")
 import("//components/viz/viz.gni")
 
 viz_component("host") {
@@ -50,6 +51,7 @@ viz_component("host") {
   ]
 
   public_deps = [
+    "//components/ml:buildflags",
     "//components/viz/common",
     "//gpu/command_buffer/client",
     "//gpu/ipc/host",
@@ -57,6 +59,12 @@ viz_component("host") {
     "//services/viz/public/mojom",
     "//ui/gfx/geometry",
   ]
+
+  if (use_ml) {
+    deps += [
+      "//components/ml/webnn:features",
+    ]
+  }
 
   if (is_apple) {
     deps += [ "//ui/accelerated_widget_mac" ]

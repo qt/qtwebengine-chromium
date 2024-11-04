@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/ozone.gni")
+import("//build/config/ml.gni")
 import("//build/config/ui.gni")
 import("//components/viz/viz.gni")
 import("//gpu/vulkan/features.gni")
@@ -283,6 +284,7 @@ viz_component("service") {
   deps = [
     "//build:chromecast_buildflags",
     "//build:chromeos_buildflags",
+    "//components/ml:buildflags",
     "//cc/base",
     "//cc/paint",
     "//components/crash/core/common:crash_key",
@@ -308,8 +310,6 @@ viz_component("service") {
     "//services/metrics/public/mojom",
     "//services/tracing/public/cpp:cpp",
     "//services/viz/privileged/mojom",
-    "//services/webnn:webnn_service",
-    "//services/webnn/public/mojom",
     "//skia",
     "//skia:skcms",
     "//third_party/libyuv",
@@ -335,13 +335,23 @@ viz_component("service") {
     "//services/viz/privileged/mojom/compositing",
     "//services/viz/privileged/mojom/gl",
     "//services/viz/public/mojom",
-    "//services/webnn/public/mojom",
     "//skia",
     "//ui/base/prediction",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/latency",
   ]
+
+  if (use_ml) {
+    deps += [
+      "//services/webnn/public/mojom",
+      "//services/webnn:webnn_service",
+    ]
+
+    public_deps += [
+      "//services/webnn/public/mojom",
+    ]
+  }
 
   if (is_chromeos_ash) {
     sources += [
