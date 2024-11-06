@@ -141,10 +141,11 @@ class WinTool(object):
     # Read output one line at a time as it shows up to avoid OOM failures when
     # GBs of output is produced.
     for line in link.stdout:
+      line = line.decode('utf8')
       if (not line.startswith('   Creating library ') and
           not line.startswith('Generating code') and
           not line.startswith('Finished generating code')):
-        print(line)
+        print(line.rstrip())
     return link.wait()
 
   def ExecAsmWrapper(self, arch, *args):
@@ -158,7 +159,7 @@ class WinTool(object):
     popen = subprocess.Popen(args, shell=True, env=env,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out, _ = popen.communicate()
-    for line in out.splitlines():
+    for line in out.decode('utf8').splitlines():
       if not line.startswith(' Assembling: '):
         print(line)
     return popen.returncode
