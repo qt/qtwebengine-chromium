@@ -22,14 +22,14 @@ const execution_context::ExecutionContext* GetExecutionContext_ICPV(
     const FrameNode* frame_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              frame_node->GetGraph())
-      ->GetExecutionContext_ICPVForFrameNode(frame_node);
+      ->GetExecutionContextForFrameNode(frame_node);
 }
 
 const execution_context::ExecutionContext* GetExecutionContext_ICPV(
     const WorkerNode* worker_node) {
   return execution_context::ExecutionContextRegistry::GetFromGraph(
              worker_node->GetGraph())
-      ->GetExecutionContext_ICPVForWorkerNode(worker_node);
+      ->GetExecutionContextForWorkerNode(worker_node);
 }
 
 std::optional<Vote> GetVoteFromClient(const FrameNode* client_frame_node) {

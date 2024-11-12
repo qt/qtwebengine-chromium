@@ -25,7 +25,7 @@ namespace {
 
 // Returns the root prerender frame tree node associated with navigation_request
 // of ongoing prerender activation.
-FrameTreeNode* GetRootPrerenderFrameTreeNode(
+FrameTreeNode* GetRootPrerenderFrameTreeNodePNVSHCDC(
     FrameTreeNodeId prerender_frame_tree_node_id) {
   FrameTreeNode* root =
       FrameTreeNode::GloballyFindByID(prerender_frame_tree_node_id);
@@ -59,7 +59,7 @@ PrerenderNoVarySearchHintCommitDeferringCondition::MaybeCreate(
   CHECK(candidate_prerender_frame_tree_node_id.has_value());
 
   // Don't create if associated PrerenderHost has already received headers.
-  FrameTreeNode* prerender_frame_tree_node = GetRootPrerenderFrameTreeNode(
+  FrameTreeNode* prerender_frame_tree_node = GetRootPrerenderFrameTreeNodePNVSHCDC(
       candidate_prerender_frame_tree_node_id.value());
   // If there is no prerender frame tree node stop here.
   if (!prerender_frame_tree_node) {
@@ -89,7 +89,7 @@ PrerenderNoVarySearchHintCommitDeferringCondition::
   block_until_head_timer_.reset();
   // Stop observing the associated PrerenderHost to avoid use-after-free.
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   if (!prerender_frame_tree_node) {
     // In this case the commit deferring condition was removed as an
     // observer by the PrerenderHost destructor.
@@ -117,7 +117,7 @@ PrerenderNoVarySearchHintCommitDeferringCondition::
   CHECK(base::FeatureList::IsEnabled(blink::features::kPrerender2NoVarySearch));
   CHECK(candidate_prerender_frame_tree_node_id_);
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   // The prerender frame tree node is alive. This condition was also checked in
   // `MaybeCreate` static method.
   CHECK(prerender_frame_tree_node);
@@ -136,7 +136,7 @@ CommitDeferringCondition::Result
 PrerenderNoVarySearchHintCommitDeferringCondition::WillCommitNavigation(
     base::OnceClosure resume) {
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   // If the prerender FrameTreeNode is gone, the prerender activation is allowed
   // to continue here but will fail soon.
   if (!prerender_frame_tree_node) {
@@ -184,7 +184,7 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived() {
   // * headers should have been received and
   // * the prerender_frame_tree_node is still alive.
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   // `OnHeadersReceived` is called by `PrerenderHost::ReadyToCommitNavigation`.
   // Prerender frame tree node is alive, see:
   // `PrerenderHostRegistry::ReadyToCommitNavigation`.
@@ -256,7 +256,7 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::OnHeadersReceived() {
 void PrerenderNoVarySearchHintCommitDeferringCondition::OnHostDestroyed(
     PrerenderFinalStatus status) {
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   if (prerender_frame_tree_node) {
     PrerenderHost& prerender_host =
         PrerenderHost::GetFromFrameTreeNode(*prerender_frame_tree_node);
@@ -296,7 +296,7 @@ void PrerenderNoVarySearchHintCommitDeferringCondition::
   CHECK(waiting_on_headers_);
   waiting_on_headers_ = false;
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSHCDC(candidate_prerender_frame_tree_node_id_);
   if (prerender_frame_tree_node) {
     PrerenderHost& prerender_host =
         PrerenderHost::GetFromFrameTreeNode(*prerender_frame_tree_node);

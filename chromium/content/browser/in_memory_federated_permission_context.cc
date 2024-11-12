@@ -23,7 +23,7 @@ InMemoryFederatedPermissionContext::~InMemoryFederatedPermissionContext() =
 content::FederatedIdentityApiPermissionContextDelegate::PermissionStatus
 InMemoryFederatedPermissionContext::GetApiPermissionStatus(
     const url::Origin& relying_party_embedder) {
-  if (!base::FeatureList::IsEnabled(features::kFedCm)) {
+  if (!base::FeatureList::IsEnabled(::features::kFedCm)) {
     return PermissionStatus::BLOCKED_VARIATIONS;
   }
 

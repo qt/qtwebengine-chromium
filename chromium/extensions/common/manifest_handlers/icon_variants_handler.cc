@@ -29,7 +29,7 @@ using IconVariantsManifestKeys = extensions::api::icon_variants::ManifestKeys;
 // extensions::diagnostics::
 using Id = extensions::diagnostics::icon_variants::Id;
 using Severity = extensions::diagnostics::icon_variants::Severity;
-using Feature = extensions::diagnostics::icon_variants::Feature;
+using FeatureIVH= extensions::diagnostics::icon_variants::Feature;
 
 namespace {
 void AddInstallWarning(Extension& extension, const std::string& warning) {
@@ -38,7 +38,7 @@ void AddInstallWarning(Extension& extension, const std::string& warning) {
 
 void AddInstallWarningForId(Extension& extension, Id id) {
   auto diagnostic = extensions::diagnostics::icon_variants::GetDiagnostic(
-      Feature::kIconVariants, id);
+      FeatureIVH::kIconVariants, id);
   if (diagnostic.severity != Severity::kWarning) {
     return;
   }
@@ -55,7 +55,7 @@ std::unique_ptr<ExtensionIconVariants> GetIconVariants(Extension& extension,
   if (!icon_variants_list) {
     *error = base::UTF8ToUTF16(
         diagnostics::icon_variants::GetDiagnostic(
-            Feature::kIconVariants, Id::kIconVariantsKeyMustBeAList)
+            FeatureIVH::kIconVariants, Id::kIconVariantsKeyMustBeAList)
             .message);
     return nullptr;
   }
@@ -72,7 +72,7 @@ std::unique_ptr<ExtensionIconVariants> GetIconVariants(Extension& extension,
   if (icon_variants->IsEmpty()) {
     *error =
         base::UTF8ToUTF16(diagnostics::icon_variants::GetDiagnostic(
-                              Feature::kIconVariants, Id::kIconVariantsInvalid)
+                              FeatureIVH::kIconVariants, Id::kIconVariantsInvalid)
                               .message);
     return nullptr;
   }

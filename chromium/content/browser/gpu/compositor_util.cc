@@ -209,9 +209,9 @@ std::vector<GpuFeatureData> GetGpuFeatureData(
           "WebGL2 has been disabled via blocklist or the command line."),
       false});
   features.push_back({"raw_draw",
-                        GetFakeFeatureStatus(features::IsUsingRawDraw())});
+                        GetFakeFeatureStatus(::features::IsUsingRawDraw())});
   features.push_back({"direct_rendering_display_compositor",
-                        GetFakeFeatureStatus(features::IsDrDcEnabled())});
+                        GetFakeFeatureStatus(::features::IsDrDcEnabled())});
   features.push_back({
       "webgpu",
       SafeGetFeatureStatus(

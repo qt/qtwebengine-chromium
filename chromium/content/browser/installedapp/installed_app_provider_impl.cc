@@ -59,7 +59,7 @@ void InstalledAppProviderImpl::FilterInstalledApps(
     const GURL& manifest_url,
     FilterInstalledAppsCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (!base::FeatureList::IsEnabled(features::kInstalledAppProvider)) {
+  if (!base::FeatureList::IsEnabled(::features::kInstalledAppProvider)) {
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback),
@@ -70,7 +70,7 @@ void InstalledAppProviderImpl::FilterInstalledApps(
   base::ConcurrentCallbacks<FetchRelatedAppsTaskResult> concurrent;
 
 #if BUILDFLAG(IS_WIN)
-  if (base::FeatureList::IsEnabled(features::kFilterInstalledAppsWinMatching)) {
+  if (base::FeatureList::IsEnabled(::features::kFilterInstalledAppsWinMatching)) {
     StartTask(std::make_unique<FetchRelatedWinAppsTask>(
                   native_win_app_fetcher_factory_.Run()),
               related_apps, concurrent.CreateCallback());
@@ -79,7 +79,7 @@ void InstalledAppProviderImpl::FilterInstalledApps(
 
 #if !BUILDFLAG(IS_ANDROID)
   if (base::FeatureList::IsEnabled(
-          features::kFilterInstalledAppsWebAppMatching)) {
+          ::features::kFilterInstalledAppsWebAppMatching)) {
     StartTask(std::make_unique<FetchRelatedWebAppsTask>(
                   render_frame_host().GetBrowserContext()),
               related_apps, concurrent.CreateCallback());

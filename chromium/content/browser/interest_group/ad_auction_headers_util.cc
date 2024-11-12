@@ -123,7 +123,7 @@ bool IsAdAuctionHeadersEligible(
 bool IsAdAuctionHeadersEligibleForNavigation(
     const FrameTreeNode& frame,
     const url::Origin& navigation_request_origin) {
-  if (!base::FeatureList::IsEnabled(features::kEnableIFrameAdAuctionHeaders)) {
+  if (!base::FeatureList::IsEnabled(::features::kEnableIFrameAdAuctionHeaders)) {
     return false;
   }
 

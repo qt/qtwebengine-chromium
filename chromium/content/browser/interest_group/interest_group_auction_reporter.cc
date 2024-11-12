@@ -85,7 +85,7 @@ bool IsKAnonForReporting(
         selected_buyer_and_seller_reporting_id) {
   // K-anonymity enforcement is always disabled for the testing population.
   if (base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTesting)) {
+          ::features::kCookieDeprecationFacilitatedTesting)) {
     return true;
   }
   if (!base::FeatureList::IsEnabled(

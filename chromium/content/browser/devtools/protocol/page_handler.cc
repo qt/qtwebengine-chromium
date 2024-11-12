@@ -1361,7 +1361,7 @@ Response PageHandler::BringToFront() {
   }
 
   if (host_->GetParentOrOuterDocument()) {
-    return Response::ServerError(kCommandIsOnlyAvailableAtTopTarget);
+    return Response::ServerError(kCommandIsOnlyAvailableAtTopTarget2);
   }
 
   WebContentsImpl* web_contents =

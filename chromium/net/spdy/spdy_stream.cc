@@ -54,7 +54,7 @@ base::Value::Dict NetLogSpdyStreamWindowUpdateParams(
       .Set("window_size", window_size);
 }
 
-base::Value::Dict NetLogSpdyDataParams(spdy::SpdyStreamId stream_id,
+base::Value::Dict NetLogSpdyDataParamsSS(spdy::SpdyStreamId stream_id,
                                        int size,
                                        bool fin) {
   return base::Value::Dict()
@@ -763,7 +763,7 @@ void SpdyStream::QueueNextDataFrame() {
   }
 
   session_->net_log().AddEvent(NetLogEventType::HTTP2_SESSION_SEND_DATA, [&] {
-    return NetLogSpdyDataParams(stream_id_, effective_len, end_stream);
+    return NetLogSpdyDataParamsSS(stream_id_, effective_len, end_stream);
   });
 
   session_->EnqueueStreamWrite(

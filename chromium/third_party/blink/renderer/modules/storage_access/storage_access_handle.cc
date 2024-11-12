@@ -17,7 +17,7 @@
 
 namespace blink {
 
-using PassKey = base::PassKey<StorageAccessHandle>;
+using PassKey2 = base::PassKey<StorageAccessHandle>;
 
 // static
 const char StorageAccessHandle::kSupplementName[] = "StorageAccessHandle";
@@ -430,7 +430,7 @@ BroadcastChannel* StorageAccessHandle::BroadcastChannel(
       WebFeature::
           kStorageAccessAPI_requestStorageAccess_BeyondCookies_BroadcastChannel_Use);
   return MakeGarbageCollected<blink::BroadcastChannel>(
-      PassKey(), execution_context, name, broadcast_channel_provider.get());
+      PassKey2(), execution_context, name, broadcast_channel_provider.get());
 }
 
 blink::SharedWorker* StorageAccessHandle::SharedWorker(
@@ -457,7 +457,7 @@ blink::SharedWorker* StorageAccessHandle::SharedWorker(
   GetSupplementable()->CountUse(
       WebFeature::
           kStorageAccessAPI_requestStorageAccess_BeyondCookies_SharedWorker_Use);
-  return SharedWorker::Create(PassKey(), context, url, name_or_options,
+  return SharedWorker::Create(PassKey2(), context, url, name_or_options,
                               exception_state, public_url_manager,
                               &shared_worker_connector);
 }

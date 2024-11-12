@@ -32,7 +32,7 @@ using FrameTerminationStatus = CompositorFrameReporter::FrameTerminationStatus;
 
 constexpr int kNumOfCompositorStages3 =
     static_cast<int>(StageType::kStageTypeCount) - 1;
-constexpr int kNumDispatchStages =
+constexpr int kNumDispatchStages3 =
     static_cast<int>(EventMetrics::DispatchStage::kMaxValue);
 constexpr base::TimeDelta kDefaultLatencyPredictionDeviationThreshold =
     viz::BeginFrameArgs::DefaultInterval() / 2;
@@ -52,7 +52,7 @@ CompositorFrameReportingController::CompositorFrameReportingController(
       previous_latency_predictions_main_(base::Microseconds(-1)),
       previous_latency_predictions_impl_(base::Microseconds(-1)),
       event_latency_predictions_(
-          CompositorFrameReporter::EventLatencyInfo(kNumDispatchStages,
+          CompositorFrameReporter::EventLatencyInfo(kNumDispatchStages3,
                                                     kNumOfCompositorStages3)) {
   if (should_report_ukm) {
     // UKM metrics should be reported if and only if `latency_ukm_reporter` is

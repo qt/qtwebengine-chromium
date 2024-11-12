@@ -111,7 +111,7 @@ void TabPageDecorator::OnAboutToBeDiscarded(const PageNode* page_node,
 
   // When kWebContentsDiscard is disabled new_page_node will be different from
   // page node and needs handling to transfer data from the old node.
-  if (base::FeatureList::IsEnabled(features::kWebContentsDiscard)) {
+  if (base::FeatureList::IsEnabled(::features::kWebContentsDiscard)) {
     CHECK_EQ(page_node, new_page_node);
   } else {
     CHECK_EQ(new_page_node->GetType(), performance_manager::PageType::kUnknown);

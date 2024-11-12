@@ -33,13 +33,13 @@ namespace net {
 namespace {
 // Sets a boolean to a value, and restores it to the previous value once
 // the saver goes out of scope.
-class ScopedBoolSaver {
+class ScopedBoolSaverQCCS {
  public:
-  ScopedBoolSaver(bool* var, bool new_val) : var_(var), old_val_(*var) {
+  ScopedBoolSaverQCCS(bool* var, bool new_val) : var_(var), old_val_(*var) {
     *var_ = new_val;
   }
 
-  ~ScopedBoolSaver() { *var_ = old_val_; }
+  ~ScopedBoolSaverQCCS() { *var_ = old_val_; }
 
  private:
   raw_ptr<bool> var_;
@@ -182,7 +182,7 @@ void QuicChromiumClientStream::Handle::InvokeCallbacksOnClose(int error) {
 int QuicChromiumClientStream::Handle::ReadInitialHeaders(
     quiche::HttpHeaderBlock* header_block,
     CompletionOnceCallback callback) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (!stream_)
     return net_error_;
 
@@ -207,7 +207,7 @@ int QuicChromiumClientStream::Handle::ReadBody(
     IOBuffer* buffer,
     int buffer_len,
     CompletionOnceCallback callback) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (IsDoneReading())
     return OK;
 
@@ -234,7 +234,7 @@ int QuicChromiumClientStream::Handle::ReadBody(
 int QuicChromiumClientStream::Handle::ReadTrailingHeaders(
     quiche::HttpHeaderBlock* header_block,
     CompletionOnceCallback callback) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (!stream_)
     return net_error_;
 
@@ -262,7 +262,7 @@ int QuicChromiumClientStream::Handle::WriteStreamData(
     std::string_view data,
     bool fin,
     CompletionOnceCallback callback) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (!stream_)
     return net_error_;
 
@@ -279,7 +279,7 @@ int QuicChromiumClientStream::Handle::WritevStreamData(
     const std::vector<int>& lengths,
     bool fin,
     CompletionOnceCallback callback) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (!stream_)
     return net_error_;
 
@@ -292,7 +292,7 @@ int QuicChromiumClientStream::Handle::WritevStreamData(
 
 int QuicChromiumClientStream::Handle::WriteConnectUdpPayload(
     std::string_view packet) {
-  ScopedBoolSaver saver(&may_invoke_callbacks_, false);
+  ScopedBoolSaverQCCS saver(&may_invoke_callbacks_, false);
   if (!stream_) {
     return net_error_;
   }

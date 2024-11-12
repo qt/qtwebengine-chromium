@@ -1403,7 +1403,7 @@ class InterestGroupAuction::BuyerHelper
     size_t number_of_bidder_threads = 1;
     if (num_outstanding_bids_ > 0) {
       number_of_bidder_threads += static_cast<int>(
-          features::kFledgeBidderWorkletThreadPoolSizeLogarithmicScalingFactor
+          ::features::kFledgeBidderWorkletThreadPoolSizeLogarithmicScalingFactor
               .Get() *
           std::log10(num_outstanding_bids_));
     }
@@ -2267,7 +2267,7 @@ class InterestGroupAuction::BuyerHelper
     if (base::FeatureList::IsEnabled(
             blink::features::kFledgeRealTimeReporting) &&
         !base::FeatureList::IsEnabled(
-            features::kCookieDeprecationFacilitatedTesting)) {
+            ::features::kCookieDeprecationFacilitatedTesting)) {
       if (!base::ranges::all_of(real_time_contributions,
                                 HasValidRealTimeBucket)) {
         mojo_bids.clear();
@@ -4744,7 +4744,7 @@ void InterestGroupAuction::HandleUpdateIfOlderThan(
     const blink::InterestGroup& interest_group,
     std::optional<base::TimeDelta> update_if_older_than) {
   if (!base::FeatureList::IsEnabled(
-          features::kInterestGroupUpdateIfOlderThan)) {
+          ::features::kInterestGroupUpdateIfOlderThan)) {
     return;
   }
   if (!update_if_older_than) {
@@ -5328,7 +5328,7 @@ void InterestGroupAuction::OnScoreAdComplete(
     if (base::FeatureList::IsEnabled(
             blink::features::kFledgeRealTimeReporting) &&
         !base::FeatureList::IsEnabled(
-            features::kCookieDeprecationFacilitatedTesting)) {
+            ::features::kCookieDeprecationFacilitatedTesting)) {
       // Only keep real time reporting contributions when the seller is
       // opted-in.
       if (config_->non_shared_params.seller_real_time_reporting_type

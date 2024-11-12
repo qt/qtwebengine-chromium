@@ -288,6 +288,10 @@ jumbo_static_library("performance_manager") {
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
+  jumbo_excluded_sources = [
+      "graph/graph_impl.cc",
+  ]
+
   if (!is_android) {
     sources += [
       "decorators/site_data_node_data.cc",
@@ -320,7 +324,7 @@ jumbo_static_library("performance_manager") {
       "public/persistence/site_data/feature_usage.h",
       "public/persistence/site_data/site_data_reader.h",
     ]
-    jumbo_excluded_sources = [ "decorators/site_data_recorder.cc" ]
+    jumbo_excluded_sources += [ "decorators/site_data_recorder.cc" ]
 
     public_deps += [
       ":site_data_proto",

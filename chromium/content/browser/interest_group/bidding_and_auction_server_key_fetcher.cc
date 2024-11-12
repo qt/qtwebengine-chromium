@@ -120,7 +120,7 @@ void BiddingAndAuctionServerKeyFetcher::MaybePrefetchKeys() {
   // kFledgeBiddingAndAuctionServer is enabled. We don't need to check
   // kFledgeBiddingAndAuctionServer because if it's not enabled
   // fetcher_state_map_ would have no keys.
-  if (!base::FeatureList::IsEnabled(features::kFledgePrefetchBandAKeys)) {
+  if (!base::FeatureList::IsEnabled(::features::kFledgePrefetchBandAKeys)) {
     return;
   }
   // We only want to prefetch once.
@@ -180,7 +180,7 @@ void BiddingAndAuctionServerKeyFetcher::FetchKeys(
 
   state.keys.clear();
 
-  if (base::FeatureList::IsEnabled(features::kFledgeStoreBandAKeysInDB)) {
+  if (base::FeatureList::IsEnabled(::features::kFledgeStoreBandAKeysInDB)) {
     manager_->GetBiddingAndAuctionServerKeys(
         coordinator,
         base::BindOnce(
@@ -305,7 +305,7 @@ void BiddingAndAuctionServerKeyFetcher::OnParsedKeys(
 
   base::Time expiration = base::Time::Now() + kKeyRequestInterval;
   CacheKeysAndRunAllCallbacks(coordinator, keys, expiration);
-  if (base::FeatureList::IsEnabled(features::kFledgeStoreBandAKeysInDB)) {
+  if (base::FeatureList::IsEnabled(::features::kFledgeStoreBandAKeysInDB)) {
     manager_->SetBiddingAndAuctionServerKeys(coordinator, std::move(keys),
                                              expiration);
   }

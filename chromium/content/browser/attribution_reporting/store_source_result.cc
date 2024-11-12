@@ -79,16 +79,16 @@ StatusSSR StoreSourceResult::status() const {
             return StatusSSR::kExceedsMaxChannelCapacity;
           },
           [](ExceedsMaxScopesChannelCapacity) {
-            return Status::kExceedsMaxScopesChannelCapacity;
+            return StatusSSR::kExceedsMaxScopesChannelCapacity;
           },
           [](ExceedsMaxTriggerStateCardinality) {
             return StatusSSR::kExceedsMaxTriggerStateCardinality;
           },
           [](ExceedsMaxEventStatesLimit) {
-            return Status::kExceedsMaxEventStatesLimit;
+            return StatusSSR::kExceedsMaxEventStatesLimit;
           },
           [](DestinationPerDayReportingLimitReached) {
-            return Status::kDestinationPerDayReportingLimitReached;
+            return StatusSSR::kDestinationPerDayReportingLimitReached;
           },
       },
       result_);

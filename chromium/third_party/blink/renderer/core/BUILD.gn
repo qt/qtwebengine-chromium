@@ -431,6 +431,8 @@ jumbo_component("core") {
   jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
   jumbo_excluded_sources += rebase_path([ "scroll_animator.cc" ], "", "scroll")
   jumbo_excluded_sources += rebase_path([ "html_permission_element.cc" ], "", "html")
+  jumbo_excluded_sources += [ "//third_party/blink/renderer/bindings/core/v8/script_decoder.cc" ]
+  jumbo_excluded_sources += rebase_path([ "soft_navigation_heuristics.cc" ], "", "timing")
 
   public_configs = [ ":core_include_dirs" ]
 

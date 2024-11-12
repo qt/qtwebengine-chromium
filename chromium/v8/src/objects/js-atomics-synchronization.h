@@ -29,11 +29,11 @@ template <typename T>
 class AsyncWaiterQueueNode;
 }  // namespace detail
 
-using detail::WaiterQueueLockGuard;
-using detail::WaiterQueueNode;
-using LockAsyncWaiterQueueNode = detail::AsyncWaiterQueueNode<JSAtomicsMutex>;
+using v8::internal::detail::WaiterQueueLockGuard;
+using v8::internal::detail::WaiterQueueNode;
+using LockAsyncWaiterQueueNode = v8::internal::detail::AsyncWaiterQueueNode<JSAtomicsMutex>;
 using WaitAsyncWaiterQueueNode =
-    detail::AsyncWaiterQueueNode<JSAtomicsCondition>;
+    v8::internal::detail::AsyncWaiterQueueNode<JSAtomicsCondition>;
 
 // JSSynchronizationPrimitive is the base class for JSAtomicsMutex and
 // JSAtomicsCondition. It contains a 32-bit state field and a pointer to a

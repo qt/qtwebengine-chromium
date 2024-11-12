@@ -492,7 +492,7 @@ void AuctionWorkletManager::WorkletOwner::OnProcessAssigned(
 
       for (size_t i = 0;
            i < static_cast<size_t>(
-                   features::kFledgeSellerWorkletThreadPoolSize.Get());
+                   ::features::kFledgeSellerWorkletThreadPoolSize.Get());
            ++i) {
         worklet_debugs_.emplace_back(new DebuggableAuctionWorklet(
             delegate->GetFrame(), process_handle_, worklet_info_.script_url,

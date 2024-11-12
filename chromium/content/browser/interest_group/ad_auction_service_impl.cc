@@ -409,7 +409,7 @@ void AdAuctionServiceImpl::RunAdAuction(
   // been invalidated or the current frame's `PageImpl` has changed to a
   // different one, abort the auction.
   // See crbug.com/1422301.
-  if (base::FeatureList::IsEnabled(features::kDetectInconsistentPageImpl) &&
+  if (base::FeatureList::IsEnabled(::features::kDetectInconsistentPageImpl) &&
       (!GetFrame()->auction_initiator_page() ||
        GetFrame()->auction_initiator_page().get() !=
            &(GetFrame()->GetPage()))) {
@@ -447,7 +447,7 @@ void AdAuctionServiceImpl::RunAdAuction(
 
   // Try to preconnect to owner and bidding signals origins if this is an
   // on-device auction.
-  if (base::FeatureList::IsEnabled(features::kFledgeUsePreconnectCache) &&
+  if (base::FeatureList::IsEnabled(::features::kFledgeUsePreconnectCache) &&
       !config.server_response.has_value()) {
     PreconnectToBuyerOrigins(config);
     for (const blink::AuctionConfig& component_config :
@@ -725,7 +725,7 @@ AdAuctionServiceImpl::GetClientSecurityState() {
 
 std::optional<std::string> AdAuctionServiceImpl::GetCookieDeprecationLabel() {
   if (!base::FeatureList::IsEnabled(
-          features::kFledgeFacilitatedTestingSignalsHeaders)) {
+          ::features::kFledgeFacilitatedTestingSignalsHeaders)) {
     return std::nullopt;
   }
 
@@ -893,7 +893,7 @@ void AdAuctionServiceImpl::OnAuctionComplete(
   // been invalidated or the current frame's `PageImpl` has changed to a
   // different one, abort the auction.
   // See crbug.com/1422301.
-  if (base::FeatureList::IsEnabled(features::kDetectInconsistentPageImpl) &&
+  if (base::FeatureList::IsEnabled(::features::kDetectInconsistentPageImpl) &&
       (!GetFrame()->auction_initiator_page() ||
        GetFrame()->auction_initiator_page().get() !=
            &(GetFrame()->GetPage()))) {
@@ -1238,7 +1238,7 @@ AdAuctionPageData* AdAuctionServiceImpl::GetAdAuctionPageData() {
   // been invalidated or the current frame's `PageImpl` has changed to a
   // different one, signal that state is no longer available.
   // See crbug.com/1422301.
-  if (base::FeatureList::IsEnabled(features::kDetectInconsistentPageImpl) &&
+  if (base::FeatureList::IsEnabled(::features::kDetectInconsistentPageImpl) &&
       (!GetFrame()->auction_initiator_page() ||
        GetFrame()->auction_initiator_page().get() !=
            &(GetFrame()->GetPage()))) {

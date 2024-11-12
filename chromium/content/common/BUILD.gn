@@ -196,7 +196,6 @@ jumbo_source_set("common") {
   ]
   jumbo_excluded_sources = [
     "common_param_traits.cc",
-    "content_message_generator.cc",
     "content_param_traits.cc",
   ]
 

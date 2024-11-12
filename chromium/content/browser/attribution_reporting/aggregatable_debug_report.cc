@@ -191,7 +191,7 @@ GetAggregatableContributions(
   return contributions;
 }
 
-bool IsAggregatableFilteringIdsEnabled() {
+bool IsAggregatableFilteringIdsEnabledADR() {
   return base::FeatureList::IsEnabled(
              attribution_reporting::features::
                  kAttributionReportingAggregatableFilteringIds) &&
@@ -364,7 +364,7 @@ AggregatableDebugReport::CreateAggregatableReportRequest() const {
   CHECK(report_id_.is_valid());
 
   std::optional<size_t> filtering_id_max_bytes;
-  if (IsAggregatableFilteringIdsEnabled()) {
+  if (IsAggregatableFilteringIdsEnabledADR()) {
     filtering_id_max_bytes =
         attribution_reporting::AggregatableFilteringIdsMaxBytes().value();
   }

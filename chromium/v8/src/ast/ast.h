@@ -762,23 +762,23 @@ class IfStatement final : public Statement {
 
 class TryStatement : public Statement {
  public:
-  Block* try_block() const { return try_block_; }
-  void set_try_block(Block* b) { try_block_ = b; }
+  v8::internal::Block* try_block() const { return try_block_; }
+  void set_try_block(v8::internal::Block* b) { try_block_ = b; }
 
  protected:
-  TryStatement(Block* try_block, int pos, NodeType type)
+  TryStatement(v8::internal::Block* try_block, int pos, NodeType type)
       : Statement(pos, type), try_block_(try_block) {}
 
  private:
-  Block* try_block_;
+  v8::internal::Block* try_block_;
 };
 
 
 class TryCatchStatement final : public TryStatement {
  public:
   Scope* scope() { return scope_; }
-  Block* catch_block() const { return catch_block_; }
-  void set_catch_block(Block* b) { catch_block_ = b; }
+  v8::internal::Block* catch_block() const { return catch_block_; }
+  void set_catch_block(v8::internal::Block* b) { catch_block_ = b; }
 
   // Prediction of whether exceptions thrown into the handler for this try block
   // will be caught.

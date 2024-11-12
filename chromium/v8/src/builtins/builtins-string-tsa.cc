@@ -15,7 +15,7 @@ namespace v8::internal {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
-using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
+// using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
 
 template <typename Next>
 class StringBuiltinsReducer : public Next {
@@ -27,6 +27,7 @@ class StringBuiltinsReducer : public Next {
                             ConstOrV<WordPtr> dst_begin,
                             String::Encoding dst_encoding,
                             ConstOrV<WordPtr> character_count) {
+    using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
     bool src_one_byte = src_encoding == String::ONE_BYTE_ENCODING;
     bool dst_one_byte = dst_encoding == String::ONE_BYTE_ENCODING;
     __ CodeComment("CopyStringCharacters ",
@@ -64,6 +65,7 @@ class StringBuiltinsReducer : public Next {
   }
 
   V<SeqOneByteString> AllocateSeqOneByteString(V<WordPtr> length) {
+    using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
     __ CodeComment("AllocateSeqOneByteString");
     Label<SeqOneByteString> done(this);
     GOTO_IF(__ WordPtrEqual(length, 0), done,
@@ -101,6 +103,7 @@ class StringBuiltinsReducer : public Next {
 
   V<SeqTwoByteString> AllocateSeqTwoByteString(V<WordPtr> length) {
     __ CodeComment("AllocateSeqTwoByteString");
+    using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
     Label<SeqTwoByteString> done(this);
     GOTO_IF(__ WordPtrEqual(length, 0), done,
             V<SeqTwoByteString>::Cast(__ EmptyStringConstant()));

@@ -44,7 +44,7 @@ namespace {
 auction_worklet::mojom::KAnonymityBidMode DetermineKAnonMode() {
   // K-anonymity enforcement is always disabled for the testing population.
   if (base::FeatureList::IsEnabled(
-          features::kCookieDeprecationFacilitatedTesting)) {
+          ::features::kCookieDeprecationFacilitatedTesting)) {
     return auction_worklet::mojom::KAnonymityBidMode::kNone;
   }
   if (base::FeatureList::IsEnabled(
@@ -713,7 +713,7 @@ void AuctionRunner::UpdateInterestGroupsPostAuction() {
   });
 
   if (base::FeatureList::IsEnabled(
-          features::kFledgeDelayPostAuctionInterestGroupUpdate)) {
+          ::features::kFledgeDelayPostAuctionInterestGroupUpdate)) {
     interest_group_manager_->UpdateInterestGroupsOfOwnersWithDelay(
         std::move(update_owners), client_security_state_.Clone(),
         std::move(attestation_callback_), kPostAuctionInterestGroupUpdateDelay);

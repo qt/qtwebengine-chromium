@@ -137,7 +137,7 @@ void InterestGroupCachingStorage::GetInterestGroupsForOwner(
     base::OnceCallback<void(scoped_refptr<StorageInterestGroups>)> callback) {
   // If the cache is disabled, simply call
   // InterestGroupStorage::GetInterestGroupsForOwner on each request.
-  if (!base::FeatureList::IsEnabled(features::kFledgeUseInterestGroupCache)) {
+  if (!base::FeatureList::IsEnabled(::features::kFledgeUseInterestGroupCache)) {
     interest_group_storage_
         .AsyncCall(&InterestGroupStorage::GetInterestGroupsForOwner)
         .WithArgs(owner)
@@ -385,7 +385,7 @@ void InterestGroupCachingStorage::GetInterestGroup(
     const blink::InterestGroupKey& group_key,
     base::OnceCallback<void(std::optional<SingleStorageInterestGroup>)>
         callback) {
-  if (base::FeatureList::IsEnabled(features::kFledgeUseInterestGroupCache)) {
+  if (base::FeatureList::IsEnabled(::features::kFledgeUseInterestGroupCache)) {
     auto cached_groups_it = cached_interest_groups_.find(group_key.owner);
     if (cached_groups_it != cached_interest_groups_.end()) {
       scoped_refptr<StorageInterestGroups> groups =
@@ -649,7 +649,7 @@ void InterestGroupCachingStorage::StartTimerForInterestGroupHold(
 void InterestGroupCachingStorage::UpdateCachedOriginsIfEnabled(
     const url::Origin& owner,
     const std::vector<StorageInterestGroup>& interest_groups) {
-  if (!base::FeatureList::IsEnabled(features::kFledgeUsePreconnectCache)) {
+  if (!base::FeatureList::IsEnabled(::features::kFledgeUsePreconnectCache)) {
     return;
   }
   if (interest_groups.empty()) {

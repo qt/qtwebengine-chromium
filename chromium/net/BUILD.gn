@@ -158,6 +158,7 @@ proto_library("device_bound_sessions_storage_proto") {
 }
 
 jumbo_component("net") {
+  jumbo_excluded_sources = []
   sources = [
     "base/address_family.cc",
     "base/address_family.h",
@@ -1280,6 +1281,10 @@ jumbo_component("net") {
       "base/network_interfaces_linux.h",
       "base/platform_mime_util_linux.cc",
     ]
+    jumbo_excluded_sources += [
+      "base/address_tracker_linux.cc",
+      "base/network_interfaces_linux.cc",
+    ]
   }
 
   if (is_linux) {
@@ -1407,6 +1412,9 @@ jumbo_component("net") {
       "socket/udp_socket_posix.cc",
       "socket/udp_socket_posix.h",
     ]
+
+    jumbo_excluded_sources += [ "socket/udp_socket_posix.cc" ]
+
     if (!is_ios) {
       sources += [ "disk_cache/blockfile/file_posix.cc" ]
     }

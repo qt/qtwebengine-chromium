@@ -72,7 +72,7 @@ class PictureLayerTilingCoverageIterator;
 
 class CC_EXPORT PictureLayerTiling {
  public:
-  using Tile = Tile;
+  using Tile = cc::Tile;
   using CoverageIterator = PictureLayerTilingCoverageIterator;
 
   static const int kBorderTexels = 1;

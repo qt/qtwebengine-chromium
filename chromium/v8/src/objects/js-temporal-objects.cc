@@ -16120,7 +16120,7 @@ MaybeHandle<BigInt> InterpretISODateTimeOffset(
   // 6. Assert: offsetBehaviour is option.
   DCHECK_EQ(offset_behaviour, OffsetBehaviour::kOption);
   // 7. Assert: offsetOption is "prefer" or "reject".
-  DCHECK(offset_option == OffsetAction::kPrefer || offset_option == Offset::kReject);
+  DCHECK(offset_option == OffsetAction::kPrefer || offset_option == OffsetAction::kReject);
   // 8. Let possibleInstants be ? GetPossibleInstantsFor(timeZone, dateTime).
   Handle<FixedArray> possible_instants;
   ASSIGN_RETURN_ON_EXCEPTION(

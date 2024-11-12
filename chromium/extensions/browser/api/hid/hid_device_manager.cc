@@ -341,7 +341,6 @@ void HidDeviceManager::LazyInitialize() {
 
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     auto receiver = hid_manager_.BindNewPipeAndPassReceiver();
-    const auto& binder = GetHidManagerBinderOverride();
     const auto& binder = GetHidDeviceManagerBinderOverride();
     if (binder) {
       binder.Run(std::move(receiver));

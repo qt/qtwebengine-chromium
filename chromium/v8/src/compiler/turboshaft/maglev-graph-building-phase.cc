@@ -472,14 +472,14 @@ class GeneratorAnalyzer {
 //    {current_catch_block} (in particular with nested scopes) might introduce
 //    even more complexity and magic in the assembler.
 
-class GraphBuilder {
+class GraphBuilderMGBP {
  public:
   using AssemblerT =
       TSAssembler<BlockOriginTrackingReducer, MaglevEarlyLoweringReducer,
                   MachineOptimizationReducer, VariableReducer,
                   RequiredOptimizationReducer, ValueNumberingReducer>;
 
-  GraphBuilder(PipelineData* data, Graph& graph, Zone* temp_zone,
+  GraphBuilderMGBP(PipelineData* data, Graph& graph, Zone* temp_zone,
                maglev::MaglevCompilationUnit* maglev_compilation_unit,
                std::optional<BailoutReason>* bailout)
       : data_(data),
@@ -5213,7 +5213,7 @@ class GraphBuilder {
     // intepreter register.
 
    public:
-    ThrowingScope(GraphBuilder* builder, maglev::NodeBase* throwing_node)
+    ThrowingScope(GraphBuilderMGBP* builder, maglev::NodeBase* throwing_node)
         : builder_(*builder) {
       DCHECK_EQ(__ current_catch_block(), nullptr);
       if (!throwing_node->properties().can_throw()) return;
@@ -5288,8 +5288,8 @@ class GraphBuilder {
     }
 
    private:
-    GraphBuilder::AssemblerT& Asm() { return builder_.Asm(); }
-    GraphBuilder& builder_;
+    GraphBuilderMGBP::AssemblerT& Asm() { return builder_.Asm(); }
+    GraphBuilderMGBP& builder_;
     const maglev::BasicBlock* catch_block_ = nullptr;
   };
 
@@ -5501,14 +5501,14 @@ class GraphBuilder {
 // A NodeProcessor wrapper around GraphBuilder that takes care of
 //  - skipping nodes when we are in Unreachable code.
 //  - recording source positions.
-class NodeProcessorBase : public GraphBuilder {
+class NodeProcessorBase : public GraphBuilderMGBP {
  public:
-  using GraphBuilder::GraphBuilder;
+  using GraphBuilderMGBP::GraphBuilderMGBP;
 
   NodeProcessorBase(PipelineData* data, Graph& graph, Zone* temp_zone,
                     maglev::MaglevCompilationUnit* maglev_compilation_unit,
                     std::optional<BailoutReason>* bailout)
-      : GraphBuilder::GraphBuilder(data, graph, temp_zone,
+      : GraphBuilderMGBP::GraphBuilderMGBP(data, graph, temp_zone,
                                    maglev_compilation_unit, bailout),
         graph_(graph),
         labeller_(maglev_compilation_unit->graph_labeller()) {}
@@ -5516,7 +5516,7 @@ class NodeProcessorBase : public GraphBuilder {
   template <typename NodeT>
   maglev::ProcessResult Process(NodeT* node,
                                 const maglev::ProcessingState& state) {
-    if (GraphBuilder::Asm().generating_unreachable_operations()) {
+    if (GraphBuilderMGBP::Asm().generating_unreachable_operations()) {
       // It doesn't matter much whether we return kRemove or kContinue here,
       // since anyways we'll be done with the Maglev graph once this phase is
       // over. Maglev currently doesn't support kRemove for control nodes, so we
@@ -5524,7 +5524,7 @@ class NodeProcessorBase : public GraphBuilder {
       return maglev::ProcessResult::kContinue;
     } else {
       OpIndex end_index_before = graph_.EndIndex();
-      maglev::ProcessResult result = GraphBuilder::Process(node, state);
+      maglev::ProcessResult result = GraphBuilderMGBP::Process(node, state);
 
       // Recording the SourcePositions of the OpIndex that were just created.
       SourcePosition source = labeller_->GetNodeProvenance(node).position;

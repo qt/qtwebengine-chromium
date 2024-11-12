@@ -10,7 +10,7 @@ namespace v8::internal {
 
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
-using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
+// using namespace compiler::turboshaft;  // NOLINT(build/namespaces)
 
 class NumberBuiltinsAssemblerTS
     : public TurboshaftBuiltinsAssembler<NumberBuiltinsReducer,

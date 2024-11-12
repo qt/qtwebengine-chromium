@@ -20,13 +20,13 @@
 
 namespace {
 
-constexpr auto kInvalidMode = static_cast<x11::RandR::Mode>(0);
-constexpr auto kDisabledCrtc = static_cast<x11::RandR::Crtc>(0);
+constexpr auto kInvalidModeCR = static_cast<x11::RandR::Mode>(0);
+constexpr auto kDisabledCrtcCR = static_cast<x11::RandR::Crtc>(0);
 
 // TODO(jamiewalch): Use the correct DPI for the mode: http://crbug.com/172405.
 const int kDefaultDPI = 96;
 
-int PixelsToMillimeters(int pixels, int dpi) {
+int PixelsToMillimetersCR(int pixels, int dpi) {
   DCHECK(dpi != 0);
 
   const double kMillimetersPerInch = 25.4;
@@ -121,7 +121,7 @@ x11::RandR::Crtc X11CrtcResizer::GetCrtcForOutput(
         return base::Contains(crtc_info.outputs, output);
       });
   if (iter == active_crtcs_.end()) {
-    return kDisabledCrtc;
+    return kDisabledCrtcCR;
   }
   return iter->crtc;
 }
@@ -134,7 +134,7 @@ void X11CrtcResizer::DisableCrtc(x11::RandR::Crtc crtc) {
       .config_timestamp = config_timestamp,
       .x = 0,
       .y = 0,
-      .mode = kInvalidMode,
+      .mode = kInvalidModeCR,
       .rotation = x11::RandR::Rotation::Rotate_0,
       .outputs = {},
   });
@@ -329,8 +329,8 @@ void X11CrtcResizer::UpdateRootWindow(x11::Window root) {
   auto dimensions = GetBoundingBox();
 
   // TODO(lambroslambrou): Use the DPI from client size information.
-  uint32_t width_mm = PixelsToMillimeters(dimensions.width(), kDefaultDPI);
-  uint32_t height_mm = PixelsToMillimeters(dimensions.height(), kDefaultDPI);
+  uint32_t width_mm = PixelsToMillimetersCR(dimensions.width(), kDefaultDPI);
+  uint32_t height_mm = PixelsToMillimetersCR(dimensions.height(), kDefaultDPI);
   randr_->SetScreenSize({root, static_cast<uint16_t>(dimensions.width()),
                          static_cast<uint16_t>(dimensions.height()), width_mm,
                          height_mm});

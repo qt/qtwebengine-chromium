@@ -176,7 +176,7 @@ bool AppViewGuest::CheckMediaAccessPermission(
 void AppViewGuest::CreateWebContents(std::unique_ptr<GuestViewBase> owned_this,
                                      const base::Value::Dict& create_params,
                                      WebContentsCreatedCallback callback) {
-  const std::string* app_id = create_params.FindString(appview::kAppID);
+  const std::string* app_id = create_params.FindString(::appview::kAppID);
   if (!app_id) {
     std::move(callback).Run(std::move(owned_this), nullptr);
     return;
@@ -187,7 +187,7 @@ void AppViewGuest::CreateWebContents(std::unique_ptr<GuestViewBase> owned_this,
     return;
   }
 
-  const base::Value::Dict* data = create_params.FindDict(appview::kData);
+  const base::Value::Dict* data = create_params.FindDict(::appview::kData);
   if (!data) {
     std::move(callback).Run(std::move(owned_this), nullptr);
     return;
@@ -243,7 +243,7 @@ void AppViewGuest::MaybeRecreateGuestContents(
 }
 
 const char* AppViewGuest::GetAPINamespace() const {
-  return appview::kEmbedderAPINamespace;
+  return ::appview::kEmbedderAPINamespace;
 }
 
 int AppViewGuest::GetTaskPrefix() const {
@@ -303,9 +303,9 @@ void AppViewGuest::LaunchAppAndFireEvent(
                                      std::move(callback))));
 
   base::Value::Dict embed_request;
-  embed_request.Set(appview::kGuestInstanceID, guest_instance_id());
-  embed_request.Set(appview::kEmbedderID, owner_host());
-  embed_request.Set(appview::kData, std::move(data));
+  embed_request.Set(::appview::kGuestInstanceID, guest_instance_id());
+  embed_request.Set(::appview::kEmbedderID, owner_host());
+  embed_request.Set(::appview::kData, std::move(data));
   AppRuntimeEventRouter::DispatchOnEmbedRequestedEvent(
       browser_context(), std::move(embed_request), extension);
 }

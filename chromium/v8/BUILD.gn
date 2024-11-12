@@ -3059,10 +3059,17 @@ v8_source_set("v8_initializers") {
     "src/builtins/builtins-async-iterator-gen.cc",
     "src/builtins/builtins-async-generator-gen.cc",
 
+    "src/builtins/builtins-number-tsa.cc",
+    "src/builtins/builtins-string-tsa.cc",
+
     # These source files take an unusually large amount of time to
     # compile.  Build them separately to avoid bottlenecks.
     "src/builtins/builtins-regexp-gen.cc",
     "src/codegen/code-stub-assembler.cc",
+
+    "src/interpreter/interpreter-assembler.cc",
+    "src/interpreter/interpreter-generator.cc",
+    "src/interpreter/interpreter-generator-tsa.cc",
   ]
 
   if (v8_current_cpu == "x86") {
@@ -5064,6 +5071,10 @@ v8_compiler_sources = [
   "src/compiler/zone-stats.cc",
 ]
 
+v8_compiler_jumbo_excluded_sources = [
+  "src/compiler/bytecode-analysis.cc",
+]
+
 if (v8_current_cpu == "x86") {
   v8_compiler_sources += [
     ### gcmole(ia32) ###
@@ -5166,6 +5177,10 @@ if (v8_enable_webassembly) {
     "src/compiler/wasm-loop-peeling.cc",
     "src/compiler/wasm-typer.cc",
   ]
+  v8_compiler_jumbo_excluded_sources += [
+    "src/compiler/turboshaft/wasm-gc-optimize-phase.cc",
+    "src/compiler/wasm-compiler.cc",
+  ]
 }
 
 if (v8_enable_wasm_simd256_revec) {
@@ -5186,9 +5201,7 @@ v8_source_set("v8_compiler_for_mksnapshot_source_set") {
   visibility = [ ":*" ]  # Only targets in this file can depend on this.
 
   sources = v8_compiler_sources
-  jumbo_excluded_sources = [
-    "src/compiler/bytecode-analysis.cc",
-  ]
+  jumbo_excluded_sources = v8_compiler_jumbo_excluded_sources
 
   public_deps = [
     ":generate_bytecode_builtins_list",
@@ -5223,9 +5236,7 @@ v8_source_set("v8_compiler") {
 
   if (v8_enable_turbofan) {
     sources = v8_compiler_sources
-    jumbo_excluded_sources = [
-      "src/compiler/bytecode-analysis.cc",
-    ]
+    jumbo_excluded_sources = v8_compiler_jumbo_excluded_sources
   } else {
     # With Turbofan disabled, we only include the stubbed-out API.
     sources = [ "src/compiler/turbofan-disabled.cc" ]
