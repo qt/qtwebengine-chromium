@@ -8,7 +8,7 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "mojo/public/cpp/system/simple_watcher.h"
 #include "third_party/blink/renderer/core/streams/underlying_source_base.h"
-#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
+#include "third_party/blink/renderer/platform/heap/thread_state.h"
 
 namespace blink {
 
