@@ -48,7 +48,7 @@ inline Operand GetMemOp(LiftoffAssembler* assm, Register addr, Register offset,
     return Operand(addr, offset, times_1, offset_imm);
   }
   // Offset immediate does not fit in 31 bits.
-  Register scratch = kScratchRegister;
+  Register scratch = kScratchRegister2;
   assm->movl(scratch, Immediate(offset_imm));
   if (offset != no_reg) {
     assm->addq(scratch, offset);
