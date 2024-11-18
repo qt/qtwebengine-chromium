@@ -323,7 +323,6 @@ struct State {
                 break;
             }
             case core::BuiltinFn::kTextureLoad: {
-                clamp_coords(1u);
                 uint32_t next_arg = 2u;
                 if (type::IsTextureArray(texture->dim())) {
                     clamp_array_index(next_arg++);
@@ -331,6 +330,7 @@ struct State {
                 if (texture->IsAnyOf<type::SampledTexture, type::DepthTexture>()) {
                     clamp_level(next_arg++);
                 }
+                clamp_coords(1u);  // Must run after clamp_level
                 break;
             }
             case core::BuiltinFn::kTextureStore: {
