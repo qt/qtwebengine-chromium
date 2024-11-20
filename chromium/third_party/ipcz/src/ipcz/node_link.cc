@@ -459,8 +459,12 @@ bool NodeLink::OnAcceptIntroduction(msg::AcceptIntroduction& accept) {
     return false;
   }
 
-  auto transport = MakeRefCounted<DriverTransport>(
-      accept.TakeDriverObject(accept.params().transport));
+  DriverObject transport_object =
+      accept.TakeDriverObject(accept.params().transport);
+  if (!transport_object.is_valid()) {
+    return false;
+  }
+  auto transport = MakeRefCounted<DriverTransport>(std::move(transport_object));
   node()->AcceptIntroduction(
       *this, accept.params().name, accept.params().link_side,
       accept.params().remote_node_type, accept.params().remote_protocol_version,
