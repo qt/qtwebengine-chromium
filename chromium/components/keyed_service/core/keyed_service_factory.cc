@@ -155,3 +155,10 @@ int KeyedServiceFactory::GetServicesCount(void* context) {
   auto it = GetKeyedServicesCount().find(context);
   return it != GetKeyedServicesCount().end() ? it->second : 0;
 }
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+void KeyedServiceFactory::RemoveFromBrowserContext(void* context)
+{
+  Disassociate(context);
+}
+#endif

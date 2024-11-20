@@ -33,6 +33,10 @@ class KEYED_SERVICE_EXPORT KeyedServiceFactory
   // context.
   static int GetServicesCount(void* context);
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  void RemoveFromBrowserContext(void* context);
+#endif
+
  protected:
   KeyedServiceFactory(const char* name, DependencyManager* manager, Type type);
   ~KeyedServiceFactory() override;
