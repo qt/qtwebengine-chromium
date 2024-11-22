@@ -1226,6 +1226,18 @@
       ]
     },
     {
+      "id": 158,
+      "description": "Recurring canvas rendering issues on Intel with direct rendering: https://bugreports.qt.io/browse/QTBUG-130404",
+      "os": {
+        "type": "linux"
+      },
+      "gl_type": "gl",
+      "vendor_id": "0x8086",
+      "features": [
+        "accelerated_2d_canvas"
+      ]
+    },
+    {
       "id": 159,
       "cr_bugs": [902247],
       "description": "Disallow OpenGL use on Mac with old NVIDIA GPUs",
