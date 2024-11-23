@@ -68,6 +68,24 @@ static void LogContainer(bool is_local_file,
   }
 }
 
+static const char* GetAllowedDemuxers() {
+  static const base::NoDestructor<std::string> kAllowedDemuxers([]() {
+    // This should match the configured lists in //third_party/ffmpeg.
+    std::vector<std::string> allowed_demuxers = {"ogg",  "matroska", "wav",
+                                                 "flac", "mp3",      "mov"};
+#if BUILDFLAG(USE_PROPRIETARY_CODECS)
+    allowed_demuxers.push_back("aac");
+#if BUILDFLAG(IS_CHROMEOS)
+    if (base::FeatureList::IsEnabled(kCrOSLegacyMediaFormats)) {
+      allowed_demuxers.push_back("avi");
+    }
+#endif
+#endif
+    return base::JoinString(allowed_demuxers, ",");
+  }());
+  return kAllowedDemuxers->c_str();
+}
+
 FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
   // Initialize an AVIOContext using our custom read and seek operations.  Don't
   // keep pointers to the buffer since FFmpeg may reallocate it on the fly.  It
@@ -97,6 +115,10 @@ FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
   format_context_->error_recognition |= AV_EF_EXPLODE;
 
   format_context_->pb = avio_context_.get();
+
+  // Note: FFmpeg will try to free these strings, so we must duplicate them.
+  format_context_->codec_whitelist = av_strdup(GetAllowedAudioDecoders());
+  format_context_->format_whitelist = av_strdup(GetAllowedDemuxers());
 }
 
 bool FFmpegGlue::OpenContext(bool is_local_file) {
