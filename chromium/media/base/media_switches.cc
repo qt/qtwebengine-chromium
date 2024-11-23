@@ -1792,11 +1792,6 @@ BASE_FEATURE(kUseWindowBoundsForPip,
              "UseWindowBoundsForPip",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Enables FFmpeg allow lists for supported codecs / containers.
-BASE_FEATURE(kFFmpegAllowLists,
-             "FFmpegAllowLists",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 #if BUILDFLAG(IS_WIN)
 // Enables audio offload when supported by endpoints.
 BASE_FEATURE(kAudioOffload, "AudioOffload", base::FEATURE_DISABLED_BY_DEFAULT);

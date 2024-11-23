@@ -138,54 +138,9 @@ FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
 
   format_context_->pb = avio_context_.get();
 
-  if (base::FeatureList::IsEnabled(kFFmpegAllowLists)) {
-    // Enhance security by forbidding ffmpeg from decoding / demuxing codecs and
-    // containers which should be unsupported.
-    //
-    // Normally these aren't even compiled in, but during codec/container
-    // deprecations and when an external ffmpeg is used this adds extra
-    // security.
-    static const base::NoDestructor<std::string> kCombinedCodecList([]() {
-      if (base::FeatureList::IsEnabled(kAllowOnlyAudioCodecsDuringDemuxing)) {
-        // We also don't allow ffmpeg to use any video decoders during demuxing
-        // since it's unnecessary for the codecs we use and just increases
-        // memory usage.
-        return std::string(GetAllowedAudioDecoders());
-      }
-
-      return base::JoinString(
-          {GetAllowedAudioDecoders(), GetAllowedVideoDecoders()}, ",");
-    }());
-
-    // Note: FFmpeg will try to free these strings, so we must duplicate them.
-    format_context_->codec_whitelist = av_strdup(kCombinedCodecList->c_str());
-    format_context_->format_whitelist = av_strdup(GetAllowedDemuxers());
-  }
-}
-
-// static
-const char* FFmpegGlue::GetAllowedAudioDecoders() {
-  static const base::NoDestructor<std::string> kAllowedAudioCodecs([]() {
-    // This should match the configured lists in //third_party/ffmpeg.
-    std::string allowed_decoders(
-        "vorbis,libopus,flac,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,"
-        "mp3,pcm_s16be,pcm_s24be,pcm_mulaw,pcm_alaw");
-#if BUILDFLAG(USE_PROPRIETARY_CODECS)
-    allowed_decoders += ",aac";
-#endif
-    return allowed_decoders;
-  }());
-  return kAllowedAudioCodecs->c_str();
-}
-
-// static
-const char* FFmpegGlue::GetAllowedVideoDecoders() {
-  // This should match the configured lists in //third_party/ffmpeg.
-#if BUILDFLAG(USE_PROPRIETARY_CODECS) && BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-  return IsBuiltInVideoCodec(VideoCodec::kH264) ? "h264" : "";
-#else
-  return "";
-#endif
+  // Note: FFmpeg will try to free these strings, so we must duplicate them.
+  format_context_->codec_whitelist = av_strdup(GetAllowedAudioDecoders());
+  format_context_->format_whitelist = av_strdup(GetAllowedDemuxers());
 }
 
 bool FFmpegGlue::OpenContext(bool is_local_file) {
