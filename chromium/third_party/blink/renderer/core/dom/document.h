@@ -2668,7 +2668,7 @@ class CORE_EXPORT Document : public ContainerNode,
 
   Member<SVGDocumentExtensions> svg_extensions_;
 
-  Vector<DraggableRegionValue> draggable_regions_;
+  std::unique_ptr<Vector<DraggableRegionValue>> draggable_regions_;
   bool has_draggable_regions_ = false;
   bool draggable_regions_dirty_ = false;
 
