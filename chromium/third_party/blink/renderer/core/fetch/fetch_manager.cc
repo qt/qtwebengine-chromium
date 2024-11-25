@@ -776,7 +776,7 @@ void FetchManager::Loader::DidReceiveResponse(
   Response* r = Response::Create(response_resolver_->GetExecutionContext(),
                                  tainted_response);
   r->headers()->SetGuard(Headers::kImmutableGuard);
-  std::optional<UnencodedDigest> unencoded_digest = response.UnencodedDigest();
+  std::optional<UnencodedDigest> unencoded_digest = response.GetUnencodedDigest();
   if (GetFetchRequestData()->Integrity().empty() &&
       !unencoded_digest.has_value()) {
     response_resolver_->Resolve(r);

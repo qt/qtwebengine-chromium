@@ -673,8 +673,10 @@ BUILTIN(Uint8ArrayToBase64) {
 
     // TODO(rezvan): Make sure to add a path for SharedArrayBuffers when
     // simdutf library got updated. Also, add a test for it.
+    const char* backing_store;
+    std::memcpy(&backing_store, uint8array->GetBuffer()->backing_store(), sizeof(backing_store));
     size_t simd_result_size = simdutf::binary_to_base64(
-        std::bit_cast<const char*>(uint8array->GetBuffer()->backing_store()),
+        backing_store,
         uint8array->byte_length(),
         reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
     DCHECK_EQ(simd_result_size, output_length);

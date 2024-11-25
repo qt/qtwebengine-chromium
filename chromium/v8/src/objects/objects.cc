@@ -312,8 +312,7 @@ MaybeDirectHandle<JSReceiver> Object::ConvertReceiver(
 
 // static
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ConvertToNumber(
     Isolate* isolate, HandleType<Object> input) {
   while (true) {
@@ -345,8 +344,7 @@ template V8_EXPORT_PRIVATE MaybeIndirectHandle<Number> Object::ConvertToNumber(
     Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Numeric>::MaybeType Object::ConvertToNumeric(
     Isolate* isolate, HandleType<Object> input) {
   while (true) {
@@ -378,8 +376,7 @@ template V8_EXPORT_PRIVATE MaybeIndirectHandle<Numeric>
 Object::ConvertToNumeric(Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ConvertToInteger(
     Isolate* isolate, HandleType<Object> input) {
   ASSIGN_RETURN_ON_EXCEPTION(isolate, input, ConvertToNumber(isolate, input));
@@ -394,8 +391,7 @@ template V8_EXPORT_PRIVATE MaybeIndirectHandle<Number> Object::ConvertToInteger(
     Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ConvertToInt32(
     Isolate* isolate, HandleType<Object> input) {
   ASSIGN_RETURN_ON_EXCEPTION(isolate, input, ConvertToNumber(isolate, input));
@@ -410,8 +406,7 @@ template MaybeIndirectHandle<Number> Object::ConvertToInt32(
     Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ConvertToUint32(
     Isolate* isolate, HandleType<Object> input) {
   ASSIGN_RETURN_ON_EXCEPTION(isolate, input, ConvertToNumber(isolate, input));
@@ -428,8 +423,7 @@ template MaybeIndirectHandle<Number> Object::ConvertToUint32(
     Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Name>::MaybeType Object::ConvertToName(
     Isolate* isolate, HandleType<Object> input) {
   ASSIGN_RETURN_ON_EXCEPTION(
@@ -446,8 +440,7 @@ template V8_EXPORT_PRIVATE MaybeIndirectHandle<Name> Object::ConvertToName(
 
 // ES6 7.1.14
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ConvertToPropertyKey(
     Isolate* isolate, HandleType<Object> value) {
   // 1. Let key be ToPrimitive(argument, hint String).
@@ -478,8 +471,7 @@ template V8_EXPORT_PRIVATE MaybeIndirectHandle<Object>
 Object::ConvertToPropertyKey(Isolate* isolate, IndirectHandle<Object> input);
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<String>::MaybeType Object::ConvertToString(
     Isolate* isolate, HandleType<Object> input) {
   while (true) {
@@ -745,8 +737,7 @@ MaybeHandle<Number> Object::ConvertToLength(Isolate* isolate,
 }
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ConvertToIndex(
     Isolate* isolate, HandleType<Object> input, MessageTemplate error_index) {
   if (IsUndefined(*input, isolate))
@@ -2757,8 +2748,7 @@ Maybe<bool> Object::TransitionAndWriteDataProperty(
 }
 
 // static
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Object>, DirectHandle<Object>>)
+template <template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ShareSlow(
     Isolate* isolate, HandleType<HeapObject> value,
     ShouldThrow throw_if_cannot_be_shared) {
@@ -5413,8 +5403,7 @@ void HashTable<Derived, Shape>::Rehash(PtrComprCageBase cage_base) {
 }
 
 template <typename Derived, typename Shape>
-template <typename IsolateT, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <typename IsolateT, template <typename> typename HandleType, typename>
 HandleType<Derived> HashTable<Derived, Shape>::EnsureCapacity(
     IsolateT* isolate, HandleType<Derived> table, int n,
     AllocationType allocation) {
@@ -5476,8 +5465,7 @@ int HashTable<Derived, Shape>::ComputeCapacityWithShrink(
 
 // static
 template <typename Derived, typename Shape>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
 HandleType<Derived> HashTable<Derived, Shape>::Shrink(Isolate* isolate,
                                                       HandleType<Derived> table,
                                                       int additional_capacity) {
@@ -5634,8 +5622,7 @@ int BaseNameDictionary<Derived, Shape>::NextEnumerationIndex(
 }
 
 template <typename Derived, typename Shape>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
 HandleType<Derived> Dictionary<Derived, Shape>::DeleteEntry(
     Isolate* isolate, HandleType<Derived> dictionary, InternalIndex entry) {
   DCHECK(TodoShape::kEntrySize != 3 ||
@@ -5646,8 +5633,7 @@ HandleType<Derived> Dictionary<Derived, Shape>::DeleteEntry(
 }
 
 template <typename Derived, typename Shape>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
 HandleType<Derived> Dictionary<Derived, Shape>::AtPut(
     Isolate* isolate, HandleType<Derived> dictionary, Key key,
     DirectHandle<Object> value, PropertyDetails details) {
@@ -5681,8 +5667,7 @@ void Dictionary<Derived, Shape>::UncheckedAtPut(
 }
 
 template <typename Derived, typename Shape>
-template <typename IsolateT, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <typename IsolateT, template <typename> typename HandleType, typename>
 HandleType<Derived>
 BaseNameDictionary<Derived, Shape>::AddNoUpdateNextEnumerationIndex(
     IsolateT* isolate, HandleType<Derived> dictionary, Key key,
@@ -5694,8 +5679,7 @@ BaseNameDictionary<Derived, Shape>::AddNoUpdateNextEnumerationIndex(
 }
 
 template <typename Derived, typename Shape>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
 HandleType<Derived> BaseNameDictionary<Derived, Shape>::Add(
     Isolate* isolate, HandleType<Derived> dictionary, Key key,
     DirectHandle<Object> value, PropertyDetails details,
@@ -5716,8 +5700,7 @@ HandleType<Derived> BaseNameDictionary<Derived, Shape>::Add(
 
 template <typename Derived, typename Shape>
 template <typename IsolateT, template <typename> typename HandleType,
-          AllocationType key_allocation>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+          AllocationType key_allocation, typename>
 HandleType<Derived> Dictionary<Derived, Shape>::Add(
     IsolateT* isolate, HandleType<Derived> dictionary, Key key,
     DirectHandle<Object> value, PropertyDetails details,
@@ -5744,8 +5727,7 @@ HandleType<Derived> Dictionary<Derived, Shape>::Add(
 
 template <typename Derived, typename Shape>
 template <typename IsolateT, template <typename> typename HandleType,
-          AllocationType key_allocation>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+          AllocationType key_allocation, typename>
 void Dictionary<Derived, Shape>::UncheckedAdd(IsolateT* isolate,
                                               HandleType<Derived> dictionary,
                                               Key key,
@@ -5805,9 +5787,7 @@ void NumberDictionary::UpdateMaxNumberKey(
   }
 }
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<NumberDictionary>,
-                                 DirectHandle<NumberDictionary>>)
+template <template <typename> typename HandleType, typename>
 HandleType<NumberDictionary> NumberDictionary::Set(
     Isolate* isolate, HandleType<NumberDictionary> dictionary, uint32_t key,
     DirectHandle<Object> value, DirectHandle<JSObject> dictionary_holder,

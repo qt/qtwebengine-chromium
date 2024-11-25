@@ -61,10 +61,12 @@ BASE_EXPORT std::optional<std::string> WriteJsonWithOptions(
 
 class BASE_EXPORT JSONWriter {
  public:
-  using enum JsonOptions;
-
   JSONWriter(const JSONWriter&) = delete;
   JSONWriter& operator=(const JSONWriter&) = delete;
+
+  static constexpr uint32_t OPTIONS_PRETTY_PRINT = JsonOptions::OPTIONS_PRETTY_PRINT;
+  static constexpr uint32_t OPTIONS_OMIT_BINARY_VALUES = JsonOptions::OPTIONS_OMIT_BINARY_VALUES;
+  static constexpr uint32_t OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION = JsonOptions::OPTIONS_OMIT_DOUBLE_TYPE_PRESERVATION;
 
   // Given a root node, generates a JSON string and puts it into |json|.
   // The output string is overwritten and not appended.

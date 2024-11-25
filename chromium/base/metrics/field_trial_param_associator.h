@@ -77,7 +77,8 @@ class BASE_EXPORT FieldTrialParamAssociator {
   // (field_trial_name, field_trial_group)
   using FieldTrialKey = std::pair<std::string, std::string>;
   // The following type can be used for lookups without needing to copy strings.
-  using FieldTrialRefKey = std::pair<const std::string&, const std::string&>;
+  // using FieldTrialRefKey = std::pair<const std::string&, const std::string&>;
+  using FieldTrialRefKey = FieldTrialKey;
 
   Lock lock_;
   std::map<FieldTrialKey, FieldTrialParams, std::less<>> field_trial_params_;

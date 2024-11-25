@@ -12,6 +12,7 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <climits>
 
 #include "base/i18n/char_iterator.h"
 #include "base/strings/string_util.h"

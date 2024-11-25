@@ -203,7 +203,7 @@ void Resource::CheckResourceIntegrity() {
 
   // Check `Unencoded-Digest` headers. If the digest doesn't match, fail.
   // Otherwise, fall through to validating SRI.
-  auto unencoded_digest = GetResponse().UnencodedDigest();
+  auto unencoded_digest = GetResponse().GetUnencodedDigest();
   if (unencoded_digest.has_value() && !unencoded_digest->DoesMatch(Data())) {
     DCHECK(RuntimeEnabledFeatures::UnencodedDigestEnabled());
     integrity_disposition_ =
@@ -426,7 +426,7 @@ AtomicString Resource::HttpContentType() const {
 }
 
 bool Resource::ForceIntegrityChecks() const {
-  return IsLinkPreload() || GetResponse().UnencodedDigest().has_value();
+  return IsLinkPreload() || GetResponse().GetUnencodedDigest().has_value();
 }
 
 bool Resource::MustRefetchDueToIntegrityMetadata(

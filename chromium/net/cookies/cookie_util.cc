@@ -1138,16 +1138,15 @@ bool ShouldAddInitialStorageAccessApiOverride(
     return false;
   }
 
-  using enum StorageAccessNetRequestKind;
-  StorageAccessNetRequestKind kind = kCrossSite;
+  StorageAccessNetRequestKind kind = StorageAccessNetRequestKind::kCrossSite;
   if (request_initiator->IsSameOriginWith(url)) {
-    kind = kSameOrigin;
+    kind = StorageAccessNetRequestKind::kSameOrigin;
   } else {
     SchemefulSite request_site(url.SchemeIsHTTPOrHTTPS()
                                    ? url
                                    : ChangeWebSocketSchemeToHttpScheme(url));
     if (SchemefulSite(request_initiator.value()) == request_site) {
-      kind = kCrossOriginSameSite;
+      kind = StorageAccessNetRequestKind::kCrossOriginSameSite;
     }
   }
   if (emit_metrics) {
@@ -1156,9 +1155,9 @@ bool ShouldAddInitialStorageAccessApiOverride(
 
   if (base::FeatureList::IsEnabled(
           features::kStorageAccessApiFollowsSameOriginPolicy)) {
-    return kind == kSameOrigin;
+    return kind == StorageAccessNetRequestKind::kSameOrigin;
   }
-  return kind != kCrossSite;
+  return kind != StorageAccessNetRequestKind::kCrossSite;
 }
 
 }  // namespace net::cookie_util

@@ -109,27 +109,26 @@ FillingProduct GetFillingProductFromSuggestionType(SuggestionType type) {
 
 FillingProduct GetFillingProductFromFieldTypeGroup(
     FieldTypeGroup field_type_group) {
-  using enum FieldTypeGroup;
   switch (field_type_group) {
-    case kUnfillable:
-    case kTransaction:
-    case kNoGroup:
+    case FieldTypeGroup::kUnfillable:
+    case FieldTypeGroup::kTransaction:
+    case FieldTypeGroup::kNoGroup:
       return FillingProduct::kNone;
-    case kName:
-    case kEmail:
-    case kCompany:
-    case kAddress:
-    case kPhone:
+    case FieldTypeGroup::kName:
+    case FieldTypeGroup::kEmail:
+    case FieldTypeGroup::kCompany:
+    case FieldTypeGroup::kAddress:
+    case FieldTypeGroup::kPhone:
       return FillingProduct::kAddress;
-    case kCreditCard:
-    case kStandaloneCvcField:
+    case FieldTypeGroup::kCreditCard:
+    case FieldTypeGroup::kStandaloneCvcField:
       return FillingProduct::kCreditCard;
-    case kPasswordField:
-    case kUsernameField:
+    case FieldTypeGroup::kPasswordField:
+    case FieldTypeGroup::kUsernameField:
       return FillingProduct::kPassword;
-    case kIban:
+    case FieldTypeGroup::kIban:
       return FillingProduct::kIban;
-    case kAutofillAi:
+    case FieldTypeGroup::kAutofillAi:
       return FillingProduct::kAutofillAi;
   }
   NOTREACHED();

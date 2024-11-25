@@ -733,13 +733,12 @@ bool PrefetchMatches(const ResourceRequest& prefetch_request,
   CHECK(FieldCountIsCorrect(prefetch_request));
 
   bool all_fields_match = true;
-  using enum Fields;
 
 #define DO_FIELD(name)                                                     \
-  if (!FieldMatcher<k##name>::Match(prefetch_request.name,                 \
+  if (!FieldMatcher<Fields::k##name>::Match(prefetch_request.name,         \
                                     real_request.name)) {                  \
     if (all_fields_match) {                                                \
-      LogMismatchToUma(k##name);                                           \
+      LogMismatchToUma(Fields::k##name);                                   \
       all_fields_match = false;                                            \
     }                                                                      \
     LogMismatchVerbosely(prefetch_request.name, real_request.name, #name); \

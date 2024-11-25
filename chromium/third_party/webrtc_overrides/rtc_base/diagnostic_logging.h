@@ -7,6 +7,7 @@
 
 #include <sstream>
 #include <string>
+#include <type_traits>
 
 #include "third_party/abseil-cpp/absl/base/attributes.h"
 #include "third_party/abseil-cpp/absl/strings/has_absl_stringify.h"
@@ -74,7 +75,8 @@ class RTC_EXPORT DiagnosticLogMessage {
     } else if constexpr (absl::HasAbslStringify<T>::value) {
       print_stream_ << absl::StrCat(v);
     } else {
-      static_assert(false, "Unsupported type to log");
+      // gcc 10 can't handle static_assert(false)
+      static_assert(std::is_void_v<T> && !std::is_void_v<T>, "Unsupported type to log");
     }
     return *this;
   }

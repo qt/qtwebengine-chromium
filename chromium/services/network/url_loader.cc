@@ -1765,12 +1765,11 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
   const bool storage_access_eligible =
       url_request_->cookie_setting_overrides().Has(
           net::CookieSettingOverride::kStorageAccessGrantEligible);
-  using enum StorageAccessRedirectKind;
   StorageAccessRedirectKind storage_access_redirect_kind =
-      storage_access_eligible ? kSameOrigin : kNoAccess;
+      storage_access_eligible ? StorageAccessRedirectKind::kSameOrigin : StorageAccessRedirectKind::kNoAccess;
   if (!origin.IsSameOriginWith(pending_origin)) {
     storage_access_redirect_kind =
-        storage_access_eligible ? kCrossOriginSameSite : kNoAccess;
+        storage_access_eligible ? StorageAccessRedirectKind::kCrossOriginSameSite : StorageAccessRedirectKind::kNoAccess;
     url_request_->cookie_setting_overrides().Remove(
         net::CookieSettingOverride::kStorageAccessGrantEligibleViaHeader);
 
@@ -1781,7 +1780,7 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
       bool cross_site =
           net::SchemefulSite(origin) != net::SchemefulSite(pending_origin);
       storage_access_redirect_kind =
-          cross_site ? kCrossSite : kCrossOriginSameSite;
+          cross_site ? StorageAccessRedirectKind::kCrossSite : StorageAccessRedirectKind::kCrossOriginSameSite;
       if (cross_site ||
           base::FeatureList::IsEnabled(
               net::features::kStorageAccessApiFollowsSameOriginPolicy)) {

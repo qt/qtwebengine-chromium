@@ -1186,9 +1186,9 @@ void CookieMonster::InvokeQueue() {
   // per-key queues.
   seen_global_task_ = true;
   for (auto& tasks_for_key : tasks_pending_for_key_) {
-    tasks_pending_.insert(tasks_pending_.begin(),
-                          std::make_move_iterator(tasks_for_key.second.begin()),
-                          std::make_move_iterator(tasks_for_key.second.end()));
+    for (auto it = tasks_for_key.second.rbegin(); it != tasks_for_key.second.rend(); ++it) {
+      tasks_pending_.insert(tasks_pending_.begin(), std::move(*it));
+    }
   }
   tasks_pending_for_key_.clear();
 
