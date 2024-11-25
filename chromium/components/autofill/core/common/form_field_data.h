@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include <compare>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -79,9 +78,6 @@ using FieldPropertiesMask = std::underlying_type_t<FieldPropertiesFlags>;
 // <option value=Foo></option>               | "Foo"  | ""
 // <option label=Bar></option>               | ""     | "Bar"
 struct SelectOption {
-  friend bool operator==(const SelectOption& lhs,
-                         const SelectOption& rhs) = default;
-
   // The option's "value" attribute, or, if not present, its text content.
   std::u16string value;
   // The option's "label" attribute, or, if not present, its text content.

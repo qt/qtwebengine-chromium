@@ -116,10 +116,21 @@ class MultiToken {
   }
 
   // Comparison operators
-  constexpr friend auto operator<=>(const MultiToken& lhs,
-                                    const MultiToken& rhs) = default;
+  constexpr friend std::weak_ordering operator<=>(const MultiToken& lhs,
+                                                  const MultiToken& rhs) {
+    if (lhs.storage_ < rhs.storage_) {
+      return std::weak_ordering::less;
+    }
+    if (lhs.storage_ == rhs.storage_) {
+      return std::weak_ordering::equivalent;
+    }
+    return std::weak_ordering::greater;
+  }
+
   constexpr friend bool operator==(const MultiToken& lhs,
-                                   const MultiToken& rhs) = default;
+                                   const MultiToken& rhs) {
+    return lhs.storage_ == rhs.storage_;
+  }
 
   template <typename T>
     requires(internal::IsBaseToken<T> && internal::IsCompatible<T, Tokens...>)

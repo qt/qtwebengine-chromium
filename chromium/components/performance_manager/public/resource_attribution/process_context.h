@@ -109,9 +109,16 @@ class ProcessContext {
   std::string ToString() const;
 
   // Compare ProcessContexts by process host id.
-  constexpr friend auto operator<=>(const ProcessContext& a,
-                                    const ProcessContext& b) {
-    return a.id_ <=> b.id_;
+  constexpr friend std::weak_ordering operator<=>(const ProcessContext& a,
+                                                  const ProcessContext& b) {
+    // std::variant doesn't define <=>.
+    if (a.id_ < b.id_) {
+      return std::weak_ordering::less;
+    }
+    if (a.id_ == b.id_) {
+      return std::weak_ordering::equivalent;
+    }
+    return std::weak_ordering::greater;
   }
 
   // Test ProcessContexts for equality by process host id.

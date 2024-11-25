@@ -43,12 +43,29 @@ class OriginInBrowsingInstanceContext {
   // convenience.
   std::string ToString() const;
 
-  constexpr friend auto operator<=>(const OriginInBrowsingInstanceContext& a,
-                                    const OriginInBrowsingInstanceContext& b) =
-      default;
-  constexpr friend bool operator==(const OriginInBrowsingInstanceContext& a,
-                                   const OriginInBrowsingInstanceContext& b) =
-      default;
+  // Compare OriginInBrowsingInstanceContexts by origin and browsing instance.
+  constexpr friend std::weak_ordering operator<=>(
+      const OriginInBrowsingInstanceContext& a,
+      const OriginInBrowsingInstanceContext& b) {
+    // url::Origin doesn't define operator<=>.
+    const auto a_tuple = std::tie(a.origin_, a.browsing_instance_);
+    const auto b_tuple = std::tie(b.origin_, b.browsing_instance_);
+    if (a_tuple < b_tuple) {
+      return std::weak_ordering::less;
+    }
+    if (a_tuple == b_tuple) {
+      return std::weak_ordering::equivalent;
+    }
+    return std::weak_ordering::greater;
+  }
+
+  // Test OriginInBrowsingInstanceContexts for equality by origin and browsing
+  // instance.
+  friend bool operator==(const OriginInBrowsingInstanceContext& a,
+                         const OriginInBrowsingInstanceContext& b) {
+    return a.origin_ == b.origin_ &&
+           a.browsing_instance_ == b.browsing_instance_;
+  }
 
  private:
   url::Origin origin_;

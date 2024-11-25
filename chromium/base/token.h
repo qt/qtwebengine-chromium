@@ -8,10 +8,10 @@
 #include <stdint.h>
 
 #include <array>
-#include <compare>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include "base/base_export.h"
@@ -51,11 +51,26 @@ class BASE_EXPORT Token {
 
   span<const uint8_t, 16> AsBytes() const { return as_byte_span(words_); }
 
-  friend constexpr auto operator<=>(const Token& lhs,
-                                    const Token& rhs) = default;
-  friend constexpr bool operator==(const Token& lhs,
-                                   const Token& rhs) = default;
+  constexpr bool operator==(const Token& other) const {
+    return words_[0] == other.words_[0] && words_[1] == other.words_[1];
+  }
 
+  constexpr bool operator!=(const Token& other) const {
+    return !(*this == other);
+  }
+
+  constexpr bool operator<(const Token& other) const {
+    return std::tie(words_[0], words_[1]) <
+           std::tie(other.words_[0], other.words_[1]);
+  }
+
+  friend constexpr auto operator<=>(const Token& a, const Token& b) {
+    if (a == b)
+      return std::strong_ordering::equal;
+    if (a < b)
+      return std::strong_ordering::less;
+    return std::strong_ordering::greater;
+  }
   template <typename H>
   friend H AbslHashValue(H h, const Token& token) {
     return H::combine(std::move(h), token.words_);

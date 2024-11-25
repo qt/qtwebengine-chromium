@@ -54,9 +54,11 @@ std::optional<UnguessableToken> UnguessableToken::DeserializeFromString(
   return UnguessableToken(token.value());
 }
 
-bool operator==(const UnguessableToken& lhs, const UnguessableToken& rhs) {
-  auto bytes = lhs.token_.AsBytes();
-  auto other_bytes = rhs.token_.AsBytes();
+std::strong_ordering UnguessableToken::operator<=>(const UnguessableToken& other) const = default;
+
+bool UnguessableToken::operator==(const UnguessableToken& other) const {
+  auto bytes = token_.AsBytes();
+  auto other_bytes = other.token_.AsBytes();
   return CRYPTO_memcmp(bytes.data(), other_bytes.data(), bytes.size()) == 0;
 }
 

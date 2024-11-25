@@ -107,12 +107,16 @@ class BASE_EXPORT UnguessableToken {
 
   span<const uint8_t, 16> AsBytes() const { return token_.AsBytes(); }
 
-  friend constexpr auto operator<=>(const UnguessableToken& lhs,
-                                    const UnguessableToken& rhs) = default;
+  constexpr bool operator<(const UnguessableToken& other) const {
+    return token_ < other.token_;
+  }
 
-  // operator== uses constant-time comparison for security where available.
-  friend BASE_EXPORT bool operator==(const UnguessableToken& lhs,
-                                     const UnguessableToken& rhs);
+  std::strong_ordering operator<=>(const UnguessableToken& other) const;
+  bool operator==(const UnguessableToken& other) const;
+
+  bool operator!=(const UnguessableToken& other) const {
+    return !(*this == other);
+  }
 
   template <typename H>
   friend H AbslHashValue(H h, const UnguessableToken& token) {
@@ -133,9 +137,6 @@ class BASE_EXPORT UnguessableToken {
 
   base::Token token_;
 };
-
-BASE_EXPORT bool operator==(const UnguessableToken& lhs,
-                            const UnguessableToken& rhs);
 
 BASE_EXPORT std::ostream& operator<<(std::ostream& out,
                                      const UnguessableToken& token);
