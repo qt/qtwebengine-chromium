@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include <compare>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -81,9 +80,6 @@ using FieldPropertiesMask = std::underlying_type_t<FieldPropertiesFlags>;
 // <option value=Foo></option>               | "Foo"  | ""
 // <option label=Bar></option>               | ""     | "Bar"
 struct SelectOption {
-  friend bool operator==(const SelectOption& lhs,
-                         const SelectOption& rhs) = default;
-
   // The option's "value" attribute, or, if not present, its text content.
   std::u16string value;
   // The option's "label" attribute, or, if not present, its text content.
@@ -94,11 +90,6 @@ struct SelectOption {
 class Section {
  public:
   struct Autocomplete {
-    friend auto operator<=>(const Autocomplete& lhs,
-                            const Autocomplete& rhs) = default;
-    friend bool operator==(const Autocomplete& lhs,
-                           const Autocomplete& rhs) = default;
-
     std::string section;
     HtmlFieldMode mode = HtmlFieldMode::kNone;
   };
@@ -114,10 +105,9 @@ class Section {
           local_frame_id(local_frame_id),
           field_renderer_id(field_renderer_id) {}
 
-    friend auto operator<=>(const FieldIdentifier& lhs,
-                            const FieldIdentifier& rhs) = default;
-    friend bool operator==(const FieldIdentifier& lhs,
-                           const FieldIdentifier& rhs) = default;
+    friend bool operator==(const FieldIdentifier& a, const FieldIdentifier& b);
+    friend bool operator!=(const FieldIdentifier& a, const FieldIdentifier& b);
+    friend bool operator<(const FieldIdentifier& a, const FieldIdentifier& b);
 
     std::string field_name;
     size_t local_frame_id;
@@ -133,14 +123,11 @@ class Section {
   Section(const Section& section);
   ~Section();
 
-  // `absl::variant` does not implement `operator<=>` - therefore the ordering
-  // needs to be specified manually. Once `absl::variant` is `std::variant`,
-  // this return type can become `auto`.
-  friend std::strong_ordering operator<=>(const Section& lhs,
-                                          const Section& rhs) = default;
-  friend bool operator==(const Section& lhs, const Section& rhs) = default;
-  explicit operator bool() const;
+  friend bool operator==(const Section& a, const Section& b);
+  friend bool operator!=(const Section& a, const Section& b);
+  friend bool operator<(const Section& a, const Section& b);
 
+  explicit operator bool() const;
   bool is_from_autocomplete() const;
   bool is_from_fieldidentifier() const;
   bool is_default() const;
