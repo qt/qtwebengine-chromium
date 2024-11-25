@@ -101,8 +101,8 @@ int ComparePort(const Port* a, const Port* b) {
     return cmp_protocol;
   }
 
-  int a_family = GetAddressFamilyPriority(a->Network()->GetBestIP().family());
-  int b_family = GetAddressFamilyPriority(b->Network()->GetBestIP().family());
+  int a_family = GetAddressFamilyPriority(a->GetNetwork()->GetBestIP().family());
+  int b_family = GetAddressFamilyPriority(b->GetNetwork()->GetBestIP().family());
   return a_family - b_family;
 }
 
@@ -416,7 +416,7 @@ std::vector<const Network*> BasicPortAllocatorSession::GetFailedNetworks() {
   for (const PortData& data : ports_) {
     Port* port = data.port();
     if (!port->connections().empty()) {
-      networks_with_connection.insert(port->Network()->name());
+      networks_with_connection.insert(port->GetNetwork()->name());
     }
   }
 
@@ -1027,7 +1027,7 @@ Port* BasicPortAllocatorSession::GetBestTurnPortForNetwork(
   RTC_DCHECK_RUN_ON(network_thread_);
   Port* best_turn_port = nullptr;
   for (const PortData& data : ports_) {
-    if (data.port()->Network()->name() == network_name &&
+    if (data.port()->GetNetwork()->name() == network_name &&
         data.port()->Type() == IceCandidateType::kRelay && data.ready() &&
         (!best_turn_port || ComparePort(data.port(), best_turn_port) > 0)) {
       best_turn_port = data.port();
@@ -1044,10 +1044,10 @@ bool BasicPortAllocatorSession::PruneNewlyPairableTurnPort(
   // If an existing turn port is ready on the same network, prune the newly
   // pairable port.
   const std::string& network_name =
-      newly_pairable_port_data->port()->Network()->name();
+      newly_pairable_port_data->port()->GetNetwork()->name();
 
   for (PortData& data : ports_) {
-    if (data.port()->Network()->name() == network_name &&
+    if (data.port()->GetNetwork()->name() == network_name &&
         data.port()->Type() == IceCandidateType::kRelay && data.ready() &&
         &data != newly_pairable_port_data) {
       RTC_LOG(LS_INFO) << "Port pruned: "
@@ -1064,7 +1064,7 @@ bool BasicPortAllocatorSession::PruneTurnPorts(Port* newly_pairable_turn_port) {
   // Note: We determine the same network based only on their network names. So
   // if an IPv4 address and an IPv6 address have the same network name, they
   // are considered the same network here.
-  const std::string& network_name = newly_pairable_turn_port->Network()->name();
+  const std::string& network_name = newly_pairable_turn_port->GetNetwork()->name();
   Port* best_turn_port = GetBestTurnPortForNetwork(network_name);
   // `port` is already in the list of ports, so the best port cannot be nullptr.
   RTC_CHECK(best_turn_port != nullptr);
@@ -1072,7 +1072,7 @@ bool BasicPortAllocatorSession::PruneTurnPorts(Port* newly_pairable_turn_port) {
   bool pruned = false;
   std::vector<PortData*> ports_to_prune;
   for (PortData& data : ports_) {
-    if (data.port()->Network()->name() == network_name &&
+    if (data.port()->GetNetwork()->name() == network_name &&
         data.port()->Type() == IceCandidateType::kRelay && !data.pruned() &&
         ComparePort(data.port(), best_turn_port) < 0) {
       pruned = true;
@@ -1338,7 +1338,7 @@ void AllocationSequence::DisableEquivalentPhases(const Network* network,
   // Port over PROTO_UDP, namely a TurnPort over UDP.
   if (absl::c_any_of(session_->ports_,
                      [this](const BasicPortAllocatorSession::PortData& p) {
-                       return !p.pruned() && p.port()->Network() == network_ &&
+                       return !p.pruned() && p.port()->GetNetwork() == network_ &&
                               p.port()->GetProtocol() == PROTO_UDP &&
                               p.port()->Type() == IceCandidateType::kHost &&
                               !p.error();
@@ -1349,7 +1349,7 @@ void AllocationSequence::DisableEquivalentPhases(const Network* network,
   // its type.
   if (absl::c_any_of(session_->ports_,
                      [this](const BasicPortAllocatorSession::PortData& p) {
-                       return !p.pruned() && p.port()->Network() == network_ &&
+                       return !p.pruned() && p.port()->GetNetwork() == network_ &&
                               p.port()->GetProtocol() == PROTO_TCP &&
                               p.port()->Type() == IceCandidateType::kHost &&
                               !p.error();

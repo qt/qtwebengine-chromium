@@ -140,7 +140,7 @@ class PLATFORM_EXPORT ContouredRect {
     constexpr bool IsConcave() const { return curvature_ < 1; }
     constexpr bool IsHyperellipse() const { return curvature_ >= 2; }
     constexpr bool IsZero() const { return Start() == End(); }
-    constexpr bool IsEmpty() const {
+    bool IsEmpty() const {
       return v1().Length() == 0 || v2().Length() == 0;
     }
     constexpr bool operator==(const Corner&) const = default;
@@ -155,23 +155,23 @@ class PLATFORM_EXPORT ContouredRect {
       return Corner({End(), Outer(), Start(), Center()}, Curvature());
     }
 
-    constexpr gfx::RectF BoundingBox() const {
+    gfx::RectF BoundingBox() const {
       return gfx::BoundingRect(Start(), End());
     }
 
-    constexpr bool Intersects(const Corner& other) const {
+    bool Intersects(const Corner& other) const {
       return BoundingBox().Intersects(other.BoundingBox());
     }
 
-    constexpr gfx::Vector2dF v1() const { return Outer() - Start(); }
-    constexpr gfx::Vector2dF v2() const { return End() - Outer(); }
-    constexpr gfx::Vector2dF v3() const { return Center() - End(); }
-    constexpr gfx::Vector2dF v4() const { return Start() - Center(); }
-    constexpr float DiagonalLength() const {
+    gfx::Vector2dF v1() const { return Outer() - Start(); }
+    gfx::Vector2dF v2() const { return End() - Outer(); }
+    gfx::Vector2dF v3() const { return Center() - End(); }
+    gfx::Vector2dF v4() const { return Start() - Center(); }
+    float DiagonalLength() const {
       return (End() - Start()).Length();
     }
 
-    constexpr gfx::PointF HalfCorner() const {
+    gfx::PointF HalfCorner() const {
       const float normalized_half_corner = HalfCornerForCurvature(curvature_);
       return MapPoint(
           gfx::Vector2dF(normalized_half_corner, normalized_half_corner));
@@ -183,7 +183,7 @@ class PLATFORM_EXPORT ContouredRect {
 
     static float CurvatureForHalfCorner(float half_corner);
 
-    constexpr gfx::PointF MapPoint(
+    gfx::PointF MapPoint(
         const gfx::Vector2dF& normalized_point) const {
       return Center() + gfx::ScaleVector2d(v1(), normalized_point.x()) +
              gfx::ScaleVector2d(v4(), normalized_point.y());
@@ -213,11 +213,11 @@ class PLATFORM_EXPORT ContouredRect {
     return corner_curvature_;
   }
 
-  constexpr bool HasRoundCurvature() const {
+  bool HasRoundCurvature() const {
     return corner_curvature_.IsRound() || !IsRounded();
   }
 
-  constexpr bool IsConvex() const {
+  bool IsConvex() const {
     return !IsRounded() || corner_curvature_.IsConvex();
   }
 

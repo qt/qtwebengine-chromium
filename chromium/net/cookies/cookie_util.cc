@@ -1199,14 +1199,13 @@ bool ShouldAddInitialStorageAccessApiOverride(
 
   const url::Origin origin = url::Origin::Create(url);
 
-  using enum StorageAccessNetRequestKind;
-  StorageAccessNetRequestKind kind = kCrossSite;
+  StorageAccessNetRequestKind kind = StorageAccessNetRequestKind::kCrossSite;
   if (request_initiator->IsSameOriginWith(origin)) {
-    kind = kSameOrigin;
+    kind = StorageAccessNetRequestKind::kSameOrigin;
   } else if (SchemefulSite::IsSameSite(request_initiator.value(), origin)) {
     kind = credentials_mode_include
-               ? kCrossOriginSameSiteCredentialsIncluded
-               : kCrossOriginSameSiteCredentialsNotIncluded;
+               ? StorageAccessNetRequestKind::kCrossOriginSameSiteCredentialsIncluded
+               : StorageAccessNetRequestKind::kCrossOriginSameSiteCredentialsNotIncluded;
   }
   if (emit_metrics) {
     RecordStorageAccessNetRequestMetric(kind);
@@ -1214,9 +1213,9 @@ bool ShouldAddInitialStorageAccessApiOverride(
 
   if (base::FeatureList::IsEnabled(
           features::kStorageAccessApiFollowsSameOriginPolicy)) {
-    return kind == kSameOrigin;
+    return kind == StorageAccessNetRequestKind::kSameOrigin;
   }
-  return kind != kCrossSite;
+  return kind != StorageAccessNetRequestKind::kCrossSite;
 }
 
 }  // namespace net::cookie_util

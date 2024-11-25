@@ -148,10 +148,12 @@ class PLATFORM_EXPORT HanKerning {
   Vector<wtf_size_t> changed_indexes_;
 };
 
+inline bool NoMaybeHanEtc(UChar ch) {
+  return !Character::MaybeHanKerningOpenOrCloseFast(ch);
+}
+
 inline bool HanKerning::MayApply(StringView text) {
-  return !text.Is8Bit() && !text.IsAllSpecialCharacters<[](UChar ch) {
-    return !Character::MaybeHanKerningOpenOrCloseFast(ch);
-  }>();
+  return !text.Is8Bit() && !text.IsAllSpecialCharacters<NoMaybeHanEtc>();
 }
 
 inline void HanKerning::DidShapeSegment(ShapeResult& result) {

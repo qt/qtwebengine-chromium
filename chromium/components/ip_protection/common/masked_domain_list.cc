@@ -167,7 +167,8 @@ bool MaskedDomainList::Builder::Finish(base::FilePath file_name) {
   // Write out the flatbuffer data.
   auto mdl = flat::CreateMaskedDomainList(builder, root_node);
   builder.Finish(mdl);
-  return base::WriteFile(file_name, builder.GetBufferSpan());
+  auto buffer = builder.GetBufferSpan();
+  return base::WriteFile(file_name, base::span<const uint8_t>(&*buffer.begin(), buffer.size()));
 }
 
 bool MaskedDomainList::GetResult::operator==(const GetResult& other) const {

@@ -192,7 +192,7 @@ void RemoteFontFaceSource::NotifyFinished(Resource* resource) {
   // SRI failure and simulate network error if it happens.
   bool force_integrity_checks = resource->ForceIntegrityChecks();
   if (force_integrity_checks) {
-    resource->IntegrityReport().SendReports(execution_context);
+    resource->GetIntegrityReport().SendReports(execution_context);
   }
 
   // font->GetCustomFontData() returns nullptr if network error happened

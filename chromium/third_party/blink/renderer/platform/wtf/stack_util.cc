@@ -175,6 +175,10 @@ void* GetStackStart() {
   return thread_stack_start;
 }
 
+#if !defined(__has_feature)
+#define __has_feature(x) false
+#endif
+
 bool IsOnStack(void* address) {
 #if defined(ADDRESS_SANITIZER)
   // If the address is part of a fake frame, then it is definitely on the stack.

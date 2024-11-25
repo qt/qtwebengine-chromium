@@ -463,41 +463,41 @@ bool Session::ShouldBackoff() const {
 }
 
 void Session::InformOfRefreshResult(SessionError::ErrorType error_type) {
-  using enum SessionError::ErrorType;
+  // using enum SessionError::ErrorType;
 
   switch (error_type) {
-    case kSuccess:
+    case SessionError::ErrorType::kSuccess:
       backoff_.InformOfRequest(/*succeeded=*/true);
       break;
     // Fatal errors, no backoff needed
-    case kKeyError:
-    case kSigningError:
-    case kServerRequestedTermination:
-    case kInvalidConfigJson:
-    case kInvalidSessionId:
-    case kInvalidCredentials:
-    case kInvalidChallenge:
-    case kTooManyChallenges:
-    case kInvalidFetcherUrl:
-    case kInvalidRefreshUrl:
-    case kPersistentHttpError:
-    case kScopeOriginSameSiteMismatch:
-    case kRefreshUrlSameSiteMismatch:
-    case kInvalidScopeOrigin:
-    case kMismatchedSessionId:
-    case kInvalidRefreshInitiators:
-    case kInvalidScopeRule:
-    case kMissingScope:
-    case kNoCredentials:
-    case kInvalidScopeIncludeSite:
+    case SessionError::ErrorType::kKeyError:
+    case SessionError::ErrorType::kSigningError:
+    case SessionError::ErrorType::kServerRequestedTermination:
+    case SessionError::ErrorType::kInvalidConfigJson:
+    case SessionError::ErrorType::kInvalidSessionId:
+    case SessionError::ErrorType::kInvalidCredentials:
+    case SessionError::ErrorType::kInvalidChallenge:
+    case SessionError::ErrorType::kTooManyChallenges:
+    case SessionError::ErrorType::kInvalidFetcherUrl:
+    case SessionError::ErrorType::kInvalidRefreshUrl:
+    case SessionError::ErrorType::kPersistentHttpError:
+    case SessionError::ErrorType::kScopeOriginSameSiteMismatch:
+    case SessionError::ErrorType::kRefreshUrlSameSiteMismatch:
+    case SessionError::ErrorType::kInvalidScopeOrigin:
+    case SessionError::ErrorType::kMismatchedSessionId:
+    case SessionError::ErrorType::kInvalidRefreshInitiators:
+    case SessionError::ErrorType::kInvalidScopeRule:
+    case SessionError::ErrorType::kMissingScope:
+    case SessionError::ErrorType::kNoCredentials:
+    case SessionError::ErrorType::kInvalidScopeIncludeSite:
 
     // We do not want to back off on many network connection errors
     // (e.g. internet disconnected), so we do not hit our maximum
     // backoff whenever the machine goes offline while the browser is
     // running.
-    case kNetError:
+    case SessionError::ErrorType::kNetError:
       break;
-    case kTransientHttpError:
+    case SessionError::ErrorType::kTransientHttpError:
       backoff_.InformOfRequest(/*succeeded=*/false);
       break;
   }

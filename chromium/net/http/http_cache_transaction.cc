@@ -4191,31 +4191,31 @@ int HttpCache::Transaction::RestartWithoutNoVarySearchCache(
 // static
 std::string_view HttpCache::Transaction::NoVarySearchUseResultToString(
     NoVarySearchUseResult result) {
-  using enum NoVarySearchUseResult;
+  // using enum NoVarySearchUseResult;
   switch (result) {
-    case kNotApplied:
+    case NoVarySearchUseResult::kNotApplied:
       return "NotApplied";
-    case kNoMatch:
+    case NoVarySearchUseResult::kNoMatch:
       return "NoMatch";
-    case kURLUnchanged:
+    case NoVarySearchUseResult::kURLUnchanged:
       return "URLUnchanged";
-    case kUsed:
+    case NoVarySearchUseResult::kUsed:
       return "Used";
-    case kNotSuitable:
+    case NoVarySearchUseResult::kNotSuitable:
       return "NotSuitable";
-    case kNotOpenable:
+    case NoVarySearchUseResult::kNotOpenable:
       return "NotOpenable";
-    case kReadOnlyNeedsValidation:
+    case NoVarySearchUseResult::kReadOnlyNeedsValidation:
       return "ReadOnlyNeedsValidation";
-    case kIncompleteBody:
+    case NoVarySearchUseResult::kIncompleteBody:
       return "IncompleteBody";
-    case kCouldntConditionalize:
+    case NoVarySearchUseResult::kCouldntConditionalize:
       return "CouldntConditionalize";
-    case kValidated:
+    case NoVarySearchUseResult::kValidated:
       return "Validated";
-    case kUpdated:
+    case NoVarySearchUseResult::kUpdated:
       return "Updated";
-    case kCacheLockTimeout:
+    case NoVarySearchUseResult::kCacheLockTimeout:
       return "CacheLockTimeout";
   }
 }

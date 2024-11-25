@@ -293,9 +293,9 @@ EventManager::~EventManager() {
 
 MaybeError EventManager::Initialize(const UnpackedPtr<InstanceDescriptor>& descriptor) {
     if (descriptor) {
-        for (auto feature :
-             std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount)) {
-            if (feature == wgpu::InstanceFeatureName::TimedWaitAny) {
+        const auto *features = descriptor->requiredFeatures;
+        for (size_t i = 0; i < descriptor->requiredFeatureCount; ++i) {
+            if (features[i] == wgpu::InstanceFeatureName::TimedWaitAny) {
                 mTimedWaitAnyEnable = true;
                 break;
             }

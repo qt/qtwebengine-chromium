@@ -133,7 +133,7 @@ class CodecLookupHelperForPeerConnection : public CodecLookupHelper {
                       self_->context()->use_rtx(),
                       self_->context()->env().field_trials()) {}
 
-  webrtc::PayloadTypeSuggester* PayloadTypeSuggester() override {
+  webrtc::PayloadTypeSuggester* GetPayloadTypeSuggester() override {
     return self_->transport_controller_s();
   }
 

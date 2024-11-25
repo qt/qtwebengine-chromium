@@ -69,8 +69,8 @@ MaybeHandle<Derived> OrderedHashTable<Derived, entrysize>::AllocateEmpty(
 }
 
 template <class Derived, int entrysize>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
 HandleType<Derived>::MaybeType
 OrderedHashTable<Derived, entrysize>::EnsureCapacityForAdding(
     Isolate* isolate, HandleType<Derived> table) {
@@ -98,8 +98,8 @@ OrderedHashTable<Derived, entrysize>::EnsureCapacityForAdding(
 }
 
 template <class Derived, int entrysize>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
 HandleType<Derived> OrderedHashTable<Derived, entrysize>::Shrink(
     Isolate* isolate, HandleType<Derived> table) {
   DCHECK(!table->IsObsolete());
@@ -176,9 +176,9 @@ InternalIndex OrderedHashTable<Derived, entrysize>::FindEntry(
   return InternalIndex::NotFound();
 }
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedHashSet>,
-                                 DirectHandle<OrderedHashSet>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedHashSet>,
+  //                                DirectHandle<OrderedHashSet>>)
 HandleType<OrderedHashSet>::MaybeType OrderedHashSet::Add(
     Isolate* isolate, HandleType<OrderedHashSet> table,
     DirectHandle<Object> key) {
@@ -269,8 +269,8 @@ Tagged<HeapObject> OrderedHashMap::GetEmpty(ReadOnlyRoots ro_roots) {
 }
 
 template <class Derived, int entrysize>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
 HandleType<Derived>::MaybeType OrderedHashTable<Derived, entrysize>::Rehash(
     Isolate* isolate, HandleType<Derived> table) {
   return OrderedHashTable<Derived, entrysize>::Rehash(isolate, table,
@@ -278,8 +278,8 @@ HandleType<Derived>::MaybeType OrderedHashTable<Derived, entrysize>::Rehash(
 }
 
 template <class Derived, int entrysize>
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<Derived>, DirectHandle<Derived>>)
 HandleType<Derived>::MaybeType OrderedHashTable<Derived, entrysize>::Rehash(
     Isolate* isolate, HandleType<Derived> table, int new_capacity) {
   DCHECK(!table->IsObsolete());
@@ -332,17 +332,17 @@ HandleType<Derived>::MaybeType OrderedHashTable<Derived, entrysize>::Rehash(
   return new_table_candidate;
 }
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedHashSet>,
-                                 DirectHandle<OrderedHashSet>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedHashSet>,
+  //                                DirectHandle<OrderedHashSet>>)
 HandleType<OrderedHashSet>::MaybeType OrderedHashSet::Rehash(
     Isolate* isolate, HandleType<OrderedHashSet> table) {
   return Base::Rehash(isolate, table);
 }
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedHashSet>,
-                                 DirectHandle<OrderedHashSet>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedHashSet>,
+  //                                DirectHandle<OrderedHashSet>>)
 HandleType<OrderedHashSet>::MaybeType OrderedHashSet::Rehash(
     Isolate* isolate, HandleType<OrderedHashSet> table, int new_capacity) {
   return Base::Rehash(isolate, table, new_capacity);
@@ -359,16 +359,16 @@ template V8_EXPORT_PRIVATE MaybeDirectHandle<OrderedHashSet>
 OrderedHashSet::Rehash(Isolate* isolate, DirectHandle<OrderedHashSet> table,
                        int new_capacity);
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedHashMap>,
-                                 DirectHandle<OrderedHashMap>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedHashMap>,
+  //                                DirectHandle<OrderedHashMap>>)
 HandleType<OrderedHashMap>::MaybeType OrderedHashMap::Rehash(
     Isolate* isolate, HandleType<OrderedHashMap> table) {
   return Base::Rehash(isolate, table);
 }
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedHashMap>,
-                                 DirectHandle<OrderedHashMap>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedHashMap>,
+  //                                DirectHandle<OrderedHashMap>>)
 HandleType<OrderedHashMap>::MaybeType OrderedHashMap::Rehash(
     Isolate* isolate, HandleType<OrderedHashMap> table, int new_capacity) {
   return Base::Rehash(isolate, table, new_capacity);
@@ -385,9 +385,9 @@ template V8_EXPORT_PRIVATE MaybeDirectHandle<OrderedHashMap>
 OrderedHashMap::Rehash(Isolate* isolate, DirectHandle<OrderedHashMap> table,
                        int new_capacity);
 
-template <template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<OrderedNameDictionary>,
-                                 DirectHandle<OrderedNameDictionary>>)
+template <template <typename> typename HandleType, typename>
+  // requires(std::is_convertible_v<HandleType<OrderedNameDictionary>,
+  //                                DirectHandle<OrderedNameDictionary>>)
 HandleType<OrderedNameDictionary>::MaybeType OrderedNameDictionary::Rehash(
     Isolate* isolate, HandleType<OrderedNameDictionary> table,
     int new_capacity) {

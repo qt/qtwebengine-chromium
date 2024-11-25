@@ -68,15 +68,15 @@ const char kTransactionAlreadyExists[] = "Transaction already exists";
 
 std::string_view DisallowInactiveClientReasonToString(
     storage::mojom::DisallowInactiveClientReason reason) {
-  using enum storage::mojom::DisallowInactiveClientReason;
+  using storage::mojom::DisallowInactiveClientReason;
   switch (reason) {
-    case kVersionChangeEvent:
+    case DisallowInactiveClientReason::kVersionChangeEvent:
       return "VersionChangeEvent";
-    case kTransactionIsAcquiringLocks:
+    case DisallowInactiveClientReason::kTransactionIsAcquiringLocks:
       return "TransactionIsAcquiringLocks";
-    case kTransactionIsStartingWhileBlockingOthers:
+    case DisallowInactiveClientReason::kTransactionIsStartingWhileBlockingOthers:
       return "TransactionIsStartingWhileBlockingOthers";
-    case kTransactionIsOngoingAndBlockingOthers:
+    case DisallowInactiveClientReason::kTransactionIsOngoingAndBlockingOthers:
       return "TransactionIsOngoingAndBlockingOthers";
   }
   NOTREACHED();

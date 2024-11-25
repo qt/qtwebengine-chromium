@@ -281,7 +281,7 @@ const Candidate& Connection::remote_candidate() const {
 
 const Network* Connection::network() const {
   RTC_DCHECK(port_) << ToDebugId() << ": port_ null in network()";
-  return port()->Network();
+  return port()->GetNetwork();
 }
 
 int Connection::generation() const {
@@ -1118,7 +1118,7 @@ std::unique_ptr<IceMessage> Connection::BuildPingRequest(
       port()->CreateStunUsername(remote_candidate_.username())));
   message->AddAttribute(std::make_unique<StunUInt32Attribute>(
       STUN_ATTR_GOOG_NETWORK_INFO,
-      (port_->Network()->id() << 16) | port_->network_cost()));
+      (port_->GetNetwork()->id() << 16) | port_->network_cost()));
 
   if (field_trials_->piggyback_ice_check_acknowledgement &&
       last_ping_id_received_) {
@@ -1411,7 +1411,7 @@ std::string Connection::ToString() const {
     // the names with a hash (rhyming with trash).
     ss << ":#:#:";
   } else {
-    ss << ":" << port_->content_name() << ":" << port_->Network()->ToString()
+    ss << ":" << port_->content_name() << ":" << port_->GetNetwork()->ToString()
        << ":";
   }
 
@@ -1452,7 +1452,7 @@ const IceCandidatePairDescription& Connection::ToLogDescription() {
   }
   const Candidate& local = local_candidate();
   const Candidate& remote = remote_candidate();
-  const Network* network = port()->Network();
+  const Network* network = port()->GetNetwork();
   log_description_ = IceCandidatePairDescription(
       GetRtcEventLogCandidateType(local), GetRtcEventLogCandidateType(remote));
   log_description_->local_relay_protocol =

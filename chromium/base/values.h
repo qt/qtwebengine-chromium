@@ -680,7 +680,7 @@ class BASE_EXPORT GSL_OWNER DictValue {
 //       list.
 class BASE_EXPORT GSL_OWNER Value {
  public:
-  using BlobStorage = BlobStorage;
+  using BlobStorage = base::BlobStorage;
 
   using Dict = DictValue;
   using List = ListValue;

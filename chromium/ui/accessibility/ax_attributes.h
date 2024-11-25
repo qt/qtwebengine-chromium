@@ -75,11 +75,11 @@ class AX_BASE_EXPORT AXAttributes {
 
 // Traits for fundamental value types (e.g., int32_t, float, bool). `Default` is
 // the value to be returned when an attribute is not present in a collection.
-template <typename Value, Value Default = Value()>
+template <typename Value>
 struct FundamentalAttributeTraits {
   using ValueType = Value;
   using ReturnType = Value;
-  static constexpr ReturnType GetDefault() { return Default; }
+  static constexpr ReturnType GetDefault() { return Value(); }
 };
 
 // Traits for complex value types (e.g., std::string, std::vector<>). An empty

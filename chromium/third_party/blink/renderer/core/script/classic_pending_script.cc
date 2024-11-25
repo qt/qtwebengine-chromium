@@ -428,7 +428,7 @@ void ClassicPendingScript::NotifyFinished(Resource* resource) {
     return;
   }
 
-  resource->IntegrityReport().SendReports(execution_context);
+  resource->GetIntegrityReport().SendReports(execution_context);
 
   bool integrity_failure = false;
   if (!options_.GetIntegrityMetadata().empty() ||

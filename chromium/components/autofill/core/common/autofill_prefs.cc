@@ -216,9 +216,9 @@ void SetAutofillProfileEnabled(PrefService* prefs, bool enabled) {
     kMaxValue = kOptOut
   };
   // LINT.ThenChange(/tools/metrics/histograms/metadata/autofill/enums.xml:AutofillAddressOptInChange)
-  using enum AutofillAddressOptInChange;
+  // using enum AutofillAddressOptInChange;
   base::UmaHistogramEnumeration("Autofill.Address.IsEnabled.Change",
-                                enabled ? kOptIn : kOptOut);
+                                enabled ? AutofillAddressOptInChange::kOptIn : AutofillAddressOptInChange::kOptOut);
 }
 
 bool IsPaymentMethodsMandatoryReauthEnabled(const PrefService* prefs) {

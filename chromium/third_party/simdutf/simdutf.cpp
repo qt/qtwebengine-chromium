@@ -32360,7 +32360,12 @@ void utf16fix_block(char16_t *out, const char16_t *in) {
         _mm256_andnot_si256(lb_is_high, block_is_low), lb_illseq_shifted);
 
     /* fix illegal sequencing in the lookback */
+#if defined(__GNUC__) && !defined(__clang__) && !defined(SIMDUTF_GCC11ORMORE)
+    // GCC 10 is missing important intrinsics.
+    lb = _mm_cvtsi128_si32(_mm256_extractf128_si256(lb_illseq, 0));
+#else
     lb = _mm256_cvtsi256_si32(lb_illseq);
+#endif
     lb = (lb & replacement) | (~lb & out[-1]);
     out[-1] = char16_t(lb);
 

@@ -210,7 +210,7 @@ scoped_refptr<SctpTransport> JsepTransportController::GetSctpTransport(
   if (!jsep_transport) {
     return nullptr;
   }
-  return jsep_transport->SctpTransport();
+  return jsep_transport->GetSctpTransport();
 }
 
 void JsepTransportController::SetIceConfig(const IceConfig& config) {

@@ -1079,7 +1079,7 @@ viz::mojom::AnimationKeyframeValuePtr SerializeKeyframeValue(
     return viz::mojom::AnimationKeyframeValue::NewTransform(
         SerializeTransformOperations(value));
   } else {
-    static_assert(false, "Unsupported curve type");
+    static_assert(std::is_void_v<KeyframeValueType> && !std::is_void_v<KeyframeValueType>, "Unsupported curve type");
   }
 }
 

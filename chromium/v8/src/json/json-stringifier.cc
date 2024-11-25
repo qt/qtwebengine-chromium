@@ -2003,15 +2003,15 @@ class ContinuationRecord {
       Tagged<DescriptorArray> descriptors) {
     DCHECK(Is<JSObject>(obj));
     Type type;
-    using enum DescriptorArray::FastIterableState;
+    // using enum DescriptorArray::FastIterableState;
     switch (fast_iterable_state) {
-      case kJsonFast:
+      case DescriptorArray::FastIterableState::kJsonFast:
         type = Type::kObjectResume_FastIterable;
         break;
-      case kJsonSlow:
+      case DescriptorArray::FastIterableState::kJsonSlow:
         type = Type::kObjectResume_SlowIterable;
         break;
-      case kUnknown:
+      case DescriptorArray::FastIterableState::kUnknown:
         type = Type::kObjectResume_Uninitialized;
         break;
     }

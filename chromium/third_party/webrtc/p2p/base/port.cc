@@ -159,7 +159,7 @@ Port::~Port() {
 IceCandidateType Port::Type() const {
   return type_;
 }
-const Network* Port::Network() const {
+const Network* Port::GetNetwork() const {
   return network_;
 }
 
@@ -939,7 +939,7 @@ const std::string& Port::username_fragment() const {
 
 void Port::CopyPortInformationToPacketInfo(PacketInfo* info) const {
   info->protocol = ConvertProtocolTypeToPacketInfoProtocolType(GetProtocol());
-  info->network_id = Network()->id();
+  info->network_id = GetNetwork()->id();
 }
 
 void Port::MaybeRequestLocalNetworkAccessPermission(

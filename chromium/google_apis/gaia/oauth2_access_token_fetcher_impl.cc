@@ -62,57 +62,57 @@ constexpr char kInvalidRaptError[] = "invalid_rapt";
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
 OAuth2Response OAuth2ResponseErrorToOAuth2Response(const std::string& error) {
-  using enum OAuth2Response;
+  // using enum OAuth2Response;
 
   if (error.empty()) {
-    return kErrorUnexpectedFormat;
+    return OAuth2Response::kErrorUnexpectedFormat;
   }
 
   if (error == "invalid_request") {
-    return kInvalidRequest;
+    return OAuth2Response::kInvalidRequest;
   }
 
   if (error == "invalid_client") {
-    return kInvalidClient;
+    return OAuth2Response::kInvalidClient;
   }
 
   if (error == "invalid_grant") {
-    return kInvalidGrant;
+    return OAuth2Response::kInvalidGrant;
   }
 
   if (error == "unauthorized_client") {
-    return kUnauthorizedClient;
+    return OAuth2Response::kUnauthorizedClient;
   }
 
   if (error == "unsupported_grant_type") {
-    return kUnsuportedGrantType;
+    return OAuth2Response::kUnsuportedGrantType;
   }
 
   if (error == "invalid_scope") {
-    return kInvalidScope;
+    return OAuth2Response::kInvalidScope;
   }
 
   if (error == "restricted_client") {
-    return kRestrictedClient;
+    return OAuth2Response::kRestrictedClient;
   }
 
   if (error == "rate_limit_exceeded") {
-    return kRateLimitExceeded;
+    return OAuth2Response::kRateLimitExceeded;
   }
 
   if (error == "internal_failure") {
-    return kInternalFailure;
+    return OAuth2Response::kInternalFailure;
   }
 
   if (error == "admin_policy_enforced") {
-    return kAdminPolicyEnforced;
+    return OAuth2Response::kAdminPolicyEnforced;
   }
 
   if (error == "access_denied") {
-    return kAccessDenied;
+    return OAuth2Response::kAccessDenied;
   }
 
-  return kUnknownError;
+  return OAuth2Response::kUnknownError;
 }
 
 static std::unique_ptr<network::SimpleURLLoader> CreateURLLoader(
@@ -268,58 +268,58 @@ void OAuth2AccessTokenFetcherImpl::EndGetAccessToken(
   RecordOAuth2Response(response);
   std::optional<GoogleServiceAuthError> error;
 
-  using enum OAuth2Response;
+  // using enum OAuth2Response;
   switch (response) {
-    case kOk:
-    case kOkUnexpectedFormat:
-    case kTokenBindingChallenge:
-    case kConsentRequired:
+    case OAuth2Response::kOk:
+    case OAuth2Response::kOkUnexpectedFormat:
+    case OAuth2Response::kTokenBindingChallenge:
+    case OAuth2Response::kConsentRequired:
       NOTREACHED();
 
-    case kRateLimitExceeded:
-    case kInternalFailure:
+    case OAuth2Response::kRateLimitExceeded:
+    case OAuth2Response::kInternalFailure:
       // Transient error.
       error = GoogleServiceAuthError::FromServiceUnavailable(response_str);
       break;
 
-    case kInvalidGrant:
+    case OAuth2Response::kInvalidGrant:
       error = CreateErrorForInvalidGrant(error_subtype, error_description);
       break;
 
     // Scope persistent errors that can't be fixed by user action.
-    case kInvalidScope:
+    case OAuth2Response::kInvalidScope:
       error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kInvalidScope);
       break;
 
-    case kRestrictedClient:
+    case OAuth2Response::kRestrictedClient:
       error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kRestrictedClient);
       break;
 
-    case kAdminPolicyEnforced:
+    case OAuth2Response::kAdminPolicyEnforced:
       error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kAdminPolicyEnforced);
       break;
 
-    case kAccessDenied:
+    case OAuth2Response::kAccessDenied:
       error = GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kAccessDenied);
       break;
 
-    case kInvalidRequest:
-    case kInvalidClient:
-    case kUnauthorizedClient:
-    case kUnsuportedGrantType:
+    case OAuth2Response::kInvalidRequest:
+    case OAuth2Response::kInvalidClient:
+    case OAuth2Response::kUnauthorizedClient:
+    case OAuth2Response::kUnsuportedGrantType:
       error = GoogleServiceAuthError::FromServiceError(response_str);
       break;
 
-    case kUnknownError:
-    case kErrorUnexpectedFormat:
+    case OAuth2Response::kUnknownError:
+    case OAuth2Response::kErrorUnexpectedFormat:
       // Failed request with unknown error code or unexpected format is
       // treated as a persistent error case.
       break;

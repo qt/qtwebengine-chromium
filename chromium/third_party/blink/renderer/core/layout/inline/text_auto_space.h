@@ -57,6 +57,10 @@ class CORE_EXPORT TextAutoSpace {
   Callback* callback_for_testing_ = nullptr;
 };
 
+inline bool MaybeNotNeedE(UChar ch) {
+  return !Character::MayNeedEastAsianSpacing(ch);
+};
+
 inline TextAutoSpace::TextAutoSpace(const InlineItemsData& data) {
   if (!RuntimeEnabledFeatures::CSSTextAutoSpaceEnabled()) {
     return;
@@ -69,9 +73,7 @@ inline TextAutoSpace::TextAutoSpace(const InlineItemsData& data) {
                                     item->Style()->TextAutospace() !=
                                         ETextAutospace::kNoAutospace;
                            }) ||
-      data.text_content.IsAllSpecialCharacters<[](UChar ch) {
-        return !Character::MayNeedEastAsianSpacing(ch);
-      }>()) {
+      data.text_content.IsAllSpecialCharacters<MaybeNotNeedE>()) {
     return;
   }
 

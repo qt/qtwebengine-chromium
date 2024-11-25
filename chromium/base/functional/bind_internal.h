@@ -582,19 +582,20 @@ inline constexpr bool IsObjCArcBlockPointer<R (^)(Args...)> = true;
 // Do not decay `Functor` before testing this, lest it give an incorrect result
 // for overloads with different ref-qualifiers.
 template <typename Functor, typename... BoundArgs>
-concept HasOverloadedCallOp = requires {
-  // The functor must be invocable with the bound args.
-  requires requires(Functor&& f, BoundArgs&&... args) {
-    std::forward<Functor>(f)(std::forward<BoundArgs>(args)...);
-  };
-  // Now exclude invocables that are not cases of overloaded `operator()()`s:
-  // * `operator()()` exists, but isn't overloaded
-  requires !HasNonOverloadedCallOp<std::decay_t<Functor>>;
-  // * Function pointer (doesn't have `operator()()`)
-  requires !std::is_pointer_v<std::decay_t<Functor>>;
-  // * Block pointer (doesn't have `operator()()`)
-  requires !IsObjCArcBlockPointer<std::decay_t<Functor>>;
+concept FunctorIsInvocable = requires(Functor&& f, BoundArgs&&... args) {
+  std::forward<Functor>(f)(std::forward<BoundArgs>(args)...);
 };
+template <typename Functor, typename... BoundArgs>
+concept HasOverloadedCallOp =
+    // The functor must be invocable with the bound args.
+    FunctorIsInvocable<Functor, BoundArgs...> &&
+    // Now exclude invocables that are not cases of overloaded `operator()()`s:
+    // * `operator()()` exists, but isn't overloaded
+    !HasNonOverloadedCallOp<std::decay_t<Functor>> &&
+    // * Function pointer (doesn't have `operator()()`)
+    !std::is_pointer_v<std::decay_t<Functor>> &&
+    // * Block pointer (doesn't have `operator()()`)
+    !IsObjCArcBlockPointer<std::decay_t<Functor>>;
 
 // `ForceVoidReturn<>` converts a signature to have a `void` return type.
 template <typename Sig>

@@ -288,8 +288,8 @@ MaybeError InstanceBase::Initialize(const UnpackedPtr<InstanceDescriptor>& descr
     mRuntimeSearchPaths.push_back("");
 
     if (descriptor->requiredFeatureCount > 0) {
-        auto features = std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount);
-        mInstanceFeatures = {features.begin(), features.end()};
+        // auto features = std::span(descriptor->requiredFeatures, descriptor->requiredFeatureCount);
+        mInstanceFeatures = {descriptor->requiredFeatures, descriptor->requiredFeatures + descriptor->requiredFeatureCount};
     }
 
     mCallbackTaskManager = AcquireRef(new CallbackTaskManager());

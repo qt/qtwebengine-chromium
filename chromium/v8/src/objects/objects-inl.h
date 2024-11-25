@@ -810,8 +810,7 @@ bool Object::ToUint32(Tagged<Object> obj, uint32_t* value) {
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<JSReceiver>::MaybeType Object::ToObject(
     Isolate* isolate, HandleType<T> object, const char* method_name) {
   if (V8_LIKELY(IsJSReceiver(*object))) return Cast<JSReceiver>(object);
@@ -829,8 +828,7 @@ typename HandleType<Name>::MaybeType Object::ToName(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ToPropertyKey(
     Isolate* isolate, HandleType<T> value) {
   if (IsSmi(*value) || IsName(Cast<HeapObject>(*value))) return value;
@@ -838,8 +836,7 @@ typename HandleType<Object>::MaybeType Object::ToPropertyKey(
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ToPrimitive(
     Isolate* isolate, HandleType<T> input, ToPrimitiveHint hint) {
   if (IsPrimitive(*input)) return input;
@@ -847,8 +844,7 @@ typename HandleType<Object>::MaybeType Object::ToPrimitive(
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ToNumber(Isolate* isolate,
                                                         HandleType<T> input) {
   if (IsNumber(*input)) return Cast<Number>(input);  // Shortcut.
@@ -856,8 +852,7 @@ typename HandleType<Number>::MaybeType Object::ToNumber(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ToNumeric(Isolate* isolate,
                                                          HandleType<T> input) {
   if (IsNumber(*input) || IsBigInt(*input)) return input;  // Shortcut.
@@ -865,8 +860,7 @@ typename HandleType<Object>::MaybeType Object::ToNumeric(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ToInteger(Isolate* isolate,
                                                          HandleType<T> input) {
   if (IsSmi(*input)) return Cast<Smi>(input);
@@ -874,8 +868,7 @@ typename HandleType<Number>::MaybeType Object::ToInteger(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ToInt32(Isolate* isolate,
                                                        HandleType<T> input) {
   if (IsSmi(*input)) return Cast<Smi>(input);
@@ -883,8 +876,7 @@ typename HandleType<Number>::MaybeType Object::ToInt32(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Number>::MaybeType Object::ToUint32(Isolate* isolate,
                                                         HandleType<T> input) {
   if (IsSmi(*input)) {
@@ -895,8 +887,7 @@ typename HandleType<Number>::MaybeType Object::ToUint32(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<String>::MaybeType Object::ToString(Isolate* isolate,
                                                         HandleType<T> input) {
   if (IsString(*input)) return Cast<String>(input);
@@ -914,8 +905,7 @@ MaybeHandle<Object> Object::ToLength(Isolate* isolate,
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::ToIndex(
     Isolate* isolate, HandleType<T> input, MessageTemplate error_index) {
   if (IsSmi(*input) && Smi::ToInt(*input) >= 0) return input;
@@ -2002,8 +1992,7 @@ bool IsShared(Tagged<Object> obj) {
 }
 
 // static
-template <typename T, template <typename> typename HandleType>
-  requires(std::is_convertible_v<HandleType<T>, DirectHandle<T>>)
+template <typename T, template <typename> typename HandleType, typename>
 typename HandleType<Object>::MaybeType Object::Share(
     Isolate* isolate, HandleType<T> value,
     ShouldThrow throw_if_cannot_be_shared) {

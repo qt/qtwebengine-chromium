@@ -82,7 +82,7 @@ struct HlsDemuxerStatusTraits {
 
   static constexpr StatusGroupType Group() { return "HlsDemuxerStatus"; }
 
-  static constexpr std::string ReadableCodeName(Codes code) {
+  static constexpr const char* ReadableCodeName(Codes code) {
     switch (code) {
       case Codes::kOk:
         return "OK";

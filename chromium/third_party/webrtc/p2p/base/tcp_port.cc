@@ -191,8 +191,8 @@ void TCPPort::PrepareAddress() {
     // can do.
     // TODO(deadbeef): We could do something like create a dummy socket just to
     // see what IP we get. But that may be overkill.
-    AddAddress(SocketAddress(Network()->GetBestIP(), DISCARD_PORT),
-               SocketAddress(Network()->GetBestIP(), 0), SocketAddress(),
+    AddAddress(SocketAddress(GetNetwork()->GetBestIP(), DISCARD_PORT),
+               SocketAddress(GetNetwork()->GetBestIP(), 0), SocketAddress(),
                TCP_PROTOCOL_NAME, "", TCPTYPE_ACTIVE_STR,
                IceCandidateType::kHost, ICE_TYPE_PREFERENCE_HOST_TCP, 0, "",
                true);
@@ -299,7 +299,7 @@ void TCPPort::OnNewConnection(AsyncListenSocket* socket,
 
 void TCPPort::TryCreateServerSocket() {
   listen_socket_ = absl::WrapUnique(socket_factory()->CreateServerTcpSocket(
-      SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port(),
+      SocketAddress(GetNetwork()->GetBestIP(), 0), min_port(), max_port(),
       false /* ssl */));
   if (!listen_socket_) {
     RTC_LOG(LS_WARNING)
@@ -366,9 +366,9 @@ TCPConnection::TCPConnection(WeakPtr<Port> tcp_port,
     // what's being checked in OnConnect, but just DCHECKing here.
     RTC_LOG(LS_VERBOSE) << ToString() << ": socket ipaddr: "
                         << socket_->GetLocalAddress().ToSensitiveString()
-                        << ", port() Network:" << port()->Network()->ToString();
+                        << ", port() Network:" << port()->GetNetwork()->ToString();
     RTC_DCHECK(absl::c_any_of(
-        port_->Network()->GetIPs(), [this](const InterfaceAddress& addr) {
+        port_->GetNetwork()->GetIPs(), [this](const InterfaceAddress& addr) {
           return socket_->GetLocalAddress().ipaddr() == addr;
         }));
     ConnectSocketSignals(socket);
@@ -469,7 +469,7 @@ void TCPConnection::OnConnect(AsyncPacketSocket* socket) {
   // Note that, aside from minor differences in log statements, this logic is
   // identical to that in TurnPort.
   const SocketAddress& socket_address = socket->GetLocalAddress();
-  if (absl::c_any_of(port_->Network()->GetIPs(),
+  if (absl::c_any_of(port_->GetNetwork()->GetIPs(),
                      [socket_address](const InterfaceAddress& addr) {
                        return socket_address.ipaddr() == addr;
                      })) {
@@ -480,21 +480,21 @@ void TCPConnection::OnConnect(AsyncPacketSocket* socket) {
       RTC_LOG(LS_WARNING) << "Socket is bound to the address:"
                           << socket_address.ipaddr().ToSensitiveString()
                           << ", rather than an address associated with network:"
-                          << port_->Network()->ToString()
+                          << port_->GetNetwork()->ToString()
                           << ". Still allowing it since it's localhost.";
-    } else if (IPIsAny(port_->Network()->GetBestIP())) {
+    } else if (IPIsAny(port_->GetNetwork()->GetBestIP())) {
       RTC_LOG(LS_WARNING)
           << "Socket is bound to the address:"
           << socket_address.ipaddr().ToSensitiveString()
           << ", rather than an address associated with network:"
-          << port_->Network()->ToString()
+          << port_->GetNetwork()->ToString()
           << ". Still allowing it since it's the 'any' address"
              ", possibly caused by multiple_routes being disabled.";
     } else {
       RTC_LOG(LS_WARNING) << "Dropping connection as TCP socket bound to IP "
                           << socket_address.ipaddr().ToSensitiveString()
                           << ", rather than an address associated with network:"
-                          << port_->Network()->ToString();
+                          << port_->GetNetwork()->ToString();
       OnClose(socket, 0);
       return;
     }
@@ -598,7 +598,7 @@ void TCPConnection::CreateOutgoingTcpSocket() {
   PacketSocketTcpOptions tcp_opts;
   tcp_opts.opts = opts;
   socket_.reset(port()->socket_factory()->CreateClientTcpSocket(
-      SocketAddress(port()->Network()->GetBestIP(), 0),
+      SocketAddress(port()->GetNetwork()->GetBestIP(), 0),
       remote_candidate().address(), tcp_opts));
   if (socket_) {
     RTC_LOG(LS_VERBOSE) << ToString() << ": Connecting from "

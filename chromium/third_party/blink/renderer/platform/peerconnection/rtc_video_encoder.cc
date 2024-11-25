@@ -2017,14 +2017,14 @@ bool RTCVideoEncoder::Impl::NeedConvertToMemoryFrame(
       static_cast<const WebRtcVideoFrameAdapterInterface*>(&frame_buffer);
   const media::VideoFrame& frame = *frame_adapter->getMediaVideoFrame();
 
-  using enum media::VideoFrame::StorageType;
+  // using enum media::VideoFrame::StorageType;
   using StorageType = media::VideoFrame::StorageType;
   const StorageType storage_type = frame.storage_type();
 
   constexpr StorageType kStorageTypeSupportedByMojo[] = {
-      STORAGE_UNOWNED_MEMORY,
-      STORAGE_OWNED_MEMORY,
-      STORAGE_SHMEM,
+      StorageType::STORAGE_UNOWNED_MEMORY,
+      StorageType::STORAGE_OWNED_MEMORY,
+      StorageType::STORAGE_SHMEM,
   };
   if (!base::Contains(kStorageTypeSupportedByMojo, storage_type)) {
     // We need to convert to I420 memory frame if mojo doesn't support it.

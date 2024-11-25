@@ -515,10 +515,10 @@ static std::basic_string<CharT> JoinStringT(list_type parts, T sep) {
 // StringViewLike will match both std::basic_string_view<Char> and
 // std::basic_string<Char>. It ensures that the type satisfies the requirements
 // to be passed to std::basic_string::append().
-template <typename T, typename CharT, typename TBaseT = std::remove_cvref_t<T>>
+template <typename T, typename CharT>
 concept StringOrStringView =
-    std::same_as<TBaseT, std::basic_string<CharT>> ||
-    std::same_as<TBaseT, std::basic_string_view<CharT>>;
+    std::same_as<std::remove_cvref_t<T>, std::basic_string<CharT>> ||
+    std::same_as<std::remove_cvref_t<T>, std::basic_string_view<CharT>>;
 
 // Replaces placeholders in `format_string` with values from `subst`.
 // * `placeholder_prefix`: Allows using a specific character as the placeholder

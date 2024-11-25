@@ -219,6 +219,28 @@ class TraceableCounter : public TraceableVariable {
     return *this;
   }
 
+  const T operator-() const {
+    return -value();
+  }
+  T operator--() {
+    value_ = value_ - 1;
+    return value();
+  }
+  T operator++() {
+    value_ = value_ + 1;
+    return value();
+  }
+  T operator--(int) {
+    T val = value_;
+    value_ = val - 1;
+    return val;
+  }
+  T operator++(int) {
+    T val = value_;
+    value_ = val + 1;
+    return val;
+  }
+
   const T& value() const { return value_; }
   const T* operator->() const { return &value_; }
   operator T() const { return value_; }
@@ -237,7 +259,6 @@ class TraceableCounter : public TraceableVariable {
 };
 
 // Add operators when it's needed.
-
 template <typename T, TracingCategory category>
 constexpr T operator-(const TraceableCounter<T, category>& counter) {
   return -counter.value();

@@ -1638,7 +1638,6 @@ bool URLRequestHttpJob::NeedsRetryWithStorageAccess() {
 
   auto determine_storage_access_retry_outcome =
       [&]() -> cookie_util::ActivateStorageAccessRetryOutcome {
-    using enum cookie_util::ActivateStorageAccessRetryOutcome;
     if (!ShouldAddCookieHeader() ||
         request_->storage_access_status() !=
             cookie_util::StorageAccessStatus::kInactive ||
@@ -1649,9 +1648,9 @@ bool URLRequestHttpJob::NeedsRetryWithStorageAccess() {
       // We're not allowed to read cookies for this request, or this request
       // already had all the relevant settings overrides, so retrying it
       // wouldn't change anything.
-      return kFailureIneffectiveRetry;
+      return cookie_util::ActivateStorageAccessRetryOutcome::kFailureIneffectiveRetry;
     }
-    return kSuccess;
+    return cookie_util::ActivateStorageAccessRetryOutcome::kSuccess;
   };
 
   auto outcome = determine_storage_access_retry_outcome();

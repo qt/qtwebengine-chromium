@@ -127,7 +127,7 @@ class NET_EXPORT IPAddressBytes {
 
 namespace internal {
 
-constexpr bool ParseIPLiteralToBytes(std::string_view ip_literal,
+inline bool ParseIPLiteralToBytes(std::string_view ip_literal,
                                      IPAddressBytes* bytes) {
   // |ip_literal| could be either an IPv4 or an IPv6 literal. If it contains
   // a colon however, it must be an IPv6 address.
@@ -270,7 +270,7 @@ class NET_EXPORT IPAddress {
   //
   // When parsing fails, the original value of |this| will be overwritten such
   // that |this->empty()| and |!this->IsValid()|.
-  [[nodiscard]] constexpr bool AssignFromIPLiteral(
+  [[nodiscard]] inline bool AssignFromIPLiteral(
       std::string_view ip_literal) {
     bool success = internal::ParseIPLiteralToBytes(ip_literal, &ip_address_);
     if (!success) {

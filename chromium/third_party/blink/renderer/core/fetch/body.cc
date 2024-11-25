@@ -82,15 +82,20 @@ class BodyConsumerBase : public GarbageCollected<BodyConsumerBase>,
     static constexpr bool value = true;
   };
 
-  template <typename IDLType, typename T>
-    requires(!std::is_same<IDLType, IDLAny>::value &&
-             !IsNotShared<IDLType>::value)
+  template <typename IDLType,
+            typename T,
+            typename = std::enable_if_t<
+                !std::is_same<IDLType, IDLAny>::value && !IsNotShared<IDLType>::value,
+                void*>>
   void ResolveNow(const T& object) {
     resolver_->DowncastTo<IDLType>()->Resolve(object);
   }
 
-  template <typename IDLType, typename T>
-    requires std::is_same<IDLType, IDLAny>::value
+  template <typename IDLType,
+            typename T,
+            typename = std::enable_if_t<
+                std::is_same<IDLType, IDLAny>::value,
+                void*>>
   void ResolveNow(const Persistent<DisallowNewWrapper<ScriptValue>>& object) {
     resolver_->DowncastTo<IDLType>()->Resolve(object->Value());
   }

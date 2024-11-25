@@ -118,7 +118,7 @@ class StunBindingRequest : public StunRequest {
   void OnTimeout() override {
     RTC_LOG(LS_ERROR) << "Binding request timed out from "
                       << port_->GetLocalAddress().ToSensitiveString() << " ("
-                      << port_->Network()->name() << ")";
+                      << port_->GetNetwork()->name() << ")";
     port_->OnStunBindingOrResolveRequestFailed(
         server_addr_, STUN_ERROR_SERVER_NOT_REACHABLE,
         "STUN binding request timed out.");
@@ -215,7 +215,7 @@ bool UDPPort::Init() {
   if (!SharedSocket()) {
     RTC_DCHECK(socket_ == nullptr);
     socket_ = socket_factory()->CreateUdpSocket(
-        SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
+        SocketAddress(GetNetwork()->GetBestIP(), 0), min_port(), max_port());
     if (!socket_) {
       RTC_LOG(LS_WARNING) << ToString() << ": UDP socket creation failed";
       return false;
@@ -445,7 +445,7 @@ void UDPPort::ResolveStunAddress(const SocketAddress& stun_addr) {
 
   RTC_LOG(LS_INFO) << ToString() << ": Starting STUN host lookup for "
                    << stun_addr.ToSensitiveString();
-  resolver_->Resolve(stun_addr, Network()->family(), field_trials());
+  resolver_->Resolve(stun_addr, GetNetwork()->family(), field_trials());
 }
 
 void UDPPort::OnResolveResult(const SocketAddress& input, int error) {
@@ -453,7 +453,7 @@ void UDPPort::OnResolveResult(const SocketAddress& input, int error) {
 
   SocketAddress resolved;
   if (error != 0 || !resolver_->GetResolvedAddress(
-                        input, Network()->GetBestIP().family(), &resolved)) {
+                        input, GetNetwork()->GetBestIP().family(), &resolved)) {
     RTC_LOG(LS_WARNING) << ToString()
                         << ": StunPort: stun host lookup received error "
                         << error;
@@ -515,12 +515,12 @@ void UDPPort::SendStunBindingRequest(const SocketAddress& stun_addr) {
 
 bool UDPPort::MaybeSetDefaultLocalAddress(SocketAddress* addr) const {
   if (!addr->IsAnyIP() || !emit_local_for_anyaddress_ ||
-      !Network()->default_local_address_provider()) {
+      !GetNetwork()->default_local_address_provider()) {
     return true;
   }
   IPAddress default_address;
   bool result =
-      Network()->default_local_address_provider()->GetDefaultLocalAddress(
+      GetNetwork()->default_local_address_provider()->GetDefaultLocalAddress(
           addr->family(), &default_address);
   if (!result || default_address.IsNil()) {
     return false;
@@ -549,7 +549,7 @@ void UDPPort::OnStunBindingRequestSucceeded(
   // been added by another STUN server, then discarding the stun address.
   // For STUN, related address is the local socket address.
   if ((!SharedSocket() || stun_reflected_addr != socket_->GetLocalAddress() ||
-       Network()->GetMdnsResponder() != nullptr) &&
+       GetNetwork()->GetMdnsResponder() != nullptr) &&
       !HasStunCandidateWithAddress(stun_reflected_addr)) {
     SocketAddress related_address = socket_->GetLocalAddress();
     // If we can't stamp the related address correctly, empty it to avoid leak.

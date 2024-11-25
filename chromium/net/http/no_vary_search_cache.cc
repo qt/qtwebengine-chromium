@@ -53,30 +53,29 @@ enum class NoVarySearchHeaderParseResult {
 
 NoVarySearchHeaderParseResult MapParseErrorEnum(
     HttpNoVarySearchData::ParseErrorEnum error) {
-  using enum HttpNoVarySearchData::ParseErrorEnum;
   switch (error) {
-    case kOk:
+    case HttpNoVarySearchData::ParseErrorEnum::kOk:
       return NoVarySearchHeaderParseResult::kNoHeader;
 
-    case kDefaultValue:
+    case HttpNoVarySearchData::ParseErrorEnum::kDefaultValue:
       return NoVarySearchHeaderParseResult::kDefaultValue;
 
-    case kNotDictionary:
+    case HttpNoVarySearchData::ParseErrorEnum::kNotDictionary:
       return NoVarySearchHeaderParseResult::kNotDictionary;
 
-    case kUnknownDictionaryKey:
+    case HttpNoVarySearchData::ParseErrorEnum::kUnknownDictionaryKey:
       NOTREACHED();  // No longer used.
 
-    case kNonBooleanKeyOrder:
+    case HttpNoVarySearchData::ParseErrorEnum::kNonBooleanKeyOrder:
       return NoVarySearchHeaderParseResult::kNonBooleanKeyOrder;
 
-    case kParamsNotStringList:
+    case HttpNoVarySearchData::ParseErrorEnum::kParamsNotStringList:
       return NoVarySearchHeaderParseResult::kParamsNotStringList;
 
-    case kExceptNotStringList:
+    case HttpNoVarySearchData::ParseErrorEnum::kExceptNotStringList:
       return NoVarySearchHeaderParseResult::kExceptNotStringList;
 
-    case kExceptWithoutTrueParams:
+    case HttpNoVarySearchData::ParseErrorEnum::kExceptWithoutTrueParams:
       return NoVarySearchHeaderParseResult::kExceptWithoutTrueParams;
   }
   NOTREACHED();

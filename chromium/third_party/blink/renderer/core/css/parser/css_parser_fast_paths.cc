@@ -527,15 +527,15 @@ ALWAYS_INLINE static unsigned ParsePositiveDouble(base::span<const LChar> chars,
   if (chars.subspan(position).size() >= 7) {
     uint8x8_t bytes = vld1_u8(&chars[position - 1]);
     uint16x8_t words = vsubl_u8(bytes, vdup_n_u8('0'));
-    static constexpr uint16x8_t kWeights[kMaxDecimals + 1] = {
-        (uint16x8_t){0, 0, 0, 0, 0, 0, 0, 0},
-        (uint16x8_t){0, 100, 0, 0, 0, 0, 0, 0},
-        (uint16x8_t){0, 100, 10, 0, 0, 0, 0, 0},
-        (uint16x8_t){0, 100, 10, 1, 0, 0, 0, 0},
-        (uint16x8_t){0, 100, 10, 1, 1000, 0, 0, 0},
-        (uint16x8_t){0, 100, 10, 1, 1000, 100, 0, 0},
-        (uint16x8_t){0, 100, 10, 1, 1000, 100, 10, 0},
-        (uint16x8_t){0, 100, 10, 1, 1000, 100, 10, 1},
+    static const uint16x8_t kWeights[kMaxDecimals + 1] = {
+        (const uint16x8_t){0, 0, 0, 0, 0, 0, 0, 0},
+        (const uint16x8_t){0, 100, 0, 0, 0, 0, 0, 0},
+        (const uint16x8_t){0, 100, 10, 0, 0, 0, 0, 0},
+        (const uint16x8_t){0, 100, 10, 1, 0, 0, 0, 0},
+        (const uint16x8_t){0, 100, 10, 1, 1000, 0, 0, 0},
+        (const uint16x8_t){0, 100, 10, 1, 1000, 100, 0, 0},
+        (const uint16x8_t){0, 100, 10, 1, 1000, 100, 10, 0},
+        (const uint16x8_t){0, 100, 10, 1, 1000, 100, 10, 1},
     };
     uint32x4_t pairs =
         vpaddlq_u16(vmulq_u16(words, UNSAFE_TODO(kWeights[num_decimals])));

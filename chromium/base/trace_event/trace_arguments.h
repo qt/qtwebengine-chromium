@@ -367,11 +367,16 @@ struct TraceValue::Helper<T> {
 };
 
 // TraceValue::Helper for floating-point types
-template <typename T>
-  requires(std::is_floating_point_v<T>)
-struct TraceValue::Helper<T> {
+template <>
+struct TraceValue::Helper<float> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_DOUBLE;
-  static inline void SetValue(TraceValue* v, T value) { v->as_double = value; }
+  static inline void SetValue(TraceValue* v, float value) { v->as_double = value; }
+};
+
+template <>
+struct TraceValue::Helper<double> {
+  static constexpr unsigned char kType = TRACE_VALUE_TYPE_DOUBLE;
+  static inline void SetValue(TraceValue* v, double value) { v->as_double = value; }
 };
 
 // TraceValue::Helper for bool.
@@ -433,13 +438,24 @@ struct TraceValue::Helper<std::unique_ptr<CONVERTABLE_TYPE>> {
 
 // Specialization for time-based values like base::Time, which provide a
 // a ToInternalValue() method.
-template <typename T>
-  requires(std::is_same_v<T, base::Time> ||
-           std::is_same_v<T, base::TimeTicks> ||
-           std::is_same_v<T, base::ThreadTicks>)
-struct TraceValue::Helper<T> {
+template <>
+struct TraceValue::Helper<base::Time> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_INT;
-  static inline void SetValue(TraceValue* v, const T& value) {
+  static inline void SetValue(TraceValue* v, const base::Time& value) {
+    v->as_int = value.ToInternalValue();
+  }
+};
+template <>
+struct TraceValue::Helper<base::TimeTicks> {
+  static constexpr unsigned char kType = TRACE_VALUE_TYPE_INT;
+  static inline void SetValue(TraceValue* v, const base::TimeTicks& value) {
+    v->as_int = value.ToInternalValue();
+  }
+};
+template <>
+struct TraceValue::Helper<base::ThreadTicks> {
+  static constexpr unsigned char kType = TRACE_VALUE_TYPE_INT;
+  static inline void SetValue(TraceValue* v, const base::ThreadTicks& value) {
     v->as_int = value.ToInternalValue();
   }
 };

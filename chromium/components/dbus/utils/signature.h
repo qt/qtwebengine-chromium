@@ -25,7 +25,7 @@ namespace internal {
 
 template <typename T>
 struct DBusSignature {
-  static_assert(false, "Unsupported type for D-Bus");
+    static_assert(std::is_same<T, T*>::value, "Unsupported type for D-Bus");
 };
 
 #define DEFINE_SIMPLE_SIGNATURE(type, signature)             \

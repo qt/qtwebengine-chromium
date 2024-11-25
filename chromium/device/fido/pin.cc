@@ -7,6 +7,7 @@
 #include <numeric>
 #include <string>
 #include <utility>
+#include <climits>
 
 #include "base/compiler_specific.h"
 #include "base/i18n/char_iterator.h"

@@ -75,7 +75,7 @@ struct ParseStatusTraits {
   using Codes = ParseStatusCode;
   static constexpr StatusGroupType Group() { return "hls::ParseStatus"; }
 
-  static constexpr std::string ReadableCodeName(Codes code) {
+  static std::string ReadableCodeName(Codes code) {
     switch (code) {
       STRINGIFY_CODE(kReachedEOF);
       STRINGIFY_CODE(kInvalidEOL);

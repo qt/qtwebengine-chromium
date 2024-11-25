@@ -382,7 +382,7 @@ void TurnPort::PrepareAddress() {
     RTC_LOG(LS_ERROR) << ToString()
                       << ": IP address family does not match. Server: "
                       << server_address_.address.family()
-                      << " local: " << Network()->GetBestIP().family();
+                      << " local: " << GetNetwork()->GetBestIP().family();
     OnAllocateError(STUN_ERROR_NOT_AN_ERROR,
                     "TURN server address is incompatible.");
     return;
@@ -436,7 +436,7 @@ bool TurnPort::CreateTurnClientSocket() {
 
   if (server_address_.proto == PROTO_UDP && !SharedSocket()) {
     socket_ = socket_factory()->CreateUdpSocket(
-        SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
+        SocketAddress(GetNetwork()->GetBestIP(), 0), min_port(), max_port());
   } else if (server_address_.proto == PROTO_TCP ||
              server_address_.proto == PROTO_TLS) {
     RTC_DCHECK(!SharedSocket());
@@ -458,7 +458,7 @@ bool TurnPort::CreateTurnClientSocket() {
     tcp_options.tls_elliptic_curves = tls_elliptic_curves_;
     tcp_options.tls_cert_verifier = tls_cert_verifier_;
     socket_ = socket_factory()->CreateClientTcpSocket(
-        SocketAddress(Network()->GetBestIP(), 0), server_address_.address,
+        SocketAddress(GetNetwork()->GetBestIP(), 0), server_address_.address,
         tcp_options);
   }
 
@@ -519,7 +519,7 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
   // Note that, aside from minor differences in log statements, this logic is
   // identical to that in TcpPort.
   const SocketAddress& socket_address = socket->GetLocalAddress();
-  if (absl::c_none_of(Network()->GetIPs(),
+  if (absl::c_none_of(GetNetwork()->GetIPs(),
                       [socket_address](const InterfaceAddress& addr) {
                         return socket_address.ipaddr() == addr;
                       })) {
@@ -527,21 +527,21 @@ void TurnPort::OnSocketConnect(AsyncPacketSocket* socket) {
       RTC_LOG(LS_WARNING) << ToString() << ": Socket is bound to the address:"
                           << socket_address.ToSensitiveNameAndAddressString()
                           << ", rather than an address associated with network:"
-                          << Network()->ToString()
+                          << GetNetwork()->ToString()
                           << ". Still allowing it since it's localhost.";
-    } else if (IPIsAny(Network()->GetBestIP())) {
+    } else if (IPIsAny(GetNetwork()->GetBestIP())) {
       RTC_LOG(LS_WARNING)
           << ToString() << ": Socket is bound to the address:"
           << socket_address.ToSensitiveNameAndAddressString()
           << ", rather than an address associated with network:"
-          << Network()->ToString()
+          << GetNetwork()->ToString()
           << ". Still allowing it since it's the 'any' address"
              ", possibly caused by multiple_routes being disabled.";
     } else {
       RTC_LOG(LS_WARNING) << ToString() << ": Socket is bound to the address:"
                           << socket_address.ToSensitiveNameAndAddressString()
                           << ", rather than an address associated with network:"
-                          << Network()->ToString() << ". Discarding TURN port.";
+                          << GetNetwork()->ToString() << ". Discarding TURN port.";
       OnAllocateError(
           STUN_ERROR_SERVER_NOT_REACHABLE,
           "Address not associated with the desired network interface.");
@@ -870,7 +870,7 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
     // sockets we need hostname along with resolved address.
     SocketAddress resolved_address = server_address_.address;
     if (result.GetError() != 0 ||
-        !result.GetResolvedAddress(Network()->GetBestIP().family(),
+        !result.GetResolvedAddress(GetNetwork()->GetBestIP().family(),
                                    &resolved_address)) {
       RTC_LOG(LS_WARNING) << ToString() << ": TURN host lookup received error "
                           << result.GetError();
@@ -882,7 +882,7 @@ void TurnPort::ResolveTurnAddress(const SocketAddress& address) {
     server_address_.address = resolved_address;
     PrepareAddress();
   };
-  resolver_->Start(address, Network()->family(), std::move(callback));
+  resolver_->Start(address, GetNetwork()->family(), std::move(callback));
 }
 
 void TurnPort::OnSendStunPacket(const void* data,

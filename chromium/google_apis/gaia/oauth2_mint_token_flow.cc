@@ -125,9 +125,9 @@ const std::string* FindReasonInErrorResponse(
 }
 
 OAuth2Response GetOAuth2ResponseFromErrorReason(const std::string* reason) {
-  using enum OAuth2Response;
+  // using enum OAuth2Response;
   if (!reason) {
-    return kErrorUnexpectedFormat;
+    return OAuth2Response::kErrorUnexpectedFormat;
   }
 
   auto it = kOAuth2ResponseByErrorReason.find(*reason);
@@ -135,52 +135,52 @@ OAuth2Response GetOAuth2ResponseFromErrorReason(const std::string* reason) {
     return it->second;
   }
 
-  return kUnknownError;
+  return OAuth2Response::kUnknownError;
 }
 
 GoogleServiceAuthError ConvertErrorOAuth2ResponseToAuthError(
     OAuth2Response oauth2_response,
     int http_response_code,
     const std::string& display_message) {
-  using enum OAuth2Response;
+  // using enum OAuth2Response;
   switch (oauth2_response) {
-    case kOk:
-    case kOkUnexpectedFormat:
-    case kAccessDenied:
-    case kAdminPolicyEnforced:
-    case kUnauthorizedClient:
-    case kUnsuportedGrantType:
-    case kConsentRequired:
-    case kTokenBindingChallenge:
+    case OAuth2Response::kOk:
+    case OAuth2Response::kOkUnexpectedFormat:
+    case OAuth2Response::kAccessDenied:
+    case OAuth2Response::kAdminPolicyEnforced:
+    case OAuth2Response::kUnauthorizedClient:
+    case OAuth2Response::kUnsuportedGrantType:
+    case OAuth2Response::kConsentRequired:
+    case OAuth2Response::kTokenBindingChallenge:
       NOTREACHED();
 
     // Transient errors:
-    case kRateLimitExceeded:
-    case kInternalFailure:
+    case OAuth2Response::kRateLimitExceeded:
+    case OAuth2Response::kInternalFailure:
       return GoogleServiceAuthError::FromServiceUnavailable(display_message);
 
     // Scope persistent errors that can't be fixed by user action:
-    case kInvalidScope:
+    case OAuth2Response::kInvalidScope:
       return GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kInvalidScope);
-    case kRestrictedClient:
+    case OAuth2Response::kRestrictedClient:
       return GoogleServiceAuthError::FromScopeLimitedUnrecoverableErrorReason(
           GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::
               kRestrictedClient);
 
     // Persistent errors:
-    case kInvalidGrant:
+    case OAuth2Response::kInvalidGrant:
       return GoogleServiceAuthError::FromInvalidGaiaCredentialsReason(
           GoogleServiceAuthError::InvalidGaiaCredentialsReason::
               CREDENTIALS_REJECTED_BY_SERVER);
-    case kInvalidRequest:
-    case kInvalidClient:
+    case OAuth2Response::kInvalidRequest:
+    case OAuth2Response::kInvalidClient:
       return GoogleServiceAuthError::FromServiceError(display_message);
 
     // Unknown errors fall back to HTTP response codes:
-    case kUnknownError:
-    case kErrorUnexpectedFormat:
+    case OAuth2Response::kUnknownError:
+    case OAuth2Response::kErrorUnexpectedFormat:
       break;
   }
 

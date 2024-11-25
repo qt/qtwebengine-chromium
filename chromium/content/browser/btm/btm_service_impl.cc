@@ -60,24 +60,22 @@ namespace {
 
 BtmRedirectCategory ClassifyRedirect(BtmDataAccessType access,
                                      bool has_user_activation) {
-  using enum BtmRedirectCategory;
-
   switch (access) {
     case BtmDataAccessType::kUnknown:
-      return has_user_activation ? kUnknownCookies_HasEngagement
-                                 : kUnknownCookies_NoEngagement;
+      return has_user_activation ? BtmRedirectCategory::kUnknownCookies_HasEngagement
+                                 : BtmRedirectCategory::kUnknownCookies_NoEngagement;
     case BtmDataAccessType::kNone:
-      return has_user_activation ? kNoCookies_HasEngagement
-                                 : kNoCookies_NoEngagement;
+      return has_user_activation ? BtmRedirectCategory::kNoCookies_HasEngagement
+                                 : BtmRedirectCategory::kNoCookies_NoEngagement;
     case BtmDataAccessType::kRead:
-      return has_user_activation ? kReadCookies_HasEngagement
-                                 : kReadCookies_NoEngagement;
+      return has_user_activation ? BtmRedirectCategory::kReadCookies_HasEngagement
+                                 : BtmRedirectCategory::kReadCookies_NoEngagement;
     case BtmDataAccessType::kWrite:
-      return has_user_activation ? kWriteCookies_HasEngagement
-                                 : kWriteCookies_NoEngagement;
+      return has_user_activation ? BtmRedirectCategory::kWriteCookies_HasEngagement
+                                 : BtmRedirectCategory::kWriteCookies_NoEngagement;
     case BtmDataAccessType::kReadWrite:
-      return has_user_activation ? kReadWriteCookies_HasEngagement
-                                 : kReadWriteCookies_NoEngagement;
+      return has_user_activation ? BtmRedirectCategory::kReadWriteCookies_HasEngagement
+                                 : BtmRedirectCategory::kReadWriteCookies_NoEngagement;
   }
 }
 

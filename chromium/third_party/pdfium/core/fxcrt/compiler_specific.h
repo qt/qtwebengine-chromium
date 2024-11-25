@@ -9,7 +9,7 @@
 
 // A wrapper around `__has_cpp_attribute`, in case this is seen by
 // a C (not C++) compiler, say.
-#if defined(__has_cpp_attribute)
+#if defined(__has_cpp_attribute) && !(defined(__GNUC__) && __GNUC__ < 11)
 #define HAS_CPP_ATTRIBUTE(x) __has_cpp_attribute(x)
 #else
 #define HAS_CPP_ATTRIBUTE(x) 0

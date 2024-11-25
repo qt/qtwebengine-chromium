@@ -81,7 +81,7 @@ config("libvpx_config") {
 
     # Maximum allowed for a direct mapping,
     # see partition_alloc::internal::MaxDirectMapped()
-    "VPX_MAX_ALLOCABLE_MEMORY=((1ULL << 31) - (1 << 21))",
+    "VPX_MAX_ALLOCABLE_MEMORY=((1ULL<<31)-(1<<21))",
   ]
 
   # gn orders flags on a target before flags from configs. The default config

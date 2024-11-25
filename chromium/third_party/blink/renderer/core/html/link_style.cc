@@ -73,7 +73,7 @@ void LinkStyle::NotifyFinished(Resource* resource) {
        !owner_->FastGetAttribute(html_names::kIntegrityAttr).empty() &&
        !cached_style_sheet->IntegrityMetadata().empty()) ||
       resource->ForceIntegrityChecks()) {
-    cached_style_sheet->IntegrityReport().SendReports(GetExecutionContext());
+    cached_style_sheet->GetIntegrityReport().SendReports(GetExecutionContext());
 
     if (!cached_style_sheet->PassedIntegrityChecks()) {
       loading_ = false;

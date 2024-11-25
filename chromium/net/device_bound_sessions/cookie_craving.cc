@@ -108,8 +108,8 @@ std::optional<CookieCraving> CookieCraving::Create(
     return std::nullopt;
   }
 
-  static constexpr auto kPermittedAttributes =
-      base::MakeFixedFlatSet<std::string>(
+  static const auto kPermittedAttributes =
+      base::MakeFixedFlatSet<std::string_view>(
           {"domain", "path", "secure", "httponly", "samesite"});
   if (!parsed_cookie.ForEachAttribute(
           [](std::string_view attribute, std::string_view value) {

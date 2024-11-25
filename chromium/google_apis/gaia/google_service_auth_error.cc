@@ -38,19 +38,19 @@ const char* InvalidCredentialsReasonToString(
 
 const char* ScopeLimitedUnrecoverableErrorReasonToString(
     GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason reason) {
-  using enum GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason;
+  // using enum GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason;
   switch (reason) {
-    case kInvalidGrantRaptError:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kInvalidGrantRaptError:
       return "invalid grant rapt error";
-    case kInvalidScope:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kInvalidScope:
       return "invalid scope";
-    case kRestrictedClient:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kRestrictedClient:
       return "restricted client";
-    case kAdminPolicyEnforced:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kAdminPolicyEnforced:
       return "admin policy enforced";
-    case kRemoteConsentResolutionRequired:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kRemoteConsentResolutionRequired:
       return "remote consent resolution required";
-    case kAccessDenied:
+    case GoogleServiceAuthError::ScopeLimitedUnrecoverableErrorReason::kAccessDenied:
       return "access denied";
   }
   NOTREACHED();

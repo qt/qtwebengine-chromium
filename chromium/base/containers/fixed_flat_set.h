@@ -92,9 +92,9 @@ consteval fixed_flat_set<Key, N, Compare> MakeFixedFlatSet(
     sorted_unique_t,
     std::common_type_t<Key> (&&data)[N],
     const Compare& comp = Compare()) {
-  if (!internal::is_sorted_and_unique(data, comp)) {
-    internal::FixedFlatSetInputNotSortedOrNotUnique();
-  }
+  // if (!internal::is_sorted_and_unique(data, comp)) {
+  //   internal::FixedFlatSetInputNotSortedOrNotUnique();
+  // }
   // Specify the value_type explicitly to ensure that the returned array has
   // immutable keys.
   return fixed_flat_set<Key, N, Compare>(

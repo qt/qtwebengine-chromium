@@ -204,7 +204,7 @@ class JsepTransport {
     return rtp_dtls_transport_;
   }
 
-  scoped_refptr<SctpTransport> SctpTransport() const { return sctp_transport_; }
+  scoped_refptr<SctpTransport> GetSctpTransport() const { return sctp_transport_; }
 
   // TODO(bugs.webrtc.org/9719): Delete method, update callers to use
   // SctpTransport() instead.

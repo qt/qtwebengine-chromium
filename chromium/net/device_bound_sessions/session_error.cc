@@ -14,67 +14,67 @@ SessionError::SessionError(SessionError&&) noexcept = default;
 SessionError& SessionError::operator=(SessionError&&) noexcept = default;
 
 bool SessionError::IsFatal() const {
-  using enum ErrorType;
+  // using enum ErrorType;
 
   switch (type) {
-    case kSuccess:
+    case ErrorType::kSuccess:
       return false;
-    case kKeyError:
-    case kSigningError:
-    case kServerRequestedTermination:
-    case kInvalidConfigJson:
-    case kInvalidSessionId:
-    case kInvalidCredentials:
-    case kInvalidChallenge:
-    case kTooManyChallenges:
-    case kInvalidFetcherUrl:
-    case kInvalidRefreshUrl:
-    case kPersistentHttpError:
-    case kScopeOriginSameSiteMismatch:
-    case kRefreshUrlSameSiteMismatch:
-    case kInvalidScopeOrigin:
-    case kMismatchedSessionId:
-    case kInvalidRefreshInitiators:
-    case kInvalidScopeRule:
-    case kMissingScope:
-    case kNoCredentials:
-    case kInvalidScopeIncludeSite:
+    case ErrorType::kKeyError:
+    case ErrorType::kSigningError:
+    case ErrorType::kServerRequestedTermination:
+    case ErrorType::kInvalidConfigJson:
+    case ErrorType::kInvalidSessionId:
+    case ErrorType::kInvalidCredentials:
+    case ErrorType::kInvalidChallenge:
+    case ErrorType::kTooManyChallenges:
+    case ErrorType::kInvalidFetcherUrl:
+    case ErrorType::kInvalidRefreshUrl:
+    case ErrorType::kPersistentHttpError:
+    case ErrorType::kScopeOriginSameSiteMismatch:
+    case ErrorType::kRefreshUrlSameSiteMismatch:
+    case ErrorType::kInvalidScopeOrigin:
+    case ErrorType::kMismatchedSessionId:
+    case ErrorType::kInvalidRefreshInitiators:
+    case ErrorType::kInvalidScopeRule:
+    case ErrorType::kMissingScope:
+    case ErrorType::kNoCredentials:
+    case ErrorType::kInvalidScopeIncludeSite:
       return true;
 
-    case kNetError:
-    case kTransientHttpError:
+    case ErrorType::kNetError:
+    case ErrorType::kTransientHttpError:
       return false;
   }
 }
 
 bool SessionError::IsServerError() const {
-  using enum ErrorType;
+  // using enum ErrorType;
 
   switch (type) {
-    case kSuccess:
-    case kKeyError:
-    case kSigningError:
-    case kNetError:
+    case ErrorType::kSuccess:
+    case ErrorType::kKeyError:
+    case ErrorType::kSigningError:
+    case ErrorType::kNetError:
       return false;
-    case kServerRequestedTermination:
-    case kInvalidConfigJson:
-    case kInvalidSessionId:
-    case kInvalidCredentials:
-    case kInvalidChallenge:
-    case kTooManyChallenges:
-    case kInvalidFetcherUrl:
-    case kInvalidRefreshUrl:
-    case kPersistentHttpError:
-    case kScopeOriginSameSiteMismatch:
-    case kRefreshUrlSameSiteMismatch:
-    case kInvalidScopeOrigin:
-    case kTransientHttpError:
-    case kMismatchedSessionId:
-    case kInvalidRefreshInitiators:
-    case kInvalidScopeRule:
-    case kMissingScope:
-    case kNoCredentials:
-    case kInvalidScopeIncludeSite:
+    case ErrorType::kServerRequestedTermination:
+    case ErrorType::kInvalidConfigJson:
+    case ErrorType::kInvalidSessionId:
+    case ErrorType::kInvalidCredentials:
+    case ErrorType::kInvalidChallenge:
+    case ErrorType::kTooManyChallenges:
+    case ErrorType::kInvalidFetcherUrl:
+    case ErrorType::kInvalidRefreshUrl:
+    case ErrorType::kPersistentHttpError:
+    case ErrorType::kScopeOriginSameSiteMismatch:
+    case ErrorType::kRefreshUrlSameSiteMismatch:
+    case ErrorType::kInvalidScopeOrigin:
+    case ErrorType::kTransientHttpError:
+    case ErrorType::kMismatchedSessionId:
+    case ErrorType::kInvalidRefreshInitiators:
+    case ErrorType::kInvalidScopeRule:
+    case ErrorType::kMissingScope:
+    case ErrorType::kNoCredentials:
+    case ErrorType::kInvalidScopeIncludeSite:
       return true;
   }
 }

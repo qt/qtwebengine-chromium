@@ -395,9 +395,9 @@ bool ShowPredictions(const WebDocument& document,
 // TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
 // removed.
 bool IsCheckableElement(const WebFormControlElement& element) {
-  using enum blink::mojom::FormControlType;
-  return element && (element.FormControlTypeForAutofill() == kInputCheckbox ||
-                     element.FormControlTypeForAutofill() == kInputRadio);
+  using blink::mojom::FormControlType;
+  return element && (element.FormControlTypeForAutofill() == FormControlType::kInputCheckbox ||
+                     element.FormControlTypeForAutofill() == FormControlType::kInputRadio);
 }
 
 gfx::Rect GetCaretBounds(content::RenderFrame& frame) {
@@ -1575,7 +1575,7 @@ void AutofillAgent::ShowSuggestions(
   std::optional<FormAndField> form_and_field =
       form_util::FindFormAndFieldForFormControlElement(
           element, field_data_manager(),
-          GetCallTimerState(kQueryAutofillSuggestions), button_titles_cache(),
+          GetCallTimerState(autofill::CallTimerState::CallSite::kQueryAutofillSuggestions), button_titles_cache(),
           {form_util::ExtractOption::kDatalist,
            form_util::ExtractOption::kBounds},
           form_cache);
@@ -2285,7 +2285,7 @@ std::optional<FormData> AutofillAgent::GetSubmittedForm(
       document,
       submitted_form_element.has_value() ? *submitted_form_element
                                          : last_interacted_form().GetForm(),
-      field_data_manager(), GetCallTimerState(kGetSubmittedForm),
+      field_data_manager(), GetCallTimerState(autofill::CallTimerState::CallSite::kGetSubmittedForm),
       button_titles_cache());
 
   // Behavior when `AutofillPreferSavedFormAsSubmittedForm` is enabled

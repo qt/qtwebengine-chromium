@@ -50,25 +50,25 @@
 namespace v8 {
 namespace internal {
 
-using enum InlineCacheState;
+// using enum InlineCacheState;
 
 char IC::TransitionMarkFromState(IC::State state) {
   switch (state) {
-    case NO_FEEDBACK:
+    case InlineCacheState::NO_FEEDBACK:
       return 'X';
-    case UNINITIALIZED:
+    case InlineCacheState::UNINITIALIZED:
       return '0';
-    case MONOMORPHIC:
+    case InlineCacheState::MONOMORPHIC:
       return '1';
-    case RECOMPUTE_HANDLER:
+    case InlineCacheState::RECOMPUTE_HANDLER:
       return '^';
-    case POLYMORPHIC:
+    case InlineCacheState::POLYMORPHIC:
       return 'P';
-    case MEGAMORPHIC:
+    case InlineCacheState::MEGAMORPHIC:
       return 'N';
-    case MEGADOM:
+    case InlineCacheState::MEGADOM:
       return 'D';
-    case GENERIC:
+    case InlineCacheState::GENERIC:
       return 'G';
   }
   UNREACHABLE();
@@ -108,7 +108,7 @@ const char* GetModifier(KeyedAccessStoreMode mode) {
 void IC::TraceIC(const char* type, DirectHandle<Object> name) {
   if (V8_LIKELY(!TracingFlags::is_ic_stats_enabled())) return;
   State new_state =
-      (state() == NO_FEEDBACK) ? NO_FEEDBACK : nexus()->ic_state();
+      (state() == InlineCacheState::NO_FEEDBACK) ? InlineCacheState::NO_FEEDBACK : nexus()->ic_state();
   TraceIC(type, name, state(), new_state);
 }
 
@@ -119,7 +119,7 @@ void IC::TraceIC(const char* type, DirectHandle<Object> name, State old_state,
   DirectHandle<Map> map = lookup_start_object_map();  // Might be empty.
 
   const char* modifier = "";
-  if (state() == NO_FEEDBACK) {
+  if (state() == InlineCacheState::NO_FEEDBACK) {
     modifier = "";
   } else if (IsKeyedLoadIC()) {
     KeyedAccessLoadMode mode = nexus()->GetKeyedAccessLoadMode();
@@ -188,7 +188,7 @@ IC::IC(Isolate* isolate, Handle<FeedbackVector> vector, FeedbackSlot slot,
       slow_stub_reason_(nullptr),
       nexus_(isolate, vector, slot) {
   DCHECK_IMPLIES(!vector.is_null(), kind_ == nexus_.kind());
-  state_ = (vector.is_null()) ? NO_FEEDBACK : nexus_.ic_state();
+  state_ = (vector.is_null()) ? InlineCacheState::NO_FEEDBACK : nexus_.ic_state();
   old_state_ = state_;
 }
 
@@ -271,10 +271,10 @@ bool IC::RecomputeHandlerForName(DirectHandle<Object> name) {
 
 void IC::UpdateState(DirectHandle<Object> lookup_start_object,
                      DirectHandle<Object> name) {
-  if (state() == NO_FEEDBACK) return;
+  if (state() == InlineCacheState::NO_FEEDBACK) return;
   update_lookup_start_object_map(lookup_start_object);
   if (!IsString(*name)) return;
-  if (state() != MONOMORPHIC && state() != POLYMORPHIC) return;
+  if (state() != InlineCacheState::MONOMORPHIC && state() != InlineCacheState::POLYMORPHIC) return;
   if (IsNullOrUndefined(*lookup_start_object, isolate())) return;
 
   // Remove the target from the code cache if it became invalid
@@ -330,7 +330,7 @@ bool MigrateDeprecated(Isolate* isolate, DirectHandle<Object> object) {
 }  // namespace
 
 bool IC::ConfigureVectorState(IC::State new_state, DirectHandle<Object> key) {
-  DCHECK_EQ(MEGAMORPHIC, new_state);
+  DCHECK_EQ(InlineCacheState::MEGAMORPHIC, new_state);
   DCHECK_IMPLIES(!is_keyed(), IsName(*key));
   bool changed = nexus()->ConfigureMegamorphic(
       IsName(*key) ? IcCheckType::kProperty : IcCheckType::kElement);
@@ -383,7 +383,7 @@ void IC::ConfigureVectorState(DirectHandle<Name> name,
 MaybeDirectHandle<Object> LoadIC::Load(Handle<JSAny> object, Handle<Name> name,
                                        bool update_feedback,
                                        DirectHandle<JSAny> receiver) {
-  bool use_ic = (state() != NO_FEEDBACK) && v8_flags.use_ic && update_feedback;
+  bool use_ic = (state() != InlineCacheState::NO_FEEDBACK) && v8_flags.use_ic && update_feedback;
 
   if (receiver.is_null()) {
     receiver = object;
@@ -431,7 +431,7 @@ MaybeDirectHandle<Object> LoadIC::Load(Handle<JSAny> object, Handle<Name> name,
     // Update inline cache and stub cache.
     if (use_ic) {
       UpdateCaches(&it);
-    } else if (state() == NO_FEEDBACK) {
+    } else if (state() == InlineCacheState::NO_FEEDBACK) {
       // Tracing IC stats
       IsLoadGlobalIC() ? TraceIC("LoadGlobalIC", name)
                        : TraceIC("LoadIC", name);
@@ -481,7 +481,7 @@ MaybeDirectHandle<Object> LoadGlobalIC::Load(Handle<Name> name,
                               name));
       }
       bool use_ic =
-          (state() != NO_FEEDBACK) && v8_flags.use_ic && update_feedback;
+          (state() != InlineCacheState::NO_FEEDBACK) && v8_flags.use_ic && update_feedback;
       if (use_ic) {
         // 'const' Variables are mutable if REPL mode is enabled. This disables
         // compiler inlining for all 'const' variables declared in REPL mode.
@@ -496,7 +496,7 @@ MaybeDirectHandle<Object> LoadGlobalIC::Load(Handle<Name> name,
           SetCache(name, LoadHandler::LoadSlow(isolate()));
         }
         TraceIC("LoadGlobalIC", name);
-      } else if (state() == NO_FEEDBACK) {
+      } else if (state() == InlineCacheState::NO_FEEDBACK) {
         TraceIC("LoadGlobalIC", name);
       }
       return Context::Get(script_context, lookup_result.slot_index, isolate());
@@ -606,7 +606,7 @@ bool IC::UpdateMegaDOMIC(const MaybeObjectDirectHandle& handler,
 
 bool IC::UpdateOneMapManyNamesIC(DirectHandle<Name> new_name) {
 #if V8_ENABLE_WEBASSEMBLY
-  if (state() != MONOMORPHIC) return false;
+  if (state() != InlineCacheState::MONOMORPHIC) return false;
   if (!IsKeyedLoadIC() && !IsKeyedStoreIC()) return false;
   // For JS objects, using the generic stub is faster. Wasm objects benefit
   // from collecting a map that the optimizing compiler can use.
@@ -630,7 +630,7 @@ bool IC::UpdateOneMapManyNamesIC(DirectHandle<Name> new_name) {
 bool IC::UpdatePolymorphicIC(DirectHandle<Name> name,
                              const MaybeObjectDirectHandle& handler) {
   DCHECK(IsHandler(*handler));
-  if (is_keyed() && state() != RECOMPUTE_HANDLER) {
+  if (is_keyed() && state() != InlineCacheState::RECOMPUTE_HANDLER) {
     if (nexus()->GetName() != *name) return false;
   }
   DirectHandle<Map> map = lookup_start_object_map();
@@ -660,7 +660,7 @@ bool IC::UpdatePolymorphicIC(DirectHandle<Name> name,
         // exception to this rule, which is when we're in RECOMPUTE_HANDLER
         // state, there we allow to migrate to a new handler.
         if (handler.is_identical_to(existing_handler) &&
-            state() != RECOMPUTE_HANDLER) {
+            state() != InlineCacheState::RECOMPUTE_HANDLER) {
           return false;
         }
 
@@ -688,7 +688,7 @@ bool IC::UpdatePolymorphicIC(DirectHandle<Name> name,
   if (deprecated_maps >= v8_flags.max_valid_polymorphic_map_count) {
     return false;
   }
-  if (number_of_maps == 0 && state() != MONOMORPHIC && state() != POLYMORPHIC) {
+  if (number_of_maps == 0 && state() != InlineCacheState::MONOMORPHIC && state() != InlineCacheState::POLYMORPHIC) {
     return false;
   }
 
@@ -753,35 +753,35 @@ void IC::SetCache(DirectHandle<Name> name, const MaybeObjectHandle& handler) {
   // Currently only load and store ICs support non-code handlers.
   DCHECK(IsAnyLoad() || IsAnyStore() || IsAnyHas());
   switch (state()) {
-    case NO_FEEDBACK:
+    case InlineCacheState::NO_FEEDBACK:
       UNREACHABLE();
-    case UNINITIALIZED:
+    case InlineCacheState::UNINITIALIZED:
       UpdateMonomorphicIC(handler, name);
       break;
-    case RECOMPUTE_HANDLER:
-    case MONOMORPHIC:
+    case InlineCacheState::RECOMPUTE_HANDLER:
+    case InlineCacheState::MONOMORPHIC:
       if (IsGlobalIC()) {
         UpdateMonomorphicIC(handler, name);
         break;
       }
       if (UpdateOneMapManyNamesIC(name)) break;
       [[fallthrough]];
-    case POLYMORPHIC:
+    case InlineCacheState::POLYMORPHIC:
       if (UpdatePolymorphicIC(name, handler)) break;
       if (UpdateMegaDOMIC(handler, name)) break;
-      if (!is_keyed() || state() == RECOMPUTE_HANDLER) {
+      if (!is_keyed() || state() == InlineCacheState::RECOMPUTE_HANDLER) {
         CopyICToMegamorphicCache(name);
       }
       [[fallthrough]];
-    case MEGADOM:
-      ConfigureVectorState(MEGAMORPHIC, name);
+    case InlineCacheState::MEGADOM:
+      ConfigureVectorState(InlineCacheState::MEGAMORPHIC, name);
       [[fallthrough]];
-    case MEGAMORPHIC:
+    case InlineCacheState::MEGAMORPHIC:
       UpdateMegamorphicCache(lookup_start_object_map(), name, handler);
       // Indicate that we've handled this case.
       vector_set_ = true;
       break;
-    case GENERIC:
+    case InlineCacheState::GENERIC:
       UNREACHABLE();
   }
 }
@@ -1200,7 +1200,7 @@ void KeyedLoadIC::UpdateLoadElement(DirectHandle<HeapObject> receiver,
   // monomorphic. If this optimistic assumption is not true, the IC will
   // miss again and it will become polymorphic and support both the
   // untransitioned and transitioned maps.
-  if (state() == MONOMORPHIC) {
+  if (state() == InlineCacheState::MONOMORPHIC) {
     if ((IsJSObject(*receiver) &&
          IsMoreGeneralElementsKindTransition(
              target_receiver_maps.at(0)->elements_kind(),
@@ -1212,7 +1212,7 @@ void KeyedLoadIC::UpdateLoadElement(DirectHandle<HeapObject> receiver,
     }
   }
 
-  DCHECK(state() != GENERIC);
+  DCHECK(state() != InlineCacheState::GENERIC);
 
   // Determine the list of receiver maps that this call site has seen,
   // adding the map that was just encountered.
@@ -1555,7 +1555,7 @@ bool IntPtrKeyToSize(intptr_t index, DirectHandle<HeapObject> receiver,
 }
 
 bool CanCache(DirectHandle<Object> receiver, InlineCacheState state) {
-  if (!v8_flags.use_ic || state == NO_FEEDBACK) return false;
+  if (!v8_flags.use_ic || state == InlineCacheState::NO_FEEDBACK) return false;
   if (!IsJSReceiver(*receiver) && !IsString(*receiver)) return false;
   return !IsAccessCheckNeeded(*receiver) && !IsJSPrimitiveWrapper(*receiver);
 }
@@ -1588,7 +1588,7 @@ MaybeDirectHandle<Object> KeyedLoadIC::LoadName(Handle<JSAny> object,
                              LoadIC::Load(object, name));
 
   if (vector_needs_update()) {
-    ConfigureVectorState(MEGAMORPHIC, key);
+    ConfigureVectorState(InlineCacheState::MEGAMORPHIC, key);
     TraceIC("LoadIC", key);
   }
 
@@ -1624,7 +1624,7 @@ MaybeDirectHandle<Object> KeyedLoadIC::Load(Handle<JSAny> object,
   }
 
   if (vector_needs_update()) {
-    ConfigureVectorState(MEGAMORPHIC, key);
+    ConfigureVectorState(InlineCacheState::MEGAMORPHIC, key);
     TraceIC("LoadIC", key);
   }
 
@@ -1763,7 +1763,7 @@ MaybeDirectHandle<Object> StoreGlobalIC::Store(Handle<Name> name,
                             name));
     }
 
-    bool use_ic = (state() != NO_FEEDBACK) && v8_flags.use_ic;
+    bool use_ic = (state() != InlineCacheState::NO_FEEDBACK) && v8_flags.use_ic;
     if (use_ic) {
       if (nexus()->ConfigureLexicalVarMode(
               lookup_result.context_index, lookup_result.slot_index,
@@ -1775,7 +1775,7 @@ MaybeDirectHandle<Object> StoreGlobalIC::Store(Handle<Name> name,
         SetCache(name, StoreHandler::StoreSlow(isolate()));
       }
       TraceIC("StoreGlobalIC", name);
-    } else if (state() == NO_FEEDBACK) {
+    } else if (state() == InlineCacheState::NO_FEEDBACK) {
       TraceIC("StoreGlobalIC", name);
     }
     AllowGarbageCollection yes_gc;
@@ -1881,7 +1881,7 @@ MaybeDirectHandle<Object> StoreIC::Store(Handle<JSAny> object,
     return value;
   }
 
-  bool use_ic = (state() != NO_FEEDBACK) && v8_flags.use_ic;
+  bool use_ic = (state() != InlineCacheState::NO_FEEDBACK) && v8_flags.use_ic;
   // If the object is undefined or null it's illegal to try to set any
   // properties on it; throw a TypeError in that case.
   if (IsNullOrUndefined(*object, isolate())) {
@@ -1946,7 +1946,7 @@ MaybeDirectHandle<Object> StoreIC::Store(Handle<JSAny> object,
 
   if (use_ic) {
     UpdateCaches(&it, value, store_origin);
-  } else if (state() == NO_FEEDBACK) {
+  } else if (state() == InlineCacheState::NO_FEEDBACK) {
     // Tracing IC Stats for No Feedback State.
     IsStoreGlobalIC() ? TraceIC("StoreGlobalIC", name)
                       : TraceIC("StoreIC", name);
@@ -2303,7 +2303,7 @@ void KeyedStoreIC::UpdateStoreElement(Handle<Map> receiver_map,
   // to a more general kind.
   KeyedAccessStoreMode old_store_mode = GetKeyedAccessStoreMode();
   DirectHandle<Map> previous_receiver_map = target_maps_and_handlers.maps()[0];
-  if (state() == MONOMORPHIC) {
+  if (state() == InlineCacheState::MONOMORPHIC) {
     DirectHandle<Map> transitioned_receiver_map = new_receiver_map;
     if (IsTransitionOfMonomorphicTarget(*previous_receiver_map,
                                         *transitioned_receiver_map)) {
@@ -2337,7 +2337,7 @@ void KeyedStoreIC::UpdateStoreElement(Handle<Map> receiver_map,
     }
   }
 
-  DCHECK(state() != GENERIC);
+  DCHECK(state() != InlineCacheState::GENERIC);
 
   bool map_added =
       AddOneReceiverMapIfMissing(&target_maps_and_handlers, receiver_map);
@@ -2623,7 +2623,7 @@ MaybeDirectHandle<Object> KeyedStoreIC::Store(Handle<JSAny> object,
         isolate(), store_handle,
         StoreIC::Store(object, maybe_name, value, StoreOrigin::kMaybeKeyed));
     if (vector_needs_update()) {
-      if (ConfigureVectorState(MEGAMORPHIC, key)) {
+      if (ConfigureVectorState(InlineCacheState::MEGAMORPHIC, key)) {
         set_slow_stub_reason("unhandled internalized string key");
         TraceIC("StoreIC", key);
       }
@@ -2634,7 +2634,7 @@ MaybeDirectHandle<Object> KeyedStoreIC::Store(Handle<JSAny> object,
   JSObject::MakePrototypesFast(object, kStartAtPrototype, isolate());
 
   // TODO(jkummerow): Refactor the condition logic here and below.
-  bool use_ic = (state() != NO_FEEDBACK) && v8_flags.use_ic &&
+  bool use_ic = (state() != InlineCacheState::NO_FEEDBACK) && v8_flags.use_ic &&
                 !IsStringWrapper(*object) && !IsAccessCheckNeeded(*object) &&
                 !IsJSGlobalProxy(*object);
   if (use_ic && !IsSmi(*object)) {
@@ -2729,7 +2729,7 @@ MaybeDirectHandle<Object> KeyedStoreIC::Store(Handle<JSAny> object,
   }
 
   if (vector_needs_update()) {
-    ConfigureVectorState(MEGAMORPHIC, key);
+    ConfigureVectorState(InlineCacheState::MEGAMORPHIC, key);
   }
   TraceIC("StoreIC", key);
 
@@ -2756,7 +2756,7 @@ MaybeDirectHandle<Object> StoreInArrayLiteralIC::Store(
   DCHECK(!array->map()->IsMapInArrayPrototypeChain(isolate()));
   DCHECK(IsNumber(*index));
 
-  if (!v8_flags.use_ic || state() == NO_FEEDBACK ||
+  if (!v8_flags.use_ic || state() == InlineCacheState::NO_FEEDBACK ||
       MigrateDeprecated(isolate(), array)) {
     MAYBE_RETURN_NULL(StoreOwnElement(isolate(), array, index, value));
     TraceIC("StoreInArrayLiteralIC", index);
@@ -2784,7 +2784,7 @@ MaybeDirectHandle<Object> StoreInArrayLiteralIC::Store(
   }
 
   if (vector_needs_update()) {
-    ConfigureVectorState(MEGAMORPHIC, index);
+    ConfigureVectorState(InlineCacheState::MEGAMORPHIC, index);
   }
   TraceIC("StoreInArrayLiteralIC", index);
   return value;

@@ -284,7 +284,7 @@ CSSMathType CSSMathType::InvalidType() {
 
 CalculationResultCategory CSSMathType::BaseTypeToCalculationCategory(
     BaseType base_type) {
-  using enum BaseType;
+  // using enum BaseType;
   switch (base_type) {
     case kLength:
       return kCalcLength;
@@ -306,21 +306,21 @@ CalculationResultCategory CSSMathType::BaseTypeToCalculationCategory(
 
 CSSMathType::BaseType CSSMathType::CalculationCategoryToBaseType(
     CalculationResultCategory category) {
-  using enum BaseType;
+  // using enum BaseType;
   switch (category) {
     case kCalcLength:
     case kCalcLengthFunction:
-      return kLength;
+      return BaseType::kLength;
     case kCalcPercent:
-      return kPercent;
+      return BaseType::kPercent;
     case kCalcAngle:
-      return kAngle;
+      return BaseType::kAngle;
     case kCalcTime:
-      return kTime;
+      return BaseType::kTime;
     case kCalcFrequency:
-      return kFrequency;
+      return BaseType::kFrequency;
     case kCalcResolution:
-      return kResolution;
+      return BaseType::kResolution;
     case kCalcNumber:
     case kCalcIdent:
     case kCalcOther:
@@ -416,17 +416,17 @@ CSSMathType operator+(CSSMathType type1, CSSMathType type2) {
   }
   // If type1 and/or type2 contain "percent" with a non-zero value, and type1
   // and/or type2 contain a key other than "percent" with a non-zero value.
-  using enum CSSMathType::BaseType;
-  bool type1_contains_percent = type1.base_type_powers_[kPercent] != 0;
-  bool type2_contains_percent = type2.base_type_powers_[kPercent] != 0;
+  // using enum CSSMathType::BaseType;
+  bool type1_contains_percent = type1.base_type_powers_[CSSMathType::BaseType::kPercent] != 0;
+  bool type2_contains_percent = type2.base_type_powers_[CSSMathType::BaseType::kPercent] != 0;
   bool type1_or_type2_contain_percent =
       type1_contains_percent || type2_contains_percent;
   bool type1_contains_key_other_than_percent =
-      type1.base_type_powers_[kPercent] !=
+      type1.base_type_powers_[CSSMathType::BaseType::kPercent] !=
       std::accumulate(type1.base_type_powers_.begin(),
                       type1.base_type_powers_.end(), 0);
   bool type2_contains_key_other_than_percent =
-      type2.base_type_powers_[kPercent] !=
+      type2.base_type_powers_[CSSMathType::BaseType::kPercent] !=
       std::accumulate(type2.base_type_powers_.begin(),
                       type2.base_type_powers_.end(), 0);
   bool type1_or_type2_contain_key_other_than_percent =
@@ -438,7 +438,7 @@ CSSMathType operator+(CSSMathType type1, CSSMathType type2) {
     for (uint8_t type_index = 0; type_index < CSSMathType::BaseType::kNumTypes;
          ++type_index) {
       auto type = static_cast<CSSMathType::BaseType>(type_index);
-      if (type == kPercent) {
+      if (type == CSSMathType::BaseType::kPercent) {
         continue;
       }
       // 1. Provisionally apply the percent hint hint to both type1 and type2.

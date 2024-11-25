@@ -53,7 +53,7 @@ enum class PromoRecommendation {
   // should be promoted to RO space.
   kMatchHost,
 };
-using enum PromoRecommendation;
+// using enum PromoRecommendation;
 
 class Committee final {
  public:
@@ -150,16 +150,16 @@ class Committee final {
     PromoRecommendation recommendation =
         GetPromoRecommendation(this, isolate_, o);
     switch (recommendation) {
-      case kPromote:
+      case PromoRecommendation::kPromote:
         break;
-      case kReject: {
+      case PromoRecommendation::kReject: {
         const auto& [it, inserted] = promo_rejected_.insert(o);
         if (V8_UNLIKELY(v8_flags.trace_read_only_promotion) && inserted) {
           LogRejectedPromotionForFailedPredicate(o);
         }
         return false;
       }
-      case kMatchHost:
+      case PromoRecommendation::kMatchHost:
         if (!maybe_host.has_value()) {
           // We've met this object during regular heap iteration and don't know
           // yet how it's used. Postpone the decision for later.
@@ -230,7 +230,7 @@ class Committee final {
   } else
     PROMO_CANDIDATE_TYPE_LIST(V)
     /* if { ... } else */ {
-      return kReject;
+      return PromoRecommendation::kReject;
     }
 #undef V
     UNREACHABLE();
@@ -240,12 +240,12 @@ class Committee final {
 #define DEF_PROMO_CANDIDATE(Type)                               \
   static PromoRecommendation GetPromoRecommendation##Type(      \
       Committee* committee, Isolate* isolate, Tagged<Type> o) { \
-    return kPromote;                                            \
+    return PromoRecommendation::kPromote;                                            \
   }
 #define DEF_MATCH_HOST_CANDIDATE(Type)                          \
   static PromoRecommendation GetPromoRecommendation##Type(      \
       Committee* committee, Isolate* isolate, Tagged<Type> o) { \
-    return kMatchHost;                                          \
+    return PromoRecommendation::kMatchHost;                                          \
   }
 
   DEF_PROMO_CANDIDATE(AccessCheckInfo)
@@ -259,15 +259,15 @@ class Committee final {
       Committee* committee, Isolate* isolate, Tagged<FunctionTemplateInfo> o) {
     // This flag is set by the embedder explicitly by calling
     // v8::FunctionTemplate::SealAndPrepareForPromotionToReadOnly(..).
-    return o->should_promote_to_read_only() ? kPromote : kReject;
+    return o->should_promote_to_read_only() ? PromoRecommendation::kPromote : PromoRecommendation::kReject;
   }
   DEF_PROMO_CANDIDATE(FunctionTemplateRareData)
 
   static PromoRecommendation GetPromoRecommendationCode(Committee* committee,
                                                         Isolate* isolate,
                                                         Tagged<Code> o) {
-    return Builtins::kCodeObjectsAreInROSpace && o->is_builtin() ? kPromote
-                                                                 : kReject;
+    return Builtins::kCodeObjectsAreInROSpace && o->is_builtin() ? PromoRecommendation::kPromote
+                                                                 : PromoRecommendation::kReject;
   }
   static PromoRecommendation GetPromoRecommendationCodeWrapper(
       Committee* committee, Isolate* isolate, Tagged<CodeWrapper> o) {
@@ -279,14 +279,14 @@ class Committee final {
       Committee* committee, Isolate* isolate, Tagged<ObjectTemplateInfo> o) {
     // This flag is set by the embedder explicitly by calling
     // v8::ObjectTemplate::SealAndPrepareForPromotionToReadOnly(..).
-    return o->should_promote_to_read_only() ? kPromote : kReject;
+    return o->should_promote_to_read_only() ? PromoRecommendation::kPromote : PromoRecommendation::kReject;
   }
 
   DEF_PROMO_CANDIDATE(ScopeInfo)
   static PromoRecommendation GetPromoRecommendationSharedFunctionInfo(
       Committee* committee, Isolate* isolate, Tagged<SharedFunctionInfo> o) {
     // Only internal SFIs are guaranteed to remain immutable.
-    if (o->has_script(kAcquireLoad)) return kReject;
+    if (o->has_script(kAcquireLoad)) return PromoRecommendation::kReject;
     // kIllegal is used for js_global_object_function, which is created during
     // bootstrapping but never rooted. We currently assumed that all objects in
     // the snapshot are live. But RO space is 1) not GC'd and 2) serialized
@@ -296,11 +296,11 @@ class Committee final {
     // test-heap-profiler.cc)? Overwrite dead RO objects with fillers
     // pre-serialization? Implement a RO GC pass pre-serialization?
     if (o->HasBuiltinId() && o->builtin_id() != Builtin::kIllegal) {
-      return kPromote;
+      return PromoRecommendation::kPromote;
     }
     // Api functions are good candidates for promotion.
-    if (o->IsApiFunction()) return kPromote;
-    return kReject;
+    if (o->IsApiFunction()) return PromoRecommendation::kPromote;
+    return PromoRecommendation::kReject;
   }
   DEF_PROMO_CANDIDATE(Symbol)
 

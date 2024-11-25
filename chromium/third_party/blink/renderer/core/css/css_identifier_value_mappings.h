@@ -1699,12 +1699,12 @@ inline CSSIdentifierValue::CSSIdentifierValue(TextUnderlinePosition position)
 template <>
 inline ScrollMarkerGroup::ScrollMarkerPosition CSSIdentifierValue::ConvertTo()
     const {
-  using enum ScrollMarkerGroup::ScrollMarkerPosition;
+  // using enum ScrollMarkerGroup::ScrollMarkerPosition;
   switch (GetValueID()) {
     case CSSValueID::kAfter:
-      return kAfter;
+      return ScrollMarkerGroup::ScrollMarkerPosition::kAfter;
     case CSSValueID::kBefore:
-      return kBefore;
+      return ScrollMarkerGroup::ScrollMarkerPosition::kBefore;
     default:
       break;
   }
@@ -1715,12 +1715,12 @@ template <>
 inline CSSIdentifierValue::CSSIdentifierValue(
     ScrollMarkerGroup::ScrollMarkerPosition position)
     : CSSValue(kIdentifierClass) {
-  using enum ScrollMarkerGroup::ScrollMarkerPosition;
+  // using enum ScrollMarkerGroup::ScrollMarkerPosition;
   switch (position) {
-    case kAfter:
+    case ScrollMarkerGroup::ScrollMarkerPosition::kAfter:
       value_id_ = CSSValueID::kAfter;
       break;
-    case kBefore:
+    case ScrollMarkerGroup::ScrollMarkerPosition::kBefore:
       value_id_ = CSSValueID::kBefore;
       break;
   }
@@ -1729,12 +1729,12 @@ inline CSSIdentifierValue::CSSIdentifierValue(
 template <>
 inline ScrollMarkerGroup::ScrollMarkerMode CSSIdentifierValue::ConvertTo()
     const {
-  using enum ScrollMarkerGroup::ScrollMarkerMode;
+  // using enum ScrollMarkerGroup::ScrollMarkerMode;
   switch (GetValueID()) {
     case CSSValueID::kTabs:
-      return kTabs;
+      return ScrollMarkerGroup::ScrollMarkerMode::kTabs;
     case CSSValueID::kLinks:
-      return kLinks;
+      return ScrollMarkerGroup::ScrollMarkerMode::kLinks;
     default:
       break;
   }
@@ -1745,12 +1745,12 @@ template <>
 inline CSSIdentifierValue::CSSIdentifierValue(
     ScrollMarkerGroup::ScrollMarkerMode mode)
     : CSSValue(kIdentifierClass) {
-  using enum ScrollMarkerGroup::ScrollMarkerMode;
+  // using enum ScrollMarkerGroup::ScrollMarkerMode;
   switch (mode) {
-    case kTabs:
+    case ScrollMarkerGroup::ScrollMarkerMode::kTabs:
       value_id_ = CSSValueID::kTabs;
       break;
-    case kLinks:
+    case ScrollMarkerGroup::ScrollMarkerMode::kLinks:
       value_id_ = CSSValueID::kLinks;
       break;
   }

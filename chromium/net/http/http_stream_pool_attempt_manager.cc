@@ -377,34 +377,34 @@ bool HttpStreamPool::AttemptManager::IsEndpointUsableForTcpBasedAttempt(
 
 HttpStreamPool::AttemptManager::InitialAttemptState
 HttpStreamPool::AttemptManager::CalculateInitialAttemptState() {
-  using enum InitialAttemptState;
+  // using enum InitialAttemptState;
   bool supports_spdy = SupportsSpdy();
   if (CanUseQuic()) {
     if (quic_version_.IsKnown()) {
       if (supports_spdy) {
-        return kCanUseQuicWithKnownVersionAndSupportsSpdy;
+        return InitialAttemptState::kCanUseQuicWithKnownVersionAndSupportsSpdy;
       } else {
-        return kCanUseQuicWithKnownVersion;
+        return InitialAttemptState::kCanUseQuicWithKnownVersion;
       }
     } else {
       if (supports_spdy) {
-        return kCanUseQuicWithUnknownVersionAndSupportsSpdy;
+        return InitialAttemptState::kCanUseQuicWithUnknownVersionAndSupportsSpdy;
       } else {
-        return kCanUseQuicWithUnknownVersion;
+        return InitialAttemptState::kCanUseQuicWithUnknownVersion;
       }
     }
   } else {
     if (quic_version_.IsKnown()) {
       if (supports_spdy) {
-        return kCannotUseQuicWithKnownVersionAndSupportsSpdy;
+        return InitialAttemptState::kCannotUseQuicWithKnownVersionAndSupportsSpdy;
       } else {
-        return kCannotUseQuicWithKnownVersion;
+        return InitialAttemptState::kCannotUseQuicWithKnownVersion;
       }
     } else {
       if (supports_spdy) {
-        return kCannotUseQuicWithUnknownVersionAndSupportsSpdy;
+        return InitialAttemptState::kCannotUseQuicWithUnknownVersionAndSupportsSpdy;
       } else {
-        return kCannotUseQuicWithUnknownVersion;
+        return InitialAttemptState::kCannotUseQuicWithUnknownVersion;
       }
     }
   }

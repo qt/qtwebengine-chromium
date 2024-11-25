@@ -914,7 +914,7 @@ struct DateTimeValueRecord {
 
 bool CalendarEquals(temporal_rs::AnyCalendarKind kind,
                     const icu::SimpleDateFormat& date_time_format) {
-  using enum temporal_rs::AnyCalendarKind::Value;
+  // using enum temporal_rs::AnyCalendarKind::Value;
   std::string_view other_kind = date_time_format.getCalendar()->getType();
   // Note: some calendars have aliases, and "islamic" encompasses all Islamic
   // calendars
@@ -925,41 +925,41 @@ bool CalendarEquals(temporal_rs::AnyCalendarKind kind,
   // islamic calendars. This works for now, and perhaps temporal_rs can add
   // a match_icu4c_calendar function to move this logic out of V8.
   switch (kind) {
-    case Buddhist:
+    case temporal_rs::AnyCalendarKind::Value::Buddhist:
       return other_kind == "buddhist";
-    case Chinese:
+    case temporal_rs::AnyCalendarKind::Value::Chinese:
       return other_kind == "chinese";
-    case Coptic:
+    case temporal_rs::AnyCalendarKind::Value::Coptic:
       return other_kind == "coptic";
-    case Dangi:
+    case temporal_rs::AnyCalendarKind::Value::Dangi:
       return other_kind == "dangi";
-    case Ethiopian:
+    case temporal_rs::AnyCalendarKind::Value::Ethiopian:
       return other_kind == "ethiopic";
-    case EthiopianAmeteAlem:
+    case temporal_rs::AnyCalendarKind::Value::EthiopianAmeteAlem:
       return other_kind == "ethiopic-amete-alem" || other_kind == "ethioaa";
-    case Gregorian:
+    case temporal_rs::AnyCalendarKind::Value::Gregorian:
       return other_kind == "gregorian";
-    case Hebrew:
+    case temporal_rs::AnyCalendarKind::Value::Hebrew:
       return other_kind == "hebrew";
-    case Indian:
+    case temporal_rs::AnyCalendarKind::Value::Indian:
       return other_kind == "indian";
-    case HijriTabularTypeIIFriday:
+    case temporal_rs::AnyCalendarKind::Value::HijriTabularTypeIIFriday:
       return other_kind == "islamic-civil" || other_kind == "islamicc" ||
              other_kind == "islamic";
-    case HijriSimulatedMecca:
+    case temporal_rs::AnyCalendarKind::Value::HijriSimulatedMecca:
       return other_kind == "islamic-rgsa" || other_kind == "islamic";
-    case HijriTabularTypeIIThursday:
+    case temporal_rs::AnyCalendarKind::Value::HijriTabularTypeIIThursday:
       return other_kind == "islamic-tbla" || other_kind == "islamic";
-    case HijriUmmAlQura:
+    case temporal_rs::AnyCalendarKind::Value::HijriUmmAlQura:
       return other_kind == "islamic-umalqura " || other_kind == "islamic";
-    case Iso:
+    case temporal_rs::AnyCalendarKind::Value::Iso:
       return other_kind == "iso8601";
-    case Japanese:
-    case JapaneseExtended:
+    case temporal_rs::AnyCalendarKind::Value::Japanese:
+    case temporal_rs::AnyCalendarKind::Value::JapaneseExtended:
       return other_kind == "japanese";
-    case Persian:
+    case temporal_rs::AnyCalendarKind::Value::Persian:
       return other_kind == "persian";
-    case Roc:
+    case temporal_rs::AnyCalendarKind::Value::Roc:
       return other_kind == "roc";
   }
   // Exhaustive match

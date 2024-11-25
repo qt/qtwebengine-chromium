@@ -191,7 +191,7 @@ class RTC_EXPORT Port : public PortInterface, public sigslot::has_slots<> {
   // conflict in the value of the 2-tuple, make sure that the implementation
   // that relies on this 2-tuple for RTTI is properly changed.
   IceCandidateType Type() const override;
-  const ::webrtc::Network* Network() const override;
+  const ::webrtc::Network* GetNetwork() const override;
 
   // Methods to set/get ICE role and tiebreaker values.
   IceRole GetIceRole() const override;

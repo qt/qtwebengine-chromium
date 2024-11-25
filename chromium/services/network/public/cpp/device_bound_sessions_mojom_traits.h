@@ -34,13 +34,12 @@ struct EnumTraits<network::mojom::DeviceBoundSessionAccessType,
                   net::device_bound_sessions::SessionAccess::AccessType> {
   static network::mojom::DeviceBoundSessionAccessType ToMojom(
       net::device_bound_sessions::SessionAccess::AccessType access_type) {
-    using enum net::device_bound_sessions::SessionAccess::AccessType;
     switch (access_type) {
-      case kCreation:
+      case net::device_bound_sessions::SessionAccess::AccessType::kCreation:
         return network::mojom::DeviceBoundSessionAccessType::kCreation;
-      case kUpdate:
+      case net::device_bound_sessions::SessionAccess::AccessType::kUpdate:
         return network::mojom::DeviceBoundSessionAccessType::kUpdate;
-      case kTermination:
+      case net::device_bound_sessions::SessionAccess::AccessType::kTermination:
         return network::mojom::DeviceBoundSessionAccessType::kTermination;
     }
   }
@@ -48,16 +47,15 @@ struct EnumTraits<network::mojom::DeviceBoundSessionAccessType,
   static bool FromMojom(
       network::mojom::DeviceBoundSessionAccessType input,
       net::device_bound_sessions::SessionAccess::AccessType* output) {
-    using enum net::device_bound_sessions::SessionAccess::AccessType;
     switch (input) {
       case network::mojom::DeviceBoundSessionAccessType::kCreation:
-        *output = kCreation;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kCreation;
         return true;
       case network::mojom::DeviceBoundSessionAccessType::kUpdate:
-        *output = kUpdate;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kUpdate;
         return true;
       case network::mojom::DeviceBoundSessionAccessType::kTermination:
-        *output = kTermination;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kTermination;
         return true;
     }
   }
@@ -90,29 +88,29 @@ struct EnumTraits<network::mojom::DeviceBoundSessionDeletionReason,
                   net::device_bound_sessions::DeletionReason> {
   static network::mojom::DeviceBoundSessionDeletionReason ToMojom(
       net::device_bound_sessions::DeletionReason reason) {
-    using enum net::device_bound_sessions::DeletionReason;
+    typedef net::device_bound_sessions::DeletionReason Reason;
     switch (reason) {
-      case kExpired:
+      case Reason::kExpired:
         return network::mojom::DeviceBoundSessionDeletionReason::kExpired;
-      case kFailedToRestoreKey:
+      case Reason::kFailedToRestoreKey:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kFailedToRestoreKey;
-      case kFailedToUnwrapKey:
+      case Reason::kFailedToUnwrapKey:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kFailedToUnwrapKey;
-      case kStoragePartitionCleared:
+      case Reason::kStoragePartitionCleared:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kStoragePartitionCleared;
-      case kClearBrowsingData:
+      case Reason::kClearBrowsingData:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kClearBrowsingData;
-      case kServerRequested:
+      case Reason::kServerRequested:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kServerRequested;
-      case kInvalidSessionParams:
+      case Reason::kInvalidSessionParams:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kInvalidSessionParams;
-      case kRefreshFatalError:
+      case Reason::kRefreshFatalError:
         return network::mojom::DeviceBoundSessionDeletionReason::
             kRefreshFatalError;
     }
@@ -120,34 +118,35 @@ struct EnumTraits<network::mojom::DeviceBoundSessionDeletionReason,
 
   static bool FromMojom(network::mojom::DeviceBoundSessionDeletionReason input,
                         net::device_bound_sessions::DeletionReason* output) {
-    using enum net::device_bound_sessions::DeletionReason;
+    // using enum net::device_bound_sessions::DeletionReason;
+    typedef net::device_bound_sessions::DeletionReason Reason;
     switch (input) {
       case network::mojom::DeviceBoundSessionDeletionReason::kExpired:
-        *output = kExpired;
+        *output = Reason::kExpired;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::
           kFailedToRestoreKey:
-        *output = kFailedToRestoreKey;
+        *output = Reason::kFailedToRestoreKey;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::kFailedToUnwrapKey:
-        *output = kFailedToUnwrapKey;
+        *output = Reason::kFailedToUnwrapKey;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::
           kStoragePartitionCleared:
-        *output = kStoragePartitionCleared;
+        *output = Reason::kStoragePartitionCleared;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::kClearBrowsingData:
-        *output = kClearBrowsingData;
+        *output = Reason::kClearBrowsingData;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::kServerRequested:
-        *output = kServerRequested;
+        *output = Reason::kServerRequested;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::
           kInvalidSessionParams:
-        *output = kInvalidSessionParams;
+        *output = Reason::kInvalidSessionParams;
         return true;
       case network::mojom::DeviceBoundSessionDeletionReason::kRefreshFatalError:
-        *output = kRefreshFatalError;
+        *output = Reason::kRefreshFatalError;
         return true;
     }
   }

@@ -151,14 +151,13 @@ NetLogWithSource CreateNetLogWithSource(
 net::cookie_util::StorageAccessStatusOutcome
 ConvertSecFetchStorageAccessHeaderValueToOutcome(
     net::cookie_util::StorageAccessStatus storage_access_status) {
-  using enum net::cookie_util::StorageAccessStatusOutcome;
   switch (storage_access_status) {
     case net::cookie_util::StorageAccessStatus::kInactive:
-      return kValueInactive;
+      return net::cookie_util::StorageAccessStatusOutcome::kValueInactive;
     case net::cookie_util::StorageAccessStatus::kActive:
-      return kValueActive;
+      return net::cookie_util::StorageAccessStatusOutcome::kValueActive;
     case net::cookie_util::StorageAccessStatus::kNone:
-      return kValueNone;
+      return net::cookie_util::StorageAccessStatusOutcome::kValueNone;
   }
   NOTREACHED();
 }

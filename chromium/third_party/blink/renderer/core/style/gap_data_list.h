@@ -144,7 +144,7 @@ class CORE_EXPORT GapDataListIterator {
 
  public:
   using GapDataVector = GapDataList<T>::GapDataVector;
-  using GapData = GapData<T>;
+  using GapDataT = GapData<T>;
   explicit GapDataListIterator(const GapDataVector& gap_data_list,
                                wtf_size_t gap_count)
       : gap_data_list_(gap_data_list), gap_count_(gap_count) {
@@ -194,7 +194,7 @@ class CORE_EXPORT GapDataListIterator {
     auto_idx_ = kNotFound;
 
     for (wtf_size_t i = 0; i < gap_data_list_.size(); ++i) {
-      const GapData& gap_data = gap_data_list_[i];
+      const GapDataT& gap_data = gap_data_list_[i];
 
       wtf_size_t gap_data_slot_count = 1;
       if (gap_data.IsRepeaterData()) {
@@ -228,7 +228,7 @@ class CORE_EXPORT GapDataListIterator {
 
   // Retrieves the current value based on the region and index.
   T GetData() const {
-    const GapData& gap_data =
+    const GapDataT& gap_data =
         gap_data_list_[region_ == kAuto ? auto_idx_ : list_idx_];
     return gap_data.IsRepeaterData()
                ? gap_data.GetValueRepeater()
@@ -247,7 +247,7 @@ class CORE_EXPORT GapDataListIterator {
   void AdvanceWithinNonAutoRegion() {
     repeated_value_idx_ += 1;
 
-    const GapData& gap_data = gap_data_list_[list_idx_];
+    const GapDataT& gap_data = gap_data_list_[list_idx_];
 
     // Determine how many repeated values are associated with this gap_data. If
     // it's not a repeater (i.e. regular gap data item), we treat it as having
@@ -319,7 +319,7 @@ class CORE_EXPORT GapDataListIterator {
   }
 
   void InitNonAutoDataState() {
-    const GapData& gap_data = gap_data_list_[list_idx_];
+    const GapDataT& gap_data = gap_data_list_[list_idx_];
     if (gap_data.IsRepeaterData()) {
       CHECK(!gap_data.GetValueRepeater()->IsAutoRepeater());
       repeats_left_ = gap_data.GetValueRepeater()->RepeatCount();

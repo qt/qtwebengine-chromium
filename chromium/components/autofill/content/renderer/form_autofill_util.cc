@@ -300,9 +300,9 @@ bool IsSelectElement(const WebFormControlElement& element) {
 // TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is
 // removed.
 bool IsCheckableElement(const WebFormControlElement& element) {
-  using enum blink::mojom::FormControlType;
-  return element && (element.FormControlTypeForAutofill() == kInputCheckbox ||
-                     element.FormControlTypeForAutofill() == kInputRadio);
+  using FCT = blink::mojom::FormControlType;
+  return element && (element.FormControlTypeForAutofill() == FCT::kInputCheckbox ||
+                     element.FormControlTypeForAutofill() == FCT::kInputRadio);
 }
 
 // TODO(crbug.com/402071086): Remove when AutofillIgnoreCheckableElements is

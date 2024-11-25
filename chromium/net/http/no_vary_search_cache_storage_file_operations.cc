@@ -39,7 +39,7 @@ namespace {
 // NoVarySearchCacheStorageFileOperations is a very long name.
 using FileOperations = NoVarySearchCacheStorageFileOperations;
 
-using enum base::File::Error;
+// using enum base::File::Error;
 
 // Implementation of FileOperations::Writer that appends to a real file.
 class RealWriter final : public FileOperations::Writer {
@@ -68,7 +68,7 @@ bool IsAcceptableFilename(std::string_view filename) {
 
 // Logs `error` to histogram `name`.
 void UmaHistogramFileError(std::string_view name, base::File::Error error) {
-  base::UmaHistogramExactLinear(name, -error, -FILE_ERROR_MAX);
+  base::UmaHistogramExactLinear(name, -error, -base::File::Error::FILE_ERROR_MAX);
 }
 
 // Creates the directory `path` and all non-existent parent directories if
@@ -295,7 +295,7 @@ bool ReplaceFileWithRetries(const base::FilePath& source,
 // Implementation of FileOperations that operates on real files.
 class RealFileOperations : public FileOperations {
  public:
-  using enum base::File::Flags;
+  // using enum base::File::Flags;
 
   explicit RealFileOperations(const base::FilePath& dedicated_path,
                               const base::FilePath& legacy_path)
@@ -337,22 +337,22 @@ class RealFileOperations : public FileOperations {
 
     const base::FilePath path = GetPath(filename);
     if (path.empty()) {
-      return base::unexpected(FILE_ERROR_SECURITY);
+      return base::unexpected(base::File::Error::FILE_ERROR_SECURITY);
     }
 
-    base::File file(path, FLAG_OPEN | FLAG_READ);
+    base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
     if (!file.IsValid()) {
       return base::unexpected(file.error_details());
     }
 
     base::File::Info info;
     if (!file.GetInfo(&info)) {
-      return base::unexpected(FILE_ERROR_FAILED);
+      return base::unexpected(base::File::Error::FILE_ERROR_FAILED);
     }
 
     CHECK_GE(info.size, 0);
     if (base::StrictNumeric(info.size) > max_size) {
-      return base::unexpected(FILE_ERROR_NO_MEMORY);
+      return base::unexpected(base::File::Error::FILE_ERROR_NO_MEMORY);
     }
 
     // This cast is safe because we checked that 0 <= info.size <= max_size, and
@@ -366,7 +366,7 @@ class RealFileOperations : public FileOperations {
 
     std::optional<size_t> maybe_bytes = file.ReadAtCurrentPos(result.contents);
     if (!maybe_bytes) {
-      return base::unexpected(FILE_ERROR_IO);
+      return base::unexpected(base::File::Error::FILE_ERROR_IO);
     }
     size_t read_bytes = maybe_bytes.value();
     CHECK_LE(read_bytes, size);
@@ -385,7 +385,7 @@ class RealFileOperations : public FileOperations {
 
     base::FilePath path = GetPath(filename);
     if (path.empty()) {
-      return base::unexpected(FILE_ERROR_SECURITY);
+      return base::unexpected(base::File::Error::FILE_ERROR_SECURITY);
     }
 
     // Use a consistent temporary file name so that it will eventually be
@@ -396,7 +396,7 @@ class RealFileOperations : public FileOperations {
     // exists. It doesn't matter if this fails.
     base::DeleteFile(temp_path);
 
-    base::File temp_file(temp_path, FLAG_CREATE_ALWAYS | FLAG_WRITE);
+    base::File temp_file(temp_path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
 
     if (!temp_file.IsValid()) {
       return base::unexpected(temp_file.error_details());
@@ -408,7 +408,7 @@ class RealFileOperations : public FileOperations {
       }
 
       if (!temp_file.WriteAtCurrentPosAndCheck(segment)) {
-        return base::unexpected(FILE_ERROR_IO);
+        return base::unexpected(base::File::Error::FILE_ERROR_IO);
       }
     }
 
@@ -420,7 +420,7 @@ class RealFileOperations : public FileOperations {
     replace_file_func = ReplaceFileWithRetries;
 #endif
 
-    base::File::Error replace_error = FILE_OK;
+    base::File::Error replace_error = base::File::Error::FILE_OK;
 
     if (!replace_file_func(temp_path, path, &replace_error)) {
       UmaHistogramFileError("HttpCache.NoVarySearch.ReplaceFileError",
@@ -437,14 +437,14 @@ class RealFileOperations : public FileOperations {
 
     base::FilePath path = GetPath(filename);
     if (path.empty()) {
-      return base::unexpected(FILE_ERROR_SECURITY);
+      return base::unexpected(base::File::Error::FILE_ERROR_SECURITY);
     }
 
     // To defend against permission problems, delete `path` if it already
     // exists. Ignore errors.
     base::DeleteFile(path);
 
-    base::File file(path, FLAG_CREATE_ALWAYS | FLAG_WRITE);
+    base::File file(path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
 
     if (!file.IsValid()) {
       return base::unexpected(file.error_details());

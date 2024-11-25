@@ -514,7 +514,7 @@ void GeneratedCodeCache::WriteEntry(const GURL& url,
     // change shared memory before we can compute the hash and write the data.
     // TODO(crbug.com/40151989) Eliminate this copy when the shared memory can't
     // be written by the sender.
-    mojo_base::BigBuffer copy(base::span{data});
+    mojo_base::BigBuffer copy(base::span<uint8_t>{data});
     if (copy.size() != data.size())
       return;
     data = mojo_base::BigBuffer();  // Release the old buffer.
