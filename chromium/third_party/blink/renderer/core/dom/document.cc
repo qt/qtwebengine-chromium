@@ -814,6 +814,7 @@ Document::Document(const DocumentInit& initializer,
       script_runner_delayer_(MakeGarbageCollected<ScriptRunnerDelayer>(
           script_runner_,
           ScriptRunner::DelayReason::kMilestone)),
+      draggable_regions_(std::make_unique<Vector<DraggableRegionValue>>()),
       document_classes_(document_classes),
       is_srcdoc_document_(initializer.IsSrcdocDocument()),
       // We already intentionally fire load event asynchronously and here we use
@@ -5307,12 +5308,12 @@ void Document::ActiveChainNodeDetached(Element& element) {
 }
 
 const Vector<DraggableRegionValue>& Document::DraggableRegions() const {
-  return draggable_regions_;
+  return *draggable_regions_;
 }
 
 void Document::SetDraggableRegions(
     const Vector<DraggableRegionValue>& regions) {
-  draggable_regions_ = regions;
+  *draggable_regions_ = regions;
   SetDraggableRegionsDirty(false);
 }
 

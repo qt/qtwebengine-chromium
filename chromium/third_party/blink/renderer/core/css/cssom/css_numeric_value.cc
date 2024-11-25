@@ -302,7 +302,7 @@ CSSNumericValue* CSSNumericValue::parse(
           stream.Peek().FunctionId() == CSSValueID::kMin ||
           stream.Peek().FunctionId() == CSSValueID::kMax ||
           stream.Peek().FunctionId() == CSSValueID::kClamp) {
-        using enum CSSMathExpressionNode::Flag;
+        using Flag = CSSMathExpressionNode::Flag;
         using Flags = CSSMathExpressionNode::Flags;
 
         // TODO(crbug.com/1309178): Decide how to handle anchor queries here.
@@ -310,7 +310,7 @@ CSSNumericValue* CSSNumericValue::parse(
             CSSMathExpressionNode::ParseMathFunction(
                 CSSValueID::kCalc, stream,
                 *MakeGarbageCollected<CSSParserContext>(*execution_context),
-                Flags({AllowPercent}), kCSSAnchorQueryTypesNone);
+                Flags({Flag::AllowPercent}), kCSSAnchorQueryTypesNone);
         if (expression) {
           return CalcToNumericValue(*expression);
         }

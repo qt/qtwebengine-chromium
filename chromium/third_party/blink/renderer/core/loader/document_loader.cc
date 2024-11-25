@@ -298,7 +298,7 @@ struct SameSizeAsDocumentLoader
   bool finish_loading_when_parser_resumed;
   bool in_commit_data;
   scoped_refptr<SharedBuffer> data_buffer;
-  Vector<DocumentLoader::DecodedBodyData> decoded_data_buffer_;
+  std::unique_ptr<Vector<DocumentLoader::DecodedBodyData>> decoded_data_buffer_;
   base::UnguessableToken devtools_navigation_token;
   base::Uuid base_auction_nonce;
   LoaderFreezeMode defers_loading;
@@ -469,7 +469,7 @@ class DocumentLoader::DecodedBodyData : public BodyData {
   }
 
   void Buffer(DocumentLoader* loader) override {
-    loader->decoded_data_buffer_.push_back(*this);
+    loader->decoded_data_buffer_->push_back(*this);
   }
 
   base::SpanOrSize<const char> EncodedData() const override {
@@ -536,6 +536,7 @@ DocumentLoader::DocumentLoader(
       state_(kNotStarted),
       in_commit_data_(false),
       data_buffer_(SharedBuffer::Create()),
+      decoded_data_buffer_(std::make_unique<Vector<DecodedBodyData>>()),
       devtools_navigation_token_(params_->devtools_navigation_token),
       base_auction_nonce_(params_->base_auction_nonce),
       last_navigation_had_transient_user_activation_(
@@ -566,7 +567,8 @@ DocumentLoader::DocumentLoader(
       navigation_api_forward_entries_(params_->navigation_api_forward_entries),
       navigation_api_previous_entry_(params_->navigation_api_previous_entry),
       extra_data_(std::move(extra_data)),
-      reduced_accept_language_(static_cast<String>(params_->reduced_accept_language)),
+      reduced_accept_language_(
+          static_cast<String>(params_->reduced_accept_language)),
       navigation_delivery_type_(params_->navigation_delivery_type),
       view_transition_state_(std::move(params_->view_transition_state)),
       storage_access_api_status_(params_->load_with_storage_access),
@@ -1808,17 +1810,18 @@ void DocumentLoader::ProcessDataBuffer(BodyData* data) {
   // Process data received in reentrant invocations. Note that the invocations
   // of CommitData() may queue more data in reentrant invocations, so iterate
   // until it's empty.
-  DCHECK(data_buffer_->empty() || decoded_data_buffer_.empty());
+  DCHECK(data_buffer_->empty() || decoded_data_buffer_->empty());
   for (const auto& span : *data_buffer_) {
     EncodedBodyData body_data(span);
     CommitData(body_data);
   }
-  for (auto& decoded_data : decoded_data_buffer_)
+  for (auto& decoded_data : *decoded_data_buffer_) {
     CommitData(decoded_data);
+  }
 
   // All data has been consumed, so flush the buffer.
   data_buffer_->Clear();
-  decoded_data_buffer_.clear();
+  decoded_data_buffer_->clear();
 }
 
 void DocumentLoader::StopLoading() {

@@ -501,8 +501,9 @@ int64_t IntersectionObserver::ComputeIntersections(
     return 0;
   }
   // TODO(szager): Is this copy necessary?
-  HeapVector<Member<IntersectionObservation>> observations_to_process(
-      observations_);
+  HeapVector<Member<IntersectionObservation>> observations_to_process;
+  for (auto& observation : observations_)
+    observations_to_process.push_back(observation);
   for (auto& observation : observations_to_process) {
     result +=
         observation->ComputeIntersection(flags, gfx::Vector2dF(), context);

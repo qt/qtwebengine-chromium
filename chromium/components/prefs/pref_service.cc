@@ -287,7 +287,7 @@ PrefService::GetPreferencesValueAndStore() const {
 const PrefService::Preference* PrefService::FindPreference(
     std::string_view path) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  auto it = prefs_map_.find(path);
+  auto it = prefs_map_.find(std::string(path));
   if (it != prefs_map_.end())
     return &(it->second);
   const base::Value* default_value = nullptr;

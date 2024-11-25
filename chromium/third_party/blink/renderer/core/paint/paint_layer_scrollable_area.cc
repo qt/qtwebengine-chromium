@@ -3291,20 +3291,18 @@ void PaintLayerScrollableArea::
 Node* PaintLayerScrollableArea::GetSnapTargetAlongAxis(
     cc::TargetSnapAreaElementIds ids,
     cc::SnapAxis axis) const {
-  using cc::SnapAxis::kBlock;
-  using cc::SnapAxis::kInline;
-  using cc::SnapAxis::kX;
-  using cc::SnapAxis::kY;
   if (!GetLayoutBox() || !GetLayoutBox()->Style()) {
     return nullptr;
   }
   bool horiz = GetLayoutBox()->Style()->GetWritingDirection().IsHorizontal();
-  if (ids.y && (axis == kY || (axis == kBlock && horiz) ||
-                (axis == kInline && !horiz))) {
+  if (ids.y &&
+      (axis == cc::SnapAxis::kY || (axis == cc::SnapAxis::kBlock && horiz) ||
+       (axis == cc::SnapAxis::kInline && !horiz))) {
     return DOMNodeIds::NodeForId(DOMNodeIdFromCompositorElementId(ids.y));
   }
-  if (ids.x && (axis == kX || (axis == kInline && horiz) ||
-                (axis == kBlock && !horiz))) {
+  if (ids.x &&
+      (axis == cc::SnapAxis::kX || (axis == cc::SnapAxis::kInline && horiz) ||
+       (axis == cc::SnapAxis::kBlock && !horiz))) {
     return DOMNodeIds::NodeForId(DOMNodeIdFromCompositorElementId(ids.x));
   }
   return nullptr;

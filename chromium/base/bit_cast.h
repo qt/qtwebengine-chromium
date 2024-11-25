@@ -7,6 +7,11 @@
 
 #include <type_traits>
 
+#include "base/compiler_specific.h"
+#if !HAS_BUILTIN(__builtin_bit_cast)
+#include <string.h>
+#endif
+
 namespace base {
 
 // This is an equivalent to C++20's std::bit_cast<>(), but with additional
@@ -18,8 +23,14 @@ namespace base {
 // reinterpret_cast<>(), and then look at https://eel.is/c++draft/basic.lval#11
 // as that's probably UB also.
 
-template <class Dest, class Source>
-constexpr Dest bit_cast(const Source& source) {
+template <typename Dest, typename Source>
+#if !HAS_BUILTIN(__builtin_bit_cast)
+constexpr
+#else
+inline
+#endif
+    Dest
+    bit_cast(const Source& source) {
   static_assert(!std::is_pointer_v<Source>,
                 "bit_cast must not be used on pointer types");
   static_assert(!std::is_pointer_v<Dest>,
@@ -36,8 +47,13 @@ constexpr Dest bit_cast(const Source& source) {
   static_assert(
       std::is_trivially_copyable_v<Dest>,
       "bit_cast requires the destination type to be trivially copyable");
-
+#if HAS_BUILTIN(__builtin_bit_cast)
   return __builtin_bit_cast(Dest, source);
+#else
+  Dest dest;
+  memcpy(&dest, &source, sizeof(dest));
+  return dest;
+#endif
 }
 
 }  // namespace base

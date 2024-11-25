@@ -478,17 +478,16 @@ inline TextBoxEdge::Type CssValueIDToPlatformEnum(CSSValueID id) {
 
 template <>
 inline CSSValueID PlatformEnumToCSSValueID(TextBoxEdge::Type type) {
-  using enum TextBoxEdge::Type;
   switch (type) {
-    case kAuto:
+    case TextBoxEdge::Type::kAuto:
       return CSSValueID::kAuto;
-    case kText:
+    case TextBoxEdge::Type::kText:
       return CSSValueID::kText;
-    case kCap:
+    case TextBoxEdge::Type::kCap:
       return CSSValueID::kCap;
-    case kEx:
+    case TextBoxEdge::Type::kEx:
       return CSSValueID::kEx;
-    case kAlphabetic:
+    case TextBoxEdge::Type::kAlphabetic:
       return CSSValueID::kAlphabetic;
   }
 }

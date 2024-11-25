@@ -44,7 +44,7 @@ using blink::WebFormElement;
 using blink::WebInputElement;
 using blink::WebLocalFrame;
 
-using enum blink::mojom::FormControlType;
+using FCT = blink::mojom::FormControlType;
 
 namespace autofill {
 
@@ -68,7 +68,7 @@ FieldRendererId FindConfirmationPasswordFieldId(
   for (; iter != control_elements.end(); ++iter) {
     const WebInputElement input_element = iter->DynamicTo<WebInputElement>();
     if (input_element &&
-        input_element.FormControlTypeForAutofill() == kInputPassword) {
+        input_element.FormControlTypeForAutofill() == FCT::kInputPassword) {
       return form_util::GetFieldRendererId(input_element);
     }
   }
@@ -437,7 +437,7 @@ void PasswordGenerationAgent::TriggeredGeneratePassword(
     bool is_generation_element_password_type =
         current_generation_item_->generation_element_
             .FormControlType()  // nocheck
-        == kInputPassword;
+        == FCT::kInputPassword;
     password_generation::PasswordGenerationUIData password_generation_ui_data(
         gfx::RectF(render_frame()->ConvertViewportToWindow(
             current_generation_item_->generation_element_.BoundsInWidget())),
@@ -670,7 +670,7 @@ void PasswordGenerationAgent::AutomaticGenerationAvailable() {
   bool is_generation_element_password_type =
       current_generation_item_->generation_element_
           .FormControlType()  // nocheck
-      == kInputPassword;
+      == FCT::kInputPassword;
   password_generation::PasswordGenerationUIData password_generation_ui_data(
       gfx::RectF(render_frame()->ConvertViewportToWindow(
           current_generation_item_->generation_element_.BoundsInWidget())),

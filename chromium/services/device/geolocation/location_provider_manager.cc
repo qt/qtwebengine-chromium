@@ -23,11 +23,7 @@
 
 namespace device {
 
-using ::device::mojom::LocationProviderManagerMode::kCustomOnly;
-using ::device::mojom::LocationProviderManagerMode::kHybridFallbackNetwork;
-using ::device::mojom::LocationProviderManagerMode::kHybridPlatform;
-using ::device::mojom::LocationProviderManagerMode::kNetworkOnly;
-using ::device::mojom::LocationProviderManagerMode::kPlatformOnly;
+using LPMM = ::device::mojom::LocationProviderManagerMode;
 
 LocationProviderManager::LocationProviderManager(
     CustomLocationProviderCallback custom_location_provider_getter,
@@ -50,10 +46,10 @@ LocationProviderManager::LocationProviderManager(
       network_response_callback_(std::move(network_response_callback)) {
 #if BUILDFLAG(IS_ANDROID)
   // On Android, default to using the platform location provider.
-  provider_manager_mode_ = kPlatformOnly;
+  provider_manager_mode_ = LPMM::kPlatformOnly;
 #elif BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
   // On Ash / Lacros / Linux, default to using the network location provider.
-  provider_manager_mode_ = kNetworkOnly;
+  provider_manager_mode_ = LPMM::kNetworkOnly;
 #else
   // On macOS / Windows platforms, use the mode specified by the feature flag.
   provider_manager_mode_ = features::kLocationProviderManagerParam.Get();
@@ -97,15 +93,15 @@ void LocationProviderManager::StartProvider(bool enable_high_accuracy) {
     enable_high_accuracy_ = enable_high_accuracy;
     is_running_ = true;
     switch (provider_manager_mode_) {
-      case kCustomOnly:
+      case LPMM::kCustomOnly:
         custom_location_provider_->StartProvider(enable_high_accuracy_);
         break;
-      case kNetworkOnly:
-      case kHybridFallbackNetwork:
+      case LPMM::kNetworkOnly:
+      case LPMM::kHybridFallbackNetwork:
         network_location_provider_->StartProvider(enable_high_accuracy_);
         break;
-      case kPlatformOnly:
-      case kHybridPlatform:
+      case LPMM::kPlatformOnly:
+      case LPMM::kHybridPlatform:
         platform_location_provider_->StartProvider(enable_high_accuracy_);
     }
   }
@@ -154,16 +150,16 @@ bool LocationProviderManager::InitializeProvider() {
   if (custom_location_provider_getter_) {
     custom_location_provider_ = custom_location_provider_getter_.Run();
     if (custom_location_provider_) {
-      provider_manager_mode_ = kCustomOnly;
+      provider_manager_mode_ = LPMM::kCustomOnly;
     }
   }
 
   switch (provider_manager_mode_) {
-    case kCustomOnly:
+    case LPMM::kCustomOnly:
       RegisterProvider(*custom_location_provider_.get());
       break;
-    case kNetworkOnly:
-    case kHybridFallbackNetwork:
+    case LPMM::kNetworkOnly:
+    case LPMM::kHybridFallbackNetwork:
       if (!url_loader_factory_) {
         return false;
       }
@@ -171,8 +167,8 @@ bool LocationProviderManager::InitializeProvider() {
           NewNetworkLocationProvider(url_loader_factory_, api_key_);
       RegisterProvider(*network_location_provider_.get());
       break;
-    case kPlatformOnly:
-    case kHybridPlatform:
+    case LPMM::kPlatformOnly:
+    case LPMM::kHybridPlatform:
       platform_location_provider_ = NewSystemLocationProvider();
       if (!platform_location_provider_) {
         return false;
@@ -192,14 +188,14 @@ void LocationProviderManager::OnLocationUpdate(
              ValidateGeoposition(*new_result->get_position()));
 
   switch (provider_manager_mode_) {
-    case kHybridPlatform:
+    case LPMM::kHybridPlatform:
       platform_location_provider_result_ = new_result.Clone();
       // Currently, the fallback mechanism only triggers on macOS when Wi-Fi is
       // disabled (either before or during position watching).
       if (new_result->is_error() &&
           new_result->get_error()->error_code ==
               device::mojom::GeopositionErrorCode::kWifiDisabled) {
-        provider_manager_mode_ = kHybridFallbackNetwork;
+        provider_manager_mode_ = LPMM::kHybridFallbackNetwork;
         platform_location_provider_->StopProvider();
         platform_location_provider_.reset();
         network_location_provider_ =
@@ -211,14 +207,14 @@ void LocationProviderManager::OnLocationUpdate(
         return;
       }
       break;
-    case kPlatformOnly:
+    case LPMM::kPlatformOnly:
       platform_location_provider_result_ = new_result.Clone();
       break;
-    case kNetworkOnly:
-    case kHybridFallbackNetwork:
+    case LPMM::kNetworkOnly:
+    case LPMM::kHybridFallbackNetwork:
       network_location_provider_result_ = new_result.Clone();
       break;
-    case kCustomOnly:
+    case LPMM::kCustomOnly:
       custom_location_provider_result_ = new_result.Clone();
       break;
   }
@@ -228,13 +224,13 @@ void LocationProviderManager::OnLocationUpdate(
 
 const mojom::GeopositionResult* LocationProviderManager::GetPosition() {
   switch (provider_manager_mode_) {
-    case kHybridPlatform:
-    case kPlatformOnly:
+    case LPMM::kHybridPlatform:
+    case LPMM::kPlatformOnly:
       return platform_location_provider_result_.get();
-    case kNetworkOnly:
-    case kHybridFallbackNetwork:
+    case LPMM::kNetworkOnly:
+    case LPMM::kHybridFallbackNetwork:
       return network_location_provider_result_.get();
-    case kCustomOnly:
+    case LPMM::kCustomOnly:
       return custom_location_provider_result_.get();
   }
 }
@@ -247,13 +243,13 @@ void LocationProviderManager::FillDiagnostics(
     return;
   }
   switch (provider_manager_mode_) {
-    case kHybridPlatform:
-    case kPlatformOnly:
+    case LPMM::kHybridPlatform:
+    case LPMM::kPlatformOnly:
       return platform_location_provider_->FillDiagnostics(diagnostics);
-    case kNetworkOnly:
-    case kHybridFallbackNetwork:
+    case LPMM::kNetworkOnly:
+    case LPMM::kHybridFallbackNetwork:
       return network_location_provider_->FillDiagnostics(diagnostics);
-    case kCustomOnly:
+    case LPMM::kCustomOnly:
       return custom_location_provider_->FillDiagnostics(diagnostics);
   }
   if (position_cache_) {

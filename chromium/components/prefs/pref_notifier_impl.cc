@@ -76,7 +76,7 @@ void PrefNotifierImpl::RemovePrefObserver(std::string_view path,
                                           PrefObserver* obs) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  auto observer_iterator = pref_observers_.find(path);
+  auto observer_iterator = pref_observers_.find(std::string(path));
   if (observer_iterator == pref_observers_.end()) {
     return;
   }
@@ -128,7 +128,7 @@ void PrefNotifierImpl::FireObservers(std::string_view path) {
     observer.OnPreferenceChanged(pref_service_, path);
   }
 
-  auto observer_iterator = pref_observers_.find(path);
+  auto observer_iterator = pref_observers_.find(std::string(path));
   if (observer_iterator == pref_observers_.end())
     return;
 

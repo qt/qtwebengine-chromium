@@ -13,45 +13,45 @@ namespace autofill {
 
 namespace {
 std::string_view CallSiteToString(CallTimerState::CallSite call_site) {
-  using enum CallTimerState::CallSite;
+  using CTS = CallTimerState::CallSite;
   switch (call_site) {
-    case kApplyFieldsAction:
+    case CTS::kApplyFieldsAction:
       return "ApplyFieldsAction";
-    case kBatchSelectOrSelectListOptionChange:
+    case CTS::kBatchSelectOrSelectListOptionChange:
       return "BatchSelectOrSelectListOptionChange";
-    case kDidChangeScrollOffsetImpl:
+    case CTS::kDidChangeScrollOffsetImpl:
       return "DidChangeScrollOffsetImpl";
-    case kExtractForm:
+    case CTS::kExtractForm:
       return "ExtractForm";
-    case kFocusedElementChanged:
+    case CTS::kFocusedElementChanged:
       return "FocusedElementChanged";
-    case kFocusedElementChangedDeprecated:
+    case CTS::kFocusedElementChangedDeprecated:
       return "FocusedElementChangedDeprecated";
-    case kGetFormDataFromUnownedInputElements:
+    case CTS::kGetFormDataFromUnownedInputElements:
       return "GetFormDataFromUnownedInputElements";
-    case kGetFormDataFromWebForm:
+    case CTS::kGetFormDataFromWebForm:
       return "GetFormDataFromWebForm";
-    case kGetSubmittedForm:
+    case CTS::kGetSubmittedForm:
       return "GetSubmittedForm";
-    case kHandleCaretMovedInFormField:
+    case CTS::kHandleCaretMovedInFormField:
       return "HandleCaretMovedInFormField";
-    case kJavaScriptChangedValue:
+    case CTS::kJavaScriptChangedValue:
       return "JavaScriptChangedValue";
-    case kNotifyPasswordManagerAboutClearedForm:
+    case CTS::kNotifyPasswordManagerAboutClearedForm:
       return "NotifyPasswordManagerAboutClearedForm";
-    case kOnFormSubmitted:
+    case CTS::kOnFormSubmitted:
       return "OnFormSubmitted";
-    case kOnProvisionallySaveForm:
+    case CTS::kOnProvisionallySaveForm:
       return "OnProvisionallySaveForm";
-    case kOnTextFieldDidChange:
+    case CTS::kOnTextFieldDidChange:
       return "OnTextFieldDidChange";
-    case kQueryAutofillSuggestions:
+    case CTS::kQueryAutofillSuggestions:
       return "QueryAutofillSuggestions";
-    case kShowSuggestionPopup:
+    case CTS::kShowSuggestionPopup:
       return "ShowSuggestionPopup";
-    case kUpdateFormCache:
+    case CTS::kUpdateFormCache:
       return "UpdateFormCache";
-    case kUpdateLastInteractedElement:
+    case CTS::kUpdateLastInteractedElement:
       return "UpdateLastInteractedElement";
   }
   NOTREACHED();

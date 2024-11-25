@@ -418,7 +418,11 @@ void VideoEffectsProcessorWebGpu::PostProcess(
       .saturation = saturation,
   };
   auto uniforms_bytes =
+#if defined(COMPILER_MSVC) || (defined(__GNUC__) && __GNUC__ < 11)
+      base::bit_cast<std::array<uint8_t, sizeof(uniforms)>>(uniforms);
+#else
       base::bit_cast<std::array<const uint8_t, sizeof(uniforms)>>(uniforms);
+#endif
   command_encoder.WriteBuffer(uniforms_buffer_, 0, uniforms_bytes.data(),
                               uniforms_bytes.size());
 

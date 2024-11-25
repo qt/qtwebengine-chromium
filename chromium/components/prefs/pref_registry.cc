@@ -22,7 +22,7 @@ PrefRegistry::~PrefRegistry() {
 }
 
 uint32_t PrefRegistry::GetRegistrationFlags(std::string_view pref_name) const {
-  const auto& it = registration_flags_.find(pref_name);
+  const auto& it = registration_flags_.find(std::string(pref_name));
   return it != registration_flags_.end() ? it->second : NO_REGISTRATION_FLAGS;
 }
 

@@ -8798,15 +8798,15 @@ const CSSValue* TextBoxEdge::CSSValueFromComputedStyleInternal(
     return CSSIdentifierValue::Create(text_box_edge.Over());
   }
   if (text_box_edge.Under() == ::blink::TextBoxEdge::Type::kText) {
-    using enum ::blink::TextBoxEdge::Type;
+    using Type = ::blink::TextBoxEdge::Type;
     switch (text_box_edge.Over()) {
-      case kCap:
-      case kEx:
+      case Type::kCap:
+      case Type::kEx:
         return CSSIdentifierValue::Create(text_box_edge.Over());
-      case kAlphabetic:
+      case Type::kAlphabetic:
         break;
-      case kAuto:
-      case kText:
+      case Type::kAuto:
+      case Type::kText:
         NOTREACHED();
     }
   }

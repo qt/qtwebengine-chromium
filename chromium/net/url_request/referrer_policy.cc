@@ -15,7 +15,6 @@ namespace net {
 
 std::optional<ReferrerPolicy> ReferrerPolicyFromHeader(
     std::string_view referrer_policy_header_value) {
-  using enum ReferrerPolicy;
   const auto policy_tokens =
       base::SplitStringPiece(referrer_policy_header_value, ",",
                              base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
@@ -24,17 +23,18 @@ std::optional<ReferrerPolicy> ReferrerPolicyFromHeader(
   // to keep this sorted.
   static constexpr auto kTokenToReferrerPolicy =
       base::MakeFixedFlatMap<std::string_view, ReferrerPolicy>(
-          {{"no-referrer", NO_REFERRER},
+          {{"no-referrer", ReferrerPolicy::NO_REFERRER},
            {"no-referrer-when-downgrade",
-            CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE},
-           {"origin", ORIGIN},
-           {"origin-when-cross-origin", ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN},
-           {"same-origin", CLEAR_ON_TRANSITION_CROSS_ORIGIN},
+            ReferrerPolicy::CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE},
+           {"origin", ReferrerPolicy::ORIGIN},
+           {"origin-when-cross-origin",
+            ReferrerPolicy::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN},
+           {"same-origin", ReferrerPolicy::CLEAR_ON_TRANSITION_CROSS_ORIGIN},
            {"strict-origin",
-            ORIGIN_CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE},
+            ReferrerPolicy::ORIGIN_CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE},
            {"strict-origin-when-cross-origin",
-            REDUCE_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN},
-           {"unsafe-url", NEVER_CLEAR}});
+            ReferrerPolicy::REDUCE_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN},
+           {"unsafe-url", ReferrerPolicy::NEVER_CLEAR}});
 
   // Per https://w3c.github.io/webappsec-referrer-policy/#unknown-policy-values,
   // use the last recognized policy value, and ignore unknown policies.

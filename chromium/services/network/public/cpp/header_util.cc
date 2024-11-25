@@ -107,38 +107,37 @@ bool AreRequestHeadersSafe(const net::HttpRequestHeaders& request_headers) {
 
 mojom::ReferrerPolicy ParseReferrerPolicy(
     const net::HttpResponseHeaders& response_headers) {
-  using enum net::ReferrerPolicy;
-  using enum mojom::ReferrerPolicy;
   std::string referrer_policy_header;
   if (!response_headers.GetNormalizedHeader("Referrer-Policy",
                                             &referrer_policy_header)) {
-    return kDefault;
+    return mojom::ReferrerPolicy::kDefault;
   }
 
   std::optional<net::ReferrerPolicy> net_policy =
       net::ReferrerPolicyFromHeader(referrer_policy_header);
 
   if (!net_policy) {
-    return kDefault;
+    return mojom::ReferrerPolicy::kDefault;
   }
 
   switch (net_policy.value()) {
-    case NO_REFERRER:
-      return kNever;
-    case CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
-      return kNoReferrerWhenDowngrade;
-    case ORIGIN:
-      return kOrigin;
-    case ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN:
-      return kOriginWhenCrossOrigin;
-    case CLEAR_ON_TRANSITION_CROSS_ORIGIN:
-      return kSameOrigin;
-    case ORIGIN_CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
-      return kStrictOrigin;
-    case REDUCE_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN:
-      return kStrictOriginWhenCrossOrigin;
-    case NEVER_CLEAR:
-      return kAlways;
+    case net::ReferrerPolicy::NO_REFERRER:
+      return mojom::ReferrerPolicy::kNever;
+    case net::ReferrerPolicy::CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
+      return mojom::ReferrerPolicy::kNoReferrerWhenDowngrade;
+    case net::ReferrerPolicy::ORIGIN:
+      return mojom::ReferrerPolicy::kOrigin;
+    case net::ReferrerPolicy::ORIGIN_ONLY_ON_TRANSITION_CROSS_ORIGIN:
+      return mojom::ReferrerPolicy::kOriginWhenCrossOrigin;
+    case net::ReferrerPolicy::CLEAR_ON_TRANSITION_CROSS_ORIGIN:
+      return mojom::ReferrerPolicy::kSameOrigin;
+    case net::ReferrerPolicy::
+        ORIGIN_CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE:
+      return mojom::ReferrerPolicy::kStrictOrigin;
+    case net::ReferrerPolicy::REDUCE_GRANULARITY_ON_TRANSITION_CROSS_ORIGIN:
+      return mojom::ReferrerPolicy::kStrictOriginWhenCrossOrigin;
+    case net::ReferrerPolicy::NEVER_CLEAR:
+      return mojom::ReferrerPolicy::kAlways;
   }
 
   NOTREACHED();

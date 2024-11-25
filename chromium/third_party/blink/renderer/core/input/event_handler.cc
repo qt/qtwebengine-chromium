@@ -1805,7 +1805,9 @@ bool EventHandler::BestNodeForHitTestResult(
         (location.BoundingBox().Bottom() == LayoutUnit::Max() &&
          location.Point().top == LayoutUnit::Max()));
 
-  HeapVector<Member<Node>, 11> nodes(result.ListBasedTestResult());
+  HeapVector<Member<Node>, 11> nodes;
+  for (auto &node: result.ListBasedTestResult())
+    nodes.push_back(node);
 
   return FindBestTouchAdjustmentCandidate(candidate_type, adjusted_node,
                                           adjusted_point, touch_hotspot,

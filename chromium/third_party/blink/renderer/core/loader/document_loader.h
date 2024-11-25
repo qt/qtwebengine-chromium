@@ -741,7 +741,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   // Either |data_buffer_| or |decoded_data_buffer_| will be used depending on
   // whether BodyDataReceived() or DecodedBodyDataReceived() is called.
   scoped_refptr<SharedBuffer> data_buffer_;
-  Vector<DecodedBodyData> decoded_data_buffer_;
+  std::unique_ptr<Vector<DecodedBodyData>> decoded_data_buffer_;
 
   const base::UnguessableToken devtools_navigation_token_;
 

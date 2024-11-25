@@ -277,12 +277,13 @@ bool IsMonthInput(const WebInputElement& element) {
 }
 
 bool IsCheckableElement(const WebFormControlElement& element) {
-  using enum blink::mojom::FormControlType;
+  using FCT = blink::mojom::FormControlType;
   // We intentionally use `FormControlType()` instead of
   // `FormControlTypeForAutofill()` because the existing callers do not care if
   // the field has ever been a password field before.
-  return element && (element.FormControlType() == kInputCheckbox ||  // nocheck
-                     element.FormControlType() == kInputRadio);      // nocheck
+  return element &&
+         (element.FormControlType() == FCT::kInputCheckbox ||  // nocheck
+          element.FormControlType() == FCT::kInputRadio);      // nocheck
 }
 
 bool IsCheckableElement(const WebElement& element) {
