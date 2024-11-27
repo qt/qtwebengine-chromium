@@ -430,14 +430,15 @@ BASE_FEATURE(kUsePoolOffsetFreelists,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if PA_BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kPartitionAllocMakeFreeNoOpOnShutdown,
              "PartitionAllocMakeFreeNoOpOnShutdown",
-#if PA_BUILDFLAG(IS_CHROMEOS)
-             FEATURE_ENABLED_BY_DEFAULT
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPartitionAllocMakeFreeNoOpOnShutdown,
+             "PartitionAllocMakeFreeNoOpOnShutdown",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 constexpr FeatureParam<WhenFreeBecomesNoOp>::Option
     kPartitionAllocMakeFreeNoOpOnShutdownOptions[] = {
@@ -484,11 +485,13 @@ void MakeFreeNoOp(WhenFreeBecomesNoOp callsite) {
 #endif  // PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
 }
 
+#if BUILDFLAG(IS_MAC)
 BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
              "PartitionAllocAdjustSizeWhenInForeground",
-#if BUILDFLAG(IS_MAC)
              FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kPartitionAllocAdjustSizeWhenInForeground,
+             "PartitionAllocAdjustSizeWhenInForeground",
              FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

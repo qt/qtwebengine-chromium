@@ -48,11 +48,13 @@ BASE_FEATURE(kAutofillEnableCardBenefitsForCapitalOne,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableCardBenefitsSync,
              "AutofillEnableCardBenefitsSync",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableCardBenefitsSync,
+             "AutofillEnableCardBenefitsSync",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -150,21 +152,25 @@ BASE_FEATURE(kAutofillEnablePrefetchingRiskDataForRetrieval,
 // When enabled, the save card screen will present a loading spinner when
 // uploading the card to the server and present a confirmation screen with the
 // result when completed.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableSaveCardLoadingAndConfirmation,
              "AutofillEnableSaveCardLoadingAndConfirmation",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableSaveCardLoadingAndConfirmation,
+             "AutofillEnableSaveCardLoadingAndConfirmation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
 // When enabled, save card will fallback to a local save if the server upload of
 // a card encounters a failure.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableSaveCardLocalSaveFallback,
              "AutofillEnableSaveCardLocalSaveFallback",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableSaveCardLocalSaveFallback,
+             "AutofillEnableSaveCardLocalSaveFallback",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -192,11 +198,13 @@ BASE_FEATURE(kAutofillEnableVcn3dsAuthentication,
 // When enabled, the vcn enroll screen will present a loading spinner while
 // enrolling the card to the server and present a confirmation screen with the
 // result when completed.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableVcnEnrollLoadingAndConfirmation,
              "AutofillEnableVcnEnrollLoadingAndConfirmation",
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableVcnEnrollLoadingAndConfirmation,
+             "AutofillEnableVcnEnrollLoadingAndConfirmation",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 
@@ -219,11 +227,13 @@ BASE_FEATURE(kAutofillEnableVerveCardSupport,
 
 // When enabled, Chrome will show metadata along with other card information
 // when the virtual card is presented to users.
+#if BUILDFLAG(IS_IOS)
 BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
              "AutofillEnableVirtualCardMetadata",
-#if BUILDFLAG(IS_IOS)
              base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAutofillEnableVirtualCardMetadata,
+             "AutofillEnableVirtualCardMetadata",
              base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
 

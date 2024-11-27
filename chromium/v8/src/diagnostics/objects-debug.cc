@@ -2459,15 +2459,22 @@ void WasmExportedFunctionData::WasmExportedFunctionDataVerify(
     Isolate* isolate) {
   TorqueGeneratedClassVerifiers::WasmExportedFunctionDataVerify(*this, isolate);
   Tagged<Code> wrapper = wrapper_code(isolate);
+#if V8_ENABLE_DRUMBRAKE
   CHECK(
       wrapper->kind() == CodeKind::JS_TO_WASM_FUNCTION ||
       wrapper->kind() == CodeKind::C_WASM_ENTRY ||
       (wrapper->is_builtin() &&
        (wrapper->builtin_id() == Builtin::kJSToWasmWrapper ||
-#if V8_ENABLE_DRUMBRAKE
         wrapper->builtin_id() == Builtin::kGenericJSToWasmInterpreterWrapper ||
-#endif  // V8_ENABLE_DRUMBRAKE
         wrapper->builtin_id() == Builtin::kWasmPromising)));
+#else
+  CHECK(
+      wrapper->kind() == CodeKind::JS_TO_WASM_FUNCTION ||
+      wrapper->kind() == CodeKind::C_WASM_ENTRY ||
+      (wrapper->is_builtin() &&
+       (wrapper->builtin_id() == Builtin::kJSToWasmWrapper ||
+        wrapper->builtin_id() == Builtin::kWasmPromising)));
+#endif  // V8_ENABLE_DRUMBRAKE
 }
 
 #endif  // V8_ENABLE_WEBASSEMBLY

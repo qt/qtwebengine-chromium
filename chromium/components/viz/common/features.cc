@@ -258,11 +258,13 @@ const base::FeatureParam<int> kNumPendingFrames{&kVSyncAlignedPresent,
                                                 "PendingFrames", 2};
 #endif
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_LACROS)
 BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
              "AllowUndamagedNonrootRenderPassToSkip",
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_LACROS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip,
+             "AllowUndamagedNonrootRenderPassToSkip",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

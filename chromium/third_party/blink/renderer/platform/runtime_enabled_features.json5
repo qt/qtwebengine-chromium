@@ -811,10 +811,7 @@
     },
     {
       name: "ComputePressure",
-      status: {
-        "Android": "",
-        "default": "stable",
-      }
+      status: "stable",
     },
     {
       name: "ConcurrentViewTransitionsSPA",
@@ -1534,19 +1531,13 @@
     // re-using the previous pip window bounds.
     {
       name: "DocumentPictureInPicturePreferInitialPlacement",
-      status: {
-        "Android": "",
-        "default": "stable",
-      },
+      status: "stable",
     },
     // Enables propagating user activation from a document picture-in-picture
     // window up to its opener window and vice versa.
     {
       name: "DocumentPictureInPictureUserActivation",
-      status: {
-        "Android": "",
-        "default": "stable",
-      },
+      status: "stable",
     },
     // Enables the ability to use Document Policy header to control feature
     // DocumentDomain.
@@ -2315,7 +2306,7 @@
        // When enabled, every traversable mainframe same-doc navigation will
        // increment the `viz::LocalSurfaceId` from the impl thread.
       name: "IncrementLocalSurfaceIdForMainframeSameDocNavigation",
-      status: {"Android": "stable"},
+      status: "test",
     },
     {
       name: "InertElementNonEditable",

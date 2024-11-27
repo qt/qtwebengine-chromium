@@ -34,14 +34,17 @@ namespace blink {
 
 namespace {
 
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
              "UseCopyToGpuMemoryBufferAsync",
-#if BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif
 );
+#else
+BASE_FEATURE(kUseCopyToGpuMemoryBufferAsync,
+             "UseCopyToGpuMemoryBufferAsync",
+             base::FEATURE_DISABLED_BY_DEFAULT
+);
+#endif
 
 class Context : public media::RenderableGpuMemoryBufferVideoFramePool::Context {
  public:

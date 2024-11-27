@@ -1548,14 +1548,15 @@ BASE_FEATURE(kLowLatencyCanvas2dImageChromium,
 // Allow low latency WebGL to be in overlay (generally meaning scanned out
 // directly to display), even if regular canvas are not in overlay
 // (WebGLImageChromium is disabled).
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kLowLatencyWebGLImageChromium,
              "LowLatencyWebGLImageChromium",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kLowLatencyWebGLImageChromium,
+             "LowLatencyWebGLImageChromium",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 BASE_FEATURE(kLowPriorityAsyncScriptExecution,
              "LowPriorityAsyncScriptExecution",
@@ -1725,8 +1726,18 @@ BASE_FEATURE_PARAM(int,
 // anchor element will be extracted and recorded.
 // Note that the desktop roll out is being done separately from android. See
 // https://crbug.com/40258405
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kNavigationPredictor,
              "NavigationPredictor",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kNavigationPredictor,
+             "NavigationPredictor",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
+
+BASE_FEATURE(kNewBaseUrlInheritanceBehavior,
+             "NewBaseUrlInheritanceBehavior",
              base::FEATURE_ENABLED_BY_DEFAULT);
 const base::FeatureParam<int> kPredictorTrafficClientEnabledPercent{
     &kNavigationPredictor, "traffic_client_enabled_percent",
@@ -1862,8 +1873,8 @@ BASE_FEATURE(kPrefetchFontLookupTables,
 BASE_FEATURE(kPrefetchFontLookupTables,
              "PrefetchFontLookupTables",
              base::FEATURE_ENABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_WIN)
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID)
+#endif
+#endif
 
 // Prefetch request properties are updated to be privacy-preserving. See
 // crbug.com/988956.

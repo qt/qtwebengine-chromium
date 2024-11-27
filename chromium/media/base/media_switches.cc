@@ -1147,14 +1147,15 @@ BASE_FEATURE(kAVDColorSpaceChanges,
 
 // Whether FFmpeg supports decoding H.264 video in software. Has no effect if
 // BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS) is false.
+#if BUILDFLAG(IS_ANDROID) || !BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
 BASE_FEATURE(kBuiltInH264Decoder,
              "BuiltInH264Decoder",
-#if BUILDFLAG(IS_ANDROID) || !BUILDFLAG(ENABLE_FFMPEG_VIDEO_DECODERS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kBuiltInH264Decoder,
+             "BuiltInH264Decoder",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 #if BUILDFLAG(IS_ANDROID)
 // Should we allow video playback to use an overlay if it's not needed for
@@ -1441,14 +1442,15 @@ const base::FeatureParam<int> kBatchReadCount{&kMediaFoundationBatchRead,
 // When ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is enabled at build time, allow
 // the support of encrypted Dolby Vision. Have no effect when
 // ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is disabled.
+#if BUILDFLAG(IS_WIN)
 BASE_FEATURE(kPlatformEncryptedDolbyVision,
              "PlatformEncryptedDolbyVision",
-#if BUILDFLAG(IS_WIN)
-             base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kPlatformEncryptedDolbyVision,
+             "PlatformEncryptedDolbyVision",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // When ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION is enabled at build time and
 // `kPlatformEncryptedDolbyVision` is enabled at run time, encrypted Dolby

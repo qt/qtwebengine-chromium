@@ -542,11 +542,13 @@ BASE_FEATURE(kInstalledAppProvider,
 // IsolatedWebAppsPolicy::AreIsolatedWebAppsEnabled() in the browser process or
 // check kEnableIsolatedWebAppsInRenderer command line flag in the renderer
 // process.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kIsolatedWebApps,
              "IsolatedWebApps",
-#if BUILDFLAG(IS_CHROMEOS)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kIsolatedWebApps,
+             "IsolatedWebApps",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
@@ -1184,18 +1186,18 @@ BASE_FEATURE(kVerifyDidCommitParams,
 BASE_FEATURE(kV8VmFuture, "V8VmFuture", base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables per PWA System Media Controls. Only supported on Windows and macOS.
+#if BUILDFLAG(IS_WIN) ||  BUILDFLAG(IS_MAC)
 BASE_FEATURE(kWebAppSystemMediaControls,
              "WebAppSystemMediaControls",
-#if BUILDFLAG(IS_WIN)
              // Windows enabled since 124.
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#elif BUILDFLAG(IS_MAC)
              // macOS enabled in 130. If a kill switch is needed, it should be
              // safe to only disable the failing platform (ie. macOS here).
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // BUILDFLAG(IS_WIN)
+BASE_FEATURE(kWebAppSystemMediaControls,
+             "WebAppSystemMediaControls",
+              base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 
 // Enable WebAssembly baseline compilation (Liftoff).
 BASE_FEATURE(kWebAssemblyBaseline,

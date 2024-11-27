@@ -716,14 +716,15 @@ BASE_FEATURE(kAutofillLogDeduplicationMetricsFollowup,
 // When enabled, low-quality quasi duplicates of rank one are silently removed
 // during the once-per-milestone deduplication routine.
 // TODO(crbug.com/325450676): Remove when launched.
+#if BUILDFLAG(IS_CHROMEOS)
 BASE_FEATURE(kAutofillSilentlyRemoveQuasiDuplicates,
              "AutofillSilentlyRemoveQuasiDuplicates",
-#if BUILDFLAG(IS_CHROMEOS)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kAutofillSilentlyRemoveQuasiDuplicates,
+             "AutofillSilentlyRemoveQuasiDuplicates",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Currently, the importing logic offers new profile creation if the observed
 // profile is non-mergeable with any existing profile. With this feature, low-
