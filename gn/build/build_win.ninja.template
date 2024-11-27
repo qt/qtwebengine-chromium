@@ -8,5 +8,5 @@ rule alink_thin
   description = LIB $out
 
 rule link
-  command = $ld /nologo $ldflags /OUT:$out /PDB:$out.pdb $in $solibs $libs
+  command = $ld /nologo $in /link $ldflags /PDB:$out.pdb /OUT:$out $solibs $libs
   description = LINK $out
