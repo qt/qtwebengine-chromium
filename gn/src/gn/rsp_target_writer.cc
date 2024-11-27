@@ -132,9 +132,9 @@ void RspTargetWriter::Run() {
             tool_outputs[0].AsSourceFile(settings->build_settings()));
       }
       if (target_->config_values().has_precompiled_headers()) {
-        const CTool* tool =
+        const CTool* tool_cxx =
             target_->toolchain()->GetTool(CTool::kCToolCxx)->AsC();
-        if (tool && tool->precompiled_header_type() == CTool::PCH_MSVC) {
+        if (tool_cxx && tool_cxx->precompiled_header_type() == CTool::PCH_MSVC) {
           GetPCHOutputFiles(target_, CTool::kCToolCxx, &tool_outputs);
           if (!tool_outputs.empty())
             object_files.push_back(
