@@ -55,6 +55,8 @@ def rollup(input_path, output_path, filename, max_size, rollup_plugin):
             ['--plugin', rollup_plugin],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            universal_newlines=True,
+            encoding='utf-8',
             text=True)
 
     out, error = rollup_process.communicate()

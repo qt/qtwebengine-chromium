@@ -142,7 +142,11 @@ except ImportError:
         import dummy_thread as thread  # noqa
 
 if win32 or jython:
-    time_func = time.clock
+    if py33:
+        import timeit
+        time_func = timeit.default_timer
+    else:
+        time_func = time.clock
 else:
     time_func = time.time
 

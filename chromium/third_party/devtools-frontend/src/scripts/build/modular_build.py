@@ -12,6 +12,7 @@ from __future__ import print_function
 import collections
 from os import path
 import os
+import sys
 
 try:
     import simplejson as json
@@ -20,9 +21,12 @@ except ImportError:
 
 
 def read_file(filename):
-    with open(path.normpath(filename), 'rt') as input:
-        return input.read()
-
+    if sys.version_info[0] < 3:
+        with open(path.normpath(filename), 'rt') as input:
+            return input.read()
+    else:
+        with open(path.normpath(filename), 'rt', encoding = 'utf-8') as input:
+            return input.read()
 
 def write_file(filename, content):
     if path.exists(filename):
@@ -30,9 +34,12 @@ def write_file(filename, content):
     directory = path.dirname(filename)
     if not path.exists(directory):
         os.makedirs(directory)
-    with open(filename, 'wt') as output:
-        output.write(content)
-
+    if sys.version_info[0] < 3:
+        with open(filename, 'wt') as output:
+            output.write(content)
+    else:
+        with open(filename, 'wt', encoding = 'utf-8') as output:
+            output.write(content)
 
 def bail_error(message):
     raise Exception(message)
