@@ -4176,6 +4176,11 @@
       depends_on: ["ScrollTimeline"]
     },
     {
+      // crbug.com/379254069
+      name: "TextTransformAndSecurityFix",
+      status: "stable",
+    },
+    {
       name: "TimerThrottlingForBackgroundTabs",
       public: true,
       status: "stable",
