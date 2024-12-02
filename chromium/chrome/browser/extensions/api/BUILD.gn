@@ -113,6 +113,10 @@ function_registration("api_registration") {
     "//ui/accessibility:ax_enums_mojo",
   ]
 
+  if (is_qtwebengine) {
+     deps += [ "//qtwebengine/common:mojo_bindings" ]
+  }
+
   # TODO: We should pull these out into a separate build and function generation
   # step so that //chrome/browser/extensions has fewer dependencies on
   # //chrome/browser/chromeos.
