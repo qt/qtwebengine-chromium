@@ -39,7 +39,7 @@ buildflag_header("buildflags") {
   ]
 }
 
-component("gl_enums") {
+jumbo_component("gl_enums") {
   sources = [
     "gl_enums.cc",
     "gl_enums.h",
@@ -191,10 +191,6 @@ jumbo_component("gl") {
     sources += [
       "gl_angle_util_vulkan.cc",
       "gl_angle_util_vulkan.h",
-    ]
-
-    jumbo_excluded_sources += [
-      "gl_angle_util_vulkan.cc",
     ]
   }
 

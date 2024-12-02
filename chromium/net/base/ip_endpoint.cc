@@ -37,7 +37,7 @@ namespace {
 
 // Value dictionary keys
 constexpr std::string_view kValueAddressKey = "address";
-constexpr std::string_view kValuePortKey = "port";
+constexpr std::string_view kValuePortKeyIE = "port";
 
 }  // namespace
 
@@ -56,7 +56,7 @@ std::optional<IPEndPoint> IPEndPoint::FromValue(const base::Value& value) {
   // Expect IPAddress to only allow deserializing valid addresses.
   DCHECK(address.value().IsValid());
 
-  std::optional<int> port = dict->FindInt(kValuePortKey);
+  std::optional<int> port = dict->FindInt(kValuePortKeyIE);
   if (!port.has_value() ||
       !base::IsValueInRangeForNumericType<uint16_t>(port.value())) {
     return std::nullopt;
@@ -226,7 +226,7 @@ base::Value IPEndPoint::ToValue() const {
 
   DCHECK(address_.IsValid());
   dict.Set(kValueAddressKey, address_.ToValue());
-  dict.Set(kValuePortKey, port_);
+  dict.Set(kValuePortKeyIE, port_);
 
   return base::Value(std::move(dict));
 }

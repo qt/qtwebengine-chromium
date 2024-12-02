@@ -39,8 +39,8 @@ constexpr char kTableName[] = "dictionaries";
 // metadata because calculating the total size is an expensive operation.
 constexpr char kTotalDictSizeKey[] = "total_dict_size";
 
-const int kCurrentVersionNumber = 3;
-const int kCompatibleVersionNumber = 3;
+const int kCurrentVersionNumberSPSDS = 3;
+const int kCompatibleVersionNumberSPSDS = 3;
 
 bool CreateV3Schema(sql::Database* db, sql::MetaTable* meta_table) {
   CHECK(!db->DoesTableExist(kTableName));
@@ -220,8 +220,8 @@ class SQLitePersistentSharedDictionaryStore::Backend
       const scoped_refptr<base::SequencedTaskRunner>& background_task_runner)
       : SQLitePersistentStoreBackendBase(path,
                                          kHistogramTag,
-                                         kCurrentVersionNumber,
-                                         kCompatibleVersionNumber,
+                                         kCurrentVersionNumberSPSDS,
+                                         kCompatibleVersionNumberSPSDS,
                                          background_task_runner,
                                          client_task_runner,
                                          /*enable_exclusive_access=*/false) {}
@@ -422,7 +422,7 @@ SQLitePersistentSharedDictionaryStore::Backend::DoMigrateDatabaseSchema() {
     cur_version = 3;
     if (!meta_table()->SetVersionNumber(cur_version) ||
         !meta_table()->SetCompatibleVersionNumber(
-            std::min(cur_version, kCompatibleVersionNumber)) ||
+            std::min(cur_version, kCompatibleVersionNumberSPSDS)) ||
         !transaction.Commit()) {
       return std::nullopt;
     }

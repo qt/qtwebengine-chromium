@@ -877,7 +877,7 @@ if (enable_extensions) {
   # //extensions/browser module. Note that, unlike the production build targets
   # above, this is a monolithic target that includes all tests for both the core
   # system and relevant APIs.
-  source_set("browser_tests") {
+  jumbo_source_set("browser_tests") {
     testonly = true
     sources = [
       # TODO(michaelpg): bluetooth_appshell_test.cc is a crutch until we have a

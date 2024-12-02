@@ -400,7 +400,7 @@ template("v8_executable") {
 }
 
 template("v8_component") {
-  component(target_name) {
+  jumbo_component(target_name) {
     output_name = target_name
     forward_variables_from(invoker,
                            "*",
@@ -437,7 +437,7 @@ template("v8_shared_library") {
 }
 
 template("v8_static_library") {
-  static_library(target_name) {
+  jumbo_static_library(target_name) {
     complete_static_lib = true
     forward_variables_from(invoker, "*", [ "configs" ])
     configs -= v8_remove_configs

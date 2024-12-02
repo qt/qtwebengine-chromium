@@ -366,7 +366,7 @@ jumbo_component("first_party_sets_mojom_support") {
 
 # This component is separate from cpp_base as it is a dependency of
 # //services/network/public/mojom:cookies_mojom.
-component("storage_access_api_mojom_support") {
+jumbo_component("storage_access_api_mojom_support") {
   sources = [
     "storage_access_api_mojom_traits.cc",
     "storage_access_api_mojom_traits.h",

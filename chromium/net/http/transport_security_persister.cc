@@ -104,7 +104,7 @@ const char kMode[] = "mode";
 const char kForceHTTPS[] = "force-https";
 const char kDefault[] = "default";
 
-std::string LoadState(const base::FilePath& path) {
+std::string LoadStateTSP(const base::FilePath& path) {
   std::string result;
   if (!base::ReadFileToString(path, &result)) {
     return "";
@@ -217,7 +217,7 @@ TransportSecurityPersister::TransportSecurityPersister(
   transport_security_state_->SetDelegate(this);
 
   background_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&LoadState, writer_.path()),
+      FROM_HERE, base::BindOnce(&LoadStateTSP, writer_.path()),
       base::BindOnce(&TransportSecurityPersister::CompleteLoad,
                      weak_ptr_factory_.GetWeakPtr()));
 }

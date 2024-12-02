@@ -34,7 +34,7 @@ struct AlternativeService;
 
 namespace {
 
-bool ValidateStatus(const HttpResponseHeaders* headers) {
+bool ValidateStatusWH3HS(const HttpResponseHeaders* headers) {
   return headers->GetStatusLine() == "HTTP/1.1 200";
 }
 
@@ -359,7 +359,7 @@ int WebSocketHttp3HandshakeStream::ValidateUpgradeResponse(
     const HttpResponseHeaders* headers) {
   extension_params_ = std::make_unique<WebSocketExtensionParams>();
   std::string failure_message;
-  if (!ValidateStatus(headers)) {
+  if (!ValidateStatusWH3HS(headers)) {
     result_ = HandshakeResult::HTTP3_INVALID_STATUS;
   } else if (!ValidateSubProtocol(headers, requested_sub_protocols_,
                                   &sub_protocol_, &failure_message)) {
