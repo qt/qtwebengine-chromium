@@ -25,7 +25,9 @@
 #include "gpu/command_buffer/service/dxgi_shared_handle_manager.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
+#if BUILDFLAG(USE_DAWN)
 #include "gpu/command_buffer/service/shared_image/dawn_shared_texture_holder.h"
+#endif
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
@@ -127,7 +129,6 @@ class GPU_GLES2_EXPORT D3DImageBacking final
                                 wgpu::TextureUsage internal_usage,
                                 std::vector<wgpu::TextureFormat> view_formats);
   void EndAccessDawn(const wgpu::Device& device, wgpu::Texture texture);
-#endif
 
   std::unique_ptr<DawnBufferRepresentation> ProduceDawnBuffer(
       SharedImageManager* manager,
@@ -138,6 +139,7 @@ class GPU_GLES2_EXPORT D3DImageBacking final
                                      wgpu::BackendType backend_type,
                                      wgpu::BufferUsage usage);
   void EndAccessDawnBuffer(const wgpu::Device& device, wgpu::Buffer buffer);
+#endif
 
   std::optional<gl::DCLayerOverlayImage> GetDCLayerOverlayImage();
 
@@ -296,12 +298,11 @@ class GPU_GLES2_EXPORT D3DImageBacking final
       const wgpu::Device& wait_dawn_device,
       bool write_access) EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
-#if BUILDFLAG(USE_DAWN)
   // Uses either DXGISharedHandleState or internal |dawn_shared_texture_holder_|
   // depending on whether the texture has a shared handle or not.
+#if BUILDFLAG(USE_DAWN)
   wgpu::SharedTextureMemory GetSharedTextureMemory(const wgpu::Device& device)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
-#endif
 
   // Returns the number of ongoing accesses that were already present on this
   // texture prior to beginning this access.
@@ -312,6 +313,7 @@ class GPU_GLES2_EXPORT D3DImageBacking final
   // texture after ending this access.
   int TrackEndAccessToWGPUTexture(wgpu::Texture texture)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+#endif
 
   // Texture could be nullptr if an empty backing is needed for testing.
   const Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture_;
@@ -391,8 +393,9 @@ class GPU_GLES2_EXPORT D3DImageBacking final
   // DawnSharedTextureHolder that keeps an internal cache of per-device
   // SharedTextureData that vends WebGPU textures for the underlying d3d
   // texture. Only used if the backing doesn't have a shared handle.
+#if BUILDFLAG(USE_DAWN)
   DawnSharedTextureHolder dawn_shared_texture_holder_ GUARDED_BY(lock_);
-
+#endif
   // Dawn SharedBufferMemory will exist when backing is being used for buffer
   // interop.
   wgpu::SharedBufferMemory dawn_shared_buffer_memory_ GUARDED_BY(lock_);

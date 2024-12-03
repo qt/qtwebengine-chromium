@@ -751,6 +751,7 @@ D3DImageBacking::GetPendingWaitFences(
   return wait_fences;
 }
 
+#if BUILDFLAG(USE_DAWN)
 int D3DImageBacking::TrackBeginAccessToWGPUTexture(wgpu::Texture texture) {
   return wgpu_texture_ongoing_accesses_[texture.Get()]++;
 }
@@ -771,7 +772,6 @@ int D3DImageBacking::TrackEndAccessToWGPUTexture(wgpu::Texture texture) {
   return num_outstanding_accesses;
 }
 
-#if BUILDFLAG(USE_DAWN)
 wgpu::Texture D3DImageBacking::BeginAccessDawn(
     const wgpu::Device& device,
     wgpu::BackendType backend_type,
@@ -1033,6 +1033,7 @@ void D3DImageBacking::EndAccessD3D11(
   EndAccessCommon(signaled_fence);
 }
 
+#if BUILDFLAG(USE_DAWN)
 std::unique_ptr<DawnBufferRepresentation> D3DImageBacking::ProduceDawnBuffer(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker,
@@ -1157,6 +1158,7 @@ void D3DImageBacking::EndAccessDawnBuffer(const wgpu::Device& device,
 
   EndAccessCommon(signaled_fences);
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 bool D3DImageBacking::ValidateBeginAccess(bool write_access) const {
   if (in_write_access_) {

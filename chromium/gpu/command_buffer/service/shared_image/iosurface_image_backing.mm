@@ -720,6 +720,7 @@ bool IOSurfaceImageBacking::OverlayRepresentation::IsInUseByWindowServer()
   return IOSurfaceIsInUse(io_surface_.get());
 }
 
+#if BUILDFLAG(USE_DAWN)
 ///////////////////////////////////////////////////////////////////////////////
 // DawnRepresentation
 
@@ -1013,7 +1014,9 @@ IOSurfaceImageBacking::IOSurfaceImageBacking(
                        IOSurfaceGetHeight(io_surface_.get())),
       io_surface_format_(IOSurfaceGetPixelFormat(io_surface_.get())),
       io_surface_id_(io_surface_id),
+#if BUILDFLAG(USE_DAWN)
       dawn_texture_holder_(std::make_unique<DawnSharedTextureHolder>()),
+#endif
       gl_target_(gl_target),
       framebuffer_attachment_angle_(framebuffer_attachment_angle),
       cleared_rect_(is_cleared ? gfx::Rect(size) : gfx::Rect()),

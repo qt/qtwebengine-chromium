@@ -103,7 +103,6 @@ void DawnD3DImageRepresentation::EndAccess() {
 
   texture_ = nullptr;
 }
-#endif  // BUILDFLAG(USE_DAWN)
 
 // Enabling this functionality reduces overhead in the compositor by lowering
 // the frequency of begin/end access pairs. The semantic constraints for a
@@ -167,6 +166,7 @@ void DawnD3DBufferRepresentation::EndAccess() {
   // with other backings).
   buffer_ = nullptr;
 }
+#endif  // BUILDFLAG(USE_DAWN)
 
 OverlayD3DImageRepresentation::OverlayD3DImageRepresentation(
     SharedImageManager* manager,

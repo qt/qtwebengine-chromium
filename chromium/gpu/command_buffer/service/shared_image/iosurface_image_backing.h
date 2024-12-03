@@ -219,6 +219,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   const uint32_t io_surface_format_;
   const gfx::GenericSharedMemoryId io_surface_id_;
 
+#if BUILDFLAG(USE_DAWN)
   // DawnSharedTextureHolder that keeps an internal cache of per-device
   // SharedTextureData that vends WebGPU textures for the underlying IOSurface.
   std::unique_ptr<DawnSharedTextureHolder> dawn_texture_holder_;
@@ -245,6 +246,7 @@ class GPU_GLES2_EXPORT IOSurfaceImageBacking
   // Returns the number of ongoing accesses that will still be present on this
   // texture after ending this access.
   int TrackEndAccessToWGPUTexture(wgpu::Texture texture);
+#endif  // BUILDFLAG(USE_DAWN)
 
   const GLenum gl_target_;
   const bool framebuffer_attachment_angle_;
