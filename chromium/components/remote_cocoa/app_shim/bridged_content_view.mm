@@ -15,7 +15,7 @@
 #import "components/remote_cocoa/app_shim/native_widget_ns_window_bridge.h"
 #include "components/remote_cocoa/app_shim/native_widget_ns_window_host_helper.h"
 #include "components/remote_cocoa/common/native_widget_ns_window_host.mojom.h"
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 #include "ui/base/clipboard/clipboard_constants.h"
 #endif
 #import "ui/base/cocoa/appkit_utils.h"
@@ -123,15 +123,17 @@ ui::TextEditCommand GetTextEditCommandForMenuAction(SEL action) {
   return ui::TextEditCommand::INVALID_COMMAND;
 }
 
-#if defined(TOOLKIT_QT)
+#if BUILDFLAG(IS_QTWEBENGINE)
 // Copy of ui::OSExchangeDataProviderMac::SupportedPasteboardTypes() (ui/base/dragdrop/os_exchange_data_provider_mac.mm)
 NSArray* SupportedPasteboardTypes() {
   return @[
-    ui::kUTTypeChromiumInitiatedDrag, ui::kUTTypeChromiumPrivilegedInitiatedDrag,
-    ui::kUTTypeChromiumRendererInitiatedDrag, ui::kUTTypeChromiumWebCustomData,
-    ui::kUTTypeWebKitWebURLsWithTitles, NSPasteboardTypeFileURL,
-    NSPasteboardTypeHTML, NSPasteboardTypeRTF, NSPasteboardTypeString,
-    NSPasteboardTypeURL
+    ui::kUTTypeChromiumInitiatedDrag,
+    ui::kUTTypeChromiumPrivilegedInitiatedDrag,
+    ui::kUTTypeChromiumRendererInitiatedDrag,
+    ui::kUTTypeChromiumDataTransferCustomData,
+    ui::kUTTypeWebKitWebURLsWithTitles, ui::kUTTypeChromiumSourceURL,
+    NSPasteboardTypeFileURL, NSPasteboardTypeHTML, NSPasteboardTypeRTF,
+    NSPasteboardTypeString, NSPasteboardTypeURL
   ];
 }
 #endif
@@ -234,7 +236,7 @@ NSArray* SupportedPasteboardTypes() {
     // Initialize the focus manager with the correct keyboard accessibility
     // setting.
     [self updateFullKeyboardAccess];
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
     [self registerForDraggedTypes:ui::OSExchangeDataProviderMac::
                                       SupportedPasteboardTypes()];
 #else
