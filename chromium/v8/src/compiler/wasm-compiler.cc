@@ -8579,7 +8579,7 @@ wasm::WasmCompilationResult CompileWasmMathIntrinsic(
   SourcePositionTable* source_positions = nullptr;
   MachineGraph* mcgraph = CreateCommonMachineGraph(&zone);
 
-  wasm::CompilationEnv env = wasm::CompilationEnv::NoModuleAllFeatures();
+  wasm::CompilationEnv env(wasm::CompilationEnv::NoModuleAllFeatures());
 
   WasmGraphBuilder builder(&env, mcgraph->zone(), mcgraph, sig,
                            source_positions,

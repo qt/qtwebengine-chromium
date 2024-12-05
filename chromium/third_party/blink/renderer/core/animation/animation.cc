@@ -98,7 +98,7 @@ namespace {
       bool was_first_call = first_call;                                       \
       first_call = false;                                                     \
       if (was_first_call) {                                                   \
-        VLOG(1) << __PRETTY_FUNCTION__                                        \
+        VLOG(1) << PRETTY_FUNCTION                                            \
                 << " called during style, layout or paint";                   \
         if (VLOG_IS_ON(2)) {                                                  \
           base::debug::StackTrace().Print();                                  \

@@ -54,4 +54,18 @@ concept AllowedOverSharedMemory = SharedMemorySafetyChecker<T>::kIsAllowed;
 
 }  // namespace base::subtle
 
+// This macro is used to compile bufffer class when it contains std::atomic
+// which is non-trivially-copyable class on msvc, we can at lest check if used
+// atomic is lock free
+#if defined(COMPILER_MSVC)
+#define SKIP_SAFETY_CHECK_FOR(X)                   \
+  namespace base::subtle {                         \
+  template <>                                      \
+  struct SharedMemorySafetyChecker<X> {            \
+    static constexpr bool kIsAllowed =             \
+        std::atomic<int32_t>::is_always_lock_free; \
+  };                                               \
+  }  // namespace base::subtle
+#endif  // defined(COMPILER_MSVC)
+
 #endif  // BASE_MEMORY_SHARED_MEMORY_SAFETY_CHECKER_H_

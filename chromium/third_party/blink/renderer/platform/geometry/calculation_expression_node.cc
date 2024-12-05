@@ -125,7 +125,7 @@ float CalculationExpressionSizingKeywordNode::Evaluate(
     return 0.0f;
   }
   CHECK(input.intrinsic_evaluator);
-  return (*input.intrinsic_evaluator)(Length(intrinsic_type));
+  return input.intrinsic_evaluator(Length(intrinsic_type));
 }
 
 // ------ CalculationExpressionColorChannelKeywordNode ------

@@ -203,7 +203,7 @@ CanvasAsyncBlobCreator::CanvasAsyncBlobCreator(
       // Sadly the compiler can't determine that automatically.
       constexpr int kMaxBytesPerPixel = 16;
       CHECK_LE(info.bytesPerPixel(), kMaxBytesPerPixel);
-      std::vector<uint8_t> pixel(kMaxBytesPerPixel);
+      uint8_t pixel[kMaxBytesPerPixel];
       skia_image_->readPixels(info, pixel, info.minRowBytes(), 0, 0);
     }
 

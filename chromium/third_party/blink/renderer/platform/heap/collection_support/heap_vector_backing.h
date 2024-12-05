@@ -60,10 +60,6 @@ class HeapVectorBacking final
     return reinterpret_cast<ClassType*>(payload);
   }
 
-  void operator delete(void* p) { delete
-                                  (WTF::ConditionalDestructor<HeapVectorBacking<T, Traits>,
-                                                              !Traits::kNeedsDestruction>*)p; }
-
   void Free(cppgc::HeapHandle& heap_handle) {
     cppgc::subtle::FreeUnreferencedObject(heap_handle, *this);
   }

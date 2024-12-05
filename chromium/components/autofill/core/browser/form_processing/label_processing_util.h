@@ -6,6 +6,7 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_FORM_PROCESSING_LABEL_PROCESSING_UTIL_H_
 
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 

@@ -5,6 +5,11 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_COMMON_IS_REQUIRED_H_
 #define COMPONENTS_AUTOFILL_CORE_COMMON_IS_REQUIRED_H_
 
+#if !defined(COMPILER_MSVC) &&  \
+    (!defined(__GNUC__) || (__GNUC__ >= 12))
+#define IS_REQUIRED_SUPPORTED 1
+#endif
+
 namespace autofill::internal {
 
 // Auxiliary type to mark members of a struct as required:

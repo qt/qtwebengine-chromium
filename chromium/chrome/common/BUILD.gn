@@ -84,7 +84,7 @@ source_set("channel_info") {
     "//components/version_info",
     "//components/version_info:version_string",
   ]
-  if (is_win) {
+  if (is_win && !is_qtwebengine) {
     sources += [ "channel_info_win.cc" ]
     public_deps += [ "//chrome/install_static:install_static_util" ]
   } else if (is_mac) {
@@ -97,7 +97,7 @@ source_set("channel_info") {
     deps += [ "//chromeos/ash/components/channel" ]
   } else if (is_chromeos_lacros) {
     sources += [ "channel_info_lacros.cc" ]
-  } else if (is_posix) {
+  } else if (is_posix || (is_win && is_qtwebengine)) {
     sources += [ "channel_info_posix.cc" ]
   }
 }

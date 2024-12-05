@@ -18,7 +18,7 @@ struct MEDIA_EXPORT SupportedAudioDecoderConfig {
   SupportedAudioDecoderConfig(AudioCodec codec, AudioCodecProfile profile);
   ~SupportedAudioDecoderConfig();
 
-  bool operator<=>(const SupportedAudioDecoderConfig& other) const = default;
+  auto operator<=>(const SupportedAudioDecoderConfig& other) const = default;
 
   AudioCodec codec;
   AudioCodecProfile profile;

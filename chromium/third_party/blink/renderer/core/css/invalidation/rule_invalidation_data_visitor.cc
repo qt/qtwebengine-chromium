@@ -1523,7 +1523,7 @@ void RuleInvalidationDataVisitor<VisitorType>::
     }
   }
 }
-
+#if !defined(COIN_WORKAROUND)
 template <RuleInvalidationDataVisitorType VisitorType>
 RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
 RuleInvalidationDataVisitor<VisitorType>::InvalidationSetForSimpleSelector(
@@ -1654,7 +1654,6 @@ RuleInvalidationDataVisitor<VisitorType>::EnsureClassInvalidationSet(
   return EnsureInvalidationSet(rule_invalidation_data_.class_invalidation_sets,
                                class_name, type, position, in_nth_child);
 }
-
 template <RuleInvalidationDataVisitorType VisitorType>
 RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
 RuleInvalidationDataVisitor<VisitorType>::EnsureAttributeInvalidationSet(
@@ -1667,7 +1666,6 @@ RuleInvalidationDataVisitor<VisitorType>::EnsureAttributeInvalidationSet(
       rule_invalidation_data_.attribute_invalidation_sets, attribute_name, type,
       position, in_nth_child);
 }
-
 template <RuleInvalidationDataVisitorType VisitorType>
 RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
 RuleInvalidationDataVisitor<VisitorType>::EnsureIdInvalidationSet(
@@ -1784,7 +1782,7 @@ RuleInvalidationDataVisitor<VisitorType>::EnsureNthInvalidationSet() {
   }
   return rule_invalidation_data_.nth_invalidation_set.get();
 }
-
+#endif
 // Add features extracted from the rightmost compound selector to descendant
 // invalidation sets for features found in other compound selectors.
 //
@@ -1937,7 +1935,7 @@ bool RuleInvalidationDataVisitor<VisitorType>::
     return false;
   }
 }
-
+#if !defined(COIN_WORKAROUND)
 template <RuleInvalidationDataVisitorType VisitorType>
 RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
 RuleInvalidationDataVisitor<VisitorType>::
@@ -1949,7 +1947,7 @@ RuleInvalidationDataVisitor<VisitorType>::
     return invalidation_set->SiblingDescendants();
   }
 }
-
+#endif
 template <RuleInvalidationDataVisitorType VisitorType>
 InvalidationSet&
 RuleInvalidationDataVisitor<VisitorType>::EnsureMutableInvalidationSet(

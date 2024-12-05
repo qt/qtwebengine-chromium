@@ -588,7 +588,7 @@ UINT32 VideoCodecToMFVideoLevel(VideoCodec code) {
   }
 }
 
-constexpr DWORD CalculateMacroBlocksPerSecond(const gfx::Size& size) {
+const DWORD CalculateMacroBlocksPerSecond(const gfx::Size& size) {
   constexpr DWORD kMacroBlockWidth = 16u;
   constexpr DWORD kMacroBlockHeight = 16u;
   constexpr DWORD kMacroBlockFrameRate = 30u;

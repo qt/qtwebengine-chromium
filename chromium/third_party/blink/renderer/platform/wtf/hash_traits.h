@@ -409,16 +409,9 @@ struct SimpleClassHashTraits : GenericHashTraits<T> {
   }
 };
 
+// Defined in string_hash.h.
 template <>
-struct HashTraits<String> : SimpleClassHashTraits<String> {
-  // Defined in string_hash.h.
-  static unsigned GetHash(const String& key);
-  static bool Equal(const String& a, const String& b);
-  static constexpr bool kSafeToCompareToEmptyOrDeleted = false;
-  static bool IsEmptyValue(const String& s);
-  static bool IsDeletedValue(const String& s);
-  static void ConstructDeletedValue(String& slot);
-};
+struct HashTraits<String>;
 
 namespace internal {
 

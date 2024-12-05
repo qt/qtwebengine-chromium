@@ -2671,7 +2671,7 @@ StyleRule* CSSParserImpl::ConsumeStyleRule(
       DCHECK(style_sheet_);
 
       StringView text(stream.RemainingText(), 1);
-#ifdef ARCH_CPU_X86_FAMILY
+#if defined(ARCH_CPU_X86_FAMILY) && !defined(COMPILER_MSVC)
       wtf_size_t len;
       if (base::CPU::GetInstanceNoAllocation().has_avx2()) {
         len = static_cast<wtf_size_t>(FindLengthOfDeclarationListAVX2(text));

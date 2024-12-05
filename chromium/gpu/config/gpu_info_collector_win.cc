@@ -31,8 +31,13 @@
 #include "build/branding_buildflags.h"
 #include "components/ml/buildflags.h"
 #include "gpu/config/gpu_util.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "third_party/microsoft_dxheaders/src/include/directx/d3d12.h"
 #include "third_party/microsoft_dxheaders/src/include/directx/dxcore.h"
+#else
+#include <d3d12.h>
+#include <dxcore.h>
+#endif
 #include "third_party/re2/src/re2/re2.h"
 #include "ui/gl/direct_composition_support.h"
 #include "ui/gl/gl_angle_util_win.h"

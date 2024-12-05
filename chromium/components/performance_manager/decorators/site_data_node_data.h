@@ -27,7 +27,6 @@ class SiteDataRecorder;
 class SiteDataNodeData : public SiteDataRecorder::Data,
                          public SparseNodeInlineData<SiteDataNodeData> {
  public:
-  SiteDataNodeData() = default;
   SiteDataNodeData(const PageNodeImpl* page_node,
                    SiteDataRecorder* site_data_recorder);
 

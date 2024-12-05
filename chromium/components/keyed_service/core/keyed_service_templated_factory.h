@@ -18,6 +18,10 @@
 #include "components/keyed_service/core/keyed_service_base_factory.h"
 #include "components/keyed_service/core/keyed_service_export.h"
 
+#if defined(COMPILER_MSVC)
+#define COIN_WORKAROUND 1  // just an issue with old compiler on COIN
+#endif
+
 // Templated sub-class for KeyedServiceBaseFactory.
 //
 // This allow to share the implementation between KeyedService factories and
@@ -171,8 +175,11 @@ class KEYED_SERVICE_EXPORT KeyedServiceTemplatedFactory
     MappingInfo& operator=(const MappingInfo&) = delete;
 
     MappingInfo(MappingInfo&&);
+#if !defined(COIN_WORKAROUND)
     MappingInfo& operator=(MappingInfo&&);
-
+#else
+    MappingInfo& operator=(MappingInfo&&) = default;
+#endif
     ~MappingInfo();
 
     // The current stage of the mapping.

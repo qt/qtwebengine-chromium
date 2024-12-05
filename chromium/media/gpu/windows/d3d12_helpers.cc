@@ -9,7 +9,18 @@
 #include "media/base/video_codecs.h"
 #include "media/gpu/windows/format_utils.h"
 #include "media/gpu/windows/supported_profile_helpers.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "third_party/microsoft_dxheaders/src/include/directx/d3dx12_core.h"
+#else
+#include <d3d12.h>
+constexpr UINT D3D12CalcSubresource(UINT MipSlice,
+                                    UINT ArraySlice,
+                                    UINT PlaneSlice,
+                                    UINT MipLevels,
+                                    UINT ArraySize) noexcept {
+  return MipSlice + ArraySlice * MipLevels + PlaneSlice * MipLevels * ArraySize;
+}
+#endif
 
 namespace media {
 

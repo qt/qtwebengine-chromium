@@ -533,6 +533,8 @@ class WasmLoadEliminationReducer : public Next {
   EMIT_OP(StringPrepareForGetCodeUnit)
   EMIT_OP(AnyConvertExtern)
 
+#undef EMIT_OP
+
   OpIndex REDUCE_INPUT_GRAPH(StructSet)(OpIndex ig_index,
                                         const StructSetOp& op) {
     if (v8_flags.turboshaft_wasm_load_elimination) {

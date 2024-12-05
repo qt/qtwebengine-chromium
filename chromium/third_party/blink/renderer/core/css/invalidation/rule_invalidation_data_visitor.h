@@ -8,6 +8,10 @@
 #include "third_party/blink/renderer/core/css/invalidation/rule_invalidation_data.h"
 #include "third_party/blink/renderer/core/css/invalidation/selector_pre_match.h"
 
+#if defined(COMPILER_MSVC)
+#define COIN_WORKAROUND 1
+#endif
+
 namespace blink {
 
 class CSSSelector;
@@ -516,7 +520,7 @@ class RuleInvalidationDataVisitor {
   // for Nth-child invalidation.
   void MarkInvalidationSetsWithinNthChild(const CSSSelector& selector,
                                           bool in_nth_child);
-
+#if !defined(COIN_WORKAROUND)
   InvalidationSetType* InvalidationSetForSimpleSelector(const CSSSelector&,
                                                         InvalidationType,
                                                         PositionType,
@@ -554,6 +558,170 @@ class RuleInvalidationDataVisitor {
   SiblingInvalidationSetType* EnsureUniversalSiblingInvalidationSet();
   SiblingInvalidationSetType* EnsureNthInvalidationSet();
 
+#else
+  InvalidationSetType* InvalidationSetForSimpleSelector(
+      const CSSSelector& selector,
+      InvalidationType type,
+      PositionType position,
+      bool in_nth_child) {
+    if (selector.Match() == CSSSelector::kClass) {
+      if (type == InvalidationType::kInvalidateDescendants &&
+          position == kSubject && !in_nth_child &&
+          InsertIntoSelfInvalidationBloomFilter(
+              selector.Value(), RuleInvalidationData::kClassSalt)) {
+        // Do not insert self-invalidation sets for classes;
+        // see comment on class_invalidation_sets_.
+        return nullptr;
+      }
+      return EnsureClassInvalidationSet(selector.Value(), type, position,
+                                        in_nth_child);
+    }
+    if (selector.IsAttributeSelector()) {
+      return EnsureAttributeInvalidationSet(selector.Attribute().LocalName(),
+                                            type, position, in_nth_child);
+    }
+    if (selector.Match() == CSSSelector::kId) {
+      if (type == InvalidationType::kInvalidateDescendants &&
+          position == kSubject &&
+          InsertIntoSelfInvalidationBloomFilter(
+              selector.Value(), RuleInvalidationData::kIdSalt)) {
+        // Do not insert self-invalidation sets for IDs;
+        // see comment on class_invalidation_sets_.
+        return nullptr;
+      }
+      return EnsureIdInvalidationSet(selector.Value(), type, position,
+                                     in_nth_child);
+    }
+
+    return nullptr;
+  }
+  InvalidationSetType* EnsureClassInvalidationSet(
+      const AtomicString& class_name,
+      InvalidationType type,
+      PositionType position,
+      bool in_nth_child) {
+    CHECK(!class_name.empty());
+    return EnsureInvalidationSet(
+        rule_invalidation_data_.class_invalidation_sets, class_name, type,
+        position, in_nth_child);
+  }
+  InvalidationSetType* EnsureAttributeInvalidationSet(
+      const AtomicString& attribute_name,
+      InvalidationType type,
+      PositionType position,
+      bool in_nth_child) {
+    CHECK(!attribute_name.empty());
+    return EnsureInvalidationSet(
+        rule_invalidation_data_.attribute_invalidation_sets, attribute_name,
+        type, position, in_nth_child);
+  }
+  InvalidationSetType* EnsureIdInvalidationSet(const AtomicString& id,
+                                               InvalidationType type,
+                                               PositionType position,
+                                               bool in_nth_child) {
+    CHECK(!id.empty());
+    return EnsureInvalidationSet(rule_invalidation_data_.id_invalidation_sets,
+                                 id, type, position, in_nth_child);
+  }
+
+  InvalidationSetType* EnsurePseudoInvalidationSet(
+      CSSSelector::PseudoType pseudo_type,
+      InvalidationType type,
+      PositionType position,
+      bool in_nth_child) {
+    CHECK_NE(pseudo_type, CSSSelector::kPseudoUnknown);
+    return EnsureInvalidationSet(
+        rule_invalidation_data_.pseudo_invalidation_sets, pseudo_type, type,
+        position, in_nth_child);
+  }
+
+  InvalidationSetType* EnsureInvalidationSet(InvalidationSetMapType& map,
+                                             const AtomicString& key,
+                                             InvalidationType type,
+                                             PositionType position,
+                                             bool in_nth_child) {
+    if constexpr (is_builder()) {
+      scoped_refptr<InvalidationSet>& invalidation_set =
+          map.insert(key, nullptr).stored_value->value;
+      return &EnsureMutableInvalidationSet(type, position, in_nth_child,
+                                           invalidation_set);
+    } else {
+      auto it = map.find(key);
+      if (it != map.end()) {
+        const InvalidationSet* invalidation_set = it->value.get();
+        if (invalidation_set->GetType() == type) {
+          return invalidation_set;
+        } else {
+          // The caller wanted descendant and we found sibling+descendant.
+          CHECK(type == InvalidationType::kInvalidateDescendants);
+          return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
+        }
+      }
+      // It is possible for the Tracer not to find an InvalidationSet we expect
+      // to be there. One case where this can happen is when, at the time we run
+      // the Tracer, a rule has been added to a stylesheet but not yet indexed.
+      // In such a case, we'll pick up information about the new rule as it gets
+      // indexed on the next document lifecycle update.
+      return nullptr;
+    }
+  }
+
+  InvalidationSetType* EnsureInvalidationSet(
+      PseudoTypeInvalidationSetMapType& map,
+      CSSSelector::PseudoType key,
+      InvalidationType type,
+      PositionType position,
+      bool in_nth_child) {
+    if constexpr (is_builder()) {
+      scoped_refptr<InvalidationSet>& invalidation_set =
+          map.insert(key, nullptr).stored_value->value;
+      return &EnsureMutableInvalidationSet(type, position, in_nth_child,
+                                           invalidation_set);
+    } else {
+      auto it = map.find(key);
+      if (it != map.end()) {
+        const InvalidationSet* invalidation_set = it->value.get();
+        if (invalidation_set->GetType() == type) {
+          return invalidation_set;
+        } else {
+          // The caller wanted descendant and we found sibling+descendant.
+          CHECK(type == InvalidationType::kInvalidateDescendants);
+          return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
+        }
+      }
+      // It is possible for the Tracer not to find an InvalidationSet we expect
+      // to be there. One case where this can happen is when, at the time we run
+      // the Tracer, a rule has been added to a stylesheet but not yet indexed.
+      // In such a case, we'll pick up information about the new rule as it gets
+      // indexed on the next document lifecycle update.
+      return nullptr;
+    }
+  }
+
+  SiblingInvalidationSetType*
+
+  EnsureUniversalSiblingInvalidationSet() {
+    if constexpr (is_builder()) {
+      if (!rule_invalidation_data_.universal_sibling_invalidation_set) {
+        rule_invalidation_data_.universal_sibling_invalidation_set =
+            SiblingInvalidationSet::Create(nullptr);
+      }
+    }
+    return rule_invalidation_data_.universal_sibling_invalidation_set.get();
+  }
+
+  SiblingInvalidationSetType* EnsureNthInvalidationSet() {
+    if constexpr (is_builder()) {
+      if (!rule_invalidation_data_.nth_invalidation_set) {
+        rule_invalidation_data_.nth_invalidation_set =
+            NthSiblingInvalidationSet::Create();
+      }
+    }
+    return rule_invalidation_data_.nth_invalidation_set.get();
+  }
+
+#endif
+
   void AddFeaturesToInvalidationSet(InvalidationSetType*,
                                     const InvalidationSetFeatures&);
   static void SetWholeSubtreeInvalid(InvalidationSetType* invalidation_set);
@@ -568,10 +736,19 @@ class RuleInvalidationDataVisitor {
   // there is no Bloom filter yet.)
   bool InsertIntoSelfInvalidationBloomFilter(const AtomicString& value,
                                              int salt);
-
+#if !defined(COIN_WORKAROUND)
   static InvalidationSetType* EnsureSiblingDescendantInvalidationSet(
       SiblingInvalidationSetType* invalidation_set);
-
+#else
+  static InvalidationSetType* EnsureSiblingDescendantInvalidationSet(
+      SiblingInvalidationSetType* invalidation_set) {
+    if constexpr (is_builder()) {
+      return &invalidation_set->EnsureSiblingDescendants();
+    } else {
+      return invalidation_set->SiblingDescendants();
+    }
+  }
+#endif
   // Make sure that the pointer in `invalidation_set` has a single
   // reference that can be modified safely. (This is done through
   // copy-on-write, if needed, so that it can be modified without

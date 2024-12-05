@@ -358,7 +358,7 @@ void SetGLGetProcAddressProc(GLGetProcAddressProc proc) {
 }
 
 NO_SANITIZE("cfi-icall")
-STDCALL GLFunctionPointerType GetGLProcAddress(const char* name) {
+GLFunctionPointerType GetGLProcAddress(const char* name) {
   DCHECK(g_gl_implementation.gl != kGLImplementationNone);
 
   if (g_libraries) {

@@ -23,7 +23,6 @@ namespace init {
 
 std::vector<GLImplementationParts> GetAllowedGLImplementations() {
   std::vector<GLImplementationParts> impls;
-  impls.emplace_back(kGLImplementationDesktopGL);
   impls.emplace_back(kGLImplementationEGLANGLE);
   return impls;
 }

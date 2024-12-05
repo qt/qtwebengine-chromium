@@ -27,12 +27,12 @@ KeyedServiceTemplatedFactory<ServiceType>::MappingInfo::MappingInfo() = default;
 template <typename ServiceType>
 KeyedServiceTemplatedFactory<ServiceType>::MappingInfo::MappingInfo(
     MappingInfo&&) = default;
-
+#if !defined(COIN_WORKAROUND)
 template <typename ServiceType>
 KeyedServiceTemplatedFactory<ServiceType>::MappingInfo&
 KeyedServiceTemplatedFactory<ServiceType>::MappingInfo::operator=(
     MappingInfo&&) = default;
-
+#endif
 template <typename ServiceType>
 KeyedServiceTemplatedFactory<ServiceType>::MappingInfo::~MappingInfo() =
     default;

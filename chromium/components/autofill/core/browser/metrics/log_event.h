@@ -74,7 +74,6 @@ struct TriggerFillFieldLogEvent {
   FillDataType data_type = internal::IsRequired();
   // The country_code associated with the information filled. Only present for
   // autofill addresses (i.e. `AutofillEventType::kAutofillProfile`).
-#if !defined(COMPILER_MSVC)
   std::string associated_country_code = internal::IsRequired();
   // The time at which the event occurred.
   base::Time timestamp = internal::IsRequired();
