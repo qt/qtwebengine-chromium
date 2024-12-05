@@ -327,7 +327,8 @@ void MaglevPhiRepresentationSelector::ConvertTaggedPhiTo(
   // registers to floating registers.
   phi->InitializeRegisterData();
 
-  for (int i = 0; i < phi->input_count(); i++) {
+  const int skip_backedge = phi->is_loop_phi() ? 1 : 0;
+  for (int i = 0; i < phi->input_count() - skip_backedge; i++) {
     ValueNode* input = phi->input(i).node();
 #define TRACE_INPUT_LABEL \
   "    @ Input " << i << " (" << PrintNodeLabel(graph_labeller(), input) << ")"
