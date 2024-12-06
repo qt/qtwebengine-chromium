@@ -309,7 +309,7 @@ if ((current_cpu == "x64" && ffmpeg_branding == "Chrome") ||
   ]
 }
 
-if (current_cpu == "arm64" && ffmpeg_branding == "Chrome") {
+if (current_cpu == "arm64" && ffmpeg_branding == "Chrome" && (!is_win || !is_msvc)) {
   ffmpeg_c_sources += [
     "libavcodec/aarch64/aacpsdsp_init_aarch64.c",
     "libavcodec/aarch64/autorename_libavcodec_aarch64_videodsp_init.c",
@@ -384,7 +384,7 @@ if ((is_android && current_cpu == "arm" && arm_use_neon) ||
   ]
 }
 
-if (current_cpu == "arm64") {
+if (current_cpu == "arm64" && (!is_win || !is_msvc || is_clang)) {
   ffmpeg_c_sources += [
     "libavcodec/aarch64/mpegaudiodsp_init.c",
     "libavcodec/aarch64/vorbisdsp_init.c",
@@ -479,4 +479,42 @@ if ((is_android && current_cpu == "arm" && arm_use_neon) ||
     (is_android && current_cpu == "x64") ||
     (is_android && current_cpu == "x86")) {
   ffmpeg_c_sources += [ "compat/strtod.c" ]
+}
+
+if (is_win && current_cpu == "arm64" && is_msvc && is_qtwebengine && !is_clang) {
+  ffmpeg_c_sources += [
+    "libavcodec/aarch64/mpegaudiodsp_init.c",
+    "libavcodec/aarch64/vorbisdsp_init.c",
+    "libavutil/aarch64/cpu.c",
+    "libavutil/aarch64/float_dsp_init.c",
+    "libavutil/aarch64/tx_float_init.c",
+  ]
+  ffmpeg_gas_sources += [
+    "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_vorbisdsp_neon.S",
+    "libavcodec/aarch64/armasm_autogen/mpegaudiodsp_neon.S",
+    "libavutil/aarch64/armasm_autogen/autorename_libavutil_aarch64_float_dsp_neon.S",
+    "libavutil/aarch64/armasm_autogen/tx_float_neon.S",
+  ]
+  if (ffmpeg_branding == "Chrome") {
+    ffmpeg_c_sources += [
+      "libavcodec/aarch64/aacpsdsp_init_aarch64.c",
+      "libavcodec/aarch64/autorename_libavcodec_aarch64_videodsp_init.c",
+      "libavcodec/aarch64/h264chroma_init_aarch64.c",
+      "libavcodec/aarch64/h264dsp_init_aarch64.c",
+      "libavcodec/aarch64/h264pred_init.c",
+      "libavcodec/aarch64/h264qpel_init_aarch64.c",
+      "libavcodec/aarch64/sbrdsp_init_aarch64.c",
+    ]
+    ffmpeg_gas_sources += [
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_h264cmc_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_h264dsp_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_h264idct_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_h264pred_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_h264qpel_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_hpeldsp_neon.S",
+      "libavcodec/aarch64/armasm_autogen/videodsp.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_aacpsdsp_neon.S",
+      "libavcodec/aarch64/armasm_autogen/autorename_libavcodec_aarch64_sbrdsp_neon.S",
+    ]
+  }
 }
