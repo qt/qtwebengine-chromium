@@ -2103,7 +2103,10 @@ void AuthenticationCredentialsContainer::GetForIdentity(
   mojom::blink::RpMode rp_mode = mojom::blink::RpMode::kWidget;
   if (blink::RuntimeEnabledFeatures::FedCmButtonModeEnabled(
           resolver->GetExecutionContext())) {
-    rp_mode = mojo::ConvertTo<mojom::blink::RpMode>(identity_options.mode());
+    rp_mode =
+        mojo::TypeConverter<mojom::blink::RpMode,
+                            blink::V8IdentityCredentialRequestOptionsMode>::
+            Convert(identity_options.mode());
     if (rp_mode == mojom::blink::RpMode::kButton) {
       if (identity_provider_ptrs.size() > 1u) {
         resolver->Reject(MakeGarbageCollected<DOMException>(
