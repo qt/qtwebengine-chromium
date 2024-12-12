@@ -723,7 +723,7 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
   // embedder figure out what to do with it. Navigations to filesystem URLs are
   // always blocked here.
   if (frame_->IsMainFrame() && origin_window &&
-      request.GetClientRedirectReason() != ClientNavigationReason::kReload &&
+      request.GetClientNavigationReason() != ClientNavigationReason::kReload &&
       !frame_->Client()->AllowContentInitiatedDataUrlNavigations(
           origin_window->Url()) &&
       (url.ProtocolIs("filesystem") ||
