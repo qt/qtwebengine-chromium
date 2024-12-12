@@ -41,6 +41,7 @@ namespace {
 // Mappings from Chrome card networks to Payment Request API basic card payment
 // spec networks and icons. Note that "generic" is not in the spec.
 // https://w3c.github.io/webpayments-methods-card/#method-id
+#if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr PaymentRequestData kPaymentRequestData[]{
     {autofill::kAmericanExpressCard, "amex", IDR_AUTOFILL_CC_AMEX,
      IDS_AUTOFILL_CC_AMEX},
@@ -93,6 +94,9 @@ constexpr PaymentRequestData kGenericPaymentRequestData = {
 constexpr PaymentRequestData kGenericPaymentRequestDataForNewNetworkImages = {
     autofill::kGenericCard, "generic", IDR_AUTOFILL_METADATA_CC_GENERIC,
     IDS_AUTOFILL_CC_GENERIC};
+#else
+constexpr PaymentRequestData kDummyPaymentRequestData = {"", "", -1, -1};
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 constexpr auto kNamePrefixes = std::to_array<std::string_view>(
     {"1lt",     "1st", "2lt", "2nd",    "3rd",  "admiral", "capt",
@@ -493,6 +497,7 @@ std::u16string JoinNameParts(std::u16string_view given,
 
 const PaymentRequestData& GetPaymentRequestData(
     const std::string& issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool use_new_data = base::FeatureList::IsEnabled(
       autofill::features::kAutofillEnableNewCardArtAndNetworkImages);
 
@@ -504,10 +509,14 @@ const PaymentRequestData& GetPaymentRequestData(
   }
   return use_new_data ? kGenericPaymentRequestDataForNewNetworkImages
                       : kGenericPaymentRequestData;
+#else
+  return kDummyPaymentRequestData;
+#endif
 }
 
 const char* GetIssuerNetworkForBasicCardIssuerNetwork(
     const std::string& basic_card_issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool use_new_data = base::FeatureList::IsEnabled(
       autofill::features::kAutofillEnableNewCardArtAndNetworkImages);
 
@@ -521,10 +530,14 @@ const char* GetIssuerNetworkForBasicCardIssuerNetwork(
   return use_new_data
              ? kGenericPaymentRequestDataForNewNetworkImages.issuer_network
              : kGenericPaymentRequestData.issuer_network;
+#else
+  return "";
+#endif
 }
 
 bool IsValidBasicCardIssuerNetwork(
     const std::string& basic_card_issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool use_new_data = base::FeatureList::IsEnabled(
       autofill::features::kAutofillEnableNewCardArtAndNetworkImages);
 
@@ -532,6 +545,9 @@ bool IsValidBasicCardIssuerNetwork(
                                      : kPaymentRequestData,
                         basic_card_issuer_network,
                         &PaymentRequestData::basic_card_issuer_network);
+#else
+  return false;
+#endif
 }
 
 bool IsValidCountryCode(const std::string& country_code) {
@@ -550,8 +566,10 @@ std::string GetCountryCodeWithFallback(const autofill::AutofillProfile& profile,
                                        const std::string& app_locale) {
   std::string country_code =
       base::UTF16ToUTF8(profile.GetRawInfo(autofill::ADDRESS_HOME_COUNTRY));
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!IsValidCountryCode(country_code))
     country_code = AutofillCountry::CountryCodeForLocale(app_locale);
+#endif
   return country_code;
 }
 

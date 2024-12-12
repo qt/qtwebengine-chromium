@@ -142,14 +142,7 @@ void AutofillManager::LogTypePredictionsAvailable(
 }
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
-#if BUILDFLAG(IS_QTWEBENGINE)
-AutofillManager::AutofillManager(AutofillDriver* driver)
-    : driver_(CHECK_DEREF(driver)) {}
-
-AutofillManager::~AutofillManager() {
-  NotifyObservers(&Observer::OnAutofillManagerDestroyed);
-}
-#else
+#if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillManager::AutofillManager(AutofillDriver* driver)
     : driver_(CHECK_DEREF(driver)),
       log_manager_(client().GetLogManager()),
@@ -162,6 +155,14 @@ AutofillManager::AutofillManager(AutofillDriver* driver)
 AutofillManager::~AutofillManager() {
   translate_observation_.Reset();
 }
+#else
+AutofillManager::AutofillManager(AutofillDriver* driver)
+    : driver_(CHECK_DEREF(driver)) {}
+
+AutofillManager::~AutofillManager() {
+  //NotifyObservers(&Observer::OnAutofillManagerDestroyed);
+}
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillManager::OnAutofillDriverLifecycleStateChanged(
     LifecycleState old_state,
@@ -179,9 +180,12 @@ void AutofillManager::OnAutofillDriverLifecycleStateChanged(
 void AutofillManager::Reset() {
   parsing_weak_ptr_factory_.InvalidateWeakPtrs();
   form_structures_.clear();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   form_interactions_ukm_logger_ = CreateFormInteractionsUkmLogger();
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // TODO(crbug.com/40219607): Unify form parsing logic.
 // TODO(crbug.com/40276177): ML predictions are not computed here since
 // `kAutofillPageLanguageDetection` is disabled by default. Once the form

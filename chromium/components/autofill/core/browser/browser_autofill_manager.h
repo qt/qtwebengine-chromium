@@ -30,7 +30,9 @@
 #include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autofill_plus_address_delegate.h"
+#endif
 #include "components/autofill/core/browser/autofill_trigger_details.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling_product.h"
@@ -425,6 +427,7 @@ class BrowserAutofillManager : public AutofillManager {
  private:
   friend class BrowserAutofillManagerTestApi;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Utilities for logging form events. The loggers emit metrics during their
   // destruction, effectively when the BrowserAutofillManager is reset or
   // destroyed.
@@ -524,7 +527,6 @@ class BrowserAutofillManager : public AutofillManager {
   // Updates event loggers with information about data stored for Autofill.
   void UpdateLoggersReadinessData();
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Creates a FormStructure using the FormData received from the renderer. Will
   // return an empty scoped_ptr if the data should not be processed for upload
   // or personal data.
@@ -643,6 +645,7 @@ class BrowserAutofillManager : public AutofillManager {
       SuggestionsContext& context,
       OnGenerateSuggestionsCallback callback);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Receives the lists of plus address and single field form fill suggestions
   // and combines them. It gives priority to the plus address suggestions,
   // ensuring they appear first in the final combined list that's sent to
@@ -662,6 +665,7 @@ class BrowserAutofillManager : public AutofillManager {
       const AutofillField* autofill_field,
       AutofillSuggestionTriggerSource trigger_source,
       SuppressReason suppress_reason);
+#endif
 
   // The function receives a the list of `suggestions` from
   // `GenerateSuggestionsAndMaybeShowUI` and displays them if `show_suggestions`
@@ -679,6 +683,7 @@ class BrowserAutofillManager : public AutofillManager {
       std::optional<autofill_metrics::SuggestionRankingContext>
           ranking_context);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void OnGetPlusAddressSuggestions(
       AutofillPlusAddressDelegate::SuggestionContext suggestions_context,
       PasswordFormClassification::Type password_form_type,
@@ -687,6 +692,7 @@ class BrowserAutofillManager : public AutofillManager {
       std::vector<Suggestion> address_suggestions,
       OnGenerateSuggestionsCallback callback,
       std::vector<Suggestion> suggestions);
+#endif
 
   // For each submitted field in the |form_structure|, it determines whether
   // |ADDRESS_HOME_STATE| is a possible matching type.

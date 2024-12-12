@@ -240,6 +240,7 @@ class AutofillClient {
   // Returns the `AutofillComposeDelegate` instance for the tab of this client.
   virtual AutofillComposeDelegate* GetComposeDelegate();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the `AutofillPredictionImprovementsDelegate` instance for
   // the tab of this client. This method can return nullptr if the user does not
   // have the feature available, either because of not being part of the
@@ -248,7 +249,6 @@ class AutofillClient {
   virtual AutofillPredictionImprovementsDelegate*
   GetAutofillPredictionImprovementsDelegate();
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the `AutofillPlusAddressDelegate` associated with the profile of
   // the window of this tab.
   virtual AutofillPlusAddressDelegate* GetPlusAddressDelegate();

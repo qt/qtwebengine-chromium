@@ -33,7 +33,9 @@
 #include "components/autofill/core/browser/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_granular_filling_utils.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autofill_plus_address_delegate.h"
+#endif
 #include "components/autofill/core/browser/autofill_prediction_improvements_delegate.h"
 #include "components/autofill/core/browser/autofill_trigger_details.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -336,6 +338,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (shortcut_test_suggestion_index_ >= 0) {
     const Suggestion* test_suggestion = FindTestSuggestion(
         manager_->client(), suggestions, shortcut_test_suggestion_index_);
@@ -343,6 +346,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
     DidAcceptSuggestion(*test_suggestion, {});
     return;
   }
+#endif
 
   // Send to display.
   if (is_update) {
@@ -351,7 +355,6 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
     return;
   }
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   AutofillComposeDelegate* delegate = manager_->client().GetComposeDelegate();
   const bool show_proactive_nudge_at_caret =
       shown_suggestion_types_.size() == 1 &&
@@ -376,7 +379,6 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
       query_field_.form_control_ax_id(),
       should_use_caret_bounds ? PopupAnchorType::kCaret : default_anchor_type);
   manager_->client().ShowAutofillSuggestions(open_args, GetWeakPtr());
-#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 base::RepeatingCallback<void(std::vector<Suggestion>,
@@ -432,6 +434,7 @@ AutofillExternalDelegate::CreateHideSuggestionsCallback() {
       GetWeakPtr(), *session_id);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::RepeatingCallback<void(const std::u16string&)>
 AutofillExternalDelegate::CreateSingleFieldFillCallback(
     SuggestionType suggestion_type,
@@ -452,6 +455,7 @@ AutofillExternalDelegate::CreateSingleFieldFillCallback(
       GetWeakPtr(), query_form_, query_field_, suggestion_type,
       field_type_used);
 }
+#endif
 
 SuggestionType
 AutofillExternalDelegate::GetLastAcceptedSuggestionToFillForSection(
@@ -917,6 +921,7 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
 void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
     const Suggestion& suggestion,
     const SuggestionButtonAction& button_action) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   switch (suggestion.type) {
     case SuggestionType::kComposeResumeNudge:
       NOTIMPLEMENTED();
@@ -986,6 +991,9 @@ void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
     default:
       NOTREACHED_IN_MIGRATION();
   }
+#else
+  NOTIMPLEMENTED();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
@@ -1700,7 +1708,6 @@ void AutofillExternalDelegate::DidAcceptPaymentsSuggestion(
             : AutofillMetrics::SCAN_CARD_OTHER_ITEM_SELECTED);
   }
 }
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 PlusAddressCallback AutofillExternalDelegate::CreatePlusAddressCallback(
     SuggestionType suggestion_type) {
@@ -1775,5 +1782,6 @@ void AutofillExternalDelegate::DidAcceptCreateNewPlusAddressInlineSuggestion(
       std::move(show_affiliation_error), std::move(show_error),
       std::move(reshow_suggestions));
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace autofill

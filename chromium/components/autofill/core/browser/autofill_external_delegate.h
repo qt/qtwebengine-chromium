@@ -188,6 +188,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate
   base::OnceCallback<void(SuggestionHidingReason)>
   CreateHideSuggestionsCallback();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Creates a callback that, when run, fills the field that was last queried
   // when the callback was created.
   base::RepeatingCallback<void(const std::u16string&)>
@@ -211,7 +212,6 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate
   void DidAcceptCreateNewPlusAddressInlineSuggestion(
       const Suggestion& suggestion);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shows the address editor to the user. The Autofill profile to edit is
   // determined by passed `guid`.
   void ShowEditAddressProfileDialog(const std::string& guid);
