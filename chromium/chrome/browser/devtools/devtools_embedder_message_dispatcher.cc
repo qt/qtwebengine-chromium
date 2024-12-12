@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/values.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_features.h"

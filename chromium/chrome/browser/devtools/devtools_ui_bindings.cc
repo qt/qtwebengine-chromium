@@ -1595,7 +1595,7 @@ base::Value::Dict DevToolsUIBindings::GetSyncInformationForProfile(
 
 void DevToolsUIBindings::GetHostConfig(DispatchCallback callback) {
   base::Value::Dict response_dict;
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AidaClient::Availability availability = AidaClient::CanUseAida(profile_);
 
   base::Value::Dict aida_availability;
@@ -1656,6 +1656,7 @@ void DevToolsUIBindings::GetHostConfig(DispatchCallback callback) {
   devtools_privacy_ui_dict.Set(
       "enabled", base::FeatureList::IsEnabled(::features::kDevToolsPrivacyUI));
   response_dict.Set("devToolsPrivacyUI", std::move(devtools_privacy_ui_dict));
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   base::Value response = base::Value(std::move(response_dict));
   std::move(callback).Run(&response);
