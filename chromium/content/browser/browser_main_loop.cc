@@ -585,7 +585,7 @@ int BrowserMainLoop::EarlyInitialization() {
   // MessagePumpForUI needs to be bound to the main thread by this point.
   DCHECK(base::CurrentUIThread::IsSet());
   base::PlatformThread::SetCurrentThreadType(
-      base::ThreadType::kDisplayCritical),
+      base::ThreadType::kDisplayCritical,
       base::FeatureList::IsEnabled(
           features::kBrowserUseCompositingThreadPriority));
 
