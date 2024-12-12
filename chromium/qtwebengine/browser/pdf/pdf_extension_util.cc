@@ -80,8 +80,6 @@ static void AddCommonStrings(base::Value::Dict* dict) {
     dict->Set(resource.name, l10n_util::GetStringUTF16(resource.id));
 
   dict->Set("presetZoomFactors", zoom::GetPresetZoomFactorsAsJSON());
-  dict->Set("chromeRefresh2023Attribute",
-            features::IsChromeWebuiRefresh2023() ? "chrome-refresh-2023" : "");
   dict->Set("pdfOopifEnabled",
             base::FeatureList::IsEnabled(chrome_pdf::features::kPdfOopif) ? "pdfOopifEnabled" : "");
 }
