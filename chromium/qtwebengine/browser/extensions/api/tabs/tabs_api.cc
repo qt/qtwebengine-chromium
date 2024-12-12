@@ -59,6 +59,10 @@
 #include "extensions/common/error_utils.h"
 #include "extensions/common/permissions/permissions_data.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+
 using content::NavigationController;
 using content::OpenURLParams;
 using content::WebContents;
@@ -135,7 +139,7 @@ static bool PrepareURLForNavigation(const std::string& url_string,
 TabsUpdateFunction::TabsUpdateFunction() : web_contents_(nullptr) {}
 
 ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
-  absl::optional<tabs::Update::Params> params =
+  std::optional<tabs::Update::Params> params =
       tabs::Update::Params::Create(args());
   EXTENSION_FUNCTION_VALIDATE(params);
 
