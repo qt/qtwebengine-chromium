@@ -470,10 +470,14 @@ std::unique_ptr<SharedImageBacking> D3DImageBackingFactory::CreateSharedImage(
                                              SHARED_IMAGE_USAGE_WEBGPU_WRITE);
   const bool has_gl_usage = HasGLES2ReadOrWriteUsage(usage);
   const bool want_dcomp_texture =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      false;
+#else
       usage.Has(SHARED_IMAGE_USAGE_SCANOUT) &&
       IsFormatSupportedForDCompTexture(desc.Format) &&
       IsColorSpaceSupportedForDCompTexture(
           gfx::ColorSpaceWin::GetDXGIColorSpace(color_space));
+#endif
   // TODO(crbug.com/40204134): Look into using DXGI handle when MF VEA is used.
   const bool needs_cross_device_synchronization =
       has_webgpu_usage ||
@@ -883,6 +887,7 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
     return false;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const bool is_scanout = usage.Has(gpu::SHARED_IMAGE_USAGE_SCANOUT);
   const bool is_video_decode = usage.Has(gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE);
   const bool is_buffer =
@@ -898,6 +903,7 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
                  GetDXGIFormatForCreateTexture(format));
     }
   }
+#endif
 
   if (gmb_type == gfx::EMPTY_BUFFER) {
     if (GetDXGIFormatForCreateTexture(format) == DXGI_FORMAT_UNKNOWN &&
