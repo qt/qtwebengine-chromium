@@ -594,7 +594,7 @@ class CORE_EXPORT PaintLayerScrollableArea final
       mojom::blink::ScrollBehavior scroll_behavior) override {
     if (!should_restore_scroll)
       return;
-    pending_view_state_.emplace();
+    pending_view_state_ = PendingViewState{};
     pending_view_state_->state = view_state;
     pending_view_state_->scroll_behavior = scroll_behavior;
   }
