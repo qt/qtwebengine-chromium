@@ -1904,6 +1904,10 @@ void GpuImageDecodeCache::DecodeImageIfNecessary(const DrawImage& draw_image,
   TRACE_EVENT0("cc,benchmark", "GpuImageDecodeCache::DecodeImage");
 
   image_data->decode.ResetData();
+
+  // Prevent image_data from being deleted while lock is not held.
+  scoped_refptr<ImageData> image_data_holder(image_data);
+
   std::unique_ptr<base::DiscardableMemory> backing_memory;
   sk_sp<SkImage> image;
   // These are used only for decoding into YUV.
@@ -2130,6 +2134,9 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
   sk_sp<SkImage> uploaded_image = image_data->decode.image();
   GrMipMapped image_needs_mips =
       image_data->needs_mips ? GrMipMapped::kYes : GrMipMapped::kNo;
+
+  // Prevent image_data from being deleted while lock is not held.
+  scoped_refptr<ImageData> image_data_holder(image_data);
 
   if (image_data->is_yuv) {
     DCHECK(image_data->yuv_color_space.has_value());
