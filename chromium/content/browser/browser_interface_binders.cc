@@ -101,9 +101,7 @@
 #include "media/mojo/mojom/media_metrics_provider.mojom.h"
 #include "media/mojo/mojom/media_player.mojom.h"
 #include "media/mojo/mojom/remoting.mojom.h"
-#if BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "media/mojo/mojom/speech_recognizer.mojom.h"
-#endif
 #include "media/mojo/mojom/video_decode_perf_history.mojom.h"
 #include "media/mojo/mojom/video_encoder_metrics_provider.mojom.h"
 #include "media/mojo/mojom/webrtc_video_perf.mojom.h"
