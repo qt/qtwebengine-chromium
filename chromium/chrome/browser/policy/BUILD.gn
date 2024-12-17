@@ -7,6 +7,7 @@ import("//build/config/features.gni")
 import("//components/nacl/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//third_party/webrtc/webrtc.gni")
 
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 
@@ -221,7 +222,6 @@ source_set("policy_specific_browser_tests") {
     "//base",
     "//chrome/app:command_ids",
     "//chrome/browser",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/ui/autofill",
     "//chrome/common",
     "//chrome/test:test_support",
@@ -234,6 +234,12 @@ source_set("policy_specific_browser_tests") {
     "//content/test:test_support",
     "//testing/gmock",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (is_chromeos) {
     deps += [

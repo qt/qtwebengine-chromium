@@ -1514,6 +1514,13 @@ source_set("extensions") {
     deps += [ "//rlz:rlz_lib" ]
   }
 
+  if (enable_webrtc) {
+    sources += [ "api/webrtc_logging_private/webrtc_logging_private_api.cc" ]
+  } else {
+    sources +=
+        [ "api/webrtc_logging_private/webrtc_logging_private_api_stub.cc" ]
+  }
+
   if (toolkit_views) {
     deps += [ "//ui/views" ]
   }

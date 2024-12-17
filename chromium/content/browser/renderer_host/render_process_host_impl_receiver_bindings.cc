@@ -22,7 +22,9 @@
 #include "content/browser/push_messaging/push_messaging_manager.h"
 #include "content/browser/renderer_host/embedded_frame_sink_provider_impl.h"
 #include "content/browser/renderer_host/media/media_stream_track_metrics_host.h"
+#if BUILDFLAG(ENABLE_WEBRTC)
 #include "content/browser/renderer_host/p2p/socket_dispatcher_host.h"
+#endif
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/common/features.h"
@@ -230,25 +232,24 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   registry->AddInterface(
       base::BindRepeating(&GpuDataManagerImpl::BindReceiver));
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   // Note, the base::Unretained() is safe because the target object has an IO
   // thread deleter and the callback is also targeting the IO thread.  When
   // the RPHI is destroyed it also triggers the destruction of the registry
   // on the IO thread.
+#if BUILDFLAG(ENABLE_WEBRTC)
   media_stream_track_metrics_host_.reset(new MediaStreamTrackMetricsHost());
+
   registry->AddInterface(base::BindRepeating(
       &MediaStreamTrackMetricsHost::BindReceiver,
       base::Unretained(media_stream_track_metrics_host_.get())));
-#endif  // BUILDFLAG(ENABLE_WEBRTC)
+#endif
   registry->AddInterface(
       base::BindRepeating(&metrics::CreateSingleSampleMetricsProvider));
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::CreateMediaLogRecordHost,
                           instance_weak_factory_.GetWeakPtr()));
-#endif  // BUILDFLAG(ENABLE_WEBRTC)
 
   AddUIThreadInterface(registry.get(),
                        base::BindRepeating(&FieldTrialRecorder::Create));
@@ -291,13 +292,13 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       base::BindRepeating(&RenderProcessHostImpl::BindMediaInterfaceProxy,
                           instance_weak_factory_.GetWeakPtr()));
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(
           &RenderProcessHostImpl::BindVideoEncoderMetricsProvider,
           instance_weak_factory_.GetWeakPtr()));
 
+#if BUILDFLAG(ENABLE_WEBRTC)
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::BindAecDumpManager,

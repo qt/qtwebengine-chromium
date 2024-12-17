@@ -1791,7 +1791,6 @@ static_library("browser") {
     "//chrome/browser/feedback",
     "//chrome/browser/feedback:feedback_impl",
     "//chrome/browser/google",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/file_system_access:impl",
     "//chrome/browser/search",
 
@@ -1916,7 +1915,6 @@ static_library("browser") {
     "//chrome/browser/media/router",
     "//chrome/browser/media/router:media_router_feature",
     "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/metrics:expired_histograms_array",
     "//chrome/browser/metrics/structured",
     "//chrome/browser/metrics/variations:chrome_ui_string_overrider_factory",
@@ -8287,12 +8285,16 @@ static_library("browser") {
       "media/webrtc/window_icon_util.h",
     ]
     deps += [
+      "//chrome/browser/media/webrtc",
       "//components/webrtc",
       "//components/webrtc_logging/browser",
       "//components/webrtc_logging/common",
       "//content/public/browser",
       "//services/audio/public/cpp",
       "//third_party/webrtc_overrides:webrtc_component",
+    ]
+    allow_circular_includes_from += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 
@@ -9088,7 +9090,6 @@ static_library("test_support") {
   public_deps = [
     ":browser",
     "//chrome/browser/autofill:test_support",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/safe_browsing:test_support",
     "//chrome/browser/ui:test_support",
@@ -9279,6 +9280,12 @@ static_library("test_support") {
       "//components/crx_file",
       "//extensions/browser",
       "//extensions/common:mojom",
+    ]
+  }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 

@@ -462,7 +462,6 @@ static_library("test_support") {
     "//chrome:strings",
     "//chrome/browser:browser_process",
     "//chrome/browser:test_support",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles:profile_attributes",
     "//chrome/browser/safe_browsing",
     "//chrome/browser/search_engine_choice",
@@ -594,6 +593,12 @@ static_library("test_support") {
       "../browser/pdf:pdf_extension_test_utils",
       "//components/pdf/browser",
       "//pdf:features",
+    ]
+  }
+
+  if (enable_webrtc) {
+    public_deps += [
+      "//chrome/browser/media/webrtc",
     ]
   }
 
@@ -1931,8 +1936,6 @@ if (!is_android) {
       "//chrome/browser/media/router:media_router_feature",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
-      "//chrome/browser/media/webrtc",
-      "//chrome/browser/media/webrtc:test_support",
       "//chrome/browser/metrics:test_support",
       "//chrome/browser/metrics/structured:test_support",
       "//chrome/browser/notifications/scheduler:factory",
@@ -2498,6 +2501,8 @@ if (!is_android) {
 
     if (enable_webrtc) {
       deps += [
+        "//chrome/browser/media/webrtc",
+        "//chrome/browser/media/webrtc:test_support",
         "//components/webrtc",
         "//components/webrtc_logging/browser",
       ]
@@ -6636,7 +6641,7 @@ test("unit_tests") {
   }
   defines = []
 
-  public_deps = [ "//chrome/browser/media/webrtc" ]
+  public_deps = [ ]
   deps = [
     ":test_support",
     ":test_support_unit",
@@ -7268,6 +7273,9 @@ test("unit_tests") {
       data_deps +=
           [ "//components/update_client:recovery_component_tests_bundle_data" ]
     }
+  }
+  if (enable_webrtc) {
+    public_deps += [ "//chrome/browser/media/webrtc" ]
   }
 
   if (is_chrome_branded) {
@@ -8304,7 +8312,6 @@ test("unit_tests") {
       "//chrome/browser/media/router:test_support",
       "//chrome/browser/media/router/discovery:discovery",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
-      "//chrome/browser/media/webrtc:test_support",
       "//chrome/browser/new_tab_page/chrome_colors",
       "//chrome/browser/new_tab_page/modules/v2/calendar:mojo_bindings",
       "//chrome/browser/new_tab_page/modules/v2/most_relevant_tab_resumption:mojo_bindings",
@@ -8427,6 +8434,12 @@ test("unit_tests") {
     ]
 
     data += [ "//ash/components/arc/test/data/icons/" ]
+
+    if (enable_webrtc) {
+      deps += [
+          "//chrome/browser/media/webrtc:test_support",
+      ]
+    }
 
     if (include_js2gtest_tests && is_chromeos_ash) {
       data += js2gtest_js_libraries

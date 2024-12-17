@@ -402,6 +402,7 @@ void RealtimeAudioDestinationHandler::StartPlatformDestination() {
 
   if (update_echo_cancellation_on_next_start_) {
     update_echo_cancellation_on_next_start_ = false;
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (base::FeatureList::IsEnabled(
             features::kWebAudioContextConstructorEchoCancellation) &&
         sink_descriptor_.Type() ==
@@ -430,6 +431,7 @@ void RealtimeAudioDestinationHandler::StartPlatformDestination() {
                            output_device_status));
       }
     }
+#endif
   }
 
   AudioWorklet* audio_worklet = Context()->audioWorklet();
