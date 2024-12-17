@@ -11,6 +11,7 @@
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkSafeMath.h"
 #include "src/core/SkStroke.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrBuffer.h"
@@ -1189,16 +1190,28 @@ void AAHairlineOp::onPrepareDraws(Target* target) {
 
     int instanceCount = fPaths.count();
     bool convertConicsToQuads = !target->caps().shaderCaps()->floatIs32Bits();
-    for (int i = 0; i < instanceCount; i++) {
+    SkSafeMath safeMath;
+    for (int i = 0; i < instanceCount && safeMath.ok(); i++) {
         const PathData& args = fPaths[i];
-        quadCount += gather_lines_and_quads(args.fPath, args.fViewMatrix, args.fDevClipBounds,
-                                            args.fCapLength, convertConicsToQuads, &lines, &quads,
-                                            &conics, &qSubdivs, &cWeights);
+        quadCount = safeMath.addInt(quadCount,
+                                    gather_lines_and_quads(args.fPath,
+                                                           args.fViewMatrix,
+                                                           args.fDevClipBounds,
+                                                           args.fCapLength,
+                                                           convertConicsToQuads,
+                                                           &lines,
+                                                           &quads,
+                                                           &conics,
+                                                           &qSubdivs,
+                                                           &cWeights));
     }
 
     int lineCount = lines.count() / 2;
     int conicCount = conics.count() / 3;
-    int quadAndConicCount = conicCount + quadCount;
+    int quadAndConicCount = safeMath.addInt(conicCount, quadCount);
+    if (!safeMath.ok()) {
+        return;
+    }
 
     static constexpr int kMaxLines = SK_MaxS32 / kLineSegNumVertices;
     static constexpr int kMaxQuadsAndConics = SK_MaxS32 / kQuadNumVertices;
