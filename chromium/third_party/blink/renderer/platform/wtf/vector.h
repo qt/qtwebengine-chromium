@@ -48,6 +48,7 @@
 #include "third_party/blink/renderer/platform/wtf/allocator/partition_allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/atomic_operations.h"
+#include "third_party/blink/renderer/platform/wtf/conditional_destructor.h"
 #include "third_party/blink/renderer/platform/wtf/construct_traits.h"
 #include "third_party/blink/renderer/platform/wtf/container_annotations.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"  // For default Vector template parameters.
@@ -1197,7 +1198,12 @@ template <typename T, wtf_size_t InlineCapacity>
 inline constexpr bool kVectorNeedsDestructor<T, InlineCapacity, true> = true;
 
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
-class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator> {
+class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator>,
+      public ConditionalDestructor<
+          Vector<T, INLINE_CAPACITY, Allocator>,
+          kVectorNeedsDestructor<T,
+                                INLINE_CAPACITY,
+                                Allocator::kIsGarbageCollected>> {
   USE_ALLOCATOR(Vector, Allocator);
   using Base = VectorBuffer<T, INLINE_CAPACITY, Allocator>;
   using TypeOperations = VectorTypeOperations<T, Allocator>;
@@ -1565,15 +1571,7 @@ class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator> {
     return Allocator::template MaxElementCountInBackingStore<T>();
   }
 
-  ~Vector()
-    requires(!kVectorNeedsDestructor<T,
-                                     INLINE_CAPACITY,
-                                     Allocator::kIsGarbageCollected>)
-  = default;
-  ~Vector()
-    requires(kVectorNeedsDestructor<T,
-                                    INLINE_CAPACITY,
-                                    Allocator::kIsGarbageCollected>)
+  void Finalize()
   {
     static_assert(!Allocator::kIsGarbageCollected || INLINE_CAPACITY,
                   "GarbageCollected collections without inline capacity cannot "

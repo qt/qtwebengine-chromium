@@ -58,7 +58,11 @@ class DequeConstIterator;
 template <typename T,
           wtf_size_t InlineCapacity = 0,
           typename Allocator = PartitionAllocator>
-class Deque {
+class Deque : public ConditionalDestructor<
+          Deque<T, INLINE_CAPACITY, Allocator>,
+          kVectorNeedsDestructor<T,
+                                INLINE_CAPACITY,
+                                Allocator::kIsGarbageCollected>> {
   USE_ALLOCATOR(Deque, Allocator);
 
  public:
@@ -68,21 +72,12 @@ class Deque {
   typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
   Deque();
-
-  ~Deque()
-    requires(!kVectorNeedsDestructor<T,
-                                     INLINE_CAPACITY,
-                                     Allocator::kIsGarbageCollected>)
-  = default;
-  ~Deque()
-    requires(kVectorNeedsDestructor<T,
-                                    INLINE_CAPACITY,
-                                    Allocator::kIsGarbageCollected>);
-
   Deque(const Deque&);
   Deque& operator=(const Deque&);
   Deque(Deque&&);
   Deque& operator=(Deque&&);
+
+  void Finalize();
 
   void Swap(Deque&);
 
@@ -429,10 +424,7 @@ inline void Deque<T, InlineCapacity, Allocator>::DestroyAll() {
 // For design of the destructor, please refer to
 // [here](https://docs.google.com/document/d/1AoGTvb3tNLx2tD1hNqAfLRLmyM59GM0O-7rCHTT_7_U/)
 template <typename T, wtf_size_t InlineCapacity, typename Allocator>
-inline Deque<T, InlineCapacity, Allocator>::~Deque()
-  requires(kVectorNeedsDestructor<T,
-                                  INLINE_CAPACITY,
-                                  Allocator::kIsGarbageCollected>)
+void Deque<T, InlineCapacity, Allocator>::Finalize()
 {
   static_assert(!Allocator::kIsGarbageCollected || INLINE_CAPACITY,
                 "GarbageCollected collections without inline capacity cannot "

@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/platform/wtf/allocator/partition_allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
 #include "third_party/blink/renderer/platform/wtf/atomic_operations.h"
+#include "third_party/blink/renderer/platform/wtf/conditional_destructor.h"
 #include "third_party/blink/renderer/platform/wtf/construct_traits.h"
 #include "third_party/blink/renderer/platform/wtf/hash_traits.h"
 #include "third_party/blink/renderer/platform/wtf/type_traits.h"
@@ -633,7 +634,9 @@ template <typename Key,
           typename Traits,
           typename KeyTraits,
           typename Allocator>
-class HashTable final {
+class HashTable final : public ConditionalDestructor<
+          HashTable<Key, Value, Extractor, Traits, KeyTraits, Allocator>,
+          !Allocator::kIsGarbageCollected> {
   DISALLOW_NEW();
 
  public:
@@ -657,13 +660,9 @@ class HashTable final {
 
   HashTable();
 
-  ~HashTable()
-    requires(Allocator::kIsGarbageCollected)
-  = default;
-
-  ~HashTable()
-    requires(!Allocator::kIsGarbageCollected)
-  {
+  void Finalize() {
+    static_assert(!Allocator::kIsGarbageCollected,
+                  "GCed collections can't be finalized.");
     if (!table_) [[likely]] {
       return;
     }
