@@ -4,6 +4,7 @@
 
 import("//components/enterprise/buildflags/buildflags.gni")
 import("//components/safe_browsing/buildflags.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
@@ -55,7 +56,7 @@ source_set("impl") {
     deps += [ "//components/safe_browsing/content/common:file_type_policies" ]
   }
 
-  if (!is_android || is_desktop_android) {
+  if ((!is_android || is_desktop_android) && enable_extensions) {
     deps += [ "//extensions/browser" ]
   }
 
@@ -94,12 +95,16 @@ if (!is_android) {
       "//content/public/browser",
       "//content/public/common",
       "//content/test:test_support",
-      "//extensions:test_support",
       "//net:test_support",
       "//testing/gtest",
       "//ui/shell_dialogs",
       "//url",
     ]
+    if (enable_extensions) {
+      deps += [
+        "//extensions:test_support",
+      ]
+    }
   }
 }
 

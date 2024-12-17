@@ -5,6 +5,7 @@
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 source_set("feedback_enum") {
   sources = [ "public/feedback_source.h" ]
@@ -99,7 +100,6 @@ source_set("feedback_impl") {
       "//chrome/browser:browser_process",
       "//chrome/browser/crash_upload_list",
       "//chrome/browser/devtools",
-      "//chrome/browser/extensions",
       "//chrome/browser/google",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/sync",
@@ -111,12 +111,17 @@ source_set("feedback_impl") {
       "//components/performance_manager",
       "//components/supervised_user/core/browser",
       "//content/public/browser",
-      "//extensions/browser",
-      "//extensions/browser/api/feedback_private",
-      "//extensions/browser/api/power",
       "//net",
       "//services/cert_verifier:lib",
     ]
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+        "//extensions/browser",
+        "//extensions/browser/api/feedback_private",
+        "//extensions/browser/api/power",
+      ]
+    }
   }
   if (is_chromeos) {
     deps += [

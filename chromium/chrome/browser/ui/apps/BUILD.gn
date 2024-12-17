@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(is_win || is_mac || is_linux || is_chromeos)
 
@@ -16,10 +17,14 @@ source_set("apps") {
 
   public_deps = [
     "//base",
-    "//extensions/browser",
     "//ui/base:types",
     "//ui/gfx/geometry",
   ]
+  if (enable_extensions) {
+    public_deps += [
+      "//extensions/browser",
+    ]
+  }
 }
 
 source_set("impl") {
@@ -35,7 +40,6 @@ source_set("impl") {
     "//chrome/app:generated_resources",
     "//chrome/app:generated_resources_grit",
     "//chrome/browser:primitives",
-    "//chrome/browser/apps/platform_apps",
     "//chrome/browser/devtools",
     "//chrome/browser/favicon",
     "//chrome/browser/file_system_access",
@@ -47,15 +51,20 @@ source_set("impl") {
     "//components/version_info",
     "//components/zoom",
     "//content/public/browser",
-    "//extensions/common",
-    "//extensions/common:common_constants",
-    "//extensions/common:mojom",
     "//mojo/public/cpp/bindings",
     "//printing/buildflags",
     "//services/service_manager/public/cpp",
     "//ui/base",
   ]
 
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/apps/platform_apps",
+      "//extensions/common",
+      "//extensions/common:common_constants",
+      "//extensions/common:mojom",
+    ]
+  }
   if (is_chromeos_ash) {
     deps += [ "//chrome/browser/ash/lock_screen_apps:lock_screen_apps" ]
   }

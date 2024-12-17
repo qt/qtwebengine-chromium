@@ -36,7 +36,7 @@ source_set("impl") {
     "//components/signin/public/base",
     "//components/signin/public/identity_manager",
     "//content/public/browser",
-    "//extensions/browser",
+#    "//extensions/browser",
     "//google_apis",
   ]
 

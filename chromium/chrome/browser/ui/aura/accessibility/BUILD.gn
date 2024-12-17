@@ -11,7 +11,7 @@ source_set("accessibility") {
 
   public_deps = [
     "//base",
-    "//extensions/browser/api",
+#    "//extensions/browser/api",
     "//ui/accessibility",
     "//ui/views",
   ]
@@ -24,7 +24,7 @@ source_set("impl") {
     ":accessibility",
     "//base",
     "//build:chromeos_buildflags",
-    "//extensions/browser/api",
+#    "//extensions/browser/api",
     "//ui/accessibility",
     "//ui/aura",
     "//ui/display",
@@ -49,7 +49,7 @@ source_set("interactive_ui_tests") {
     "//chrome/test:test_support_ui",
     "//content/public/browser",
     "//content/test:test_support",
-    "//extensions/browser/api/automation_internal",
+#    "//extensions/browser/api/automation_internal",
     "//ui/accessibility",
     "//ui/base",
     "//ui/gfx/geometry",
