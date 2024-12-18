@@ -41,6 +41,7 @@ source_set("path_bridge") {
   sources = skia_fontations_path_bridge_sources
 }
 
+if (!is_qtwebengine) {
 rust_static_library("bridge_rust_side") {
   allow_unsafe = true
   crate_root = skia_fontations_bridge_root
@@ -57,6 +58,7 @@ rust_static_library("bridge_rust_side") {
     ":skia_config",
     "//build/config/compiler:no_chromium_code",
   ]
+}
 }
 
 # External-facing config for dependent code.
@@ -226,6 +228,12 @@ config("skia_library_config") {
       # fairly small size. http://crbug.com/314387
       "SK_DEFAULT_FONT_CACHE_COUNT_LIMIT=256",
     ]
+  }
+
+  if (is_qtwebengine) {
+      defines -= [
+        "SK_TYPEFACE_FACTORY_FONTATIONS",
+      ]
   }
 }
 
@@ -424,14 +432,16 @@ component("skia") {
       public += skia_ports_fontmgr_empty_public
     }
     sources += skia_ports_typeface_proxy_sources
-    sources += skia_ports_typeface_fontations_sources
-    sources += skia_ports_fontmgr_fontations_sources
 
-    # Fontations Rust/C++ bridge interfaces.
-    deps += [
-      ":bridge_rust_side",
-      ":path_bridge",
-    ]
+    if (!is_qtwebengine) {
+      sources += skia_ports_typeface_fontations_sources
+      sources += skia_ports_fontmgr_fontations_sources
+      # Fontations Rust/C++ bridge interfaces.
+      deps += [
+        ":bridge_rust_side",
+        ":path_bridge",
+      ]
+    }
   }
 
   if (is_win) {
@@ -734,6 +744,13 @@ skia_source_set("skia_core_and_effects") {
     ]
   }
   visibility = [ ":skia" ]
+
+  if (is_qtwebengine) {
+    deps -= [
+      ":bridge_rust_side",
+      ":path_bridge",
+    ]
+  }
 }
 
 # Bits that involve special vector-y hardware.
