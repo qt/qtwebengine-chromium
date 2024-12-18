@@ -604,7 +604,7 @@ bool SourceBufferState::OnNewConfigs(std::unique_ptr<MediaTracks> tracks) {
       DCHECK(audio_config.IsValidConfig());
 
       if (strict_codec_expectations_) {
-        const auto& it =
+        const auto it =
             base::ranges::find(expected_acodecs, audio_config.codec());
         if (it == expected_acodecs.end()) {
           MEDIA_LOG(ERROR, media_log_)
@@ -688,7 +688,7 @@ bool SourceBufferState::OnNewConfigs(std::unique_ptr<MediaTracks> tracks) {
 #endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_DOLBY_VISION)
 
       if (strict_codec_expectations_) {
-        const auto& it =
+        const auto it =
             base::ranges::find(expected_vcodecs, video_config.codec());
         if (it == expected_vcodecs.end()) {
           MEDIA_LOG(ERROR, media_log_)
