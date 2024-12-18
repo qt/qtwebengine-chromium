@@ -9,6 +9,7 @@
 #include "third_party/skia/include/core/SkFontMgr.h"
 
 #include "build/build_config.h"
+#include "skia/buildflags.h"
 #include "third_party/blink/public/common/buildflags.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
@@ -27,7 +28,9 @@ class PLATFORM_EXPORT WebFontTypefaceFactory {
 
   using FontInstantiator = struct {
     InstantiationFunction make_system;
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
     InstantiationFunction make_fontations;
+#endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
     InstantiationFunction make_fallback;
 #endif
