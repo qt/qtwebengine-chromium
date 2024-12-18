@@ -8,6 +8,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "build/build_config.h"
 #include "skia/ext/font_utils.h"
+#include "third_party/freetype_buildflags.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
 #include "third_party/blink/renderer/platform/fonts/opentype/font_format_check.h"
 #include "third_party/skia/include/core/SkTypeface.h"
@@ -21,13 +22,13 @@
 #include "third_party/skia/include/ports/SkFontMgr_empty.h"
 #endif
 
-
 #include <functional>
 
 namespace blink {
 
 namespace {
 
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
 bool IsWin() {
 #if BUILDFLAG(IS_WIN)
   return true;
@@ -43,30 +44,37 @@ bool IsFreeTypeSystemRasterizer() {
   return false;
 #endif
 }
+#endif
 
 sk_sp<SkTypeface> MakeTypefaceDefaultFontMgr(sk_sp<SkData> data) {
 #if BUILDFLAG(IS_WIN)
   return skia::DefaultFontMgr()->makeFromData(data, 0);
 #endif
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) || !BUILDFLAG(SKIA_USE_FONTATIONS)
   return skia::DefaultFontMgr()->makeFromData(data, 0);
 #endif
 
-#if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE))
+#if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)) && BUILDFLAG(SKIA_USE_FONTATIONS)
   return SkTypeface_Make_Fontations(data, SkFontArguments());
 #endif
 }
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
 sk_sp<SkTypeface> MakeTypefaceFallback(sk_sp<SkData> data) {
-  return SkTypeface_Make_Fontations(data, SkFontArguments());
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
+   return SkTypeface_Make_Fontations(data, SkFontArguments());
+#else
+   return SkFontMgr_New_Custom_Empty()->makeFromData(data, 0);
+#endif
 }
 #endif
 
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
 sk_sp<SkTypeface> MakeTypefaceFontations(sk_sp<SkData> data) {
   return SkTypeface_Make_Fontations(data, SkFontArguments());
 }
+#endif
 
 sk_sp<SkTypeface> MakeVariationsTypeface(
     sk_sp<SkData> data,
@@ -85,11 +93,13 @@ sk_sp<SkTypeface> MakeVariationsTypeface(
 sk_sp<SkTypeface> MakeSbixTypeface(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   // If we're on a OS with FreeType as backend, or on Windows, where we used to
   // use FreeType for SBIX, switch to Fontations for SBIX.
   if (IsFreeTypeSystemRasterizer() || IsWin()) {
     return instantiator.make_fontations(data);
   }
+#endif
 
   // Remaining case, on Mac, CoreText can handle creating SBIX fonts.
   return instantiator.make_system(data);
@@ -98,29 +108,55 @@ sk_sp<SkTypeface> MakeSbixTypeface(
 sk_sp<SkTypeface> MakeColrV0Typeface(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   if (IsWin()) {
     // On Windows Skia's DirectWrite
     // backend handles COLRv0.
     return instantiator.make_system(data);
   }
   return instantiator.make_fontations(data);
+#else
+  // Remaining cases, Fontations is off, then on Windows Skia's DirectWrite
+  // backend handles COLRv0, on FreeType systems, FT handles COLRv0.
+  return instantiator.make_system(data);
+#endif
 }
 
 sk_sp<SkTypeface> MakeColrV0VariationsTypeface(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
 #if BUILDFLAG(IS_WIN)
   if (DWriteVersionSupportsVariations()) {
     return instantiator.make_system(data);
   }
 #endif
   return instantiator.make_fontations(data);
+#else
+  return instantiator.make_system(data);
+#endif
 }
+
+#if !BUILDFLAG(SKIA_USE_FONTATIONS)
+sk_sp<SkTypeface> MakeUseFallbackIfNeeded(
+    sk_sp<SkData> data,
+    const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
+   return instantiator.make_fallback(data);
+#else
+   return instantiator.make_system(data);
+#endif
+}
+#endif
 
 sk_sp<SkTypeface> MakeFontationsFallbackPreferred(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   return instantiator.make_fontations(data);
+#else
+  return MakeUseFallbackIfNeeded(data, instantiator);
+#endif
 }
 
 }  // namespace
@@ -130,7 +166,9 @@ bool WebFontTypefaceFactory::CreateTypeface(sk_sp<SkData> data,
   const FontFormatCheck format_check(data);
   const FontInstantiator instantiator = {
       MakeTypefaceDefaultFontMgr,
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
       MakeTypefaceFontations,
+#endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
       MakeTypefaceFallback,
 #endif

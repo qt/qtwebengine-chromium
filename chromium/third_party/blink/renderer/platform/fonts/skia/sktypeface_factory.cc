@@ -6,6 +6,7 @@
 
 #include "base/notreached.h"
 #include "build/build_config.h"
+#include "skia/buildflags.h"
 #include "skia/ext/font_utils.h"
 #include "third_party/skia/include/core/SkFontMgr.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
@@ -27,7 +28,12 @@ sk_sp<SkTypeface> SkTypeface_Factory::FromFontConfigInterfaceIdAndTtcIndex(
   SkFontConfigInterface::FontIdentity font_identity;
   font_identity.fID = config_id;
   font_identity.fTTCIndex = ttc_index;
+
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   return fci->makeTypeface(font_identity, SkFontMgr_New_Fontations_Empty());
+#else
+  return fci->makeTypeface(font_identity, skia::DefaultFontMgr());
+#endif
 #else
   NOTREACHED();
 #endif
@@ -39,8 +45,13 @@ sk_sp<SkTypeface> SkTypeface_Factory::FromFilenameAndTtcIndex(
     int ttc_index) {
 #if !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_FUCHSIA) && \
     !BUILDFLAG(IS_APPLE)
+
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   return SkFontMgr_New_Fontations_Empty()->makeFromFile(filename.c_str(),
                                                         ttc_index);
+#else
+  return skia::DefaultFontMgr()->makeFromFile(filename.c_str(), ttc_index);
+#endif
 #else
   NOTREACHED();
 #endif

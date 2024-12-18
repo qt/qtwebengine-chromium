@@ -19,6 +19,7 @@
 #include "base/trace_event/trace_event.h"
 #include "content/common/features.h"
 #include "content/public/child/child_thread.h"
+#include "skia/buildflags.h"
 #include "skia/ext/font_utils.h"
 #if BUILDFLAG(IS_WIN)
 #include "third_party/skia/src/ports/SkTypeface_win_dw.h"  // nogncheck
@@ -240,7 +241,13 @@ sk_sp<SkTypeface> FontDataManager::onMakeFromStreamArgs(
   }
 #endif
 
+#if BUILDFLAG(SKIA_USE_FONTATIONS)
   return SkTypeface_Make_Fontations(std::move(stream), args);
+#endif
+#if BUILDFLAG(ENABLE_FREETYPE)
+  return custom_fnt_mgr_->makeFromStream(std::move(stream), args);
+#endif
+  return nullptr;
 }
 
 sk_sp<SkTypeface> FontDataManager::onMakeFromFile(const char path[],

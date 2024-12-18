@@ -85,9 +85,15 @@ static sk_sp<SkFontMgr> fontmgr_factory() {
   return SkFontMgr_New_CoreText(nullptr);
 #elif BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
   sk_sp<SkFontConfigInterface> fci(SkFontConfigInterface::RefGlobal());
+#if defined(SK_TYPEFACE_FACTORY_FONTATIONS)
   return fci ? SkFontMgr_New_FCI(std::move(fci),
                                  SkFontScanner_Make_Fontations())
              : nullptr;
+#else
+  return fci ? SkFontMgr_New_FCI(std::move(fci),
+                                 SkFontScanner_Make_FreeType())
+             : nullptr;
+#endif
 #elif BUILDFLAG(IS_FUCHSIA)
   fuchsia::fonts::ProviderSyncPtr provider;
   base::ComponentContextForProcess()->svc()->Connect(provider.NewRequest());

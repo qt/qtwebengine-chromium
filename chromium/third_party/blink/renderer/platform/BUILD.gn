@@ -1806,6 +1806,7 @@ jumbo_component("platform") {
     "//third_party/dawn/include/dawn:cpp_headers",
     "//third_party/fdlibm",
     "//third_party/pffft",
+    "//third_party:freetype_buildflags",
     "//ui/base",
     "//ui/base:ui_data_pack",
     "//ui/base/cursor",
