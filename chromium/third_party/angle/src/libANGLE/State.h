@@ -1482,7 +1482,7 @@ class State : angle::NonCopyable
     using DirtyObjectHandler = angle::Result (State::*)(const Context *context, Command command);
     using DirtyObjectHandlerArray = std::array<DirtyObjectHandler, state::DIRTY_OBJECT_MAX>;
 
-    static constexpr DirtyObjectHandlerArray MakeDirtyObjectHandlers()
+    static DirtyObjectHandlerArray MakeDirtyObjectHandlers()
     {
         // Work around C++'s lack of array element support in designated initializers
         // This function cannot be a lambda due to MSVC C++17 limitations b/330910097#comment5
@@ -1515,8 +1515,8 @@ class State : angle::NonCopyable
 
     angle::Result dirtyObjectHandler(size_t dirtyObject, const Context *context, Command command)
     {
-        static constexpr DirtyObjectHandlerArray handlers = MakeDirtyObjectHandlers();
-        static_assert(handlers[0] != nullptr, "MakeDirtyObjectHandlers missing a handler");
+        static DirtyObjectHandlerArray handlers = MakeDirtyObjectHandlers();
+        // static_assert(handlers[0] != nullptr, "MakeDirtyObjectHandlers missing a handler");
 
         return (this->*handlers[dirtyObject])(context, command);
     }

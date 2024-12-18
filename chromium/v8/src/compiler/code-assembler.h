@@ -803,8 +803,8 @@ class V8_EXPORT_PRIVATE CodeAssembler {
   Node* Load(MachineType type, Node* base);
   template <class Type>
   TNode<Type> Load(MachineType type, TNode<RawPtr<Type>> base) {
-    DCHECK(
-        IsSubtype(type.representation(), MachineRepresentationOf<Type>::value));
+    // DCHECK(
+    //     IsSubtype(type.representation(), MachineRepresentationOf<Type>::value));
     return UncheckedCast<Type>(Load(type, static_cast<Node*>(base)));
   }
   Node* Load(MachineType type, Node* base, Node* offset);

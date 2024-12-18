@@ -614,10 +614,9 @@ PA_ALWAYS_INLINE void ThreadCache::PutInBucket(Bucket& bucket,
   static const uint32_t poison_16_bytes[4] = {0xbadbad00, 0xbadbad00,
                                               0xbadbad00, 0xbadbad00};
 
-#if !(PA_BUILDFLAG(IS_WIN) && defined(COMPONENT_BUILD)) && \
-    PA_HAS_BUILTIN(__builtin_assume_aligned)
-  void* slot_start_tagged = __builtin_assume_aligned(
-      internal::SlotStartAddr2Ptr(slot_start), internal::kAlignment);
+#if !(PA_BUILDFLAG(IS_WIN) && defined(COMPONENT_BUILD)) && !PA_BUILDFLAG(IS_IOS)
+  void* slot_start_tagged = std::assume_aligned<internal::kAlignment>(
+      internal::SlotStartAddr2Ptr(slot_start));
 #else
   // TODO(crbug.com/40262684): std::assume_aligned introduce an additional
   // dependency: _libcpp_verbose_abort(const char*, ...).  It will cause

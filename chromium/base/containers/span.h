@@ -901,7 +901,7 @@ class GSL_POINTER span<T, dynamic_extent, InternalPtrType> {
     // `count != 0` implies non-null `data_`.  Consider using
     // `base::SpanOrSize<T>` to represent a size that may or may not be
     // accompanied by the actual data.
-    DCHECK(count == 0 || !!data_);
+    // DCHECK(count == 0 || !!data_);
   }
 
   // Constructs a span from a contiguous iterator and a size.

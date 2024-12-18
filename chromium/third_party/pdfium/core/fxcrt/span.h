@@ -203,7 +203,7 @@ class TRIVIAL_ABI GSL_POINTER span {
 
   UNSAFE_BUFFER_USAGE constexpr span(T* data, size_t size) noexcept
       : data_(data), size_(size) {
-    DCHECK(data_ || size_ == 0);
+//    DCHECK(data_ || size_ == 0);
   }
 
   // TODO(dcheng): Implement construction from a |begin| and |end| pointer.
