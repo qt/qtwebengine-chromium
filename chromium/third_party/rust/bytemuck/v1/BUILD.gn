@@ -7,6 +7,9 @@
 # Do not edit!
 
 import("//build/rust/cargo_crate.gni")
+import("//config/features.gni")
+
+static_assert(!is_qtwebengine)
 
 cargo_crate("lib") {
   crate_name = "bytemuck"

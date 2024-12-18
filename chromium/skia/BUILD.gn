@@ -51,22 +51,24 @@ source_set("path_bridge") {
   sources = skia_fontations_path_bridge_sources
 }
 
-rust_static_library("bridge_rust_side") {
-  allow_unsafe = true
-  crate_root = skia_fontations_bridge_root
-  sources = skia_fontations_bridge_sources
-  cxx_bindings = skia_fontations_bridge_sources
-  deps = [
-    ":path_bridge",
-    "//third_party/rust/font_types/v0_7:lib",
-    "//third_party/rust/read_fonts/v0_22:lib",
-    "//third_party/rust/skrifa/v0_22:lib",
-  ]
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    ":skia_config",
-    "//build/config/compiler:no_chromium_code",
-  ]
+if (!is_qtwebengine) {
+  rust_static_library("bridge_rust_side") {
+    allow_unsafe = true
+    crate_root = skia_fontations_bridge_root
+    sources = skia_fontations_bridge_sources
+    cxx_bindings = skia_fontations_bridge_sources
+    deps = [
+      ":path_bridge",
+      "//third_party/rust/font_types/v0_7:lib",
+      "//third_party/rust/read_fonts/v0_22:lib",
+      "//third_party/rust/skrifa/v0_22:lib",
+    ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":skia_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+  }
 }
 
 # External-facing config for dependent code.
@@ -429,15 +431,17 @@ component("skia") {
     # See SK_TYPEFACE_FACTORY_FREETYPE
     sources += skia_ports_freetype_sources
     sources += skia_ports_fontmgr_custom_sources
-    sources += skia_ports_typeface_fontations_sources
     sources += skia_ports_fontmgr_empty_sources
     public += skia_ports_fontmgr_empty_public
 
-    # Fontations Rust/C++ bridge interfaces.
-    deps += [
-      ":bridge_rust_side",
-      ":path_bridge",
-    ]
+    if (!is_qtwebengine) {
+      sources += skia_ports_typeface_fontations_sources
+      # Fontations Rust/C++ bridge interfaces.
+      deps += [
+        ":bridge_rust_side",
+        ":path_bridge",
+      ]
+    }
   }
 
   if (is_win) {
