@@ -41,6 +41,7 @@ source_set("path_bridge") {
   sources = skia_fontations_path_bridge_sources
 }
 
+if (!is_qtwebengine) {
 rust_static_library("bridge_rust_side") {
   allow_unsafe = true
   crate_root = skia_fontations_bridge_root
@@ -57,6 +58,7 @@ rust_static_library("bridge_rust_side") {
     ":skia_config",
     "//build/config/compiler:no_chromium_code",
   ]
+}
 }
 
 # External-facing config for dependent code.
@@ -424,14 +426,16 @@ component("skia") {
       public += skia_ports_fontmgr_empty_public
     }
     sources += skia_ports_typeface_proxy_sources
-    sources += skia_ports_typeface_fontations_sources
-    sources += skia_ports_fontmgr_fontations_sources
 
-    # Fontations Rust/C++ bridge interfaces.
-    deps += [
-      ":bridge_rust_side",
-      ":path_bridge",
-    ]
+    if (!is_qtwebengine) {
+      sources += skia_ports_typeface_fontations_sources
+      sources += skia_ports_fontmgr_fontations_sources
+      # Fontations Rust/C++ bridge interfaces.
+      deps += [
+        ":bridge_rust_side",
+        ":path_bridge",
+      ]
+    }
   }
 
   if (is_win) {

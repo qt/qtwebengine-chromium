@@ -30,6 +30,7 @@ namespace blink {
 
 namespace {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool IsWin() {
 #if BUILDFLAG(IS_WIN)
   return true;
@@ -53,9 +54,10 @@ bool IsFreeTypeSystemRasterizer() {
   return false;
 #endif
 }
+#endif
 
 sk_sp<SkTypeface> MakeTypefaceDefaultFontMgr(sk_sp<SkData> data) {
-#if !(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE))
+#if (!(BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE))) && !BUILDFLAG(IS_QTWEBENGINE)
   if (RuntimeEnabledFeatures::FontationsFontBackendEnabled()) {
     std::unique_ptr<SkStreamAsset> stream(new SkMemoryStream(data));
     return SkTypeface_Make_Fontations(std::move(stream), SkFontArguments());
@@ -78,15 +80,19 @@ sk_sp<SkTypeface> MakeTypefaceFallback(sk_sp<SkData> data) {
     return SkFontMgr_New_Custom_Empty()->makeFromData(data, 0);
   }
 #endif
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<SkStreamAsset> stream(new SkMemoryStream(data));
   return SkTypeface_Make_Fontations(std::move(stream), SkFontArguments());
+#endif
 }
 #endif
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 sk_sp<SkTypeface> MakeTypefaceFontations(sk_sp<SkData> data) {
   std::unique_ptr<SkStreamAsset> stream(new SkMemoryStream(data));
   return SkTypeface_Make_Fontations(std::move(stream), SkFontArguments());
 }
+#endif
 
 sk_sp<SkTypeface> MakeVariationsTypeface(
     sk_sp<SkData> data,
@@ -105,6 +111,7 @@ sk_sp<SkTypeface> MakeVariationsTypeface(
 sk_sp<SkTypeface> MakeSbixTypeface(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If we're on a OS with FreeType as backend, or on Windows, where we used to
   // use FreeType for SBIX, switch to Fontations for SBIX.
   if ((IsFreeTypeSystemRasterizer() || IsWin()) &&
@@ -112,6 +119,7 @@ sk_sp<SkTypeface> MakeSbixTypeface(
        RuntimeEnabledFeatures::FontationsFontBackendEnabled())) {
     return instantiator.make_fontations(data);
   }
+#endif
 #if BUILDFLAG(IS_WIN)
   return instantiator.make_fallback(data);
 #else
@@ -123,12 +131,14 @@ sk_sp<SkTypeface> MakeSbixTypeface(
 sk_sp<SkTypeface> MakeColrV0Typeface(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // On FreeType systems, move to Fontations for COLRv0.
   if ((IsApple() || IsFreeTypeSystemRasterizer()) &&
       (RuntimeEnabledFeatures::FontationsForSelectedFormatsEnabled() ||
        RuntimeEnabledFeatures::FontationsFontBackendEnabled())) {
     return instantiator.make_fontations(data);
   }
+#endif
 
 #if BUILDFLAG(IS_APPLE)
   return instantiator.make_fallback(data);
@@ -149,10 +159,14 @@ sk_sp<SkTypeface> MakeColrV0VariationsTypeface(
   }
 #endif
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if ((RuntimeEnabledFeatures::FontationsForSelectedFormatsEnabled() ||
        RuntimeEnabledFeatures::FontationsFontBackendEnabled())) {
     return instantiator.make_fontations(data);
   } else {
+#else
+  {
+#endif
 #if BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_WIN)
     return instantiator.make_fallback(data);
 #else
@@ -174,10 +188,12 @@ sk_sp<SkTypeface> MakeUseFallbackIfNeeded(
 sk_sp<SkTypeface> MakeFontationsFallbackPreferred(
     sk_sp<SkData> data,
     const WebFontTypefaceFactory::FontInstantiator& instantiator) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (RuntimeEnabledFeatures::FontationsForSelectedFormatsEnabled() ||
       RuntimeEnabledFeatures::FontationsFontBackendEnabled()) {
     return instantiator.make_fontations(data);
   }
+#endif
   return MakeUseFallbackIfNeeded(data, instantiator);
 }
 
@@ -188,7 +204,9 @@ bool WebFontTypefaceFactory::CreateTypeface(sk_sp<SkData> data,
   const FontFormatCheck format_check(data);
   const FontInstantiator instantiator = {
       MakeTypefaceDefaultFontMgr,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       MakeTypefaceFontations,
+#endif
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_APPLE)
       MakeTypefaceFallback,
 #endif
