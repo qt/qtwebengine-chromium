@@ -116,17 +116,20 @@ bool PdfOcrHelper::AreAllPagesInBatchOcred() const {
   return AreAllPagesOcred() || remaining_page_count_ % pages_per_batch_ == 0u;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void PdfOcrHelper::SetScreenAIAnnotatorForTesting(
     mojo::PendingRemote<screen_ai::mojom::ScreenAIAnnotator>
         screen_ai_annotator) {
   screen_ai_annotator_.reset();
   screen_ai_annotator_.Bind(std::move(screen_ai_annotator));
 }
+#endif
 
 void PdfOcrHelper::ResetRemainingPageCountForTesting() {
   remaining_page_count_ = 0;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void PdfOcrHelper::MaybeConnectToOcrService() {
   if (screen_ai_annotator_.is_bound() && screen_ai_annotator_.is_connected()) {
     return;
@@ -139,6 +142,7 @@ void PdfOcrHelper::MaybeConnectToOcrService() {
     screen_ai_annotator_.reset_on_idle_timeout(kIdleDisconnectDelay);
   }
 }
+#endif
 
 void PdfOcrHelper::OcrNextImage() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -156,11 +160,13 @@ void PdfOcrHelper::OcrNextImage() {
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   MaybeConnectToOcrService();
   screen_ai_annotator_->PerformOcrAndReturnAXTreeUpdate(
       std::move(bitmap),
       base::BindOnce(&PdfOcrHelper::ReceiveOcrResultsForImage,
                      weak_ptr_factory_.GetWeakPtr(), std::move(request)));
+#endif
 
   base::UmaHistogramEnumeration("Accessibility.PdfOcr.PDFImages",
                                 PdfOcrRequestStatus::kRequested);

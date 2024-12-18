@@ -147,7 +147,7 @@ jumbo_source_set("utility") {
     }
   }
 
-  if (enable_screen_ai_service && (is_linux || is_chromeos) && !is_qtwebengine) {
+  if (enable_screen_ai_service && (is_linux || is_chromeos)) {
     deps += [ "//services/screen_ai:screen_ai_sandbox_hook" ]
   }
 

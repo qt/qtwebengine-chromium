@@ -4341,9 +4341,6 @@ static_library("browser") {
       "//components/webauthn/core/browser:passkey_model",
       "//services/device/public/cpp/bluetooth",
       "//services/device/public/cpp/hid",
-      "//services/screen_ai",
-      "//services/screen_ai/public/cpp:utilities",
-      "//services/screen_ai/public/mojom",
       "//third_party/crashpad/crashpad/client:common",
       "//third_party/zxcvbn-cpp",
       "//ui/views",
@@ -4353,6 +4350,13 @@ static_library("browser") {
       "//ui/webui/resources/cr_components/history_clusters:mojo_bindings",
       "//ui/webui/resources/cr_components/history_embeddings:mojo_bindings",
     ]
+    if (enable_screen_ai_service) {
+      deps += [
+        "//services/screen_ai",
+        "//services/screen_ai/public/cpp:utilities",
+        "//services/screen_ai/public/mojom",
+      ]
+    }
 
     #!is_android
     # Any circular includes must depend on the target

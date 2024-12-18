@@ -13,7 +13,9 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "pdf/accessibility_structs.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "services/screen_ai/public/mojom/screen_ai_service.mojom.h"
+#endif
 #include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/ax_tree_update.h"
 
@@ -91,9 +93,11 @@ class PdfOcrHelper : public content::RenderFrameObserver {
   void OcrPage(base::queue<PdfOcrRequest> page_requests);
   bool AreAllPagesOcred() const;
   bool AreAllPagesInBatchOcred() const;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void SetScreenAIAnnotatorForTesting(
       mojo::PendingRemote<screen_ai::mojom::ScreenAIAnnotator>
           screen_ai_annotator);
+#endif
   void ResetRemainingPageCountForTesting();
   uint32_t pages_per_batch_for_testing() const { return pages_per_batch_; }
 
@@ -106,9 +110,11 @@ class PdfOcrHelper : public content::RenderFrameObserver {
   void ReceiveOcrResultsForImage(PdfOcrRequest request,
                                  const ui::AXTreeUpdate& tree_update);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If `screen_ai_annotator_` is not connected to OCR service and
   // `render_frame_` is available, tries to connect it to the OCR service.
   void MaybeConnectToOcrService();
+#endif
 
   // `image_fetcher_` owns `this`.
   const raw_ptr<chrome_pdf::PdfAccessibilityImageFetcher> image_fetcher_;
@@ -133,7 +139,9 @@ class PdfOcrHelper : public content::RenderFrameObserver {
   std::vector<PdfOcrRequest> batch_requests_;
   std::vector<ui::AXTreeUpdate> batch_tree_updates_;
   OnOcrDataReceivedCallback on_ocr_data_received_callback_;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   mojo::Remote<screen_ai::mojom::ScreenAIAnnotator> screen_ai_annotator_;
+#endif
   SEQUENCE_CHECKER(sequence_checker_);
   // Needs to be kept last so that it would be destructed first.
   base::WeakPtrFactory<PdfOcrHelper> weak_ptr_factory_{this};
