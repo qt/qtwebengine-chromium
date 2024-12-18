@@ -386,14 +386,9 @@ void LayerTreeView::DidFailToInitializeLayerTreeFrameSink() {
   // unable to be killed after Chrome is closed.
   // https://issues.chromium.org/336164423
   if (!Platform::Current()->IsGpuRemoteDisconnected()) {
-    // in case of dead gpu channel there no chance to recover without some delay
-    layer_tree_host_->GetTaskRunnerProvider()
-        ->MainThreadTaskRunner()
-        ->PostDelayedTask(
-            FROM_HERE,
-            base::BindOnce(&LayerTreeView::RequestNewLayerTreeFrameSink,
-                           weak_factory_.GetWeakPtr()),
-            base::Milliseconds(10));
+    layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner()->PostTask(
+        FROM_HERE, base::BindOnce(&LayerTreeView::RequestNewLayerTreeFrameSink,
+                                  weak_factory_.GetWeakPtr()));
   }
 }
 
