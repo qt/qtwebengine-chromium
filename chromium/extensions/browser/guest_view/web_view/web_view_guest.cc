@@ -1181,6 +1181,7 @@ bool WebViewGuest::IsPermissionRequestable(ContentSettingsType type) const {
 
 std::optional<content::PermissionResult> WebViewGuest::OverridePermissionResult(
     ContentSettingsType type) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (IsOwnedByControlledFrameEmbedder()) {
     // Permission of content within a Controlled Frame is isolated.
     // Therefore, Controlled Frame decides what the immediate permission result
@@ -1194,6 +1195,7 @@ std::optional<content::PermissionResult> WebViewGuest::OverridePermissionResult(
     }
     // Returns nullopt for unhandled cases.
   }
+#endif
   return std::nullopt;
 }
 
