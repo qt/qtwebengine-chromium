@@ -34,6 +34,7 @@ buildflag_header("buildflags") {
     "SKIA_BUILD_RUST_PNG=$enable_rust_png",
     "SKIA_SUPPORT_SKOTTIE=$skia_support_skottie",
     "SKIA_USE_DAWN=$skia_use_dawn",
+    "SKIA_USE_FONTATIONS=$skia_use_fontations",
     "SKIA_USE_METAL=$skia_use_metal",
   ]
 }
@@ -42,22 +43,24 @@ source_set("path_bridge") {
   sources = skia_fontations_path_bridge_sources
 }
 
-rust_static_library("bridge_rust_side") {
-  allow_unsafe = true
-  crate_root = skia_fontations_bridge_root
-  sources = skia_ports_fontations_bridge_rust_side_sources
-  cxx_bindings = [ skia_fontations_bridge_root ]
-  deps = [
-    ":path_bridge",
-    "//third_party/rust/font_types/v0_9:lib",
-    "//third_party/rust/read_fonts/v0_31:lib",
-    "//third_party/rust/skrifa/v0_33:lib",
-  ]
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [
-    ":skia_config",
-    "//build/config/compiler:no_chromium_code",
-  ]
+if (skia_use_fontations) {
+  rust_static_library("bridge_rust_side") {
+    allow_unsafe = true
+    crate_root = skia_fontations_bridge_root
+    sources = skia_ports_fontations_bridge_rust_side_sources
+    cxx_bindings = [ skia_fontations_bridge_root ]
+    deps = [
+      ":path_bridge",
+      "//third_party/rust/font_types/v0_9:lib",
+      "//third_party/rust/read_fonts/v0_31:lib",
+      "//third_party/rust/skrifa/v0_33:lib",
+    ]
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [
+      ":skia_config",
+      "//build/config/compiler:no_chromium_code",
+    ]
+  }
 }
 
 # External-facing config for dependent code.
@@ -196,7 +199,7 @@ config("skia_library_config") {
     defines += [ "SK_CODEC_DECODES_ICO" ]
   }
 
-  if (use_blink) {
+  if (use_blink && skia_use_fontations) {
     defines += [ "SK_TYPEFACE_FACTORY_FONTATIONS" ]
   }
   if (use_blink && !use_system_freetype) {
@@ -441,14 +444,16 @@ component("skia") {
       public += skia_ports_fontmgr_empty_public
     }
     sources += skia_ports_typeface_proxy_sources
-    sources += skia_ports_typeface_fontations_sources
-    sources += skia_ports_fontmgr_fontations_sources
 
-    # Fontations Rust/C++ bridge interfaces.
-    deps += [
-      ":bridge_rust_side",
-      ":path_bridge",
-    ]
+    if (skia_use_fontations) {
+      sources += skia_ports_typeface_fontations_sources
+      sources += skia_ports_fontmgr_fontations_sources
+      # Fontations Rust/C++ bridge interfaces.
+      deps += [
+        ":bridge_rust_side",
+        ":path_bridge",
+      ]
+    }
   }
 
   if (is_win) {
@@ -746,7 +751,7 @@ skia_source_set("skia_core_and_effects") {
     # skia_core_and_effects rather than the other way around.
     public_deps = [ "//third_party/dawn/include/dawn:cpp_headers" ]
   }
-  if (use_blink) {
+  if (use_blink && skia_use_fontations) {
     # Fontations Rust/C++ bridge interfaces, needed by SkTypeface.
     deps += [
       ":bridge_rust_side",

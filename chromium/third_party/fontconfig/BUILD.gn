@@ -10,6 +10,7 @@ import("//third_party/fontconfig/fontconfig.gni")
 assert(is_linux || is_chromeos)
 
 if (use_bundled_fontconfig) {
+  if (enable_rust) {
   rust_bindgen("fontconfig_h_bindgen") {
     header = "include/fontconfig/fontconfig.h"
     bindgen_flags = [
@@ -65,6 +66,7 @@ if (use_bundled_fontconfig) {
       "//third_party/rust/read_fonts/v0_31:lib",
       "//third_party/rust/skrifa/v0_33:lib",
     ]
+  }
   }
 
   config("fontconfig_config") {
@@ -140,7 +142,6 @@ if (use_bundled_fontconfig) {
     }
 
     deps = [
-      ":fontconfig_fontations_ffi",
       "//build/config/freetype",
       "//third_party/libxml",
       "//third_party/zlib",
@@ -158,6 +159,11 @@ if (use_bundled_fontconfig) {
 
         # Work around a pointer-to-bool conversion.
         "-Wno-pointer-bool-conversion",
+      ]
+    }
+    if (enable_rust) {
+      deps += [
+        ":fontconfig_fontations_ffi",
       ]
     }
 

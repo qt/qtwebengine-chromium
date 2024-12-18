@@ -53,7 +53,7 @@ declare_args() {
   # If enabled, coexists in build with FreeType library and the default font
   # library is selectable at runtime.
   # Note that Fontations requires Skia and Rust support.
-  pdf_enable_fontations = pdf_enable_fontations_override
+  pdf_enable_fontations = pdf_enable_fontations_override && enable_rust_cxx
 
   # Build PDFium standalone. Now only controls whether the test binaries
   # are built. Most logic is conditioned by build_with_chromium.
