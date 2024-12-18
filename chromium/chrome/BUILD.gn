@@ -1236,9 +1236,12 @@ if (is_win) {
       ":chrome_framework_plugins",
       ":chrome_framework_resources",
       ":optimization_guide_library",
-      ":swiftshader_binaries",
       ":widevine_cdm_library",
     ]
+
+    if (enable_swiftshader) {
+       bundle_deps += [ ":swiftshader_binaries" ]
+    }
 
     if (is_chrome_branded) {
       bundle_deps += [ ":preinstalled_apps" ]
