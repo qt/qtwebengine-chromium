@@ -53,7 +53,6 @@
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
 #if BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/screen_capture_kit_device_utils_mac.h"
-#include "content/browser/media/capture/screen_capture_kit_device_mac.h"
 #endif // BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/views_widget_video_capture_device_mac.h"
 #endif
