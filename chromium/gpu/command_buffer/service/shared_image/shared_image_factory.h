@@ -11,6 +11,11 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+
+#if defined(__GNUC__) && __GNUC__ < 11
+#include "base/containers/flat_set.h"
+#endif
+
 #include "build/build_config.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "gpu/command_buffer/common/mailbox.h"
