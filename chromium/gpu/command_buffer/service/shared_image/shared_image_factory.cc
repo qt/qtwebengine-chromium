@@ -137,6 +137,23 @@ bool WillGetGmbConfigFromGpu() {
 
 }  // namespace
 
+#if defined(__GNUC__) && __GNUC__ < 11
+bool operator<(
+    const std::unique_ptr<SharedImageRepresentationFactoryRef>& lhs,
+    const std::unique_ptr<SharedImageRepresentationFactoryRef>& rhs) {
+  return lhs->mailbox() < rhs->mailbox();
+}
+bool operator<(
+    const Mailbox& lhs,
+    const std::unique_ptr<SharedImageRepresentationFactoryRef>& rhs) {
+  return lhs < rhs->mailbox();
+}
+bool operator<(const std::unique_ptr<SharedImageRepresentationFactoryRef>& lhs,
+               const Mailbox& rhs) {
+  return lhs->mailbox() < rhs;
+}
+
+#else
 std::size_t
 SharedImageFactory::SharedImageRepresentationFactoryRefHash::operator()(
     const std::unique_ptr<SharedImageRepresentationFactoryRef>& o) const {
@@ -168,6 +185,7 @@ operator()(
     const std::unique_ptr<SharedImageRepresentationFactoryRef>& rhs) const {
   return lhs == rhs->mailbox();
 }
+#endif
 
 SharedImageFactory::SharedImageFactory(
     const GpuPreferences& gpu_preferences,

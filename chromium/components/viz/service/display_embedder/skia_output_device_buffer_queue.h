@@ -12,6 +12,9 @@
 #include <vector>
 
 #include "base/cancelable_callback.h"
+#if defined(__GNUC__) && __GNUC__ < 11
+#include "base/containers/flat_set.h"
+#endif
 #include "base/memory/raw_ptr.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
@@ -32,7 +35,126 @@ class SkiaOutputSurfaceDependency;
 
 class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
  public:
-  class OverlayData;
+  class OverlayData {
+   public:
+#if defined(__GNUC__) && __GNUC__ < 11
+    OverlayData() = default;
+#else
+    OverlayData() = delete;
+    OverlayData(OverlayData&& other) = delete;
+#endif
+    OverlayData(
+        std::unique_ptr<gpu::OverlayImageRepresentation> representation,
+        std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess>
+            scoped_read_access,
+        bool is_root_render_pass)
+        : representation_(std::move(representation)),
+          scoped_read_access_(std::move(scoped_read_access)),
+#if defined(__GNUC__) && __GNUC__ < 11
+          ref_(1),
+#endif
+          is_root_render_pass_(is_root_render_pass) {
+      DCHECK(representation_);
+      DCHECK(scoped_read_access_);
+    }
+
+#if defined(__GNUC__) && __GNUC__ < 11
+    OverlayData(OverlayData&& other) { *this = std::move(other); }
+
+    ~OverlayData() { Reset(); }
+
+    OverlayData& operator=(OverlayData&& other) {
+      DCHECK(!IsInUseByWindowServer());
+      DCHECK(!ref_);
+      DCHECK(!scoped_read_access_);
+      DCHECK(!representation_);
+      scoped_read_access_ = std::move(other.scoped_read_access_);
+      representation_ = std::move(other.representation_);
+      ref_ = other.ref_;
+      other.ref_ = 0;
+      is_root_render_pass_ = other.is_root_render_pass_;
+      return *this;
+    }
+#else
+    ~OverlayData() = default;
+
+    OverlayData& operator=(OverlayData&& other) = delete;
+#endif
+    bool IsInUseByWindowServer() const {
+#if BUILDFLAG(IS_APPLE)
+      if (!scoped_read_access_) {
+        return false;
+      }
+      // The root render pass buffers are managed by SkiaRenderer so we don't
+      // care
+      // if they're in use by the window server.
+      if (is_root_render_pass_) {
+        return false;
+      }
+      return scoped_read_access_->IsInUseByWindowServer();
+#else
+      return false;
+#endif
+    }
+
+    void Ref() const { ++ref_; }
+    void Unref() const {
+#if defined(__GNUC__) && __GNUC__ < 11
+      DCHECK_GT(ref_, 0);
+      if (ref_ > 1) {
+        --ref_;
+      } else if (ref_ == 1) {
+        DCHECK(!IsInUseByWindowServer());
+        Reset();
+      }
+#else
+      // Unref should only be called when there is more than one reference.
+      DCHECK_GT(ref_, 1);
+      --ref_;
+#endif
+    }
+    void OnReuse()
+        const { /*
+     // This is a proxy check for single-buffered overlay.
+          if (representation_->usage().Has(
+                     gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE) &&
+                             base::FeatureList::IsEnabled(
+                                         kRestartReadAccessForConcurrentReadWrite))
+     {
+                                                // If this is a single-buffered
+     overlay, want to restart read access to
+                                                      // pick up any new write
+     fences for this frame. scoped_read_access_.reset(); scoped_read_access_ =
+     representation_->BeginScopedReadAccess();
+                                                                      }
+                                                                      */
+    }
+
+    void OnContextLost() const { representation_->OnContextLost(); }
+
+    bool unique() const { return ref_ == 1; }
+    const gpu::Mailbox& mailbox() const { return representation_->mailbox(); }
+    gpu::OverlayImageRepresentation::ScopedReadAccess* scoped_read_access()
+        const {
+      return scoped_read_access_.get();
+    }
+
+    bool IsRootRenderPass() const { return is_root_render_pass_; }
+
+   private:
+#if defined(__GNUC__) && __GNUC__ < 11
+    void Reset() const {
+      scoped_read_access_.reset();
+      representation_.reset();
+      ref_ = 0;
+    }
+#endif
+    mutable std::unique_ptr<gpu::OverlayImageRepresentation> representation_;
+    mutable std::unique_ptr<gpu::OverlayImageRepresentation::ScopedReadAccess>
+        scoped_read_access_;
+    mutable int ref_ = 1;
+    mutable bool is_root_render_pass_ = false;
+  };
 
   SkiaOutputDeviceBufferQueue(
       std::unique_ptr<OutputPresenter> presenter,
@@ -106,6 +228,18 @@ class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
   // Mailboxes of committed overlays for the last SwapBuffers call.
   std::vector<gpu::Mailbox> committed_overlay_mailboxes_;
 
+  // Heterogeneous lookup for unordered set is nice feature sadly only from
+  // gcc-11 upwards
+#if defined(__GNUC__) && __GNUC__ < 11
+  class OverlayDataComparator {
+   public:
+    using is_transparent = void;
+    bool operator()(const OverlayData& lhs, const OverlayData& rhs) const;
+    bool operator()(const OverlayData& lhs, const gpu::Mailbox& rhs) const;
+    bool operator()(const gpu::Mailbox& lhs, const OverlayData& rhs) const;
+  };
+  base::flat_set<OverlayData, OverlayDataComparator> overlays_;
+#else
   struct OverlayDataHash {
     using is_transparent = void;
     std::size_t operator()(const OverlayData& o) const;
@@ -123,7 +257,7 @@ class VIZ_SERVICE_EXPORT SkiaOutputDeviceBufferQueue : public SkiaOutputDevice {
   // key.
   std::unordered_set<OverlayData, OverlayDataHash, OverlayDataKeyEqual>
       overlays_;
-
+#endif
   bool has_overlays_scheduled_but_swap_not_finished_ = false;
   raw_ptr<const base::TickClock> swap_time_clock_ =
       base::DefaultTickClock::GetInstance();
