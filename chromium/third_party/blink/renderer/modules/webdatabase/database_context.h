@@ -29,6 +29,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBDATABASE_DATABASE_CONTEXT_H_
 
 #include "base/types/pass_key.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/modules/webdatabase/database_error.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
