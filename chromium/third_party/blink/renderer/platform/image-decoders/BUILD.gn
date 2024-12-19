@@ -76,15 +76,21 @@ component("image_decoders") {
     sources += [
       "avif/avif_image_decoder.cc",
       "avif/avif_image_decoder.h",
-      "avif/crabbyavif_image_decoder.cc",
-      "avif/crabbyavif_image_decoder.h",
     ]
-
     deps += [
-      "//third_party/crabbyavif",
       "//third_party/libavif",
       "//third_party/libavifinfo",
     ]
+    if (!is_qtwebengine) {
+      sources += [
+        "avif/crabbyavif_image_decoder.cc",
+        "avif/crabbyavif_image_decoder.h",
+      ]
+      deps += [
+        "//third_party/crabbyavif",
+      ]
+    }
+
   }
 }
 

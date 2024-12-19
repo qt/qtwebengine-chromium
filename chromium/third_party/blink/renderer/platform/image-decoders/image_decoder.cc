@@ -196,7 +196,11 @@ String SniffMimeTypeInternal(scoped_refptr<SegmentReader> reader) {
   if (MatchesBMPSignature(contents)) {
     return "image/bmp";
   }
-#if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(IS_QTWEBENGINE)
+  if (AVIFImageDecoder::MatchesAVIFSignature(fast_reader)) {
+    return "image/avif";
+  }
+#elif BUILDFLAG(ENABLE_AV1_DECODER)
   if (base::FeatureList::IsEnabled(blink::features::kCrabbyAvif)
           ? CrabbyAVIFImageDecoder::MatchesAVIFSignature(fast_reader)
           : AVIFImageDecoder::MatchesAVIFSignature(fast_reader)) {
@@ -307,7 +311,12 @@ std::unique_ptr<ImageDecoder> ImageDecoder::CreateByMimeType(
   } else if (mime_type == "image/bmp" || mime_type == "image/x-xbitmap") {
     decoder = std::make_unique<BMPImageDecoder>(alpha_option, color_behavior,
                                                 max_decoded_bytes);
-#if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(IS_QTWEBENGINE)
+  } else if (mime_type == "image/avif") {
+    decoder = std::make_unique<AVIFImageDecoder>(
+        alpha_option, high_bit_depth_decoding_option, color_behavior,
+        max_decoded_bytes, animation_option);
+#elif BUILDFLAG(ENABLE_AV1_DECODER)
   } else if (mime_type == "image/avif") {
     if (base::FeatureList::IsEnabled(blink::features::kCrabbyAvif)) {
       decoder = std::make_unique<CrabbyAVIFImageDecoder>(
