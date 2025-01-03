@@ -389,7 +389,7 @@ uint32_t ZLIB_INTERNAL crc32_sse42_simd_(  /* SSE4.2+PCLMUL */
 #if defined(__aarch64__)
 #define TARGET_ARMV8_WITH_CRC __attribute__((target("arch=armv8-a+aes+crc")))
 #else  // !defined(__aarch64__)
-#define TARGET_ARMV8_WITH_CRC __attribute__((target("crc")))
+#define TARGET_ARMV8_WITH_CRC __attribute__((target("armv8-a,crc")))
 #endif  // defined(__aarch64__)
 
 #elif defined(__GNUC__)
