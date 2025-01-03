@@ -252,7 +252,7 @@ void ConvolveVertically_Neon(const ConvolutionFilter1D::Fixed* filter_values,
       accum8 = vmaxq_u8(b, accum8);
     } else {
       // Set value of alpha channels to 0xFF.
-      accum8 = vreinterpretq_u8_u32(vorrq_u8(vreinterpretq_u32_u8(accum8),
+      accum8 = vreinterpretq_u8_u32(vorrq_u32(vreinterpretq_u32_u8(accum8),
                                     vdupq_n_u32(0xFF000000)));
     }
 
@@ -313,7 +313,7 @@ void ConvolveVertically_Neon(const ConvolutionFilter1D::Fixed* filter_values,
       accum8 = vmaxq_u8(b, accum8);
     } else {
       // Set value of alpha channels to 0xFF.
-      accum8 = vreinterpretq_u8_u32(vorrq_u8(vreinterpretq_u32_u8(accum8),
+      accum8 = vreinterpretq_u8_u32(vorrq_u32(vreinterpretq_u32_u8(accum8),
                                     vdupq_n_u32(0xFF000000)));
     }
 
