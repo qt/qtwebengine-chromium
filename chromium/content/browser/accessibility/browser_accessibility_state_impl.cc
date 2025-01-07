@@ -388,7 +388,8 @@ void BrowserAccessibilityStateImpl::UpdateHistogramsOnUIThread() {
       "Accessibility.ManuallyEnabled",
       !GetAccessibilityMode().is_mode_off() && !allow_ax_mode_changes_);
 
-#if BUILDFLAG(IS_WIN)
+// WebEngine does not care about the system theme, and attempting to query it will crash
+#if !BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(IS_WIN)
   base::UmaHistogramEnumeration(
       "Accessibility.WinHighContrastTheme",
       ui::NativeTheme::GetInstanceForNativeUi()
