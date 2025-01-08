@@ -11,6 +11,7 @@
 #include "base/ranges/algorithm.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
+#include "media/base/media_permission.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/common/features.h"
@@ -21,7 +22,9 @@
 #include "third_party/blink/public/mojom/media/capture_handle_config.mojom-blink.h"
 #include "third_party/blink/public/mojom/mediastream/media_devices.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -372,6 +375,19 @@ bool EqualDeviceForDeviceChange(const WebMediaDeviceInfo& lhs,
                                 const WebMediaDeviceInfo& rhs) {
   return lhs.device_id == rhs.device_id && lhs.label == rhs.label &&
          lhs.group_id == rhs.group_id && lhs.IsAvailable() == rhs.IsAvailable();
+}
+
+media::MediaPermission::Type ToMediaPermissionType(
+    mojom::blink::MediaDeviceType media_device_type) {
+  switch (media_device_type) {
+    case mojom::blink::MediaDeviceType::kMediaAudioInput:
+    case mojom::blink::MediaDeviceType::kMediaAudioOuput:
+      return media::MediaPermission::Type::kAudioCapture;
+    case mojom::blink::MediaDeviceType::kMediaVideoInput:
+      return media::MediaPermission::Type::kVideoCapture;
+    case mojom::blink::MediaDeviceType::kNumMediaDeviceTypes:
+      NOTREACHED();
+  }
 }
 
 }  // namespace
@@ -877,6 +893,20 @@ void MediaDevices::OnDevicesChanged(
 
   current_device_infos_[static_cast<wtf_size_t>(type)] = device_infos;
   if (RuntimeEnabledFeatures::OnDeviceChangeEnabled()) {
+    if (media::MediaPermission* media_permission =
+            blink::Platform::Current()->GetWebRTCMediaPermission(
+                WebLocalFrame::FromFrameToken(
+                    DomWindow()->GetLocalFrameToken()))) {
+      media_permission->HasPermission(
+          ToMediaPermissionType(type),
+          WTF::BindOnce(&MediaDevices::MaybeFireDeviceChangeEvent,
+                        WrapWeakPersistent(this)));
+    }
+  }
+}
+
+void MediaDevices::MaybeFireDeviceChangeEvent(bool has_permission) {
+  if (has_permission) {
     ScheduleDispatchEvent(Event::Create(event_type_names::kDevicechange));
   }
 }
