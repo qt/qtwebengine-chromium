@@ -1328,6 +1328,7 @@ class GSL_POINTER span<T, dynamic_extent, InternalPtrType> {
   // # Implementation note
   // The non-template overloads allow implicit conversions to span for
   // comparison.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   friend constexpr auto operator<=>(span lhs, span rhs)
     requires(std::is_const_v<T> && std::three_way_comparable<T>)
   {
@@ -1338,6 +1339,7 @@ class GSL_POINTER span<T, dynamic_extent, InternalPtrType> {
   {
     return internal::span_cmp(span<const T>(lhs), span<const T>(rhs));
   }
+#endif
   template <class U, size_t M>
     requires(std::three_way_comparable_with<const T, const U>)
   friend constexpr auto operator<=>(span lhs, span<U, M> rhs) {
