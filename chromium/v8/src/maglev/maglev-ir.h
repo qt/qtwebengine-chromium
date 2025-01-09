@@ -2464,7 +2464,7 @@ class ValueNode : public Node {
                                         GetMachineRepresentation(),
                                         FirstRegisterCode());
     }
-    DCHECK(is_loadable());
+    CHECK(is_loadable());
     return spill_;
   }
 
