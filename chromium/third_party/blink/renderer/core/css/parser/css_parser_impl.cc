@@ -1356,35 +1356,38 @@ StyleRuleMedia* CSSParserImpl::ConsumeMediaRule(
                          prelude_offset_end - prelude_offset_start)
           .ToString();
   const MediaQuerySet* media;
-  Member<const MediaQuerySet>& cached_media =
-      media_query_cache_.insert(prelude_string, nullptr).stored_value->value;
-  if (cached_media) {
-    media = cached_media.Get();
-  } else {
-    // Not in the cache, so we'll have to rewind and actually parse it.
-    // Note that the media query set grammar doesn't really have an idea
-    // of when the stream should end; if it sees something it doesn't
-    // understand (which includes a left brace), it will just forward to
-    // the next comma, skipping over the entire stylesheet until the end.
-    // The grammar is generally written in the understanding that the prelude
-    // is extracted as a string and only then parsed, whereas we do fully
-    // streaming prelude parsing. Thus, we need to set some boundaries
-    // here ourselves to make sure we end when the prelude does; the alternative
-    // would be to teach the media query set parser to stop there itself.
-    stream.Restore(savepoint);
-    CSSParserTokenStream::Boundary boundary(stream, kLeftBraceToken);
-    CSSParserTokenStream::Boundary boundary2(stream, kSemicolonToken);
-    media = MediaQueryParser::ParseMediaQuerySet(
-        stream, context_->GetExecutionContext());
-  }
-  DCHECK(media);
 
-  if (!ConsumeEndOfPreludeForAtRuleWithBlock(stream,
-                                             CSSAtRuleID::kCSSAtRuleMedia)) {
-    return nullptr;
-  }
+  {
+    Member<const MediaQuerySet>& cached_media =
+        media_query_cache_.insert(prelude_string, nullptr).stored_value->value;
+    if (cached_media) {
+      media = cached_media.Get();
+    } else {
+      // Not in the cache, so we'll have to rewind and actually parse it.
+      // Note that the media query set grammar doesn't really have an idea
+      // of when the stream should end; if it sees something it doesn't
+      // understand (which includes a left brace), it will just forward to
+      // the next comma, skipping over the entire stylesheet until the end.
+      // The grammar is generally written in the understanding that the prelude
+      // is extracted as a string and only then parsed, whereas we do fully
+      // streaming prelude parsing. Thus, we need to set some boundaries
+      // here ourselves to make sure we end when the prelude does; the alternative
+      // would be to teach the media query set parser to stop there itself.
+      stream.Restore(savepoint);
+      CSSParserTokenStream::Boundary boundary(stream, kLeftBraceToken);
+      CSSParserTokenStream::Boundary boundary2(stream, kSemicolonToken);
+      media = MediaQueryParser::ParseMediaQuerySet(
+          stream, context_->GetExecutionContext());
+    }
+    DCHECK(media);
 
-  cached_media = media;
+    if (!ConsumeEndOfPreludeForAtRuleWithBlock(stream,
+                                              CSSAtRuleID::kCSSAtRuleMedia)) {
+      return nullptr;
+    }
+
+    cached_media = media;
+  }
 
   // Consume the actual block.
   CSSParserTokenStream::BlockGuard guard(stream);
