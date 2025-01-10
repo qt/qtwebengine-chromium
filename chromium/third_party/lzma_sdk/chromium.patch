@@ -1,31 +1,46 @@
---- /usr/local/google/home/waffles/Downloads/C/CpuArch.c	2015-03-25 05:17:41.000000000 -0700
-+++ CpuArch.c	2016-02-19 12:42:20.327993932 -0800
-@@ -45,7 +45,8 @@
-     "push %%EDX\n\t"
-     "popf\n\t"
-     "andl %%EAX, %0\n\t":
--    "=c" (flag) : "c" (flag));
-+    "=c" (flag) : "c" (flag):
-+    "%eax", "%edx" );
-   #endif
-   return flag;
- }
-@@ -78,8 +79,17 @@
- 
-   #else
- 
-+  // When built using GCC and -fPIC (until GCC 5.0), ebx points to the global
-+  // offset table, so the value must be preserved before executing cpuid.
-+  // Attempting to explicitly clobber ebx is a compile-time error.
-   __asm__ __volatile__ (
--  #if defined(MY_CPU_X86) && defined(__PIC__)
-+  #if defined(MY_CPU_AMD64) && defined(__PIC__)
-+    "mov %%rbx, %%rdi\n"
-+    "cpuid\n"
-+    "xchg %%rdi, %%rbx\n"
-+    : "=a" (*a) ,
-+      "=D" (*b) ,
-+  #elif defined(MY_CPU_X86) && defined(__PIC__)
-     "mov %%ebx, %%edi;"
-     "cpuid;"
-     "xchgl %%ebx, %%edi;"
+diff -r /Users/waffles/Downloads/lzma2409/Asm/x86/LzmaDecOpt.asm ./Asm/x86/LzmaDecOpt.asm
+42c42,44
+< _TEXT$LZMADECOPT SEGMENT ALIGN(64) 'CODE'
+---
+> ; Make this deterministic
+> ; _TEXT$LZMADECOPT SEGMENT ALIGN(64) 'CODE'
+> LZMADEC SEGMENT ALIGN(64) 'CODE'
+1336c1338
+< _TEXT$LZMADECOPT ENDS
+---
+> LZMADEC ENDS
+diff -r /Users/waffles/Downloads/lzma2409/C/CpuArch.h ./C/CpuArch.h
+413c413,417
+< 
+---
+> // Disable MY_CPU_LE_UNALIGN. Although the underlying ISA may be able to load
+> // unaligned words, doing so via pointer casts is undefined behavior in C and
+> // C++, under both strict aliasing and because it is invalid to construct
+> // unaligned pointers. Instead, load the bytes generically and leave optimizing
+> // this to the compiler.
+419,420c423,424
+<     #define MY_CPU_LE_UNALIGN
+<     #define MY_CPU_LE_UNALIGN_64
+---
+>     // #define MY_CPU_LE_UNALIGN
+>     // #define MY_CPU_LE_UNALIGN_64
+diff -r /Users/waffles/Downloads/lzma2409/C/LzFind.c ./C/LzFind.c
+598c598
+< 
+---
+> #if 0
+642c642
+< 
+---
+> #endif // #if 0
+diff -r /Users/waffles/Downloads/lzma2409/C/Util/SfxSetup/SfxSetup.c ./C/Util/SfxSetup/SfxSetup.c
+13a14,17
+> // SHELLEXECUTEINFO
+> #include <windows.h>
+> #include <shellapi.h>
+> 
+144c148
+< #define kSignatureSearchLimit (1 << 22)
+---
+> #define kSignatureSearchLimit (1 << 26)
+
