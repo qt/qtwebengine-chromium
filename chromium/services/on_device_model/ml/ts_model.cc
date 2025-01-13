@@ -76,7 +76,9 @@ class TsModel final : public mojom::TextSafetyModel,
 
   const raw_ref<const ChromeML> chrome_ml_;
   ChromeMLTSModel model_ = 0;
+#if BUILDFLAG(USE_ML)
   std::unique_ptr<translate::LanguageDetectionModel> language_detector_;
+#endif
   base::MemoryMappedFile data_;
   base::MemoryMappedFile sp_model_;
   mojo::ReceiverSet<mojom::TextSafetySession> sessions_;
@@ -108,6 +110,9 @@ std::unique_ptr<TsModel> TsModel::Create(
 }
 
 bool TsModel::InitLanguageDetection(mojom::LanguageModelAssetsPtr assets) {
+#if !BUILDFLAG(USE_ML)
+  return false;
+#else
   auto tflite_model =
       std::make_unique<language_detection::LanguageDetectionModel>();
   tflite_model->UpdateWithFile(std::move(assets->model));
@@ -115,6 +120,7 @@ bool TsModel::InitLanguageDetection(mojom::LanguageModelAssetsPtr assets) {
   language_detector_ = std::make_unique<translate::LanguageDetectionModel>(
       std::move(tflite_model));
   return language_detector_->IsAvailable();
+#endif
 }
 
 DISABLE_CFI_DLSYM

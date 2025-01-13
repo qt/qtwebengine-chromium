@@ -1865,6 +1865,7 @@ void ContentBrowserClient::BindTranslationManager(
     const url::Origin& origin,
     mojo::PendingReceiver<blink::mojom::TranslationManager> receiver) {}
 
+#if BUILDFLAG(USE_ML)
 namespace {
 // TODO(https://crbug.com/383035345): Use BASE_FEATURE_PARAM.
 const base::FeatureParam<std::string> kLanguageDetectionLocalFileModelPath{
@@ -1901,15 +1902,18 @@ GetContentLanguageDetectionDriver() {
   return *driver.get();
 }
 }  // namespace
+#endif
 
 void ContentBrowserClient::BindLanguageDetectionDriver(
     content::BrowserContext* browser_context,
     base::SupportsUserData* context_user_data,
     mojo::PendingReceiver<
         language_detection::mojom::ContentLanguageDetectionDriver> receiver) {
+#if BUILDFLAG(USE_ML)
   if (base::FeatureList::IsEnabled(blink::features::kLanguageDetectionAPI)) {
     GetContentLanguageDetectionDriver().AddReceiver(std::move(receiver));
   }
+#endif
 }
 
 #if !BUILDFLAG(IS_ANDROID)
