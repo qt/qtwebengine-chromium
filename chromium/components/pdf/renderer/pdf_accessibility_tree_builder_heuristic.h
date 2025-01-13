@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <string>
 
 #include "base/memory/raw_ref.h"
 #include "services/screen_ai/buildflags/buildflags.h"

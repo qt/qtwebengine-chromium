@@ -4,6 +4,7 @@
 
 #include "base/debug/proc_maps_linux.h"
 
+#include <cstring>
 #include <fcntl.h>
 #include <stddef.h>
 #include <unistd.h>

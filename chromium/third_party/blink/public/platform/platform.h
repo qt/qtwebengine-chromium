@@ -55,6 +55,7 @@
 #include "third_party/blink/public/platform/audio/web_audio_device_source_type.h"
 #include "third_party/blink/public/platform/cross_variant_mojo_util.h"
 #include "third_party/blink/public/platform/url_loader_throttle_provider.h"
+#include "third_party/blink/public/platform/web_audio_bus.h"
 #include "third_party/blink/public/platform/web_audio_device.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_string.h"

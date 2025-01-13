@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <webgpu/webgpu.h>
 #include <climits>
+#include <optional>
 
 #include "libANGLE/Caps.h"
 #include "libANGLE/Error.h"

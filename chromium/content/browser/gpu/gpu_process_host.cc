@@ -12,7 +12,9 @@
 #include <memory>
 #include <utility>
 
+#if BUILDFLAG(IS_CHROMEOS)
 #include "ash/constants/ash_switches.h"
+#endif
 #include "base/base64.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"

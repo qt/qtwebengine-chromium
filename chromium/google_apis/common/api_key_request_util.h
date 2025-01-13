@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <string_view>
+#include <string>
 
 class GURL;
 

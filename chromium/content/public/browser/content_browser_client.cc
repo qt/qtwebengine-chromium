@@ -28,6 +28,7 @@
 #include "components/language_detection/content/browser/content_language_detection_driver.h"
 #include "components/language_detection/content/common/language_detection.mojom.h"
 #include "components/language_detection/core/browser/language_detection_model_provider.h"
+#include "components/optimization_guide/core/model_execution/model_broker_client.h"
 #include "content/browser/ai/echo_ai_manager_impl.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/webauth/default_authenticator_request_client_delegate.h"

@@ -5,6 +5,7 @@
 #ifndef NET_WEBSOCKETS_WEBSOCKET_HANDSHAKE_CHALLENGE_H_
 #define NET_WEBSOCKETS_WEBSOCKET_HANDSHAKE_CHALLENGE_H_
 
+#include <string>
 #include <string_view>
 
 #include "net/base/net_export.h"

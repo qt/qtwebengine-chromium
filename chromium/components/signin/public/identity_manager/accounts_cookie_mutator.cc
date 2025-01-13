@@ -5,6 +5,7 @@
 #include "components/signin/public/identity_manager/accounts_cookie_mutator.h"
 
 #include "build/build_config.h"
+#include "components/signin/public/base/bound_session_oauth_multilogin_delegate.h"
 #include "components/signin/public/base/signin_buildflags.h"
 
 namespace signin {
