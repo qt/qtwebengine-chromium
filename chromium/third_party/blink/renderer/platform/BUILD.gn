@@ -7,6 +7,7 @@ import("//build/buildflag_header.gni")
 import("//build/compiled_action.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/jumbo.gni")
+import("//build/config/ml.gni")
 import("//build/config/ui.gni")
 import("//build/nocompile.gni")
 import("//media/media_options.gni")
@@ -1674,6 +1675,13 @@ jumbo_component("platform") {
 
   sources -= blink_platform_avx_files
 
+  if (!use_ml) {
+    sources -= [
+      "language_detection/language_detection_model.cc",
+      "language_detection/language_detection_model.h",
+    ]
+  }
+
   # Add in the generated files.
   sources += get_target_outputs(":character_data") +
              get_target_outputs(":color_data") +
@@ -1867,6 +1875,16 @@ jumbo_component("platform") {
     "//ui/gl:buildflags",
     "//ui/native_theme",
   ]
+
+  if (!use_ml) {
+    deps -= [
+      "//components/language_detection/content/common",
+      "//components/language_detection/content/common:common_blink",
+      "//components/language_detection/content/renderer",
+      "//components/language_detection/core",
+      "//components/translate/core/language_detection",
+    ]
+  }
 
   if (has_zstd_compression) {
     deps += [

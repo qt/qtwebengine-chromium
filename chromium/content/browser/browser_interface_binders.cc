@@ -1105,6 +1105,7 @@ void PopulateBinderMapWithContext(
             host->GetLastCommittedOrigin(), std::move(receiver));
       }));
 
+#if BUILDFLAG(USE_ML)
   map->Add<language_detection::mojom::ContentLanguageDetectionDriver>(
       base::BindRepeating(
           [](RenderFrameHost* host,
@@ -1116,6 +1117,7 @@ void PopulateBinderMapWithContext(
                 &RenderFrameHostImpl::From(host)->document_associated_data(),
                 std::move(receiver));
           }));
+#endif
 
   map->Add<blink::mojom::BackgroundFetchService>(
       &BackgroundFetchServiceImpl::CreateForFrame);
@@ -1418,6 +1420,7 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
             host->GetStorageKey().origin(), std::move(receiver));
       },
       base::Unretained(host)));
+#if BUILDFLAG(USE_ML)
   map->Add<language_detection::mojom::ContentLanguageDetectionDriver>(
       base::BindRepeating(
           [](DedicatedWorkerHost* host,
@@ -1429,6 +1432,7 @@ void PopulateDedicatedWorkerBinders(DedicatedWorkerHost* host,
                 std::move(receiver));
           },
           base::Unretained(host)));
+#endif
 }
 
 void PopulateBinderMapWithContext(
@@ -1542,6 +1546,7 @@ void PopulateSharedWorkerBinders(SharedWorkerHost* host, mojo::BinderMap* map) {
             host->GetStorageKey().origin(), std::move(receiver));
       },
       base::Unretained(host)));
+#if BUILDFLAG(USE_ML)
   map->Add<language_detection::mojom::ContentLanguageDetectionDriver>(
       base::BindRepeating(
           [](SharedWorkerHost* host,
@@ -1553,6 +1558,7 @@ void PopulateSharedWorkerBinders(SharedWorkerHost* host, mojo::BinderMap* map) {
                 std::move(receiver));
           },
           base::Unretained(host)));
+#endif
 
 #if !BUILDFLAG(IS_ANDROID)
   map->Add<blink::mojom::DirectSocketsService>(base::BindRepeating(
@@ -1716,6 +1722,7 @@ void PopulateServiceWorkerBinders(ServiceWorkerHost* host,
         }
       },
       base::Unretained(host)));
+#if BUILDFLAG(USE_ML)
   map->Add<language_detection::mojom::ContentLanguageDetectionDriver>(
       base::BindRepeating(
           [](ServiceWorkerHost* host,
@@ -1729,6 +1736,7 @@ void PopulateServiceWorkerBinders(ServiceWorkerHost* host,
             }
           },
           base::Unretained(host)));
+#endif
 
   // RenderProcessHost binders
   map->Add<media::mojom::VideoDecodePerfHistory>(BindServiceWorkerReceiver(

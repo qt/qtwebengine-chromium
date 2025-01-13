@@ -12,7 +12,10 @@
 #include "base/task/single_thread_task_runner.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#include "components/ml/buildflags.h"
+#if BUILDFLAG(USE_ML)
 #include "components/optimization_guide/core/optimization_guide_features.h"
+#endif
 #include "components/services/storage/public/mojom/storage_service.mojom.h"
 #include "components/services/storage/storage_service_impl.h"
 #include "content/child/child_process.h"

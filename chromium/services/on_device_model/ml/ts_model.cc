@@ -65,7 +65,9 @@ class TsModel final : public mojom::TextSafetyModel,
 
   const raw_ref<const ChromeML> chrome_ml_;
   ChromeMLTSModel model_ = 0;
+#if BUILDFLAG(USE_ML)
   std::unique_ptr<translate::LanguageDetectionModel> language_detector_;
+#endif
   base::MemoryMappedFile data_;
   base::MemoryMappedFile sp_model_;
   mojo::ReceiverSet<mojom::TextSafetySession> sessions_;
