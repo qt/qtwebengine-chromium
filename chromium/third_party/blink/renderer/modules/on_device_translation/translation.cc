@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
+#include "components/ml/buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
@@ -14,13 +15,17 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_translation_language_options.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#if BUILDFLAG(USE_ML)
 #include "third_party/blink/renderer/modules/ai/ai_mojo_client.h"
+#endif
 #include "third_party/blink/renderer/modules/on_device_translation/language_translator.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
+#if BUILDFLAG(USE_ML)
 #include "third_party/blink/renderer/platform/language_detection/language_detection_model.h"
+#endif
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 
@@ -68,6 +73,7 @@ String ConvertCreateTranslatorErrorToDebugString(
       return "The translation library version is invalid.";
   }
 }
+#if BUILDFLAG(USE_ML)
 class CreateTranslatorClient
     : public GarbageCollected<CreateTranslatorClient>,
       public mojom::blink::TranslationManagerCreateTranslatorClient,
@@ -141,6 +147,7 @@ class CreateTranslatorClient
   const String source_language_;
   const String target_language_;
 };
+#endif // BUILDFLAG(USE_ML)
 
 }  // namespace
 
@@ -245,6 +252,7 @@ ScriptPromise<LanguageTranslator> Translation::createTranslator(
           script_state);
   auto promise = resolver->Promise();
 
+#if BUILDFLAG(USE_ML)
   mojo::PendingRemote<mojom::blink::TranslationManagerCreateTranslatorClient>
       client;
   MakeGarbageCollected<CreateTranslatorClient>(
@@ -255,6 +263,7 @@ ScriptPromise<LanguageTranslator> Translation::createTranslator(
       mojom::blink::TranslatorCreateOptions::New(
           TranslatorLanguageCode::New(options->sourceLanguage()),
           TranslatorLanguageCode::New(options->targetLanguage())));
+#endif
   return promise;
 }
 

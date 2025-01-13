@@ -5,10 +5,13 @@
 #ifndef SERVICES_ON_DEVICE_MODEL_ML_TS_MODEL_H_
 #define SERVICES_ON_DEVICE_MODEL_ML_TS_MODEL_H_
 
+#include "components/ml/buildflags.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/memory/raw_ref.h"
 #include "base/threading/sequence_bound.h"
+#if BUILDFLAG(USE_ML)
 #include "components/translate/core/language_detection/language_detection_model.h"
+#endif
 #include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/unique_receiver_set.h"
 #include "services/on_device_model/ml/chrome_ml.h"
