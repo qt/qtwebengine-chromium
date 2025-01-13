@@ -1807,7 +1807,7 @@ config("runtime_library") {
   # the C++ symbols. This config ensures the C++ symbols exist and are strong in
   # order to cause that replacement to occur by explicitly linking in clang's
   # compiler-rt library.
-  if (is_clang && !is_nacl && !is_cronet_build) {
+  if (is_clang && !is_nacl && !is_cronet_build && !is_qtwebengine) {
     configs += [ "//build/config/clang:compiler_builtins" ]
   }
 
@@ -2732,11 +2732,12 @@ config("optimize") {
   if (is_win && !is_mingw) {
     # clang-cl's /O2 corresponds to clang's -O3, and really want -O2 for
     # consistency with the other platforms.
-    cflags = [
-               "/O2",
-               "/clang:-O2",
-             ] + common_optimize_on_cflags
 
+    if (is_msvc) {
+      cflags = [ "/O2" ] + common_optimize_on_cflags
+    } else {
+      cflags = [ "/O2", "/clang:-O2" ] + common_optimize_on_cflags
+    }
     # The `-O3` for clang turns on extra optimizations compared to the standard
     # `-O2`. But for rust, `-Copt-level=3` is the default and is thus reliable
     # to use.

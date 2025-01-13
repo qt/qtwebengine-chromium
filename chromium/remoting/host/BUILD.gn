@@ -592,7 +592,6 @@ static_library("common") {
       "//third_party/wayland-protocols:xdg_output_protocol",
     ]
     deps += [
-      ":x11_display_utils",
       "//remoting/host/linux:wayland",
       "//ui/base/x",
       "//ui/events/platform/x11",
@@ -600,8 +599,7 @@ static_library("common") {
     ]
     if (use_gtk) {
       deps += [
-        "//build/config/linux/gtk",
-        "//ui/gtk:gtk_config",
+        ":x11_display_utils",
       ]
     }
     public_configs = [ ":xkbcommon" ]
@@ -744,7 +742,7 @@ source_set("display_layout") {
   deps = [ "//ui/gfx" ]
 }
 
-if (is_linux && (ozone_platform_x11 || remoting_use_x11)) {
+if (is_linux && (ozone_platform_x11 || remoting_use_x11) && use_gtk) {
   source_set("x11_display_utils") {
     sources = [
       "linux/gnome_display_config.cc",

@@ -911,7 +911,6 @@ jumbo_static_library("browser") {
       "//base:i18n",
       "//build:branding_buildflags",
       "//build:chromeos_buildflags",
-      "//components/optimization_guide:machine_learning_tflite_buildflags",
       "//components/pref_registry",
       "//components/prefs",
       "//third_party/re2",

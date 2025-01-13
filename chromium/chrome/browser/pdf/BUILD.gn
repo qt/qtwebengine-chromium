@@ -7,7 +7,7 @@ import("//pdf/features.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_pdf)
+#assert(enable_pdf)
 
 source_set("pdf") {
   sources = [

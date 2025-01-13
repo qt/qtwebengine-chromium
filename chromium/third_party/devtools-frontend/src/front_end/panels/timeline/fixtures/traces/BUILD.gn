@@ -94,7 +94,7 @@ copy_to_gen("traces") {
     "web-dev-initial-url.json.gz",
     "web-dev-modifications.json.gz",
     "web-dev-outermost-frames.json.gz",
-    "web-dev-with-advanced-instrumentation.json.gz",
+#    "web-dev-with-advanced-instrumentation.json.gz",
     "web-dev-with-commit.json.gz",
     "web-dev.json.gz",
     "web-sockets.json.gz",

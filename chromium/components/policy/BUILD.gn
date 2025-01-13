@@ -273,7 +273,7 @@ static_library("generated") {
   deps = [ "//build:branding_buildflags" ]
 }
 
-if (gen_policy_templates_android && is_android && !is_qtwebengine) {
+if (gen_policy_templates_android && is_android) {
   import("//build/config/android/rules.gni")
 
   _generated_resources_dir = "$root_gen_dir/chrome/app/policy/android"

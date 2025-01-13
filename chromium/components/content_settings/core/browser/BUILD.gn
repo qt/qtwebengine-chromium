@@ -70,14 +70,14 @@ jumbo_static_library("browser") {
     "//url",
   ]
 
-  if (!is_ios) {
+  if (!is_ios && !is_qtwebengine) {
     sources += [
       "insecure_private_network_policy_handler.cc",
       "insecure_private_network_policy_handler.h",
     ]
   }
 
-  if (use_blink) {
+  if (use_blink && !is_qtwebengine) {
     deps += [
       "//components/policy:generated",
       "//components/policy/core/browser",

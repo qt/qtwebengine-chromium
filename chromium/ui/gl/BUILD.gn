@@ -384,12 +384,10 @@ jumbo_component("gl") {
   }
 
   if (is_qtwebengine && !is_android && !is_ios) {
-    if (use_egl) {
-      data_deps -= [
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
-      ]
-    }
+    data_deps -= [
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
   }
 }
 

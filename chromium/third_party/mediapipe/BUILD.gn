@@ -179,6 +179,9 @@ source_set("mediapipe_shims") {
   deps = [ "//third_party/abseil-cpp:absl" ]
 }
 
+
+if (mediapipe_build_with_gpu_support) {
+
 # These calculators are found at runtime and must be linked in, despite not
 # being explicitly referenced.
 # See src/docs/getting_started/troubleshooting.md
@@ -746,4 +749,5 @@ tflite_group("mediapipe") {
     ":mediapipe_tasks",
     ":mediapipe_tasks_always_link",
   ]
+}
 }
