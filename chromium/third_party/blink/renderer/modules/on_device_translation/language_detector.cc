@@ -68,8 +68,9 @@ ScriptPromise<IDLSequence<LanguageDetectionResult>> LanguageDetector::detect(
       ScriptPromiseResolver<IDLSequence<LanguageDetectionResult>>>(
       script_state);
 
-  DetectLanguage(input,
-                 WTF::BindOnce(OnDetectComplete, WrapPersistent(resolver)));
+  OnDetectComplete(resolver, base::unexpected(blink::DetectLanguageError::kUnavailable));
+  // DetectLanguage(input,
+                 // WTF::BindOnce(OnDetectComplete, WrapPersistent(resolver)));
   return resolver->Promise();
 }
 
