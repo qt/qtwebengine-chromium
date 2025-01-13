@@ -42,7 +42,7 @@ if (is_android) {
     # heavily but don't write gclient args files.
 
     import("//build/config/gclient_args.gni")
-    if (defined(checkout_android) && !is_qtwebengine) {
+    if (defined(checkout_android) && !is_qtpdf) {
       n = "$0x0A"  # Newline
       assert(checkout_android,
              "Missing native Android toolchain support. |target_os| in your " +

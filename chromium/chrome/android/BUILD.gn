@@ -277,7 +277,7 @@ if (current_toolchain == default_toolchain) {
       "//third_party/androidx:androidx_preference_preference_java",
     ]
 
-    if (is_qtwebengine) {
+    if (is_qtpdf) {
       deps -= [ "//components/policy:app_restrictions_resources" ]
     }
 

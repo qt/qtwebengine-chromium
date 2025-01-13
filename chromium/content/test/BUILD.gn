@@ -3424,7 +3424,7 @@ test("content_unittests") {
       "//ui/android:android",
     ]
 
-    if (is_qtwebengine) {
+    if (is_qtpdf) {
       deps -= [ "//content/browser:fontations_name_table_ffi" ]
     }
 

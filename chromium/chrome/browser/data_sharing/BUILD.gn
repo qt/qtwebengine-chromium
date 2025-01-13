@@ -75,7 +75,7 @@ if (is_android) {
       "//url:url_java",
     ]
 
-    if (is_qtwebengine) {
+    if (is_qtpdf) {
       deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
     }
   }
@@ -97,7 +97,7 @@ if (is_android) {
       "//url:url_java",
     ]
 
-    if (is_qtwebengine) {
+    if (is_qtpdf) {
       deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
     }
 

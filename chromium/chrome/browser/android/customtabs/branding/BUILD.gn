@@ -77,7 +77,7 @@ robolectric_library("junit") {
     "//ui/android:ui_no_recycler_view_java",
   ]
 
-  if (is_qtwebengine) {
+  if (is_qtpdf) {
     deps -= [ "//third_party/androidx:androidx_core_core_animation_testing_java", ]
   }
 }

@@ -219,7 +219,7 @@ android_library("content_full_java") {
     "//ui/gfx/geometry/mojom:mojom_java",
     "//url:gurl_java",
   ]
-  if (is_qtwebengine) {
+  if (is_qtpdf) {
     deps-=["//third_party/android_sdk:android_window_extensions_java",]
   }
   srcjar_deps = [

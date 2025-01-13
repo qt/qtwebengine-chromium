@@ -31,7 +31,7 @@ android_library("window_util_java") {
     "java/org/chromium/window/WindowApiCheck.java",
     "java/org/chromium/window/WindowUtil.java",
   ]
-  if (!is_qtwebengine) {
+  if (!is_qtpdf) {
     deps = [ "//third_party/android_sdk:android_window_extensions_java" ]
   }
 }
