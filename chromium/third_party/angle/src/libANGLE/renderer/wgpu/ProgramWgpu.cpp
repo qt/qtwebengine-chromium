@@ -9,6 +9,8 @@
 
 #include "libANGLE/renderer/wgpu/ProgramWgpu.h"
 
+#include <iostream>
+
 #include "GLES2/gl2.h"
 #include "common/PackedEnums.h"
 #include "common/PackedGLEnums_autogen.h"
