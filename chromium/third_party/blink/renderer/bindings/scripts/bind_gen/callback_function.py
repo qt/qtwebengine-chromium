@@ -629,6 +629,8 @@ def generate_callback_function(callback_function_identifier):
         EmptyNode(),
         make_header_include_directives(source_node.accumulator),
         EmptyNode(),
+        TextNode("#include <vector>"),
+        EmptyNode(),
         source_blink_ns,
     ])
     source_blink_ns.body.extend([
