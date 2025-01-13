@@ -11,6 +11,7 @@
 #include "base/functional/callback_helpers.h"
 #include "content/browser/webid/flags.h"
 #include "content/public/browser/webid/constants.h"
+#include "content/public/browser/webid/identity_request_dialog_controller.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/bindings/message.h"

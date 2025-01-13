@@ -10,6 +10,7 @@
 
 #include "libANGLE/renderer/wgpu/wgpu_wgsl_util.h"
 
+#include <iostream>
 #include <sstream>
 #include <string>
 
