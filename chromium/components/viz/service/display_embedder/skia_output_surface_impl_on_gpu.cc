@@ -1947,7 +1947,7 @@ bool SkiaOutputSurfaceImplOnGpu::Initialize() {
 
 bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
   if (dependency_->IsOffscreen()) {
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
     output_device_ = CreateOutputDevice();
 #else
     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
@@ -2039,7 +2039,7 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
 
 #if BUILDFLAG(ENABLE_VULKAN)
 bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
   output_device_ = CreateOutputDevice();
   return true;
 #endif
@@ -2567,7 +2567,7 @@ void SkiaOutputSurfaceImplOnGpu::PreserveChildSurfaceControls() {
   }
 }
 
-#ifdef TOOLKIT_QT
+#if BUILDFLAG(IS_QTWEBENGINE)
 void SkiaOutputSurfaceImplOnGpu::SetFrameSinkId(const FrameSinkId& frame_sink_id) {
   if (output_device_)
     output_device_->SetFrameSinkId(frame_sink_id);
