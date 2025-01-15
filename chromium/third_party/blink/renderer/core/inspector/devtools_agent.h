@@ -32,7 +32,7 @@ struct WorkerDevToolsParams;
 class CORE_EXPORT DevToolsAgent : public GarbageCollected<DevToolsAgent>,
                                   public mojom::blink::DevToolsAgent {
  public:
-  class Client {
+  class Client : public GarbageCollectedMixin {
    public:
     virtual ~Client() = default;
     virtual void AttachSession(DevToolsSession*, bool restore) = 0;
@@ -122,7 +122,7 @@ class CORE_EXPORT DevToolsAgent : public GarbageCollected<DevToolsAgent>,
                               bool wait_for_debugger,
                               base::OnceClosure callback);
 
-  Client* client_;
+  Member<Client> const client_;
   // DevToolsAgent is not tied to ExecutionContext
   HeapMojoAssociatedReceiver<mojom::blink::DevToolsAgent,
                              DevToolsAgent,
