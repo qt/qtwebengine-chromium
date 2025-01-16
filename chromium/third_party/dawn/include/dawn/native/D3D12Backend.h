@@ -97,6 +97,8 @@ struct DAWN_NATIVE_EXPORT SharedTextureMemoryD3D12ResourceDescriptor : wgpu::Cha
     Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 };
 
+DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D12Resource> TextureImplToID3D12Resource(WGPUTexture &);
+
 }  // namespace dawn::native::d3d12
 
 #endif  // INCLUDE_DAWN_NATIVE_D3D12BACKEND_H_
