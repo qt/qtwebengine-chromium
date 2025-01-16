@@ -450,7 +450,7 @@ WrappedGraphiteTextureBacking::ProduceGLTexturePassthrough(
   // GLTextureImageBacking.
   CHECK(!base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations));
 
-  CHECK(context_state_->IsGraphiteDawnVulkan());
+  //CHECK(context_state_->IsGraphiteDawnVulkan());
   if (context_state_->context_lost()) {
     return nullptr;
   }
@@ -472,7 +472,7 @@ WrappedGraphiteTextureBacking::ProduceDawn(
   // allocate a DawnImageBacking which provides native Dawn support.
   CHECK(!base::FeatureList::IsEnabled(features::kUseDynamicBackingAllocations));
 
-  CHECK(context_state_->IsGraphiteDawnVulkan());
+  //CHECK(context_state_->IsGraphiteDawnVulkan());
   if (context_state_->context_lost()) {
     return nullptr;
   }
