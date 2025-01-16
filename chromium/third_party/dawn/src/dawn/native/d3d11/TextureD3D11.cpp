@@ -203,6 +203,9 @@ T Texture::GetD3D11TextureDesc() const {
             // Texture layers are more than 6. It can be used as a cube map.
             desc.MiscFlags |= D3D11_RESOURCE_MISC_TEXTURECUBE;
         }
+        if (mKind == Kind::Normal && desc.SampleDesc.Count == 1 && !GetFormat().HasDepthOrStencil()) {
+            desc.MiscFlags |= D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+        }
     } else if constexpr (std::is_same<T, D3D11_TEXTURE3D_DESC>::value) {
         desc.Width = GetBaseSize().width;
         desc.Height = GetBaseSize().height;

@@ -2150,11 +2150,15 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
 bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
 #if BUILDFLAG(SKIA_USE_DAWN)
   if (dependency_->IsOffscreen()) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+    output_device_ = CreateOutputDevice();
+#else
     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
         context_state_, gfx::SurfaceOrigin::kBottomLeft,
         renderer_settings_.requires_alpha_channel,
         shared_gpu_deps_->memory_tracker(),
         GetDidSwapBuffersCompleteCallback());
+#endif
     return true;
   }
 
