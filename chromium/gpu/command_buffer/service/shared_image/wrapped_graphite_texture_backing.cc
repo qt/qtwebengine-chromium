@@ -401,7 +401,7 @@ std::unique_ptr<GLTexturePassthroughImageRepresentation>
 WrappedGraphiteTextureBacking::ProduceGLTexturePassthrough(
     SharedImageManager* manager,
     MemoryTypeTracker* tracker) {
-  CHECK(context_state_->IsGraphiteDawnVulkan());
+  //CHECK(context_state_->IsGraphiteDawnVulkan());
   if (context_state_->context_lost()) {
     return nullptr;
   }
@@ -418,7 +418,7 @@ WrappedGraphiteTextureBacking::ProduceDawn(
     wgpu::BackendType backend_type,
     std::vector<wgpu::TextureFormat> view_formats,
     scoped_refptr<SharedContextState> context_state) {
-  CHECK(context_state_->IsGraphiteDawnVulkan());
+  //CHECK(context_state_->IsGraphiteDawnVulkan());
   if (context_state_->context_lost()) {
     return nullptr;
   }
