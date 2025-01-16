@@ -59,6 +59,8 @@ struct DAWN_NATIVE_EXPORT SharedTextureMemoryD3D11Texture2DDescriptor : wgpu::Ch
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
 };
 
+DAWN_NATIVE_EXPORT Microsoft::WRL::ComPtr<ID3D11Resource> TextureImplToID3D11Resource(WGPUTexture &);
+
 }  // namespace dawn::native::d3d11
 
 #endif  // INCLUDE_DAWN_NATIVE_D3D11BACKEND_H_
