@@ -7,7 +7,7 @@ import("//build/config/features.gni")
 import("//components/nacl/features.gni")
 import("//components/signin/features.gni")
 import("//extensions/buildflags/buildflags.gni")
-import("//third_party/webrtc/webrtc.gni")
+import("//media/media_options.gni")
 
 assert(!is_fuchsia, "Fuchsia shouldn't use anything in //chrome")
 

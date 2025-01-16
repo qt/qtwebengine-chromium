@@ -9,6 +9,8 @@ import("//build/config/ui.gni")
 import("//third_party/webrtc/webrtc.gni")
 import("//extensions/buildflags/buildflags.gni")
 
+assert(enable_webrtc)
+
 source_set("webrtc") {
   sources = [
     "audio_debug_recordings_handler.cc",
@@ -100,7 +102,7 @@ source_set("webrtc") {
     "//components/prefs",
     "//components/upload_list",
     "//components/webrtc:media_stream_device_enumerator",
-#    "//components/webrtc_logging/common",
+    "//components/webrtc_logging/common",
     "//content/public/browser",
     "//ipc:message_support",
     "//mojo/public/cpp/bindings",
@@ -144,7 +146,7 @@ source_set("webrtc") {
     "//components/vector_icons",
     "//components/version_info",
     "//components/webrtc",
-#    "//components/webrtc_logging/browser",
+    "//components/webrtc_logging/browser",
     "//content/public/common",
     "//media",
     "//media/webrtc",

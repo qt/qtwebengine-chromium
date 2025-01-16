@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 
 # Contained Lens dependencies are currently for desktop platforms only
@@ -84,7 +85,6 @@ source_set("lens") {
     "//chrome/browser:primitives",
     "//chrome/browser/content_extraction",
     "//chrome/browser/feedback",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles",
     "//chrome/browser/resources/lens/overlay:resources",
     "//chrome/browser/resources/lens/overlay:resources_grit",
@@ -152,6 +152,12 @@ source_set("lens") {
 
   if (enable_pdf) {
     deps += [ "//components/pdf/browser" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 }
 

@@ -17,7 +17,7 @@
 #include "third_party/webrtc/rtc_base/rtc_certificate.h"
 #include "third_party/webrtc/rtc_base/rtc_certificate_generator.h"
 
-    namespace blink {
+namespace blink {
 namespace {
 
 // A certificate generation request spawned by

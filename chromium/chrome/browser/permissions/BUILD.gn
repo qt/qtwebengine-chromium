@@ -5,9 +5,9 @@
 import("//build/config/ui.gni")
 import("//components/optimization_guide/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//services/device/public/cpp/geolocation/buildflags.gni")
 import("//third_party/protobuf/proto_library.gni")
-import("//third_party/webrtc/webrtc.gni")
 
 source_set("permissions") {
   sources = [
@@ -247,7 +247,6 @@ if (!is_android) {
 
     deps = [
       ":permissions",
-      "//chrome/browser/media/webrtc",
       "//chrome/browser/optimization_guide:test_support",
       "//chrome/browser/permissions/system",
       "//chrome/browser/ui:browser_element_identifiers",
@@ -264,6 +263,12 @@ if (!is_android) {
     if (build_with_tflite_lib) {
       sources += [ "prediction_service_browsertest.cc" ]
       deps += [ "//components/permissions/prediction_service" ]
+    }
+
+    if (enable_webrtc) {
+      deps += [
+        "//chrome/browser/media/webrtc",
+      ]
     }
   }
 }

@@ -6,6 +6,7 @@ assert(is_win || is_mac || is_linux || is_chromeos)
 
 import("//components/lens/features.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 source_set("side_panel_enums") {
   sources = [ "side_panel_enums.h" ]
@@ -151,7 +152,6 @@ source_set("side_panel") {
     "//chrome/browser/companion/core",
     "//chrome/browser/favicon",
     "//chrome/browser/lens/region_search",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/profiles",
     "//chrome/browser/resources:component_extension_resources",
     "//chrome/browser/resources:component_extension_resources_grit",
@@ -213,6 +213,12 @@ source_set("side_panel") {
       "//extensions/common",
     ]
     deps += [ "//chrome/common/extensions/api" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 
   allow_circular_includes_from = [

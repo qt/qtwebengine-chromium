@@ -243,6 +243,7 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       &MediaStreamTrackMetricsHost::BindReceiver,
       base::Unretained(media_stream_track_metrics_host_.get())));
 #endif
+
   registry->AddInterface(
       base::BindRepeating(&metrics::CreateSingleSampleMetricsProvider));
 

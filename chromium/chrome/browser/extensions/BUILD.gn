@@ -719,9 +719,6 @@ source_set("extensions") {
     # TODO(crbug.com/345487716): Remove this circular dependency.
     "//chrome/browser/ui/views/side_panel",
 
-    # TODO(crbug.com/353284909): Remove this circular dependency.
-    "//chrome/browser/media/webrtc",
-
     "//chrome/browser/feedback",
     "//chrome/browser/ui/views/toolbar",
   ]
@@ -734,7 +731,6 @@ source_set("extensions") {
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
     "//chrome/browser/extensions/api:api_registration",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/resource_coordinator:tab_lifecycle_observer",
     "//chrome/browser/task_manager",
     "//chrome/browser/ui:browser_list",
@@ -1516,6 +1512,13 @@ source_set("extensions") {
 
   if (enable_webrtc) {
     sources += [ "api/webrtc_logging_private/webrtc_logging_private_api.cc" ]
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+    allow_circular_includes_from += [
+      # TODO(crbug.com/353284909): Remove this circular dependency.
+      "//chrome/browser/media/webrtc",
+    ]
   } else {
     sources +=
         [ "api/webrtc_logging_private/webrtc_logging_private_api_stub.cc" ]

@@ -363,7 +363,6 @@ static_library("ui") {
     "//chrome/browser:primitives",
     "//chrome/browser/feedback",
     "//chrome/browser/headless",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/search",
     "//chrome/browser/ui/tabs:tab_enums",
   ]
@@ -736,9 +735,6 @@ static_library("ui") {
 
     # TODO(crbug.com/344921703): Remove circular dependencies.
     "//chrome/browser/sync",
-
-    # TODO(crbug.com/353284909): Remove this circular dependency.
-    "//chrome/browser/media/webrtc",
 
     # TODO(crbug.com/360599255): Remove this circular dependency.
     # - chrome_popup_navigation_delegate.cc includes //c/b/ui/browser_navigator.h.
@@ -5883,6 +5879,14 @@ static_library("ui") {
       "webui/media/webrtc_logs_ui.h",
     ]
     deps += [ "//components/webrtc_logging/browser" ]
+    public_deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+
+    allow_circular_includes_from += [
+      # TODO(crbug.com/353284909): Remove this circular dependency.
+      "//chrome/browser/media/webrtc",
+    ]
   }
 
   if (safe_browsing_mode > 0) {

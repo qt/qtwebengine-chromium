@@ -804,7 +804,7 @@ MediaFactory::CreateWebMediaPlayerForMediaStream(
                      blink::WebSurfaceLayerBridge::ContainsVideo::kYes),
       std::move(submitter), use_surface_layer);
 #else
-  return NULL;
+  return nullptr;
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
 }
 

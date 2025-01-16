@@ -1056,6 +1056,7 @@ void AudioContext::NotifySetSinkIdIsDone(
   DCHECK(IsMainThread());
 
   sink_descriptor_ = pending_sink_descriptor;
+
 #if BUILDFLAG(ENABLE_WEBRTC)
   // Use flag guard to revert to old AEC SetSinkId behavior if necessary. Remove
   // this entire block when kWebAudioContextConstructorEchoCancellation is
