@@ -634,6 +634,7 @@ static_library("bundled_libvpxrc") {
 if (use_system_libvpx) {
   pkg_config("system_libvpx") {
     packages = [ "vpx" ]
+    defines = ["USE_SYSTEM_LIBVPX=true"]
   }
 }
 
