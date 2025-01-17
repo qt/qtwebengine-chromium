@@ -495,7 +495,7 @@ if (is_clang_or_gcc || is_msvc || is_mingw) {
     } else if (current_cpu == "arm") {
       assert(stack_scan_supported)
       sources += [ "stack/asm/arm/push_registers_asm.cc" ]
-    } else if (current_cpu == "arm64") {
+    } else if (current_cpu == "arm64" && (!is_msvc || is_clang)) {
       assert(stack_scan_supported)
       sources += [ "stack/asm/arm64/push_registers_asm.cc" ]
     } else if (current_cpu == "riscv64") {

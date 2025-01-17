@@ -102,7 +102,7 @@ if (enable_rust) {
   }
 }
 
-if (is_msan) {
+if (is_msan || (is_msvc && current_cpu == "arm64" && !is_clang)) {
   # MSan instrumentation is incompatible with assembly optimizations.
   # BoringSSL's GAS-compatible assembly knows how to detect MSan, but the NASM
   # assembly does not, so we check for MSan explicitly.

@@ -6,6 +6,7 @@ import("//build/config/win/visual_studio_version.gni")
 import("//build/toolchain/win/toolchain.gni")
 
 assert(is_win, "Should only be running on Windows")
+assert(!is_qtwebengine)
 
 # Setup the Visual Studio state.
 #
