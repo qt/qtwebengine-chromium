@@ -365,19 +365,8 @@ bool FFmpegAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
   }
 
 #if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
-  // Workaround http://crbug.com/41492567
-  // Chromium only supports the 'libopus' decoder.
-  // 'avcodec_find_decoder' finds the experimental 'opus' decoder first
-  // because the lookup is based on codec_id and both have the same id.
-  // Bundled ffmpeg only have libopus but the system usually have both.
-  const AVCodec* codec = [&config, this]() {
-    if (config.codec() == AudioCodec::kOpus)
-      return avcodec_find_decoder_by_name("libopus");
-    if (config.codec() == AudioCodec::kMP3) {
-      return avcodec_find_decoder_by_name("mp3");
-    }
-    return avcodec_find_decoder(codec_context_->codec_id);
-  }();
+  AVCodecID id = AudioCodecToCodecID(config.codec(), config.sample_format());
+  const AVCodec* codec = FindDecoder(id, codec_context_->codec_whitelist);
 #else
   const AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
 #endif

@@ -261,20 +261,27 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
   LogContainer(is_local_file, container_);
 
 #if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
-  // Sometimes FFmpeg is not aware of the whitelisted codecs and
-  // configures streams and demuxers with unsupported codecs/params.
-  // Force the correct codecs to avoid problems later.
+  // 'avformat_find_stream_info' is not aware of the whitelisted codecs.
+  // However it respects the codecs set in the format_context.
+  // Try to force the correct codecs here at context creation.
   // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#a52f39351b15890ef57cc6ff0ec9ab42d
   // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#ae5e087f4623b907517c0f7dd8327387d
 
-  // Note: don't forget to update FFmpeg[Audio|Video]Decoder::ConfigureDecoder
-
-  if (strcmp(format_context_->iformat->name, "mp3") == 0) {
-    const AVCodec* mp3_codec = avcodec_find_decoder_by_name("mp3");
-    if (mp3_codec) {
-      format_context_->audio_codec = mp3_codec;
-    } else {
-      LOG(ERROR) << "No supported codec for mp3";
+  for (int i = 0; i < format_context_->nb_streams; i++) {
+    AVCodecParameters *params = format_context_->streams[i]->codecpar;
+    if (!params)
+      continue;
+    const AVCodec* audio_codec =
+        FindDecoder(params->codec_id, GetAllowedAudioDecoders());
+    if (audio_codec) {
+      if (format_context_->audio_codec &&
+          format_context_->audio_codec != audio_codec) {
+        LOG(INFO) << "Conflicting codecs " << format_context_->audio_codec->name
+                  << ", " << audio_codec->name;
+        format_context_->audio_codec = nullptr;
+        break;
+      }
+      format_context_->audio_codec = audio_codec;
     }
   }
 #endif

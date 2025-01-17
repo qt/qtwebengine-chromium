@@ -34,6 +34,11 @@
 #endif
 #endif
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+extern "C" {
+#include <libavutil/avstring.h>
+}
+#endif
 namespace media {
 
 namespace {
@@ -71,6 +76,24 @@ static_assert(
     VideoFrame::kFrameAddressAlignment >= kFFmpegBufferAddressAlignment &&
     VideoFrame::kFrameAddressAlignment % kFFmpegBufferAddressAlignment == 0,
     "VideoFrame frame address alignment does not fit ffmpeg requirement");
+
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+const AVCodec* FindDecoder(AVCodecID id, const char* whitelist) {
+  if (!whitelist) {
+    return avcodec_find_decoder(id);
+  }
+
+  void* i = 0;
+  const AVCodec* codec;
+  while (codec = av_codec_iterate(&i)) {
+    if (av_codec_is_decoder(codec) && codec->id == id &&
+        av_match_list(codec->name, whitelist, ',')) {
+      return codec;
+    }
+  }
+  return nullptr;
+}
+#endif
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 

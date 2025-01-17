@@ -504,7 +504,12 @@ bool FFmpegVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config,
     codec_context_->flags2 |= AV_CODEC_FLAG2_CHUNKS;
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  const AVCodec* codec =
+      FindDecoder(codec_context_->codec_id, codec_context_->codec_whitelist);
+#else
   const AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
+#endif
   if (!codec || avcodec_open2(codec_context_.get(), codec, NULL) < 0) {
     ReleaseFFmpegResources();
     return false;
