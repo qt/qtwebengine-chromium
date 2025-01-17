@@ -177,7 +177,12 @@ bool FFmpegCdmAudioDecoder::Initialize(
   if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
     codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  const AVCodec* codec =
+      FindDecoder(codec_context_->codec_id, codec_context_->codec_whitelist);
+#else
   const AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
+#endif
   if (!codec || avcodec_open2(codec_context_.get(), codec, NULL) < 0) {
     DLOG(ERROR) << "Could not initialize audio decoder: "
                 << codec_context_->codec_id;

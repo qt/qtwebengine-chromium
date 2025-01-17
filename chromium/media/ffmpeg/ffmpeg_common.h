@@ -93,6 +93,12 @@ inline base::span<const uint8_t> AVPacketData(const AVPacket& packet) {
       base::span(packet.data, base::checked_cast<size_t>(packet.size)));
 }
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+// Systemlib friendly version of avcodec_find_decoder that respects the
+// whitelisted codecs.
+MEDIA_EXPORT const AVCodec* FindDecoder(AVCodecID id, const char* whitelist);
+#endif
+
 // Converts an int64_t timestamp in |time_base| units to a base::TimeDelta.
 // For example if |timestamp| equals 11025 and |time_base| equals {1, 44100}
 // then the return value will be a base::TimeDelta for 0.25 seconds since that
