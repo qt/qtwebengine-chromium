@@ -51,7 +51,13 @@ using UkmSmoothnessDataShared = SharedMetricsBuffer<UkmSmoothnessData>;
 }  // namespace cc
 
 #if defined(COMPILER_MSVC)
-SKIP_SAFETY_CHECK_FOR(cc::UkmSmoothnessDataShared)
+namespace base::subtle {
+  template <>
+  struct SharedMemorySafetyChecker<cc::UkmSmoothnessDataShared> {
+    static constexpr bool kIsAllowed =
+        std::atomic<int32_t>::is_always_lock_free;
+  };
+}
 #endif
 
 #endif  // CC_METRICS_UKM_SMOOTHNESS_DATA_H_
