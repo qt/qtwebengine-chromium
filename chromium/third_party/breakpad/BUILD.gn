@@ -9,8 +9,10 @@ import("//build/toolchain/toolchain.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
-if (is_win) {
+if (is_win && !is_mingw) {
   import("//build/config/win/visual_studio_version.gni")
+} else if(is_mingw) {
+  visual_studio_path = ""
 }
 
 # Breakpad executables are only built with the system allocator toolchains,

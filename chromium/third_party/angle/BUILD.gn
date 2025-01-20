@@ -389,7 +389,7 @@ config("build_id_config") {
   ldflags = [ "-Wl,--build-id" ]
 }
 
-_use_copy_compiler_dll = angle_has_build && is_win
+_use_copy_compiler_dll = angle_has_build && is_win && !is_mingw
 
 if (_use_copy_compiler_dll) {
   copy("copy_compiler_dll") {
