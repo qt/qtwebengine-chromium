@@ -8,7 +8,7 @@ import json
 import argparse
 import dataclasses
 import licenses as license_tools
-from typing import Any
+from typing import Any, DefaultDict
 import spdx_writer
 import pathlib
 import subprocess
@@ -63,7 +63,7 @@ DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES = [
 # Wrappers for Chromium's package and SPDX writer tools
 @dataclasses.dataclass(frozen=True)
 class ExtendedPackage(spdx_writer._Package):
-  extra_metadata: dict[str, Any]
+  extra_metadata: DefaultDict[str, Any]
 
 class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
   def __init__(self, root: str, root_package: ExtendedPackage, link_prefix: str,
