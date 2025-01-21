@@ -1013,20 +1013,20 @@ static CSSRule* FindStyleRule(CSSRuleCollection* css_rules,
 
 void ElementRuleCollector::AppendCSSOMWrapperForRule(
     const TreeScope* tree_scope_containing_rule,
-    const RuleData* rule_data,
+    const MatchedRule& matched_rule,
     wtf_size_t position) {
   // For :visited/:link rules, the question of whether or not a selector
   // matches is delayed until cascade-time (see CascadeExpansion), hence such
   // rules may appear to match from ElementRuleCollector's output. This behavior
   // is not correct for Inspector purposes, hence we explicitly filter out
   // rules that don't match the current link state here.
-  if (!(rule_data->LinkMatchType() &
+  if (!(matched_rule.LinkMatchType() &
         LinkMatchTypeFromInsideLink(inside_link_))) {
     return;
   }
 
   CSSRule* css_rule = nullptr;
-  StyleRule* rule = rule_data->Rule();
+  StyleRule* rule = matched_rule.Rule();
   if (tree_scope_containing_rule) {
     for (const auto& [parent_style_sheet, rule_set] :
          tree_scope_containing_rule->GetScopedStyleResolver()
@@ -1044,7 +1044,7 @@ void ElementRuleCollector::AppendCSSOMWrapperForRule(
     // will not try to edit them.
     css_rule = rule->CreateCSSOMWrapper(position);
   }
-  EnsureRuleList()->emplace_back(css_rule, rule_data->SelectorIndex());
+  EnsureRuleList()->emplace_back(css_rule, matched_rule.SelectorIndex());
 }
 
 void ElementRuleCollector::SortAndTransferMatchedRules(
@@ -1059,32 +1059,27 @@ void ElementRuleCollector::SortAndTransferMatchedRules(
 
   if (mode_ == SelectorChecker::kCollectingStyleRules) {
     for (const MatchedRule& matched_rule : matched_rules_) {
-      EnsureStyleRuleList()->push_back(matched_rule.GetRuleData()->Rule());
+      EnsureStyleRuleList()->push_back(matched_rule.Rule());
     }
     return;
   }
 
   if (mode_ == SelectorChecker::kCollectingCSSRules) {
     for (unsigned i = 0; i < matched_rules_.size(); ++i) {
-      AppendCSSOMWrapperForRule(current_matching_tree_scope_,
-                                matched_rules_[i].GetRuleData(), i);
+      AppendCSSOMWrapperForRule(current_matching_tree_scope_, matched_rules_[i],
+                                i);
     }
     return;
   }
 
   // Now transfer the set of matched rules over to our list of declarations.
   for (const MatchedRule& matched_rule : matched_rules_) {
-    const RuleData* rule_data = matched_rule.GetRuleData();
-    if (rule_data->IsStartingStyle()) {
-      result_.AddFlags(
-          static_cast<MatchFlags>(MatchFlag::kAffectedByStartingStyle));
-    }
     result_.AddMatchedProperties(
-        &rule_data->Rule()->Properties(), origin,
+        &matched_rule.Rule()->Properties(), origin,
         {.link_match_type =
-             AdjustLinkMatchType(inside_link_, rule_data->LinkMatchType()),
+             AdjustLinkMatchType(inside_link_, matched_rule.LinkMatchType()),
          .valid_property_filter =
-             rule_data->GetValidPropertyFilter(matching_ua_rules_),
+             matched_rule.GetValidPropertyFilter(matching_ua_rules_),
          .layer_order = matched_rule.LayerOrder(),
          .is_inline_style = is_vtt_embedded_style});
   }
@@ -1169,6 +1164,10 @@ void ElementRuleCollector::DidMatchRule(
       result_.SetFirstLineDependsOnSizeContainerQueries();
     }
   } else {
+    if (rule_data->IsStartingStyle()) {
+      result_.AddFlags(
+          static_cast<MatchFlags>(MatchFlag::kAffectedByStartingStyle));
+    }
     matched_rules_.emplace_back(rule_data, layer_order, proximity,
                                 style_sheet_index);
   }
@@ -1223,7 +1222,7 @@ void ElementRuleCollector::SortMatchedRules() {
 void ElementRuleCollector::AddMatchedRulesToTracker(
     StyleRuleUsageTracker* tracker) const {
   for (auto matched_rule : matched_rules_) {
-    const StyleRule* rule = matched_rule.GetRuleData()->Rule();
+    const StyleRule* rule = matched_rule.Rule();
     tracker->Track(
         FindStyleSheet(current_matching_tree_scope_,
                        context_.GetElement().GetDocument().GetStyleEngine(),
