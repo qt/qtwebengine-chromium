@@ -140,9 +140,9 @@ void WebrtcDesktopCapturePrivateChooseDesktopMediaFunction::ProcessAccessRequest
 {
   if (stream_request_result != blink::mojom::MediaStreamRequestResult::OK) {
     // The request is canceled either by the desktopMediaRequest or the permission request.
-    // Respond with no arguments to mimic DesktopCaptureCancelChooseDesktopMediaFunctionBase::Run()
+    // Respond with no arguments to mimic DesktopCaptureChooseDesktopMediaFunctionBase::Cancel()
     // form desktop_capture_base.cc.
-    Respond(NoArguments());
+    Respond(ArgumentList(Create(std::string(), Options())));
     return;
   }
 
