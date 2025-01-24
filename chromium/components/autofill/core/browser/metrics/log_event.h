@@ -54,7 +54,7 @@ bool AreCollapsible(const absl::monostate& event1,
 
 // Log the field that shows a dropdown list of suggestions for autofill.
 struct AskForValuesToFillFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   OptionalBoolean has_suggestion = internal::IsRequired();
   OptionalBoolean suggestion_is_shown = internal::IsRequired();
 #else
@@ -69,7 +69,7 @@ bool AreCollapsible(const AskForValuesToFillFieldLogEvent& event1,
 // Log the field that triggers the suggestion that the user selects to fill.
 struct TriggerFillFieldLogEvent {
   FillEventId fill_event_id = GetNextFillEventId();
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   // The type of filled data for the Autofill event.
   FillDataType data_type = internal::IsRequired();
   // The country_code associated with the information filled. Only present for
@@ -89,7 +89,7 @@ bool AreCollapsible(const TriggerFillFieldLogEvent& event1,
 
 // Log the fields on the form that are autofilled.
 struct FillFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   // This refers to `TriggleFillFieldLogEvent::fill_event_id`.
   FillEventId fill_event_id = internal::IsRequired();
   OptionalBoolean had_value_before_filling = internal::IsRequired();
@@ -133,7 +133,7 @@ bool AreCollapsible(const FillFieldLogEvent& event1,
 
 // Log the field that the user types in.
 struct TypingFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   OptionalBoolean has_value_after_typing = internal::IsRequired();
 #else
   OptionalBoolean has_value_after_typing;
@@ -145,7 +145,7 @@ bool AreCollapsible(const TypingFieldLogEvent& event1,
 
 // Events recorded after local heuristic prediction happened.
 struct HeuristicPredictionFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   FieldType field_type = internal::IsRequired();
   HeuristicSource heuristic_source = internal::IsRequired();
   bool is_active_heuristic_source = internal::IsRequired();
@@ -163,7 +163,7 @@ bool AreCollapsible(const HeuristicPredictionFieldLogEvent& event1,
 
 // Events recorded after parsing autocomplete attribute.
 struct AutocompleteAttributeFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   HtmlFieldType html_type = internal::IsRequired();
   HtmlFieldMode html_mode = internal::IsRequired();
   size_t rank_in_field_signature_group = internal::IsRequired();
@@ -179,7 +179,7 @@ bool AreCollapsible(const AutocompleteAttributeFieldLogEvent& event1,
 
 // Events recorded after autofill server prediction happened.
 struct ServerPredictionFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   std::optional<FieldType> server_type1 =
       static_cast<FieldType>(internal::IsRequired());
   FieldPrediction::Source prediction_source1 = internal::IsRequired();
@@ -203,7 +203,7 @@ bool AreCollapsible(const ServerPredictionFieldLogEvent& event1,
 
 // Events recorded after rationalization happened.
 struct RationalizationFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   FieldType field_type = internal::IsRequired();
   size_t section_id = internal::IsRequired();
   bool type_changed = internal::IsRequired();
@@ -218,7 +218,7 @@ bool AreCollapsible(const RationalizationFieldLogEvent& event1,
                     const RationalizationFieldLogEvent& event2);
 
 struct AblationFieldLogEvent {
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   AblationGroup ablation_group = internal::IsRequired();
   AblationGroup conditional_ablation_group = internal::IsRequired();
   int day_in_ablation_window = internal::IsRequired();
