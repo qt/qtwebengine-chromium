@@ -199,7 +199,9 @@ PendingMessage::PendingMessage(std::string app_id, gcm::IncomingMessage message)
       received_time(base::Time::Now()) {}
 PendingMessage::PendingMessage(const PendingMessage& other) = default;
 PendingMessage::PendingMessage(PendingMessage&& other) = default;
+#if !BUILDFLAG(IS_QTWEBENGINE)
 PendingMessage& PendingMessage::operator=(PendingMessage&& other) = default;
+#endif
 PendingMessage::~PendingMessage() = default;
 
 }  // namespace
