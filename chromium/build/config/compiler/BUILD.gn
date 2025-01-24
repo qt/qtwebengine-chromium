@@ -2120,6 +2120,9 @@ config("default_warnings") {
       # files.
       cflags += [ "-Wno-packed-not-aligned" ]
 
+      # TODO(crbug.com/40762742): Clean up and enable.
+      cflags += [ "-Wno-misleading-indentation" ]
+
       # Disable a number of GCC warnings caused by a mix
       # of Chromium and GCC bugs.
       cflags += [ "-Wno-dangling-else" ]
