@@ -53,7 +53,9 @@ const int kLogCountLimit = 20;
 const uint32_t kIntermediateCompressionBufferBytes = 256 * 1024;  // 256 KB
 const int kLogListLimitLines = 50;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const char kWebrtcLogUploadContentType[] = "multipart/form-data";
+#endif
 const char kWebrtcLogMultipartBoundary[] =
     "----**--yradnuoBgoLtrapitluMklaTelgooG--**----";
 
