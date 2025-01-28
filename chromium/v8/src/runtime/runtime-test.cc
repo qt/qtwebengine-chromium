@@ -2206,5 +2206,26 @@ RUNTIME_FUNCTION(Runtime_GetFeedback) {
 #endif  // OBJECT_PRINT
 }
 
+RUNTIME_FUNCTION(Runtime_IsNoWriteBarrierNeeded) {
+  HandleScope scope(isolate);
+  DisallowGarbageCollection no_gc;
+  if (args.length() != 1) {
+    return CrashUnlessFuzzing(isolate);
+  }
+  DirectHandle<Object> object = args.at(0);
+  if (!(*object).IsHeapObject()) {
+    return CrashUnlessFuzzing(isolate);
+  }
+  auto heap_object = Cast<HeapObject>(object);
+  if (InReadOnlySpace(*heap_object)) {
+    return ReadOnlyRoots(isolate).true_value();
+  }
+  if (WriteBarrier::GetWriteBarrierModeForObject(*heap_object, no_gc) !=
+      WriteBarrierMode::SKIP_WRITE_BARRIER) {
+    return ReadOnlyRoots(isolate).false_value();
+  }
+  return ReadOnlyRoots(isolate).true_value();
+}
+
 }  // namespace internal
 }  // namespace v8
