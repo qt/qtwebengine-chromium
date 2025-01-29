@@ -11,6 +11,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_typedefs.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
 #include "third_party/blink/renderer/core/streams/underlying_sink_base.h"
+#include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 
 namespace blink {
 
