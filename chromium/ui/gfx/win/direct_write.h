@@ -7,6 +7,8 @@
 
 #include <dwrite.h>
 
+#include <string>
+
 #include "base/strings/string_piece.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/gfx_export.h"
