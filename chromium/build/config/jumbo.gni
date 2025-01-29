@@ -172,11 +172,13 @@ template("internal_jumbo_target") {
     # Create an action that calls a script that merges all the source files.
     action(merge_action_name) {
       script = "//build/config/merge_for_jumbo.py"
-      response_file_contents =
-          rebase_path(sources_in_jumbo_files, root_build_dir)
+      response_file_contents = [ "--inputs" ]
+      response_file_contents += rebase_path(sources_in_jumbo_files, root_build_dir)
+      response_file_contents += [ "--outputs" ]
       outputs = jumbo_files
-      args = [ "--outputs" ] + rebase_path(outputs, root_build_dir) +
-             [ "--file-list={{response_file_name}}" ]
+      response_file_contents += rebase_path(outputs, root_build_dir)
+      args = [ "--param-list={{response_file_name}}" ]
+
 
       # For the "gn analyze" step to work, gn needs to know about the
       # original source files. They can't be in |sources| because then
