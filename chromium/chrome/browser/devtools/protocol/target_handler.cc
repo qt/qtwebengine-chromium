@@ -40,8 +40,9 @@ NavigateParams CreateNavigateParams(Profile* profile,
 }  // namespace
 
 TargetHandler::TargetHandler(protocol::UberDispatcher* dispatcher,
-                             bool is_trusted)
-    : is_trusted_(is_trusted) {
+                             bool is_trusted,
+                             bool may_read_local_files)
+    : is_trusted_(is_trusted), may_read_local_files_(may_read_local_files) {
   protocol::Target::Dispatcher::wire(dispatcher, this);
 }
 
@@ -127,6 +128,11 @@ protocol::Response TargetHandler::CreateTarget(
   if (!is_trusted_ && gurl.SchemeIs(content::kChromeUIUntrustedScheme)) {
     return protocol::Response::ServerError(
         "Refusing to create a target with the specified URL");
+  }
+
+  if (!may_read_local_files_ && gurl.SchemeIsFile()) {
+    return protocol::Response::ServerError(
+        "Creating a target with a local URL is not allowed");
   }
 
   create_new_window = !target_browser;
