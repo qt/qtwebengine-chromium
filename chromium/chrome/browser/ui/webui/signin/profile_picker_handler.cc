@@ -740,12 +740,10 @@ void ProfilePickerHandler::HandleContinueWithoutAccount(
       ProfileMetrics::ADD_NEW_PROFILE_PICKER_LOCAL);
   ProfilePicker::SwitchToSignedOutPostIdentityFlow(
       profile_color, profile_picked_time_on_startup_,
-      base::BindOnce(
-          &ProfilePickerHandler::OnProfileCreationFinished,
-          // `OnProfileCreationFinished` is called when we want to close the
-          // profile picker. `ProfilePickerHandler` will always be initialized
-          // when we get to that call because the picker will still be open.
-          base::Unretained(this)));
+      base::BindOnce(&ProfilePickerHandler::OnProfileCreationFinished,
+                     // `OnProfileCreationFinished` is called when we want to
+                     // close the profile picker.
+                     weak_factory_.GetWeakPtr()));
 }
 
 void ProfilePickerHandler::HandleGetSwitchProfile(
