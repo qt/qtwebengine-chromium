@@ -348,6 +348,27 @@ bool IsAllowedToBeEmbedded(
          EndsWithPermittedDomains(embedded_target, embedding_domain);
 }
 
+// Hostnames containing these strings are considered unsafe due to ligature
+// rendering in some fonts.
+const char* kUnsafeLigatures[] = {
+    "g_logo", "o_logo", "l_logo", "e_logo",
+    // google_logo is also unsafe, but e_logo is its substring.
+    // super_g_logo is also unsafe, but g_logo is its substring.
+    "google_g", "glogoligature", "ologoligature", "llogoligature",
+    "elogoligature",
+    // googlelogoligature is also unsafe, but elogoligature is its
+    // substring
+};
+
+bool IsUnsafeLigature(const DomainInfo& domain) {
+  for (const char* unsafe_ligature : kUnsafeLigatures) {
+    if (domain.hostname.find(unsafe_ligature) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 DomainInfo::DomainInfo(const std::string& arg_hostname,
@@ -771,6 +792,10 @@ bool IsASCIIAndEmojiOnly(const base::StringPiece16& text) {
 }
 
 bool ShouldBlockBySpoofCheckResult(const DomainInfo& navigated_domain) {
+  if (IsUnsafeLigature(navigated_domain)) {
+    return true;
+  }
+
   // Here, only a subset of spoof checks that cause an IDN to fallback to
   // punycode are configured to show an interstitial.
   switch (navigated_domain.idn_result.spoof_check_result) {
