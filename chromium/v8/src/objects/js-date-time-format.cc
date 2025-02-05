@@ -1667,6 +1667,10 @@ base::Optional<std::string> GetOffsetTimeZone(Isolate* isolate,
   if (m0 == ':') {
     // Ignore ':'
     p++;
+    if (len == p) {
+      // Error
+      return base::nullopt;
+    }
     m0 = flat.Get(p);
   }
   if (len - p != 2) {
