@@ -119,6 +119,10 @@ BASE_DECLARE_FEATURE(kExtensionSidePanelIntegration);
 // IsValidSourceUrl enforcement for ExtensionHostMsg_OpenChannelToExtension IPC.
 BASE_DECLARE_FEATURE(kExtensionSourceUrlEnforcement);
 
+// Controls whether server-side redirects are subject to extensions' web
+// accessible resource restrictions.
+BASE_DECLARE_FEATURE(kExtensionWARForRedirect);
+
 // File Handlers.
 BASE_DECLARE_FEATURE(kExtensionWebFileHandlers);
 
