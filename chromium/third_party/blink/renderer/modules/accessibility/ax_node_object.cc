@@ -506,8 +506,7 @@ const int kDefaultHeadingLevel = 2;
 // means that the LayoutObject is purposely being set to null, as it is not
 // relevant for this object in the AX tree.
 AXNodeObject::AXNodeObject(Node* node, AXObjectCacheImpl& ax_object_cache)
-    : AXObject(ax_object_cache),
-      node_(node) {}
+    : AXObject(ax_object_cache), node_(node) {}
 
 AXNodeObject::AXNodeObject(LayoutObject* layout_object,
                            AXObjectCacheImpl& ax_object_cache)
@@ -980,8 +979,7 @@ AXObjectInclusion AXNodeObject::ShouldIncludeBasedOnSemantics(
   return kDefaultBehavior;
 }
 
-bool AXNodeObject::ComputeIsIgnored(
-    IgnoredReasons* ignored_reasons) const {
+bool AXNodeObject::ComputeIsIgnored(IgnoredReasons* ignored_reasons) const {
   Node* node = GetNode();
 
   if (ShouldIgnoreForHiddenOrInert(ignored_reasons)) {
@@ -3831,7 +3829,7 @@ String AXNodeObject::FontFamilyForSerialization() const {
   if (!style)
     return AXObject::FontFamilyForSerialization();
 
-  const SimpleFontData* primary_font = style->GetFont().PrimaryFont();
+  const SimpleFontData* primary_font = style->GetFont()->PrimaryFont();
   if (!primary_font)
     return AXObject::FontFamilyForSerialization();
 
@@ -5869,10 +5867,9 @@ void AXNodeObject::InsertChild(AXObject* child,
       /*notify_parent_of_ignored_changes*/ false);
 
   if (!child->IsIncludedInTree()) {
-    DCHECK(!is_from_aria_owns)
-        << "Owned elements must be in tree: " << child
-        << "\nRecompute included in tree: "
-        << child->ComputeIsIgnoredButIncludedInTree();
+    DCHECK(!is_from_aria_owns) << "Owned elements must be in tree: " << child
+                               << "\nRecompute included in tree: "
+                               << child->ComputeIsIgnoredButIncludedInTree();
 
     // Get the ignored child's children and add to children of ancestor
     // included in tree. This will recurse if necessary, skipping levels of
@@ -7994,9 +7991,8 @@ AXObject* AXNodeObject::PreviousOnLine() const {
     return SetPreviousOnLine(nullptr);
   }
 
-  AXObject* previous_sibling = IsIncludedInTree()
-                                   ? PreviousSiblingIncludingIgnored()
-                                   : nullptr;
+  AXObject* previous_sibling =
+      IsIncludedInTree() ? PreviousSiblingIncludingIgnored() : nullptr;
   if (previous_sibling && previous_sibling->GetLayoutObject() &&
       previous_sibling->GetLayoutObject()->IsLayoutOutsideListMarker()) {
     // A list item should be preceded by a list marker on the same line.

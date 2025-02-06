@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/platform/graphics/interpolation_space.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_filter.h"
 #include "third_party/blink/renderer/platform/graphics/skia/skia_utils.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -161,6 +162,8 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState()
       global_alpha_(1.0),
       line_dash_offset_(0.0),
       unparsed_font_(defaultFont),
+      font_(MakeGarbageCollected<Font>()),
+      font_for_filter_(font_),
       unparsed_css_filter_(defaultFilter),
       text_align_(kStartTextAlign),
       parsed_letter_spacing_(defaultSpacing),
@@ -245,8 +248,9 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState(
   }
   // Since FontSelector is weakly persistent with |font_|, the memory may be
   // freed even |font_| is valid.
-  if (realized_font_ && font_.GetFontSelector())
-    font_.GetFontSelector()->RegisterForInvalidationCallbacks(this);
+  if (realized_font_ && font_->GetFontSelector()) {
+    font_->GetFontSelector()->RegisterForInvalidationCallbacks(this);
+  }
   ValidateFilterState();
 }
 
@@ -254,7 +258,7 @@ CanvasRenderingContext2DState::~CanvasRenderingContext2DState() = default;
 
 void CanvasRenderingContext2DState::FontsNeedUpdate(FontSelector* font_selector,
                                                     FontInvalidationReason) {
-  DCHECK_EQ(font_selector, font_.GetFontSelector());
+  DCHECK_EQ(font_selector, font_->GetFontSelector());
   DCHECK(realized_font_);
 
   // |font_| will revalidate its FontFallbackList on demand. We don't need to
@@ -354,9 +358,9 @@ void CanvasRenderingContext2DState::SetFont(
   font_description.SetSubpixelAscentDescent(true);
 
   CSSToLengthConversionData conversion_data = CSSToLengthConversionData();
-  Font font = Font();
   auto const font_size = CSSToLengthConversionData::FontSizes(
-      font_description.ComputedSize(), font_description.ComputedSize(), &font,
+      font_description.ComputedSize(), font_description.ComputedSize(),
+      MakeGarbageCollected<Font>(),
       1.0f /*Deliberately ignore zoom on the canvas element*/);
   conversion_data.SetFontSizes(font_size);
 
@@ -406,7 +410,7 @@ void CanvasRenderingContext2DState::SetFontInternal(
   FontDescription font_description = passed_font_description;
   font_description.SetSubpixelAscentDescent(true);
 
-  font_ = Font(font_description, selector);
+  font_ = MakeGarbageCollected<Font>(font_description, selector);
   realized_font_ = true;
   if (selector)
     selector->RegisterForInvalidationCallbacks(this);
@@ -416,17 +420,17 @@ bool CanvasRenderingContext2DState::IsFontDirtyForFilter() const {
   // Indicates if the font has changed since the last time the filter was set.
   if (!HasRealizedFont())
     return true;
-  return GetFont() != font_for_filter_;
+  return *GetFont() != *font_for_filter_;
 }
 
-const Font& CanvasRenderingContext2DState::GetFont() const {
+const Font* CanvasRenderingContext2DState::GetFont() const {
   return font_;
 }
 
 const FontDescription& CanvasRenderingContext2DState::GetFontDescription()
     const {
   DCHECK(realized_font_);
-  return font_.GetFontDescription();
+  return font_->GetFontDescription();
 }
 
 void CanvasRenderingContext2DState::SetFontKerning(
@@ -564,13 +568,13 @@ sk_sp<PaintFilter> CanvasRenderingContext2DState::GetFilter(
       css_filter_value_->ReResolveUrl(document);
     }
 
-    const Font* font = &font_for_filter_;
+    const Font* font = font_for_filter_;
 
     // Must set font in case the filter uses any font-relative units (em, ex)
     // If font_for_filter_ was never set (ie frame-less documents) use base font
-    if (!font_for_filter_.GetFontSelector()) [[unlikely]] {
+    if (!font_for_filter_->GetFontSelector()) [[unlikely]] {
       if (LayoutView* layout_view = document.GetLayoutView()) {
-        font = &layout_view->StyleRef().GetFont();
+        font = layout_view->StyleRef().GetFont();
       } else {
         return nullptr;
       }
@@ -869,15 +873,15 @@ void CanvasRenderingContext2DState::SetLetterSpacing(
   FontDescription font_description(GetFontDescription());
   CSSToLengthConversionData conversion_data = CSSToLengthConversionData();
   auto const font_size = CSSToLengthConversionData::FontSizes(
-      font_description.ComputedSize(), font_description.ComputedSize(), &font_,
+      font_description.ComputedSize(), font_description.ComputedSize(), font_,
       1.0f /*Deliberately ignore zoom on the canvas element*/);
   conversion_data.SetFontSizes(font_size);
   float letter_spacing_in_pixel =
       conversion_data.ZoomedComputedPixels(num_spacing, unit);
 
   font_description.SetLetterSpacing(letter_spacing_in_pixel);
-  if (font_.GetFontSelector())
-    SetFontInternal(font_description, font_.GetFontSelector());
+  if (font_->GetFontSelector())
+    SetFontInternal(font_description, font_->GetFontSelector());
 }
 
 void CanvasRenderingContext2DState::SetWordSpacing(const String& word_spacing) {
@@ -904,15 +908,15 @@ void CanvasRenderingContext2DState::SetWordSpacing(const String& word_spacing) {
   FontDescription font_description(GetFontDescription());
   CSSToLengthConversionData conversion_data = CSSToLengthConversionData();
   auto const font_size = CSSToLengthConversionData::FontSizes(
-      font_description.ComputedSize(), font_description.ComputedSize(), &font_,
+      font_description.ComputedSize(), font_description.ComputedSize(), font_,
       1.0f /*Deliberately ignore zoom on the canvas element*/);
   conversion_data.SetFontSizes(font_size);
   float word_spacing_in_pixel =
       conversion_data.ZoomedComputedPixels(num_spacing, unit);
 
   font_description.SetWordSpacing(word_spacing_in_pixel);
-  if (font_.GetFontSelector())
-    SetFontInternal(font_description, font_.GetFontSelector());
+  if (font_->GetFontSelector())
+    SetFontInternal(font_description, font_->GetFontSelector());
 }
 
 void CanvasRenderingContext2DState::SetTextRendering(

@@ -249,7 +249,7 @@ FilterOperations FilterOperationResolver::CreateFilterOperations(
 
 FilterOperations FilterOperationResolver::CreateOffscreenFilterOperations(
     const CSSValue& in_value,
-    const Font& font) {
+    const Font* font) {
   FilterOperations operations;
 
   if (auto* in_identifier_value = DynamicTo<CSSIdentifierValue>(in_value)) {
@@ -260,7 +260,7 @@ FilterOperations FilterOperationResolver::CreateOffscreenFilterOperations(
   // TODO(layout-dev): Should document zoom factor apply for offscreen canvas?
   float zoom = 1.0f;
   CSSToLengthConversionData::FontSizes font_sizes(
-      kOffScreenCanvasEmFontSize, kOffScreenCanvasRemFontSize, &font, zoom);
+      kOffScreenCanvasEmFontSize, kOffScreenCanvasRemFontSize, font, zoom);
   CSSToLengthConversionData::LineHeightSize line_height_size;
   CSSToLengthConversionData::ViewportSize viewport_size(0, 0);
   CSSToLengthConversionData::ContainerSizes container_sizes;

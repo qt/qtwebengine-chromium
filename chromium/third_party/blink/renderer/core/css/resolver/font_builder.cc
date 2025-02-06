@@ -388,9 +388,9 @@ void FontBuilder::UpdateAdjustedSize(FontDescription& font_description,
   // FontDescription::EffectiveFontSize.
   font_description.SetAdjustedSize(computed_size);
 
-  Font font(font_description, font_selector);
+  Font* font = MakeGarbageCollected<Font>(font_description, font_selector);
 
-  const SimpleFontData* font_data = font.PrimaryFont();
+  const SimpleFontData* font_data = font->PrimaryFont();
   if (!font_data) {
     return;
   }
@@ -638,7 +638,7 @@ FontSelector* FontBuilder::ComputeFontSelector(
   if (IsSet(PropertySetFlag::kFamily)) {
     return FontSelectorFromTreeScope(family_tree_scope_);
   } else {
-    return builder.GetFont().GetFontSelector();
+    return builder.GetFont()->GetFontSelector();
   }
 }
 
@@ -668,7 +668,7 @@ void FontBuilder::CreateFont(ComputedStyleBuilder& builder,
   FontSelector* font_selector = ComputeFontSelector(builder);
   UpdateAdjustedSize(description, font_selector);
 
-  builder.SetFont(Font(description, font_selector));
+  builder.SetFont(MakeGarbageCollected<Font>(description, font_selector));
   flags_ = 0;
 }
 
@@ -688,7 +688,7 @@ void FontBuilder::CreateInitialFont(ComputedStyleBuilder& builder) {
   font_description.SetOrientation(builder.ComputeFontOrientation());
 
   FontSelector* font_selector = document_->GetStyleEngine().GetFontSelector();
-  builder.SetFont(Font(font_description, font_selector));
+  builder.SetFont(MakeGarbageCollected<Font>(font_description, font_selector));
 }
 
 }  // namespace blink

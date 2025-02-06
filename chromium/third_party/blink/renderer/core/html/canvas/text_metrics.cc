@@ -71,7 +71,7 @@ void TextMetrics::Trace(Visitor* visitor) const {
 
 TextMetrics::TextMetrics() : baselines_(Baselines::Create()) {}
 
-TextMetrics::TextMetrics(const Font& font,
+TextMetrics::TextMetrics(const Font* font,
                          const TextDirection& direction,
                          const TextBaseline& baseline,
                          const TextAlign& align,
@@ -93,12 +93,12 @@ const ShapeResult* ShapeWord(const TextRun& word_run, const Font& font) {
 }
 }  // namespace
 
-void TextMetrics::Update(const Font& font,
+void TextMetrics::Update(const Font* font,
                          const TextDirection& direction,
                          const TextBaseline& baseline,
                          const TextAlign& align,
                          const String& text) {
-  const SimpleFontData* font_data = font.PrimaryFont();
+  const SimpleFontData* font_data = font->PrimaryFont();
   if (!font_data)
     return;
 
@@ -145,11 +145,11 @@ void TextMetrics::Update(const Font& font,
     float run_width;
     gfx::RectF run_glyph_bounds;
     if (RuntimeEnabledFeatures::Canvas2dTextMetricsShapingEnabled()) {
-      run_with_offset.shape_result_ = ShapeWord(text_run, font);
+      run_with_offset.shape_result_ = ShapeWord(text_run, *font);
       run_width = run_with_offset.shape_result_->Width();
       run_glyph_bounds = run_with_offset.shape_result_->ComputeInkBounds();
     } else {
-      run_width = font.Width(text_run, &run_glyph_bounds);
+      run_width = font->Width(text_run, &run_glyph_bounds);
     }
     runs_with_offset_.push_back(run_with_offset);
 
@@ -219,7 +219,7 @@ void TextMetrics::ShapeTextIfNeeded() {
   }
   for (auto& run : runs_with_offset_) {
     TextRun word_run(run.text_, run.direction_, false);
-    run.shape_result_ = ShapeWord(word_run, font_);
+    run.shape_result_ = ShapeWord(word_run, *font_);
   }
   shaping_needed_ = false;
 }

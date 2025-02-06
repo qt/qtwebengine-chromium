@@ -24,7 +24,7 @@ TextCombinePainter::TextCombinePainter(
     const LineRelativeOffset& text_origin)
     : TextPainter(context,
                   svg_context_paints,
-                  style.GetFont(),
+                  *style.GetFont(),
                   visual_rect,
                   text_origin,
                   /* horizontal */ false),
@@ -95,7 +95,7 @@ void TextCombinePainter::Paint(const PaintInfo& paint_info,
   }
 
   if (has_emphasis_mark) {
-    text_painter.PaintEmphasisMark(text_style, style.GetFont());
+    text_painter.PaintEmphasisMark(text_style, *style.GetFont());
   }
 
   if (has_text_decoration) {

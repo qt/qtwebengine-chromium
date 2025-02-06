@@ -262,7 +262,7 @@ class ReusingTextShaper final {
       if (!shape_result || item->Direction() != direction)
         continue;
       if (RuntimeEnabledFeatures::ReuseShapeResultsByFontsEnabled()) {
-        if (item->Style()->GetFont() != font) {
+        if (*item->Style()->GetFont() != font) {
           continue;
         }
       } else {
@@ -306,7 +306,7 @@ const Font& ScaledFont(const LayoutText& layout_text) {
   if (const auto* svg_text = DynamicTo<LayoutSVGInlineText>(layout_text)) {
     return svg_text->ScaledFont();
   }
-  return layout_text.StyleRef().GetFont();
+  return *layout_text.StyleRef().GetFont();
 }
 
 // The function is templated to indicate the purpose of collected inlines:
@@ -332,7 +332,7 @@ void CollectInlinesInternal(ItemsBuilder* builder,
   while (node) {
     if (auto* counter = DynamicTo<LayoutCounter>(node)) {
       // TODO(crbug.com/561873): PrimaryFont should not be nullptr.
-      if (counter->Style()->GetFont().PrimaryFont()) {
+      if (counter->Style()->GetFont()->PrimaryFont()) {
         // According to
         // https://w3c.github.io/csswg-drafts/css-counter-styles/#simple-symbolic,
         // disclosure-* should have special rendering paths.
@@ -460,9 +460,10 @@ inline bool ShouldBreakShapingBeforeText(const InlineItem& item,
   DCHECK(item.Style());
   const ComputedStyle& style = *item.Style();
   if (&style != &start_style) {
-    const Font& font = style.GetFont();
-    if (&font != &start_font && font != start_font)
+    const Font* font = style.GetFont();
+    if (font != &start_font && *font != start_font) {
       return true;
+    }
   }
 
   // The resolved direction and run segment properties must match to shape
@@ -534,9 +535,9 @@ inline bool NeedsShaping(const InlineItem& item) {
 // Determine if reshape is needed for ::first-line style.
 bool FirstLineNeedsReshape(const ComputedStyle& first_line_style,
                            const ComputedStyle& base_style) {
-  const Font& base_font = base_style.GetFont();
-  const Font& first_line_font = first_line_style.GetFont();
-  return &base_font != &first_line_font && base_font != first_line_font;
+  const Font* base_font = base_style.GetFont();
+  const Font* first_line_font = first_line_style.GetFont();
+  return base_font != first_line_font && *base_font != *first_line_font;
 }
 
 // Make a string to the specified length, either by truncating if longer, or
@@ -1248,7 +1249,7 @@ void InlineNode::SegmentFontOrientation(InlineNodeData* data) const {
 
   for (const InlineItem& item : items) {
     if (item.Type() == InlineItem::kText && item.Length() &&
-        item.Style()->GetFont().GetFontDescription().Orientation() ==
+        item.Style()->GetFont()->GetFontDescription().Orientation() ==
             FontOrientation::kVerticalMixed) {
       if (!segments) {
         data->segments = std::make_unique<InlineItemSegments>();
@@ -1880,17 +1881,17 @@ static LayoutUnit ComputeContentSize(InlineNode node,
       AddTextUntil(items_data.ToItemIterator(item));
       DCHECK(item.Style());
       const ComputedStyle& style = *item.Style();
-      const Font& font = style.GetFont();
-      const SimpleFontData* font_data = font.PrimaryFont();
+      const Font* font = style.GetFont();
+      const SimpleFontData* font_data = font->PrimaryFont();
       const TabSize& tab_size = style.GetTabSize();
       // Sync with `ShapeResult::CreateForTabulationCharacters()`.
       TextRunLayoutUnit glyph_advance = TextRunLayoutUnit::FromFloatRound(
-          font.TabWidth(font_data, tab_size, position));
+          font->TabWidth(font_data, tab_size, position));
       InlineLayoutUnit run_advance = glyph_advance;
       DCHECK_GE(length, 1u);
       if (length > 1u) {
         glyph_advance = TextRunLayoutUnit::FromFloatRound(
-            font.TabWidth(font_data, tab_size));
+            font->TabWidth(font_data, tab_size));
         run_advance += glyph_advance.To<InlineLayoutUnit>() * (length - 1);
       }
       position += run_advance.ToCeil<LayoutUnit>().ClampNegativeToZero();
@@ -2152,21 +2153,22 @@ void InlineNode::AdjustFontForTextCombineUprightAll() const {
   if (content_width <= desired_width)
     return;
 
-  const Font& font = Style().GetFont();
-  FontSelector* const font_selector = font.GetFontSelector();
-  FontDescription description = font.GetFontDescription();
+  const Font* font = Style().GetFont();
+  FontSelector* const font_selector = font->GetFontSelector();
+  FontDescription description = font->GetFontDescription();
 
   // Try compressed fonts.
   static const std::array<FontWidthVariant, 3> kWidthVariants = {
       kHalfWidth, kThirdWidth, kQuarterWidth};
   for (const auto width_variant : kWidthVariants) {
     description.SetWidthVariant(width_variant);
-    Font compressed_font(description, font_selector);
+    Font* compressed_font =
+        MakeGarbageCollected<Font>(description, font_selector);
     // TODO(crbug.com/561873): PrimaryFont should not be nullptr.
-    if (!compressed_font.PrimaryFont()) {
+    if (!compressed_font->PrimaryFont()) {
       continue;
     }
-    ShapeText(MutableData(), nullptr, nullptr, &compressed_font);
+    ShapeText(MutableData(), nullptr, nullptr, compressed_font);
     if (CalculateWidthForTextCombine(ItemsData(false)) <= desired_width) {
       text_combine.SetCompressedFont(compressed_font);
       return;

@@ -308,13 +308,13 @@ void ExternalPopupMenu::GetPopupMenuInfo(
   const ComputedStyle& menu_style = owner_element.GetComputedStyle()
                                         ? *owner_element.GetComputedStyle()
                                         : *owner_element.EnsureComputedStyle();
-  const SimpleFontData* font_data = menu_style.GetFont().PrimaryFont();
+  const SimpleFontData* font_data = menu_style.GetFont()->PrimaryFont();
   DCHECK(font_data);
   // These coordinates need to be in CSS pixels.
   float dpr = GetDprForSizeAdjustment(owner_element);
   *item_height = font_data ? font_data->GetFontMetrics().Height() / dpr : 0;
   *font_size = static_cast<int>(
-      menu_style.GetFont().GetFontDescription().ComputedSize() / dpr);
+      menu_style.GetFont()->GetFontDescription().ComputedSize() / dpr);
   *selected_item = ToExternalPopupMenuItemIndex(
       owner_element.SelectedListIndex(), owner_element);
 

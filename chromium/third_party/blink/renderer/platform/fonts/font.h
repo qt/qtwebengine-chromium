@@ -44,7 +44,7 @@
 namespace gfx {
 class PointF;
 class RectF;
-}
+}  // namespace gfx
 
 namespace cc {
 class PaintCanvas;
@@ -60,9 +60,7 @@ class TextRun;
 struct TextFragmentPaintInfo;
 struct TextRunPaintInfo;
 
-class PLATFORM_EXPORT Font {
-  DISALLOW_NEW();
-
+class PLATFORM_EXPORT Font : public GarbageCollected<Font> {
  public:
   Font();
   explicit Font(const FontDescription&);

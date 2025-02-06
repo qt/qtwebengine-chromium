@@ -189,8 +189,8 @@ ScriptPromise<IDLSequence<FontFace>> FontFaceSet::load(
     return ScriptPromise<IDLSequence<FontFace>>();
   }
 
-  Font font;
-  if (!ResolveFontStyle(font_string, font)) {
+  const Font* font = ResolveFontStyle(font_string);
+  if (!font) {
     return ScriptPromise<IDLSequence<FontFace>>::RejectWithDOMException(
         script_state,
         MakeGarbageCollected<DOMException>(
@@ -200,13 +200,13 @@ ScriptPromise<IDLSequence<FontFace>> FontFaceSet::load(
 
   FontFaceCache* font_face_cache = GetFontSelector()->GetFontFaceCache();
   FontFaceArray* faces = MakeGarbageCollected<FontFaceArray>();
-  for (const FontFamily* f = &font.GetFontDescription().Family(); f;
+  for (const FontFamily* f = &font->GetFontDescription().Family(); f;
        f = f->Next()) {
     if (f->FamilyIsGeneric()) {
       continue;
     }
     CSSSegmentedFontFace* segmented_font_face =
-        font_face_cache->Get(font.GetFontDescription(), f->FamilyName());
+        font_face_cache->Get(font->GetFontDescription(), f->FamilyName());
     if (segmented_font_face) {
       segmented_font_face->Match(text, faces);
     }
@@ -227,8 +227,8 @@ bool FontFaceSet::check(const String& font_string,
     return false;
   }
 
-  Font font;
-  if (!ResolveFontStyle(font_string, font)) {
+  const Font* font = ResolveFontStyle(font_string);
+  if (!font) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
         "Could not resolve '" + font_string + "' as a font.");
@@ -243,15 +243,15 @@ bool FontFaceSet::check(const String& font_string,
     UChar32 c = text.CharacterStartingAt(index);
     index += U16_LENGTH(c);
 
-    for (const FontFamily* f = &font.GetFontDescription().Family(); f;
+    for (const FontFamily* f = &font->GetFontDescription().Family(); f;
          f = f->Next()) {
       if (f->FamilyIsGeneric() || font_selector->IsPlatformFamilyMatchAvailable(
-                                      font.GetFontDescription(), *f)) {
+                                      font->GetFontDescription(), *f)) {
         continue;
       }
 
       CSSSegmentedFontFace* face =
-          font_face_cache->Get(font.GetFontDescription(), f->FamilyName());
+          font_face_cache->Get(font->GetFontDescription(), f->FamilyName());
       if (face && !face->CheckFont(c)) {
         return false;
       }

@@ -57,7 +57,7 @@ class SpacingApplier {
                   const InlineItem* current_item,
                   const ComputedStyle& style) {
     DCHECK(current_item->TextShapeResult());
-    const float spacing = TextAutoSpace::GetSpacingWidth(&style.GetFont());
+    const float spacing = TextAutoSpace::GetSpacingWidth(style.GetFont());
     auto offset = offsets.begin();
     if (!offsets.empty() && *offset == current_item->StartOffset()) {
       DCHECK(last_item_);
