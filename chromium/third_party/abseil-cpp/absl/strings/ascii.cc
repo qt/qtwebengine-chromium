@@ -249,7 +249,9 @@ static constexpr size_t ValidateAsciiCasefold() {
   return incorrect_index;
 }
 
+#if ABSL_INTERNAL_HAVE_MIN_GNUC_VERSION(10, 0) // Not constant expression in gcc 9
 static_assert(ValidateAsciiCasefold() == 0, "error in case conversion");
+#endif
 
 }  // namespace ascii_internal
 
