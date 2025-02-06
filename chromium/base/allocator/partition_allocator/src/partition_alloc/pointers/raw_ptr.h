@@ -1256,6 +1256,7 @@ struct pointer_traits<::raw_ptr<T, Traits>> {
   }
 };
 
+#if defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 10
 // Mark `raw_ptr<T>` and `T*` as having a common reference type (the type to
 // which both can be converted or bound) of `T*`. This makes them satisfy
 // `std::equality_comparable`, which allows usage like:
@@ -1285,6 +1286,7 @@ template <typename T,
 struct basic_common_reference<T*, base::raw_ptr<T, Traits>, TQ, UQ> {
   using type = T*;
 };
+#endif // defined(__clang__) || !defined(__GNUC__) || __GNUC__ >= 10
 
 }  // namespace std
 

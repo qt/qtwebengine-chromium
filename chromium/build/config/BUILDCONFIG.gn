@@ -148,6 +148,7 @@ declare_args() {
   is_gcc = false
   is_qtwebengine = false
   is_qtpdf = false
+  is_gcc_legacy = false # used for gcc 9
 
   # Allows the path to a custom target toolchain to be injected as a single
   # argument, and set as the default toolchain.
