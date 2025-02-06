@@ -1840,7 +1840,7 @@ const AtomicString& ComputedStyle::HyphenString() const {
                       (base::span_from_ref(kHyphenMinusCharacter)));
   DEFINE_STATIC_LOCAL(AtomicString, hyphen_string,
                       (base::span_from_ref(kHyphenCharacter)));
-  const SimpleFontData* primary_font = GetFont().PrimaryFont();
+  const SimpleFontData* primary_font = GetFont()->PrimaryFont();
   DCHECK(primary_font);
   return primary_font && primary_font->GlyphForCharacter(kHyphenCharacter)
              ? hyphen_string
@@ -2066,7 +2066,7 @@ FontBaseline ComputedStyle::GetFontBaseline() const {
 }
 
 FontHeight ComputedStyle::GetFontHeight(FontBaseline baseline) const {
-  if (const SimpleFontData* font_data = GetFont().PrimaryFont()) {
+  if (const SimpleFontData* font_data = GetFont()->PrimaryFont()) {
     return font_data->GetFontMetrics().GetFontHeight(baseline);
   }
   return FontHeight();
@@ -2339,7 +2339,7 @@ float ComputedStyle::ComputedLineHeight(const Length& lh, const Font& font) {
 }
 
 float ComputedStyle::ComputedLineHeight() const {
-  return ComputedLineHeight(LineHeight(), GetFont());
+  return ComputedLineHeight(LineHeight(), *GetFont());
 }
 
 LayoutUnit ComputedStyle::ComputedLineHeightAsFixed(const Font& font) const {
@@ -2361,7 +2361,7 @@ LayoutUnit ComputedStyle::ComputedLineHeightAsFixed(const Font& font) const {
 }
 
 LayoutUnit ComputedStyle::ComputedLineHeightAsFixed() const {
-  return ComputedLineHeightAsFixed(GetFont());
+  return ComputedLineHeightAsFixed(*GetFont());
 }
 
 StyleColor ComputedStyle::DecorationColorIncludingFallback(
