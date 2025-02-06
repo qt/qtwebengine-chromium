@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr partition_alloc::PartitionOptions kOptions = {};
+const partition_alloc::PartitionOptions kOptions = {};
 
 struct Allocators {
 #ifndef V8_ENABLE_SANDBOX
