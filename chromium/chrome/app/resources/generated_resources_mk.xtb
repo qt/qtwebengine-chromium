@@ -2094,7 +2094,7 @@
 <translation id="2454206500483040640">Поделени во партиции</translation>
 <translation id="2454247629720664989">Клучен збор</translation>
 <translation id="2454524890947537054">Да се одобри барањето за прелистување?</translation>
-<translation id="2454913962395846391">Автоматска временска зона</translation>
+<translation id="2454913962395846391">Автоматска часовна зона</translation>
 <translation id="245650153866130664">За автоматско освежување на билетот, изберете „Запомни ја лозинката“. Лозинката ќе се зачува само на вашиот уред.</translation>
 <translation id="2456794251167091176">Увозот е целосен</translation>
 <translation id="2457246892030921239"><ph name="APP_NAME" /> сака да копира датотеки од <ph name="VOLUME_NAME" />.</translation>
@@ -2725,7 +2725,7 @@
 <translation id="289695669188700754">ИД на клуч: <ph name="KEY_ID" /></translation>
 <translation id="2897713966423243833">Оваа приспособена поставка ќе биде отстранета кога ќе ги затворите сите ваши прозорци „Инкогнито“</translation>
 <translation id="2897878306272793870">Дали сте сигурни дека сакате да отворите <ph name="TAB_COUNT" /> картички?</translation>
-<translation id="2900247416110050639">„Документи“, „Табели“ и „Слајдови“ на Google бараат да се складираат датотеки во Google Drive. Локалните датотеки ќе се преместат и ќе се копираат датотеки од други локации. Датотеките може да ги најдете во папката Google Drive во апликацијата „Датотеки“.</translation>
+<translation id="2900247416110050639">Docs, „Табели“ и Slides на Google бараат да се складираат датотеки во Google Drive. Локалните датотеки ќе се преместат и ќе се копираат датотеки од други локации. Датотеките може да ги најдете во папката Google Drive во апликацијата „Датотеки“.</translation>
 <translation id="290105521672621980">Датотеката користи неподдржани функции</translation>
 <translation id="2901348420151309559">Неодамнешни фотографии и апликации</translation>
 <translation id="2902127500170292085"><ph name="EXTENSION_NAME" /> не може да комуницира со печатачов. Погрижете се печатачот да е приклучен и обидете се повторно.</translation>
@@ -4184,7 +4184,7 @@
 <translation id="3948507072814225786"><ph name="ORIGIN" /> може да изменува датотеки во следниве папки</translation>
 <translation id="394984172568887996">Увезени од IE</translation>
 <translation id="3949999964543783947"><ph name="IDS_DOWNLOAD_BUBBLE_SUBPAGE_SUMMARY_WARNING_SAFE_BROWSING_SETTING_LINK" /> за да го направите преземањето датотеки побезбедно</translation>
-<translation id="3950820424414687140">Најави се</translation>
+<translation id="3950820424414687140">Најавете се</translation>
 <translation id="3950841222883198950">Гласовно пишување</translation>
 <translation id="3953834000574892725">Мои сметки</translation>
 <translation id="3954354850384043518">Во тек</translation>
@@ -5875,7 +5875,7 @@
 <translation id="5208988882104884956">Полуширина</translation>
 <translation id="5209320130288484488">Не се пронајдени уреди</translation>
 <translation id="5209513429611499188">HID-уреди со искористеност од страницата за користење <ph name="USAGE_PAGE" /></translation>
-<translation id="5210365745912300556">Затвори ја картичката</translation>
+<translation id="5210365745912300556">Затвори картичка</translation>
 <translation id="5213114823401215820">Повторно отвори ја затворената група</translation>
 <translation id="5213481667492808996">Услугата за мобилен интернет од <ph name="NAME" /> е спремна за употреба</translation>
 <translation id="5213891612754844763">Покажи ги поставките за прокси</translation>
@@ -7052,7 +7052,7 @@
 <translation id="608912389580139775">За да ја додадете страницава во списокот за читање, допрете на иконата за обележувач</translation>
 <translation id="6089289670051481345">Тританомалија</translation>
 <translation id="6090760257419195752">Отфрлени опомени</translation>
-<translation id="609174145569509836">Подзачистете го просторот</translation>
+<translation id="609174145569509836">Ослободете простор</translation>
 <translation id="6091761513005122595">Споделувањето е успешно монтирано.</translation>
 <translation id="6093803049406781019">Избриши го профилот</translation>
 <translation id="6093888419484831006">Се откажува ажурирањето...</translation>
@@ -7277,7 +7277,7 @@
 <translation id="6247708409970142803"><ph name="PERCENTAGE" />%</translation>
 <translation id="6247802389331535091">Систем: <ph name="ARC_PROCESS_NAME" /></translation>
 <translation id="624789221780392884">Ажурирањето е подготвено</translation>
-<translation id="6248988683584659830">Пребарување низ поставките</translation>
+<translation id="6248988683584659830">Пребарувајте низ поставките</translation>
 <translation id="6249200942125593849">Управувајте со пристапноста</translation>
 <translation id="6250186368828697007">Деталите се скриени додека го споделувате екранот</translation>
 <translation id="6251870443722440887">Рачки на ГДИ</translation>
@@ -8560,7 +8560,7 @@
 <translation id="7199452998289813782">Паузирај со емитување на <ph name="DEVICE_NAME" /></translation>
 <translation id="720110658997053098">Трајно задржи го уредов во режим на киоск</translation>
 <translation id="7201118060536064622">Ставката „<ph name="DELETED_ITEM_NAME" />“ е избришана</translation>
-<translation id="7201420661433230412">Прикажи ги датотеките</translation>
+<translation id="7201420661433230412">Прегледувај ги датотеките</translation>
 <translation id="7201432510117121839">Емитувањето на аудиото од компјутерот не е поддржано на уредов</translation>
 <translation id="7201535955609308429">Почекајте да заврши потврдувањето во тек</translation>
 <translation id="7202337678781136582">Скенирајте го QR-кодот со вашиот телефон со Android</translation>
@@ -9158,7 +9158,7 @@
 <translation id="764178579712141045">Контактот <ph name="USER_EMAIL" /> е додаден</translation>
 <translation id="7642778300616172920">Скриј ги чувствителните содржини</translation>
 <translation id="7643842463591647490">{0,plural, =1{# oтворен прозорец}one{# отворен прозорец}other{# отворени прозорци}}</translation>
-<translation id="7643932971554933646">Дали да му се дозволи на сајтот да ги прикажува датотеките?</translation>
+<translation id="7643932971554933646">Да му се дозволи на сајтот да ги прегледува датотеките?</translation>
 <translation id="7645176681409127223"><ph name="USER_NAME" /> (сопственик)</translation>
 <translation id="7645681574855902035">Се откажува бекапот на Linux</translation>
 <translation id="7646499124171960488">Ве предупредува за небезбедни јавни сајтови</translation>
@@ -10083,7 +10083,7 @@
 <translation id="8281886186245836920">Прескокни</translation>
 <translation id="8284279544186306258">сите локации на <ph name="WEBSITE_1" /></translation>
 <translation id="8284326494547611709">Титлови</translation>
-<translation id="8286036467436129157">Најави се</translation>
+<translation id="8286036467436129157">Најавете се</translation>
 <translation id="8286227656784970313">Употреби системски речник</translation>
 <translation id="828642162569365647">Оваа лозинка или PIN ги штити вашите податоци на овој <ph name="DEVICE_TYPE" /> и сите податоци до кои пристапувате од вашиот телефон. Ќе треба да отклучувате секој пат кога вашиот <ph name="DEVICE_TYPE" /> ќе се разбуди од режим во мирување.</translation>
 <translation id="8287902281644548111">Пребарувајте по повик/URL на API</translation>
@@ -10308,7 +10308,7 @@
 <translation id="8447409163267621480">Опфатете или Ctrl или Alt</translation>
 <translation id="8448729345478502352">Намалете ги или зголемете ги ставките на екранот</translation>
 <translation id="8449008133205184768">Залепи и усогласи стил</translation>
-<translation id="8449036207308062757">Управувајте со капацитетот</translation>
+<translation id="8449036207308062757">Управувајте со просторот</translation>
 <translation id="8449347986464073209">Избриши и одјави се</translation>
 <translation id="8449836157089738489">Отвори ги сите во нова група картички</translation>
 <translation id="8449869326050867919">Лозинката е споделена</translation>
@@ -11359,7 +11359,7 @@
 <translation id="9180380851667544951">Сајтот може да го споделува вашиот екран</translation>
 <translation id="9180847522826713506">За да ја прегледате вашата лозинка или да додадете белешка за неа, кликнете на иконата со клуч</translation>
 <translation id="9182556968660520230">Не им дозволувај на сајтовите да пуштаат заштитени содржини</translation>
-<translation id="9183302530794969518">Документи на Google</translation>
+<translation id="9183302530794969518">Google Docs</translation>
 <translation id="918352324374649435">{COUNT,plural, =1{Апликација}one{# апликација}other{# апликации}}</translation>
 <translation id="9186963452600581158">Најавете се со сметка на Google на дете</translation>
 <translation id="9187967020623675250">Клучевите не се совпаѓаат. Притиснете на кое било копче за да <ph name="RESPONSE" />.</translation>

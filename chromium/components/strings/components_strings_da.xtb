@@ -1485,7 +1485,7 @@ Ellers vil det blive blokeret af dine privatlivsindstillinger. Det giver det ind
 <translation id="3693327506115126094">Vælg, hvordan du vil verificere din identitet</translation>
 <translation id="3698353241727597930">Din administrator har konfigureret at gemme <ph name="FILES" /> i din virksomhedsadministrerede <ph name="CLOUD_STORAGE" />-lagerplads. Disse filer kan overvåges, kontrolleres og opbevares, når du sletter dem.</translation>
 <translation id="3698629142018988477">Knappen Opret website, aktivér for hurtigt at oprette et nyt website i Google Sites</translation>
-<translation id="3701325639446035885">Salg af billetter til events</translation>
+<translation id="3701325639446035885">Salg af billetter</translation>
 <translation id="3701427423622901115">Nulstillingen blev anerkendt.</translation>
 <translation id="3701900332588705891">Normalt <ph name="LOW_PRICE" />-<ph name="HIGH_PRICE" /></translation>
 <translation id="3704162925118123524">Det netværk, du bruger, kan kræve, at du går til netværkets loginside.</translation>
@@ -1743,7 +1743,7 @@ Ellers vil det blive blokeret af dine privatlivsindstillinger. Det giver det ind
 <translation id="4179515394835346607"><ph name="ROW_NAME" /> <ph name="ROW_CONTENT" /></translation>
 <translation id="4186035307311647330">Hold ikke længere øje med prisen</translation>
 <translation id="4191334393248735295">Længde</translation>
-<translation id="4195459680867822611">Knappen Se tips til Chrome, aktivér for at få flere oplysninger om Chrome-funktioner</translation>
+<translation id="4195459680867822611">Knappen Se tip til Chrome, aktivér for at få flere oplysninger om Chrome-funktioner</translation>
 <translation id="4195643157523330669">Åbn på ny fane</translation>
 <translation id="4196861286325780578">&amp;Annuller fortryd flytning</translation>
 <translation id="4199637363739172710">Ure</translation>
@@ -1964,7 +1964,7 @@ Ellers vil det blive blokeret af dine privatlivsindstillinger. Det giver det ind
 <translation id="4598556348158889687">Administration af lagerplads</translation>
 <translation id="459914240367517409">Webdesign og -udvikling</translation>
 <translation id="4602465984861132303">Bowling</translation>
-<translation id="4607608436550361748">Se tips til Chrome</translation>
+<translation id="4607608436550361748">Se tip til Chrome</translation>
 <translation id="460848736049414407">Blokeret af administrator</translation>
 <translation id="4610279718074907952">Dette website er i en gruppe, der er defineret af <ph name="SET_OWNER" />, og som kan se din aktivitet</translation>
 <translation id="46128681529823442">Fodboldudstyr</translation>
@@ -3569,7 +3569,7 @@ Yderligere oplysninger:
 <translation id="7548892272833184391">Ret forbindelsesfejl</translation>
 <translation id="7549584377607005141">Denne webside kræver data, du tidligere har indtastet, før den kan vises korrekt. Du kan sende disse data igen, men hvis du gør dette, gentager du enhver handling, som denne side tidligere har foretaget.</translation>
 <translation id="7550637293666041147">Brugernavnet for din enhed og dit Chrome-brugernavn</translation>
-<translation id="7552846755917812628">Prøv de følgende tips:</translation>
+<translation id="7552846755917812628">Prøv de følgende tip:</translation>
 <translation id="7554242657529665960">Fra din administrator: "<ph name="ADMIN_MESSAGE" />"</translation>
 <translation id="7554475479213504905">Genindlæs, og vis alligevel</translation>
 <translation id="7554791636758816595">Ny fane</translation>
@@ -4213,7 +4213,7 @@ Yderligere oplysninger:
 <translation id="8725066075913043281">Forsøg igen</translation>
 <translation id="8725667981218437315">Kamera og mikrofon</translation>
 <translation id="8726549941689275341">Sidestørrelse:</translation>
-<translation id="8730621377337864115">Udfør</translation>
+<translation id="8730621377337864115">Udført</translation>
 <translation id="8731268612289859741">Sikkerhedskode</translation>
 <translation id="8731917264694569036">Gennemfør dit køb ved hjælp af din enhed</translation>
 <translation id="8733345475331865475">Bilforsikring</translation>

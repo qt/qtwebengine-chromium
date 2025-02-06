@@ -202,7 +202,7 @@ Vous pouvez vérifier vos mots de passe en tout temps dans le menu <ph name="GOO
 <translation id="1138686548582345331">{MUTED_NOTIFICATIONS_COUNT,plural, =1{Nouvelle notification}one{# nouvelle notification}other{# nouvelles notifications}}</translation>
 <translation id="1139923033416533844">Utilisation de la mémoire</translation>
 <translation id="1140351953533677694">Accéder à vos appareils connectés par Bluetooth et en série</translation>
-<translation id="114036956334641753">Audio et sous-titres</translation>
+<translation id="114036956334641753">Son et sous-titres</translation>
 <translation id="1142002900084379065">Photos récentes</translation>
 <translation id="1142713751288681188">Type de papier</translation>
 <translation id="1143142264369994168">Signataire du certificat</translation>
@@ -3354,7 +3354,7 @@ l'<ph name="BEGIN_LINK" />
 <translation id="3387829698079331264">Non autorisés à savoir quand vous utilisez activement votre appareil</translation>
 <translation id="3388094447051599208">Le plateau de sortie de l'imprimante est presque plein</translation>
 <translation id="3388788256054548012">Ce fichier est chiffré. Demandez à son propriétaire de le déchiffrer.</translation>
-<translation id="3390013585654699824">Renseignements sur l'application</translation>
+<translation id="3390013585654699824">Renseignements sur l'appli</translation>
 <translation id="3390442085511866400">Enregistrer l'image &amp;amp;vidéo sous…</translation>
 <translation id="3390530051434634135">Note : <ph name="NOTE" /></translation>
 <translation id="3391721320619127327">Le lecteur d'écran sur ChromeOS Flex, ChromeVox, est principalement utilisé par les personnes aveugles ou ayant une basse vision pour lire le texte affiché à l'écran avec un synthétiseur vocal ou un afficheur braille. Maintenez les deux touches de volume enfoncées pendant cinq secondes pour activer ChromeVox. Lorsque ChromeVox est activé, une présentation rapide s'affiche.</translation>
@@ -3862,7 +3862,7 @@ l'<ph name="BEGIN_LINK" />
 <translation id="3740396996321407665">Obtenir une aide contextuelle de certaines fonctionnalités</translation>
 <translation id="3740945083753997630">Réduire la taille de l'affichage et du texte</translation>
 <translation id="3741056951918180319">Vous pouvez toujours cliquer sur l'extension pour l'utiliser sur n'importe quel site</translation>
-<translation id="374124333420280219">Détails de l'application :</translation>
+<translation id="374124333420280219">Détails de l'appli :</translation>
 <translation id="3741510433331996336">Redémarrez votre appareil pour terminer la mise à jour</translation>
 <translation id="3742235229730461951">Disposition du clavier coréen</translation>
 <translation id="3743842571276656710">Entrez le NIP pour effectuer l'association à <ph name="DEVICE_NAME" /></translation>
@@ -4307,7 +4307,7 @@ Cela peut inclure des renseignements sur les fichiers, les logiciels installés,
 <translation id="4043267180218562935">Taille du curseur</translation>
 <translation id="4043620984511647481">Ajouter une imprimante manuellement</translation>
 <translation id="4044612648082411741">Entrez le mot de passe de votre certificat</translation>
-<translation id="4044708573046946214">Mots de passe de verrouillage d'écran</translation>
+<translation id="4044708573046946214">Mot de passe de verrouillage d'écran</translation>
 <translation id="4044883420905480380">Vous vous êtes connecté au Wi-Fi et à <ph name="USER_EMAIL" /> à l'aide de votre téléphone Android</translation>
 <translation id="404493185430269859">Moteur de recherche par défaut</translation>
 <translation id="4044964245574571633">Utilise l'espace de stockage Microsoft OneDrive</translation>
@@ -4582,7 +4582,7 @@ Cela peut inclure des renseignements sur les fichiers, les logiciels installés,
 <translation id="4263223596040212967">Vérifiez la disposition de votre clavier et réessayez.</translation>
 <translation id="4263470758446311292">Obtenez des économies maximales de mémoire. Vos onglets deviennent inactifs après une plus courte période.</translation>
 <translation id="4263824086525632">Aurore boréale</translation>
-<translation id="4265096510956307240">Confirmer que c'est bien vous</translation>
+<translation id="4265096510956307240">Confirmer votre identité</translation>
 <translation id="4265301768135164545">Vous pouvez également configurer un profil eSIM <ph name="BEGIN_LINK" />manuellement<ph name="END_LINK" /></translation>
 <translation id="426564820080660648">Pour rechercher des mises à jour, veuillez utiliser une connexion Ethernet, Wi-Fi ou de données mobiles.</translation>
 <translation id="426652736638196239">Ce IBAN sera enregistré sur cet appareil uniquement</translation>
@@ -5063,7 +5063,7 @@ Cela peut inclure des renseignements sur les fichiers, les logiciels installés,
 <translation id="4617001782309103936">Trop court</translation>
 <translation id="4617270414136722281">Options de l'extension</translation>
 <translation id="4617880081511131945">Impossible d'établir la connexion</translation>
-<translation id="4619564267100705184">Confirmer que c'est bien vous</translation>
+<translation id="4619564267100705184">Confirmer votre identité</translation>
 <translation id="4619615317237390068">Onglets ouverts sur d'autres appareils</translation>
 <translation id="4620757807254334872">souris</translation>
 <translation id="4620809267248568679">Une extension impose la valeur attribuée à ce paramètre.</translation>
@@ -5179,7 +5179,7 @@ Cela peut inclure des renseignements sur les fichiers, les logiciels installés,
 <translation id="4697071790493980729">Aucun résultat</translation>
 <translation id="4697551882387947560">Lorsque la session de navigation se termine</translation>
 <translation id="469838979880025581">Les sites peuvent demander à utiliser votre microphone</translation>
-<translation id="4699172675775169585">Images et fichiers dans la mémoire cache</translation>
+<translation id="4699172675775169585">Images et fichiers mis en cache</translation>
 <translation id="4699357559218762027">(lancement automatique)</translation>
 <translation id="4699473989647132421">Rivage</translation>
 <translation id="4701025263201366865">Connexion d'un parent</translation>
@@ -7211,7 +7211,7 @@ Les autorisations que vous avez déjà accordées à des sites Web et à des app
 <translation id="6214106213498203737">Aquarelle</translation>
 <translation id="621470880408090483">Ne pas autoriser les sites à se connecter à des appareils Bluetooth</translation>
 <translation id="6215039389782910006">{1,plural, =1{Pour protéger vos mots de passe, <ph name="BRAND" /> se verrouille après 1 minute d'inactivité}one{Pour protéger vos mots de passe, <ph name="BRAND" /> se verrouille après # minute d'inactivité}other{Pour protéger vos mots de passe, <ph name="BRAND" /> se verrouille après # minutes d'inactivité}}</translation>
-<translation id="6216239400972191926">Applications et sites refusés</translation>
+<translation id="6216239400972191926">Applis et sites refusés</translation>
 <translation id="6216601812881225442">Votre conteneur ne prend pas en charge le redimensionnement. Pour modifier la quantité d'espace allouée à Linux, sauvegardez votre disque et restaurez-le dans un nouveau conteneur.</translation>
 <translation id="6216696360484424239">Se connecter automatiquement</translation>
 <translation id="6217806119082621377">Sous Windows, les dossiers partagés sont accessibles dans <ph name="SPECIFIC_NAME" /> : <ph name="BASE_DIR" />.</translation>
@@ -9515,7 +9515,7 @@ Appuyez sur un commutateur attribué ou une touche du clavier pour retirer l'att
 <translation id="7901405293566323524">Phone Hub</translation>
 <translation id="7903290522161827520">Vous recherchez les composants du navigateur? Consultez</translation>
 <translation id="7903429136755645827">Cliquez pour personnaliser vos commandes de jeu</translation>
-<translation id="7903481341948453971">Utilisez votre verrouillage d'écran lors du remplissage des mots de passe</translation>
+<translation id="7903481341948453971">Utiliser le verrouillage de l'écran lors du remplissage des mots de passe</translation>
 <translation id="7903742244674067440">Vous disposez de certificats qui identifient ces autorités de certification</translation>
 <translation id="7903925330883316394">Utilitaire : <ph name="UTILITY_TYPE" /></translation>
 <translation id="7903984238293908205">katakana</translation>
@@ -10216,7 +10216,7 @@ Conservez votre fichier de clé en lieu sûr. Vous en aurez besoin lors de la cr
 <translation id="8383614331548401927">Récap de bienvenue</translation>
 <translation id="8386091599636877289">Politique introuvable.</translation>
 <translation id="8387361103813440603">Non autorisés à consulter votre position</translation>
-<translation id="8387617938027387193">Confirmez que c'est vous</translation>
+<translation id="8387617938027387193">Confirmer votre identité</translation>
 <translation id="8388770971141403598">Les profils secondaires ne sont pas pris en charge</translation>
 <translation id="8389492867173948260">Permettez à cette extension de lire et de modifier toutes vos données sur les sites Web que vous consultez :</translation>
 <translation id="8390392581097975659">Installation du logiciel du numériseur en cours…</translation>

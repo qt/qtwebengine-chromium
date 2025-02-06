@@ -1109,7 +1109,7 @@ Berechtigungen, die du Apps bereits gewährt hast, gelten möglicherweise für d
 <translation id="1780572199786401845">Als anstößig / nicht sicher melden</translation>
 <translation id="178092663238929451">Nearby Share einrichten, um Dateien mit Personen in der Nähe auszutauschen</translation>
 <translation id="1781291988450150470">Aktuelle PIN</translation>
-<translation id="1781502536226964113">„Neuer Tab“-Seite öffnen</translation>
+<translation id="1781502536226964113">Seite „Neuer Tab“ öffnen</translation>
 <translation id="1781553166608855614">Gesprochene Sprache</translation>
 <translation id="1781771911845953849">Konten und Synchronisierung</translation>
 <translation id="1782101999402987960">Updates werden von deinem Administrator blockiert</translation>
@@ -1235,7 +1235,7 @@ Berechtigungen, die du Apps bereits gewährt hast, gelten möglicherweise für d
 <translation id="1865769994591826607">Nur bei Verbindungen zur gleichen Website</translation>
 <translation id="186594096341696655">Rate verringern</translation>
 <translation id="186612162884103683">"<ph name="EXTENSION" />" kann Bilder, Video- und Sounddateien an den geprüften Orten lesen und schreiben.</translation>
-<translation id="1867780286110144690"><ph name="PRODUCT_NAME" /> ist zum Abschließen der Installation bereit.</translation>
+<translation id="1867780286110144690"><ph name="PRODUCT_NAME" /> ist bereit, die Installation abzuschließen</translation>
 <translation id="1868553836791672080">Die Passwortüberprüfung ist in Chromium nicht verfügbar</translation>
 <translation id="1868617395637139709">Standortermittlung für Android-Apps und -Dienste nutzen.</translation>
 <translation id="1869433484041798909">Lesezeichen-Schaltfläche</translation>
@@ -1420,7 +1420,7 @@ Berechtigungen, die du Apps bereits gewährt hast, gelten möglicherweise für d
 <translation id="199191324030140441">„Bitte nicht stören“ deaktivieren</translation>
 <translation id="1992397118740194946">Nicht eingerichtet</translation>
 <translation id="1994173015038366702">Website-URL</translation>
-<translation id="1995916364271252349">Welche Informationen Websites nutzen und anzeigen dürfen (z. B. Standort, Kamera, Pop-ups)</translation>
+<translation id="1995916364271252349">Festlegen, welche Informationen Websites nutzen und anzeigen dürfen (z. B. Standort, Kamera, Pop-ups)</translation>
 <translation id="199610894463449797">{0,plural, =1{Dieses Profil schließen}other{Dieses Profil schließen (# Fenster)}}</translation>
 <translation id="1997433994358798851">Chrome benötigt eine Berechtigung, um sich mit deinem Gerät über Bluetooth zu verbinden</translation>
 <translation id="1997616988432401742">Meine Zertifikate</translation>
@@ -2268,7 +2268,7 @@ Diese Aktion wirkt sich nicht auf Lesezeichen, Passwörter und den Verlauf aus.<
 <translation id="2587922766792651800">Zeitüberschreitung</translation>
 <translation id="2588636910004461974">Geräte von <ph name="VENDOR_NAME" /></translation>
 <translation id="2589658397149952302">Drive-Dateien nie anzeigen</translation>
-<translation id="2593499352046705383">Erstelle vor der Installation auf jeden Fall ein Back-up deiner Daten. Wenn du <ph name="DEVICE_OS" /> installierst, werden die Daten auf deiner Festplatte überschrieben. Weitere Informationen findest du unter g.co/flex/InstallGuide.</translation>
+<translation id="2593499352046705383">Erstelle vor der Installation auf jeden Fall ein Backup deiner Daten. Wenn du <ph name="DEVICE_OS" /> installierst, werden die Daten auf deiner Festplatte überschrieben. Weitere Informationen findest du unter g.co/flex/InstallGuide.</translation>
 <translation id="2594832159966169099">V8-Sicherheit verwalten</translation>
 <translation id="2597073208962000830">Nearby Share nutzt die Bluetooth-Suche, um Geräte in der Nähe zu finden.</translation>
 <translation id="2598136842498757793">Schaltflächen auf Symbolleiste anpassen</translation>
@@ -4023,7 +4023,7 @@ Dazu gehören beispielsweise installierte Software, Dateien, dein Browser und da
 <translation id="3843464315703645664">Intern auf der Zulassungsliste</translation>
 <translation id="3844888638014364087">Emoji eingefügt</translation>
 <translation id="3846116211488856547">Entwicklertools für Websites, Android-Apps und mehr – für die Installation von Linux werden <ph name="DOWNLOAD_SIZE" /> an Daten heruntergeladen.</translation>
-<translation id="3847319713229060696">Dabei helfen, das Web für alle sicherer zu machen</translation>
+<translation id="3847319713229060696">Dazu beitragen, das Web für alle sicherer zu machen</translation>
 <translation id="3848547754896969219">In &amp;Inkognitofenster öffnen</translation>
 <translation id="3850172593216628215">Dieses Chromebook erhält keine Sicherheitsupdates mehr. Sichere dir einen Rabatt von 50 $ oder mehr beim Kauf eines neuen Chromebook.</translation>
 <translation id="385051799172605136">Zurück</translation>
@@ -5034,7 +5034,7 @@ Dazu gehören beispielsweise installierte Software, Dateien, dein Browser und da
 <translation id="4598776695426288251">WLAN über mehrere Geräte verfügbar</translation>
 <translation id="4599323532350839656">Dürfen deine Tastatureingaben nicht erfassen und verwenden</translation>
 <translation id="4600071396330666617">Anzahl der Vorschläge</translation>
-<translation id="4601095002996233687">Umfangreiche Scans für verdächtige Downloads.</translation>
+<translation id="4601095002996233687">Umfangreiche Scans nach verdächtigen Downloads.</translation>
 <translation id="4601426376352205922">Als ungelesen markieren</translation>
 <translation id="460190672235687855">Passwörter ansehen</translation>
 <translation id="4602466770786743961"><ph name="HOST" /> immer Zugriff auf Kamera und Mikrofon gestatten</translation>
@@ -5296,7 +5296,7 @@ Zum Herauszoomen drücke Strg + Alt + „Helligkeit verringern“.</translatio
 <translation id="4807098396393229769">Name auf Karte</translation>
 <translation id="4807122856660838973">Safe Browsing aktivieren</translation>
 <translation id="4807514039636325497">DBus-Details</translation>
-<translation id="4808525520374557629">Du erhältst Benachrichtigungen mit Vorschlägen, wie du erkannte Leistungsprobleme verbessern kannst. <ph name="BEGIN_LINK" />Weitere Informationen zu Benachrichtigungen zu Leistungsproblemen<ph name="END_LINK" /></translation>
+<translation id="4808525520374557629">Du erhältst Benachrichtigungen mit Vorschlägen, wie sich erkannte Leistungsprobleme verringern lassen. <ph name="BEGIN_LINK" />Weitere Informationen zu Benachrichtigungen zu Leistungsproblemen<ph name="END_LINK" /></translation>
 <translation id="4808667324955055115">Pop-ups blockiert:</translation>
 <translation id="4809079943450490359">Anweisungen des Geräteadministrators:</translation>
 <translation id="4809447465126035330">Löschen</translation>
@@ -5530,7 +5530,7 @@ Zum Herauszoomen drücke Strg + Alt + „Helligkeit verringern“.</translatio
 <translation id="4967227914555989138">Notiz hinzufügen</translation>
 <translation id="4967360192915400530">Gefährliche Datei herunterladen</translation>
 <translation id="496742804571665842">eSIM-Profile deaktivieren</translation>
-<translation id="4967571733817147990">Maustasten anpassen</translation>
+<translation id="4967571733817147990">Tastaturmaus anpassen</translation>
 <translation id="4967852842111017386">Name des <ph name="FEATURE_NAME" />-Geräts</translation>
 <translation id="4971412780836297815">Nach abgeschlossenem Download öffnen</translation>
 <translation id="4972129977812092092">Druckerinformationen bearbeiten</translation>
@@ -6686,7 +6686,7 @@ Berechtigungen, die du Websites und Apps bereits gewährt hast, gelten mögliche
 <translation id="5840680448799937675">Dateien werden immer offline geteilt</translation>
 <translation id="5841270259333717135">Ethernet konfigurieren</translation>
 <translation id="5842497610951477805">Bluetooth aktivieren</translation>
-<translation id="5844284118433003733">Wenn du angemeldet bist, werden diese Daten mit deinem Google-Konto verknüpft, um dich in allen Google-Diensten besser zu schützen, wie beispielsweise nach einem Sicherheitsvorfall in Gmail.</translation>
+<translation id="5844284118433003733">Wenn du angemeldet bist, werden diese Daten mit deinem Google-Konto verknüpft, um dich in allen Google-Diensten besser zu schützen, beispielsweise durch erhöhten Schutz in Gmail nach einem Sicherheitsvorfall.</translation>
 <translation id="5844574845205796324">Inhaltsvorschläge erhalten</translation>
 <translation id="5846200638699387931">Bezugs-Syntaxfehler: <ph name="ERROR_LINE" /></translation>
 <translation id="5846455742152785308">Kein Schatten</translation>
@@ -7536,7 +7536,7 @@ Berechtigungen, die du Websites und Apps bereits gewährt hast, gelten mögliche
 <translation id="6469702164109431067">Passwörter und Passkeys</translation>
 <translation id="6470120577693311302">Aufleuchten bei Benachrichtigungen</translation>
 <translation id="6470823736074966819">Benachrichtigungen stummschalten</translation>
-<translation id="6472893788822429178">Schaltfläche "Startseite" anzeigen</translation>
+<translation id="6472893788822429178">Schaltfläche „Startseite“ anzeigen</translation>
 <translation id="6473315466413288899">Option auswählen</translation>
 <translation id="6474498546677193336">Die Aufhebung der Freigabe ist nicht möglich, weil eine Anwendung diesen Ordner verwendet. Die Freigabe des Ordners wird aufgehoben, wenn Linux das nächste Mal heruntergefahren wird.</translation>
 <translation id="6474884162850599008">Verbindung zu Google Drive-Konto aufheben</translation>
@@ -7936,7 +7936,7 @@ Du hast # weitere kompromittierte Passwörter. Der Google Passwortmanager empfi
 <translation id="6774710250118040929">Neues Passwort hinzufügen</translation>
 <translation id="6775163072363532304">Verfügbare Geräte werden hier angezeigt.</translation>
 <translation id="677646486571529447">Notiz hinzufügen</translation>
-<translation id="6776589734354015877">Du erhältst zusätzliche Funktionen</translation>
+<translation id="6776589734354015877">Du erhältst Zugriff auf zusätzliche Funktionen</translation>
 <translation id="6776729248872343918">Schnelles Pairing aktivieren</translation>
 <translation id="6777817260680419853">Weiterleitung blockiert</translation>
 <translation id="6777845730143344223">Weitere Informationen zu Passpoint-Abos</translation>
@@ -7993,7 +7993,7 @@ Du hast # weitere kompromittierte Passwörter. Der Google Passwortmanager empfi
 <translation id="6805647936811177813">Melde dich in <ph name="TOKEN_NAME" /> an, um das Clientzertifikat von <ph name="HOST_NAME" /> herunterzuladen.</translation>
 <translation id="680572642341004180">RLZ-Nachverfolgung für <ph name="SHORT_PRODUCT_OS_NAME" /> aktivieren</translation>
 <translation id="6806089545527108739">Nicht zulassen, später noch einmal fragen</translation>
-<translation id="680644983456221885">Proaktiver Schutz in Echtzeit vor gefährlichen Websites, Downloads und Erweiterungen auf der Grundlage deiner Browserdaten, die an Google gesendet werden</translation>
+<translation id="680644983456221885">Proaktiver Schutz in Echtzeit vor gefährlichen Websites, Downloads und Erweiterungen auf der Grundlage deiner Browserdaten, die an Google gesendet werden.</translation>
 <translation id="6806781719264274042">Nur meine Kontakte mit einem Google-Konto. <ph name="LINK_BEGIN" />Kontakte anzeigen<ph name="LINK_END" /></translation>
 <translation id="6808039367995747522">Stecke deinen Sicherheitsschlüssel ein und tippe darauf, um fortzufahren</translation>
 <translation id="6808166974213191158">Chrome OS Flex-Systemimage-Writer</translation>
@@ -9537,7 +9537,7 @@ Drücke zum Entfernen der Zuweisung einen bereits zugewiesenen Schalter oder ein
 <translation id="7923564237306226146">Linux-Upgrade abgeschlossen</translation>
 <translation id="7924075559900107275">Kandidat für Langzeitsupport</translation>
 <translation id="7924358170328001543">Fehler bei der Portweiterleitung</translation>
-<translation id="7925108652071887026">AutoFill-Daten</translation>
+<translation id="7925108652071887026">Autofill-Daten</translation>
 <translation id="792514962475806987">Zoomstufe für angedockte Lupe:</translation>
 <translation id="7925285046818567682">Warten auf <ph name="HOST_NAME" />...</translation>
 <translation id="7926423016278357561">Das war nicht ich.</translation>
@@ -9691,7 +9691,7 @@ Speichere deine Schlüsseldatei an einem sicheren Ort. Du benötigst die Datei, 
 <translation id="8024161440284949905">Mit diesen Tabs fortfahren</translation>
 <translation id="8025151549289123443">Sperrbildschirm und Anmeldung</translation>
 <translation id="8025291188699172126">Informationen zu Updates</translation>
-<translation id="8026471514777758216">Alle meine Geräte</translation>
+<translation id="8026471514777758216">Auf allen Geräten nutzen</translation>
 <translation id="8026784703228858744">Über eine Synchronisierung deine Lesezeichen und weitere Elemente speichern</translation>
 <translation id="8028060951694135607">Microsoft-Schlüsselwiederherstellung</translation>
 <translation id="8028803902702117856"><ph name="SIZE" /> werden heruntergeladen, <ph name="FILE_NAME" /></translation>
@@ -10035,7 +10035,7 @@ Speichere deine Schlüsseldatei an einem sicheren Ort. Du benötigst die Datei, 
 <translation id="826905130698769948">Ungültiges Clientzertifikat</translation>
 <translation id="8270320981823560179">Drive</translation>
 <translation id="82706708334564640">Aktueller Downloadverlauf</translation>
-<translation id="827097179112817503">Schaltfläche "Startseite" anzeigen</translation>
+<translation id="827097179112817503">Schaltfläche „Startseite“ anzeigen</translation>
 <translation id="8271268254812352141">Du kannst Definitionen oder Übersetzungen anzeigen oder Einheiten umrechnen lassen, indem du Text gedrückt hältst oder mit der rechten Maustaste darauf klickst. Unter <ph name="LINK_BEGIN" />Websitesprachen<ph name="LINK_END" /> kannst du die Sprachen für die Übersetzung anpassen.</translation>
 <translation id="8271379370373330993">Liebe Eltern, die nächsten Schritte müsst ihr ausführen. Ihr könnt das Gerät (<ph name="DEVICE_TYPE" />) nach der Kontoeinrichtung wieder eurem Kind geben.</translation>
 <translation id="8272194309885535896">Bild herunterladen</translation>
@@ -10561,7 +10561,7 @@ Speichere deine Schlüsseldatei an einem sicheren Ort. Du benötigst die Datei, 
 <translation id="865936634714975126">Füge der URL einen Suchparameter hinzu, um beim Seitenaufbau Typen auszuwählen. Beispiel: chrome://device-log/?types=Bluetooth,USB</translation>
 <translation id="8659608856364348875"><ph name="FEATURE_NAME" />-Kontakte</translation>
 <translation id="8659609431223166673">Fenster nach unten verschoben</translation>
-<translation id="8661290697478713397">Link in Inko&amp;gnito-Fenster öffnen</translation>
+<translation id="8661290697478713397">Link in Inko&amp;gnitofenster öffnen</translation>
 <translation id="8662474268934425487">In <ph name="SITE_ETLD_PLUS_ONE" /> anmelden</translation>
 <translation id="8662671328352114214">Mit <ph name="TYPE" /> verbinden</translation>
 <translation id="8662733268723715832">Dieser Vorgang dauert länger als erwartet. Du kannst ihn entweder überspringen oder warten, bis er abgeschlossen ist.</translation>
@@ -11224,7 +11224,7 @@ Informationen dazu, welche Daten von Google erhoben werden und warum, findest du
 <translation id="9110739391922513676">Microsoft 365 zum Öffnen von Dateien einrichten</translation>
 <translation id="9111102763498581341">Entsperren</translation>
 <translation id="9111305600911828693">Lizenz ist nicht eingerichtet</translation>
-<translation id="9111330022786356709">Maustasten hinzufügen oder finden</translation>
+<translation id="9111330022786356709">Tastaturmaus hinzufügen oder finden</translation>
 <translation id="9111395131601239814"><ph name="NETWORKDEVICE" />: <ph name="STATUS" /></translation>
 <translation id="9111519254489533373">Safe Browsing-Einstellungen aufrufen</translation>
 <translation id="9111668656364922873">Willkommen in deinem neuen Profil</translation>

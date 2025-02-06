@@ -785,7 +785,7 @@
 <translation id="15662109988763471">ଚୟନ କରାଯାଇଥିବା ପ୍ରିଣ୍ଟର୍ ଉପଲବ୍ଧ ନାହିଁ କିମ୍ବା ଠିକ୍ ଭାବେ ଇନ୍‍ଷ୍ଟଲ୍ କରାଯାଇନାହିଁ। ଆପଣଙ୍କର ପ୍ରିଣ୍ଟର୍ ଯାଞ୍ଚ କରନ୍ତୁ କିମ୍ବା ଅନ୍ୟ ଏକ ପ୍ରିଣ୍ଟର୍ ଚୟନ କରି ଦେଖନ୍ତୁ।</translation>
 <translation id="1566329594234563241">ଯେତେବେଳେ ନିଷ୍କ୍ରିୟ ଏବଂ ପ୍ଲଗ ଇନ ଥାଏ</translation>
 <translation id="1567135437923613642">ଫିଚର୍ କରାଯାଇଥିବା ପରୀକ୍ଷଣଗୁଡ଼ିକୁ ସକ୍ଷମ କରନ୍ତୁ</translation>
-<translation id="1567387640189251553">ଯେବେଠାରୁ ଆପଣ ଶେଷଥର ନିଜର ପାସ୍‌ୱର୍ଡ ଲେଖିଥିଲେ, ସେବେଠାରୁ ଏକ ଅଲଗା କୀବୋର୍ଡ ସଂଯୋଗ କରାଯାଇଛି। ଏହା ଆପଣଙ୍କର କୀ'ଷ୍ଟ୍ରୋକ୍‌କୁ ଚୋରି କରିବାକୁ ପ୍ରଚେଷ୍ଟା କରୁଥାଇପାରେ।</translation>
+<translation id="1567387640189251553">ଆପଣ ଗତଥର ଆପଣଙ୍କ ପାସୱାର୍ଡ ଲେଖିବାଠାରୁ ଏକ ଅଲଗା କୀବୋର୍ଡ କନେକ୍ଟ ହୋଇଛି। ଏହା ଆପଣଙ୍କର କୀ'ଷ୍ଟ୍ରୋକଗୁଡ଼ିକୁ ଚୋରି କରିବାକୁ ଚେଷ୍ଟା କରୁଥାଇପାରେ।</translation>
 <translation id="1567579616025300478">ଆପଣଙ୍କ ଡିଭାଇସରେ ଡାଟା ସେଭ କରିବା ପାଇଁ ଏହି ସାଇଟକୁ ଅନୁମତି ନାହିଁ।</translation>
 <translation id="156793199942386351">'<ph name="ACTION" />'କୁ ପୂର୍ବରୁ '<ph name="CURRENTKEY" />'କୁ ଆସାଇନ୍ କରାଯାଇଛି। <ph name="RESPONSE" /> ପାଇଁ ଯେ କୌଣସି କୀକୁ ଦବାନ୍ତୁ।</translation>
 <translation id="1567993339577891801">&amp;JavaScript କନ୍‌ସୋଲ୍</translation>
@@ -4495,7 +4495,7 @@
 <translation id="4198268995694216131">ଅତିରିକ୍ତ ସାଇଟ</translation>
 <translation id="4200609364258658652">କପି&amp; ଭିଡିଓ ଫ୍ରେମ</translation>
 <translation id="4200689466366162458">କଷ୍ଟମ୍ ଶଦ୍ଦ</translation>
-<translation id="4200983522494130825">ନୂତନ &amp;ଟ୍ୟାବ୍</translation>
+<translation id="4200983522494130825">ନୂଆଁ &amp;ଟାବ</translation>
 <translation id="4201546031411513170">ସେଟିଂସ୍‌ରେ କ’ଣ ସିଙ୍କ୍ କରିବାକୁ ହେବ ତାହା ଆପଣ ସର୍ବଦା ବାଛି ପାରିବେ।</translation>
 <translation id="4203065553461038553">ଫାଇଲ ନାମ କିମ୍ବା ଲୋକେସନ ବହୁତ ଲମ୍ବା ଅଟେ</translation>
 <translation id="4203769790323223880">କେମେରାକୁ ଅନୁମତି ଦିଆଯାଇନାହିଁ</translation>
@@ -5855,7 +5855,7 @@
 <translation id="5208988882104884956">ଅଧା-ଚଉଡ଼ା</translation>
 <translation id="5209320130288484488">କୌଣସି ଡିଭାଇସ୍ ମିଳିଲା ନାହିଁ</translation>
 <translation id="5209513429611499188">ବ୍ୟବହାର ପୃଷ୍ଠା <ph name="USAGE_PAGE" />ରୁ ବ୍ୟବହାର ସହ HID ଡିଭାଇସଗୁଡ଼ିକ</translation>
-<translation id="5210365745912300556">ଟ୍ୟାବ୍ ବନ୍ଦ କରନ୍ତୁ</translation>
+<translation id="5210365745912300556">ଟାବ ବନ୍ଦ କରନ୍ତୁ</translation>
 <translation id="5213114823401215820">ବନ୍ଦ କରାଯାଇଥିବା ଗୋଷ୍ଠୀକୁ ପୁଣି ଖୋଲନ୍ତୁ</translation>
 <translation id="5213481667492808996">ଆପଣଙ୍କର '<ph name="NAME" />' ଡାଟା ସେବା ବ୍ୟବହାର କରିବା ପାଇଁ ପ୍ରସ୍ତୁତ</translation>
 <translation id="5213891612754844763">ପ୍ରୋକ୍ସି ସେଟିଂସ୍‌ ଦେଖାନ୍ତୁ</translation>
@@ -6457,7 +6457,7 @@
 <translation id="5656845498778518563">Googleକୁ ମତାମତ ପଠାନ୍ତୁ</translation>
 <translation id="5657667036353380798">ଏକ୍ସଟର୍ନାଲ୍ ଏକ୍ସଟେନ୍‌ସନ୍ chrome ସଂସ୍କରଣ <ph name="MINIMUM_CHROME_VERSION" /> କିମ୍ବା ଏହାର ଉନ୍ନତ ସଂସ୍କରଣକୁ ଇନ୍‍ଷ୍ଟଲ୍ କରିବା ଆବଶ୍ୟକ କରେ।</translation>
 <translation id="565899488479822148">ନବୀନତମ ଅପଡେଟକୁ ଇନଷ୍ଟଲ କରାଯାଉଛି</translation>
-<translation id="5659593005791499971">ଇମେଲ୍</translation>
+<translation id="5659593005791499971">ଇମେଲ</translation>
 <translation id="5659964844710667266">ଏହି <ph name="DEVICE_TYPE" /> ପାଇଁ ପାସୱାର୍ଡ ତିଆରି କରନ୍ତୁ</translation>
 <translation id="566040795510471729">ଆପଣଙ୍କ Chromeକୁ &amp;କଷ୍ଟମାଇଜ କରନ୍ତୁ</translation>
 <translation id="5662513737565158057">Linux ଆପ୍ସ କିପରି କାମ କରିବ ତାହା ବଦଳାନ୍ତୁ।</translation>
@@ -7105,7 +7105,7 @@
 <translation id="6147253937684562370">ପ୍ରୋଫାଇଲକୁ ଅନଲକ କରିବା ପାଇଁ ଆପଣଙ୍କର ଏହି ମୁଖ୍ୟ ଆକାଉଣ୍ଟ ଇମେଲ ମାଧ୍ୟମରେ ସାଇନ ଇନ କରନ୍ତୁ: <ph name="EMAIL" /></translation>
 <translation id="6148576794665275391">ବର୍ତ୍ତମାନ ଖୋଲନ୍ତୁ</translation>
 <translation id="614890671148262506">ଏହି ସାଇଟର ବିଜ୍ଞପ୍ତିଗୁଡ଼ିକୁ ସର୍ବଦା ଅନୁମତି ଦିଅନ୍ତୁ</translation>
-<translation id="6149015141270619212">ଇଣ୍ଟର୍ନେଟ୍ ସହ ସଂଯୋଗ ହୋଇପାରୁ ନାହିଁ</translation>
+<translation id="6149015141270619212">ଇଣ୍ଟର୍ନେଟ ସହ କନେକ୍ଟ ହୋଇପାରୁନାହିଁ</translation>
 <translation id="6149061208933997199">ପାସୱାର୍ଡ ବ୍ୟବହାର କରନ୍ତୁ</translation>
 <translation id="6149791593592044995">ମଡର୍ନ ଟୋନ ମାର୍କ ପ୍ଲେସମେଣ୍ଟ ବ୍ୟବହାର କରନ୍ତୁ</translation>
 <translation id="6150116777338468525">ଅଡିଓ ଗୁଣବତ୍ତା</translation>
@@ -7658,7 +7658,7 @@ Google Chrome ଆପଣଙ୍କ ମୋବାଇଲ୍ ଡାଟା ବ୍ୟବ
 <translation id="6560061709899140565">ଅନ୍ୟ କାଷ୍ଟ ସେସନଗୁଡ଼ିକୁ ଦେଖାନ୍ତୁ</translation>
 <translation id="6560151649238390891">ପରାମର୍ଶ ଭର୍ତ୍ତି କରାଯାଇଛି</translation>
 <translation id="656065428026159829">ଅଧିକ ଦେଖନ୍ତୁ</translation>
-<translation id="6561726789132298588">ଏଣ୍ଟର୍</translation>
+<translation id="6561726789132298588">ଏଣ୍ଟର</translation>
 <translation id="6562117348069327379">ଡାଉନଲୋଡ୍ ଡିରେକ୍ଟୋରୀରେ ସିଷ୍ଟମ୍ ଲଗଗୁଡ଼ିକ ଷ୍ଟୋର୍ କରନ୍ତୁ।</translation>
 <translation id="656293578423618167">ଫାଇଲ୍‌ର ପାଥ୍‍ କିମ୍ବା ନାମ ବହୁତ ଲମ୍ବା ଅଟେ।  ଦୟାକରି ଛୋଟ ନାମରେ କିମ୍ବା ଅନ୍ୟ ଏକ ଲୋକେସନ୍‌ରେ ସେଭ୍‌ କରନ୍ତୁ।</translation>
 <translation id="6563002009564846727">Windowsରୁ ଇମ୍ପୋର୍ଟ କରାଯାଇଥିବା ସାର୍ଟିଫିକେଟଗୁଡ଼ିକୁ ଭ୍ୟୁ କରନ୍ତୁ</translation>
@@ -8420,7 +8420,7 @@ Voice Match ଆପଣଙ୍କ Assistantକୁ ଆପଣଙ୍କୁ ଚିହ�
 <translation id="710640343305609397">ନେଟୱାର୍କ ସେଟିଂସ୍ ଖୋଲନ୍ତୁ</translation>
 <translation id="7107609441453408294">ସମସ୍ତ ସ୍ପିକରରେ ସମାନ ଅଡିଓ ପ୍ଲେ କରନ୍ତୁ</translation>
 <translation id="7108338896283013870">ଲୁଚାନ୍ତୁ</translation>
-<translation id="7108668606237948702">ଏଣ୍ଟର୍</translation>
+<translation id="7108668606237948702">ଏଣ୍ଟର</translation>
 <translation id="7108933416628942903">ବର୍ତ୍ତମାନ ଲକ୍ କରନ୍ତୁ</translation>
 <translation id="7109543803214225826">ସର୍ଟକଟ୍‍କୁ କାଢ଼ିଦିଆଯାଇଛି</translation>
 <translation id="7110388475787189534">ଆପଣଙ୍କ ଟାବଗୁଡ଼ିକୁ କିପରି ସ୍ୱତଃ ବ୍ୟବସ୍ଥିତ କରିବେ ତାହା ଜାଣନ୍ତୁ</translation>
@@ -8629,7 +8629,7 @@ Voice Match ଆପଣଙ୍କ Assistantକୁ ଆପଣଙ୍କୁ ଚିହ�
 <translation id="7269736181983384521">Nearby Share ମାଧ୍ୟମରେ ଡାଟାର ବ୍ୟବହାର</translation>
 <translation id="7271278495464744706">ଶବ୍ଦବହୁଳ ବର୍ଣ୍ଣନା ସକ୍ଷମ କରନ୍ତୁ</translation>
 <translation id="7272674038937250585">କୌଣସି ବିବରଣୀ ଦିଆଯାଇ ନାହିଁ।</translation>
-<translation id="7273110280511444812"><ph name="DATE" />ରେ ଶେଷଥର ପାଇଁ ଆଟାଚ୍ କରାଯାଇଥିଲା</translation>
+<translation id="7273110280511444812"><ph name="DATE" />ରେ ଗତଥର ଆଟାଚ ହୋଇଛି</translation>
 <translation id="7273894023751806510">ଆପଣଙ୍କ MIDI ଡିଭାଇସଗୁଡ଼ିକୁ ନିୟନ୍ତ୍ରଣ କରିବା ଏବଂ ପୁଣି ପ୍ରୋଗ୍ରାମ କରିବାରୁ <ph name="HOST" />କୁ ସର୍ବଦା ବ୍ଲକ କରନ୍ତୁ।</translation>
 <translation id="727441411541283857"><ph name="PERCENTAGE" />% - ପୂର୍ଣ୍ଣ ହେବାକୁ <ph name="TIME" />ବାକି ଅଛି</translation>
 <translation id="727595954130325265">ବର୍ତ୍ତମାନ କିଣନ୍ତୁ</translation>

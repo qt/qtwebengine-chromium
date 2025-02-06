@@ -2831,7 +2831,7 @@ Du kan administrere indstillingerne for denne konto ved at installere Family Lin
 <translation id="2979493931538961252">Når din Chromebook er offline, og hotspots er tilgængelige</translation>
 <translation id="2979639724566107830">Åbn i nyt vindue</translation>
 <translation id="2979893796619951531">Ekskluder website</translation>
-<translation id="2979966855249721010">Baseret på dine interesser kan du få vist appanbefalinger, tips og meget mere</translation>
+<translation id="2979966855249721010">Baseret på dine interesser kan du få vist appanbefalinger, tip og meget mere</translation>
 <translation id="2981033191524548279">Noget gik galt. Send os feedback med #bruschetta i beskrivelsen. Fejlkoden er <ph name="ERROR" />. Problemet kan muligvis løses ved at genstarte og prøve igen.</translation>
 <translation id="2981113813906970160">Vis stor musemarkør</translation>
 <translation id="2983102365694924129">Baseret på din aktivitet på et website. Denne indstilling er deaktiveret.</translation>
@@ -3453,7 +3453,7 @@ Du kan administrere indstillingerne for denne konto ved at installere Family Lin
 <translation id="3448492834076427715">Opdater konto</translation>
 <translation id="3449393517661170867">Nyt fanevindue</translation>
 <translation id="3449839693241009168">Tryk på <ph name="SEARCH_KEY" /> for at sende kommandoer til <ph name="EXTENSION_NAME" /></translation>
-<translation id="3450056559545492516">Vis systemnotifikationer om Chrome-funktioner og -tips</translation>
+<translation id="3450056559545492516">Vis systemnotifikationer om Chrome-funktioner og -tip</translation>
 <translation id="3450157232394774192">Anvendt andel for inaktiv tilstand</translation>
 <translation id="3450180775417907283"><ph name="MANAGER" /> kræver, at du opretter forbindelse til Wi-Fi nu og downloader en opdatering.</translation>
 <translation id="345078987193237421">Dette giver apps, websites med kameratilladelse og systemtjenester adgang til kameraet</translation>
@@ -4392,7 +4392,7 @@ Dette kan omfatte oplysninger om installeret software, filer, din browser og enh
 <translation id="4096421352214844684">Oprette automatisk forbindelse til din telefons hotspot.</translation>
 <translation id="4096797685681362305">Set inden for den seneste uge</translation>
 <translation id="4097406557126260163">Apps og udvidelser</translation>
-<translation id="409742781329613461">Tips til Chrome</translation>
+<translation id="409742781329613461">Tip til Chrome</translation>
 <translation id="4097560579602855702">Søg på Google</translation>
 <translation id="4098667039111970300">Styluspenværktøjer på værktøjslinje</translation>
 <translation id="4099874310852108874">Der opstod en netværksfejl.</translation>
@@ -4783,7 +4783,7 @@ Dette kan omfatte oplysninger om installeret software, filer, din browser og enh
 <translation id="4400963414856942668">Du kan klikke på stjernen for at tilføje fanen som bogmærke</translation>
 <translation id="4401912261345737180">Opret forbindelse med en kode for at caste</translation>
 <translation id="4403012369005671154">Indtaling</translation>
-<translation id="4403266582403435904">Du kan til enhver tid nemt gendanne data eller skifte enhed. Backups uploades til Google og krypteres ved hjælp af adgangskoden til dit barns Google-konto.</translation>
+<translation id="4403266582403435904">Du kan til enhver tid nemt gendanne data eller skifte enhed. Sikkerhedskopier uploades til Google og krypteres ved hjælp af adgangskoden til dit barns Google-konto.</translation>
 <translation id="4403775189117163360">Vælg en anden mappe</translation>
 <translation id="4404136731284211429">Scan igen</translation>
 <translation id="4404843640767531781"><ph name="APP_NAME" /> er blokeret af din forælder. Bed din forælder om at give dig tilladelse til at bruge denne app.</translation>
@@ -5090,7 +5090,7 @@ Dette kan omfatte oplysninger om installeret software, filer, din browser og enh
 <translation id="4629521233550547305">Åbn profilen <ph name="PROFILE_NAME" /></translation>
 <translation id="4632655012900268062">Tilpas kort</translation>
 <translation id="4633003931260532286">Udvidelsen skal bruge "<ph name="IMPORT_NAME" />" med minimumversionen "<ph name="IMPORT_VERSION" />", men kun versionen "<ph name="INSTALLED_VERSION" />" er installeret</translation>
-<translation id="4633757335284074492">Sikkerhedskopiér i Google Drev. Gendan nemt data, eller skift enhed når som helst. Denne sikkerhedskopi omfatter appdata. Backups uploades til Google og krypteres ved hjælp af adgangskoden til dit barns Google-konto.</translation>
+<translation id="4633757335284074492">Sikkerhedskopiér i Google Drev. Gendan nemt data, eller skift enhed når som helst. Denne sikkerhedskopi omfatter appdata. Sikkerhedskopier uploades til Google og krypteres ved hjælp af adgangskoden til dit barns Google-konto.</translation>
 <translation id="4634575639321169635">Konfigurer denne enhed til personlig brug eller arbejdsbrug</translation>
 <translation id="4635072447747973225">Afinstaller Crostini</translation>
 <translation id="4635398712689569051"><ph name="PAGE_NAME" /> er ikke tilgængelig for gæstebrugere</translation>
@@ -6652,7 +6652,7 @@ De tilladelser, du har givet til websites og apps, gælder muligvis for denne ko
 <translation id="5798079537501238810">Websites kan installere betalingshandlere</translation>
 <translation id="5798086737841799234">Angiv bekræftelseskoden</translation>
 <translation id="579915268381781820">Din sikkerhedsnøgle blev fjernet.</translation>
-<translation id="5799478978078236781">Få tips, tilbud og opdateringer vedrørende <ph name="DEVICE_TYPE" />, og giv feedback.</translation>
+<translation id="5799478978078236781">Få tip, tilbud og opdateringer vedrørende <ph name="DEVICE_TYPE" />, og giv feedback.</translation>
 <translation id="5799508265798272974">Virtuel Linux-maskine: <ph name="LINUX_VM_NAME" /></translation>
 <translation id="5800020978570554460">Destinationsfilen er blevet forkortet eller fjernet siden sidste download.</translation>
 <translation id="5800290746557538611">Aktivér øjeblikkeligt hotspot</translation>
@@ -7034,7 +7034,7 @@ De tilladelser, du har givet til websites og apps, gælder muligvis for denne ko
 <translation id="6076491747490570887">Kølig grå</translation>
 <translation id="6076576896267434196">Udvidelsen "<ph name="EXTENSION_NAME" />" anmoder om adgang til din konto</translation>
 <translation id="6077131872140550515">Fjern fra foretrukne</translation>
-<translation id="6077189836672154517">Tips og opdateringer om <ph name="DEVICE_TYPE" /></translation>
+<translation id="6077189836672154517">Tip og opdateringer om <ph name="DEVICE_TYPE" /></translation>
 <translation id="6077476112742402730">Indtaling</translation>
 <translation id="6078121669093215958">{0,plural, =1{Gæst}one{# åbent gæstevindue}other{# åbne gæstevinduer}}</translation>
 <translation id="6078323886959318429">Tilføj genvej</translation>
@@ -8123,7 +8123,7 @@ Du har # andre kompromitterede adgangskoder. Google Adgangs­kode­admin­istrat
 <translation id="6863496016067551393">Alle udvidelser er tilladt</translation>
 <translation id="686366188661646310">Vil du slette adgangskoden?</translation>
 <translation id="6863925886424789941">Colosseum</translation>
-<translation id="6865313869410766144">Formulardata for AutoFyld</translation>
+<translation id="6865313869410766144">Data til autofyld af formularer</translation>
 <translation id="6865598234501509159">Siden er ikke på <ph name="LANGUAGE" /></translation>
 <translation id="6865708901122695652">WebRTC-hændelseslogfiler (<ph name="WEBRTC_EVENT_LOG_COUNT" />)</translation>
 <translation id="686609795364435700">Stille</translation>
@@ -9040,7 +9040,7 @@ Du har # andre kompromitterede adgangskoder. Google Adgangs­kode­admin­istrat
 <translation id="7550885994112799211">Lagerplads, strøm, sprog</translation>
 <translation id="7551059576287086432"><ph name="FILE_NAME" /> blev ikke downloadet</translation>
 <translation id="7551643184018910560">Fastgør til hylde</translation>
-<translation id="7552846755917812628">Prøv de følgende tips:</translation>
+<translation id="7552846755917812628">Prøv de følgende tip:</translation>
 <translation id="7553012839257224005">Tjekker Linux-containeren</translation>
 <translation id="7553242001898162573">Angiv din adgangskode</translation>
 <translation id="755472745191515939">Din administrator tillader ikke brug af dette sprog</translation>
@@ -9317,7 +9317,7 @@ Tryk på en kontakt eller tast, der er tildelt en handling, for at fjerne tildel
 <translation id="7751260505918304024">Vis alle</translation>
 <translation id="7752832973194460442">Android-appoplysninger</translation>
 <translation id="7753735457098489144">Installationen mislykkedes på grund af manglende lagerplads. Slet filer fra lageret på din enhed for at frigøre plads.</translation>
-<translation id="7754704193130578113">Spørg, hvor hver enkelt fil skal gemmes, inden download begynder</translation>
+<translation id="7754704193130578113">Spørg, hvor hver enkelt fil skal gemmes, inden downloaden begynder</translation>
 <translation id="7757592200364144203">Skift navn på enheden</translation>
 <translation id="7757739382819740102">Kontakter i nærheden kan dele med dig. Godkendelse er påkrævet.</translation>
 <translation id="7757787379047923882">Tekst, der deles fra <ph name="DEVICE_NAME" /></translation>
@@ -9818,8 +9818,8 @@ Opbevar din nøglefil på et sikkert sted. Du skal bruge den til at oprette nye 
 <translation id="8090686009202681725">Opret et tema ved hjælp af AI</translation>
 <translation id="8093359998839330381"><ph name="PLUGIN_NAME" /> svarer ikke</translation>
 <translation id="8094536695728193970">Apricot</translation>
-<translation id="8095105960962832018"><ph name="BEGIN_PARAGRAPH1" />Sikkerhedskopiér til Google Drev. Du kan til enhver tid gendanne dine data eller skifte til en anden enhed. Backups omfatter appdata.<ph name="END_PARAGRAPH1" />
-    <ph name="BEGIN_PARAGRAPH2" />Backups uploades til Google og krypteres ved hjælp af adgangskoden til din Google-konto.<ph name="END_PARAGRAPH2" />
+<translation id="8095105960962832018"><ph name="BEGIN_PARAGRAPH1" />Sikkerhedskopiér til Google Drev. Du kan til enhver tid gendanne dine data eller skifte til en anden enhed. Sikkerhedskopier omfatter appdata.<ph name="END_PARAGRAPH1" />
+    <ph name="BEGIN_PARAGRAPH2" />Sikkerhedskopier uploades til Google og krypteres ved hjælp af adgangskoden til din Google-konto.<ph name="END_PARAGRAPH2" />
     <ph name="BEGIN_PARAGRAPH3" />Appdata kan være alle former for data, som en app har gemt (baseret på udviklerens indstillinger), f.eks. kontakter, beskeder og billeder.<ph name="END_PARAGRAPH3" />
     <ph name="BEGIN_PARAGRAPH4" />Sikkerhedskopierede data tæller ikke med i din kvote for Drev-lagerplads.<ph name="END_PARAGRAPH4" />
     <ph name="BEGIN_PARAGRAPH5" />Du kan deaktivere denne tjeneste i Indstillinger.<ph name="END_PARAGRAPH5" /></translation>
@@ -10701,7 +10701,7 @@ Opbevar din nøglefil på et sikkert sted. Du skal bruge den til at oprette nye 
           <ph name="LINE_BREAK" />
           (dine data for autofyld deles ikke)</translation>
 <translation id="8729133765463465108">Scan QR-koden med kameraet</translation>
-<translation id="8730621377337864115">Udfør</translation>
+<translation id="8730621377337864115">Udført</translation>
 <translation id="8731029916209785242">Tilladelser (<ph name="FORMATTED_ORIGIN" />)</translation>
 <translation id="8731268612289859741">Sikkerhedskode</translation>
 <translation id="8731629443331803108"><ph name="SITE_NAME" /> vil gerne have tilladelse til at: <ph name="PERMISSION" /></translation>

@@ -3663,7 +3663,7 @@ Možete da upravljate podešavanjima ovog naloga ako instalirate aplikaciju Fami
 <translation id="3617891479562106823">Pozadine nisu dostupne. Probajte ponovo kasnije.</translation>
 <translation id="3618286417582819036">Žao nam je, došlo je do greške</translation>
 <translation id="3618647122592024084"><ph name="RECIPIENT_NAME" /> sada može da koristi vaše korisničko ime i lozinku kada koristi Google menadžer lozinki. Recite ovom članu porodice da poseti <ph name="WEBSITE" /> da bi se prijavio.</translation>
-<translation id="3619115746895587757">Kapučino</translation>
+<translation id="3619115746895587757">Kapućino</translation>
 <translation id="3619294456800709762">Sajtovi mogu automatski da uđu u sliku u slici</translation>
 <translation id="3620136223548713675">Geolociranje</translation>
 <translation id="3621202678540785336">Ulaz</translation>
@@ -7088,7 +7088,7 @@ Vodite računa da ne otkrijete nikakve osetljive informacije.</translation>
 <translation id="6127598727646973981">Bezbedne veze</translation>
 <translation id="6129691635767514872">Izabrani podaci su uklonjeni iz Chrome-a i sa sinhronizovanih uređaja. Google nalog možda ima druge oblike istorije pregledanja, poput pretraga i aktivnosti na drugim Google uslugama na <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" />.</translation>
 <translation id="6129938384427316298">Komentar Netscape sertifikata</translation>
-<translation id="6129953537138746214">Razmak</translation>
+<translation id="6129953537138746214">Taster za razmak</translation>
 <translation id="6130692320435119637">Dodaj WiFi</translation>
 <translation id="6130807998512240230">Phone Hub, Deljenje u blizini</translation>
 <translation id="6130887916931372608">Taster tastature</translation>
@@ -9144,7 +9144,7 @@ Imate još # ugroženih lozinki. Google menadžer lozinki preporučuje da odmah 
 <translation id="764178579712141045">Dodato: <ph name="USER_EMAIL" /></translation>
 <translation id="7642778300616172920">Sakrij osetljiv sadržaj</translation>
 <translation id="7643842463591647490">{0,plural, =1{# otvoren prozor}one{# otvoren prozor}few{# otvorena prozora}other{# otvorenih prozora}}</translation>
-<translation id="7643932971554933646">Želite li da dozvolite da sajt pregleda datoteke?</translation>
+<translation id="7643932971554933646">Želite li da dozvolite da sajt pregleda fajlove?</translation>
 <translation id="7645176681409127223"><ph name="USER_NAME" /> (vlasnik)</translation>
 <translation id="7645681574855902035">Otkazuje se pravljenje rezervne kopije za Linux</translation>
 <translation id="7646499124171960488">Upozorava vas na nebezbedne javne sajtove</translation>

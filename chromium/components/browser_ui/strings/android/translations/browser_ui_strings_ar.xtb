@@ -46,7 +46,7 @@
 <translation id="1915307458270490472">قطع الاتصال</translation>
 <translation id="1919950603503897840">اختيار جهات الاتصال</translation>
 <translation id="1923695749281512248"><ph name="BYTES_DOWNLOADED_WITH_UNITS" /> / <ph name="FILE_SIZE_WITH_UNITS" /></translation>
-<translation id="1979673356880165407">يمكنك تكبير أو تصغير النص والصور لجميع المواقع الإلكترونية التي تزورها.</translation>
+<translation id="1979673356880165407">يمكنك تكبير أو تصغير النص والصور لجميع المواقع الإلكترونية التي تزورها</translation>
 <translation id="1984937141057606926">مسموح بها، باستثناء التابعة لجهات خارجية</translation>
 <translation id="1985247341569771101">عندما يكون هذا الإعداد مفعَّلاً، يمكن للمواقع الإلكترونية استخدام أدوات استشعار الحركة في جهازك. وعند إيقافه، لا يمكن للمواقع الإلكترونية استخدام تلك الأدوات.</translation>
 <translation id="1989112275319619282">تصفّح</translation>
@@ -242,7 +242,7 @@
 <translation id="4985206706500620449">لقد سمحت باستخدام ملفات تعريف الارتباط التابعة لجهات خارجية في هذا الموقع الإلكتروني.</translation>
 <translation id="4994033804516042629">لم يتم العثور على أي جهات اتصال</translation>
 <translation id="4996978546172906250">المشاركة عن طريق</translation>
-<translation id="5001526427543320409">ملفات تعريف الارتباط التابعة لجهات خارجية</translation>
+<translation id="5001526427543320409">ملفات تعريف الارتباط الخارجية</translation>
 <translation id="5007392906805964215">مراجعة</translation>
 <translation id="5014182796621173645">لقد زرت هذا المكان <ph name="RECENCY" /></translation>
 <translation id="5039804452771397117">سماح</translation>
@@ -295,10 +295,10 @@
 <translation id="5689516760719285838">الموقع الجغرافي</translation>
 <translation id="5690795753582697420">‏تم إيقاف الكاميرا في إعدادات Android.</translation>
 <translation id="5691080386278724773">بإمكان "<ph name="SITE" />" استخدام معلوماتك أثناء التصفُّح.</translation>
-<translation id="5700761515355162635">ملفات تعريف الارتباط الخارجية مسموحة</translation>
+<translation id="5700761515355162635">ملفات تعريف الارتباط الخارجية مسموح بها</translation>
 <translation id="5706552988683188916">يؤدي هذا الإجراء إلى حذف ملفات تعريف الارتباط وبيانات الموقع الإلكتروني الأخرى لـ "<ph name="WEBSITE" />".</translation>
-<translation id="5723967018671998714">يتم حظر ملفات تعريف الارتباط التابعة لجهات خارجية في وضع التصفُّح المتخفي.</translation>
-<translation id="5740126560802162366">المواقع الإلكترونية مسموح لها بحفظ البيانات على جهازك.</translation>
+<translation id="5723967018671998714">يتم حظر ملفات تعريف الارتباط الخارجية في وضع التصفُّح المتخفي.</translation>
+<translation id="5740126560802162366">المواقع الإلكترونية مسموح لها بحفظ البيانات على جهازك</translation>
 <translation id="5750869797196646528">تتبُّع اليد</translation>
 <translation id="5771720122942595109">تم حظر <ph name="PERMISSION_1" />.</translation>
 <translation id="5804241973901381774">الأذونات</translation>
@@ -360,7 +360,7 @@
 <translation id="6554732001434021288">تمّت زيارة الموقع الإلكتروني آخر مرّة قبل <ph name="NUM_DAYS" /> يوم.</translation>
 <translation id="656065428026159829">عرض المزيد</translation>
 <translation id="6561560012278703671">استخدام طريقة أقل بروزًا لإرسال الإشعارات (منع رسائل الإشعارات من إزعاجك)</translation>
-<translation id="6593061639179217415">الموقع على الكمبيوتر</translation>
+<translation id="6593061639179217415">موقع مصمَّم للكمبيوتر</translation>
 <translation id="659938948789980540">{COUNT,plural, =1{تم السماح باستخدام ملفات تعريف الارتباط لموقع إلكتروني واحد (<ph name="RWS_MEMBERS_COUNT" />) ضمن مجموعة "<ph name="RWS_OWNER" />"}zero{تم السماح باستخدام ملفات تعريف الارتباط لـ <ph name="RWS_MEMBERS_COUNT" /> موقع إلكتروني ضمن مجموعة "<ph name="RWS_OWNER" />"}two{تم السماح باستخدام ملفات تعريف الارتباط لموقعَين إلكترونيَّين (<ph name="RWS_MEMBERS_COUNT" />) ضمن مجموعة "<ph name="RWS_OWNER" />"}few{تم السماح باستخدام ملفات تعريف الارتباط لـ <ph name="RWS_MEMBERS_COUNT" /> مواقع إلكترونية ضمن مجموعة "<ph name="RWS_OWNER" />"}many{تم السماح باستخدام ملفات تعريف الارتباط لـ <ph name="RWS_MEMBERS_COUNT" /> موقعًا إلكترونيًّا ضمن مجموعة "<ph name="RWS_OWNER" />"}other{تم السماح باستخدام ملفات تعريف الارتباط لـ <ph name="RWS_MEMBERS_COUNT" /> موقع إلكتروني ضمن مجموعة "<ph name="RWS_OWNER" />"}}</translation>
 <translation id="6608650720463149374"><ph name="GIGABYTES" /> غيغابايت</translation>
 <translation id="6612358246767739896">المحتوى المحمي</translation>

@@ -456,7 +456,7 @@
 <translation id="1803254472779303354">マウスのロックを許可しました</translation>
 <translation id="1803351196216024260">マイクの使用を要求できる</translation>
 <translation id="1806174020048213474">このアプリは Wi-Fi 認証情報のインストール権限をリクエストしています。セットアップが完了すると、<ph name="DEVICE_TYPE" /> は登録されている Wi-Fi ネットワークに自動的に接続します。これらの認証情報を削除するには、アプリをアンインストールします。</translation>
-<translation id="1807246157184219062">明</translation>
+<translation id="1807246157184219062">ライト</translation>
 <translation id="1807528111851433570">開始シート</translation>
 <translation id="180757923930449935">（64 ビット エミュレーション）</translation>
 <translation id="180991881384371158">CVC コードはカードの裏面に記載されています。署名ボックスの右上にある末尾 3 桁のコードです。</translation>
@@ -582,7 +582,7 @@
 <translation id="2045871135676061132">6 3/4 封筒</translation>
 <translation id="2046951263634619614">書籍販売</translation>
 <translation id="2048261947532620704">ページを翻訳しています</translation>
-<translation id="2056658168519009885">パーソナライズド広告を表示するため、ウェブサイトから Chrome に情報を要求することがあります。</translation>
+<translation id="2056658168519009885">パーソナライズド広告を表示するため、ウェブサイトが Chrome に情報を要求することがあります。</translation>
 <translation id="2059166748188874810">市区町村</translation>
 <translation id="2059202684901022309">22x34 インチ</translation>
 <translation id="2064568741209980952">クレジット、貸付</translation>
@@ -735,7 +735,7 @@
 <translation id="2306124309679506798">没入型エクスペリエンスを許可しますか？</translation>
 <translation id="2312234273148520048">調味料、ドレッシング</translation>
 <translation id="2316087952091171402"><ph name="UPPER_ESTIMATE" /> 未満。サイトによっては、次回アクセスする際に読み込みに時間がかかる可能性があります。</translation>
-<translation id="2316159751672436664">Chrome OS の設定でユーザー補助ツールをカスタマイズします</translation>
+<translation id="2316159751672436664">ChromeOS の設定でユーザー補助ツールをカスタマイズします</translation>
 <translation id="2316887270356262533">最大で 1 MB を解放します。サイトによっては、次回アクセスする際に読み込みに時間がかかる可能性があります。</translation>
 <translation id="2317259163369394535"><ph name="DOMAIN" /> にはユーザー名とパスワードが必要です。</translation>
 <translation id="2318594867107319532">ポリシーの最終タイムスタンプ:</translation>
@@ -794,7 +794,7 @@
 <translation id="2412310121876768057">次回、カードを自動入力しますか？</translation>
 <translation id="2413155254802890957">旧</translation>
 <translation id="2413528052993050574">このサーバーが <ph name="DOMAIN" /> であることを確認できませんでした。このサーバーのセキュリティ証明書は取り消されている可能性があります。原因としては、不適切な設定や、悪意のあるユーザーによる接続妨害が考えられます。</translation>
-<translation id="2414886740292270097">暗</translation>
+<translation id="2414886740292270097">ダーク</translation>
 <translation id="2429716554270894715">布（防水）</translation>
 <translation id="2436186046335138073">すべての <ph name="PROTOCOL" /> リンクを <ph name="HANDLER_HOSTNAME" /> で開きますか？</translation>
 <translation id="2436976580469434549">手芸</translation>
@@ -1468,7 +1468,7 @@
 <translation id="3665100783276035932">ほとんどのサイトは適切に機能します</translation>
 <translation id="3665806835792525231"><ph name="BEGIN_LINK1" />詳細<ph name="LINK_END1" /></translation>
 <translation id="3670229581627177274">Bluetooth を ON にする</translation>
-<translation id="3671117652518853176">オフにした場合、セキュリティを確保するため、時々確認が求められることがあります</translation>
+<translation id="3671117652518853176">オフにした場合、セキュリティを確保するために確認を求められることがあります</translation>
 <translation id="3671540257457995106">サイズ変更を許可しますか？</translation>
 <translation id="3672568546897166916"><ph name="ERROR_PATH" /> でエラーが発生しました: <ph name="ERROR_MESSAGE" /></translation>
 <translation id="3674751419374947706">ネットワーク機器</translation>
@@ -1808,7 +1808,7 @@
 <translation id="4277529130885813215">別のデバイスを使用</translation>
 <translation id="4277937682389409325">ローカル アドレス</translation>
 <translation id="4278090321534187713">この販売者が対応していないカードは無効になっています</translation>
-<translation id="4278390842282768270">許可</translation>
+<translation id="4278390842282768270">許可されています</translation>
 <translation id="4281998142035485137">{0,plural, =1{機密ファイルを開きますか？}other{機密ファイルを開きますか？}}</translation>
 <translation id="4282280603030594840">自動車販売</translation>
 <translation id="4282346679996504092">この商品のアラートをオフにし、ブックマークを削除しました</translation>
@@ -2462,7 +2462,7 @@
 <translation id="5523118979700054094">ポリシー名</translation>
 <translation id="5523588073846127669">販売者がこの仮想カードに対応していません</translation>
 <translation id="5525755241743357906">ファイルをコピーまたは移動しました</translation>
-<translation id="5526617258931667850"><ph name="MANAGE_CHROMEOS_ACCESSIBILITY_FOCUSED_FRIENDLY_MATCH_TEXT" /> です。Tab、Enter キーの順に押すと、Chrome OS の設定でユーザー補助ツールをカスタマイズできます</translation>
+<translation id="5526617258931667850"><ph name="MANAGE_CHROMEOS_ACCESSIBILITY_FOCUSED_FRIENDLY_MATCH_TEXT" /> です。Tab、Enter キーの順に押すと、ChromeOS の設定でユーザー補助ツールをカスタマイズできます</translation>
 <translation id="55293785478302737">端綴じ</translation>
 <translation id="553377674408670169">教育系の求人情報</translation>
 <translation id="5534785731327961487">買い時</translation>
@@ -3204,7 +3204,7 @@
 <translation id="6896758677409633944">コピー</translation>
 <translation id="6897140037006041989">ユーザー エージェント</translation>
 <translation id="6898699227549475383">組織（O）</translation>
-<translation id="6903907808598579934">同期を ON にする</translation>
+<translation id="6903907808598579934">同期をオンにする</translation>
 <translation id="6907458757809079309">フィットネス</translation>
 <translation id="691024665142758461">複数ファイルのダウンロード</translation>
 <translation id="6915804003454593391">ユーザー:</translation>
@@ -3660,7 +3660,7 @@
 <translation id="7684683146428206649">金属</translation>
 <translation id="7684817988830401358">[閲覧履歴データを削除] ボタンを使用すると、Chrome の設定で閲覧履歴、Cookie、キャッシュなどを削除できます</translation>
 <translation id="7684928361160505327">{0,plural, =1{ポリシーにより <ph name="FILE_NAME" /> がブロックされました}other{ポリシーにより <ph name="FILE_COUNT" /> 個のファイルがブロックされました}}</translation>
-<translation id="7687186412095877299">保存したお支払い方法を使ってお支払いフォームに入力する</translation>
+<translation id="7687186412095877299">保存したお支払い方法を使ってお支払いフォームに自動入力します</translation>
 <translation id="7687305263118037187">再試行のタイムアウト</translation>
 <translation id="7690647519407127574">往復はがき</translation>
 <translation id="7693583928066320343">受信したページ順序</translation>
@@ -3954,7 +3954,7 @@
 <translation id="824968735947741546"><ph name="SOURCE" />（自動検出）を <ph name="TARGET" /> に翻訳しています</translation>
 <translation id="8250094606476360498">この住所は現在、このデバイスに保存されています。Google サービス全体で使用するには、Google アカウント（<ph name="ACCOUNT" />）に保存してください。</translation>
 <translation id="8251493595871259082">住所を自動入力</translation>
-<translation id="8252991034201168845">[ユーザー補助設定を管理] ボタンです。Enter キーを押すと Chrome OS の設定でユーザー補助ツールをカスタマイズできます</translation>
+<translation id="8252991034201168845">[ユーザー補助設定を管理] ボタンです。Enter キーを押すと ChromeOS の設定でユーザー補助ツールをカスタマイズできます</translation>
 <translation id="8253091569723639551">請求先住所が必要です</translation>
 <translation id="8257387598443225809">このアプリはモバイル向けに設計されています</translation>
 <translation id="8259239120149678929">ドキュメンタリー番組、ノンフィクション番組</translation>
@@ -4334,7 +4334,7 @@
 <translation id="8956124158020778855">この設定をオンにしたら、このタブに戻って作成を開始してください。</translation>
 <translation id="8957210676456822347">キャプティブ ポータル認証</translation>
 <translation id="8959282183248574156"><ph name="NICKNAME_COUNT" /> / <ph name="NICKNAME_MAX" /></translation>
-<translation id="8963117664422609631">サイトの設定に移動します</translation>
+<translation id="8963117664422609631">サイトの設定に移動</translation>
 <translation id="8963213021028234748"><ph name="MARKUP_1" />アドバイス:<ph name="MARKUP_2" />データ接続があることを確認します<ph name="MARKUP_3" />このウェブページを後で再読み込みします<ph name="MARKUP_4" />入力したアドレスを確認します<ph name="MARKUP_5" /></translation>
 <translation id="8968766641738584599">カードを保存</translation>
 <translation id="8970887620466824814">エラーが発生しました。</translation>
@@ -4358,7 +4358,7 @@
 <translation id="9004367719664099443">VR セッションが進行中</translation>
 <translation id="9005998258318286617">PDF ドキュメントを読み込めませんでした。</translation>
 <translation id="9008201768610948239">無視する</translation>
-<translation id="9014705027639070815">アクセスしたサイトから Chrome に、広告のパフォーマンスを測定するための情報を要求できます。Chrome では、限定的な種類のデータ（サイトにアクセスした後に購入したかどうかなど）をサイトが収集できるよう設定できます。</translation>
+<translation id="9014705027639070815">アクセスしたサイトが Chrome に、広告のパフォーマンスを測定するための情報を要求することがあります。Chrome では、限定的な種類のデータ（サイトにアクセスした後に購入したかどうかなど）をサイトが収集することを許可しています。</translation>
 <translation id="9018120810758822233"><ph name="CREDIT_CARD" /> のセキュリティ コードを入力してください</translation>
 <translation id="901834265349196618">メール</translation>
 <translation id="90196294733273307">クレジット カード情報に関するダイアログが表示されました</translation>

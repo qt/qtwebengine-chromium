@@ -3663,7 +3663,7 @@
 <translation id="3617891479562106823">Позадине нису доступне. Пробајте поново касније.</translation>
 <translation id="3618286417582819036">Жао нам је, дошло је до грешке</translation>
 <translation id="3618647122592024084"><ph name="RECIPIENT_NAME" /> сада може да користи ваше корисничко име и лозинку када користи Google менаџер лозинки. Реците овом члану породице да посети <ph name="WEBSITE" /> да би се пријавио.</translation>
-<translation id="3619115746895587757">Капучино</translation>
+<translation id="3619115746895587757">Капућино</translation>
 <translation id="3619294456800709762">Сајтови могу аутоматски да уђу у слику у слици</translation>
 <translation id="3620136223548713675">Геолоцирање</translation>
 <translation id="3621202678540785336">Улаз</translation>
@@ -7088,7 +7088,7 @@
 <translation id="6127598727646973981">Безбедне везе</translation>
 <translation id="6129691635767514872">Изабрани подаци су уклоњени из Chrome-а и са синхронизованих уређаја. Google налог можда има друге облике историје прегледања, попут претрага и активности на другим Google услугама на <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" />.</translation>
 <translation id="6129938384427316298">Коментар Netscape сертификата</translation>
-<translation id="6129953537138746214">Размак</translation>
+<translation id="6129953537138746214">Тастер за размак</translation>
 <translation id="6130692320435119637">Додај WiFi</translation>
 <translation id="6130807998512240230">Phone Hub, Дељење у близини</translation>
 <translation id="6130887916931372608">Тастер тастатуре</translation>
@@ -9144,7 +9144,7 @@
 <translation id="764178579712141045">Додато: <ph name="USER_EMAIL" /></translation>
 <translation id="7642778300616172920">Сакриј осетљив садржај</translation>
 <translation id="7643842463591647490">{0,plural, =1{# отворен прозор}one{# отворен прозор}few{# отворена прозора}other{# отворених прозора}}</translation>
-<translation id="7643932971554933646">Желите ли да дозволите да сајт прегледа датотеке?</translation>
+<translation id="7643932971554933646">Желите ли да дозволите да сајт прегледа фајлове?</translation>
 <translation id="7645176681409127223"><ph name="USER_NAME" /> (власник)</translation>
 <translation id="7645681574855902035">Отказује се прављење резервне копије за Linux</translation>
 <translation id="7646499124171960488">Упозорава вас на небезбедне јавне сајтове</translation>

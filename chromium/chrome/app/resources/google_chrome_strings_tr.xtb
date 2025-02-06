@@ -143,7 +143,7 @@
 <translation id="286025080868315611">Chrome'un bazı indirme işlemlerini neden engellediğini öğrenin</translation>
 <translation id="2861074815332034794">Chrome güncelleniyor (<ph name="PROGRESS_PERCENT" />)</translation>
 <translation id="2871893339301912279">Chrome'da oturum açtınız!</translation>
-<translation id="2876628302275096482"><ph name="BEGIN_LINK" />Chrome'un verilerinizi nasıl gizli tuttuğu<ph name="END_LINK" /> hakkında daha fazla bilg edinin</translation>
+<translation id="2876628302275096482"><ph name="BEGIN_LINK" />Chrome'un verilerinizi nasıl gizli tuttuğu<ph name="END_LINK" /> hakkında daha fazla bilgi edinin</translation>
 <translation id="2885378588091291677">Görev Yöneticisi</translation>
 <translation id="2888126860611144412">Chrome hakkında</translation>
 <translation id="29082080693925013">Düzenli kalmak için sık ziyaret ettiğiniz siteleri sabitleyebilir ve sekmeleri gruplar halinde düzenleyebilirsiniz.</translation>
@@ -338,7 +338,7 @@ Bazı özellikler kullanılamayabilir. Lütfen farklı bir profil dizini belirti
 <translation id="5686916850681061684">Google Chrome'u özelleştirin ve kontrol edin. İlgilenmeniz gereken bir konu var. Ayrıntılar için tıklayın.</translation>
 <translation id="5690427481109656848">Google LLC</translation>
 <translation id="569897634095159764">İnternet'e bağlanılamıyor. Proxy sunucu kimlik doğrulama gerektiriyor.</translation>
-<translation id="5709557627224531708">Chrome'u varsayılan tarayıcınız olarak ayarlama</translation>
+<translation id="5709557627224531708">Chrome'u varsayılan tarayıcınız olarak ayarlayın</translation>
 <translation id="5727531838415286053">Chrome tarafından etkin bir denemeye rastgele yerleştirildiyseniz tarama geçmişiniz gördüğünüz reklamları ve aşağıdaki şekilde tahmin edilen ilgi alanlarınızı etkiler. Chrome, gizliliğinizi korumak için ilgi alanlarınızı her ay sürekli olarak siler. Kaldırmadığınız sürece ilgi alanlarınız yenilenmeye devam eder.</translation>
 <translation id="5736850870166430177">Chrome, bir sitenin şifrenizi çalmaya çalışması veya zararlı bir dosya indirmeniz halinde de Güvenli Tarama'ya sayfa içeriğinden parçalarla birlikte URL'ler gönderebilir</translation>
 <translation id="5756509061973259733">Cihazda bu hesaba sahip bir Chrome profili zaten var</translation>
@@ -603,6 +603,6 @@ Web sitelerine ve uygulamalara verdiğiniz izinler, bu hesap için geçerli olab
 <translation id="940313311831216333">Chrome öğelerinize tüm cihazlarınızda erişmek için oturum açın ve senkronizasyonu etkinleştirin.</translation>
 <translation id="943390475793766444">Chrome, tehlikeli olabileceği için bu dosyanın taranmasını öneriyor.</translation>
 <translation id="983803489796659991">Güncelleme sunucusunda uygulamanın karma verisi bulunmadığından yükleme işlemi başarısız oldu.</translation>
-<translation id="989369509083708165">Google Chrome varsayılan tarayıcınız oldu</translation>
+<translation id="989369509083708165">Google Chrome varsayılan tarayıcınız</translation>
 <translation id="989816563149873169"><ph name="SHORTCUT" />, Chrome profilleri arasında geçiş yapabilir</translation>
 </translationbundle>
