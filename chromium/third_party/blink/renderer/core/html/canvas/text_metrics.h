@@ -40,7 +40,7 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
 
  public:
   TextMetrics();
-  TextMetrics(const Font& font,
+  TextMetrics(const Font* font,
               const TextDirection& direction,
               const TextBaseline& baseline,
               const TextAlign& align,
@@ -67,7 +67,7 @@ class CORE_EXPORT TextMetrics final : public ScriptWrappable {
   void Trace(Visitor*) const override;
 
  private:
-  void Update(const Font&,
+  void Update(const Font*,
               const TextDirection&,
               const TextBaseline&,
               const TextAlign&,

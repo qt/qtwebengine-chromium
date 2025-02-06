@@ -366,7 +366,7 @@ InkOverflow::Type InkOverflow::SetTextInkOverflow(
   CheckType(type);
   DCHECK(type == Type::kNotSet || type == Type::kInvalidated);
   absl::optional<PhysicalRect> ink_overflow =
-      ComputeTextInkOverflow(cursor, text_info, style, style.GetFont(),
+      ComputeTextInkOverflow(cursor, text_info, style, *style.GetFont(),
                              rect_in_container, inline_context);
   if (!ink_overflow) {
     *ink_overflow_out = {PhysicalOffset(), rect_in_container.size};
@@ -513,7 +513,7 @@ LogicalRect InkOverflow::ComputeEmphasisMarkOverflow(
   DCHECK(style.GetTextEmphasisMark() != TextEmphasisMark::kNone);
 
   LayoutUnit emphasis_mark_height = LayoutUnit(
-      style.GetFont().EmphasisMarkHeight(style.TextEmphasisMarkString()));
+      style.GetFont()->EmphasisMarkHeight(style.TextEmphasisMarkString()));
   DCHECK_GE(emphasis_mark_height, LayoutUnit());
 
   LogicalRect ink_overflow = ink_overflow_in;

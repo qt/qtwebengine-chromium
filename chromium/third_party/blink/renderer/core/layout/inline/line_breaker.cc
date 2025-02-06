@@ -1741,11 +1741,11 @@ scoped_refptr<ShapeResult> LineBreaker::ShapeText(const InlineItem& item,
   if (!items_data_.segments) {
     RunSegmenter::RunSegmenterRange segment_range =
         InlineItemSegment::UnpackSegmentData(start, end, item.SegmentData());
-    shape_result = shaper_.Shape(&item.Style()->GetFont(), item.Direction(),
+    shape_result = shaper_.Shape(item.Style()->GetFont(), item.Direction(),
                                  start, end, segment_range, options);
   } else {
     shape_result = items_data_.segments->ShapeText(
-        &shaper_, &item.Style()->GetFont(), item.Direction(), start, end,
+        &shaper_, item.Style()->GetFont(), item.Direction(), start, end,
         base::checked_cast<unsigned>(&item - items_data_.items.begin()),
         options);
   }
@@ -2445,14 +2445,14 @@ void LineBreaker::HandleControlItem(const InlineItem& item,
     case kTabulationCharacter: {
       DCHECK(item.Style());
       const ComputedStyle& style = *item.Style();
-      if (!style.GetFont().PrimaryFont()) {
+      if (!style.GetFont()->PrimaryFont()) {
         // TODO(crbug.com/561873): PrimaryFont should not be nullptr.
         HandleEmptyText(item, line_info);
         return;
       }
       scoped_refptr<const ShapeResult> shape_result =
           ShapeResult::CreateForTabulationCharacters(
-              &style.GetFont(), item.Direction(), style.GetTabSize(), position_,
+              style.GetFont(), item.Direction(), style.GetTabSize(), position_,
               item.StartOffset(), item.Length());
       HandleText(item, *shape_result, line_info);
       return;
@@ -3591,7 +3591,7 @@ void LineBreaker::SetCurrentStyle(const ComputedStyle& style) {
       DCHECK_EQ(break_iterator_.Locale(), style.GetFontDescription().Locale());
     }
     ShapeResultSpacing<String> spacing(spacing_.Text(), is_svg_text_);
-    spacing.SetSpacing(style.GetFont().GetFontDescription());
+    spacing.SetSpacing(style.GetFont()->GetFontDescription());
     DCHECK_EQ(spacing.LetterSpacing(), spacing_.LetterSpacing());
     DCHECK_EQ(spacing.WordSpacing(), spacing_.WordSpacing());
 #endif  //  EXPENSIVE_DCHECKS_ARE_ON()

@@ -133,7 +133,7 @@ const LayoutResult* MathOperatorLayoutAlgorithm::Layout() {
                             : OpenTypeMathStretchData::StretchAxis::Horizontal);
   StretchyOperatorShaper::Metrics metrics;
   scoped_refptr<ShapeResult> shape_result =
-      shaper.Shape(&Style().GetFont(), operator_target_size, &metrics);
+      shaper.Shape(Style().GetFont(), operator_target_size, &metrics);
   const ShapeResultView* shape_result_view =
       ShapeResultView::Create(shape_result.get());
 
@@ -193,7 +193,7 @@ MinMaxSizesResult MathOperatorLayoutAlgorithm::ComputeMinMaxSizes(
       StretchyOperatorShaper shaper(GetBaseCodePoint(),
                                     OpenTypeMathStretchData::Horizontal);
       StretchyOperatorShaper::Metrics metrics;
-      shaper.Shape(&Style().GetFont(), 0, &metrics);
+      shaper.Shape(Style().GetFont(), 0, &metrics);
       sizes.Encompass(LayoutUnit(metrics.advance));
     } else {
       // "Otherwise, the stretch axis of the operator is block."
@@ -207,7 +207,7 @@ MinMaxSizesResult MathOperatorLayoutAlgorithm::ComputeMinMaxSizes(
                                   OpenTypeMathStretchData::Vertical);
     StretchyOperatorShaper::Metrics metrics;
     LayoutUnit operator_target_size = DisplayOperatorMinHeight(Style());
-    shaper.Shape(&Style().GetFont(), operator_target_size, &metrics);
+    shaper.Shape(Style().GetFont(), operator_target_size, &metrics);
     sizes.Encompass(LayoutUnit(metrics.advance));
   }
 

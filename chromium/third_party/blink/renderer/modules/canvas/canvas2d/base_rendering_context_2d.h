@@ -123,7 +123,6 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasPath {
   void beginLayer(ScriptState*,
                   const BeginLayerOptions* options,
                   ExceptionState& exception_state);
-  // Pop state stack if top state was pushed by beginLayer, restore state and draw the bitmap.
   void endLayer(ExceptionState& exception_state);
   virtual void reset();  // Called by the javascript interface
   void ResetInternal();  // Called from within blink
@@ -464,7 +463,7 @@ class MODULES_EXPORT BaseRenderingContext2D : public CanvasPath {
   virtual HTMLCanvasElement* HostAsHTMLCanvasElement() const;
   virtual OffscreenCanvas* HostAsOffscreenCanvas() const;
   virtual FontSelector* GetFontSelector() const;
-  const Font& AccessFont(HTMLCanvasElement* canvas);
+  const Font* AccessFont(HTMLCanvasElement* canvas);
 
   void WillUseCurrentFont() const;
   virtual bool WillSetFont() const;

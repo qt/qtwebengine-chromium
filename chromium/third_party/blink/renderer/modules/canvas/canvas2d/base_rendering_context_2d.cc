@@ -2858,7 +2858,7 @@ void BaseRenderingContext2D::strokeText(const String& text,
                    &max_width);
 }
 
-const Font& BaseRenderingContext2D::AccessFont(HTMLCanvasElement* canvas) {
+const Font* BaseRenderingContext2D::AccessFont(HTMLCanvasElement* canvas) {
   const CanvasRenderingContext2DState& state = GetState();
   if (!state.HasRealizedFont()) {
     setFont(state.UnparsedFont());
@@ -2913,8 +2913,8 @@ void BaseRenderingContext2D::DrawTextInternal(
     identifiability_study_helper_.set_encountered_sensitive_ops();
   }
 
-  const Font& font = AccessFont(canvas);
-  const SimpleFontData* font_data = font.PrimaryFont();
+  const Font* font = AccessFont(canvas);
+  const SimpleFontData* font_data = font->PrimaryFont();
   DCHECK(font_data);
   if (!font_data) {
     return;
@@ -2936,7 +2936,7 @@ void BaseRenderingContext2D::DrawTextInternal(
   gfx::PointF location(ClampTo<float>(x),
                        ClampTo<float>(y + GetFontBaseline(*font_data)));
   gfx::RectF bounds;
-  double font_width = font.Width(text_run, &bounds);
+  double font_width = font->Width(text_run, &bounds);
 
   bool use_max_width = (max_width && *max_width < font_width);
   double width = use_max_width ? *max_width : font_width;
@@ -2993,7 +2993,7 @@ void BaseRenderingContext2D::DrawTextInternal(
         Font::DrawType draw_type = (canvas && canvas->IsPrinting())
                                        ? Font::DrawType::kGlyphsAndClusters
                                        : Font::DrawType::kGlyphsOnly;
-        this->AccessFont(canvas).DrawBidiText(c, text_run_paint_info, location,
+        this->AccessFont(canvas)->DrawBidiText(c, text_run_paint_info, location,
                                               Font::kUseFallbackIfFontNotReady,
                                               *flags, draw_type);
       },
@@ -3026,7 +3026,8 @@ TextMetrics* BaseRenderingContext2D::measureText(const String& text) {
     canvas->GetDocument().UpdateStyleAndLayoutTreeForElement(
         canvas, DocumentUpdateReason::kCanvas);
   }
-  const Font& font = AccessFont(canvas);
+
+  const Font* font = AccessFont(canvas);
 
   const CanvasRenderingContext2DState& state = GetState();
   TextDirection direction = ToTextDirection(state.GetDirection(), canvas);

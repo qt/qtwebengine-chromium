@@ -283,10 +283,10 @@ void HighlightPainter::SelectionPaintState::PaintSelectedText(
     const TextPaintStyle& text_style,
     DOMNodeId node_id,
     const AutoDarkMode& auto_dark_mode) {
-  text_painter.PaintSelectedText(fragment_paint_info, selection_status_.start,
-                                 selection_status_.end, text_style,
-                                 selection_style_, LineRelativeSelectionRect(),
-                                 node_id, auto_dark_mode);
+  text_painter.PaintSelectedText(
+      fragment_paint_info, selection_status_.start, selection_status_.end,
+      text_style, selection_style_, LineRelativeSelectionRect(), node_id,
+      auto_dark_mode);
 }
 
 // Paint the given text range in the given style, suppressing the text proper
@@ -539,7 +539,7 @@ void HighlightPainter::Paint(Phase phase) {
         if (DocumentMarkerPainter::ShouldPaintMarkerUnderline(
                 styleable_marker)) {
           const SimpleFontData* font_data =
-              originating_style_.GetFont().PrimaryFont();
+              originating_style_.GetFont()->PrimaryFont();
           DocumentMarkerPainter::PaintStyleableMarkerUnderline(
               paint_info_.context, box_origin_, styleable_marker,
               originating_style_, node_->GetDocument(),

@@ -171,7 +171,7 @@ absl::optional<LayoutUnit> ParagraphLineBreaker::AttemptParagraphBalancing(
     const InlineItemsData& items_data = node.ItemsData(
         /* use_first_line_style */ false);
     const wtf_size_t estimated_num_lines = EstimateNumLines(
-        items_data.text_content, block_style.GetFont().PrimaryFont(),
+        items_data.text_content, block_style.GetFont()->PrimaryFont(),
         line_opportunity.AvailableInlineSize());
     if (estimated_num_lines > max_lines * 2) {
       return absl::nullopt;

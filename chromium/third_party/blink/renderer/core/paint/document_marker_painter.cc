@@ -161,7 +161,7 @@ void DocumentMarkerPainter::PaintStyleableMarkerUnderline(
   // underline will touch or overlap characters. Line thickness should change
   // with zoom.
   int line_thickness = 1 * style.EffectiveZoom();
-  const SimpleFontData* font_data = style.GetFont().PrimaryFont();
+  const SimpleFontData* font_data = style.GetFont()->PrimaryFont();
   DCHECK(font_data);
   int baseline = font_data ? font_data->GetFontMetrics().Ascent() : 0;
   if (marker.HasThicknessThick()) {
@@ -238,7 +238,7 @@ void DocumentMarkerPainter::PaintDocumentMarker(
   float zoom = style.EffectiveZoom();
   int line_thickness = static_cast<int>(ceilf(kMarkerHeight * zoom));
 
-  const SimpleFontData* font_data = style.GetFont().PrimaryFont();
+  const SimpleFontData* font_data = style.GetFont()->PrimaryFont();
   DCHECK(font_data);
   int baseline = font_data->GetFontMetrics().Ascent();
   int available_height = (local_rect.BlockSize() - baseline).ToInt();

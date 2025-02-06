@@ -298,7 +298,7 @@ void InlinePaintContext::SetLineBox(const InlineCursor& line_cursor) {
   PhysicalOffset offset = line_item.OffsetInContainerFragment();
   const PhysicalLineBoxFragment* fragment = line_item.LineBoxFragment();
   DCHECK(fragment);
-  if (const SimpleFontData* font = style.GetFont().PrimaryFont()) {
+  if (const SimpleFontData* font = style.GetFont()->PrimaryFont()) {
     offset.top += fragment->Metrics().ascent;
     offset.top -= font->GetFontMetrics().FixedAscent();
   }

@@ -114,7 +114,7 @@ class TestFontSelector : public FontSelector {
 
 }  // namespace
 
-Font CreateTestFont(const AtomicString& family_name,
+Font* CreateTestFont(const AtomicString& family_name,
                     const uint8_t* data,
                     size_t data_size,
                     float size,
@@ -129,10 +129,11 @@ Font CreateTestFont(const AtomicString& family_name,
   if (ligatures)
     font_description.SetVariantLigatures(*ligatures);
 
-  return Font(font_description, TestFontSelector::Create(data, data_size));
+  return  MakeGarbageCollected<Font>(font_description,
+                                     TestFontSelector::Create(data, data_size));
 }
 
-Font CreateTestFont(const AtomicString& family_name,
+Font* CreateTestFont(const AtomicString& family_name,
                     const String& font_path,
                     float size,
                     const FontDescription::VariantLigatures* ligatures,
@@ -149,10 +150,11 @@ Font CreateTestFont(const AtomicString& family_name,
   if (init_font_description)
     (*init_font_description)(&font_description);
 
-  return Font(font_description, TestFontSelector::Create(font_path));
+  return MakeGarbageCollected<Font>(font_description,
+                                    TestFontSelector::Create(font_path));
 }
 
-Font CreateAhemFont(float size) {
+Font* CreateAhemFont(float size) {
   return CreateTestFont(AtomicString("Ahem"), PlatformTestDataPath("Ahem.woff"),
                         size);
 }

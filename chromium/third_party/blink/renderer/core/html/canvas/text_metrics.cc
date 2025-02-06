@@ -60,7 +60,7 @@ void TextMetrics::Trace(Visitor* visitor) const {
 
 TextMetrics::TextMetrics() : baselines_(Baselines::Create()) {}
 
-TextMetrics::TextMetrics(const Font& font,
+TextMetrics::TextMetrics(const Font* font,
                          const TextDirection& direction,
                          const TextBaseline& baseline,
                          const TextAlign& align,
@@ -69,12 +69,12 @@ TextMetrics::TextMetrics(const Font& font,
   Update(font, direction, baseline, align, text);
 }
 
-void TextMetrics::Update(const Font& font,
+void TextMetrics::Update(const Font* font,
                          const TextDirection& direction,
                          const TextBaseline& baseline,
                          const TextAlign& align,
                          const String& text) {
-  const SimpleFontData* font_data = font.PrimaryFont();
+  const SimpleFontData* font_data = font->PrimaryFont();
   if (!font_data)
     return;
 
@@ -83,7 +83,7 @@ void TextMetrics::Update(const Font& font,
     // bidi reorder occurs.
     TextRun text_run(text, direction, false);
     text_run.SetNormalizeSpace(true);
-    advances_ = font.IndividualCharacterAdvances(text_run);
+    advances_ = font->IndividualCharacterAdvances(text_run);
   }
 
   // x direction
@@ -103,7 +103,7 @@ void TextMetrics::Update(const Font& font,
                      /* directional_override */ false);
     text_run.SetNormalizeSpace(true);
     gfx::RectF run_glyph_bounds;
-    float run_width = font.Width(text_run, &run_glyph_bounds);
+    float run_width = font->Width(text_run, &run_glyph_bounds);
 
     // Accumulate the position and the glyph bounding box.
     run_glyph_bounds.Offset(xpos, 0);

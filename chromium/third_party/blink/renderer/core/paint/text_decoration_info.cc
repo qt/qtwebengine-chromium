@@ -20,9 +20,10 @@ namespace blink {
 namespace {
 
 inline float GetAscent(const ComputedStyle& style, const Font* font_override) {
-  const Font& font = font_override ? *font_override : style.GetFont();
-  if (const SimpleFontData* primary_font = font.PrimaryFont())
+  const Font* font = font_override ? font_override : style.GetFont();
+  if (const SimpleFontData* primary_font = font->PrimaryFont()) {
     return primary_font->GetFontMetrics().FloatAscent();
+  }
   return 0.f;
 }
 
@@ -277,7 +278,7 @@ TextDecorationInfo::TextDecorationInfo(
       inline_context_(inline_context),
       selection_text_decoration_(selection_text_decoration),
       decoration_override_(decoration_override),
-      font_override_(font_override && font_override != &target_style.GetFont()
+      font_override_(font_override && font_override != target_style.GetFont()
                          ? font_override
                          : nullptr),
       local_origin_(local_origin),
@@ -375,7 +376,7 @@ void TextDecorationInfo::UpdateForDecorationIndex() {
 
   // Compute the |Font| and its properties.
   const Font* font =
-      font_override_ ? font_override_ : &decorating_box_style_->GetFont();
+      font_override_ ? font_override_ : decorating_box_style_->GetFont();
   DCHECK(font);
   if (font != font_) {
     font_ = font;
@@ -609,7 +610,7 @@ float TextDecorationInfo::ComputeUnderlineThickness(
       thickness = ComputeDecorationThickness(
           applied_decoration_thickness,
           decorating_box_style->ComputedFontSize(), minimum_thickness,
-          decorating_box_style->GetFont().PrimaryFont());
+          decorating_box_style->GetFont()->PrimaryFont());
     } else {
       thickness = ComputeDecorationThickness(applied_decoration_thickness,
                                              computed_font_size_,

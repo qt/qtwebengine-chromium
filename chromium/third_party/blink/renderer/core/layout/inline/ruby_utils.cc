@@ -23,7 +23,7 @@ std::tuple<LayoutUnit, LayoutUnit> AdjustTextOverUnderOffsetsForEmHeight(
     const ComputedStyle& style,
     const ShapeResultView& shape_view) {
   DCHECK_LE(over, under);
-  const SimpleFontData* primary_font_data = style.GetFont().PrimaryFont();
+  const SimpleFontData* primary_font_data = style.GetFont()->PrimaryFont();
   if (!primary_font_data)
     return std::make_pair(over, under);
   const auto font_baseline = style.GetFontBaseline();

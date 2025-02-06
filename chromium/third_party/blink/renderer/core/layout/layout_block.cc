@@ -588,7 +588,7 @@ bool LayoutBlock::HasLineIfEmpty() const {
 absl::optional<LayoutUnit> LayoutBlock::BaselineForEmptyLine() const {
   NOT_DESTROYED();
   const ComputedStyle* style = FirstLineStyle();
-  const SimpleFontData* font_data = style->GetFont().PrimaryFont();
+  const SimpleFontData* font_data = style->GetFont()->PrimaryFont();
   if (!font_data)
     return absl::nullopt;
   const auto& font_metrics = font_data->GetFontMetrics();

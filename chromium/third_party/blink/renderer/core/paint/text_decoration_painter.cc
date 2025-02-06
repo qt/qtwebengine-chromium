@@ -58,9 +58,8 @@ void TextDecorationPainter::UpdateDecorationInfo(
     // Need to recompute a scaled font and a scaling factor because they
     // depend on the scaling factor of an element referring to the text.
     float scaling_factor = 1;
-    Font scaled_font;
-    LayoutSVGInlineText::ComputeNewScaledFontForStyle(
-        *text_item_.GetLayoutObject(), scaling_factor, scaled_font);
+    const Font* scaled_font = LayoutSVGInlineText::ComputeNewScaledFontForStyle(
+        *text_item_.GetLayoutObject(), scaling_factor);
     DCHECK(scaling_factor);
     // Adjust the origin of the decoration because
     // TextPainter::PaintDecorationsExceptLineThrough() will change the
@@ -72,12 +71,12 @@ void TextDecorationPainter::UpdateDecorationInfo(
     top +=
         text_item_.ScaledFont().PrimaryFont()->GetFontMetrics().FixedAscent();
     top *= scaling_factor / text_item_.SvgScalingFactor();
-    top -= scaled_font.PrimaryFont()->GetFontMetrics().FixedAscent();
+    top -= scaled_font->PrimaryFont()->GetFontMetrics().FixedAscent();
     result.emplace(LineRelativeOffset{decoration_rect_.offset.line_left, top},
                    decoration_rect_.InlineSize(), style,
                    text_painter_.InlineContext(),
                    effective_selection_decoration, decoration_override,
-                   &scaled_font, MinimumThickness1(false), scaling_factor);
+                   scaled_font, MinimumThickness1(false), scaling_factor);
   } else {
     LineRelativeRect decoration_rect =
         decoration_rect_override.value_or(decoration_rect_);

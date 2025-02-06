@@ -41,7 +41,8 @@ LogicalRect ExpandedSelectionRectForSoftLineBreakIfNeeded(
   if (layout_block_flow && layout_block_flow->ShouldTruncateOverflowingText())
     return rect;
   // Copy from InlineTextBoxPainter::PaintSelection.
-  const LayoutUnit space_width(cursor.Current().Style().GetFont().SpaceWidth());
+  const LayoutUnit space_width(
+      cursor.Current().Style().GetFont()->SpaceWidth());
   return {rect.offset,
           {rect.size.inline_size + space_width, rect.size.block_size}};
 }
@@ -513,7 +514,7 @@ PhysicalRect InlineCursor::CurrentLocalSelectionRectForText(
       // This is for old compatible that old doesn't paint last br in a page.
       !IsLastBRInPage(*Current().GetLayoutObject())) {
     logical_rect.size.inline_size =
-        LayoutUnit(Current().Style().GetFont().SpaceWidth());
+        LayoutUnit(Current().Style().GetFont()->SpaceWidth());
   }
   const LogicalRect line_break_extended_rect =
       Current().IsLineBreak() ? logical_rect

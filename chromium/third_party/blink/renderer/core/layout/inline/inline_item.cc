@@ -232,7 +232,7 @@ const Font& InlineItem::FontWithSvgScaling() const {
     // ::first-line.
     return svg_text->ScaledFont();
   }
-  return Style()->GetFont();
+  return *Style()->GetFont();
 }
 
 String InlineItem::ToString() const {

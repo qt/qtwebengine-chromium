@@ -20,7 +20,7 @@ TextCombinePainter::TextCombinePainter(GraphicsContext& context,
                                        const ComputedStyle& style,
                                        const LineRelativeOffset& text_origin)
     : TextPainterBase(context,
-                      style.GetFont(),
+                      *style.GetFont(),
                       text_origin,
                       /* inline_context */ nullptr,
                       /* horizontal */ false),
@@ -72,7 +72,7 @@ void TextCombinePainter::Paint(const PaintInfo& paint_info,
       text_combine.GetDocument(), style, paint_info);
 
   if (has_emphasis_mark) {
-    text_painter.PaintEmphasisMark(text_style, style.GetFont());
+    text_painter.PaintEmphasisMark(text_style, *style.GetFont());
   }
 
   if (has_text_decoration) {

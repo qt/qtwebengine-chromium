@@ -45,8 +45,8 @@ const ComputedStyle& LineTruncator::EllipsisStyle() const {
 }
 
 void LineTruncator::SetupEllipsis() {
-  const Font& font = EllipsisStyle().GetFont();
-  ellipsis_font_data_ = font.PrimaryFont();
+  const Font* font = EllipsisStyle().GetFont();
+  ellipsis_font_data_ = font->PrimaryFont();
   DCHECK(ellipsis_font_data_);
   ellipsis_text_ =
       ellipsis_font_data_ && ellipsis_font_data_->GlyphForCharacter(
@@ -55,7 +55,7 @@ void LineTruncator::SetupEllipsis() {
           : String(u"...");
   HarfBuzzShaper shaper(ellipsis_text_);
   ellipsis_shape_result_ =
-      ShapeResultView::Create(shaper.Shape(&font, line_direction_).get());
+      ShapeResultView::Create(shaper.Shape(font, line_direction_).get());
   ellipsis_width_ = ellipsis_shape_result_->SnappedWidth();
 }
 

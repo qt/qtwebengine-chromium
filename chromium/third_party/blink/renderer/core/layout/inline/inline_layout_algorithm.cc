@@ -813,7 +813,7 @@ InlineBoxState* InlineLayoutAlgorithm::PlaceAtomicInline(
   } else {
     // The metrics should be as text instead of atomic inline box.
     const auto& style = layout_object->Parent()->StyleRef();
-    box->ComputeTextMetrics(style, style.GetFont(), baseline_type_);
+    box->ComputeTextMetrics(style, *style.GetFont(), baseline_type_);
     // Note: |item_result->spacing_before| is non-zero if this |item_result|
     // is |LayoutTextCombine| and after CJK character.
     // See "text-combine-justify.html".
@@ -849,7 +849,7 @@ void InlineLayoutAlgorithm::PlaceLayoutResult(InlineItemResult* item_result,
   line_box->AddChild(std::move(item_result->layout_result),
                      LogicalOffset{inline_offset, line_top},
                      item_result->inline_size, /* children_count */ 0,
-                     item.BidiLevel());
+                     item.BidiLevel());  
 }
 
 void InlineLayoutAlgorithm::PlaceBlockInInline(const InlineItem& item,
@@ -1109,7 +1109,7 @@ void InlineLayoutAlgorithm::PlaceListMarker(const InlineItem& item,
                                             const LineInfo& line_info) {
   if (UNLIKELY(quirks_mode_)) {
     box_states_->LineBoxState().EnsureTextMetrics(
-        *item.Style(), item.Style()->GetFont(), baseline_type_);
+        *item.Style(), *item.Style()->GetFont(), baseline_type_);
   }
 }
 

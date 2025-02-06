@@ -821,8 +821,7 @@ AXObjectInclusion AXNodeObject::ShouldIncludeBasedOnSemantics(
   return kDefaultBehavior;
 }
 
-bool AXNodeObject::ComputeAccessibilityIsIgnored(
-    IgnoredReasons* ignored_reasons) const {
+bool AXNodeObject::ComputeAccessibilityIsIgnored(IgnoredReasons* ignored_reasons) const {
   if (AXObject::ComputeAccessibilityIsIgnored(ignored_reasons)) {
     // Fallback elements inside of a <canvas> are invisible, but are not ignored
     // if they are semantic and not aria-hidden or hidden via style.
@@ -2982,7 +2981,7 @@ String AXNodeObject::FontFamilyForSerialization() const {
   if (!style)
     return AXObject::FontFamilyForSerialization();
 
-  const SimpleFontData* primary_font = style->GetFont().PrimaryFont();
+  const SimpleFontData* primary_font = style->GetFont()->PrimaryFont();
   if (!primary_font)
     return AXObject::FontFamilyForSerialization();
 
