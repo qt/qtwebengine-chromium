@@ -215,6 +215,8 @@ def main(argv):
   args_list.add('--osx-architectures',
                     help='delimited list of architectures for universal build',
                     type=str)
+  args_list.add('--gcc-legacy-support', action='store_true',
+                    help='Support gcc9 compilation')
 
   if sys.platform == 'zos':
     args_list.add('--zoslib-dir',
@@ -569,8 +571,12 @@ def WriteGNNinja(path, platform, host, options, args_list):
         '-Wno-format',             # Use of %llx, which is supported by _UCRT, false positive
         '-Wno-strict-aliasing',    # Dereferencing punned pointer
         '-Wno-cast-function-type', # Casting FARPROC to RegDeleteKeyExPtr
-        '-std=gnu++20',
       ])
+
+      if options.gcc_legacy_support:
+        cflags.append('-std=gnu++2a')
+      else:
+        cflags.append('-std=gnu++20')
 
     elif platform.is_darwin():
       min_mac_version_flag = '-mmacosx-version-min=10.9'
