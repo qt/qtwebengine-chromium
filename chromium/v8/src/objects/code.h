@@ -506,7 +506,7 @@ class Code : public HeapObject {
 
   static const int kArgumentsBits = 16;
   // Reserve one argument count value as the "don't adapt arguments" sentinel.
-  static const int kMaxArguments = (1 << kArgumentsBits) - 2;
+  static const int kMaxArguments = (1 << kArgumentsBits) - 10;
 
  private:
   friend class RelocIterator;
