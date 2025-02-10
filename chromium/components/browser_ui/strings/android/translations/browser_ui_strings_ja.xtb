@@ -201,7 +201,7 @@
 <translation id="4200726100658658164">位置情報の設定を開く</translation>
 <translation id="4226663524361240545">通知を受け取るとデバイスが振動します</translation>
 <translation id="4259722352634471385"><ph name="URL" /> へのアクセスがブロックされました</translation>
-<translation id="4278390842282768270">許可</translation>
+<translation id="4278390842282768270">許可されています</translation>
 <translation id="429312253194641664">サイトでメディアが再生されています</translation>
 <translation id="42981349822642051">展開</translation>
 <translation id="4336219115486912529">{COUNT,plural, =1{明日で期限切れ}other{あと # 日で期限切れ}}</translation>
@@ -303,12 +303,12 @@
 <translation id="5804241973901381774">権限</translation>
 <translation id="5844448279347999754">オンにすると、サイトはクリップボードに保存されたテキストや画像の参照を要求できます。オフにすると、サイトはクリップボードに保存されたテキストや画像を参照できません。</translation>
 <translation id="5853982612236235577">オンにすると、サイトは通知の送信を要求できます。オフにすると、サイトは通知を送信できません。</translation>
-<translation id="5860033963881614850">OFF</translation>
+<translation id="5860033963881614850">オフ</translation>
 <translation id="5876056640971328065">動画を一時停止</translation>
 <translation id="5877248419911025165">すべてのリクエストを閉じる</translation>
 <translation id="5884085660368669834">サイトの設定</translation>
 <translation id="5887687176710214216">最終アクセス日: 昨日</translation>
-<translation id="5916664084637901428">ON</translation>
+<translation id="5916664084637901428">オン</translation>
 <translation id="5922853908706496913">画面を共有しています</translation>
 <translation id="5922967540311291836">サードパーティの Cookie をブロックする:</translation>
 <translation id="5923512600150154850">サイトにより保存された <ph name="DATASIZE" /> のデータと Cookie が削除されます。</translation>

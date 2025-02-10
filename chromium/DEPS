@@ -300,19 +300,19 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'src_internal_revision': 'faded0792517f51d0000a52e380ab4e0e598e8bd',
+  'src_internal_revision': 'd53e728f0443119dc2a360d6e234b06f28ed823b',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and whatever else without interference from each other.
-  'skia_revision': '3c64459d5df2fa9794b277f0959ed8a92552bf4c',
+  'skia_revision': 'd41eba845cdb7ade07e68f20676675c25e2734fc',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': '9ae5f73732808d0b574e8efe88fcdbc72850fbd0',
+  'v8_revision': '3551594a5f6604c7e5070f408cc81d60d08ddbbf',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
-  'angle_revision': '21e4b689c009a93f66d61989a713d52bceaf2979',
+  'angle_revision': 'fffbc739779a2df56a464fd6853bbfb24bebb5f6',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling SwiftShader
   # and whatever else without interference from each other.
@@ -420,7 +420,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'dawn_revision': 'a37557db581c2b60fb1cd2c01abdb232927dd961',
+  'dawn_revision': 'f1041a163d06fb86b082e29260ab53a4637b0e98',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
@@ -1287,7 +1287,7 @@ deps = {
 
   'src/clank': {
     'url': Var('chrome_git') + '/clank/internal/apps.git' + '@' +
-    '3b29d97d3eeb534c862394aa050829b0b095e37f',
+    '6f2cbd68bb30ab9ea052f6c9ad75c961078bae5a',
     'condition': 'checkout_android and checkout_src_internal',
   },
 
@@ -4371,7 +4371,7 @@ deps = {
 
   'src/ios_internal':  {
       'url': Var('chrome_git') + '/chrome/ios_internal.git' + '@' +
-        '3e0d2b8c7e5af9c0d6cb29429ccad9d8745e23c3',
+        '4891e90d20c1bf50536f28d4222ff2c95ebf2a48',
       'condition': 'checkout_ios and checkout_src_internal',
   },
 

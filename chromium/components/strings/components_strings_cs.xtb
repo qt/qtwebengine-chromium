@@ -277,7 +277,7 @@ Jinak to vaše nastavení ochrany soukromí bude blokovat. Povolením umožníte
 <translation id="147358896496811705">2A0</translation>
 <translation id="1474576429883213321">Úklidové služby</translation>
 <translation id="1475299637784133125">Hledáte verzi prohlížeče? Přejděte na stránku</translation>
-<translation id="1476595624592550506">Změňte heslo</translation>
+<translation id="1476595624592550506">Změna hesla</translation>
 <translation id="1482879811280872320">Cyklistika</translation>
 <translation id="1483493594462132177">Odeslat</translation>
 <translation id="1484449009683144042">Toto je experimentální funkce pro pomoc s psaním založená na umělé inteligenci a nemusí vždy fungovat správně.
@@ -1717,7 +1717,7 @@ Jinak to vaše nastavení ochrany soukromí bude blokovat. Povolením umožníte
 <translation id="4134123981501319574">Vytvořit dokument</translation>
 <translation id="413544239732274901">Další informace</translation>
 <translation id="4140905366050378834">Krmivo a potřeby pro péči o domácí zvířata</translation>
-<translation id="4140905530744469899">ID profilu:</translation>
+<translation id="4140905530744469899">Číslo profilu:</translation>
 <translation id="4142935452406587478">Přihrádka 10</translation>
 <translation id="4148925816941278100">American Express</translation>
 <translation id="4149757165376323512">Toto upozornění se vám zobrazuje, protože tento web nepodporuje protokol HTTPS a využíváte program pokročilé ochrany od Googlu. <ph name="BEGIN_LEARN_MORE_LINK" />Další informace o tomto upozornění<ph name="END_LEARN_MORE_LINK" /></translation>
@@ -2356,7 +2356,7 @@ Jinak to vaše nastavení ochrany soukromí bude blokovat. Povolením umožníte
 <translation id="5329858041417644019">Prohlížeč není spravován</translation>
 <translation id="5331585574693522196">Nastavit jako výchozí</translation>
 <translation id="5332219387342487447">Způsob dopravy</translation>
-<translation id="5332769172018416402">Odeslat zprávu s žádostí</translation>
+<translation id="5332769172018416402">Poslat zprávu s žádostí</translation>
 <translation id="533323551986281710">Spodní tabulka obchodu byla otevřena na celou výšku</translation>
 <translation id="5334013548165032829">Podrobné systémové protokoly</translation>
 <translation id="5334145288572353250">Uložit adresu?</translation>
@@ -3616,7 +3616,7 @@ Kontaktujte administrátora systému.</translation>
 <translation id="7631072086707140121">Adresa URL musí být https.</translation>
 <translation id="7631527008834753063">Televizní hry</translation>
 <translation id="7633909222644580952">Údaje o výkonu a přehledy selhání</translation>
-<translation id="7636346903338549690">Povolení používat soubory cookie třetích stran</translation>
+<translation id="7636346903338549690">Weby s povolením používat soubory cookie třetích stran</translation>
 <translation id="7637571805876720304">Odstranit platební kartu z prohlížeče Chromium?</translation>
 <translation id="7637586430889951925">{COUNT,plural, =0{Žádné}=1{V účtu máte 1 heslo (pro domény <ph name="DOMAIN_LIST" />)}few{V účtu máte # hesla (pro domény <ph name="DOMAIN_LIST" />)}many{V účtu máte # hesla (pro domény <ph name="DOMAIN_LIST" />)}other{V účtu máte # hesel (pro domény <ph name="DOMAIN_LIST" />)}}</translation>
 <translation id="7638605456503525968">Sériové porty</translation>

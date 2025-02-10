@@ -752,7 +752,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="2349957959687031096">Pulsante Apri scheda di navigazione in incognito, attiva per aprire una nuova scheda di navigazione in incognito per navigare in privato</translation>
 <translation id="2350796302381711542">Consentire a <ph name="HANDLER_HOSTNAME" /> di aprire tutti i link <ph name="PROTOCOL" /> al posto di <ph name="REPLACED_HANDLER_TITLE" />?</translation>
 <translation id="2353297238722298836">Videocamera e microfono consentiti</translation>
-<translation id="2354001756790975382">Altri Preferiti</translation>
+<translation id="2354001756790975382">Altri preferiti</translation>
 <translation id="2355395290879513365">Gli utenti malintenzionati potrebbero riuscire a vedere le immagini che visualizzi in questo sito e ingannarti modificandole.</translation>
 <translation id="2356070529366658676">Chiedi</translation>
 <translation id="2356926036049612643">Strumento di ottimizzazione V8</translation>
@@ -1805,7 +1805,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="4277529130885813215">Usa un altro dispositivo</translation>
 <translation id="4277937682389409325">Indirizzo locale</translation>
 <translation id="4278090321534187713">Le carte non accettate da questo commerciante sono disattivate</translation>
-<translation id="4278390842282768270">Autorizzazione consentita</translation>
+<translation id="4278390842282768270">Autorizzazione concessa</translation>
 <translation id="4281998142035485137">{0,plural, =1{Aprire il file riservato?}other{Aprire i file riservati?}}</translation>
 <translation id="4282280603030594840">Acquisto veicoli</translation>
 <translation id="4282346679996504092">Gli avvisi per questo prodotto sono stati disattivati e il preferito è stato rimosso</translation>
@@ -2044,7 +2044,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="4756501505996488486">PRC 16K</translation>
 <translation id="4757022425116568383">Passkey del tuo profilo Chrome</translation>
 <translation id="4757993714154412917">Hai appena inserito la tua password su un sito ingannevole. Per proteggere i tuoi account, Chromium ti consiglia di controllare le password salvate.</translation>
-<translation id="4758311279753947758">Aggiungi informazioni di contatto</translation>
+<translation id="4758311279753947758">Aggiungi dati di contatto</translation>
 <translation id="4761326898079498987">Rivedi per ulteriori dettagli</translation>
 <translation id="4761869838909035636">Esegui il controllo di sicurezza di Chrome</translation>
 <translation id="4763196677855776703">Termini e condizioni forniti da <ph name="URL" /></translation>
@@ -2542,7 +2542,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="5675809467256309336">Musica dance ed elettronica</translation>
 <translation id="5675959228867414813">Mostra per data</translation>
 <translation id="567604591393105935">Riquadro inferiore di informazioni sul prodotto aperto nella parte inferiore dello schermo</translation>
-<translation id="5677928146339483299">Autorizzazione bloccata</translation>
+<translation id="5677928146339483299">Autorizzazione negata</translation>
 <translation id="5678007133659493065">Alluminio</translation>
 <translation id="5680642791693447368">Film gialli, polizieschi e del mistero</translation>
 <translation id="568292603005599551">Posizione X immagine</translation>
@@ -3049,7 +3049,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="6613866251791999074">Scopri di più sul tuo motore di ricerca in Chrome</translation>
 <translation id="6615297766614333076">Fascicolatore 2</translation>
 <translation id="6619496928666593220">IBAN non compilato</translation>
-<translation id="6624427990725312378">Informazioni di contatto</translation>
+<translation id="6624427990725312378">Dati di contatto</translation>
 <translation id="6628463337424475685">Ricerca <ph name="ENGINE" /></translation>
 <translation id="6629652037942826935">Viaggi di lusso</translation>
 <translation id="6630043285902923878">Ricerca di dispositivi USB in corso…</translation>
@@ -3288,7 +3288,7 @@ In caso contrario l'uso sarà bloccato dalle impostazioni sulla privacy. I conte
 <translation id="7062635574500127092">Verde petrolio</translation>
 <translation id="706295145388601875">Aggiungi e gestisci indirizzi nelle impostazioni di Chrome</translation>
 <translation id="7064443976734085921">Auto compatte</translation>
-<translation id="7064851114919012435">Informazioni di contatto</translation>
+<translation id="7064851114919012435">Dati di contatto</translation>
 <translation id="7067633076996245366">Musica soul e R&amp;B</translation>
 <translation id="706960991003274248">Le tabelle di confronto vengono salvate nel tuo account <ph name="EMAIL" /></translation>
 <translation id="7070144569727915108">impostazioni di sistema</translation>
@@ -3498,7 +3498,7 @@ Ulteriori dettagli:
 <translation id="7427079287360774240">Studio di lingue straniere</translation>
 <translation id="7429429656042611765">Executive</translation>
 <translation id="7432774160230062882">Verifica la tua identità per consentire a Chromium di inserire i tuoi dati di pagamento.</translation>
-<translation id="7437289804838430631">Aggiungi informazioni di contatto</translation>
+<translation id="7437289804838430631">Aggiungi dati di contatto</translation>
 <translation id="7440140511386898319">Esplora offline</translation>
 <translation id="7441627299479586546">Oggetto del criterio errato</translation>
 <translation id="7441864845853794192">Alimenti gourmet e specialità</translation>
@@ -3795,7 +3795,7 @@ Ulteriori dettagli:
 <translation id="7953236668995583915">Ricarica la pagina per applicare le impostazioni aggiornate a questo sito</translation>
 <translation id="7953569069500808819">Impuntura in alto</translation>
 <translation id="7955105108888461311">Chiedi di persona</translation>
-<translation id="7956713633345437162">Preferiti su disp. mobili</translation>
+<translation id="7956713633345437162">Preferiti su dispositivi mobili</translation>
 <translation id="7961015016161918242">Mai</translation>
 <translation id="7962467575542381659">Macchina della piattaforma</translation>
 <translation id="7966803981046576691">Tipo di account lavoro</translation>
@@ -4034,7 +4034,7 @@ Ulteriori dettagli:
 <translation id="8389532092404711541">In genere <ph name="LOW_PRICE" /></translation>
 <translation id="8389940864052787379">Veicoli ad alte prestazioni e personalizzati</translation>
 <translation id="8390725133630534698">La possibilità di condivisione da <ph name="ORIGIN_NAME" /> a <ph name="VM_NAME" /> è stata bloccata da un criterio dell'amministratore</translation>
-<translation id="8392783408127179588">Criteri di ricaricamento</translation>
+<translation id="8392783408127179588">Ricaricamento criteri in corso...</translation>
 <translation id="8396522675989118466">È il codice a <ph name="NUMBER_OF_DIGITS" /> cifre indicato sul <ph name="SIDE_OF_CARD" /></translation>
 <translation id="8398335999901363925">Metodi di pagamento che è possibile compilare tramite tocco aperti a schermo intero.</translation>
 <translation id="8398446215576328011">Ripristina criteri applicati</translation>

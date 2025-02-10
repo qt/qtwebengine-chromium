@@ -630,7 +630,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="2130699163006053678">A3x7</translation>
 <translation id="2132825047782982803">Las opciones se muestran en orden aleatorio. Puedes cambiar la opción predeterminada en cualquier momento.</translation>
 <translation id="2137891579555018930">Esperando el permiso…</translation>
-<translation id="213826338245044447">Favoritos del celular</translation>
+<translation id="213826338245044447">Favoritos del dispositivo</translation>
 <translation id="2141000681034340397">Editar tu entrada</translation>
 <translation id="2144171668675205303">No hay temas activos</translation>
 <translation id="2145193671493396738">Noticias económicas</translation>
@@ -2001,7 +2001,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="467662567472608290">Este servidor no pudo probar que su dominio es <ph name="DOMAIN" />; el certificado de seguridad contiene errores. Es posible que esto se deba a una configuración incorrecta o a que un atacante interceptó la conexión.</translation>
 <translation id="4677585247300749148"><ph name="URL" /> desea responder a los eventos de accesibilidad</translation>
 <translation id="467809019005607715">Presentaciones de Google</translation>
-<translation id="4682496302933121474">¿Deseas traducir la página?</translation>
+<translation id="4682496302933121474">¿Traducir página?</translation>
 <translation id="468314109939257734">Ver tu número de tarjeta virtual</translation>
 <translation id="4686942373615810936">Se creó recién</translation>
 <translation id="4687718960473379118">Anuncios sugeridos por sitios</translation>
@@ -2546,7 +2546,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="5675809467256309336">Música dance y electrónica</translation>
 <translation id="5675959228867414813">Mostrar por fecha</translation>
 <translation id="567604591393105935">La hoja inferior del comercio está abierta a media altura</translation>
-<translation id="5677928146339483299">Bloqueadas</translation>
+<translation id="5677928146339483299">Bloqueados</translation>
 <translation id="5678007133659493065">Lámina</translation>
 <translation id="5680642791693447368">Películas de suspenso, crimen y misterio</translation>
 <translation id="568292603005599551">Posición en el eje X de la imagen</translation>
@@ -2775,7 +2775,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="6108580855199168381">Detalles del certificado</translation>
 <translation id="6108702513636120202">Tu motor de búsqueda en Chromium</translation>
 <translation id="6108849843016142864">Reptiles y anfibios</translation>
-<translation id="610911394827799129">Es posible que tu cuenta de Google tenga otros formularios del historial de navegación en <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" /></translation>
+<translation id="610911394827799129">Es posible que tu cuenta de Google tenga otras formas de historial de navegación en <ph name="BEGIN_LINK" />myactivity.google.com<ph name="END_LINK" /></translation>
 <translation id="611018310643025551">Tus búsquedas, los resultados más relevantes y el contenido de sus páginas se envían a Google y es posible que los revisen personas para mejorar esta función.</translation>
 <translation id="6116338172782435947">Ver el texto y las imágenes copiados en el portapapeles</translation>
 <translation id="6117833587752089929">Foto (satinado)</translation>
@@ -3070,7 +3070,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="6648459603387803038">El administrador puede cambiar la configuración de tu navegador de forma remota. Es posible que la actividad en este dispositivo también se administre fuera de Chrome.</translation>
 <translation id="6648524591329069940">Fuente Serif</translation>
 <translation id="6649510485211003056">195 × 270 mm</translation>
-<translation id="6651270836885078973">Administrador:</translation>
+<translation id="6651270836885078973">Administrado por:</translation>
 <translation id="6652101503459149953">Usar Windows Hello</translation>
 <translation id="6654244995031366386">Vidrio (texturado)</translation>
 <translation id="6657585470893396449">Contraseña</translation>
@@ -3366,7 +3366,7 @@ De lo contrario, la configuración de privacidad bloqueará esta acción. Esto p
 <translation id="718872491229180389">Animación deportiva</translation>
 <translation id="7188840756966467339">Reiniciar y aplicar políticas</translation>
 <translation id="7192188280913829296">También se debe especificar el atributo "vendor_id".</translation>
-<translation id="7192203810768312527">Esta acción libera hasta <ph name="SIZE" />. Es posible que algunos sitios carguen más lento en tu próxima visita.</translation>
+<translation id="7192203810768312527">Esta acción libera <ph name="SIZE" />. Es posible que algunos sitios carguen más lento en tu próxima visita.</translation>
 <translation id="7192537357091279678">Unidades y almacenamiento para computadoras</translation>
 <translation id="7193661028827781021">Referencia</translation>
 <translation id="719464814642662924">Visa</translation>
@@ -3800,7 +3800,7 @@ Detalles adicionales:
 <translation id="7953236668995583915">Vuelve a cargar esta página para aplicar la configuración actualizada en este sitio</translation>
 <translation id="7953569069500808819">Costura de borde superior</translation>
 <translation id="7955105108888461311">Preguntar en persona</translation>
-<translation id="7956713633345437162">Favoritos del celular</translation>
+<translation id="7956713633345437162">Favoritos del dispositivo</translation>
 <translation id="7961015016161918242">Nunca</translation>
 <translation id="7962467575542381659">Máquina de la plataforma</translation>
 <translation id="7966803981046576691">Tipo de cuenta para el trabajo</translation>
