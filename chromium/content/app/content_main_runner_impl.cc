@@ -1122,8 +1122,10 @@ NO_STACK_PROTECTOR int ContentMainRunnerImpl::Run() {
 
 #if defined(ADDRESS_SANITIZER)
   base::debug::AsanService::GetInstance()->Initialize();
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
   // Report the command line of this process in ASAN's Additional Info area.
   base::debug::AsanService::GetInstance()->AddErrorCallback(AsanProcessInfoCB);
+#endif
 #endif
 
   // Run this logic on all child processes.
