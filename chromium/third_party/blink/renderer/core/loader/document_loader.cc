@@ -339,6 +339,7 @@ struct SameSizeAsDocumentLoader
       modified_runtime_features;
   AtomicString cookie_deprecation_label;
   mojom::RendererContentSettingsPtr content_settings;
+  bool force_new_document_sequence_number;
 };
 
 // Asserts size of DocumentLoader, so that whenever a new attribute is added to
@@ -539,7 +540,9 @@ DocumentLoader::DocumentLoader(
       modified_runtime_features_(std::move(params_->modified_runtime_features)),
       cookie_deprecation_label_(
           static_cast<String>(params_->cookie_deprecation_label)),
-      content_settings_(std::move(params_->content_settings)) {
+      content_settings_(std::move(params_->content_settings)),
+      force_new_document_sequence_number_(
+          params_->force_new_document_sequence_number) {
   DCHECK(frame_);
   DCHECK(params_);
 
@@ -690,6 +693,10 @@ DocumentLoader::CreateWebNavigationParamsToCloneDocument() {
   params->modified_runtime_features = modified_runtime_features_;
   params->cookie_deprecation_label = cookie_deprecation_label_;
   params->content_settings = content_settings_->Clone();
+
+  // Do not copy over force_new_document_sequence_number_, since all
+  // JavaScript and XSLT navigations are same-origin and thus are allowed to
+  // reuse the document sequence number.
   return params;
 }
 
@@ -1126,14 +1133,17 @@ void DocumentLoader::SetHistoryItemStateForCommit(
 
   // Don't propagate state from the old item if this is a different-document
   // navigation, unless the before and after pages are logically related. This
-  // means they have the same url (ignoring fragment) and the new item was
-  // loaded via reload or client redirect.
-  // TODO(crbug.com/40051596): Also return early if the origin changes as a
-  // result of this commit.
+  // means they have the same origin or a compatible origin for error page
+  // cases (as computed by the browser process in
+  // `force_new_document_sequence_number_ `), the same url (ignoring
+  // fragment), and the new item was loaded via reload or client redirect.
   if (navigation_type == HistoryNavigationType::kDifferentDocument &&
-      (history_commit_type != kWebHistoryInertCommit ||
-       !EqualIgnoringFragmentIdentifier(old_item->Url(), history_item_->Url())))
+      (force_new_document_sequence_number_ ||
+       history_commit_type != kWebHistoryInertCommit ||
+       !EqualIgnoringFragmentIdentifier(old_item->Url(),
+                                        history_item_->Url()))) {
     return;
+  }
   history_item_->SetDocumentSequenceNumber(old_item->DocumentSequenceNumber());
 
   history_item_->CopyViewStateFrom(old_item);

@@ -860,6 +860,12 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   // Renderer-enforced content settings are stored on a per-document basis.
   mojom::RendererContentSettingsPtr content_settings_;
+
+  // When this is set to true, the navigation must create a new document
+  // sequence number to avoid appearing as a same-document navigation, even if
+  // the URL seems like a match. This matters for cross-origin navigations
+  // (apart from error pages with the same precursor origin).
+  bool force_new_document_sequence_number_ = false;
 };
 
 DECLARE_WEAK_IDENTIFIER_MAP(DocumentLoader);

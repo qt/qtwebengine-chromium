@@ -1344,7 +1344,8 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
           /*load_with_storage_access=*/load_with_storage_access,
           /*browsing_context_group_info=*/std::nullopt,
           /*lcpp_hint=*/nullptr, blink::CreateDefaultRendererContentSettings(),
-          /*cookie_deprecation_label=*/std::nullopt);
+          /*cookie_deprecation_label=*/std::nullopt,
+          /*force_new_document_sequence_number=*/false);
 
   commit_params->navigation_timing->system_entropy_at_navigation_start =
       SystemEntropyUtils::ComputeSystemEntropyForFrameTreeNode(
@@ -1489,7 +1490,8 @@ NavigationRequest::CreateForSynchronousRendererCommit(
           /*load_with_storage_access=*/false,
           /*browsing_context_group_info=*/std::nullopt,
           /*lcpp_hint=*/nullptr, blink::CreateDefaultRendererContentSettings(),
-          /*cookie_deprecation_label=*/std::nullopt);
+          /*cookie_deprecation_label=*/std::nullopt,
+          /*force_new_document_sequence_number=*/false);
   blink::mojom::BeginNavigationParamsPtr begin_params =
       blink::mojom::BeginNavigationParams::New();
   std::unique_ptr<NavigationRequest> navigation_request(new NavigationRequest(
@@ -5706,6 +5708,30 @@ void NavigationRequest::CommitErrorPage(
   // if so.
   if (!weak_self) {
     return;
+  }
+
+  // Ensure the renderer does not reuse the document sequence number for
+  // cross-origin navigations (which can lead to later bugs with same-document
+  // navigations appearing to be cross-origin). All error pages have unique
+  // opaque origins and are considered cross-origin.
+  //
+  // The one exception is for transitioning to or from a compatible error page,
+  // which preserves state in case a temporary failure later succeeds. Here, we
+  // must check for any cases where the committing error page has a valid
+  // precursor that agrees with the current document, whether the current
+  // document is already an error page or not. (The renderer process will narrow
+  // DSN reuse further, to cases the URL is a closer match, ignoring fragments.)
+  // See also CommitNavigation for the other direction.
+  // TODO(crbug.com/396645697): Use a different technique for preserving history
+  // item state on error pages, separate from the error page's own state.
+  RenderFrameHostImpl* previous_rfh = frame_tree_node()->current_frame_host();
+  const url::Origin& previous_origin = previous_rfh->GetLastCommittedOrigin();
+  bool is_error_page_with_same_precursor =
+      previous_origin.GetTupleOrPrecursorTupleIfOpaque().IsValid() &&
+      commit_params_->origin_to_commit->GetTupleOrPrecursorTupleIfOpaque() ==
+          previous_origin.GetTupleOrPrecursorTupleIfOpaque();
+  if (!is_error_page_with_same_precursor) {
+    commit_params_->force_new_document_sequence_number = true;
   }
 
   PopulateDocumentTokenForCrossDocumentNavigation();

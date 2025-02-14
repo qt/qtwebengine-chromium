@@ -556,6 +556,12 @@ struct BLINK_EXPORT WebNavigationParams {
 
   // The cookie deprecation label for cookie deprecation facilitated testing.
   WebString cookie_deprecation_label;
+
+  // When this is set to true, the navigation must create a new document
+  // sequence number to avoid appearing as a same-document navigation, even if
+  // the URL seems like a match. This matters for cross-origin navigations
+  // (apart from error pages with the same precursor origin).
+  bool force_new_document_sequence_number = false;
 };
 
 }  // namespace blink
