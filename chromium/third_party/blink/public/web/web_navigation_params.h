@@ -576,6 +576,12 @@ struct BLINK_EXPORT WebNavigationParams {
   // the VisitedLinkNotificationSink interface) after the :visited link
   // hashtable is initialized.
   std::optional<uint64_t> visited_link_salt;
+
+  // When this is set to true, the navigation must create a new document
+  // sequence number to avoid appearing as a same-document navigation, even if
+  // the URL seems like a match. This matters for cross-origin navigations
+  // (apart from error pages with the same precursor origin).
+  bool force_new_document_sequence_number = false;
 };
 
 }  // namespace blink
