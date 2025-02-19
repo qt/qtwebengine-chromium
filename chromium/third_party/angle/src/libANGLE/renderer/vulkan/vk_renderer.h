@@ -654,7 +654,7 @@ class Renderer : angle::NonCopyable
 
     void requestAsyncCommandsAndGarbageCleanup(vk::ErrorContext *context);
 
-    VkDeviceSize getMaxMemoryAllocationSize()
+    VkDeviceSize getMaxMemoryAllocationSize() const
     {
         return mMaintenance3Properties.maxMemoryAllocationSize;
     }
@@ -1068,6 +1068,9 @@ class Renderer : angle::NonCopyable
 
     // A placeholder descriptor set layout handle for layouts with no bindings.
     vk::DescriptorSetLayoutPtr mPlaceHolderDescriptorSetLayout;
+
+    // Cached value for the buffer memory size limit.
+    VkDeviceSize mMaxBufferMemorySizeLimit;
 };
 
 ANGLE_INLINE Serial Renderer::generateQueueSerial(SerialIndex index)
