@@ -358,11 +358,13 @@ void ReportWebGPUAdapterMetrics(dawn::native::Instance* instance) {
 }
 
 void ReportWebGPUSupportMetrics(dawn::native::Instance* instance) {
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
   static BASE_FEATURE(kCollectWebGPUSupportMetrics,
                       "CollectWebGPUSupportMetrics",
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX)
                       base::FEATURE_DISABLED_BY_DEFAULT);
 #else
+  static BASE_FEATURE(kCollectWebGPUSupportMetrics,
+                      "CollectWebGPUSupportMetrics",
                       base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
   if (!base::FeatureList::IsEnabled(kCollectWebGPUSupportMetrics)) {
