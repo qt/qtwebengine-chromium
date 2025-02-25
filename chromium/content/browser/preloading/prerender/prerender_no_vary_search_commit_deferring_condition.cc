@@ -18,7 +18,7 @@ namespace {
 
 // Returns the root prerender frame tree node associated with navigation_request
 // of ongoing prerender activation.
-FrameTreeNode* GetRootPrerenderFrameTreeNode(
+FrameTreeNode* GetRootPrerenderFrameTreeNodePNVSCDC(
     FrameTreeNodeId prerender_frame_tree_node_id) {
   FrameTreeNode* root =
       FrameTreeNode::GloballyFindByID(prerender_frame_tree_node_id);
@@ -68,7 +68,7 @@ CommitDeferringCondition::Result
 PrerenderNoVarySearchCommitDeferringCondition::WillCommitNavigation(
     base::OnceClosure resume) {
   FrameTreeNode* prerender_frame_tree_node =
-      GetRootPrerenderFrameTreeNode(candidate_prerender_frame_tree_node_id_);
+      GetRootPrerenderFrameTreeNodePNVSCDC(candidate_prerender_frame_tree_node_id_);
   // If the prerender FrameTreeNode is gone, the prerender activation is allowed
   // to continue here but will fail soon.
   if (!prerender_frame_tree_node) {
