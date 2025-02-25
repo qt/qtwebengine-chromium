@@ -267,7 +267,7 @@ int TurboAssembler::RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
   }
 
   if (fp_mode == kSaveFPRegs) {
-    // Count all XMM registers except XMM0.
+    // Count all allocatable XMM registers.
     bytes += kDoubleSize * (XMMRegister::kNumRegisters - 1);
   }
 
@@ -289,12 +289,12 @@ int TurboAssembler::PushCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
   }
 
   if (fp_mode == kSaveFPRegs) {
-    // Save all XMM registers except XMM0.
+    // Save all allocatable XMM registers.
     int delta = kDoubleSize * (XMMRegister::kNumRegisters - 1);
     AllocateStackSpace(delta);
-    for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
+    for (int i = XMMRegister::kNumRegisters - 2; i >= 0; i--) {
       XMMRegister reg = XMMRegister::from_code(i);
-      movsd(Operand(esp, (i - 1) * kDoubleSize), reg);
+      movsd(Operand(esp, i * kDoubleSize), reg);
     }
     bytes += delta;
   }
@@ -306,11 +306,11 @@ int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
                                    Register exclusion2, Register exclusion3) {
   int bytes = 0;
   if (fp_mode == kSaveFPRegs) {
-    // Restore all XMM registers except XMM0.
-    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 1);
-    for (int i = XMMRegister::kNumRegisters - 1; i > 0; i--) {
+    // Restore all allocatable XMM registers.
+    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 2);
+    for (int i = XMMRegister::kNumRegisters - 2; i >= 0; i--) {
       XMMRegister reg = XMMRegister::from_code(i);
-      movsd(reg, Operand(esp, (i - 1) * kDoubleSize));
+      movsd(reg, Operand(esp, i * kDoubleSize));
     }
     add(esp, Immediate(delta));
     bytes += delta;

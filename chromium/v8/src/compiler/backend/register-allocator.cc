@@ -1614,6 +1614,18 @@ InstructionOperand* ConstraintBuilder::AllocateFixed(
   } else if (operand->HasFixedFPRegisterPolicy()) {
     DCHECK(IsFloatingPoint(rep));
     DCHECK_NE(InstructionOperand::kInvalidVirtualRegister, virtual_register);
+    if (rep == MachineRepresentation::kFloat32) {
+      DCHECK(data()->config()->IsAllocatableFloatCode(
+          operand->fixed_register_index()));
+    } else if (rep == MachineRepresentation::kFloat64) {
+      DCHECK(data()->config()->IsAllocatableDoubleCode(
+          operand->fixed_register_index()));
+    } else if (rep == MachineRepresentation::kSimd128) {
+      DCHECK(data()->config()->IsAllocatableSimd128Code(
+          operand->fixed_register_index()));
+    } else {
+      UNREACHABLE();
+    }
     allocated = AllocatedOperand(AllocatedOperand::REGISTER, rep,
                                  operand->fixed_register_index());
   } else {

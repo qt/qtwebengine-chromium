@@ -26,8 +26,6 @@ namespace compiler {
 
 #define __ tasm()->
 
-#define kScratchDoubleReg xmm0
-
 // Adds IA-32 specific methods for decoding operands.
 class IA32OperandConverter : public InstructionOperandConverter {
  public:
