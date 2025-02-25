@@ -21,6 +21,10 @@ class Timing:
   # Used for upper bound / timeout limits independently.
   timeout_unit: dt.timedelta = dt.timedelta()
   run_timeout: dt.timedelta = dt.timedelta()
+  # Wait time after starting the browser and before running a workload.
+  start_delay: dt.timedelta = dt.timedelta()
+  # Wait time after running a workload and before stopping a browser.
+  stop_delay: dt.timedelta = dt.timedelta()
 
   def __post_init__(self) -> None:
     if self.cool_down_time.total_seconds() < 0:

@@ -135,7 +135,7 @@ bool StatelessValidation::ValidatePipelineBinaryInfo(const void *next, VkPipelin
         skip |= LogError(GetPipelineBinaryInfoVUID(flag_loc, vvl::PipelineBinaryInfoError::PNext_09617), device, flag_loc,
                          "(%s) includes VK_PIPELINE_CREATE_2_CAPTURE_DATA_BIT_KHR while "
                          "pipelineCache is not VK_NULL_HANDLE.",
-                         string_VkPipelineCreateFlags2KHR(flags).c_str());
+                         string_VkPipelineCreateFlags2KHR(create_flags_2).c_str());
     }
 
     const auto binary_info = vku::FindStructInPNextChain<VkPipelineBinaryInfoKHR>(next);
@@ -249,6 +249,15 @@ bool StatelessValidation::ValidateCreateGraphicsPipelinesFlags(const VkPipelineC
                 LogError("VUID-VkGraphicsPipelineCreateInfo-flags-02877", device, flags_loc,
                          "(%s) contains VK_PIPELINE_CREATE_INDIRECT_BINDABLE_BIT_NV, but deviceGeneratedCommands was not enabled.",
                          string_VkPipelineCreateFlags2KHR(flags).c_str());
+        }
+    }
+
+    if ((flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0) {
+        if (!enabled_features.deviceGeneratedCommands) {
+            skip |= LogError("VUID-VkGraphicsPipelineCreateInfo-flags-11000", device, flags_loc,
+                             "(%s) contains VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT, but "
+                             "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT::deviceGeneratedCommands is not enabled.",
+                             string_VkPipelineCreateFlags2KHR(flags).c_str());
         }
     }
 
@@ -543,8 +552,11 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(
                 skip |= ValidatePipelineTessellationStateCreateInfo(*create_info.pTessellationState,
                                                                     create_info_loc.dot(Field::pTessellationState));
 
-                if (create_info.pTessellationState->patchControlPoints == 0 ||
-                    create_info.pTessellationState->patchControlPoints > device_limits.maxTessellationPatchSize) {
+                const bool has_dynamic_patch_control_points =
+                    vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT);
+                if (!has_dynamic_patch_control_points &&
+                    (create_info.pTessellationState->patchControlPoints == 0 ||
+                     create_info.pTessellationState->patchControlPoints > device_limits.maxTessellationPatchSize)) {
                     skip |= LogError("VUID-VkPipelineTessellationStateCreateInfo-patchControlPoints-01214", device,
                                      create_info_loc.dot(Field::pTessellationState).dot(Field::patchControlPoints),
                                      "is %" PRIu32 ", but should be between 0 and maxTessellationPatchSize (%" PRIu32 ").",
@@ -694,6 +706,8 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(
                     vku::FindStructInPNextChain<VkPipelineViewportWScalingStateCreateInfoNV>(viewport_state.pNext);
                 const auto *depth_clip_control_struct =
                     vku::FindStructInPNextChain<VkPipelineViewportDepthClipControlCreateInfoEXT>(viewport_state.pNext);
+                const auto *depth_clamp_control_struct =
+                    vku::FindStructInPNextChain<VkPipelineViewportDepthClampControlCreateInfoEXT>(viewport_state.pNext);
 
                 if (!enabled_features.multiViewport) {
                     if (exclusive_scissor_struct && (exclusive_scissor_struct->exclusiveScissorCount != 0 &&
@@ -930,6 +944,21 @@ bool StatelessValidation::manual_PreCallValidateCreateGraphicsPipelines(
                             "VUID-VkGraphicsPipelineCreateInfo-pDynamicStates-01715", device,
                             viewport_loc.pNext(Struct::VkPipelineViewportWScalingStateCreateInfoNV, Field::pViewportWScalings),
                             "is NULL.");
+                    }
+                }
+
+                const bool has_dynamic_depth_clamp_range = vvl::Contains(dynamic_state_map, VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT);
+                if (!has_dynamic_depth_clamp_range && depth_clamp_control_struct &&
+                    depth_clamp_control_struct->depthClampMode == VK_DEPTH_CLAMP_MODE_USER_DEFINED_RANGE_EXT) {
+                    if (!depth_clamp_control_struct->pDepthClampRange) {
+                        skip |= LogError(
+                            "VUID-VkPipelineViewportDepthClampControlCreateInfoEXT-pDepthClampRange-09646", device,
+                            viewport_loc.pNext(Struct::VkPipelineViewportDepthClampControlCreateInfoEXT, Field::pDepthClampRange),
+                            "is NULL.");
+                    } else {
+                        skip |= ValidateDepthClampRange(
+                            *depth_clamp_control_struct->pDepthClampRange,
+                            viewport_loc.pNext(Struct::VkPipelineViewportDepthClampControlCreateInfoEXT, Field::pDepthClampRange));
                     }
                 }
 
@@ -1247,6 +1276,14 @@ bool StatelessValidation::ValidateCreateComputePipelinesFlags(const VkPipelineCr
                          "(%s) must not include VK_PIPELINE_CREATE_RAY_TRACING_DISPLACEMENT_MICROMAP_BIT_NV.",
                          string_VkPipelineCreateFlags2KHR(flags).c_str());
     }
+    if ((flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0) {
+        if (!enabled_features.deviceGeneratedCommands) {
+            skip |= LogError("VUID-VkComputePipelineCreateInfo-flags-11007", device, flags_loc,
+                             "(%s) contains VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT, but "
+                             "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT::deviceGeneratedCommands is not enabled.",
+                             string_VkPipelineCreateFlags2KHR(flags).c_str());
+        }
+    }
     return skip;
 }
 
@@ -1311,6 +1348,45 @@ bool StatelessValidation::manual_PreCallValidateCreateComputePipelines(VkDevice 
         skip |= ValidatePipelineShaderStageCreateInfoCommon(create_info.stage, create_info_loc.dot(Field::stage));
 
         skip |= ValidatePipelineBinaryInfo(create_info.pNext, create_info.flags, pipelineCache, create_info_loc);
+    }
+    return skip;
+}
+
+bool StatelessValidation::ValidateDepthClampRange(const VkDepthClampRangeEXT &depth_clamp_range, const Location &loc) const {
+    bool skip = false;
+    if (depth_clamp_range.minDepthClamp > depth_clamp_range.maxDepthClamp) {
+        skip |=
+            LogError("VUID-VkDepthClampRangeEXT-pDepthClampRange-00999", device, loc.dot(Field::minDepthClamp),
+                     "(%f) is greater than maxDepthClamp (%f).", depth_clamp_range.minDepthClamp, depth_clamp_range.maxDepthClamp);
+    }
+
+    if (!IsExtEnabled(device_extensions.vk_ext_depth_range_unrestricted)) {
+        if (depth_clamp_range.minDepthClamp < 0.0) {
+            skip |= LogError("VUID-VkDepthClampRangeEXT-pDepthClampRange-09648", device, loc.dot(Field::minDepth),
+                             "(%f) is below 0.0 (and VK_EXT_depth_range_unrestricted is not enabled).",
+                             depth_clamp_range.minDepthClamp);
+        }
+        if (depth_clamp_range.maxDepthClamp > 1.0) {
+            skip |= LogError("VUID-VkDepthClampRangeEXT-pDepthClampRange-09649", device, loc.dot(Field::maxDepthClamp),
+                             "(%f)  is above 1.0 (and VK_EXT_depth_range_unrestricted is not enabled).",
+                             depth_clamp_range.maxDepthClamp);
+        }
+    }
+    return skip;
+}
+
+bool StatelessValidation::manual_PreCallValidateCreatePipelineCache(VkDevice device, const VkPipelineCacheCreateInfo *pCreateInfo,
+                                                                    const VkAllocationCallbacks *pAllocator,
+                                                                    VkPipelineCache *pPipelineCache,
+                                                                    const ErrorObject &error_obj) const {
+    bool skip = false;
+    const bool has_externally_sync = (pCreateInfo->flags & VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT_EXT) != 0;
+
+    if (!enabled_features.pipelineCreationCacheControl && has_externally_sync) {
+        skip |= LogError("VUID-VkPipelineCacheCreateInfo-pipelineCreationCacheControl-02892", device,
+                         error_obj.location.dot(Field::pCreateInfo).dot(Field::flags),
+                         "includes VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT_EXT, but pipelineCreationCacheControl "
+                         "feature was not enabled");
     }
     return skip;
 }

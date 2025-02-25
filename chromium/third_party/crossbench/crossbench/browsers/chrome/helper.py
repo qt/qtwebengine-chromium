@@ -3,22 +3,23 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from crossbench import plt
 
 if TYPE_CHECKING:
-  from crossbench.path import RemotePath
+  from crossbench.path import AnyPath
 
 
 class ChromePathMixin:
 
   @classmethod
-  def default_path(cls, platform: plt.Platform) -> RemotePath:
+  def default_path(cls, platform: plt.Platform) -> AnyPath:
     return cls.stable_path(platform)
 
   @classmethod
-  def stable_path(cls, platform: plt.Platform) -> RemotePath:
+  def stable_path(cls, platform: plt.Platform) -> AnyPath:
     return platform.search_app_or_executable(
         "Chrome Stable",
         macos=["Google Chrome.app"],
@@ -26,7 +27,7 @@ class ChromePathMixin:
         win=["Google/Chrome/Application/chrome.exe"])
 
   @classmethod
-  def beta_path(cls, platform: plt.Platform) -> RemotePath:
+  def beta_path(cls, platform: plt.Platform) -> AnyPath:
     return platform.search_app_or_executable(
         "Chrome Beta",
         macos=["Google Chrome Beta.app"],
@@ -34,7 +35,7 @@ class ChromePathMixin:
         win=["Google/Chrome Beta/Application/chrome.exe"])
 
   @classmethod
-  def dev_path(cls, platform: plt.Platform) -> RemotePath:
+  def dev_path(cls, platform: plt.Platform) -> AnyPath:
     return platform.search_app_or_executable(
         "Chrome Dev",
         macos=["Google Chrome Dev.app"],
@@ -42,7 +43,7 @@ class ChromePathMixin:
         win=["Google/Chrome Dev/Application/chrome.exe"])
 
   @classmethod
-  def canary_path(cls, platform: plt.Platform) -> RemotePath:
+  def canary_path(cls, platform: plt.Platform) -> AnyPath:
     return platform.search_app_or_executable(
         "Chrome Canary",
         macos=["Google Chrome Canary.app"],

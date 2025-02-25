@@ -440,8 +440,6 @@ PFN_vkCmdWaitEvents2KHR CmdWaitEvents2KHR;
 PFN_vkCmdPipelineBarrier2KHR CmdPipelineBarrier2KHR;
 PFN_vkCmdWriteTimestamp2KHR CmdWriteTimestamp2KHR;
 PFN_vkQueueSubmit2KHR QueueSubmit2KHR;
-PFN_vkCmdWriteBufferMarker2AMD CmdWriteBufferMarker2AMD;
-PFN_vkGetQueueCheckpointData2NV GetQueueCheckpointData2NV;
 PFN_vkCmdCopyBuffer2KHR CmdCopyBuffer2KHR;
 PFN_vkCmdCopyImage2KHR CmdCopyImage2KHR;
 PFN_vkCmdCopyBufferToImage2KHR CmdCopyBufferToImage2KHR;
@@ -579,6 +577,7 @@ PFN_vkCmdWriteAccelerationStructuresPropertiesNV CmdWriteAccelerationStructuresP
 PFN_vkCompileDeferredNV CompileDeferredNV;
 PFN_vkGetMemoryHostPointerPropertiesEXT GetMemoryHostPointerPropertiesEXT;
 PFN_vkCmdWriteBufferMarkerAMD CmdWriteBufferMarkerAMD;
+PFN_vkCmdWriteBufferMarker2AMD CmdWriteBufferMarker2AMD;
 PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsEXT GetPhysicalDeviceCalibrateableTimeDomainsEXT;
 PFN_vkGetCalibratedTimestampsEXT GetCalibratedTimestampsEXT;
 PFN_vkCmdDrawMeshTasksNV CmdDrawMeshTasksNV;
@@ -588,6 +587,7 @@ PFN_vkCmdSetExclusiveScissorEnableNV CmdSetExclusiveScissorEnableNV;
 PFN_vkCmdSetExclusiveScissorNV CmdSetExclusiveScissorNV;
 PFN_vkCmdSetCheckpointNV CmdSetCheckpointNV;
 PFN_vkGetQueueCheckpointDataNV GetQueueCheckpointDataNV;
+PFN_vkGetQueueCheckpointData2NV GetQueueCheckpointData2NV;
 PFN_vkInitializePerformanceApiINTEL InitializePerformanceApiINTEL;
 PFN_vkUninitializePerformanceApiINTEL UninitializePerformanceApiINTEL;
 PFN_vkCmdSetPerformanceMarkerINTEL CmdSetPerformanceMarkerINTEL;
@@ -776,6 +776,7 @@ PFN_vkCreateShadersEXT CreateShadersEXT;
 PFN_vkDestroyShaderEXT DestroyShaderEXT;
 PFN_vkGetShaderBinaryDataEXT GetShaderBinaryDataEXT;
 PFN_vkCmdBindShadersEXT CmdBindShadersEXT;
+PFN_vkCmdSetDepthClampRangeEXT CmdSetDepthClampRangeEXT;
 PFN_vkGetFramebufferTilePropertiesQCOM GetFramebufferTilePropertiesQCOM;
 PFN_vkGetDynamicRenderingTilePropertiesQCOM GetDynamicRenderingTilePropertiesQCOM;
 PFN_vkSetLatencySleepModeNV SetLatencySleepModeNV;
@@ -787,6 +788,16 @@ PFN_vkCmdSetAttachmentFeedbackLoopEnableEXT CmdSetAttachmentFeedbackLoopEnableEX
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 PFN_vkGetScreenBufferPropertiesQNX GetScreenBufferPropertiesQNX;
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+PFN_vkGetGeneratedCommandsMemoryRequirementsEXT GetGeneratedCommandsMemoryRequirementsEXT;
+PFN_vkCmdPreprocessGeneratedCommandsEXT CmdPreprocessGeneratedCommandsEXT;
+PFN_vkCmdExecuteGeneratedCommandsEXT CmdExecuteGeneratedCommandsEXT;
+PFN_vkCreateIndirectCommandsLayoutEXT CreateIndirectCommandsLayoutEXT;
+PFN_vkDestroyIndirectCommandsLayoutEXT DestroyIndirectCommandsLayoutEXT;
+PFN_vkCreateIndirectExecutionSetEXT CreateIndirectExecutionSetEXT;
+PFN_vkDestroyIndirectExecutionSetEXT DestroyIndirectExecutionSetEXT;
+PFN_vkUpdateIndirectExecutionSetPipelineEXT UpdateIndirectExecutionSetPipelineEXT;
+PFN_vkUpdateIndirectExecutionSetShaderEXT UpdateIndirectExecutionSetShaderEXT;
+PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV;
 PFN_vkCreateAccelerationStructureKHR CreateAccelerationStructureKHR;
 PFN_vkDestroyAccelerationStructureKHR DestroyAccelerationStructureKHR;
 PFN_vkCmdBuildAccelerationStructuresKHR CmdBuildAccelerationStructuresKHR;
@@ -1719,8 +1730,6 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
                 CmdPipelineBarrier2KHR = reinterpret_cast<PFN_vkCmdPipelineBarrier2KHR>(GetDeviceProcAddr(device, "vkCmdPipelineBarrier2KHR"));
                 CmdWriteTimestamp2KHR = reinterpret_cast<PFN_vkCmdWriteTimestamp2KHR>(GetDeviceProcAddr(device, "vkCmdWriteTimestamp2KHR"));
                 QueueSubmit2KHR = reinterpret_cast<PFN_vkQueueSubmit2KHR>(GetDeviceProcAddr(device, "vkQueueSubmit2KHR"));
-                CmdWriteBufferMarker2AMD = reinterpret_cast<PFN_vkCmdWriteBufferMarker2AMD>(GetDeviceProcAddr(device, "vkCmdWriteBufferMarker2AMD"));
-                GetQueueCheckpointData2NV = reinterpret_cast<PFN_vkGetQueueCheckpointData2NV>(GetDeviceProcAddr(device, "vkGetQueueCheckpointData2NV"));
             }
         },
         {
@@ -1948,6 +1957,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
         {
             "VK_AMD_buffer_marker", [](VkInstance , VkDevice device) {
                 CmdWriteBufferMarkerAMD = reinterpret_cast<PFN_vkCmdWriteBufferMarkerAMD>(GetDeviceProcAddr(device, "vkCmdWriteBufferMarkerAMD"));
+                CmdWriteBufferMarker2AMD = reinterpret_cast<PFN_vkCmdWriteBufferMarker2AMD>(GetDeviceProcAddr(device, "vkCmdWriteBufferMarker2AMD"));
             }
         },
         {
@@ -1973,6 +1983,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             "VK_NV_device_diagnostic_checkpoints", [](VkInstance , VkDevice device) {
                 CmdSetCheckpointNV = reinterpret_cast<PFN_vkCmdSetCheckpointNV>(GetDeviceProcAddr(device, "vkCmdSetCheckpointNV"));
                 GetQueueCheckpointDataNV = reinterpret_cast<PFN_vkGetQueueCheckpointDataNV>(GetDeviceProcAddr(device, "vkGetQueueCheckpointDataNV"));
+                GetQueueCheckpointData2NV = reinterpret_cast<PFN_vkGetQueueCheckpointData2NV>(GetDeviceProcAddr(device, "vkGetQueueCheckpointData2NV"));
             }
         },
         {
@@ -2374,6 +2385,7 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
                 CmdSetShadingRateImageEnableNV = reinterpret_cast<PFN_vkCmdSetShadingRateImageEnableNV>(GetDeviceProcAddr(device, "vkCmdSetShadingRateImageEnableNV"));
                 CmdSetRepresentativeFragmentTestEnableNV = reinterpret_cast<PFN_vkCmdSetRepresentativeFragmentTestEnableNV>(GetDeviceProcAddr(device, "vkCmdSetRepresentativeFragmentTestEnableNV"));
                 CmdSetCoverageReductionModeNV = reinterpret_cast<PFN_vkCmdSetCoverageReductionModeNV>(GetDeviceProcAddr(device, "vkCmdSetCoverageReductionModeNV"));
+                CmdSetDepthClampRangeEXT = reinterpret_cast<PFN_vkCmdSetDepthClampRangeEXT>(GetDeviceProcAddr(device, "vkCmdSetDepthClampRangeEXT"));
             }
         },
         {
@@ -2403,6 +2415,29 @@ void InitDeviceExtension(VkInstance instance, VkDevice device, const char* exten
             }
         },
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+        {
+            "VK_EXT_device_generated_commands", [](VkInstance , VkDevice device) {
+                GetGeneratedCommandsMemoryRequirementsEXT = reinterpret_cast<PFN_vkGetGeneratedCommandsMemoryRequirementsEXT>(GetDeviceProcAddr(device, "vkGetGeneratedCommandsMemoryRequirementsEXT"));
+                CmdPreprocessGeneratedCommandsEXT = reinterpret_cast<PFN_vkCmdPreprocessGeneratedCommandsEXT>(GetDeviceProcAddr(device, "vkCmdPreprocessGeneratedCommandsEXT"));
+                CmdExecuteGeneratedCommandsEXT = reinterpret_cast<PFN_vkCmdExecuteGeneratedCommandsEXT>(GetDeviceProcAddr(device, "vkCmdExecuteGeneratedCommandsEXT"));
+                CreateIndirectCommandsLayoutEXT = reinterpret_cast<PFN_vkCreateIndirectCommandsLayoutEXT>(GetDeviceProcAddr(device, "vkCreateIndirectCommandsLayoutEXT"));
+                DestroyIndirectCommandsLayoutEXT = reinterpret_cast<PFN_vkDestroyIndirectCommandsLayoutEXT>(GetDeviceProcAddr(device, "vkDestroyIndirectCommandsLayoutEXT"));
+                CreateIndirectExecutionSetEXT = reinterpret_cast<PFN_vkCreateIndirectExecutionSetEXT>(GetDeviceProcAddr(device, "vkCreateIndirectExecutionSetEXT"));
+                DestroyIndirectExecutionSetEXT = reinterpret_cast<PFN_vkDestroyIndirectExecutionSetEXT>(GetDeviceProcAddr(device, "vkDestroyIndirectExecutionSetEXT"));
+                UpdateIndirectExecutionSetPipelineEXT = reinterpret_cast<PFN_vkUpdateIndirectExecutionSetPipelineEXT>(GetDeviceProcAddr(device, "vkUpdateIndirectExecutionSetPipelineEXT"));
+                UpdateIndirectExecutionSetShaderEXT = reinterpret_cast<PFN_vkUpdateIndirectExecutionSetShaderEXT>(GetDeviceProcAddr(device, "vkUpdateIndirectExecutionSetShaderEXT"));
+            }
+        },
+        {
+            "VK_EXT_depth_clamp_control", [](VkInstance , VkDevice device) {
+                CmdSetDepthClampRangeEXT = reinterpret_cast<PFN_vkCmdSetDepthClampRangeEXT>(GetDeviceProcAddr(device, "vkCmdSetDepthClampRangeEXT"));
+            }
+        },
+        {
+            "VK_NV_cooperative_matrix2", [](VkInstance instance, VkDevice ) {
+                GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV>(GetInstanceProcAddr(instance, "vkGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV"));
+            }
+        },
         {
             "VK_KHR_acceleration_structure", [](VkInstance , VkDevice device) {
                 CreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(GetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
@@ -2597,8 +2632,6 @@ void ResetAllExtensions() {
     CmdPipelineBarrier2KHR = nullptr;
     CmdWriteTimestamp2KHR = nullptr;
     QueueSubmit2KHR = nullptr;
-    CmdWriteBufferMarker2AMD = nullptr;
-    GetQueueCheckpointData2NV = nullptr;
     CmdCopyBuffer2KHR = nullptr;
     CmdCopyImage2KHR = nullptr;
     CmdCopyBufferToImage2KHR = nullptr;
@@ -2736,6 +2769,7 @@ void ResetAllExtensions() {
     CompileDeferredNV = nullptr;
     GetMemoryHostPointerPropertiesEXT = nullptr;
     CmdWriteBufferMarkerAMD = nullptr;
+    CmdWriteBufferMarker2AMD = nullptr;
     GetPhysicalDeviceCalibrateableTimeDomainsEXT = nullptr;
     GetCalibratedTimestampsEXT = nullptr;
     CmdDrawMeshTasksNV = nullptr;
@@ -2745,6 +2779,7 @@ void ResetAllExtensions() {
     CmdSetExclusiveScissorNV = nullptr;
     CmdSetCheckpointNV = nullptr;
     GetQueueCheckpointDataNV = nullptr;
+    GetQueueCheckpointData2NV = nullptr;
     InitializePerformanceApiINTEL = nullptr;
     UninitializePerformanceApiINTEL = nullptr;
     CmdSetPerformanceMarkerINTEL = nullptr;
@@ -2933,6 +2968,7 @@ void ResetAllExtensions() {
     DestroyShaderEXT = nullptr;
     GetShaderBinaryDataEXT = nullptr;
     CmdBindShadersEXT = nullptr;
+    CmdSetDepthClampRangeEXT = nullptr;
     GetFramebufferTilePropertiesQCOM = nullptr;
     GetDynamicRenderingTilePropertiesQCOM = nullptr;
     SetLatencySleepModeNV = nullptr;
@@ -2944,6 +2980,16 @@ void ResetAllExtensions() {
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
     GetScreenBufferPropertiesQNX = nullptr;
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+    GetGeneratedCommandsMemoryRequirementsEXT = nullptr;
+    CmdPreprocessGeneratedCommandsEXT = nullptr;
+    CmdExecuteGeneratedCommandsEXT = nullptr;
+    CreateIndirectCommandsLayoutEXT = nullptr;
+    DestroyIndirectCommandsLayoutEXT = nullptr;
+    CreateIndirectExecutionSetEXT = nullptr;
+    DestroyIndirectExecutionSetEXT = nullptr;
+    UpdateIndirectExecutionSetPipelineEXT = nullptr;
+    UpdateIndirectExecutionSetShaderEXT = nullptr;
+    GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV = nullptr;
     CreateAccelerationStructureKHR = nullptr;
     DestroyAccelerationStructureKHR = nullptr;
     CmdBuildAccelerationStructuresKHR = nullptr;

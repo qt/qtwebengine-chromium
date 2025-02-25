@@ -7,20 +7,23 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import logging
+import os
 import re
 from typing import Any, Dict, Optional, TextIO, Tuple, cast
 
 import hjson
 
 import crossbench.browsers.all as browsers
-from crossbench import cli_helper, exception
+from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
-from crossbench.cli.config.driver import BrowserDriverType, DriverConfig
+from crossbench.cli.config.driver import DriverConfig
+from crossbench.cli.config.driver_type import BrowserDriverType
 from crossbench.cli.config.network import NetworkConfig, NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
+from crossbench.parse import NumberParser, PathParser
 
 SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox")
 
@@ -44,7 +47,7 @@ VERSION_FOR_RANGE_RE = re.compile(r"(?P<prefix>[^\d]*)(?P<milestone>\d+)")
 
 @dataclasses.dataclass(frozen=True)
 class BrowserConfig(ConfigObject):
-  browser: pth.RemotePathLike
+  browser: pth.AnyPathLike
   driver: DriverConfig = DriverConfig.default()
   # Make network optional since --network provides a global default and we do
   # want to have the option to explicitly specify the default network in a
@@ -68,7 +71,7 @@ class BrowserConfig(ConfigObject):
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     network: Optional[NetworkConfig] = None
     driver = DriverConfig.default()
-    path: Optional[pth.RemotePathLike] = None
+    path: Optional[pth.AnyPathLike] = None
     if ":" not in value or cls.value_has_path_prefix(value):
       # Variant 1: $PATH_OR_IDENTIFIER
       path = cls._parse_path_or_identifier(value)
@@ -115,9 +118,9 @@ class BrowserConfig(ConfigObject):
           f"Browser version range start prefix {repr(start_prefix)} must match "
           f"limit prefix {repr(limit_prefix)}: {repr(value)}")
 
-    start_milestone: int = cli_helper.parse_positive_int(
+    start_milestone: int = NumberParser.positive_int(
         start_match["milestone"], "browser version range start milestone")
-    limit_milestone: int = cli_helper.parse_positive_int(
+    limit_milestone: int = NumberParser.positive_int(
         limit_match["milestone"], "browser version range limit milestone")
     if start_milestone > limit_milestone:
       raise argparse.ArgumentTypeError(
@@ -137,7 +140,7 @@ class BrowserConfig(ConfigObject):
       cls,
       maybe_path_or_identifier: str,
       driver_type: Optional[BrowserDriverType] = None,
-      driver: Optional[DriverConfig] = None) -> pth.RemotePathLike:
+      driver: Optional[DriverConfig] = None) -> pth.AnyPathLike:
     if not maybe_path_or_identifier:
       raise argparse.ArgumentTypeError("Got empty browser identifier.")
     if not driver_type:
@@ -151,10 +154,10 @@ class BrowserConfig(ConfigObject):
       if cls._is_downloadable_identifier(maybe_path_or_identifier):
         return maybe_path_or_identifier
       # Assume a path since short-names never contain back-/slashes.
-      if driver_type.is_remote:
-        path = cli_helper.parse_path(maybe_path_or_identifier)
+      if driver_type.is_remote_browser:
+        path = PathParser.path(maybe_path_or_identifier)
       else:
-        path = cli_helper.parse_existing_path(maybe_path_or_identifier)
+        path = PathParser.existing_path(maybe_path_or_identifier)
     else:
       if ":" in maybe_path_or_identifier:
         raise argparse.ArgumentTypeError(
@@ -170,9 +173,9 @@ class BrowserConfig(ConfigObject):
         return maybe_path_or_identifier
       if driver_type == BrowserDriverType.ANDROID:
         if ANDROID_PACKAGE_RE.fullmatch(maybe_path_or_identifier):
-          return pth.RemotePath(maybe_path_or_identifier)
+          return pth.AnyPosixPath(maybe_path_or_identifier)
     if not path:
-      path = cli_helper.try_resolve_existing_path(maybe_path_or_identifier)
+      path = pth.try_resolve_existing_path(maybe_path_or_identifier)
       if not path:
         raise argparse.ArgumentTypeError(
             f"Unknown browser path or short name: '{maybe_path_or_identifier}'")
@@ -193,33 +196,33 @@ class BrowserConfig(ConfigObject):
   @classmethod
   def _try_parse_short_name(
       cls, identifier: str,
-      driver_type: BrowserDriverType) -> Optional[pth.RemotePath]:
+      driver_type: BrowserDriverType) -> Optional[pth.AnyPath]:
     # We're not using a dict-based lookup here, since not all browsers are
     # available on all platforms
     # TODO: handle remote platforms.
     platform = plt.PLATFORM
     if identifier in ("chrome", "chrome-stable", "chr-stable", "chr"):
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("com.android.chrome")
+        return pth.AnyPosixPath("com.android.chrome")
       return browsers.Chrome.stable_path(platform)
     if identifier in ("chrome-app"):
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("com.google.android.apps.chrome")
+        return pth.AnyPosixPath("com.google.android.apps.chrome")
     if identifier in ("chrome-beta", "chr-beta"):
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("com.chrome.beta")
+        return pth.AnyPosixPath("com.chrome.beta")
       return browsers.Chrome.beta_path(platform)
     if identifier in ("chrome-dev", "chr-dev"):
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("com.chrome.dev")
+        return pth.AnyPosixPath("com.chrome.dev")
       return browsers.Chrome.dev_path(platform)
     if identifier in ("chrome-canary", "chr-canary"):
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("com.chrome.canary")
+        return pth.AnyPosixPath("com.chrome.canary")
       return browsers.Chrome.canary_path(platform)
     if identifier == "chromium":
       if driver_type == BrowserDriverType.ANDROID:
-        return pth.RemotePath("org.chromium.chrome")
+        return pth.AnyPosixPath("org.chromium.chrome")
       return browsers.Chromium.default_path(platform)
     if identifier in ("edge", "edge-stable"):
       return browsers.Edge.stable_path(platform)
@@ -242,8 +245,8 @@ class BrowserConfig(ConfigObject):
     return None
 
   @classmethod
-  def is_supported_browser_path(cls, path: pth.RemotePath) -> bool:
-    path_str = str(path).lower()
+  def is_supported_browser_path(cls, path: pth.AnyPath) -> bool:
+    path_str = os.fspath(path).lower()
     for short_name in SUPPORTED_BROWSER:
       if short_name in path_str:
         return True
@@ -252,7 +255,7 @@ class BrowserConfig(ConfigObject):
   @classmethod
   def _parse_inline_short_form(
       cls, value: str
-  ) -> Tuple[DriverConfig, pth.RemotePathLike, Optional[NetworkConfig]]:
+  ) -> Tuple[DriverConfig, pth.AnyPathLike, Optional[NetworkConfig]]:
     assert ":" in value
     match = SHORT_FORM_RE.fullmatch(value)
     if not match:
@@ -269,7 +272,7 @@ class BrowserConfig(ConfigObject):
     driver = DriverConfig.default()
     if driver_identifier is not None:
       driver = cast(DriverConfig, DriverConfig.parse(match.group("driver")))
-    path: pth.RemotePathLike = cls._parse_path_or_identifier(
+    path: pth.AnyPathLike = cls._parse_path_or_identifier(
         path_or_identifier, driver.type)
     network = None
     if network_identifier is not None:
@@ -280,7 +283,7 @@ class BrowserConfig(ConfigObject):
   def parse_text_io(cls, f: TextIO) -> BrowserConfig:
     with exception.annotate(f"Loading browser config file: {f.name}"):
       config = {}
-      with exception.annotate(f"Parsing {hjson.__name__}"):
+      with exception.annotate("Parsing hjson"):
         config = hjson.load(f)
       with exception.annotate(f"Parsing config file: {f.name}"):
         return cls.parse_dict(config)
@@ -301,13 +304,20 @@ class BrowserConfig(ConfigObject):
         depends_on=("driver",))
     parser.add_argument(
         "driver", type=DriverConfig, default=DriverConfig.default())
-    parser.add_argument(
-        "network", required=False, default=None, type=NetworkConfig)
+    parser.add_argument("network", required=False, type=NetworkConfig)
     return parser
 
   @property
-  def path(self) -> pth.RemotePath:
-    assert isinstance(self.browser, pth.RemotePath)
+  def is_remote(self) -> bool:
+    return self.driver.type.is_remote_browser
+
+  @property
+  def is_local(self) -> bool:
+    return self.driver.type.is_local_browser
+
+  @property
+  def path(self) -> pth.AnyPath:
+    assert isinstance(self.browser, pth.AnyPath)
     return self.browser
 
   def get_platform(self) -> plt.Platform:

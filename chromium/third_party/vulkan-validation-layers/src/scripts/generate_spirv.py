@@ -70,7 +70,7 @@ def compile(gpu_shaders_dir, filename, glslang_validator, spirv_opt, target_env)
     try:
         args = [spirv_opt, tmpfile, '-o', tmpfile]
 
-        # gpu_shaders_constants.h adds many constants not needed and it slows down linking time
+        # gpuav_shaders_constants.h adds many constants not needed and it slows down linking time
         args += ['--eliminate-dead-const']
         # Runs some basic optimizations that don't touch CFG for goal of making linking functions smaller (and faster)
         args += ['--eliminate-local-single-block']
@@ -243,7 +243,7 @@ def write_inst_hash(shaders_to_compile, outdir=None):
     else:
       out_file = common_ci.RepoRelative('layers/vulkan/generated')
     os.makedirs(out_file, exist_ok=True)
-    out_file = os.path.join(out_file, "gpu_av_shader_hash.h")
+    out_file = os.path.join(out_file, "gpuav_shader_hash.h")
     with open(out_file, 'w') as outfile:
         outfile.write("".join(out))
 
@@ -304,9 +304,13 @@ def main():
         words = compile(gpu_shaders_dir, shader, glslang, spirv_opt, args.targetenv)
         write(words, shader, args.api, args.outdir)
 
-    # Don't want to hash if just generating a single shader for testings
-    if (len(shaders_to_compile) > 1):
-        write_inst_hash(shaders_to_compile, args.outdir)
+    # Hash after we have generated the output
+    shaders_to_hash = []
+    generated_cpp = common_ci.RepoRelative('layers/vulkan/generated/')
+    for filename in os.listdir(generated_cpp):
+        if (filename.startswith('cmd_validation') or filename.startswith('instrumentation_')) and filename.split(".")[-1] == 'cpp':
+            shaders_to_hash.append(os.path.join(generated_cpp, filename))
+    write_inst_hash(shaders_to_hash, args.outdir)
 
 if __name__ == '__main__':
   main()

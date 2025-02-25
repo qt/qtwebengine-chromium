@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import abc
-import argparse
 import datetime as dt
 import enum
 from typing import Dict, Generic, Optional, Set, Type, TypeVar
@@ -54,7 +53,7 @@ class Decorator(abc.ABC, Generic[DecoratorTargetT]):
     return type(self).__name__
 
   @property
-  def runner_platform(self) -> plt.Platform:
+  def host_platform(self) -> plt.Platform:
     return plt.PLATFORM
 
   @property

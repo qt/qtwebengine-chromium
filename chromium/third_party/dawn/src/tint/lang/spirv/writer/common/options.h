@@ -175,6 +175,10 @@ struct Options {
     /// Set to `true` to generate polyfill for `dot4I8Packed` and `dot4U8Packed` builtins
     bool polyfill_dot_4x8_packed = false;
 
+    /// Set to `true` to generate polyfill for `pack4x8snorm`, `pack4x8unorm`, `unpack4x8snorm` and
+    /// `unpack4x8unorm` builtins
+    bool polyfill_pack_unpack_4x8_norm = false;
+
     /// Set to `true` to disable the polyfills on integer division and modulo.
     bool disable_polyfill_integer_div_mod = false;
 
@@ -196,6 +200,7 @@ struct Options {
                  pass_matrix_by_pointer,
                  experimental_require_subgroup_uniform_control_flow,
                  polyfill_dot_4x8_packed,
+                 polyfill_pack_unpack_4x8_norm,
                  disable_polyfill_integer_div_mod,
                  use_vulkan_memory_model);
 };

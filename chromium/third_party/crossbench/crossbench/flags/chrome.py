@@ -11,7 +11,7 @@ from typing import Dict, Iterable, Iterator, Optional, Tuple
 from ordered_set import OrderedSet
 
 from crossbench import path as pth
-from crossbench.flags.base import Flags, Freezable
+from crossbench.flags.base import Flags, FlagsData, Freezable
 from crossbench.flags.js_flags import JSFlags
 from crossbench.flags.known_js_flags import KNOWN_JS_FLAGS
 
@@ -25,7 +25,7 @@ class ChromeFlags(Flags):
   """
   _JS_FLAG = "--js-flags"
 
-  def __init__(self, initial_data: Flags.InitialDataType = None) -> None:
+  def __init__(self, initial_data: FlagsData = None) -> None:
     self._features = ChromeFeatures()
     self._blink_features = ChromeBlinkFeatures()
     self._js_flags = JSFlags()
@@ -47,7 +47,8 @@ class ChromeFlags(Flags):
       return self._features.disabled_str()
     if key == ChromeBlinkFeatures.ENABLE_FLAG and self._blink_features.enabled:
       return self._blink_features.enabled_str()
-    if key == ChromeBlinkFeatures.DISABLE_FLAG and self._blink_features.disabled:
+    if (key == ChromeBlinkFeatures.DISABLE_FLAG and
+        self._blink_features.disabled):
       return self._blink_features.disabled_str()
     return super().__getitem__(key)
 
@@ -150,7 +151,7 @@ class ChromeFlags(Flags):
   def js_flags(self) -> JSFlags:
     return self._js_flags
 
-  def merge(self, other: Flags.InitialDataType) -> None:
+  def merge(self, other: FlagsData) -> None:
     if not isinstance(other, ChromeFlags):
       other = ChromeFlags(other)
     self.features.merge(other.features)

@@ -2007,18 +2007,6 @@ void PreCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkS
 void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
                                    const RecordObject& record_obj) override;
 
-void PreCallRecordCmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkBuffer dstBuffer,
-                                           VkDeviceSize dstOffset, uint32_t marker, const RecordObject& record_obj) override;
-
-void PostCallRecordCmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkBuffer dstBuffer,
-                                            VkDeviceSize dstOffset, uint32_t marker, const RecordObject& record_obj) override;
-
-void PreCallRecordGetQueueCheckpointData2NV(VkQueue queue, uint32_t* pCheckpointDataCount, VkCheckpointData2NV* pCheckpointData,
-                                            const RecordObject& record_obj) override;
-
-void PostCallRecordGetQueueCheckpointData2NV(VkQueue queue, uint32_t* pCheckpointDataCount, VkCheckpointData2NV* pCheckpointData,
-                                             const RecordObject& record_obj) override;
-
 void PreCallRecordCmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfo,
                                     const RecordObject& record_obj) override;
 
@@ -2596,31 +2584,35 @@ void PostCallRecordGetExecutionGraphPipelineNodeIndexAMDX(VkDevice device, VkPip
                                                           const VkPipelineShaderStageNodeCreateInfoAMDX* pNodeInfo,
                                                           uint32_t* pNodeIndex, const RecordObject& record_obj) override;
 
-void PreCallRecordCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PreCallRecordCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer commandBuffer, VkPipeline executionGraph,
+                                                      VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                                       const RecordObject& record_obj) override;
 
-void PostCallRecordCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PostCallRecordCmdInitializeGraphScratchMemoryAMDX(VkCommandBuffer commandBuffer, VkPipeline executionGraph,
+                                                       VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                                        const RecordObject& record_obj) override;
 
-void PreCallRecordCmdDispatchGraphAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PreCallRecordCmdDispatchGraphAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                        const VkDispatchGraphCountInfoAMDX* pCountInfo, const RecordObject& record_obj) override;
 
-void PostCallRecordCmdDispatchGraphAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PostCallRecordCmdDispatchGraphAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                         const VkDispatchGraphCountInfoAMDX* pCountInfo, const RecordObject& record_obj) override;
 
-void PreCallRecordCmdDispatchGraphIndirectAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PreCallRecordCmdDispatchGraphIndirectAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                                const VkDispatchGraphCountInfoAMDX* pCountInfo,
                                                const RecordObject& record_obj) override;
 
-void PostCallRecordCmdDispatchGraphIndirectAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
+void PostCallRecordCmdDispatchGraphIndirectAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch, VkDeviceSize scratchSize,
                                                 const VkDispatchGraphCountInfoAMDX* pCountInfo,
                                                 const RecordObject& record_obj) override;
 
 void PreCallRecordCmdDispatchGraphIndirectCountAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
-                                                    VkDeviceAddress countInfo, const RecordObject& record_obj) override;
+                                                    VkDeviceSize scratchSize, VkDeviceAddress countInfo,
+                                                    const RecordObject& record_obj) override;
 
 void PostCallRecordCmdDispatchGraphIndirectCountAMDX(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
-                                                     VkDeviceAddress countInfo, const RecordObject& record_obj) override;
+                                                     VkDeviceSize scratchSize, VkDeviceAddress countInfo,
+                                                     const RecordObject& record_obj) override;
 
 #endif  // VK_ENABLE_BETA_EXTENSIONS
 void PreCallRecordCmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer, const VkSampleLocationsInfoEXT* pSampleLocationsInfo,
@@ -2814,6 +2806,12 @@ void PreCallRecordCmdWriteBufferMarkerAMD(VkCommandBuffer commandBuffer, VkPipel
 void PostCallRecordCmdWriteBufferMarkerAMD(VkCommandBuffer commandBuffer, VkPipelineStageFlagBits pipelineStage, VkBuffer dstBuffer,
                                            VkDeviceSize dstOffset, uint32_t marker, const RecordObject& record_obj) override;
 
+void PreCallRecordCmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkBuffer dstBuffer,
+                                           VkDeviceSize dstOffset, uint32_t marker, const RecordObject& record_obj) override;
+
+void PostCallRecordCmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkBuffer dstBuffer,
+                                            VkDeviceSize dstOffset, uint32_t marker, const RecordObject& record_obj) override;
+
 void PreCallRecordGetCalibratedTimestampsEXT(VkDevice device, uint32_t timestampCount,
                                              const VkCalibratedTimestampInfoKHR* pTimestampInfos, uint64_t* pTimestamps,
                                              uint64_t* pMaxDeviation, const RecordObject& record_obj) override;
@@ -2869,6 +2867,12 @@ void PreCallRecordGetQueueCheckpointDataNV(VkQueue queue, uint32_t* pCheckpointD
 
 void PostCallRecordGetQueueCheckpointDataNV(VkQueue queue, uint32_t* pCheckpointDataCount, VkCheckpointDataNV* pCheckpointData,
                                             const RecordObject& record_obj) override;
+
+void PreCallRecordGetQueueCheckpointData2NV(VkQueue queue, uint32_t* pCheckpointDataCount, VkCheckpointData2NV* pCheckpointData,
+                                            const RecordObject& record_obj) override;
+
+void PostCallRecordGetQueueCheckpointData2NV(VkQueue queue, uint32_t* pCheckpointDataCount, VkCheckpointData2NV* pCheckpointData,
+                                             const RecordObject& record_obj) override;
 
 void PreCallRecordInitializePerformanceApiINTEL(VkDevice device, const VkInitializePerformanceApiInfoINTEL* pInitializeInfo,
                                                 const RecordObject& record_obj) override;
@@ -3980,6 +3984,12 @@ void PreCallRecordCmdBindShadersEXT(VkCommandBuffer commandBuffer, uint32_t stag
 void PostCallRecordCmdBindShadersEXT(VkCommandBuffer commandBuffer, uint32_t stageCount, const VkShaderStageFlagBits* pStages,
                                      const VkShaderEXT* pShaders, const RecordObject& record_obj) override;
 
+void PreCallRecordCmdSetDepthClampRangeEXT(VkCommandBuffer commandBuffer, VkDepthClampModeEXT depthClampMode,
+                                           const VkDepthClampRangeEXT* pDepthClampRange, const RecordObject& record_obj) override;
+
+void PostCallRecordCmdSetDepthClampRangeEXT(VkCommandBuffer commandBuffer, VkDepthClampModeEXT depthClampMode,
+                                            const VkDepthClampRangeEXT* pDepthClampRange, const RecordObject& record_obj) override;
+
 void PreCallRecordGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount,
                                                    VkTilePropertiesQCOM* pProperties, const RecordObject& record_obj) override;
 
@@ -4037,6 +4047,86 @@ void PostCallRecordGetScreenBufferPropertiesQNX(VkDevice device, const struct _s
                                                 VkScreenBufferPropertiesQNX* pProperties, const RecordObject& record_obj) override;
 
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+void PreCallRecordGetGeneratedCommandsMemoryRequirementsEXT(VkDevice device,
+                                                            const VkGeneratedCommandsMemoryRequirementsInfoEXT* pInfo,
+                                                            VkMemoryRequirements2* pMemoryRequirements,
+                                                            const RecordObject& record_obj) override;
+
+void PostCallRecordGetGeneratedCommandsMemoryRequirementsEXT(VkDevice device,
+                                                             const VkGeneratedCommandsMemoryRequirementsInfoEXT* pInfo,
+                                                             VkMemoryRequirements2* pMemoryRequirements,
+                                                             const RecordObject& record_obj) override;
+
+void PreCallRecordCmdPreprocessGeneratedCommandsEXT(VkCommandBuffer commandBuffer,
+                                                    const VkGeneratedCommandsInfoEXT* pGeneratedCommandsInfo,
+                                                    VkCommandBuffer stateCommandBuffer, const RecordObject& record_obj) override;
+
+void PostCallRecordCmdPreprocessGeneratedCommandsEXT(VkCommandBuffer commandBuffer,
+                                                     const VkGeneratedCommandsInfoEXT* pGeneratedCommandsInfo,
+                                                     VkCommandBuffer stateCommandBuffer, const RecordObject& record_obj) override;
+
+void PreCallRecordCmdExecuteGeneratedCommandsEXT(VkCommandBuffer commandBuffer, VkBool32 isPreprocessed,
+                                                 const VkGeneratedCommandsInfoEXT* pGeneratedCommandsInfo,
+                                                 const RecordObject& record_obj) override;
+
+void PostCallRecordCmdExecuteGeneratedCommandsEXT(VkCommandBuffer commandBuffer, VkBool32 isPreprocessed,
+                                                  const VkGeneratedCommandsInfoEXT* pGeneratedCommandsInfo,
+                                                  const RecordObject& record_obj) override;
+
+void PreCallRecordCreateIndirectCommandsLayoutEXT(VkDevice device, const VkIndirectCommandsLayoutCreateInfoEXT* pCreateInfo,
+                                                  const VkAllocationCallbacks* pAllocator,
+                                                  VkIndirectCommandsLayoutEXT* pIndirectCommandsLayout,
+                                                  const RecordObject& record_obj) override;
+
+void PostCallRecordCreateIndirectCommandsLayoutEXT(VkDevice device, const VkIndirectCommandsLayoutCreateInfoEXT* pCreateInfo,
+                                                   const VkAllocationCallbacks* pAllocator,
+                                                   VkIndirectCommandsLayoutEXT* pIndirectCommandsLayout,
+                                                   const RecordObject& record_obj) override;
+
+void PreCallRecordDestroyIndirectCommandsLayoutEXT(VkDevice device, VkIndirectCommandsLayoutEXT indirectCommandsLayout,
+                                                   const VkAllocationCallbacks* pAllocator,
+                                                   const RecordObject& record_obj) override;
+
+void PostCallRecordDestroyIndirectCommandsLayoutEXT(VkDevice device, VkIndirectCommandsLayoutEXT indirectCommandsLayout,
+                                                    const VkAllocationCallbacks* pAllocator,
+                                                    const RecordObject& record_obj) override;
+
+void PreCallRecordCreateIndirectExecutionSetEXT(VkDevice device, const VkIndirectExecutionSetCreateInfoEXT* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator,
+                                                VkIndirectExecutionSetEXT* pIndirectExecutionSet,
+                                                const RecordObject& record_obj) override;
+
+void PostCallRecordCreateIndirectExecutionSetEXT(VkDevice device, const VkIndirectExecutionSetCreateInfoEXT* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator,
+                                                 VkIndirectExecutionSetEXT* pIndirectExecutionSet,
+                                                 const RecordObject& record_obj) override;
+
+void PreCallRecordDestroyIndirectExecutionSetEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                 const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) override;
+
+void PostCallRecordDestroyIndirectExecutionSetEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                  const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) override;
+
+void PreCallRecordUpdateIndirectExecutionSetPipelineEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                        uint32_t executionSetWriteCount,
+                                                        const VkWriteIndirectExecutionSetPipelineEXT* pExecutionSetWrites,
+                                                        const RecordObject& record_obj) override;
+
+void PostCallRecordUpdateIndirectExecutionSetPipelineEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                         uint32_t executionSetWriteCount,
+                                                         const VkWriteIndirectExecutionSetPipelineEXT* pExecutionSetWrites,
+                                                         const RecordObject& record_obj) override;
+
+void PreCallRecordUpdateIndirectExecutionSetShaderEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                      uint32_t executionSetWriteCount,
+                                                      const VkWriteIndirectExecutionSetShaderEXT* pExecutionSetWrites,
+                                                      const RecordObject& record_obj) override;
+
+void PostCallRecordUpdateIndirectExecutionSetShaderEXT(VkDevice device, VkIndirectExecutionSetEXT indirectExecutionSet,
+                                                       uint32_t executionSetWriteCount,
+                                                       const VkWriteIndirectExecutionSetShaderEXT* pExecutionSetWrites,
+                                                       const RecordObject& record_obj) override;
+
 void PreCallRecordCreateAccelerationStructureKHR(VkDevice device, const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
                                                  const VkAllocationCallbacks* pAllocator,
                                                  VkAccelerationStructureKHR* pAccelerationStructure,

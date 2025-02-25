@@ -16,7 +16,7 @@
 #include "instruction.h"
 #include "generated/spirv_grammar_helper.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 void Instruction::UpdateDebugInfo() {
@@ -266,10 +266,15 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
         case spv::OpTypeFunction:
             swap_to_end(2);
             break;
-
+        case spv::OpExtInst:
+            swap(3);
+            swap_to_end(5);
+            break;
         case spv::OpReturn:
         case spv::OpLabel:
         case spv::OpFunctionEnd:
+        case spv::OpExtInstImport:
+        case spv::OpString:
             break;  // Instructions aware of, but nothing to swap
         default:
             assert(false && "Need to add support for new instruction");
@@ -278,20 +283,5 @@ void Instruction::ReplaceLinkedId(vvl::unordered_map<uint32_t, uint32_t>& id_swa
     UpdateDebugInfo();
 }
 
-// All post SPIR-V processing we do is just needing to inspect single instructions without knowledge of the rest of the module.
-// We turn the saved vector of uint32_t into the Instruction class to make it easier to use
-void GenerateInstructions(const vvl::span<const uint32_t>& spirv, std::vector<Instruction>& instructions) {
-    spirv_iterator it = spirv.begin();
-    it += 5;  // skip first 5 word of header
-    instructions.reserve(spirv.size() * 4);
-
-    uint32_t instruction_count = 0;
-    while (it != spirv.end()) {
-        auto new_insn = instructions.emplace_back(it, instruction_count++);
-        it += new_insn.Length();
-    }
-    instructions.shrink_to_fit();
-}
-
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

@@ -116,10 +116,15 @@ jobs:
         env:
           VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/max_profile.json
       - name: Test Max Core
+        # Thread Sanitize will take about 9x longer to run than Address Sanitize.
+        # The main reason we have Max Core and Min Core is to catch issues with Vulkan 1.x vs Vulkan 1.y version issues.
+        # In effort to reduce the bottle neck time in testing, skipping these for Thread Sanitize.
+        if: ${{ matrix.sanitize != 'thread' }}
         run: python scripts/tests.py --test
         env:
           VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/max_core.json
       - name: Test Min Core
+        if: ${{ matrix.sanitize != 'thread' }}
         run: python scripts/tests.py --test
         env:
           VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/min_core.json
@@ -315,7 +320,7 @@ jobs:
     # iOS is 10x expensive to run on GitHub machines, so only run if we know something else fast/simple passed as well
     # androidOnLinux does a basic build and only takes a 2 or 3 minutes to normally run
     needs: androidOnLinux
-    runs-on: macos-12
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

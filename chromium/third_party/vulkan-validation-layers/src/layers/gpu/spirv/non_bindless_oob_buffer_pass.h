@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include "pass.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 // Will make sure Buffers (Storage and Uniform Buffers) that are non bindless are not OOB Uses robustBufferAccess to ensure if we
@@ -25,12 +25,12 @@ namespace spirv {
 class NonBindlessOOBBufferPass : public Pass {
   public:
     NonBindlessOOBBufferPass(Module& module);
-    void PrintDebugInfo() final;
+    void PrintDebugInfo();
     const char* Name() const final { return "NonBindlessOOBBufferPass"; }
-    bool Run() final;
+    bool Run();
 
   private:
-    bool AnalyzeInstruction(const Function& function, const Instruction& inst);
+    bool RequiresInstrumentation(const Function& function, const Instruction& inst);
     uint32_t CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data);
     void Reset() final;
 
@@ -48,4 +48,4 @@ class NonBindlessOOBBufferPass : public Pass {
 };
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

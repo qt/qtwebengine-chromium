@@ -124,6 +124,7 @@ enum class Toggle {
     UseTintIR,
     D3DDisableIEEEStrictness,
     PolyFillPacked4x8DotProduct,
+    PolyfillPackUnpack4x8Norm,
     D3D12PolyFillPackUnpack4x8,
     ExposeWGSLTestingFeatures,
     ExposeWGSLExperimentalFeatures,
@@ -134,6 +135,8 @@ enum class Toggle {
     UsePackedDepth24UnormStencil8Format,
     D3D12ForceStencilComponentReplicateSwizzle,
     D3D12ExpandShaderResourceStateTransitionsToCopySource,
+    GLDepthBiasModifier,
+    VulkanMonolithicPipelineCache,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

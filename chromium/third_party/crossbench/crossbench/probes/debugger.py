@@ -7,11 +7,12 @@ from __future__ import annotations
 import shlex
 from typing import TYPE_CHECKING, Dict, Iterable
 
-from crossbench import cli_helper, plt
+from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
+from crossbench.parse import PathParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT, ProbeValidationError,
-                                     ResultLocation)
+                                     ProbeKeyT, ProbeValidationError)
+from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ class DebuggerProbe(Probe):
     parser = super().config_parser()
     parser.add_argument(
         "debugger",
-        type=cli_helper.parse_binary_path,
+        type=PathParser.binary_path,
         default=_DEBUGGER_LOOKUP.get(plt.PLATFORM.name,
                                      "debugger probe not supported"),
         help="Set a custom debugger binary. "

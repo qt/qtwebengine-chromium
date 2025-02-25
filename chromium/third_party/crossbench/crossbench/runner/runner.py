@@ -12,22 +12,27 @@ import logging
 from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
                     Sequence, Set, Tuple, Type, Union)
 
-from crossbench import cli_helper, compat, exception, helper
+from crossbench import compat, exception, helper
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.benchmarks.base import BenchmarkProbeMixin
 from crossbench.env import (HostEnvironment, HostEnvironmentConfig,
                             ValidationMode)
 from crossbench.helper.state import BaseState, StateMachine
+from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes import all as all_probes
-from crossbench.probes.internal import ResultsSummaryProbe
-from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
-from crossbench.probes.trace_processor.trace_processor import \
+from crossbench.probes.internal.summary import ResultsSummaryProbe
+from crossbench.probes.perfetto.trace_processor.trace_processor import \
     TraceProcessorProbe
-from crossbench.runner.groups import (BrowserSessionRunGroup, BrowsersRunGroup,
-                                      CacheTemperatureRunGroup,
-                                      RepetitionsRunGroup, RunThreadGroup,
-                                      StoriesRunGroup)
+from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
+from crossbench.probes.thermal_monitor import ThermalStatus
+from crossbench.runner.groups.browsers import BrowsersRunGroup
+from crossbench.runner.groups.cache_temperatures import \
+    CacheTemperaturesRunGroup
+from crossbench.runner.groups.repetitions import RepetitionsRunGroup
+from crossbench.runner.groups.session import BrowserSessionRunGroup
+from crossbench.runner.groups.stories import StoriesRunGroup
+from crossbench.runner.groups.thread import RunThreadGroup
 from crossbench.runner.run import Run
 from crossbench.runner.timing import Timing
 
@@ -108,16 +113,16 @@ class Runner:
         "--repeat",
         "--invocations",
         "-r",
-        default=1,
-        type=cli_helper.parse_positive_int,
+        default=benchmark_cls.DEFAULT_REPETITIONS,
+        type=NumberParser.positive_int,
         help=("Number of times each benchmark story is repeated. "
-              "Defaults to 1. "
+              f"Defaults to {benchmark_cls.DEFAULT_REPETITIONS}. "
               "Metrics are aggregated over multiple repetitions"))
     parser.add_argument(
         "--warmup-repetitions",
         "--warmups",
         default=0,
-        type=cli_helper.parse_positive_zero_int,
+        type=NumberParser.positive_zero_int,
         help=("Number of times each benchmark story is repeated for warmup. "
               "Defaults to 0. "
               "Metrics for warmup-repetitions are discarded."))
@@ -157,7 +162,7 @@ class Runner:
     out_dir_xor_group.add_argument(
         "--label",
         "--name",
-        type=cli_helper.parse_non_empty_str,
+        type=ObjectParser.non_empty_str,
         default=benchmark_cls.NAME,
         help=("Add a name to the default output directory. "
               "Defaults to the benchmark name"))
@@ -181,6 +186,7 @@ class Runner:
         "thread_mode": args.thread_mode,
         "throw": args.throw,
         "create_symlinks": args.create_symlinks,
+        "cool_down_threshold": args.cool_down_threshold,
     }
 
   def __init__(self,
@@ -195,21 +201,22 @@ class Runner:
                warmup_repetitions: int = 0,
                cache_temperatures: Iterable[str] = ("default",),
                timing: Timing = Timing(),
+               cool_down_threshold: Optional[ThermalStatus] = None,
                thread_mode: ThreadMode = ThreadMode.NONE,
                throw: bool = False,
                create_symlinks: bool = True):
     self._state = StateMachine(RunnerState.INITIAL)
-    self.out_dir = out_dir
+    self.out_dir = out_dir.absolute()
     assert not self.out_dir.exists(), f"out_dir={self.out_dir} exists already"
     self.out_dir.mkdir(parents=True)
     self._timing = timing
+    self._cool_down_threshold: Optional[ThermalStatus] = cool_down_threshold
     self._browsers: Tuple[Browser, ...] = tuple(browsers)
-    self._validate_browsers()
+    self._validate_browser_labels()
     self._benchmark = benchmark
     self._stories = tuple(benchmark.stories)
-    self._repetitions = cli_helper.parse_positive_int(repetitions,
-                                                      "repetitions")
-    self._warmup_repetitions = cli_helper.parse_positive_zero_int(
+    self._repetitions = NumberParser.positive_int(repetitions, "repetitions")
+    self._warmup_repetitions = NumberParser.positive_zero_int(
         warmup_repetitions, "warmup repetitions")
     self._cache_temperatures: Tuple[str, ...] = tuple(cache_temperatures)
     self._probes: List[Probe] = []
@@ -220,13 +227,12 @@ class Runner:
     self._thread_mode = thread_mode
     self._exceptions = exception.Annotator(throw)
     self._platform = platform
-    self._env = HostEnvironment(
-        self,  # pytype: disable=wrong-arg-types
-        env_config,
-        env_validation_mode)
+    self._env = HostEnvironment(self.platform, self.out_dir, self.browsers,
+                                self.probes, self.repetitions, env_config,
+                                env_validation_mode)
     self._attach_default_probes(additional_probes)
     self._prepare_benchmark()
-    self._cache_temperature_groups: Tuple[CacheTemperatureRunGroup, ...] = ()
+    self._cache_temperatures_groups: Tuple[CacheTemperaturesRunGroup, ...] = ()
     self._repetitions_groups: Tuple[RepetitionsRunGroup, ...] = ()
     self._story_groups: Tuple[StoriesRunGroup, ...] = ()
     self._browser_group: Optional[BrowsersRunGroup] = None
@@ -248,18 +254,24 @@ class Runner:
           f"Expected probe.NAME for {benchmark_probe_cls}")
       self.attach_probe(benchmark_probe_cls(benchmark=self._benchmark))
 
-  def _validate_browsers(self) -> None:
+  def _validate_browser_labels(self) -> None:
     assert self.browsers, "No browsers provided"
     browser_unique_names = [browser.unique_name for browser in self.browsers]
-    cli_helper.parse_unique_sequence(browser_unique_names, "browser names")
+    ObjectParser.unique_sequence(browser_unique_names, "browser names")
 
   def _attach_default_probes(self, probe_list: Iterable[Probe]) -> None:
     assert len(self._probes) == 0
     assert len(self._default_probes) == 0
     for probe_cls in all_probes.INTERNAL_PROBES:
-      default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
-      self.attach_probe(default_probe)
-      self._default_probes.append(default_probe)
+      if probe_cls == all_probes.ThermalMonitorProbe:
+        thermal_monitor_probe = all_probes.ThermalMonitorProbe(
+            cool_down_time=self._timing.cool_down_time,
+            threshold=self._cool_down_threshold)
+        self._attach_default_probe(thermal_monitor_probe)
+      else:
+        default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
+        self._attach_default_probe(default_probe)
+
     for index, probe in enumerate(probe_list):
       assert (not isinstance(probe, TraceProcessorProbe) or index == 0), (
           f"TraceProcessorProbe must be first in the list to be able "
@@ -268,6 +280,10 @@ class Runner:
     # Results probe must be first in the list, and thus last to be processed
     # so all other probes have data by the time we write the results summary.
     assert isinstance(self._probes[0], ResultsSummaryProbe)
+
+  def _attach_default_probe(self, probe: Probe) -> None:
+    self.attach_probe(probe)
+    self._default_probes.append(probe)
 
   def attach_probe(self,
                    probe: Probe,
@@ -360,10 +376,10 @@ class Runner:
     return tuple(self._measured_runs)
 
   @property
-  def cache_temperature_groups(self) -> Tuple[CacheTemperatureRunGroup, ...]:
-    assert self._cache_temperature_groups, (
+  def cache_temperatures_groups(self) -> Tuple[CacheTemperaturesRunGroup, ...]:
+    assert self._cache_temperatures_groups, (
         f"No CacheTemperatureRunGroup in {self}")
-    return self._cache_temperature_groups
+    return self._cache_temperatures_groups
 
   @property
   def repetitions_groups(self) -> Tuple[RepetitionsRunGroup, ...]:
@@ -387,6 +403,8 @@ class Runner:
   def wait(self,
            time: Union[int, float, dt.timedelta],
            absolute_time: bool = False) -> None:
+    if not time:
+      return
     if not absolute_time:
       delta = self.timing.timedelta(time)
     else:
@@ -420,7 +438,7 @@ class Runner:
         f"Invalid repetitions count: {self.repetitions}")
     assert self.browsers, "No browsers provided: self.browsers is empty"
     assert self.stories, "No stories provided: self.stories is empty"
-    self._setup_browsers()
+    self._validate_browsers()
     self._exceptions.assert_success()
     with self._exceptions.annotate("Preparing Runs"):
       self._all_runs = list(self.get_runs())
@@ -431,28 +449,28 @@ class Runner:
       self._env.setup()
     with self._exceptions.annotate(
         f"Preparing Benchmark: {self._benchmark.NAME}"):
-      self._benchmark.setup(self)  # pytype:  disable=wrong-arg-types
+      self._benchmark.setup(self)
 
-  def _setup_browsers(self) -> None:
+  def _validate_browsers(self) -> None:
     logging.info("PREPARING %d BROWSER(S)", len(self.browsers))
     for browser in self.browsers:
       with self._exceptions.capture(
           f"Preparing browser type={browser.type_name} "
           f"unique_name={browser.unique_name}"):
-        self._setup_browser(browser)
+        self._validate_browser(browser)
 
-  def _setup_browser(self, browser: Browser) -> None:
-    browser.setup_binary(self)  # pytype: disable=wrong-arg-types
+  def _validate_browser(self, browser: Browser) -> None:
+    browser.validate_binary()
     for probe in browser.probes:
       assert probe in self._probes, (
           f"Browser {browser} probe {probe} not in Runner.probes. "
           "Use Runner.attach_probe()")
 
   def has_any_live_network(self) -> bool:
-    for browser in self.browsers:
-      if browser.network.is_live:
-        return True
-    return False
+    return any(browser.network.is_live for browser in self.browsers)
+
+  def has_all_live_network(self) -> bool:
+    return all(browser.network.is_live for browser in self.browsers)
 
   def get_runs(self) -> Iterable[Run]:
     index = 0
@@ -464,15 +482,19 @@ class Runner:
       for story in self.stories:
         for browser in self.browsers:
           # TODO: implement browser-session start/stop
-          browser_session = BrowserSessionRunGroup(self, browser, session_index,
-                                                   self.out_dir, throw)
+          extra_benchmark_flags = self.benchmark.extra_flags(browser.attributes)
+          browser_session = BrowserSessionRunGroup(self.env, self.probes,
+                                                   browser,
+                                                   extra_benchmark_flags,
+                                                   session_index, self.out_dir,
+                                                   self.create_symlinks, throw)
           session_index += 1
           for t_index, temperature in enumerate(self.cache_temperatures):
             name_parts = [f"story={story.name}"]
             if total_repetitions > 1:
               name_parts.append(f"repetition={repetition}")
             if len(self.cache_temperatures) > 1:
-              name_parts.append(f"cache={temperature}")
+              name_parts.append(f"temperature={temperature_icon(temperature)}")
             name_parts.append(f"index={index}")
             yield self.create_run(
                 browser_session,
@@ -538,36 +560,39 @@ class Runner:
     throw = self._exceptions.throw
 
     logging.debug("MERGING PROBE DATA: cache temperatures")
-    self._cache_temperature_groups = CacheTemperatureRunGroup.groups(
+    self._cache_temperatures_groups = CacheTemperaturesRunGroup.groups(
         self._measured_runs, throw)
-    for cache_temp_group in self._cache_temperature_groups:
-      cache_temp_group.merge(self)
+    for cache_temp_group in self._cache_temperatures_groups:
+      cache_temp_group.merge(self.probes)
       self._exceptions.extend(cache_temp_group.exceptions, is_nested=True)
 
     logging.debug("MERGING PROBE DATA: repetitions")
     self._repetitions_groups = RepetitionsRunGroup.groups(
-        self._cache_temperature_groups, throw)
+        self._cache_temperatures_groups, throw)
     for repetition_group in self._repetitions_groups:
-      repetition_group.merge(self)
+      repetition_group.merge(self.probes)
       self._exceptions.extend(repetition_group.exceptions, is_nested=True)
 
     logging.debug("MERGING PROBE DATA: stories")
     self._story_groups = StoriesRunGroup.groups(self._repetitions_groups, throw)
     for story_group in self._story_groups:
-      story_group.merge(self)
+      story_group.merge(self.probes)
       self._exceptions.extend(story_group.exceptions, is_nested=True)
 
     logging.debug("MERGING PROBE DATA: browsers")
     self._browser_group = BrowsersRunGroup(self._story_groups, throw)
-    self._browser_group.merge(self)
+    self._browser_group.merge(self.probes)
     self._exceptions.extend(self._browser_group.exceptions, is_nested=True)
 
-  def cool_down(self) -> None:
-    # Cool down between runs
-    if not self._platform.is_thermal_throttled():
-      return
-    logging.info("COOLDOWN")
-    for _ in helper.WaitRange(1, 100).wait_with_backoff(self._platform):
-      if not self._platform.is_thermal_throttled():
-        break
-      logging.info("COOLDOWN: still hot, waiting some more")
+
+TEMPERATURE_ICONS = {
+    "cold": "🥶",
+    "warm": "⛅",
+    "hot": "🔥",
+}
+
+
+def temperature_icon(temperature: str) -> str:
+  if icon := TEMPERATURE_ICONS.get(temperature):
+    return icon
+  return temperature

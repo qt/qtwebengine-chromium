@@ -20,10 +20,9 @@ from crossbench.types import JsonDict
 
 if TYPE_CHECKING:
   from crossbench.browsers.settings import Settings
-  from crossbench.flags.base import Flags
+  from crossbench.flags.base import Flags, FlagsData
   from crossbench.flags.js_flags import JSFlags
-  from crossbench.runner.groups import BrowserSessionRunGroup
-  from crossbench.runner.runner import Runner
+  from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
 class Chromium(Browser):
@@ -57,7 +56,7 @@ class Chromium(Browser):
   )
 
   @classmethod
-  def default_path(cls, platform: plt.Platform) -> pth.RemotePath:
+  def default_path(cls, platform: plt.Platform) -> pth.AnyPath:
     return platform.search_app_or_executable(
         "Chromium",
         macos=["Chromium.app"],
@@ -65,13 +64,12 @@ class Chromium(Browser):
         win=["Google/Chromium/Application/chromium.exe"])
 
   @classmethod
-  def default_flags(cls,
-                    initial_data: Flags.InitialDataType = None) -> ChromeFlags:
+  def default_flags(cls, initial_data: FlagsData = None) -> ChromeFlags:
     return ChromeFlags(initial_data)
 
   def __init__(self,
                label: str,
-               path: pth.RemotePath,
+               path: pth.AnyPath,
                settings: Optional[Settings] = None):
     super().__init__(label, path, settings=settings)
     self._stdout_log_file: Optional[TextIO] = None
@@ -129,7 +127,7 @@ class Chromium(Browser):
     if cache_dir is None:
       maybe_cache_dir = self._flags.get("--user-data-dir", None)
       if maybe_cache_dir:
-        cache_dir = pth.RemotePath(maybe_cache_dir)
+        cache_dir = pth.AnyPath(maybe_cache_dir)
     if cache_dir is None:
       self.cache_dir = self.platform.mkdtemp(prefix=self.type_name)
       self.clear_cache_dir = True
@@ -161,7 +159,7 @@ class Chromium(Browser):
     return "--headless" in self._flags
 
   @property
-  def chrome_log_file(self) -> pth.RemotePath:
+  def chrome_log_file(self) -> pth.AnyPath:
     assert self.log_file
     return self.log_file.with_suffix(f".{self.type_name}.log")
 
@@ -193,7 +191,7 @@ class Chromium(Browser):
 
     flags_copy = self.flags.copy()
     flags_copy.update(session.extra_flags)
-    flags_copy.update(self.network.extra_flags(self))
+    flags_copy.update(self.network.extra_flags(self.attributes))
     self._handle_viewport_flags(flags_copy)
 
     if len(js_flags_copy):
@@ -251,8 +249,8 @@ class Chromium(Browser):
   def get_label_from_flags(self) -> str:
     return convert_flags_to_label(*self.flags, *self.js_flags)
 
-  def quit(self, runner: Runner) -> None:
-    super().quit(runner)
+  def quit(self) -> None:
+    super().quit()
     if self._stdout_log_file:
       self._stdout_log_file.close()
       self._stdout_log_file = None

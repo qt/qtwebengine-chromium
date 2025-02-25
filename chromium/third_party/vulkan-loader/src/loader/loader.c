@@ -30,7 +30,7 @@
 
 #include "loader.h"
 
-#include <ctype.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,10 +54,10 @@
 #endif  // _WIN32
 
 #include "allocation.h"
+#include "stack_allocation.h"
 #include "cJSON.h"
 #include "debug_utils.h"
 #include "loader_environment.h"
-#include "gpa_helper.h"
 #include "log.h"
 #include "unknown_function_handling.h"
 #include "vk_loader_platform.h"
@@ -1666,13 +1666,15 @@ VkResult loader_scan_for_direct_drivers(const struct loader_instance *inst, cons
     }
     const VkDirectDriverLoadingListLUNARG *ddl_list = NULL;
     // Find the VkDirectDriverLoadingListLUNARG struct in the pNext chain of vkInstanceCreateInfo
-    const VkBaseOutStructure *chain = pCreateInfo->pNext;
-    while (chain) {
-        if (chain->sType == VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG) {
-            ddl_list = (VkDirectDriverLoadingListLUNARG *)chain;
+    const void *pNext = pCreateInfo->pNext;
+    while (pNext) {
+        VkBaseInStructure out_structure = {0};
+        memcpy(&out_structure, pNext, sizeof(VkBaseInStructure));
+        if (out_structure.sType == VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG) {
+            ddl_list = (VkDirectDriverLoadingListLUNARG *)pNext;
             break;
         }
-        chain = (const VkBaseOutStructure *)chain->pNext;
+        pNext = out_structure.pNext;
     }
     if (NULL == ddl_list) {
         if (direct_driver_loading_enabled) {
@@ -1931,12 +1933,18 @@ out:
     return res;
 }
 
+#if defined(_WIN32)
+BOOL __stdcall loader_initialize(PINIT_ONCE InitOnce, PVOID Parameter, PVOID *Context) {
+    (void)InitOnce;
+    (void)Parameter;
+    (void)Context;
+#else
 void loader_initialize(void) {
-    // initialize mutexes
     loader_platform_thread_create_mutex(&loader_lock);
     loader_platform_thread_create_mutex(&loader_preload_icd_lock);
     loader_platform_thread_create_mutex(&loader_global_instance_list_lock);
     init_global_loader_settings();
+#endif
 
     // initialize logging
     loader_init_global_debug_level();
@@ -1962,6 +1970,9 @@ void loader_initialize(void) {
     loader_free_getenv(loader_disable_dynamic_library_unloading_env_var, NULL);
 #if defined(LOADER_USE_UNSAFE_FILE_SEARCH)
     loader_log(NULL, VULKAN_LOADER_WARN_BIT, 0, "Vulkan Loader: unsafe searching is enabled");
+#endif
+#if defined(_WIN32)
+    return TRUE;
 #endif
 }
 
@@ -2952,21 +2963,16 @@ out:
 VkResult add_data_files(const struct loader_instance *inst, char *search_path, struct loader_string_list *out_files,
                         bool use_first_found_manifest) {
     VkResult vk_result = VK_SUCCESS;
-    DIR *dir_stream = NULL;
-    struct dirent *dir_entry;
-    char *cur_file;
-    char *next_file;
-    char *name;
     char full_path[2048];
 #if !defined(_WIN32)
     char temp_path[2048];
 #endif
 
     // Now, parse the paths
-    next_file = search_path;
+    char *next_file = search_path;
     while (NULL != next_file && *next_file != '\0') {
-        name = NULL;
-        cur_file = next_file;
+        char *name = NULL;
+        char *cur_file = next_file;
         next_file = loader_get_next_path(cur_file);
 
         // Is this a JSON file, then try to open it.
@@ -3005,12 +3011,19 @@ VkResult add_data_files(const struct loader_instance *inst, char *search_path, s
                 break;
             }
         } else {  // Otherwise, treat it as a directory
-            dir_stream = loader_opendir(inst, cur_file);
+            DIR *dir_stream = loader_opendir(inst, cur_file);
             if (NULL == dir_stream) {
                 continue;
             }
             while (1) {
-                dir_entry = readdir(dir_stream);
+                errno = 0;
+                struct dirent *dir_entry = readdir(dir_stream);
+#if !defined(WIN32)  // Windows doesn't use readdir, don't check errors on functions which aren't called
+                if (errno != 0) {
+                    loader_log(inst, VULKAN_LOADER_ERROR_BIT, 0, "readdir failed with %d: %s", errno, strerror(errno));
+                    break;
+                }
+#endif
                 if (NULL == dir_entry) {
                     break;
                 }
@@ -3148,6 +3161,8 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
 #endif
             break;
         case LOADER_DATA_FILE_MANIFEST_IMPLICIT_LAYER:
+            override_env = loader_secure_getenv(VK_IMPLICIT_LAYER_PATH_ENV_VAR, inst);
+            additional_env = loader_secure_getenv(VK_ADDITIONAL_IMPLICIT_LAYER_PATH_ENV_VAR, inst);
 #if COMMON_UNIX_PLATFORMS
             relative_location = VK_ILAYERS_INFO_RELATIVE_DIR;
 #endif
@@ -3156,8 +3171,8 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
 #endif
             break;
         case LOADER_DATA_FILE_MANIFEST_EXPLICIT_LAYER:
-            override_env = loader_secure_getenv(VK_LAYER_PATH_ENV_VAR, inst);
-            additional_env = loader_secure_getenv(VK_ADDITIONAL_LAYER_PATH_ENV_VAR, inst);
+            override_env = loader_secure_getenv(VK_EXPLICIT_LAYER_PATH_ENV_VAR, inst);
+            additional_env = loader_secure_getenv(VK_ADDITIONAL_EXPLICIT_LAYER_PATH_ENV_VAR, inst);
 #if COMMON_UNIX_PLATFORMS
             relative_location = VK_ELAYERS_INFO_RELATIVE_DIR;
 #endif
@@ -5454,14 +5469,18 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateInstance(const VkInstanceCreateI
 #endif  // LOADER_ENABLE_LINUX_SORT
 
         // Determine if vkGetPhysicalDeviceProperties2 is available to this Instance
+        // Also determine if VK_EXT_surface_maintenance1 is available on the ICD
         if (icd_term->scanned_icd->api_version >= VK_API_VERSION_1_1) {
             icd_term->supports_get_dev_prop_2 = true;
-        } else {
-            for (uint32_t j = 0; j < icd_create_info.enabledExtensionCount; j++) {
-                if (!strcmp(filtered_extension_names[j], VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
-                    icd_term->supports_get_dev_prop_2 = true;
-                    break;
-                }
+        }
+        for (uint32_t j = 0; j < icd_create_info.enabledExtensionCount; j++) {
+            if (!strcmp(filtered_extension_names[j], VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME)) {
+                icd_term->supports_get_dev_prop_2 = true;
+                continue;
+            }
+            if (!strcmp(filtered_extension_names[j], VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+                icd_term->supports_ext_surface_maintenance_1 = true;
+                continue;
             }
         }
 
@@ -5848,7 +5867,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
     {
         const void *pNext = localCreateInfo.pNext;
         while (pNext != NULL) {
-            switch (*(VkStructureType *)pNext) {
+            VkBaseInStructure pNext_in_structure = {0};
+            memcpy(&pNext_in_structure, pNext, sizeof(VkBaseInStructure));
+            switch (pNext_in_structure.sType) {
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2: {
                     const VkPhysicalDeviceFeatures2KHR *features = pNext;
 
@@ -5900,8 +5921,7 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
                 // Multiview properties are also allowed, but since VK_KHX_multiview is a device extension, we'll just let the
                 // ICD handle that error when the user enables the extension here
                 default: {
-                    const VkBaseInStructure *header = pNext;
-                    pNext = header->pNext;
+                    pNext = pNext_in_structure.pNext;
                     break;
                 }
             }
@@ -5913,7 +5933,9 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
     {
         const void *pNext = localCreateInfo.pNext;
         while (pNext != NULL) {
-            switch (*(VkStructureType *)pNext) {
+            VkBaseInStructure pNext_in_structure = {0};
+            memcpy(&pNext_in_structure, pNext, sizeof(VkBaseInStructure));
+            switch (pNext_in_structure.sType) {
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES_KHR: {
                     const VkPhysicalDeviceMaintenance5FeaturesKHR *maintenance_features = pNext;
                     if (maintenance_features->maintenance5 == VK_TRUE) {
@@ -5924,8 +5946,7 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_CreateDevice(VkPhysicalDevice physical
                 }
 
                 default: {
-                    const VkBaseInStructure *header = pNext;
-                    pNext = header->pNext;
+                    pNext = pNext_in_structure.pNext;
                     break;
                 }
             }

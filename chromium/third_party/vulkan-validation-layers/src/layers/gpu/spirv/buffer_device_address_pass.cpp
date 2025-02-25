@@ -20,14 +20,14 @@
 
 #include "generated/instrumentation_buffer_device_address_comp.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
-
-static LinkInfo link_info = {instrumentation_buffer_device_address_comp, instrumentation_buffer_device_address_comp_size,
-                             LinkFunctions::inst_buffer_device_address, 0, "inst_buffer_device_address"};
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t BufferDeviceAddressPass::GetLinkFunctionId() {
+    static LinkInfo link_info = {instrumentation_buffer_device_address_comp, instrumentation_buffer_device_address_comp_size,
+                                 LinkFunctions::inst_buffer_device_address, 0, "inst_buffer_device_address"};
+
     if (link_function_id == 0) {
         link_function_id = module_.TakeNextId();
         link_info.function_id = link_function_id;
@@ -45,27 +45,33 @@ uint32_t BufferDeviceAddressPass::CreateFunctionCall(BasicBlock& block, Instruct
     block.CreateInstruction(spv::OpConvertPtrToU, {uint64_type.Id(), convert_id, pointer_id}, inst_it);
 
     const Constant& length_constant = module_.type_manager_.GetConstantUInt32(type_length_);
-    const Constant& access_opcode = module_.type_manager_.GetConstantUInt32(access_opcode_);
+    const uint32_t opcode = target_instruction_->Opcode();
+    const Constant& access_opcode = module_.type_manager_.GetConstantUInt32(opcode);
+
+    // VUID-StandaloneSpirv-PhysicalStorageBuffer64-04708 requires there to be an Aligned operand
+    const uint32_t alignment_word_index = opcode == spv::OpLoad ? 5 : 4;  // OpStore is at [4]
+    const uint32_t alignment_literal = target_instruction_->Word(alignment_word_index);
+    const Constant& alignment_constant = module_.type_manager_.GetConstantUInt32(alignment_literal);
 
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
 
-    block.CreateInstruction(spv::OpFunctionCall,
-                            {bool_type, function_result, function_def, injection_data.inst_position_id,
-                             injection_data.stage_info_id, convert_id, length_constant.Id(), access_opcode.Id()},
-                            inst_it);
+    block.CreateInstruction(
+        spv::OpFunctionCall,
+        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, convert_id,
+         length_constant.Id(), access_opcode.Id(), alignment_constant.Id()},
+        inst_it);
 
     return function_result;
 }
 
 void BufferDeviceAddressPass::Reset() {
     target_instruction_ = nullptr;
-    access_opcode_ = 0;
     type_length_ = 0;
 }
 
-bool BufferDeviceAddressPass::AnalyzeInstruction(const Function& function, const Instruction& inst) {
+bool BufferDeviceAddressPass::RequiresInstrumentation(const Function& function, const Instruction& inst) {
     const uint32_t opcode = inst.Opcode();
     if (opcode != spv::OpLoad && opcode != spv::OpStore) {
         return false;
@@ -105,15 +111,14 @@ bool BufferDeviceAddressPass::AnalyzeInstruction(const Function& function, const
     }
 
     // Save information to be used to make the Function
-    access_opcode_ = opcode;
     target_instruction_ = &inst;
     type_length_ = module_.type_manager_.TypeLength(*accessed_type);
     return true;
 }
 
 void BufferDeviceAddressPass::PrintDebugInfo() {
-    std::cout << "BufferDeviceAddressPass\n\tinstrumentation count: " << instrumented_count_ << '\n';
+    std::cout << "BufferDeviceAddressPass instrumentation count: " << instrumentations_count_ << '\n';
 }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

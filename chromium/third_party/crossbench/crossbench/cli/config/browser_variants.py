@@ -5,38 +5,49 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import functools
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
-                    Set, TextIO, Tuple, Type, Union, cast)
+from typing import (TYPE_CHECKING, Any, Dict, Final, Iterator, List, Optional,
+                    Sequence, Set, TextIO, Tuple, Type, Union, cast)
 
 import hjson
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
 
 import crossbench.browsers.all as browsers
-from crossbench import cli_helper, exception
+from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
-from crossbench.browsers.browser_helper import (BROWSERS_CACHE,
-                                                convert_flags_to_label)
+from crossbench.browsers.browser_helper import convert_flags_to_label
 from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
 from crossbench.browsers.settings import Settings
 from crossbench.cli.config.browser import BrowserConfig
-from crossbench.cli.config.driver import BrowserDriverType
+from crossbench.cli.config.driver_type import BrowserDriverType
 from crossbench.cli.config.network import NetworkConfig
 from crossbench.config import ConfigError, ConfigObject
 from crossbench.flags.base import Flags
 from crossbench.flags.chrome import ChromeFlags
-from crossbench.flags.js_flags import JSFlags
 from crossbench.network.base import Network
+from crossbench.parse import LateArgumentError, ObjectParser
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   FlagGroupItemT = Optional[Tuple[str, Optional[str]]]
   BrowserLookupTableT = Dict[str, Tuple[Type[Browser], "BrowserConfig"]]
+
+
+@contextlib.contextmanager
+def late_argument_type_error_wrapper(flag: str) -> Iterator[None]:
+  """Converts raised ValueError and ArgumentTypeError to LateArgumentError
+  that are associated with the given flag.
+  """
+  try:
+    yield
+  except Exception as e:
+    raise LateArgumentError(flag, str(e)) from e
 
 
 def _flags_to_label(flags: Flags) -> str:
@@ -48,6 +59,7 @@ FlagVariantsDictT = Dict[str, List[str]]
 
 DEFAULT_LABEL: Final[str] = "default"
 
+
 @dataclasses.dataclass(frozen=True)
 class FlagsVariantConfig:
   label: str
@@ -55,7 +67,7 @@ class FlagsVariantConfig:
   flags: Flags = dataclasses.field(default_factory=lambda: Flags().freeze())
 
   @classmethod
-  def parse(cls, name: str, index: int, data: Any):
+  def parse(cls, name: str, index: int, data: Any) -> FlagsVariantConfig:
     return cls(name, index, Flags.parse(data).freeze())
 
   def merge_copy(self,
@@ -168,7 +180,7 @@ class FlagsGroupConfig(FlagsGroupConfigTuple):
               f"Invalid flag variant value (None, str or sequence): "
               f"{flag_name}={repr(flag_value)}")
         if isinstance(flag_value, (list, tuple)):
-          cli_helper.parse_unique_sequence(
+          ObjectParser.unique_sequence(
               flag_value, f"flag {repr(flag_name)} variant values", ConfigError)
 
   @classmethod
@@ -227,9 +239,9 @@ class FlagsGroupConfig(FlagsGroupConfigTuple):
     return FlagsGroupConfig(variants)
 
   def product(self, *args: FlagsGroupConfig) -> FlagsGroupConfig:
-    return functools.reduce(lambda a, b: a._product(b), args, self)
+    return functools.reduce(lambda a, b: a.inner_product(b), args, self)
 
-  def _product(self, other: FlagsGroupConfig) -> FlagsGroupConfig:
+  def inner_product(self, other: FlagsGroupConfig) -> FlagsGroupConfig:
     """Create a new FlagsGroupConfig as the combination of
     self.variants x other.variants"""
     new_variants: List[FlagsVariantConfig] = []
@@ -292,12 +304,12 @@ class BrowserVariantsConfig:
   def from_cli_args(cls, args: argparse.Namespace) -> BrowserVariantsConfig:
     browser_config = BrowserVariantsConfig()
     if args.browser_config:
-      with cli_helper.late_argument_type_error_wrapper("--browser-config"):
+      with late_argument_type_error_wrapper("--browser-config"):
         path = args.browser_config.expanduser()
         with path.open(encoding="utf-8") as f:
           browser_config.parse_text_io(f, args)
     else:
-      with cli_helper.late_argument_type_error_wrapper("--browser"):
+      with late_argument_type_error_wrapper("--browser"):
         browser_config.parse_args(args)
     return browser_config
 
@@ -309,7 +321,6 @@ class BrowserVariantsConfig:
     self._variants: List[Browser] = []
     self._unique_names: Set[str] = set()
     self._browser_lookup_override = browser_lookup_override or {}
-    self._cache_dir: pth.LocalPath = BROWSERS_CACHE
     if raw_config_data:
       assert args, "args object needed when loading from dict."
       self.parse_dict(raw_config_data, args)
@@ -322,7 +333,7 @@ class BrowserVariantsConfig:
   def parse_text_io(self, f: TextIO, args: argparse.Namespace) -> None:
     with exception.annotate(f"Loading browser config file: {f.name}"):
       config = {}
-      with exception.annotate(f"Parsing {hjson.__name__}"):
+      with exception.annotate("Parsing hjson"):
         config = hjson.load(f)
       with exception.annotate(f"Parsing config file: {f.name}"):
         self.parse_dict(config, args)
@@ -342,13 +353,12 @@ class BrowserVariantsConfig:
         self._parse_browsers(config["browsers"], args)
 
   def parse_args(self, args: argparse.Namespace) -> None:
-    self._cache_dir = args.cache_dir
     browser_list: List[BrowserConfig] = args.browser or [
         BrowserConfig.default()
     ]
     assert isinstance(browser_list, list)
-    browser_list = cli_helper.parse_unique_sequence(browser_list,
-                                                    "--browser arguments")
+    browser_list = ObjectParser.unique_sequence(browser_list,
+                                                "--browser arguments")
     for i, browser in enumerate(browser_list):
       with exception.annotate(f"Append browser {i}"):
         self._append_browser(args, browser)
@@ -386,12 +396,12 @@ class BrowserVariantsConfig:
     else:
       browser_config = self._maybe_downloaded_binary(
           cast(BrowserConfig, BrowserConfig.parse(raw_browser_data)))
-      browser_cls = self._get_browser_cls(browser_config)
-    if not browser_config.driver.type.is_remote and (not pth.LocalPath(
-        browser_config.path).exists()):
+      browser_cls = self.get_browser_cls(browser_config)
+    if not self._is_valid_browser_path(browser_config):
       raise ConfigError(
           f"browsers[{repr(name)}].path='{browser_config.path}' does not exist."
       )
+
     flag_variants: FlagsGroupConfig = self._get_browser_variants(
         name, raw_browser_data)
     self._log_browser_variants(name, flag_variants)
@@ -415,11 +425,20 @@ class BrowserVariantsConfig:
           viewport=args.viewport,
           splash_screen=args.splash_screen,
           platform=browser_platform,
-          secrets=args.secrets)
+          secrets=args.secrets.as_dict(),
+          driver_logging=args.driver_logging,
+          wipe_system_user_data=args.wipe_system_user_data,
+          http_request_timeout=args.http_request_timeout)
       browser_instance = browser_cls(
           label=label, path=browser_config.path, settings=settings)
       # pytype: enable=not-instantiable
       self._variants.append(browser_instance)
+
+  def _is_valid_browser_path(self, browser_config: BrowserConfig) -> bool:
+    if browser_config.is_remote:
+      # TODO: add remote path validation
+      return True
+    return pth.LocalPath(browser_config.path).exists()
 
   def _flags_to_label(self, name: str, flags: Flags) -> str:
     return f"{name}_{_flags_to_label(flags)}"
@@ -512,49 +531,73 @@ class BrowserVariantsConfig:
     for i, variant in enumerate(flag_variants):
       logging.info("   %s: %s", i, variant.flags)
 
-  def _get_browser_cls(self, browser_config: BrowserConfig) -> Type[Browser]:
+  def get_browser_cls(self, browser_config: BrowserConfig) -> Type[Browser]:
     driver = browser_config.driver.type
-    path: pth.RemotePath = browser_config.path
+    path: pth.AnyPath = browser_config.path
     assert not isinstance(path, str), "Invalid path"
     if not BrowserConfig.is_supported_browser_path(path):
       raise argparse.ArgumentTypeError(f"Unsupported browser path='{path}'")
     path_str = str(browser_config.path).lower()
     if "safari" in path_str:
-      if driver == BrowserDriverType.IOS:
-        return browsers.SafariWebdriverIOS
-      if driver == BrowserDriverType.WEB_DRIVER:
-        return browsers.SafariWebDriver
-      if driver == BrowserDriverType.APPLE_SCRIPT:
-        return browsers.SafariAppleScript
+      return self._get_safari_browser_cls(browser_config)
     if "chrome" in path_str:
-      if driver == BrowserDriverType.WEB_DRIVER:
-        return browsers.ChromeWebDriver
-      if driver == BrowserDriverType.APPLE_SCRIPT:
-        return browsers.ChromeAppleScript
-      if driver == BrowserDriverType.ANDROID:
-        return browsers.ChromeWebDriverAndroid
-      if driver == BrowserDriverType.LINUX_SSH:
-        return browsers.ChromeWebDriverSsh
-      if driver == BrowserDriverType.CHROMEOS_SSH:
-        return browsers.ChromeWebDriverChromeOsSsh
+      return self._get_chrome_browser_cls(browser_config)
     if "chromium" in path_str:
-      # TODO: technically this should be ChromiumWebDriver
-      if driver == BrowserDriverType.WEB_DRIVER:
-        return browsers.ChromeWebDriver
-      if driver == BrowserDriverType.APPLE_SCRIPT:
-        return browsers.ChromeAppleScript
-      if driver == BrowserDriverType.ANDROID:
-        return browsers.ChromiumWebDriverAndroid
-      if driver == BrowserDriverType.LINUX_SSH:
-        return browsers.ChromiumWebDriverSsh
-      if driver == BrowserDriverType.CHROMEOS_SSH:
-        return browsers.ChromiumWebDriverChromeOsSsh
+      return self._get_chromium_browser_cls(browser_config)
     if "firefox" in path_str:
       if driver == BrowserDriverType.WEB_DRIVER:
         return browsers.FirefoxWebDriver
     if "edge" in path_str:
       return browsers.EdgeWebDriver
     raise argparse.ArgumentTypeError(f"Unsupported browser path='{path}'")
+
+  def _get_safari_browser_cls(self,
+                              browser_config: BrowserConfig) -> Type[Browser]:
+    driver = browser_config.driver.type
+    if driver == BrowserDriverType.IOS:
+      return browsers.SafariWebdriverIOS
+    if driver == BrowserDriverType.WEB_DRIVER:
+      return browsers.SafariWebDriver
+    if driver == BrowserDriverType.APPLE_SCRIPT:
+      return browsers.SafariAppleScript
+    raise argparse.ArgumentTypeError(f"Unsupported Safari driver: {driver}")
+
+  def _get_chrome_browser_cls(self,
+                              browser_config: BrowserConfig) -> Type[Browser]:
+    driver = browser_config.driver.type
+    if driver == BrowserDriverType.WEB_DRIVER:
+      return browsers.ChromeWebDriver
+    if driver == BrowserDriverType.APPLE_SCRIPT:
+      return browsers.ChromeAppleScript
+    if driver == BrowserDriverType.ANDROID:
+      if browsers.LocalChromeWebDriverAndroid.is_apk_helper(
+          browser_config.path):
+        return browsers.LocalChromeWebDriverAndroid
+      return browsers.ChromeWebDriverAndroid
+    if driver == BrowserDriverType.LINUX_SSH:
+      return browsers.ChromeWebDriverSsh
+    if driver == BrowserDriverType.CHROMEOS_SSH:
+      return browsers.ChromeWebDriverChromeOsSsh
+    raise argparse.ArgumentTypeError(f"Unsupported Chrome driver: {driver}")
+
+  def _get_chromium_browser_cls(self,
+                                browser_config: BrowserConfig) -> Type[Browser]:
+    driver = browser_config.driver.type
+    # TODO: technically this should be ChromiumWebDriver
+    if driver == BrowserDriverType.WEB_DRIVER:
+      return browsers.ChromiumWebDriver
+    if driver == BrowserDriverType.APPLE_SCRIPT:
+      return browsers.ChromiumAppleScript
+    if driver == BrowserDriverType.ANDROID:
+      if browsers.LocalChromiumWebDriverAndroid.is_apk_helper(
+          browser_config.path):
+        return browsers.LocalChromiumWebDriverAndroid
+      return browsers.ChromiumWebDriverAndroid
+    if driver == BrowserDriverType.LINUX_SSH:
+      return browsers.ChromiumWebDriverSsh
+    if driver == BrowserDriverType.CHROMEOS_SSH:
+      return browsers.ChromiumWebDriverChromeOsSsh
+    raise argparse.ArgumentTypeError(f"Unsupported chromium driver: {driver}")
 
   def _get_browser_platform(self,
                             browser_config: BrowserConfig) -> plt.Platform:
@@ -641,15 +684,13 @@ class BrowserVariantsConfig:
   def _maybe_downloaded_binary(self,
                                browser_config: BrowserConfig) -> BrowserConfig:
     path_or_identifier = browser_config.browser
-    if isinstance(path_or_identifier, pth.RemotePath):
+    if isinstance(path_or_identifier, pth.AnyPath):
       return browser_config
     browser_platform = self._get_browser_platform(browser_config)
     if ChromeDownloader.is_valid(path_or_identifier, browser_platform):
-      downloaded = ChromeDownloader.load(
-          path_or_identifier, browser_platform, cache_dir=self._cache_dir)
+      downloaded = ChromeDownloader.load(path_or_identifier, browser_platform)
     elif FirefoxDownloader.is_valid(path_or_identifier, browser_platform):
-      downloaded = FirefoxDownloader.load(
-          path_or_identifier, browser_platform, cache_dir=self._cache_dir)
+      downloaded = FirefoxDownloader.load(path_or_identifier, browser_platform)
     else:
       raise ValueError(
           f"No version-download support for browser: {path_or_identifier}")
@@ -659,11 +700,10 @@ class BrowserVariantsConfig:
                       browser_config: BrowserConfig) -> None:
     assert browser_config, "Expected non-empty BrowserConfig."
     browser_config = self._maybe_downloaded_binary(browser_config)
-    browser_cls: Type[Browser] = self._get_browser_cls(browser_config)
-    path: pth.RemotePath = browser_config.path
+    browser_cls: Type[Browser] = self.get_browser_cls(browser_config)
+    path: pth.AnyPath = browser_config.path
     flags_sets = [browser_cls.default_flags()]
-
-    if browser_config.driver.is_local and not pth.LocalPath(path).exists():
+    if not self._is_valid_browser_path(browser_config):
       raise argparse.ArgumentTypeError(f"Browser binary does not exist: {path}")
 
     if issubclass(browser_cls, browsers.Chromium):
@@ -699,8 +739,12 @@ class BrowserVariantsConfig:
           viewport=args.viewport,
           splash_screen=args.splash_screen,
           platform=browser_platform,
-          secrets=args.secrets)
-      browser_instance = browser_cls(  # pytype: disable=not-instantiable
+          secrets=args.secrets.as_dict(),
+          driver_logging=args.driver_logging,
+          wipe_system_user_data=args.wipe_system_user_data,
+          http_request_timeout=args.http_request_timeout)
+
+      browser_instance = browser_cls(  # pytype: disable=not-instantiable # pylint: disable=abstract-class-instantiated
           label=label,
           path=path,
           settings=settings)

@@ -20,9 +20,9 @@
 
 #include "state_tracker/state_object.h"
 #include "utils/hash_util.h"
-#include "utils/vk_layer_utils.h"
 #include "state_tracker/shader_stage_state.h"
 #include "generated/vk_object_types.h"
+#include "generated/error_location_helper.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
 #include <map>
 #include <set>
@@ -357,30 +357,26 @@ class DescriptorSetLayout : public StateObject {
     std::unique_ptr<VkDeviceSize> layout_size_in_bytes;
 };
 
-/*
- * Descriptor classes
- *  Descriptor is an abstract base class from which 5 separate descriptor types are derived.
- *   This allows the WriteUpdate() and CopyUpdate() operations to be specialized per
- *   descriptor type, but all descriptors in a set can be accessed via the common Descriptor*.
- */
-
 // Slightly broader than type, each c++ "class" will has a corresponding "DescriptorClass"
 enum class DescriptorClass {
-    PlainSampler,
-    ImageSampler,
-    Image,
-    TexelBuffer,
-    GeneralBuffer,
-    InlineUniform,
-    AccelerationStructure,
-    Mutable,
-    NoDescriptorClass
+    PlainSampler,           // SAMPLER
+    ImageSampler,           // COMBINED_IMAGE_SAMPLER
+    Image,                  // SAMPLED_IMAGE/STORAGE_IMAGE/INPUT_ATTACHMENT
+    TexelBuffer,            // UNIFORM_TEXEL_BUFFER/VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER
+    GeneralBuffer,          // UNIFORM_BUFFER/VK_DESCRIPTOR_TYPE_STORAGE_BUFFER (and dynamic version)
+    InlineUniform,          // INLINE_UNIFORM_BLOCK
+    AccelerationStructure,  // ACCELERATION_STRUCTURE
+    Mutable,                // MUTABLE
+    Invalid
 };
 
 DescriptorClass DescriptorTypeToClass(VkDescriptorType type);
 
 class DescriptorSet;
 
+// Descriptor is an abstract base class from which many separate descriptor types are derived.
+// This allows the WriteUpdate() and CopyUpdate() operations to be specialized per descriptor type, but all descriptors in a set can
+// be accessed via the common Descriptor.
 class Descriptor {
   public:
     static bool SupportsNotifyInvalidate() { return false; }
@@ -566,7 +562,7 @@ class AccelerationStructureDescriptor : public Descriptor {
     vvl::AccelerationStructureNV *GetAccelerationStructureStateNV() { return acc_state_nv_.get(); }
     void CopyUpdate(DescriptorSet &set_state, const ValidationStateTracker &dev_data, const Descriptor &, bool is_bindless,
                     VkDescriptorType type) override;
-    bool is_khr() const { return is_khr_; }
+    bool IsKHR() const { return is_khr_; }
 
     bool AddParent(StateObject *state_object) override;
     void RemoveParent(StateObject *state_object) override;
@@ -620,7 +616,7 @@ class MutableDescriptor : public Descriptor {
     bool AddParent(StateObject *state_object) override;
     void RemoveParent(StateObject *state_object) override;
 
-    bool is_khr() const { return is_khr_; }
+    bool IsKHR() const { return is_khr_; }
     bool Invalid() const override;
 
     VkDescriptorType ActiveType() const { return active_descriptor_type_; }
@@ -849,6 +845,7 @@ class DescriptorSet : public StateObject {
     uint32_t GetVariableDescriptorCount() const { return variable_count_; }
     vvl::DescriptorPool *GetPoolState() const { return pool_state_; }
 
+    // These are overriding STL so need lower case names
     ConstBindingIterator begin() const { return bindings_.begin(); }
     ConstBindingIterator end() const { return bindings_.end(); }
     ConstBindingIterator FindBinding(uint32_t binding) const {

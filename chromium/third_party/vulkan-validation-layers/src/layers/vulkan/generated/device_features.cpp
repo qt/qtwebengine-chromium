@@ -21,7 +21,10 @@
 
 // NOLINTBEGIN
 
-#include "state_tracker/state_tracker.h"
+#include "generated/device_features.h"
+#include "generated/vk_api_version.h"
+#include "generated/vk_extension_helper.h"
+#include <vulkan/utility/vk_struct_helper.hpp>
 
 void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatures *features, const APIVersion &api_version) {
     // Initialize all to false
@@ -711,6 +714,7 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 const VkPhysicalDeviceShaderEnqueueFeaturesAMDX *enabled =
                     reinterpret_cast<const VkPhysicalDeviceShaderEnqueueFeaturesAMDX *>(pNext);
                 features->shaderEnqueue |= enabled->shaderEnqueue == VK_TRUE;
+                features->shaderMeshEnqueue |= enabled->shaderMeshEnqueue == VK_TRUE;
                 break;
             }
 #endif  // VK_ENABLE_BETA_EXTENSIONS
@@ -903,7 +907,7 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV: {
                 const VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV *enabled =
                     reinterpret_cast<const VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV *>(pNext);
-                features->deviceGeneratedCommands |= enabled->deviceGeneratedCommands == VK_TRUE;
+                features->deviceGeneratedCommandsNV |= enabled->deviceGeneratedCommands == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INHERITED_VIEWPORT_SCISSOR_FEATURES_NV: {
@@ -1085,6 +1089,12 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                     reinterpret_cast<const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *>(pNext);
                 features->primitiveTopologyListRestart |= enabled->primitiveTopologyListRestart == VK_TRUE;
                 features->primitiveTopologyPatchListRestart |= enabled->primitiveTopologyPatchListRestart == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT: {
+                const VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT *enabled =
+                    reinterpret_cast<const VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT *>(pNext);
+                features->presentModeFifoLatestReady |= enabled->presentModeFifoLatestReady == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_FEATURES_HUAWEI: {
@@ -1550,10 +1560,41 @@ void GetEnabledDeviceFeatures(const VkDeviceCreateInfo *pCreateInfo, DeviceFeatu
                 features->rayTracingValidation |= enabled->rayTracingValidation == VK_TRUE;
                 break;
             }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT: {
+                const VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT *>(pNext);
+                features->deviceGeneratedCommands |= enabled->deviceGeneratedCommands == VK_TRUE;
+                features->dynamicGeneratedPipelineLayout |= enabled->dynamicGeneratedPipelineLayout == VK_TRUE;
+                break;
+            }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_FEATURES_MESA: {
                 const VkPhysicalDeviceImageAlignmentControlFeaturesMESA *enabled =
                     reinterpret_cast<const VkPhysicalDeviceImageAlignmentControlFeaturesMESA *>(pNext);
                 features->imageAlignmentControl |= enabled->imageAlignmentControl == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_CONTROL_FEATURES_EXT: {
+                const VkPhysicalDeviceDepthClampControlFeaturesEXT *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceDepthClampControlFeaturesEXT *>(pNext);
+                features->depthClampControl |= enabled->depthClampControl == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HDR_VIVID_FEATURES_HUAWEI: {
+                const VkPhysicalDeviceHdrVividFeaturesHUAWEI *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceHdrVividFeaturesHUAWEI *>(pNext);
+                features->hdrVivid |= enabled->hdrVivid == VK_TRUE;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV: {
+                const VkPhysicalDeviceCooperativeMatrix2FeaturesNV *enabled =
+                    reinterpret_cast<const VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(pNext);
+                features->cooperativeMatrixWorkgroupScope |= enabled->cooperativeMatrixWorkgroupScope == VK_TRUE;
+                features->cooperativeMatrixFlexibleDimensions |= enabled->cooperativeMatrixFlexibleDimensions == VK_TRUE;
+                features->cooperativeMatrixReductions |= enabled->cooperativeMatrixReductions == VK_TRUE;
+                features->cooperativeMatrixConversions |= enabled->cooperativeMatrixConversions == VK_TRUE;
+                features->cooperativeMatrixPerElementOperations |= enabled->cooperativeMatrixPerElementOperations == VK_TRUE;
+                features->cooperativeMatrixTensorAddressing |= enabled->cooperativeMatrixTensorAddressing == VK_TRUE;
+                features->cooperativeMatrixBlockLoads |= enabled->cooperativeMatrixBlockLoads == VK_TRUE;
                 break;
             }
             case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR: {

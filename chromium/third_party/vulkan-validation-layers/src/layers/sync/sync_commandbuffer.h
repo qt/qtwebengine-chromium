@@ -182,8 +182,8 @@ class CommandExecutionContext : public SyncValidationInfo {
   public:
     using AccessLog = std::vector<ResourceUsageRecord>;
     using CommandBufferSet = std::vector<std::shared_ptr<const vvl::CommandBuffer>>;
-    CommandExecutionContext() : SyncValidationInfo(nullptr) {}
-    CommandExecutionContext(const SyncValidator *sync_validator) : SyncValidationInfo(sync_validator) {}
+    CommandExecutionContext(const SyncValidator *sync_validator, VkQueueFlags queue_flags)
+        : SyncValidationInfo(sync_validator, queue_flags) {}
     virtual ~CommandExecutionContext() = default;
 
     // Are imported command buffers Submitted (QueueBatchContext), or Executed (CommandBufferAccessContext)
@@ -260,8 +260,6 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // to use shared_from_this from the constructor.
     void SetSelfReference() { cbs_referenced_->push_back(cb_state_->shared_from_this()); }
 
-    const CommandExecutionContext &GetExecutionContext() const { return *this; }
-
     void Destroy() {
         // the cb self reference must be cleared or the command buffer reference count will never go to 0
         cbs_referenced_.reset();
@@ -290,10 +288,10 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     void RecordEndRendering(const RecordObject &record_obj);
     bool ValidateDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const Location &loc) const;
     void RecordDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, ResourceUsageTag tag);
-    bool ValidateDrawVertex(const std::optional<uint32_t> &vertexCount, uint32_t firstVertex, const Location &loc) const;
-    void RecordDrawVertex(const std::optional<uint32_t> &vertexCount, uint32_t firstVertex, ResourceUsageTag tag);
-    bool ValidateDrawVertexIndex(const std::optional<uint32_t> &indexCount, uint32_t firstIndex, const Location &loc) const;
-    void RecordDrawVertexIndex(const std::optional<uint32_t> &indexCount, uint32_t firstIndex, ResourceUsageTag tag);
+    bool ValidateDrawVertex(std::optional<uint32_t> vertexCount, uint32_t firstVertex, const Location &loc) const;
+    void RecordDrawVertex(std::optional<uint32_t> vertexCount, uint32_t firstVertex, ResourceUsageTag tag);
+    bool ValidateDrawVertexIndex(uint32_t indexCount, uint32_t firstIndex, const Location &loc) const;
+    void RecordDrawVertexIndex(uint32_t indexCount, uint32_t firstIndex, ResourceUsageTag tag);
     bool ValidateDrawAttachment(const Location &loc) const;
     bool ValidateDrawDynamicRenderingAttachment(const Location &loc) const;
     void RecordDrawAttachment(ResourceUsageTag tag);
@@ -357,7 +355,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     std::vector<vvl::CommandBuffer::LabelCommand> &GetProxyLabelCommands() { return proxy_label_commands_; }
 
   private:
-    CommandBufferAccessContext(const SyncValidator &sync_validator);
+    CommandBufferAccessContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
 
     uint32_t AddHandle(const VulkanTypedHandle &typed_handle, uint32_t index);
 

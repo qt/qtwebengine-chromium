@@ -18,7 +18,7 @@
 #include <spirv/unified1/spirv.hpp>
 #include "function_basic_block.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 class Module;
@@ -35,10 +35,6 @@ struct InjectionData {
 class Pass {
   public:
     virtual const char* Name() const = 0;
-    // Return false if nothing was changed
-    virtual bool Run() { return false; }
-
-    virtual void PrintDebugInfo() {}
 
     // Finds (and creates if needed) decoration and returns the OpVariable it points to
     const Variable& GetBuiltinVariable(uint32_t built_in);
@@ -64,12 +60,12 @@ class Pass {
     virtual void Reset() = 0;
 
     // As various things are modifiying the instruction streams, we need to get back to where we were.
-    // (normally set in the AnalyzeInstruction call)
+    // (normally set in the RequiresInstrumentation call)
     const Instruction* target_instruction_ = nullptr;
     InstructionIt FindTargetInstruction(BasicBlock& block) const;
 
-    uint32_t instrumented_count_ = 0;
+    uint32_t instrumentations_count_ = 0;
 };
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

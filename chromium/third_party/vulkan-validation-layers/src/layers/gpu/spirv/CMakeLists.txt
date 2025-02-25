@@ -29,12 +29,15 @@ target_sources(gpu_av_spirv PRIVATE
     ray_query_pass.cpp
     debug_printf_pass.h
     debug_printf_pass.cpp
+    post_process_descriptor_indexing.h
+    post_process_descriptor_indexing.cpp
 
     # Framework
     instruction.h
     instruction.cpp
     function_basic_block.h
     function_basic_block.cpp
+    interface.h
     link.h
     module.h
     module.cpp
@@ -58,6 +61,8 @@ target_sources(gpu_av_spirv PRIVATE
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_buffer_device_address_comp.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_ray_query_comp.h
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_ray_query_comp.cpp
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_post_process_descriptor_index_comp.h
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_post_process_descriptor_index_comp.cpp
 
 )
 

@@ -23,6 +23,7 @@
 // NOLINTBEGIN
 
 #include "stateless/stateless_validation.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 // For flags, we can't use the VkFlag as it can't be templated (since it all resolves to a int).
 // It is simpler for the caller to already check for both
@@ -73,8 +74,9 @@ vvl::Extensions StatelessValidation::IsValidFlagValue(vvl::FlagBitmask flag_bitm
                 }
             }
             if (value & (VK_ACCESS_COMMAND_PREPROCESS_READ_BIT_NV | VK_ACCESS_COMMAND_PREPROCESS_WRITE_BIT_NV)) {
-                if (!IsExtEnabled(device_extensions.vk_nv_device_generated_commands)) {
-                    return {vvl::Extension::_VK_NV_device_generated_commands};
+                if (!IsExtEnabled(device_extensions.vk_nv_device_generated_commands) &&
+                    !IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+                    return {vvl::Extension::_VK_NV_device_generated_commands, vvl::Extension::_VK_EXT_device_generated_commands};
                 }
             }
             return {};
@@ -300,8 +302,9 @@ vvl::Extensions StatelessValidation::IsValidFlagValue(vvl::FlagBitmask flag_bitm
                 }
             }
             if (value & (VK_PIPELINE_STAGE_COMMAND_PREPROCESS_BIT_NV)) {
-                if (!IsExtEnabled(device_extensions.vk_nv_device_generated_commands)) {
-                    return {vvl::Extension::_VK_NV_device_generated_commands};
+                if (!IsExtEnabled(device_extensions.vk_nv_device_generated_commands) &&
+                    !IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+                    return {vvl::Extension::_VK_NV_device_generated_commands, vvl::Extension::_VK_EXT_device_generated_commands};
                 }
             }
             if (value & (VK_PIPELINE_STAGE_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_MESH_SHADER_BIT_EXT)) {
@@ -455,12 +458,6 @@ vvl::Extensions StatelessValidation::IsValidFlagValue(vvl::FlagBitmask flag_bitm
                     return {vvl::Extension::_VK_EXT_pipeline_creation_cache_control};
                 }
             }
-            if (value & (VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR |
-                         VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT)) {
-                if (!IsExtEnabled(device_extensions.vk_khr_dynamic_rendering)) {
-                    return {vvl::Extension::_VK_KHR_dynamic_rendering};
-                }
-            }
             if (value & (VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_ANY_HIT_SHADERS_BIT_KHR |
                          VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR |
                          VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR |
@@ -474,6 +471,16 @@ vvl::Extensions StatelessValidation::IsValidFlagValue(vvl::FlagBitmask flag_bitm
             if (value & (VK_PIPELINE_CREATE_DEFER_COMPILE_BIT_NV)) {
                 if (!IsExtEnabled(device_extensions.vk_nv_ray_tracing)) {
                     return {vvl::Extension::_VK_NV_ray_tracing};
+                }
+            }
+            if (value & (VK_PIPELINE_CREATE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_BIT_EXT)) {
+                if (!IsExtEnabled(device_extensions.vk_ext_fragment_density_map)) {
+                    return {vvl::Extension::_VK_EXT_fragment_density_map};
+                }
+            }
+            if (value & (VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)) {
+                if (!IsExtEnabled(device_extensions.vk_khr_fragment_shading_rate)) {
+                    return {vvl::Extension::_VK_KHR_fragment_shading_rate};
                 }
             }
             if (value &
@@ -877,6 +884,13 @@ vvl::Extensions StatelessValidation::IsValidFlagValue(vvl::FlagBitmask flag_bitm
                 }
             }
             return {};
+        case vvl::FlagBitmask::VkShaderCreateFlagBitsEXT:
+            if (value & (VK_SHADER_CREATE_INDIRECT_BINDABLE_BIT_EXT)) {
+                if (!IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+                    return {vvl::Extension::_VK_EXT_device_generated_commands};
+                }
+            }
+            return {};
         case vvl::FlagBitmask::VkAccelerationStructureCreateFlagBitsKHR:
             if (value & (VK_ACCELERATION_STRUCTURE_CREATE_DESCRIPTOR_BUFFER_CAPTURE_REPLAY_BIT_EXT)) {
                 if (!IsExtEnabled(device_extensions.vk_ext_descriptor_buffer)) {
@@ -977,6 +991,11 @@ vvl::Extensions StatelessValidation::IsValidFlag64Value(vvl::FlagBitmask flag_bi
             }
             return {};
         case vvl::FlagBitmask::VkPipelineCreateFlagBits2KHR:
+            if (value & (VK_PIPELINE_CREATE_2_EXECUTION_GRAPH_BIT_AMDX)) {
+                if (!IsExtEnabled(device_extensions.vk_amdx_shader_enqueue)) {
+                    return {vvl::Extension::_VK_AMDX_shader_enqueue};
+                }
+            }
             if (value & (VK_PIPELINE_CREATE_2_ENABLE_LEGACY_DITHERING_BIT_EXT)) {
                 if (!IsExtEnabled(device_extensions.vk_ext_legacy_dithering)) {
                     return {vvl::Extension::_VK_EXT_legacy_dithering};
@@ -987,6 +1006,11 @@ vvl::Extensions StatelessValidation::IsValidFlag64Value(vvl::FlagBitmask flag_bi
                     return {vvl::Extension::_VK_KHR_pipeline_binary};
                 }
             }
+            if (value & (VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT)) {
+                if (!IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+                    return {vvl::Extension::_VK_EXT_device_generated_commands};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkBufferUsageFlagBits2KHR:
             if (value & (VK_BUFFER_USAGE_2_EXECUTION_GRAPH_SCRATCH_BIT_AMDX)) {
@@ -994,9 +1018,254 @@ vvl::Extensions StatelessValidation::IsValidFlag64Value(vvl::FlagBitmask flag_bi
                     return {vvl::Extension::_VK_AMDX_shader_enqueue};
                 }
             }
+            if (value & (VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT)) {
+                if (!IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+                    return {vvl::Extension::_VK_EXT_device_generated_commands};
+                }
+            }
             return {};
         default:
             return {};
+    }
+}
+
+std::string StatelessValidation::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_bitmask, VkFlags value) const {
+    switch (flag_bitmask) {
+        case vvl::FlagBitmask::VkAccessFlagBits:
+            return string_VkAccessFlags(value);
+        case vvl::FlagBitmask::VkImageAspectFlagBits:
+            return string_VkImageAspectFlags(value);
+        case vvl::FlagBitmask::VkFormatFeatureFlagBits:
+            return string_VkFormatFeatureFlags(value);
+        case vvl::FlagBitmask::VkImageCreateFlagBits:
+            return string_VkImageCreateFlags(value);
+        case vvl::FlagBitmask::VkSampleCountFlagBits:
+            return string_VkSampleCountFlags(value);
+        case vvl::FlagBitmask::VkImageUsageFlagBits:
+            return string_VkImageUsageFlags(value);
+        case vvl::FlagBitmask::VkDeviceQueueCreateFlagBits:
+            return string_VkDeviceQueueCreateFlags(value);
+        case vvl::FlagBitmask::VkPipelineStageFlagBits:
+            return string_VkPipelineStageFlags(value);
+        case vvl::FlagBitmask::VkMemoryMapFlagBits:
+            return string_VkMemoryMapFlags(value);
+        case vvl::FlagBitmask::VkSparseMemoryBindFlagBits:
+            return string_VkSparseMemoryBindFlags(value);
+        case vvl::FlagBitmask::VkFenceCreateFlagBits:
+            return string_VkFenceCreateFlags(value);
+        case vvl::FlagBitmask::VkEventCreateFlagBits:
+            return string_VkEventCreateFlags(value);
+        case vvl::FlagBitmask::VkQueryPipelineStatisticFlagBits:
+            return string_VkQueryPipelineStatisticFlags(value);
+        case vvl::FlagBitmask::VkQueryResultFlagBits:
+            return string_VkQueryResultFlags(value);
+        case vvl::FlagBitmask::VkBufferCreateFlagBits:
+            return string_VkBufferCreateFlags(value);
+        case vvl::FlagBitmask::VkBufferUsageFlagBits:
+            return string_VkBufferUsageFlags(value);
+        case vvl::FlagBitmask::VkImageViewCreateFlagBits:
+            return string_VkImageViewCreateFlags(value);
+        case vvl::FlagBitmask::VkPipelineCacheCreateFlagBits:
+            return string_VkPipelineCacheCreateFlags(value);
+        case vvl::FlagBitmask::VkColorComponentFlagBits:
+            return string_VkColorComponentFlags(value);
+        case vvl::FlagBitmask::VkPipelineCreateFlagBits:
+            return string_VkPipelineCreateFlags(value);
+        case vvl::FlagBitmask::VkPipelineShaderStageCreateFlagBits:
+            return string_VkPipelineShaderStageCreateFlags(value);
+        case vvl::FlagBitmask::VkShaderStageFlagBits:
+            return string_VkShaderStageFlags(value);
+        case vvl::FlagBitmask::VkCullModeFlagBits:
+            return string_VkCullModeFlags(value);
+        case vvl::FlagBitmask::VkPipelineDepthStencilStateCreateFlagBits:
+            return string_VkPipelineDepthStencilStateCreateFlags(value);
+        case vvl::FlagBitmask::VkPipelineColorBlendStateCreateFlagBits:
+            return string_VkPipelineColorBlendStateCreateFlags(value);
+        case vvl::FlagBitmask::VkPipelineLayoutCreateFlagBits:
+            return string_VkPipelineLayoutCreateFlags(value);
+        case vvl::FlagBitmask::VkSamplerCreateFlagBits:
+            return string_VkSamplerCreateFlags(value);
+        case vvl::FlagBitmask::VkDescriptorPoolCreateFlagBits:
+            return string_VkDescriptorPoolCreateFlags(value);
+        case vvl::FlagBitmask::VkDescriptorSetLayoutCreateFlagBits:
+            return string_VkDescriptorSetLayoutCreateFlags(value);
+        case vvl::FlagBitmask::VkAttachmentDescriptionFlagBits:
+            return string_VkAttachmentDescriptionFlags(value);
+        case vvl::FlagBitmask::VkDependencyFlagBits:
+            return string_VkDependencyFlags(value);
+        case vvl::FlagBitmask::VkFramebufferCreateFlagBits:
+            return string_VkFramebufferCreateFlags(value);
+        case vvl::FlagBitmask::VkRenderPassCreateFlagBits:
+            return string_VkRenderPassCreateFlags(value);
+        case vvl::FlagBitmask::VkSubpassDescriptionFlagBits:
+            return string_VkSubpassDescriptionFlags(value);
+        case vvl::FlagBitmask::VkCommandPoolCreateFlagBits:
+            return string_VkCommandPoolCreateFlags(value);
+        case vvl::FlagBitmask::VkCommandPoolResetFlagBits:
+            return string_VkCommandPoolResetFlags(value);
+        case vvl::FlagBitmask::VkCommandBufferUsageFlagBits:
+            return string_VkCommandBufferUsageFlags(value);
+        case vvl::FlagBitmask::VkQueryControlFlagBits:
+            return string_VkQueryControlFlags(value);
+        case vvl::FlagBitmask::VkCommandBufferResetFlagBits:
+            return string_VkCommandBufferResetFlags(value);
+        case vvl::FlagBitmask::VkStencilFaceFlagBits:
+            return string_VkStencilFaceFlags(value);
+        case vvl::FlagBitmask::VkPeerMemoryFeatureFlagBits:
+            return string_VkPeerMemoryFeatureFlags(value);
+        case vvl::FlagBitmask::VkMemoryAllocateFlagBits:
+            return string_VkMemoryAllocateFlags(value);
+        case vvl::FlagBitmask::VkExternalMemoryHandleTypeFlagBits:
+            return string_VkExternalMemoryHandleTypeFlags(value);
+        case vvl::FlagBitmask::VkExternalFenceHandleTypeFlagBits:
+            return string_VkExternalFenceHandleTypeFlags(value);
+        case vvl::FlagBitmask::VkFenceImportFlagBits:
+            return string_VkFenceImportFlags(value);
+        case vvl::FlagBitmask::VkSemaphoreImportFlagBits:
+            return string_VkSemaphoreImportFlags(value);
+        case vvl::FlagBitmask::VkExternalSemaphoreHandleTypeFlagBits:
+            return string_VkExternalSemaphoreHandleTypeFlags(value);
+        case vvl::FlagBitmask::VkResolveModeFlagBits:
+            return string_VkResolveModeFlags(value);
+        case vvl::FlagBitmask::VkDescriptorBindingFlagBits:
+            return string_VkDescriptorBindingFlags(value);
+        case vvl::FlagBitmask::VkSemaphoreWaitFlagBits:
+            return string_VkSemaphoreWaitFlags(value);
+        case vvl::FlagBitmask::VkSubmitFlagBits:
+            return string_VkSubmitFlags(value);
+        case vvl::FlagBitmask::VkRenderingFlagBits:
+            return string_VkRenderingFlags(value);
+        case vvl::FlagBitmask::VkSurfaceTransformFlagBitsKHR:
+            return string_VkSurfaceTransformFlagsKHR(value);
+        case vvl::FlagBitmask::VkCompositeAlphaFlagBitsKHR:
+            return string_VkCompositeAlphaFlagsKHR(value);
+        case vvl::FlagBitmask::VkSwapchainCreateFlagBitsKHR:
+            return string_VkSwapchainCreateFlagsKHR(value);
+        case vvl::FlagBitmask::VkDeviceGroupPresentModeFlagBitsKHR:
+            return string_VkDeviceGroupPresentModeFlagsKHR(value);
+        case vvl::FlagBitmask::VkDisplayPlaneAlphaFlagBitsKHR:
+            return string_VkDisplayPlaneAlphaFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoChromaSubsamplingFlagBitsKHR:
+            return string_VkVideoChromaSubsamplingFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoComponentBitDepthFlagBitsKHR:
+            return string_VkVideoComponentBitDepthFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoSessionCreateFlagBitsKHR:
+            return string_VkVideoSessionCreateFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoCodingControlFlagBitsKHR:
+            return string_VkVideoCodingControlFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoDecodeUsageFlagBitsKHR:
+            return string_VkVideoDecodeUsageFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeH264RateControlFlagBitsKHR:
+            return string_VkVideoEncodeH264RateControlFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeH265RateControlFlagBitsKHR:
+            return string_VkVideoEncodeH265RateControlFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoDecodeH264PictureLayoutFlagBitsKHR:
+            return string_VkVideoDecodeH264PictureLayoutFlagsKHR(value);
+        case vvl::FlagBitmask::VkMemoryUnmapFlagBitsKHR:
+            return string_VkMemoryUnmapFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeRateControlModeFlagBitsKHR:
+            return string_VkVideoEncodeRateControlModeFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeFeedbackFlagBitsKHR:
+            return string_VkVideoEncodeFeedbackFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeUsageFlagBitsKHR:
+            return string_VkVideoEncodeUsageFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeContentFlagBitsKHR:
+            return string_VkVideoEncodeContentFlagsKHR(value);
+        case vvl::FlagBitmask::VkDebugReportFlagBitsEXT:
+            return string_VkDebugReportFlagsEXT(value);
+        case vvl::FlagBitmask::VkExternalMemoryHandleTypeFlagBitsNV:
+            return string_VkExternalMemoryHandleTypeFlagsNV(value);
+        case vvl::FlagBitmask::VkConditionalRenderingFlagBitsEXT:
+            return string_VkConditionalRenderingFlagsEXT(value);
+        case vvl::FlagBitmask::VkSurfaceCounterFlagBitsEXT:
+            return string_VkSurfaceCounterFlagsEXT(value);
+        case vvl::FlagBitmask::VkDebugUtilsMessageSeverityFlagBitsEXT:
+            return string_VkDebugUtilsMessageSeverityFlagsEXT(value);
+        case vvl::FlagBitmask::VkDebugUtilsMessageTypeFlagBitsEXT:
+            return string_VkDebugUtilsMessageTypeFlagsEXT(value);
+        case vvl::FlagBitmask::VkGeometryFlagBitsKHR:
+            return string_VkGeometryFlagsKHR(value);
+        case vvl::FlagBitmask::VkGeometryInstanceFlagBitsKHR:
+            return string_VkGeometryInstanceFlagsKHR(value);
+        case vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR:
+            return string_VkBuildAccelerationStructureFlagsKHR(value);
+        case vvl::FlagBitmask::VkHostImageCopyFlagBitsEXT:
+            return string_VkHostImageCopyFlagsEXT(value);
+        case vvl::FlagBitmask::VkPresentScalingFlagBitsEXT:
+            return string_VkPresentScalingFlagsEXT(value);
+        case vvl::FlagBitmask::VkPresentGravityFlagBitsEXT:
+            return string_VkPresentGravityFlagsEXT(value);
+        case vvl::FlagBitmask::VkIndirectStateFlagBitsNV:
+            return string_VkIndirectStateFlagsNV(value);
+        case vvl::FlagBitmask::VkIndirectCommandsLayoutUsageFlagBitsNV:
+            return string_VkIndirectCommandsLayoutUsageFlagsNV(value);
+        case vvl::FlagBitmask::VkDeviceDiagnosticsConfigFlagBitsNV:
+            return string_VkDeviceDiagnosticsConfigFlagsNV(value);
+#ifdef VK_USE_PLATFORM_METAL_EXT
+        case vvl::FlagBitmask::VkExportMetalObjectTypeFlagBitsEXT:
+            return string_VkExportMetalObjectTypeFlagsEXT(value);
+#endif  // VK_USE_PLATFORM_METAL_EXT
+        case vvl::FlagBitmask::VkGraphicsPipelineLibraryFlagBitsEXT:
+            return string_VkGraphicsPipelineLibraryFlagsEXT(value);
+        case vvl::FlagBitmask::VkImageCompressionFlagBitsEXT:
+            return string_VkImageCompressionFlagsEXT(value);
+        case vvl::FlagBitmask::VkImageCompressionFixedRateFlagBitsEXT:
+            return string_VkImageCompressionFixedRateFlagsEXT(value);
+        case vvl::FlagBitmask::VkDeviceAddressBindingFlagBitsEXT:
+            return string_VkDeviceAddressBindingFlagsEXT(value);
+#ifdef VK_USE_PLATFORM_FUCHSIA
+        case vvl::FlagBitmask::VkImageConstraintsInfoFlagBitsFUCHSIA:
+            return string_VkImageConstraintsInfoFlagsFUCHSIA(value);
+#endif  // VK_USE_PLATFORM_FUCHSIA
+        case vvl::FlagBitmask::VkFrameBoundaryFlagBitsEXT:
+            return string_VkFrameBoundaryFlagsEXT(value);
+        case vvl::FlagBitmask::VkBuildMicromapFlagBitsEXT:
+            return string_VkBuildMicromapFlagsEXT(value);
+        case vvl::FlagBitmask::VkMicromapCreateFlagBitsEXT:
+            return string_VkMicromapCreateFlagsEXT(value);
+        case vvl::FlagBitmask::VkOpticalFlowGridSizeFlagBitsNV:
+            return string_VkOpticalFlowGridSizeFlagsNV(value);
+        case vvl::FlagBitmask::VkOpticalFlowUsageFlagBitsNV:
+            return string_VkOpticalFlowUsageFlagsNV(value);
+        case vvl::FlagBitmask::VkOpticalFlowSessionCreateFlagBitsNV:
+            return string_VkOpticalFlowSessionCreateFlagsNV(value);
+        case vvl::FlagBitmask::VkOpticalFlowExecuteFlagBitsNV:
+            return string_VkOpticalFlowExecuteFlagsNV(value);
+        case vvl::FlagBitmask::VkShaderCreateFlagBitsEXT:
+            return string_VkShaderCreateFlagsEXT(value);
+        case vvl::FlagBitmask::VkIndirectCommandsInputModeFlagBitsEXT:
+            return string_VkIndirectCommandsInputModeFlagsEXT(value);
+        case vvl::FlagBitmask::VkIndirectCommandsLayoutUsageFlagBitsEXT:
+            return string_VkIndirectCommandsLayoutUsageFlagsEXT(value);
+        case vvl::FlagBitmask::VkAccelerationStructureCreateFlagBitsKHR:
+            return string_VkAccelerationStructureCreateFlagsKHR(value);
+
+        default:
+            std::stringstream ss;
+            ss << "0x" << std::hex << value;
+            return ss.str();
+    }
+}
+
+std::string StatelessValidation::DescribeFlagBitmaskValue64(vvl::FlagBitmask flag_bitmask, VkFlags64 value) const {
+    switch (flag_bitmask) {
+        case vvl::FlagBitmask::VkPipelineStageFlagBits2:
+            return string_VkPipelineStageFlags2(value);
+        case vvl::FlagBitmask::VkAccessFlagBits2:
+            return string_VkAccessFlags2(value);
+        case vvl::FlagBitmask::VkPipelineCreateFlagBits2KHR:
+            return string_VkPipelineCreateFlags2KHR(value);
+        case vvl::FlagBitmask::VkBufferUsageFlagBits2KHR:
+            return string_VkBufferUsageFlags2KHR(value);
+        case vvl::FlagBitmask::VkPhysicalDeviceSchedulingControlsFlagBitsARM:
+            return string_VkPhysicalDeviceSchedulingControlsFlagsARM(value);
+        case vvl::FlagBitmask::VkMemoryDecompressionMethodFlagBitsNV:
+            return string_VkMemoryDecompressionMethodFlagsNV(value);
+
+        default:
+            std::stringstream ss;
+            ss << "0x" << std::hex << value;
+            return ss.str();
     }
 }
 

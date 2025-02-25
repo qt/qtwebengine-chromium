@@ -169,6 +169,7 @@ std::string GetSpecialUse(vvl::Extension extension_name) {
         {vvl::Extension::_VK_EXT_depth_bias_control, "d3demulation"},
         {vvl::Extension::_VK_EXT_device_memory_report, "devtools"},
         {vvl::Extension::_VK_EXT_custom_border_color, "glemulation, d3demulation"},
+        {vvl::Extension::_VK_EXT_attachment_feedback_loop_layout, "glemulation, d3demulation"},
         {vvl::Extension::_VK_VALVE_mutable_descriptor_type, "d3demulation"},
         {vvl::Extension::_VK_EXT_device_address_binding_report, "debugging, devtools"},
         {vvl::Extension::_VK_EXT_depth_clip_control, "glemulation"},
@@ -184,6 +185,7 @@ std::string GetSpecialUse(vvl::Extension extension_name) {
         {vvl::Extension::_VK_ANDROID_external_format_resolve, "glemulation"},
         {vvl::Extension::_VK_EXT_mutable_descriptor_type, "d3demulation"},
         {vvl::Extension::_VK_EXT_legacy_vertex_attributes, "glemulation"},
+        {vvl::Extension::_VK_EXT_attachment_feedback_loop_dynamic_state, "glemulation, d3demulation"},
         {vvl::Extension::_VK_MESA_image_alignment_control, "d3demulation"},
     };
 
@@ -3031,6 +3033,47 @@ void BestPractices::PostCallRecordGetScreenBufferPropertiesQNX(VkDevice device, 
     }
 }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+
+void BestPractices::PostCallRecordCreateIndirectCommandsLayoutEXT(VkDevice device,
+                                                                  const VkIndirectCommandsLayoutCreateInfoEXT* pCreateInfo,
+                                                                  const VkAllocationCallbacks* pAllocator,
+                                                                  VkIndirectCommandsLayoutEXT* pIndirectCommandsLayout,
+                                                                  const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordCreateIndirectCommandsLayoutEXT(device, pCreateInfo, pAllocator, pIndirectCommandsLayout,
+                                                                          record_obj);
+
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
+
+void BestPractices::PostCallRecordCreateIndirectExecutionSetEXT(VkDevice device,
+                                                                const VkIndirectExecutionSetCreateInfoEXT* pCreateInfo,
+                                                                const VkAllocationCallbacks* pAllocator,
+                                                                VkIndirectExecutionSetEXT* pIndirectExecutionSet,
+                                                                const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordCreateIndirectExecutionSetEXT(device, pCreateInfo, pAllocator, pIndirectExecutionSet,
+                                                                        record_obj);
+
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
+
+void BestPractices::PostCallRecordGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
+    VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties,
+    const RecordObject& record_obj) {
+    ValidationStateTracker::PostCallRecordGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
+        physicalDevice, pPropertyCount, pProperties, record_obj);
+
+    if (record_obj.result > VK_SUCCESS) {
+        LogPositiveSuccessCode(record_obj);
+        return;
+    }
+    if (record_obj.result < VK_SUCCESS) {
+        LogErrorCode(record_obj);
+    }
+}
 
 void BestPractices::PostCallRecordCreateAccelerationStructureKHR(VkDevice device,
                                                                  const VkAccelerationStructureCreateInfoKHR* pCreateInfo,

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 class Speedometer2Probe(SpeedometerProbe):
 
-  def _valid_metric_key(self, metric_key: str) -> bool:
+  def _is_valid_metric_key(self, metric_key: str) -> bool:
     parts = metric_key.split("/")
     if len(parts) == 2:
       return True

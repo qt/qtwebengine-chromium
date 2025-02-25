@@ -20,14 +20,14 @@
 
 #include "generated/instrumentation_ray_query_comp.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
-
-static LinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, LinkFunctions::inst_ray_query, 0,
-                             "inst_ray_query"};
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t RayQueryPass::GetLinkFunctionId() {
+    static LinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, LinkFunctions::inst_ray_query,
+                                 0, "inst_ray_query"};
+
     if (link_function_id == 0) {
         link_function_id = module_.TakeNextId();
         link_info.function_id = link_function_id;
@@ -57,7 +57,7 @@ uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst
 
 void RayQueryPass::Reset() { target_instruction_ = nullptr; }
 
-bool RayQueryPass::AnalyzeInstruction(const Function& function, const Instruction& inst) {
+bool RayQueryPass::RequiresInstrumentation(const Function& function, const Instruction& inst) {
     (void)function;
     const uint32_t opcode = inst.Opcode();
     if (opcode != spv::OpRayQueryInitializeKHR) {
@@ -67,7 +67,7 @@ bool RayQueryPass::AnalyzeInstruction(const Function& function, const Instructio
     return true;
 }
 
-void RayQueryPass::PrintDebugInfo() { std::cout << "RayQueryPass\n\tinstrumentation count: " << instrumented_count_ << '\n'; }
+void RayQueryPass::PrintDebugInfo() { std::cout << "RayQueryPass instrumentation count: " << instrumentations_count_ << '\n'; }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

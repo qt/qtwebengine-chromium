@@ -15,14 +15,13 @@ from crossbench.browsers.browser import Browser
 if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.settings import Settings
-  from crossbench.runner.runner import Runner
 
 
-SAFARIDRIVER_PATH = pth.RemotePath("/usr/bin/safaridriver")
+SAFARIDRIVER_PATH = pth.AnyPosixPath("/usr/bin/safaridriver")
 
 
-def find_safaridriver(bin_path: pth.RemotePath,
-                      platform: plt.Platform) -> pth.RemotePath:
+def find_safaridriver(bin_path: pth.AnyPath,
+                      platform: plt.Platform) -> pth.AnyPath:
   assert platform.is_file(bin_path), f"Invalid binary path: {bin_path}"
   driver_path = bin_path.parent / "safaridriver"
   if platform.exists(driver_path):
@@ -36,22 +35,22 @@ def find_safaridriver(bin_path: pth.RemotePath,
 class Safari(Browser):
 
   @classmethod
-  def default_path(cls, platform: plt.Platform) -> pth.RemotePath:
+  def default_path(cls, platform: plt.Platform) -> pth.AnyPath:
     return platform.path("/Applications/Safari.app")
 
   @classmethod
-  def technology_preview_path(cls, platform: plt.Platform) -> pth.RemotePath:
+  def technology_preview_path(cls, platform: plt.Platform) -> pth.AnyPath:
     return platform.path("/Applications/Safari Technology Preview.app")
 
   def __init__(self,
                label: str,
-               path: pth.RemotePath,
+               path: pth.AnyPath,
                settings: Optional[Settings] = None):
     super().__init__(label, path, settings=settings)
     assert self.platform.is_macos, "Safari only works on MacOS"
     self.bundle_name: str = ""
 
-  def _setup_path(self, path: Optional[pth.RemotePath] = None) -> None:
+  def _setup_path(self, path: Optional[pth.AnyPath] = None) -> None:
     super()._setup_path(path)
     assert self.path
     self.bundle_name = self.path.stem.replace(" ", "")
@@ -71,7 +70,7 @@ class Safari(Browser):
   def attributes(self) -> BrowserAttributes:
     return BrowserAttributes.SAFARI
 
-  def clear_cache(self, runner: Runner) -> None:
+  def clear_cache(self) -> None:
     self._clear_cache()
 
   def _clear_cache(self) -> None:

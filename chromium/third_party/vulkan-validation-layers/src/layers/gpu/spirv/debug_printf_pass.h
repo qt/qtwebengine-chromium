@@ -17,7 +17,7 @@
 #include <stdint.h>
 #include "pass.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 struct Type;
@@ -28,11 +28,11 @@ class DebugPrintfPass : public Pass {
     DebugPrintfPass(Module& module, uint32_t binding_slot = 0) : Pass(module), binding_slot_(binding_slot) {}
     const char* Name() const final { return "DebugPrintfPass"; }
 
-    bool Run() final;
-    void PrintDebugInfo() final;
+    bool Run();
+    void PrintDebugInfo();
 
   private:
-    bool AnalyzeInstruction(const Instruction& inst);
+    bool RequiresInstrumentation(const Instruction& inst);
     void CreateFunctionCall(BasicBlockIt block_it, InstructionIt* inst_it);
     void CreateFunctionParams(uint32_t argument_id, const Type& argument_type, std::vector<uint32_t>& params, BasicBlock& block,
                               InstructionIt* inst_it);
@@ -62,4 +62,4 @@ class DebugPrintfPass : public Pass {
 };
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

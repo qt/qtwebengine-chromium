@@ -51,7 +51,7 @@ bool CoreChecks::PreCallValidateGetMemoryFdKHR(VkDevice device, const VkMemoryGe
         if (!export_info) {
             skip |= LogError("VUID-VkMemoryGetFdInfoKHR-handleType-00671", pGetFdInfo->memory,
                              error_obj.location.dot(Field::pGetFdInfo).dot(Field::memory),
-                             "pNext chain does not include a VkExportMemoryAllocateInfo structure.");
+                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.");
         } else if ((export_info->handleTypes & pGetFdInfo->handleType) == 0) {
             skip |= LogError("VUID-VkMemoryGetFdInfoKHR-handleType-00671", pGetFdInfo->memory,
                              error_obj.location.dot(Field::pGetFdInfo).dot(Field::memory),
@@ -136,6 +136,13 @@ bool CoreChecks::PreCallValidateGetSemaphoreFdKHR(VkDevice device, const VkSemap
         } else if (!sem_state->CanBinaryBeWaited()) {
             skip |= LogError("VUID-VkSemaphoreGetFdInfoKHR-handleType-03254", sem_state->Handle(), info_loc.dot(Field::semaphore),
                              "must be signaled or have a pending signal operation.");
+        } else if (auto timeline_wait_info = sem_state->GetPendingBinarySignalTimelineDependency()) {
+            const LogObjectList objlist(sem_state->Handle(), timeline_wait_info->semaphore->Handle());
+            skip |= LogError("VUID-VkSemaphoreGetFdInfoKHR-handleType-03254", objlist, info_loc.dot(Field::semaphore),
+                             "(%s) has an associated signal but it depends on timeline semaphore wait (%s, wait value = %" PRIu64
+                             ") that does not have resolving signal submitted yet.",
+                             FormatHandle(sem_state->Handle()).c_str(),
+                             FormatHandle(timeline_wait_info->semaphore->Handle()).c_str(), timeline_wait_info->payload);
         }
     }
     return skip;
@@ -195,7 +202,7 @@ bool CoreChecks::PreCallValidateGetMemoryWin32HandleKHR(VkDevice device, const V
         if (!export_info) {
             skip |= LogError("VUID-VkMemoryGetWin32HandleInfoKHR-handleType-00662", pGetWin32HandleInfo->memory,
                              error_obj.location.dot(Field::pGetWin32HandleInfo).dot(Field::memory),
-                             "pNext chain does not include a VkExportMemoryAllocateInfo structure.");
+                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.");
         } else if ((export_info->handleTypes & pGetWin32HandleInfo->handleType) == 0) {
             skip |= LogError("VUID-VkMemoryGetWin32HandleInfoKHR-handleType-00662", pGetWin32HandleInfo->memory,
                              error_obj.location.dot(Field::pGetWin32HandleInfo).dot(Field::memory),

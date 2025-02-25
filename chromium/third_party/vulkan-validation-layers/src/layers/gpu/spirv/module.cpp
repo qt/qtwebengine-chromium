@@ -15,8 +15,9 @@
 
 #include "module.h"
 #include <spirv/unified1/spirv.hpp>
-#include "gpu/shaders/gpu_shaders_constants.h"
+#include "gpu/shaders/gpuav_shaders_constants.h"
 #include "error_message/logging.h"
+#include "error_message/log_message_type.h"
 
 #include "buffer_device_address_pass.h"
 #include "bindless_descriptor_pass.h"
@@ -24,22 +25,26 @@
 #include "non_bindless_oob_texel_buffer_pass.h"
 #include "ray_query_pass.h"
 #include "debug_printf_pass.h"
+#include "post_process_descriptor_indexing.h"
 
 #include <iostream>
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
-Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings)
+Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings,
+               const std::vector<std::vector<BindingLayout>>& set_index_to_bindings_layout_lut)
     : type_manager_(*this),
-      max_instrumented_count_(settings.max_instrumented_count),
+      max_instrumentations_count_(settings.max_instrumentations_count),
       shader_id_(settings.shader_id),
       output_buffer_descriptor_set_(settings.output_buffer_descriptor_set),
+      support_non_semantic_info_(settings.support_non_semantic_info),
       support_int64_(settings.support_int64),
       support_memory_model_device_scope_(settings.support_memory_model_device_scope),
       has_bindless_descriptors_(settings.has_bindless_descriptors),
       print_debug_info_(settings.print_debug_info),
-      debug_report_(debug_report) {
+      debug_report_(debug_report),
+      set_index_to_bindings_layout_lut_(set_index_to_bindings_layout_lut) {
     uint32_t instruction_count = 0;
     spirv_iterator it = words.begin();
     header_.magic_number = *it++;
@@ -106,12 +111,15 @@ Module::Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const
                 annotations_.emplace_back(std::move(new_inst));
                 break;
 
+            case spv::OpSpecConstantTrue:
+            case spv::OpSpecConstantFalse:
             case spv::OpConstantTrue:
             case spv::OpConstantFalse: {
                 const Type& type = type_manager_.GetTypeBool();
                 type_manager_.AddConstant(std::move(new_inst), type);
                 break;
             }
+            case spv::OpSpecConstant:
             case spv::OpConstant:
             case spv::OpConstantNull:
             case spv::OpConstantComposite: {
@@ -324,6 +332,15 @@ bool Module::RunPassRayQuery() {
 // binding slot allows debug printf to be slotted in the same set as GPU-AV if needed
 bool Module::RunPassDebugPrintf(uint32_t binding_slot) {
     DebugPrintfPass pass(*this, binding_slot);
+    const bool changed = pass.Run();
+    if (print_debug_info_) {
+        pass.PrintDebugInfo();
+    }
+    return changed;
+}
+
+bool Module::RunPassPostProcessDescriptorIndexing() {
+    PostProcessDescriptorIndexingPass pass(*this);
     const bool changed = pass.Run();
     if (print_debug_info_) {
         pass.PrintDebugInfo();
@@ -549,7 +566,7 @@ void Module::LinkFunction(const LinkInfo& info) {
                 }
 
                 // Replace LinkConstants
-                if (constant_value == gpuav::glsl::kLinkShaderId) {
+                if (constant_value == glsl::kLinkShaderId) {
                     new_inst->words_[3] = shader_id_;
                 }
             }
@@ -580,6 +597,16 @@ void Module::LinkFunction(const LinkInfo& info) {
                 // It is valid to have duplicated Capabilities
                 capabilities_.emplace_back(std::move(new_inst));
             }
+        } else if (opcode == spv::OpExtInstImport) {
+            const uint32_t new_result_id = TakeNextId();
+            id_swap_map[old_result_id] = new_result_id;
+            new_inst->ReplaceResultId(new_result_id);
+            ext_inst_imports_.emplace_back(std::move(new_inst));
+        } else if (opcode == spv::OpString) {
+            const uint32_t new_result_id = TakeNextId();
+            id_swap_map[old_result_id] = new_result_id;
+            new_inst->ReplaceResultId(new_result_id);
+            debug_source_.emplace_back(std::move(new_inst));
         } else if (opcode == spv::OpExtension) {
             extensions_.emplace_back(std::move(new_inst));
         }
@@ -615,6 +642,11 @@ void Module::LinkFunction(const LinkInfo& info) {
         if (opcode == spv::OpFunction) {
             new_inst->words_[1] = id_swap_map[new_inst->words_[1]];
             new_inst->words_[2] = info.function_id;
+            // We can easily inject the same function hundreds of times and really don't want to inline it.
+            // Have found that if drivers don't inline, can get a 20x speed-up at compiling large bloated shaders.
+            // There is no way to query this or test if the driver does consume this, also currently most drivers
+            // will ignore this as it is not hooked up... but worth trying
+            new_inst->words_[3] = spv::FunctionControlDontInlineMask;
             new_inst->words_[4] = function_type_id;
         } else if (opcode == spv::OpLabel) {
             uint32_t new_result_id = id_swap_map[new_inst->ResultId()];
@@ -711,4 +743,4 @@ void Module::InternalError(const char* tag, const char* message) {
 }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

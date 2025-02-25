@@ -10,8 +10,9 @@ import re
 from typing import (TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional,
                     Sequence, Type)
 
-from crossbench import cli_helper, exception
+from crossbench import exception
 from crossbench.config import ConfigError, ConfigObject
+from crossbench.parse import ObjectParser
 from crossbench.probes.all import GENERAL_PURPOSE_PROBES
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class ProbeConfig(ConfigObject):
       raise ProbeConfigError(f"Could not parse probe argument: {value}")
     config = {"name": match["probe_name"]}
     if config_str := match["config"]:
-      inline_config = cli_helper.parse_inline_hjson(config_str)
+      inline_config = ObjectParser.inline_hjson(config_str)
       if "name" in inline_config:
         raise ProbeConfigError("Inline hjson cannot redefine 'name'.")
       config.update(inline_config)
@@ -64,7 +65,7 @@ class ProbeConfig(ConfigObject):
 
   @classmethod
   def parse_dict(cls, config: Dict[str, Any]) -> ProbeConfig:
-    probe_name = cli_helper.parse_non_empty_str(config.pop("name"), "name")
+    probe_name = ObjectParser.non_empty_str(config.pop("name"), "name")
     return cls.parse_probe_dict(probe_name, config)
 
   @classmethod
@@ -107,7 +108,7 @@ class ProbeListConfig(ConfigObject):
                      config: Sequence[Dict[str, Any]]) -> ProbeListConfig:
     probe_configs: List[ProbeConfig] = []
     for index, probe_config in enumerate(config):
-      probe_config = cli_helper.parse_dict(probe_config, f"probes[{index}]")
+      probe_config = ObjectParser.dict(probe_config, f"probes[{index}]")
       probe_configs.append(ProbeConfig.parse_dict(probe_config))
     return cls(probe_configs)
 
@@ -121,7 +122,7 @@ class ProbeListConfig(ConfigObject):
         return cls.parse_sequence(config)
     elif "browsers" in config or "flags" in config:
       raise ProbeConfigError("Missing 'probes' property in global config.")
-    config = cli_helper.parse_dict(config, "probes")
+    config = ObjectParser.dict(config, "probes")
     probe_configs: List[ProbeConfig] = []
     for probe_name, config_data in config.items():
       with exception.annotate(f"Parsing probe config probes['{probe_name}']"):

@@ -26,14 +26,11 @@
 
 #include <vulkan/utility/vk_struct_helper.hpp>
 
-#include "vk_layer_config.h"
 #include "containers/custom_containers.h"
-#include "generated/vk_layer_dispatch_table.h"
 #include "generated/vk_object_types.h"
 
 #if defined __ANDROID__
 #include <android/log.h>
-#define LOGCONSOLE(...) ((void)__android_log_print(ANDROID_LOG_INFO, "VALIDATION", __VA_ARGS__))
 [[maybe_unused]] static const char *kForceDefaultCallbackKey = "debug.vvl.forcelayerlog";
 #endif
 
@@ -191,7 +188,7 @@ class DebugReport {
     // This mutex is defined as mutable since the normal usage for a debug report object is as 'const'. The mutable keyword allows
     // the layers to continue this pattern, but also allows them to use/change this specific member for synchronization purposes.
     mutable std::mutex debug_output_mutex;
-    uint32_t duplicate_message_limit = 0;
+    uint32_t duplicate_message_limit = 0;  // zero will keep printing forever
     const void *instance_pnext_chain{};
     bool force_default_log_callback{false};
     uint32_t device_created = 0;

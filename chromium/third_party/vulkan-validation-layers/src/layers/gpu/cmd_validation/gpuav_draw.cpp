@@ -19,10 +19,11 @@
 #include "gpu/cmd_validation/gpuav_cmd_validation_common.h"
 #include "gpu/error_message/gpuav_vuids.h"
 #include "gpu/resources/gpuav_subclasses.h"
-#include "state_tracker/render_pass_state.h"
-#include "gpu/shaders/gpu_error_header.h"
-#include "gpu/shaders/gpu_shaders_constants.h"
+#include "gpu/shaders/gpuav_error_header.h"
+#include "gpu/shaders/gpuav_shaders_constants.h"
 #include "generated/cmd_validation_draw_vert.h"
+
+#include "state_tracker/render_pass_state.h"
 
 // See gpu/shaders/cmd_validation/draw.vert
 constexpr uint32_t kPushConstantDWords = 11u;
@@ -154,6 +155,7 @@ static VkPipeline GetDrawValidationPipeline(Validator &gpuav, SharedDrawValidati
     input_assembly_state.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     VkPipelineRasterizationStateCreateInfo rasterization_state = vku::InitStructHelper();
     rasterization_state.rasterizerDiscardEnable = VK_TRUE;
+    rasterization_state.lineWidth = 1.0f; // Incase lineWidth is not enabled
     VkPipelineColorBlendStateCreateInfo color_blend_state = vku::InitStructHelper();
 
     pipeline_ci.pVertexInputState = &vertex_input_state;
@@ -383,19 +385,16 @@ void InsertIndirectDrawValidation(Validator &gpuav, const Location &loc, Command
                                                                                  // think about also doing it in the error message
                 const uint32_t draw_size = (stride * (count - 1) + offset + sizeof(VkDrawIndexedIndirectCommand));
 
-                const char *vuid = nullptr;
-                if (count == 1) {
-                    vuid = vuids.count_exceeds_bufsize_1;
-                } else {
-                    vuid = vuids.count_exceeds_bufsize;
-                }
-                skip |= gpuav.LogError(vuid, objlist, loc,
-                                       "Indirect draw count of %" PRIu32 " would exceed buffer size %" PRIu64
-                                       " of buffer %s "
-                                       "stride = %" PRIu32 " offset = %" PRIu32
-                                       " (stride * (drawCount - 1) + offset + sizeof(VkDrawIndexedIndirectCommand)) = %" PRIu32 ".",
-                                       count, indirect_buffer_size, gpuav.FormatHandle(indirect_buffer).c_str(), stride, offset,
-                                       draw_size);
+                // Discussed that if drawCount is largeer than the buffer, it is still capped by the maxDrawCount on the CPU (which
+                // we would have checked is in the buffer range). We decided that we still want to give a warning, but the nothing
+                // is invalid here. https://gitlab.khronos.org/vulkan/vulkan/-/issues/3991
+                skip |= gpuav.LogWarning(
+                    "WARNING-GPU-AV-drawCount", objlist, loc,
+                    "Indirect draw count of %" PRIu32 " would exceed buffer size %" PRIu64
+                    " of buffer %s "
+                    "stride = %" PRIu32 " offset = %" PRIu32
+                    " (stride * (drawCount - 1) + offset + sizeof(VkDrawIndexedIndirectCommand)) = %" PRIu32 ".",
+                    count, indirect_buffer_size, gpuav.FormatHandle(indirect_buffer).c_str(), stride, offset, draw_size);
                 break;
             }
             case kErrorSubCodePreDrawCountLimit: {

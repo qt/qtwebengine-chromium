@@ -1191,6 +1191,9 @@ bool CoreChecks::VerifyFramebufferAndRenderPassImageViews(const VkRenderPassBegi
             }
             const uint32_t resolve_attachment = subpass->pResolveAttachments[0].attachment;
             const uint32_t color_attachment = subpass->pColorAttachments[0].attachment;
+            if (resolve_attachment == VK_ATTACHMENT_UNUSED || color_attachment == VK_ATTACHMENT_UNUSED) {
+                continue;
+            }
             const uint64_t attachment_external_format =
                 GetExternalFormat(render_pass_create_info->pAttachments[resolve_attachment].pNext);
             auto it = ahb_ext_resolve_formats_map.find(attachment_external_format);
@@ -2468,7 +2471,7 @@ bool CoreChecks::PreCallValidateCreateRenderPass(VkDevice device, const VkRender
 bool CoreChecks::ValidateDepthStencilResolve(const VkRenderPassCreateInfo2 *pCreateInfo, const ErrorObject &error_obj) const {
     bool skip = false;
 
-    // If the pNext list of VkSubpassDescription2 includes a VkSubpassDescriptionDepthStencilResolve structure,
+    // If the pNext chain in VkSubpassDescription2 includes a VkSubpassDescriptionDepthStencilResolve structure,
     // then that structure describes depth/stencil resolve operations for the subpass.
     for (uint32_t i = 0; i < pCreateInfo->subpassCount; i++) {
         const Location subpass_loc = error_obj.location.dot(Field::pSubpasses, i);
@@ -3089,7 +3092,7 @@ bool CoreChecks::ValidateBeginRenderingFragmentDensityMap(VkCommandBuffer comman
         if (rendering_info.pDepthAttachment && (rendering_info.pDepthAttachment->imageView != VK_NULL_HANDLE)) {
             auto depth_view_state = Get<vvl::ImageView>(rendering_info.pDepthAttachment->imageView);
             if (depth_view_state && !(depth_view_state->image_state->create_info.flags & VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT)) {
-                const LogObjectList objlist(commandBuffer, rendering_info.pStencilAttachment->imageView);
+                const LogObjectList objlist(commandBuffer, rendering_info.pDepthAttachment->imageView);
                 skip |= LogError("VUID-VkRenderingInfo-imageView-06107", objlist,
                                  rendering_info_loc.dot(Field::pDepthAttachment).dot(Field::imageView),
                                  "must be created with VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT.");
@@ -5060,7 +5063,7 @@ bool CoreChecks::ValidateRenderingAttachmentLocationsKHR(const VkRenderingAttach
 
             if (unique.find(location) != unique.end()) {
                 skip |= LogError("VUID-VkRenderingAttachmentLocationInfoKHR-pColorAttachmentLocations-09513", objlist, loc,
-                                 "= %" PRIu32 " have same value as pColorAttachmentLocations[%" PRIu32 "] = %" PRIu32, location,
+                                 "= %" PRIu32 " has same value as pColorAttachmentLocations[%" PRIu32 "] = %" PRIu32, location,
                                  unique[location], location);
             } else
                 unique[location] = i;
@@ -5164,7 +5167,7 @@ bool CoreChecks::ValidateRenderingInputAttachmentIndicesKHR(const VkRenderingInp
                 skip |=
                     LogError("VUID-VkRenderingInputAttachmentIndexInfoKHR-pColorAttachmentInputIndices-09522", objlist,
                              loc_info.dot(Struct::VkRenderingInputAttachmentIndexInfoKHR, Field::pColorAttachmentInputIndices, i),
-                             "= %" PRIu32 " have same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32, index,
+                             "= %" PRIu32 " has same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32, index,
                              unique[index], index_info.pColorAttachmentInputIndices[unique[index]]);
             } else
                 unique[index] = i;
@@ -5173,7 +5176,7 @@ bool CoreChecks::ValidateRenderingInputAttachmentIndicesKHR(const VkRenderingInp
             unique.find(*index_info.pDepthInputAttachmentIndex) != unique.end()) {
             const Location loc = loc_info.dot(Struct::VkRenderingInputAttachmentIndexInfoKHR, Field::pDepthInputAttachmentIndex, 0);
             skip |= LogError("VUID-VkRenderingInputAttachmentIndexInfoKHR-pColorAttachmentInputIndices-09523", objlist, loc,
-                             "= %" PRIu32 " have same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32,
+                             "= %" PRIu32 " has same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32,
                              *index_info.pDepthInputAttachmentIndex, unique[*index_info.pDepthInputAttachmentIndex],
                              index_info.pColorAttachmentInputIndices[unique[*index_info.pDepthInputAttachmentIndex]]);
         }
@@ -5182,7 +5185,7 @@ bool CoreChecks::ValidateRenderingInputAttachmentIndicesKHR(const VkRenderingInp
             const Location loc =
                 loc_info.dot(Struct::VkRenderingInputAttachmentIndexInfoKHR, Field::pStencilInputAttachmentIndex, 0);
             skip |= LogError("VUID-VkRenderingInputAttachmentIndexInfoKHR-pColorAttachmentInputIndices-09524", objlist, loc,
-                             "= %" PRIu32 " have same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32,
+                             "= %" PRIu32 " has same value as in pColorAttachmentInputIndices[%" PRIu32 "] = %" PRIu32,
                              *index_info.pStencilInputAttachmentIndex, unique[*index_info.pStencilInputAttachmentIndex],
                              index_info.pColorAttachmentInputIndices[unique[*index_info.pStencilInputAttachmentIndex]]);
         }

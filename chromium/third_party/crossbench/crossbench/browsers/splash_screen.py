@@ -109,10 +109,7 @@ class DetailedSplashScreen(BaseURLSplashScreen):
 
   def _render_browser_details(self, run: Run) -> str:
     browser = run.browser
-    properties = {
-        "User Agent": browser.user_agent(run.runner),
-        **browser.details_json()
-    }
+    properties = {"User Agent": browser.user_agent(), **browser.details_json()}
     return self._render_properties("Browser Details", properties)
 
   def _render_run_details(self, run: Run) -> str:
@@ -122,7 +119,7 @@ class DetailedSplashScreen(BaseURLSplashScreen):
 class MinimalSplashScreen(DetailedSplashScreen):
 
   def _render_browser_details(self, run: Run) -> str:
-    properties = {"User Agent": run.browser.user_agent(run.runner)}
+    properties = {"User Agent": run.browser.user_agent()}
     return self._render_properties("Browser Details", properties)
 
 

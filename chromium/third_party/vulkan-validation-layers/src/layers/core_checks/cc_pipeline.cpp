@@ -86,21 +86,6 @@ bool CoreChecks::ValidatePipelineProtectedAccessFlags(VkPipelineCreateFlags2KHR 
     return skip;
 }
 
-bool CoreChecks::PreCallValidateCreatePipelineCache(VkDevice device, const VkPipelineCacheCreateInfo *pCreateInfo,
-                                                    const VkAllocationCallbacks *pAllocator, VkPipelineCache *pPipelineCache,
-                                                    const ErrorObject &error_obj) const {
-    bool skip = false;
-    if (enabled_features.pipelineCreationCacheControl == VK_FALSE) {
-        if ((pCreateInfo->flags & VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT_EXT) != 0) {
-            skip |= LogError("VUID-VkPipelineCacheCreateInfo-pipelineCreationCacheControl-02892", device,
-                             error_obj.location.dot(Field::pCreateInfo).dot(Field::flags),
-                             "includes VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT_EXT, but pipelineCreationCacheControl "
-                             "feature was not enabled");
-        }
-    }
-    return skip;
-}
-
 // This can be chained in the vkCreate*Pipelines() function or the VkPipelineShaderStageCreateInfo
 bool CoreChecks::ValidatePipelineRobustnessCreateInfo(const vvl::Pipeline &pipeline,
                                                       const VkPipelineRobustnessCreateInfoEXT &pipeline_robustness_info,
@@ -715,6 +700,9 @@ bool CoreChecks::ValidatePipelineShaderStage(const vvl::Pipeline &pipeline,
 bool CoreChecks::PreCallValidateGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfoKHR *pPipelineCreateInfo,
                                                   VkPipelineBinaryKeyKHR *pPipelineKey, const ErrorObject &error_obj) const {
     bool skip = false;
+
+    // Used when getting global key
+    if (!pPipelineCreateInfo) return skip;
 
     const VkBaseOutStructure *pipeline_create_info = reinterpret_cast<const VkBaseOutStructure *>(pPipelineCreateInfo->pNext);
     if (pipeline_create_info) {

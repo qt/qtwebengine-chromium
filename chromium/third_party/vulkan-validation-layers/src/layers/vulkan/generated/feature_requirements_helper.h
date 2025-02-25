@@ -98,6 +98,20 @@ enum class Feature {
     conditionalRendering,
     // VkPhysicalDeviceConditionalRenderingFeaturesEXT
     inheritedConditionalRendering,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixBlockLoads,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixConversions,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixFlexibleDimensions,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixPerElementOperations,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixReductions,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixTensorAddressing,
+    // VkPhysicalDeviceCooperativeMatrix2FeaturesNV
+    cooperativeMatrixWorkgroupScope,
     // VkPhysicalDeviceCooperativeMatrixFeaturesKHR, VkPhysicalDeviceCooperativeMatrixFeaturesNV
     cooperativeMatrix,
     // VkPhysicalDeviceCooperativeMatrixFeaturesKHR, VkPhysicalDeviceCooperativeMatrixFeaturesNV
@@ -128,6 +142,8 @@ enum class Feature {
     floatRepresentation,
     // VkPhysicalDeviceDepthBiasControlFeaturesEXT
     leastRepresentableValueForceUnormRepresentation,
+    // VkPhysicalDeviceDepthClampControlFeaturesEXT
+    depthClampControl,
     // VkPhysicalDeviceDepthClampZeroOneFeaturesEXT
     depthClampZeroOne,
     // VkPhysicalDeviceDepthClipControlFeaturesEXT
@@ -192,8 +208,10 @@ enum class Feature {
     deviceGeneratedComputeCaptureReplay,
     // VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV
     deviceGeneratedComputePipelines,
-    // VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV
+    // VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT
     deviceGeneratedCommands,
+    // VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT
+    dynamicGeneratedPipelineLayout,
     // VkPhysicalDeviceDeviceMemoryReportFeaturesEXT
     deviceMemoryReport,
     // VkPhysicalDeviceDiagnosticsConfigFeaturesNV
@@ -436,6 +454,8 @@ enum class Feature {
     globalPriorityQuery,
     // VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT
     graphicsPipelineLibrary,
+    // VkPhysicalDeviceHdrVividFeaturesHUAWEI
+    hdrVivid,
     // VkPhysicalDeviceHostImageCopyFeaturesEXT
     hostImageCopy,
     // VkPhysicalDeviceHostQueryResetFeatures, VkPhysicalDeviceVulkan12Features
@@ -612,6 +632,8 @@ enum class Feature {
     presentBarrier,
     // VkPhysicalDevicePresentIdFeaturesKHR
     presentId,
+    // VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT
+    presentModeFifoLatestReady,
     // VkPhysicalDevicePresentWaitFeaturesKHR
     presentWait,
     // VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT
@@ -756,6 +778,8 @@ enum class Feature {
     shaderEarlyAndLateFragmentTests,
     // VkPhysicalDeviceShaderEnqueueFeaturesAMDX
     shaderEnqueue,
+    // VkPhysicalDeviceShaderEnqueueFeaturesAMDX
+    shaderMeshEnqueue,
     // VkPhysicalDeviceShaderExpectAssumeFeaturesKHR
     shaderExpectAssume,
     // VkPhysicalDeviceShaderFloat16Int8Features, VkPhysicalDeviceVulkan12Features

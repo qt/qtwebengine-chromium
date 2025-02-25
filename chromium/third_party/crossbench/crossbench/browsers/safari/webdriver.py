@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Type
 
 from selenium import webdriver
@@ -19,9 +20,8 @@ from crossbench.browsers.webdriver import DriverException, WebDriverBrowser
 
 if TYPE_CHECKING:
   from crossbench.browsers.settings import Settings
-  from crossbench.path import RemotePath
-  from crossbench.runner.groups import BrowserSessionRunGroup
-  from crossbench.runner.runner import Runner
+  from crossbench.path import AnyPath
+  from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
 class SafariWebDriver(WebDriverBrowser, Safari):
@@ -30,7 +30,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
 
   def __init__(self,
                label: str,
-               path: RemotePath,
+               path: AnyPath,
                settings: Optional[Settings] = None):
     super().__init__(label, path, settings)
     assert self.platform.is_macos
@@ -39,23 +39,23 @@ class SafariWebDriver(WebDriverBrowser, Safari):
   def attributes(self) -> BrowserAttributes:
     return BrowserAttributes.SAFARI | BrowserAttributes.WEBDRIVER
 
-  def clear_cache(self, runner: Runner) -> None:
+  def clear_cache(self) -> None:
     # skip the default caching, and only do it after launching the browser
     # via selenium.
     pass
 
-  def _find_driver(self) -> RemotePath:
+  def _find_driver(self) -> AnyPath:
     # TODO: support remote platform
     assert self.platform.is_local, "Remote platform is not supported yet"
-    return self.platform.host_platform.local_path(
+    return self.host_platform.local_path(
         find_safaridriver(self.path, self.platform))
 
   def _start_driver(self, session: BrowserSessionRunGroup,
-                    driver_path: RemotePath) -> webdriver.Remote:
+                    driver_path: AnyPath) -> webdriver.Remote:
     return self._start_safari_driver(session, driver_path)
 
   def _start_safari_driver(self, session: BrowserSessionRunGroup,
-                           driver_path: RemotePath) -> webdriver.Safari:
+                           driver_path: AnyPath) -> webdriver.Safari:
     assert not self._is_running
     logging.info("STARTING BROWSER: browser: %s driver: %s", self.path,
                  driver_path)
@@ -64,7 +64,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
     session.setup_selenium_options(options)
     self._force_clear_cache(session)
 
-    service = SafariService(executable_path=str(driver_path))
+    service = SafariService(executable_path=os.fspath(driver_path))
     driver_kwargs = {"service": service, "options": options}
 
     if webdriver.__version__ == "4.1.0":
@@ -76,7 +76,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
       driver = self._start_driver_with_retries(driver_kwargs)
 
     assert driver.session_id, "Could not start webdriver"
-    logs: RemotePath = (
+    logs: AnyPath = (
         self.platform.home() / "Library/Logs/com.apple.WebDriver" /
         driver.session_id)
     all_logs = list(self.platform.glob(logs, "safaridriver*"))
@@ -130,8 +130,8 @@ class SafariWebDriver(WebDriverBrowser, Safari):
     for arg in args:
       options.add_argument(arg)
 
-    # TODO: Conditionally enable detailed browser logging
-    # options.set_capability("safari:diagnose", "true")
+    if self._settings.driver_logging:
+      options.set_capability("safari:diagnose", "true")
     if "Technology Preview" in self.app_name:
       options.set_capability("browserName", "Safari Technology Preview")
       options.use_technology_preview = True
@@ -155,8 +155,8 @@ class SafariWebDriver(WebDriverBrowser, Safari):
           activate
         end tell""")
 
-  def quit(self, runner: Runner) -> None:
-    super().quit(runner)
+  def quit(self) -> None:
+    super().quit()
     # Safari needs some additional push to quit properly
     self.platform.exec_apple_script(f"""
         tell application "{self.app_name}"
@@ -191,8 +191,8 @@ class SafariWebdriverIOS(SafariWebDriver):
   def _force_clear_cache(self, session: BrowserSessionRunGroup) -> None:
     pass
 
-  def quit(self, runner: Runner) -> None:
-    self._driver.close()
+  def quit(self) -> None:
+    self._private_driver.close()
     self.platform.sleep(1.0)
-    self._driver.quit()
+    self._private_driver.quit()
     self.force_quit()

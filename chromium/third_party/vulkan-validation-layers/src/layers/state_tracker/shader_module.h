@@ -127,6 +127,9 @@ struct ExecutionModeSet {
         stencil_ref_replacing_bit = 1 << 25,
 
         fp_fast_math_default = 1 << 26,
+
+        derivative_group_linear = 1 << 27,
+        derivative_group_quads = 1 << 28,
     };
 
     // bits to know if things have been set or not by a Decoration
@@ -536,6 +539,8 @@ struct EntryPoint {
                const AccessChainVariableMap &access_chain_map, const VariableAccessMap &variable_access_map,
                const DebugNameMap &debug_name_map);
 
+    bool HasBuiltIn(spv::BuiltIn built_in) const;
+
   protected:
     static vvl::unordered_set<uint32_t> GetAccessibleIds(const Module &module_state, EntryPoint &entrypoint);
     static std::vector<StageInterfaceVariable> GetStageInterfaceVariables(const Module &module_state, const EntryPoint &entrypoint,
@@ -625,6 +630,11 @@ struct Module {
         bool has_specialization_constants{false};
         bool uses_interpolate_at_sample{false};
 
+        // Will check if there is source debug information
+        // Won't save any other info and will retrieve the debug info if requested in a VU error message
+        bool using_legacy_debug_info{false};
+        uint32_t shader_debug_info_set_id = 0;  // non-zero means shader has NonSemantic.Shader.DebugInfo.100
+
         // EntryPoint has pointer references inside it that need to be preserved
         std::vector<std::shared_ptr<EntryPoint>> entry_points;
 
@@ -651,7 +661,7 @@ struct Module {
     VulkanTypedHandle handle_;                            // Will be updated once its known its valid SPIR-V
     VulkanTypedHandle handle() const { return handle_; }  // matches normal convention to get handle
 
-    // Used for when modifying the SPIR-V (spirv-opt, GPU-AV instrumentation, etc) and need reparse it for VVL validaiton
+    // Used for when modifying the SPIR-V (spirv-opt, GPU-AV instrumentation, etc) and need reparse it for VVL validation
     Module(vvl::span<const uint32_t> code) : valid_spirv(true), words_(code.begin(), code.end()), static_data_(*this) {}
 
     // StatelessData is a pointer as we have cases were we don't need it and simpler to just null check the few cases that use it
@@ -709,6 +719,7 @@ struct Module {
     void DescribeTypeInner(std::ostringstream &ss, uint32_t type, uint32_t indent) const;
     std::string DescribeType(uint32_t type) const;
     std::string DescribeVariable(uint32_t id) const;
+    std::string DescribeInstruction(const Instruction &error_insn) const;
 
     // Note that some shaders can have an input and output topology
     std::optional<VkPrimitiveTopology> GetTopology(const EntryPoint &entrypoint) const;

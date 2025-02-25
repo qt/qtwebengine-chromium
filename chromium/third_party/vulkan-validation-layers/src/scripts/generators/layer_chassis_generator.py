@@ -69,12 +69,7 @@ class APISpecific:
                     {
                         'include': 'gpu/core/gpuav.h',
                         'class': 'gpuav::Validator',
-                        'enabled': 'enables[gpu_validation]'
-                    },
-                    {
-                        'include': 'gpu/debug_printf/debug_printf.h',
-                        'class': 'debug_printf::Validator',
-                        'enabled': 'enables[debug_printf_validation]'
+                        'enabled': 'enables[gpu_validation] || enables[debug_printf_validation]'
                     },
                     {
                         'include': 'sync/sync_validation.h',
@@ -133,7 +128,6 @@ void ValidationObject::InitObjectDispatchVectors() {
                                 typeid(&CoreChecks::name), \\
                                 typeid(&BestPractices::name), \\
                                 typeid(&gpuav::Validator::name), \\
-                                typeid(&debug_printf::Validator::name), \\
                                 typeid(&SyncValidator::name));
 
     auto init_object_dispatch_vector = [this](InterceptId id,
@@ -144,7 +138,6 @@ void ValidationObject::InitObjectDispatchVectors() {
                                               const std::type_info& tcv_typeid,
                                               const std::type_info& tbp_typeid,
                                               const std::type_info& tga_typeid,
-                                              const std::type_info& tdp_typeid,
                                               const std::type_info& tsv_typeid) {
         for (auto item : this->object_dispatch) {
             auto intercept_vector = &this->intercept_vectors[id];
@@ -166,9 +159,6 @@ void ValidationObject::InitObjectDispatchVectors() {
                 break;
             case LayerObjectTypeGpuAssisted:
                 if (tga_typeid != vo_typeid) intercept_vector->push_back(item);
-                break;
-            case LayerObjectTypeDebugPrintf:
-                if (tdp_typeid != vo_typeid) intercept_vector->push_back(item);
                 break;
             case LayerObjectTypeSyncValidation:
                 if (tsv_typeid != vo_typeid) intercept_vector->push_back(item);
@@ -217,6 +207,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
         'vkCreateShadersEXT',
         'vkAllocateDescriptorSets',
         'vkCreateBuffer',
+        'vkQueuePresentKHR',
         # Need to inject HandleData logic
         'vkBeginCommandBuffer',
         # ValidationCache functions do not get dispatched
@@ -296,7 +287,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
             #pragma once
 
             #include <atomic>
-            #include <mutex>
+            #include <shared_mutex>
             #include <cinttypes>
             #include <stdio.h>
             #include <stdlib.h>
@@ -311,18 +302,17 @@ class LayerChassisOutputGenerator(BaseGenerator):
             #include <vulkan/utility/vk_struct_helper.hpp>
             #include <vulkan/utility/vk_safe_struct.hpp>
             #include "utils/cast_utils.h"
-            #include "vk_layer_config.h"
             #include "layer_options.h"
             #include "containers/custom_containers.h"
             #include "error_message/logging.h"
             #include "error_message/error_location.h"
             #include "error_message/record_object.h"
-            #include "vk_object_types.h"
+            #include "error_message/log_message_type.h"
             #include "utils/vk_layer_extension_utils.h"
             #include "utils/vk_layer_utils.h"
             #include "vk_dispatch_table_helper.h"
             #include "vk_extension_helper.h"
-            #include "gpu/core/gpu_settings.h"
+            #include "gpu/core/gpuav_settings.h"
             #include "sync/sync_settings.h"
 
             extern std::atomic<uint64_t> global_unique_id;
@@ -384,7 +374,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 LayerObjectTypeCoreValidation,       // Instance or device core validation layer object
                 LayerObjectTypeBestPractices,        // Instance or device best practices layer object
                 LayerObjectTypeGpuAssisted,          // Instance or device gpu assisted validation layer object
-                LayerObjectTypeDebugPrintf,          // Instance or device shader debug printf layer object
                 LayerObjectTypeSyncValidation,       // Instance or device synchronization validation layer object
                 LayerObjectTypeMaxEnum,              // Max enum count
             };
@@ -433,7 +422,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 CHECK_ENABLED enabled = {};
                 GlobalSettings global_settings = {};
                 GpuAVSettings gpuav_settings = {};
-                DebugPrintfSettings printf_settings = {};
                 SyncValSettings syncval_settings = {};
 
                 VkInstance instance = VK_NULL_HANDLE;
@@ -445,6 +433,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 std::vector<ValidationObject*> aborted_object_dispatch;
                 LayerObjectTypeId container_type;
                 void ReleaseDeviceDispatchObject(LayerObjectTypeId type_id) const;
+                void ReleaseAllDispatchObjects() const;
 
                 vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<std::function<void()>>, 0> deferred_operation_post_completion;
                 vvl::concurrent_unordered_map<VkDeferredOperationKHR, std::vector<std::function<void(const std::vector<VkPipeline>&)>>, 0>
@@ -881,6 +870,7 @@ class LayerChassisOutputGenerator(BaseGenerator):
             template CoreChecks* ValidationObject::GetValidationObject<CoreChecks>() const;
 
             // Takes the layer and removes it from the chassis so it will not be called anymore
+            // Designed for things like GPU-AV to remove itself while keeping everything else alive
             void ValidationObject::ReleaseDeviceDispatchObject(LayerObjectTypeId type_id) const {
                 auto layer_data = GetLayerDataPtr(GetDispatchKey(device), layer_data_map);
                 for (auto object_it = layer_data->object_dispatch.begin(); object_it != layer_data->object_dispatch.end(); object_it++) {
@@ -906,6 +896,25 @@ class LayerChassisOutputGenerator(BaseGenerator):
                         break;
                     }
                 }
+            }
+
+            // Incase we need to teardown things early, we want to do it safely, so we will keep the entrypoints into layer, but just remove all
+            // the internal chassis hooks so that any call becomes a no-op (but still dispatches into the driver)
+            void ValidationObject::ReleaseAllDispatchObjects() const {
+                assert(container_type == LayerObjectTypeInstance || container_type == LayerObjectTypeDevice);
+                auto dispatch_key = container_type == LayerObjectTypeInstance ? GetDispatchKey(instance) : GetDispatchKey(device);
+                auto layer_data = GetLayerDataPtr(dispatch_key, layer_data_map);
+
+                // Some chassis loops use the intercept_vectors instead of looking up the object
+                for (auto& intercept_vector : layer_data->intercept_vectors) {
+                    intercept_vector.clear();
+                }
+
+                for (auto object_it = layer_data->object_dispatch.begin(); object_it != layer_data->object_dispatch.end(); object_it++) {
+                    ValidationObject* object = *object_it;
+                    layer_data->aborted_object_dispatch.push_back(object);
+                }
+                layer_data->object_dispatch.clear();
             }
 
             namespace vulkan_layer_chassis {
@@ -982,35 +991,12 @@ class LayerChassisOutputGenerator(BaseGenerator):
                     list_of_disables.append("None");
                 }
 
-                auto settings_info = GetLayerSettingsFileInfo();
-                std::string settings_status;
-                if (!settings_info->file_found) {
-                    settings_status = "None. Default location is ";
-                    settings_status.append(settings_info->location);
-                    settings_status.append(".");
-                } else {
-                    settings_status = "Found at ";
-                    settings_status.append(settings_info->location);
-                    settings_status.append(" specified by ");
-                    switch (settings_info->source) {
-                        case kEnvVar:
-                            settings_status.append("environment variable (VK_LAYER_SETTINGS_PATH).");
-                            break;
-                        case kVkConfig:
-                            settings_status.append("VkConfig application override.");
-                            break;
-                        case kLocal:  // Intentionally fall through
-                        default:
-                            settings_status.append("default location (current working directory).");
-                            break;
-                    }
-                }
-
                 Location loc(vvl::Func::vkCreateInstance);
                 // Output layer status information message
+                // TODO - We should just dump all settings to a file (see https://github.com/KhronosGroup/Vulkan-Utility-Libraries/issues/188)
                 context->LogInfo("WARNING-CreateInstance-status-message", context->instance, loc,
-                    "Khronos Validation Layer Active:\\n    Settings File: %s\\n    Current Enables: %s.\\n    Current Disables: %s.\\n",
-                    settings_status.c_str(), list_of_enables.c_str(), list_of_disables.c_str());
+                    "Khronos Validation Layer Active:\\n    Current Enables: %s.\\n    Current Disables: %s.\\n",
+                    list_of_enables.c_str(), list_of_disables.c_str());
 
                 // Create warning message if user is running debug layers.
             #ifndef NDEBUG
@@ -1124,19 +1110,17 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 auto debug_report = new DebugReport{};
                 debug_report->instance_pnext_chain = vku::SafePnextCopy(pCreateInfo->pNext);
                 ActivateInstanceDebugCallbacks(debug_report);
-                LayerDebugMessengerActions(debug_report, OBJECT_LAYER_DESCRIPTION);
 
                 // Set up enable and disable features flags
                 CHECK_ENABLED local_enables{};
                 CHECK_DISABLED local_disables{};
                 GlobalSettings local_global_settings = {};
                 GpuAVSettings local_gpuav_settings = {};
-                DebugPrintfSettings local_printf_settings = {};
                 SyncValSettings local_syncval_settings = {};
                 ConfigAndEnvSettings config_and_env_settings_data{
                     OBJECT_LAYER_DESCRIPTION, pCreateInfo, local_enables, local_disables, debug_report,
                     // All settings for various internal layers
-                    &local_global_settings, &local_gpuav_settings, &local_printf_settings, &local_syncval_settings};
+                    &local_global_settings, &local_gpuav_settings, &local_syncval_settings};
                 ProcessConfigAndEnvSettings(&config_and_env_settings_data);
 
                 // Create temporary dispatch vector for pre-calls until instance is created
@@ -1195,7 +1179,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
                 framework->enabled = local_enables;
                 framework->global_settings = local_global_settings;
                 framework->gpuav_settings = local_gpuav_settings;
-                framework->printf_settings = local_printf_settings;
                 framework->syncval_settings = local_syncval_settings;
 
                 framework->instance = *pInstance;
@@ -1216,7 +1199,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
                     intercept->disabled = framework->disabled;
                     intercept->global_settings = framework->global_settings;
                     intercept->gpuav_settings = framework->gpuav_settings;
-                    intercept->printf_settings = framework->printf_settings;
                     intercept->syncval_settings = framework->syncval_settings;
                     intercept->instance = *pInstance;
                 }
@@ -1367,7 +1349,6 @@ class LayerChassisOutputGenerator(BaseGenerator):
                     object->enabled = instance_interceptor->enabled;
                     object->global_settings = instance_interceptor->global_settings;
                     object->gpuav_settings = instance_interceptor->gpuav_settings;
-                    object->printf_settings = instance_interceptor->printf_settings;
                     object->syncval_settings = instance_interceptor->syncval_settings;
                     object->instance_dispatch_table = instance_interceptor->instance_dispatch_table;
                     object->instance_extensions = instance_interceptor->instance_extensions;
@@ -1862,6 +1843,61 @@ class LayerChassisOutputGenerator(BaseGenerator):
                     for (ValidationObject* intercept : layer_data->intercept_vectors[InterceptIdPostCallRecordCreateBuffer]) {
                         auto lock = intercept->WriteLock();
                         intercept->PostCallRecordCreateBuffer(device, pCreateInfo, pAllocator, pBuffer, record_obj);
+                    }
+                }
+                return result;
+            }
+
+            // This API needs to ensure that per-swapchain VkResult results are available
+            VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
+                VVL_ZoneScoped;
+
+                auto layer_data = GetLayerDataPtr(GetDispatchKey(queue), layer_data_map);
+                bool skip = false;
+                ErrorObject error_obj(vvl::Func::vkQueuePresentKHR, VulkanTypedHandle(queue, kVulkanObjectTypeQueue));
+                {
+                    VVL_ZoneScopedN("PreCallValidate");
+                    for (const ValidationObject* intercept : layer_data->intercept_vectors[InterceptIdPreCallValidateQueuePresentKHR]) {
+                        auto lock = intercept->ReadLock();
+                        skip |= intercept->PreCallValidateQueuePresentKHR(queue, pPresentInfo, error_obj);
+                        if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+                    }
+                }
+                RecordObject record_obj(vvl::Func::vkQueuePresentKHR);
+                {
+                    VVL_ZoneScopedN("PreCallRecord");
+                    for (ValidationObject* intercept : layer_data->intercept_vectors[InterceptIdPreCallRecordQueuePresentKHR]) {
+                        auto lock = intercept->WriteLock();
+                        intercept->PreCallRecordQueuePresentKHR(queue, pPresentInfo, record_obj);
+                    }
+                }
+
+                // Track per-swapchain results when there is more than one swapchain and VkPresentInfoKHR::pResults is null
+                small_vector<VkResult, 2> present_results;
+                VkPresentInfoKHR modified_present_info;
+                if (pPresentInfo && pPresentInfo->swapchainCount > 1 && pPresentInfo->pResults == nullptr) {
+                    present_results.resize(pPresentInfo->swapchainCount);
+                    modified_present_info = *pPresentInfo;
+                    modified_present_info.pResults = present_results.data();
+                    pPresentInfo = &modified_present_info;
+                }
+
+                VkResult result;
+                {
+                    VVL_ZoneScopedN("Dispatch");
+                    result = DispatchQueuePresentKHR(queue, pPresentInfo);
+                }
+                VVL_TracyCFrameMark;
+                record_obj.result = result;
+                {
+                    VVL_ZoneScopedN("PostCallRecord");
+                    for (ValidationObject* intercept : layer_data->intercept_vectors[InterceptIdPostCallRecordQueuePresentKHR]) {
+                        auto lock = intercept->WriteLock();
+
+                        if (result == VK_ERROR_DEVICE_LOST) {
+                            intercept->is_device_lost = true;
+                        }
+                        intercept->PostCallRecordQueuePresentKHR(queue, pPresentInfo, record_obj);
                     }
                 }
                 return result;

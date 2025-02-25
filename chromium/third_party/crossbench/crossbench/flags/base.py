@@ -46,16 +46,16 @@ class Freezable:
 BasicFlagsT = TypeVar("BasicFlagsT", bound="BasicFlags")
 
 
+FlagsData = Optional[Union[Dict[str, str], "Flags",
+                           Iterable[Union[Tuple[str, Optional[str]], str]]]]
+
+
 class BasicFlags(Freezable, collections.UserDict):
   """Basic implementation for command line flags (similar to Dic[str, str].
 
   This class is mostly used to make sure command-line flags for browsers
   don't end up having contradicting values.
   """
-
-  InitialDataType = Optional[Union[Dict[str, str], "Flags",
-                                   Iterable[Union[Tuple[str, Optional[str]],
-                                                  str]]]]
 
   _WHITE_SPACE_RE = re.compile(r"\s+")
   _BASIC_FLAG_NAME_RE = re.compile(r"(--?)[^\s=-][^\s=]*")
@@ -126,7 +126,7 @@ class BasicFlags(Freezable, collections.UserDict):
           f"Invalid {msg} part at pos={current_end or 0}: {repr(part)}")
     return cls(flag_parts)
 
-  def __init__(self, initial_data: Flags.InitialDataType = None) -> None:
+  def __init__(self, initial_data: FlagsData = None) -> None:
     super().__init__(initial_data)
 
   def __setitem__(self, flag_name: str, flag_value: Optional[str]) -> None:
@@ -183,7 +183,7 @@ class BasicFlags(Freezable, collections.UserDict):
 
   # pylint: disable=arguments-differ
   def update(self,
-             initial_data: Flags.InitialDataType = None,
+             initial_data: FlagsData = None,
              override: bool = False) -> None:
     # pylint: disable=arguments-differ
     if initial_data is None:
@@ -199,13 +199,13 @@ class BasicFlags(Freezable, collections.UserDict):
           flag_name, flag_value = flag_name_or_items
           self.set(flag_name, flag_value, override)
 
-  def merge(self, other: Flags.InitialDataType):
+  def merge(self, other: FlagsData) -> None:
     self.update(other)
 
   def copy(self: BasicFlagsT) -> BasicFlagsT:
     return self.__class__(self)
 
-  def merge_copy(self, other: Flags.InitialDataType):
+  def merge_copy(self, other: FlagsData):
     ret = self.copy()
     ret.merge(other)
     return ret

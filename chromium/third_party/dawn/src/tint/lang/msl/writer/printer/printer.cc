@@ -118,7 +118,7 @@ class Printer : public tint::TextGenerator {
     /// @returns the generated MSL shader
     tint::Result<PrintResult> Generate() {
         auto valid =
-            core::ir::ValidateAndDumpIfNeeded(ir_, "MSL writer",
+            core::ir::ValidateAndDumpIfNeeded(ir_, "msl.Printer",
                                               core::ir::Capabilities{
                                                   core::ir::Capability::kAllow8BitIntegers,
                                                   core::ir::Capability::kAllowPointersInStructures,
@@ -1077,11 +1077,17 @@ class Printer : public tint::TextGenerator {
             case core::BuiltinFn::kSubgroupAdd:
                 out << "simd_sum";
                 break;
+            case core::BuiltinFn::kSubgroupInclusiveAdd:
+                out << "simd_prefix_inclusive_sum";
+                break;
             case core::BuiltinFn::kSubgroupExclusiveAdd:
                 out << "simd_prefix_exclusive_sum";
                 break;
             case core::BuiltinFn::kSubgroupMul:
                 out << "simd_product";
+                break;
+            case core::BuiltinFn::kSubgroupInclusiveMul:
+                out << "simd_prefix_inclusive_product";
                 break;
             case core::BuiltinFn::kSubgroupExclusiveMul:
                 out << "simd_prefix_exclusive_product";

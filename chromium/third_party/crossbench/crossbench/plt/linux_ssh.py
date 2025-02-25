@@ -13,7 +13,7 @@ from crossbench.plt.linux import RemoteLinuxPlatform
 from crossbench.plt.ssh import SshPlatformMixin
 
 if TYPE_CHECKING:
-  from crossbench.path import LocalPath, RemotePath
+  from crossbench.path import AnyPath, LocalPath
   from crossbench.plt.base import CmdArg, CmdArgs, ListCmdArgs, Platform
 
 
@@ -43,6 +43,14 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
   def port(self) -> int:
     return self._port
 
+  @property
+  def ssh_user(self) -> str:
+    return self._ssh_user
+
+  @property
+  def ssh_port(self) -> int:
+    return self._ssh_port
+
   def _build_ssh_cmd(self, *args: CmdArg, shell=False) -> ListCmdArgs:
     ssh_cmd: ListCmdArgs = [
         "ssh", "-p", f"{self._ssh_port}", f"{self._ssh_user}@{self._host}"
@@ -53,16 +61,16 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
       ssh_cmd.append(shlex.join(map(str, args)))
     return ssh_cmd
 
-  def sh_stdout(self,
-                *args: CmdArg,
-                shell: bool = False,
-                quiet: bool = False,
-                encoding: str = "utf-8",
-                env: Optional[Mapping[str, str]] = None,
-                check: bool = True) -> str:
+  def sh_stdout_bytes(self,
+                      *args: CmdArg,
+                      shell: bool = False,
+                      quiet: bool = False,
+                      stdin=None,
+                      env: Optional[Mapping[str, str]] = None,
+                      check: bool = True) -> bytes:
     ssh_cmd: ListCmdArgs = self._build_ssh_cmd(*args, shell=shell)
-    return self._host_platform.sh_stdout(
-        *ssh_cmd, env=env, quiet=quiet, encoding=encoding, check=check)
+    return self._host_platform.sh_stdout_bytes(
+        *ssh_cmd, quiet=quiet, stdin=stdin, env=env, check=check)
 
   def sh(self,
          *args: CmdArg,
@@ -85,6 +93,26 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
         quiet=quiet,
         check=check)
 
+  def popen(self,
+            *args: CmdArg,
+            bufsize=-1,
+            shell: bool = False,
+            stdout=None,
+            stderr=None,
+            stdin=None,
+            env: Optional[Mapping[str, str]] = None,
+            quiet: bool = False) -> subprocess.Popen:
+    ssh_cmd: ListCmdArgs = self._build_ssh_cmd(*args, shell=shell)
+    return self._host_platform.popen(
+        *ssh_cmd,
+        bufsize=bufsize,
+        shell=shell,
+        stdout=stdout,
+        stderr=stderr,
+        stdin=stdin,
+        env=env,
+        quiet=quiet)
+
   def processes(self,
                 attrs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     # TODO: Define a more generic method in PosixPlatform, possibly with
@@ -99,7 +127,7 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
       res.append({"pid": int(pid), "name": name})
     return res
 
-  def push(self, from_path: LocalPath, to_path: RemotePath) -> RemotePath:
+  def push(self, from_path: LocalPath, to_path: AnyPath) -> AnyPath:
     scp_cmd: CmdArgs = [
         "scp", "-P", f"{self._ssh_port}", f"{from_path}",
         f"{self._ssh_user}@{self._host}:{to_path}"
@@ -107,18 +135,9 @@ class LinuxSshPlatform(SshPlatformMixin, RemoteLinuxPlatform):
     self._host_platform.sh_stdout(*scp_cmd)
     return to_path
 
-  def pull(self, from_path: RemotePath, to_path: LocalPath) -> LocalPath:
+  def pull(self, from_path: AnyPath, to_path: LocalPath) -> LocalPath:
     scp_cmd: CmdArgs = [
         "scp", "-P", f"{self._ssh_port}",
-        f"{self._ssh_user}@{self._host}:{from_path}", f"{to_path}"
-    ]
-    self._host_platform.sh_stdout(*scp_cmd)
-    return to_path
-
-  def rsync(self, from_path: RemotePath, to_path: LocalPath) -> LocalPath:
-    to_path.parent.mkdir(parents=True, exist_ok=True)
-    scp_cmd: CmdArgs = [
-        "scp", "-P", f"{self._ssh_port}", "-r",
         f"{self._ssh_user}@{self._host}:{from_path}", f"{to_path}"
     ]
     self._host_platform.sh_stdout(*scp_cmd)

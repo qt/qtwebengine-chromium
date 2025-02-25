@@ -14,8 +14,8 @@ if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.probes.probe import Probe
   from crossbench.probes.results import ProbeResult
-  from crossbench.runner.groups.cache_temperature import \
-      CacheTemperatureRunGroup
+  from crossbench.runner.groups.cache_temperatures import \
+      CacheTemperaturesRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.run import Run
   from crossbench.stories.story import Story
@@ -56,9 +56,9 @@ class StoriesRunGroup(RunGroup):
     return self._repetitions_groups
 
   @property
-  def cache_temperature_groups(self) -> Iterable[CacheTemperatureRunGroup]:
+  def cache_temperatures_groups(self) -> Iterable[CacheTemperaturesRunGroup]:
     for group in self._repetitions_groups:
-      yield from group.cache_temperature_groups
+      yield from group.cache_temperatures_groups
 
   @property
   def runs(self) -> Iterable[Run]:
@@ -99,5 +99,4 @@ class StoriesRunGroup(RunGroup):
     return info
 
   def _merge_probe_results(self, probe: Probe) -> ProbeResult:
-    # TODO: enable pytype again
-    return probe.merge_stories(self)  # pytype: disable=wrong-arg-types
+    return probe.merge_stories(self)

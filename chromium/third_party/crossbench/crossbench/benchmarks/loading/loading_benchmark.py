@@ -10,25 +10,24 @@ import logging
 from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
                     Type)
 
-from crossbench import cli_helper
+from crossbench.action_runner.basic_action_runner import BasicActionRunner
+from crossbench.action_runner.config import ActionRunnerConfig
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
-from crossbench.benchmarks.loading.action_runner.base import ActionRunner
-from crossbench.benchmarks.loading.action_runner.basic_action_runner import \
-    BasicActionRunner
-from crossbench.benchmarks.loading.action_runner.config import \
-    ActionRunnerConfig
 from crossbench.benchmarks.loading.config.pages import (
     DevToolsRecorderPagesConfig, ListPagesConfig, PageConfig, PagesConfig)
-from crossbench.benchmarks.loading.page import (DEFAULT_DURATION, PAGE_LIST,
-                                                PAGE_LIST_SMALL, PAGES,
-                                                CombinedPage, InteractivePage,
-                                                LivePage, Page)
+from crossbench.benchmarks.loading.page.base import DEFAULT_DURATION, Page
+from crossbench.benchmarks.loading.page.combined import CombinedPage
+from crossbench.benchmarks.loading.page.interactive import InteractivePage
+from crossbench.benchmarks.loading.page.live import (PAGE_LIST,
+                                                     PAGE_LIST_SMALL, PAGES,
+                                                     LivePage)
 from crossbench.benchmarks.loading.playback_controller import \
     PlaybackController
 from crossbench.benchmarks.loading.tab_controller import TabController
+from crossbench.parse import DurationParser, ObjectParser
 
 if TYPE_CHECKING:
-  from crossbench.benchmarks.loading.action_runner.base import ActionRunner
+  from crossbench.action_runner.base import ActionRunner
   from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.stories.story import Story
 
@@ -65,17 +64,17 @@ class LoadingPageFilter(StoryFilter[Page]):
     tab_group.add_argument(
         "--multiple-tab",
         dest="tabs",
-        nargs='?',
+        nargs="?",
         type=TabController.parse,
         const=TabController.multiple(),
-        help="Open given urls in separate tabs (optional value for number of tabs for each url)."
-    )
+        help="Open given urls in separate tabs "
+        "(optional value for number of tabs for each url).")
     tab_group.add_argument(
         "--infinite-tab",
         dest="tabs",
         const=TabController.forever(),
         action="store_const",
-        help="Open given urls in seperate tabs infinitely.")
+        help="Open given urls in separate tabs infinitely.")
 
     playback_group = parser.add_mutually_exclusive_group()
     playback_group.add_argument(
@@ -98,14 +97,36 @@ class LoadingPageFilter(StoryFilter[Page]):
     parser.add_argument(
         "--about-blank-duration",
         "--about-blank",
-        type=cli_helper.Duration.parse_zero,
+        type=DurationParser.positive_or_zero_duration,
         default=dt.timedelta(),
         help="If non-zero, navigate to about:blank after every page.")
+
+    block_modifier_group = parser.add_argument_group("Action Block Options")
+    block_modifier_group.add_argument(
+        "--skip-login",
+        dest="run_login",
+        default=True,
+        action="store_const",
+        const=False,
+        help="Skip the login block, useful for replaying "
+        "archive that filtered already all login requests "
+        "to hide potential secrets. "
+        "The login block is run by default.")
+    block_modifier_group.add_argument(
+        "--skip-setup",
+        dest="run_setup",
+        default=True,
+        action="store_const",
+        const=False,
+        help="Skip the setup block, useful for replaying "
+        "archive that filtered already all login requests "
+        "to hide potential secrets. "
+        "The setup block is run by default.")
 
     return parser
 
   @classmethod
-  def add_page_config_parser(cls, parser):
+  def add_page_config_parser(cls, parser) -> None:
     page_config_group = parser.add_mutually_exclusive_group()
     # TODO: move --stories into mutually exclusive group as well
     page_config_group.add_argument(
@@ -132,9 +153,9 @@ class LoadingPageFilter(StoryFilter[Page]):
         "--devtools-recorder",
         dest="pages_config",
         type=DevToolsRecorderPagesConfig.parse,
-        help=("Run a single story from a serialized DevTools recorder session. "
-              "See https://developer.chrome.com/docs/devtools/recorder/ "
-              "for more details."))
+        help="Run a single story from a serialized DevTools recorder session. "
+        "See https://developer.chrome.com/docs/devtools/recorder/ "
+        "for more details.")
 
   @classmethod
   def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
@@ -166,7 +187,7 @@ class LoadingPageFilter(StoryFilter[Page]):
 
   @classmethod
   def all_stories(cls) -> Tuple[Page, ...]:
-    return PAGE_LIST
+    return tuple(PAGE_LIST)
 
   @classmethod
   def default_stories(cls) -> Tuple[Page, ...]:
@@ -211,8 +232,10 @@ class LoadingPageFilter(StoryFilter[Page]):
     if not config.blocks:
       return LivePage(label, config.first_url, duration, playback, tabs,
                       args.about_blank_duration)
-    return InteractivePage(label, config.blocks, config.login, playback, tabs,
-                           args.about_blank_duration)
+    return InteractivePage(label, config.blocks, config.setup, config.login,
+                           config.secrets.as_dict(), playback, tabs,
+                           args.about_blank_duration, args.run_login,
+                           args.run_setup)
 
   def create_stories(self, separate: bool) -> Sequence[Page]:
     logging.info("SELECTED STORIES: %s", str(list(map(str, self.stories))))
@@ -256,7 +279,7 @@ class PageLoadBenchmark(SubStoryBenchmark):
     return parser
 
   @classmethod
-  def requires_separate(cls, args: argparse.Namespace):
+  def requires_separate(cls, args: argparse.Namespace) -> bool:
     return args.separate
 
   @classmethod
@@ -270,16 +293,11 @@ class PageLoadBenchmark(SubStoryBenchmark):
             "with any other page config option.")
       pages = LoadingPageFilter.stories_from_config(args, config)
       if cls.requires_separate(args):
-        assert len(config.logins) == 0
         return pages
-      if len(pages) == 1 and len(config.logins) == 0:
+      if len(pages) == 1:
         return pages
-      return (CombinedPage(
-          pages,
-          "Page Scenarios - Combined",
-          args.playback,
-          args.tabs,
-          logins=config.logins),)
+      return (CombinedPage(pages, "Page Scenarios - Combined", args.playback,
+                           args.tabs),)
 
     if args.urls:
       # TODO: make urls and stories mutually exclusive.
@@ -296,7 +314,7 @@ class PageLoadBenchmark(SubStoryBenchmark):
     if global_config := args.config:
       # TODO: migrate --config to an already parsed hjson/json dict
       config_file = global_config
-      config_data = cli_helper.parse_hjson_file(config_file)
+      config_data = ObjectParser.hjson_file(config_file)
       if pages_config_dict := config_data.get("pages"):
         if args.pages_config:
           raise argparse.ArgumentTypeError(
@@ -316,6 +334,10 @@ class PageLoadBenchmark(SubStoryBenchmark):
     kwargs = super().kwargs_from_cli(args)
     kwargs["action_runner"] = args.action_runner
     return kwargs
+
+  @classmethod
+  def all_story_names(cls) -> Sequence[str]:
+    return sorted(LivePage.all_story_names())
 
   def __init__(self,
                stories: Sequence[Page],

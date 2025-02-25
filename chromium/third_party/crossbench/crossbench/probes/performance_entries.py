@@ -15,7 +15,8 @@ if TYPE_CHECKING:
   from crossbench.env import HostEnvironment
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
-  from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
+  from crossbench.runner.groups.browsers import BrowsersRunGroup
+  from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.types import Json
 
 
@@ -70,7 +71,7 @@ class PerformanceEntriesProbe(JsonResultProbe):
         (story_group.results[self].json
          for story_group in group.repetitions_groups),
         merge_duplicate_paths=True)
-    return self.write_group_result(group, merged, write_csv=True)
+    return self.write_group_result(group, merged)
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     # TODO: recreate the CSV from the merged JSON files since we might not

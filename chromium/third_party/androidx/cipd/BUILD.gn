@@ -25,7 +25,7 @@ template("define_all_androidx_targets") {
         ":androidx_lifecycle_lifecycle_common_jvm_java",
         ":androidx_lifecycle_lifecycle_runtime_android_java",
         ":androidx_lifecycle_lifecycle_viewmodel_android_java",
-        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java",
         ":androidx_savedstate_savedstate_android_java",
         ":androidx_tracing_tracing_java",
         "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
@@ -130,6 +130,18 @@ template("define_all_androidx_targets") {
         ":androidx_core_core_java",
         "//third_party/android_deps:com_google_auto_service_auto_service_annotations_java",
         "//third_party/android_deps:guava_android_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_appsearch_appsearch_builtin_types_java") {
+      aar_path = "cipd/libs/androidx_appsearch_appsearch_builtin_types/appsearch-builtin-types-1.1.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_appsearch_appsearch_builtin_types/androidx_appsearch_appsearch_builtin_types.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_appsearch_appsearch_java",
+        ":androidx_core_core_java",
       ]
     }
 
@@ -257,6 +269,8 @@ template("define_all_androidx_targets") {
         ":androidx_lifecycle_lifecycle_common_java8_java",
         ":androidx_lifecycle_lifecycle_livedata_core_java",
         ":androidx_lifecycle_lifecycle_viewmodel_android_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
 
@@ -385,7 +399,7 @@ template("define_all_androidx_targets") {
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_core_core_java") {
-      aar_path = "cipd/libs/androidx_core_core/core-1.15.0-SNAPSHOT.aar"
+      aar_path = "cipd/libs/androidx_core_core/core-1.16.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_core_core/androidx_core_core.info"
       enable_bytecode_checks = false
       deps = [
@@ -429,6 +443,37 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt("androidx_credentials_credentials_java") {
+      aar_path = "cipd/libs/androidx_credentials_credentials/credentials-1.5.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_credentials_credentials/androidx_credentials_credentials.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        ":androidx_biometric_biometric_java",
+        ":androidx_core_core_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_credentials_credentials_play_services_auth_java") {
+      aar_path = "cipd/libs/androidx_credentials_credentials_play_services_auth/credentials-play-services-auth-1.5.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_credentials_credentials_play_services_auth/androidx_credentials_credentials_play_services_auth.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_credentials_credentials_java",
+        "$google_play_services_package:google_play_services_auth_blockstore_java",
+        "$google_play_services_package:google_play_services_auth_java",
+        "$google_play_services_package:google_play_services_fido_java",
+        "$google_play_services_package:google_play_services_identity_credentials_java",
+        "//third_party/android_deps:com_google_android_libraries_identity_googleid_googleid_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_customview_customview_java") {
       aar_path = "cipd/libs/androidx_customview_customview/customview-1.2.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_customview_customview/androidx_customview_customview.info"
@@ -441,6 +486,26 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt("androidx_datastore_datastore_android_java") {
+      aar_path = "cipd/libs/androidx_datastore_datastore_android/datastore-android-1.2.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_datastore_datastore_android/androidx_datastore_datastore_android.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        ":androidx_datastore_datastore_core_jvm_java",
+        ":androidx_datastore_datastore_core_okio_jvm_java",
+        "//third_party/android_deps:com_squareup_okio_okio_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_java_group("androidx_datastore_datastore_core_java") {
+      deps = [ ":androidx_datastore_datastore_core_jvm_java" ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_documentfile_documentfile_java") {
       aar_path = "cipd/libs/androidx_documentfile_documentfile/documentfile-1.1.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_documentfile_documentfile/androidx_documentfile_documentfile.info"
@@ -448,6 +513,7 @@ template("define_all_androidx_targets") {
       deps = [
         ":androidx_annotation_annotation_jvm_java",
         ":androidx_core_core_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
       ]
     }
 
@@ -472,6 +538,7 @@ template("define_all_androidx_targets") {
       deps = [
         ":androidx_collection_collection_jvm_java",
         ":androidx_core_core_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
       ]
     }
 
@@ -483,6 +550,7 @@ template("define_all_androidx_targets") {
       deps = [
         ":androidx_collection_collection_jvm_java",
         ":androidx_core_core_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
       ]
     }
 
@@ -491,7 +559,10 @@ template("define_all_androidx_targets") {
       aar_path = "cipd/libs/androidx_exifinterface_exifinterface/exifinterface-1.4.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_exifinterface_exifinterface/androidx_exifinterface_exifinterface.info"
       enable_bytecode_checks = false
-      deps = [ ":androidx_annotation_annotation_jvm_java" ]
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
+      ]
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
@@ -512,10 +583,11 @@ template("define_all_androidx_targets") {
         ":androidx_lifecycle_lifecycle_livedata_core_java",
         ":androidx_lifecycle_lifecycle_runtime_android_java",
         ":androidx_lifecycle_lifecycle_viewmodel_android_java",
-        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java",
         ":androidx_loader_loader_java",
         ":androidx_savedstate_savedstate_android_java",
         ":androidx_viewpager_viewpager_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -531,6 +603,7 @@ template("define_all_androidx_targets") {
         ":androidx_fragment_fragment_testing_manifest_java",
         ":androidx_lifecycle_lifecycle_common_jvm_java",
         ":androidx_test_core_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -699,20 +772,10 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
-    androidx_android_aar_prebuilt(
+    androidx_java_group(
         "androidx_lifecycle_lifecycle_viewmodel_savedstate_java") {
-      aar_path = "cipd/libs/androidx_lifecycle_lifecycle_viewmodel_savedstate/lifecycle-viewmodel-savedstate-2.9.0-SNAPSHOT.aar"
-      info_path = "cipd/libs/androidx_lifecycle_lifecycle_viewmodel_savedstate/androidx_lifecycle_lifecycle_viewmodel_savedstate.info"
-      enable_bytecode_checks = false
-      deps = [
-        ":androidx_annotation_annotation_jvm_java",
-        ":androidx_core_core_ktx_java",
-        ":androidx_lifecycle_lifecycle_livedata_core_java",
-        ":androidx_lifecycle_lifecycle_viewmodel_android_java",
-        ":androidx_savedstate_savedstate_android_java",
-        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
-        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
-      ]
+      deps =
+          [ ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java" ]
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
@@ -872,6 +935,56 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_navigation_navigation_compose_java") {
+      aar_path = "cipd/libs/androidx_navigation_navigation_compose/navigation-compose-2.9.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_navigation_navigation_compose/androidx_navigation_navigation_compose.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_activity_activity_compose_java",
+        ":androidx_activity_activity_java",
+        ":androidx_annotation_annotation_jvm_java",
+        ":androidx_compose_animation_animation_android_java",
+        ":androidx_compose_animation_animation_core_android_java",
+        ":androidx_compose_foundation_foundation_layout_android_java",
+        ":androidx_compose_runtime_runtime_android_java",
+        ":androidx_compose_runtime_runtime_saveable_android_java",
+        ":androidx_compose_ui_ui_android_java",
+        ":androidx_lifecycle_lifecycle_common_jvm_java",
+        ":androidx_lifecycle_lifecycle_runtime_compose_android_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_android_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_compose_android_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java",
+        ":androidx_navigation_navigation_common_java",
+        ":androidx_navigation_navigation_runtime_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_navigation_navigation_runtime_java") {
+      aar_path = "cipd/libs/androidx_navigation_navigation_runtime/navigation-runtime-2.9.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_navigation_navigation_runtime/androidx_navigation_navigation_runtime.info"
+      enable_bytecode_checks = false
+      deps = [
+        ":androidx_activity_activity_ktx_java",
+        ":androidx_annotation_annotation_experimental_java",
+        ":androidx_collection_collection_jvm_java",
+        ":androidx_core_core_ktx_java",
+        ":androidx_lifecycle_lifecycle_common_jvm_java",
+        ":androidx_lifecycle_lifecycle_runtime_ktx_android_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_ktx_java",
+        ":androidx_navigation_navigation_common_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_pdf_pdf_viewer_java") {
       aar_path =
           "cipd/libs/androidx_pdf_pdf_viewer/pdf-viewer-1.0.0-SNAPSHOT.aar"
@@ -1028,9 +1141,9 @@ template("define_all_androidx_targets") {
       enable_bytecode_checks = false
       deps = [
         ":androidx_annotation_annotation_jvm_java",
-        ":androidx_arch_core_core_common_java",
         ":androidx_core_core_ktx_java",
         ":androidx_lifecycle_lifecycle_common_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -1358,7 +1471,7 @@ template("define_all_androidx_targets") {
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_webkit_webkit_java") {
-      aar_path = "cipd/libs/androidx_webkit_webkit/webkit-1.12.0-SNAPSHOT.aar"
+      aar_path = "cipd/libs/androidx_webkit_webkit/webkit-1.13.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_webkit_webkit/androidx_webkit_webkit.info"
       enable_bytecode_checks = false
       deps = [
@@ -1390,15 +1503,16 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
-    androidx_android_aar_prebuilt("androidx_window_window_java_java") {
-      aar_path =
-          "cipd/libs/androidx_window_window_java/window-java-1.4.0-SNAPSHOT.aar"
-      info_path = "cipd/libs/androidx_window_window_java/androidx_window_window_java.info"
+    androidx_android_aar_prebuilt("androidx_window_window_java") {
+      aar_path = "cipd/libs/androidx_window_window/window-1.4.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_window_window/androidx_window_window.info"
       enable_bytecode_checks = false
       deps = [
         ":androidx_annotation_annotation_jvm_java",
+        ":androidx_collection_collection_jvm_java",
         ":androidx_core_core_java",
-        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        ":androidx_window_window_core_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -1839,6 +1953,7 @@ template("define_all_androidx_targets") {
       ]
       deps = [
         ":androidx_annotation_annotation_experimental_java",
+        ":androidx_collection_collection_jvm_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -1883,7 +1998,7 @@ template("define_all_androidx_targets") {
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_core_core_ktx_java") {
-      aar_path = "cipd/libs/androidx_core_core_ktx/core-ktx-1.15.0-SNAPSHOT.aar"
+      aar_path = "cipd/libs/androidx_core_core_ktx/core-ktx-1.16.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_core_core_ktx/androidx_core_core_ktx.info"
       enable_bytecode_checks = false
 
@@ -1912,7 +2027,10 @@ template("define_all_androidx_targets") {
         ":*",
         "//third_party/android_deps:*",
       ]
-      deps = [ ":androidx_annotation_annotation_jvm_java" ]
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
+      ]
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
@@ -1935,6 +2053,47 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_java_prebuilt("androidx_datastore_datastore_core_jvm_java") {
+      jar_path = "cipd/libs/androidx_datastore_datastore_core_jvm/datastore-core-jvm-1.2.0-SNAPSHOT.jar"
+      output_name = "androidx_datastore_datastore_core_jvm"
+      supports_android = true
+      enable_bytecode_checks = false
+
+      # To remove visibility constraint, add this dependency to
+      # //third_party/androidx/cipd/build.gradle.
+      visibility = [
+        ":*",
+        "//third_party/android_deps:*",
+      ]
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_java_prebuilt("androidx_datastore_datastore_core_okio_jvm_java") {
+      jar_path = "cipd/libs/androidx_datastore_datastore_core_okio_jvm/datastore-core-okio-jvm-1.2.0-SNAPSHOT.jar"
+      output_name = "androidx_datastore_datastore_core_okio_jvm"
+      supports_android = true
+      enable_bytecode_checks = false
+
+      # To remove visibility constraint, add this dependency to
+      # //third_party/androidx/cipd/build.gradle.
+      visibility = [
+        ":*",
+        "//third_party/android_deps:*",
+      ]
+      deps = [
+        ":androidx_datastore_datastore_core_jvm_java",
+        "//third_party/android_deps:com_squareup_okio_okio_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_emoji2_emoji2_java") {
       aar_path = "cipd/libs/androidx_emoji2_emoji2/emoji2-1.5.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_emoji2_emoji2/androidx_emoji2_emoji2.info"
@@ -1952,6 +2111,7 @@ template("define_all_androidx_targets") {
         ":androidx_core_core_java",
         ":androidx_lifecycle_lifecycle_process_java",
         ":androidx_startup_startup_runtime_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
       ]
     }
 
@@ -1971,6 +2131,7 @@ template("define_all_androidx_targets") {
         ":androidx_collection_collection_jvm_java",
         ":androidx_core_core_java",
         ":androidx_emoji2_emoji2_java",
+        "//third_party/android_deps:org_jspecify_jspecify_java",
       ]
     }
 
@@ -2042,7 +2203,7 @@ template("define_all_androidx_targets") {
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt(
         "androidx_graphics_graphics_shapes_android_java") {
-      aar_path = "cipd/libs/androidx_graphics_graphics_shapes_android/graphics-shapes-android-1.0.0-SNAPSHOT.aar"
+      aar_path = "cipd/libs/androidx_graphics_graphics_shapes_android/graphics-shapes-android-1.1.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_graphics_graphics_shapes_android/androidx_graphics_graphics_shapes_android.info"
       enable_bytecode_checks = false
 
@@ -2274,7 +2435,7 @@ template("define_all_androidx_targets") {
         ":androidx_compose_ui_ui_android_java",
         ":androidx_lifecycle_lifecycle_common_jvm_java",
         ":androidx_lifecycle_lifecycle_viewmodel_android_java",
-        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -2295,6 +2456,32 @@ template("define_all_androidx_targets") {
       deps = [
         ":androidx_lifecycle_lifecycle_viewmodel_android_java",
         "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java") {
+      aar_path = "cipd/libs/androidx_lifecycle_lifecycle_viewmodel_savedstate_android/lifecycle-viewmodel-savedstate-android-2.9.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_lifecycle_lifecycle_viewmodel_savedstate_android/androidx_lifecycle_lifecycle_viewmodel_savedstate_android.info"
+      enable_bytecode_checks = false
+
+      # To remove visibility constraint, add this dependency to
+      # //third_party/androidx/cipd/build.gradle.
+      visibility = [
+        ":*",
+        "//third_party/android_deps:*",
+      ]
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        ":androidx_core_core_ktx_java",
+        ":androidx_lifecycle_lifecycle_livedata_core_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_android_java",
+        ":androidx_savedstate_savedstate_android_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm_java",
         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
       ]
     }
@@ -2339,6 +2526,33 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
+    androidx_android_aar_prebuilt(
+        "androidx_navigation_navigation_common_java") {
+      aar_path = "cipd/libs/androidx_navigation_navigation_common/navigation-common-2.9.0-SNAPSHOT.aar"
+      info_path = "cipd/libs/androidx_navigation_navigation_common/androidx_navigation_navigation_common.info"
+      enable_bytecode_checks = false
+
+      # To remove visibility constraint, add this dependency to
+      # //third_party/androidx/cipd/build.gradle.
+      visibility = [
+        ":*",
+        "//third_party/android_deps:*",
+      ]
+      deps = [
+        ":androidx_annotation_annotation_jvm_java",
+        ":androidx_collection_collection_ktx_java",
+        ":androidx_core_core_ktx_java",
+        ":androidx_lifecycle_lifecycle_common_jvm_java",
+        ":androidx_lifecycle_lifecycle_runtime_ktx_android_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_ktx_java",
+        ":androidx_lifecycle_lifecycle_viewmodel_savedstate_android_java",
+        ":androidx_savedstate_savedstate_ktx_java",
+        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm_java",
+        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+      ]
+    }
+
+    # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt("androidx_palette_palette_java") {
       aar_path = "cipd/libs/androidx_palette_palette/palette-1.1.0-SNAPSHOT.aar"
       info_path =
@@ -2360,7 +2574,7 @@ template("define_all_androidx_targets") {
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
     androidx_android_aar_prebuilt(
         "androidx_profileinstaller_profileinstaller_java") {
-      aar_path = "cipd/libs/androidx_profileinstaller_profileinstaller/profileinstaller-1.4.0-SNAPSHOT.aar"
+      aar_path = "cipd/libs/androidx_profileinstaller_profileinstaller/profileinstaller-1.5.0-SNAPSHOT.aar"
       info_path = "cipd/libs/androidx_profileinstaller_profileinstaller/androidx_profileinstaller_profileinstaller.info"
       enable_bytecode_checks = false
 
@@ -2493,6 +2707,7 @@ template("define_all_androidx_targets") {
         ":androidx_core_core_ktx_java",
         ":androidx_customview_customview_java",
         ":androidx_transition_transition_java",
+        ":androidx_window_window_java",
       ]
     }
 

@@ -18,7 +18,7 @@ class MotionMark11Probe(MotionMark1Probe):
 
 class MotionMark11Story(MotionMark1Story):
   NAME = "motionmark_1.1"
-  URL: str = "https://chromium-workloads.web.app/motionmark/v1.1/"
+  URL: str = "https://chromium-workloads.web.app/motionmark/v1.1/MotionMark/"
   URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.1/"
 
 

@@ -17,9 +17,9 @@
 
 #include "gpu/core/gpuav.h"
 #include "gpu/cmd_validation/gpuav_cmd_validation_common.h"
-#include "gpu/resources/gpu_resources.h"
+#include "gpu/resources/gpuav_resources.h"
 #include "gpu/resources/gpuav_subclasses.h"
-#include "gpu/shaders/gpu_error_header.h"
+#include "gpu/shaders/gpuav_error_header.h"
 #include "generated/cmd_validation_trace_rays_rgen.h"
 
 // See gpu/shaders/cmd_validation/trace_rays.rgen
@@ -132,14 +132,14 @@ struct SharedTraceRaysValidationResources final {
         pool_create_info.flags = VMA_POOL_CREATE_LINEAR_ALGORITHM_BIT;
         result = vmaCreatePool(vma_allocator, &pool_create_info, &sbt_pool);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to create VMA memory pool for SBT.", true);
+            gpuav.InternalVmaError(gpuav.device, loc, "Unable to create VMA memory pool for SBT.");
             return;
         }
 
         alloc_info.pool = sbt_pool;
         result = vmaCreateBuffer(vma_allocator, &buffer_info, &alloc_info, &sbt_buffer, &sbt_allocation, nullptr);
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc, "Unable to allocate device memory for shader binding table.", true);
+            gpuav.InternalVmaError(gpuav.device, loc, "Unable to allocate device memory for shader binding table.");
             return;
         }
 
@@ -147,8 +147,8 @@ struct SharedTraceRaysValidationResources final {
         result = vmaMapMemory(vma_allocator, sbt_allocation, reinterpret_cast<void **>(&mapped_sbt));
 
         if (result != VK_SUCCESS) {
-            gpuav.InternalError(gpuav.device, loc,
-                                "Failed to map shader binding table when creating trace rays validation resources.", true);
+            gpuav.InternalVmaError(gpuav.device, loc,
+                                   "Failed to map shader binding table when creating trace rays validation resources.");
             return;
         }
 

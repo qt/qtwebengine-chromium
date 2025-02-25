@@ -62,6 +62,7 @@ class StatelessValidation : public ValidationObject {
         VkPhysicalDeviceFragmentShadingRatePropertiesKHR fragment_shading_rate_props;
         VkPhysicalDeviceDepthStencilResolveProperties depth_stencil_resolve_props;
         VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
+        VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props;
         VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props;
     };
     DeviceExtensionProperties phys_dev_ext_props = {};
@@ -407,7 +408,8 @@ class StatelessValidation : public ValidationObject {
         } else if (result == ValidValue::NoExtension && device != VK_NULL_HANDLE) {
             // If called from an instance function, there is no device to base extension support off of
             auto extensions = GetEnumExtensions(value);
-            skip |= LogError(vuid, device, loc, "(%" PRIu32 ") requires the extensions %s.", value, String(extensions).c_str());
+            skip |=
+                LogError(vuid, device, loc, "(%s) requires the extensions %s.", DescribeEnum(value), String(extensions).c_str());
         }
 
         return skip;
@@ -455,8 +457,8 @@ class StatelessValidation : public ValidationObject {
                 } else if (result == ValidValue::NoExtension && device != VK_NULL_HANDLE) {
                     // If called from an instance function, there is no device to base extension support off of
                     auto extensions = GetEnumExtensions(array[i]);
-                    skip |= LogError(array_required_vuid, device, array_loc.dot(i), "(%" PRIu32 ") requires the extensions %s.",
-                                     array[i], String(extensions).c_str());
+                    skip |= LogError(array_required_vuid, device, array_loc.dot(i), "(%s) requires the extensions %s.",
+                                     DescribeEnum(array[i]), String(extensions).c_str());
                 }
             }
         }
@@ -489,11 +491,15 @@ class StatelessValidation : public ValidationObject {
     ValidValue IsValidEnumValue(T value) const;
     template <typename T>
     vvl::Extensions GetEnumExtensions(T value) const;
+    template <typename T>
+    const char *DescribeEnum(T value) const;
 
     // VkFlags values don't have a way overload, so need to use vvl::FlagBitmask
     vvl::Extensions IsValidFlagValue(vvl::FlagBitmask flag_bitmask, VkFlags value, const DeviceExtensions &device_extensions) const;
     vvl::Extensions IsValidFlag64Value(vvl::FlagBitmask flag_bitmask, VkFlags64 value,
                                        const DeviceExtensions &device_extensions) const;
+    std::string DescribeFlagBitmaskValue(vvl::FlagBitmask flag_bitmask, VkFlags value) const;
+    std::string DescribeFlagBitmaskValue64(vvl::FlagBitmask flag_bitmask, VkFlags64 value) const;
 
     template <typename ExtensionState>
     bool ValidateExtensionReqs(const ExtensionState &extensions, const char *vuid, const char *extension_type,
@@ -574,8 +580,12 @@ class StatelessValidation : public ValidationObject {
     bool ValidateCreateImageFragmentShadingRate(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateCreateImageCornerSampled(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateCreateImageStencilUsage(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
+    bool ValidateCreateImageCompressionControl(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateCreateImageSwapchain(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
+    bool ValidateCreateImageFormatList(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateCreateImageMetalObject(const VkImageCreateInfo &create_info, const Location &create_info_loc) const;
+    bool ValidateCreateImageDrmFormatModifiers(const VkImageCreateInfo &create_info, const Location &create_info_loc,
+                                               std::vector<uint64_t> &image_create_drm_format_modifiers) const;
 
     bool manual_PreCallValidateCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
                                                const VkAllocationCallbacks *pAllocator, VkImageView *pView,
@@ -592,8 +602,8 @@ class StatelessValidation : public ValidationObject {
                                                     const ErrorObject &error_obj) const;
 
     bool ValidatePipelineShaderStageCreateInfoCommon(const VkPipelineShaderStageCreateInfo &create_info, const Location &loc) const;
-    bool ValidatePipelineBinaryInfo(const void *next, VkPipelineCreateFlags flags,
-                                    VkPipelineCache pipelineCache, const Location &loc) const;
+    bool ValidatePipelineBinaryInfo(const void *next, VkPipelineCreateFlags flags, VkPipelineCache pipelineCache,
+                                    const Location &loc) const;
     bool ValidatePipelineRenderingCreateInfo(const VkPipelineRenderingCreateInfo &rendering_struct, const Location &loc) const;
     bool ValidateCreateGraphicsPipelinesFlags(const VkPipelineCreateFlags2KHR flags, const Location &flags_loc) const;
     bool manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
@@ -820,6 +830,9 @@ class StatelessValidation : public ValidationObject {
                                                             const ErrorObject &error_obj) const;
     bool manual_PreCallValidateCmdSetViewportWScalingNV(VkCommandBuffer commandBuffer, uint32_t firstViewport,
                                                         uint32_t viewportCount, const VkViewportWScalingNV *pViewportWScalings,
+                                                        const ErrorObject &error_obj) const;
+    bool manual_PreCallValidateCmdSetDepthClampRangeEXT(VkCommandBuffer commandBuffer, VkDepthClampModeEXT depthClampMode,
+                                                        const VkDepthClampRangeEXT *pDepthClampRange,
                                                         const ErrorObject &error_obj) const;
 
     bool manual_PreCallValidateCreateShadersEXT(VkDevice device, uint32_t createInfoCount,
@@ -1074,12 +1087,16 @@ class StatelessValidation : public ValidationObject {
                                                 VkShaderStageFlags stageFlags, uint32_t offset, uint32_t size, const void *pValues,
                                                 const ErrorObject &error_obj) const;
 
+    bool manual_PreCallValidateCreatePipelineCache(VkDevice device, const VkPipelineCacheCreateInfo *pCreateInfo,
+                                                   const VkAllocationCallbacks *pAllocator, VkPipelineCache *pPipelineCache,
+                                                   const ErrorObject &error_obj) const;
     bool manual_PreCallValidateMergePipelineCaches(VkDevice device, VkPipelineCache dstCache, uint32_t srcCacheCount,
                                                    const VkPipelineCache *pSrcCaches, const ErrorObject &error_obj) const;
     bool manual_PreCallValidateGetPipelinePropertiesEXT(VkDevice device, const VkPipelineInfoEXT *pPipelineInfo,
                                                         VkBaseOutStructure *pPipelineProperties,
                                                         const ErrorObject &error_obj) const;
 
+    bool ValidateDepthClampRange(const VkDepthClampRangeEXT &depth_clamp_range, const Location &loc) const;
     bool manual_PreCallValidateCmdClearColorImage(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
                                                   const VkClearColorValue *pColor, uint32_t rangeCount,
                                                   const VkImageSubresourceRange *pRanges, const ErrorObject &error_obj) const;
@@ -1162,6 +1179,43 @@ class StatelessValidation : public ValidationObject {
                                                                       const ErrorObject &error_obj) const;
     bool manual_PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindInfoCount, const VkBindSparseInfo *pBindInfo,
                                                VkFence fence, const ErrorObject &error_obj) const;
+
+    bool ValidateIndirectExecutionSetPipelineInfo(const VkIndirectExecutionSetPipelineInfoEXT &pipeline_info,
+                                                  const Location &pipeline_info_loc) const;
+    bool ValidateIndirectExecutionSetShaderInfo(const VkIndirectExecutionSetShaderInfoEXT &shader_info,
+                                                const Location &shader_info_loc) const;
+    bool manual_PreCallValidateCreateIndirectExecutionSetEXT(VkDevice device,
+                                                             const VkIndirectExecutionSetCreateInfoEXT *pCreateInfo,
+                                                             const VkAllocationCallbacks *pAllocator,
+                                                             VkIndirectExecutionSetEXT *pIndirectExecutionSet,
+                                                             const ErrorObject &error_obj) const;
+    bool ValidateIndirectCommandsPushConstantToken(const VkIndirectCommandsPushConstantTokenEXT &push_constant_token,
+                                                   VkIndirectCommandsTokenTypeEXT token_type,
+                                                   const Location &push_constant_token_loc) const;
+    bool ValidateIndirectCommandsIndexBufferToken(const VkIndirectCommandsIndexBufferTokenEXT &index_buffer_token,
+                                                  const Location &index_buffer_token_loc) const;
+    bool ValidateIndirectCommandsExecutionSetToken(const VkIndirectCommandsExecutionSetTokenEXT &exe_set_token,
+                                                   const Location &exe_set_token_loc) const;
+    bool ValidateIndirectCommandsLayoutToken(const VkIndirectCommandsLayoutTokenEXT &token, const Location &token_loc) const;
+    bool ValidateIndirectCommandsLayoutStage(const VkIndirectCommandsLayoutTokenEXT &token, const Location &token_loc,
+                                             VkShaderStageFlags shader_stages, bool has_stage_graphics, bool has_stage_compute,
+                                             bool has_stage_ray_tracing, bool has_stage_mesh) const;
+    bool manual_PreCallValidateCreateIndirectCommandsLayoutEXT(VkDevice device,
+                                                               const VkIndirectCommandsLayoutCreateInfoEXT *pCreateInfo,
+                                                               const VkAllocationCallbacks *pAllocator,
+                                                               VkIndirectCommandsLayoutEXT *pIndirectCommandsLayout,
+                                                               const ErrorObject &error_obj) const;
+    bool ValidateGeneratedCommandsInfo(VkCommandBuffer command_buffer, const VkGeneratedCommandsInfoEXT &generated_commands_info,
+                                       const Location &info_loc) const;
+
+    bool manual_PreCallValidateCmdPreprocessGeneratedCommandsEXT(VkCommandBuffer commandBuffer,
+                                                                 const VkGeneratedCommandsInfoEXT *pGeneratedCommandsInfo,
+                                                                 VkCommandBuffer stateCommandBuffer,
+                                                                 const ErrorObject &error_obj) const;
+
+    bool manual_PreCallValidateCmdExecuteGeneratedCommandsEXT(VkCommandBuffer commandBuffer, VkBool32 isPreprocessed,
+                                                              const VkGeneratedCommandsInfoEXT *pGeneratedCommandsInfo,
+                                                              const ErrorObject &error_obj) const;
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
     bool manual_PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT *pMetalObjectsInfo,

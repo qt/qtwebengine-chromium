@@ -26,24 +26,11 @@
 #error No extension available for 64-bit integers.
 #endif
 
-#include "gpu_error_header.h"
-#include "gpu_shaders_constants.h"
+#include "gpuav_error_header.h"
+#include "gpuav_shaders_constants.h"
 #include "common_descriptor_sets.h"
 
-layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorLayoutData {
-    // BindingLayout[0]
-    uint num_bindings;
-    uint pad; // always zero, used to keep things aligned
-
-    // BindingLayout[1] - BindingLayout[N]
-    // struct glsl::BindingLayout {
-    //   x: count
-    //   y: state_start
-    // }
-    uvec2 data[];
-};
-
-layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorSetInData {
+layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorSetType {
     // struct glsl::DescriptorState {
     //   x: id
     //   y: extra data depending on the descriptor type
@@ -51,19 +38,15 @@ layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorSe
     uvec2 data[];
 };
 
-layout(buffer_reference, buffer_reference_align = 8, std430) buffer GlobalState {
-    // Maps to DescriptorHeap and used to detect if descriptor is still valid on CPU
-    uint data[];
-};
+layout(buffer_reference, buffer_reference_align = 8, std430) buffer UnusedInitializedStatus;
 
 struct DescriptorSetRecord {
-    DescriptorLayoutData layout_data;
-    DescriptorSetInData in_data;
-    uvec2 out_data; // unused BDA pointer
+    DescriptorSetType ds_type;
+    uvec2 unused_descriptor_index_post_process;
 };
 
-layout(set = kInstDefaultDescriptorSet, binding = kBindingInstBindlessDescriptor, std430) buffer BindlessStateBuffer {
-    GlobalState global_state;
+layout(set = kInstDefaultDescriptorSet, binding = kBindingInstBindlessDescriptor, std430) buffer DescriptorStateSSBO {
+    UnusedInitializedStatus unused_initialized_status;
     DescriptorSetRecord desc_sets[kDebugInputBindlessMaxDescSets];
 } bindless_state_buffer;
 
@@ -71,7 +54,7 @@ layout(set = kInstDefaultDescriptorSet, binding = kBindingInstBindlessDescriptor
 // We do not want to waste time deciding which descriptor type it is inside the shader.
 // While this is some code duplication, it keeps things seperated for non-bindlesss everywhere else
 bool inst_non_bindless_oob_texel_buffer(const uint inst_num, const uvec4 stage_info, const uint desc_array_size,
-                        const uint desc_set, const uint binding, const uint desc_index, const uint byte_offset) {
+                        const uint desc_set, const uint binding, const uint desc_index, const uint byte_offset, const uint binding_layout_offset) {
     uint error = 0u;
     uint param_0 = 0u;
     uint param_1 = 0u;
@@ -83,15 +66,12 @@ bool inst_non_bindless_oob_texel_buffer(const uint inst_num, const uvec4 stage_i
             break;
         }
 
-        DescriptorLayoutData layout_data = bindless_state_buffer.desc_sets[desc_set].layout_data;
-        uvec2 binding_state = layout_data.data[binding];
+        DescriptorSetType ds_type = bindless_state_buffer.desc_sets[desc_set].ds_type;
 
-        DescriptorSetInData in_data = bindless_state_buffer.desc_sets[desc_set].in_data;
-
-        uint state_index = binding_state.y + desc_index;
+        uint binding_layout_index = binding_layout_offset + desc_index;
 
         // check that the offset is in bounds
-        uint resource_size = in_data.data[state_index].y;
+        uint resource_size = ds_type.data[binding_layout_index].y;
         if (byte_offset >= resource_size) {
             error = kErrorSubCodeNonBindlessOOBTexelBufferBounds;
             param_0 = byte_offset;

@@ -26,6 +26,7 @@
 #include "utils/shader_utils.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/shader_stage_state.h"
+#include "utils/vk_layer_utils.h"
 
 // Fwd declarations -- including descriptor_set.h creates an ugly include loop
 namespace vvl {
@@ -140,6 +141,9 @@ class Pipeline : public StateObject {
         std::vector<VkShaderModule> instrumented_shader_module;
         // TODO - For GPL, this doesn't get passed down from linked shaders
         bool was_instrumented = false;
+        // When we instrument GPL at link time, we need to hold the new libraries until they are done
+        VkPipeline pre_raster_lib = VK_NULL_HANDLE;
+        VkPipeline frag_out_lib = VK_NULL_HANDLE;
     } instrumentation_data;
 
     // Executable or legacy pipeline
@@ -665,7 +669,9 @@ struct LastBound {
     // We have to track shader_object_bound, because shader_object_states will be nullptr when VK_NULL_HANDLE is used
     bool shader_object_bound[kShaderObjectStageCount]{false};
     vvl::ShaderObject *shader_object_states[kShaderObjectStageCount]{nullptr};
+    // The compatible layout used binding descriptor sets (track location to provide better error message)
     VkPipelineLayout desc_set_pipeline_layout = VK_NULL_HANDLE;
+    vvl::Func desc_set_bound_command = vvl::Func::Empty;  // will be something like vkCmdBindDescriptorSets
     std::shared_ptr<vvl::DescriptorSet> push_descriptor_set;
 
     struct DescriptorBufferBinding {
@@ -704,6 +710,7 @@ struct LastBound {
     bool IsDepthBoundTestEnable() const;
     bool IsDepthWriteEnable() const;
     bool IsDepthBiasEnable() const;
+    bool IsDepthClampEnable() const;
     bool IsStencilTestEnable() const;
     VkStencilOpState GetStencilOpStateFront() const;
     VkStencilOpState GetStencilOpStateBack() const;
@@ -719,16 +726,24 @@ struct LastBound {
     bool IsExclusiveScissorEnabled() const;
     bool IsCoverageToColorEnabled() const;
     bool IsCoverageModulationTableEnable() const;
+    bool IsDiscardRectangleEnable() const;
+    bool IsStippledLineEnable() const;
+    bool IsShadingRateImageEnable() const;
+    bool IsViewportWScalingEnable() const;
     VkCoverageModulationModeNV GetCoverageModulationMode() const;
 
     bool ValidShaderObjectCombination(const VkPipelineBindPoint bind_point, const DeviceFeatures &device_features) const;
     VkShaderEXT GetShader(ShaderObjectStage stage) const;
     vvl::ShaderObject *GetShaderState(ShaderObjectStage stage) const;
+    const vvl::ShaderObject *GetShaderStateIfValid(ShaderObjectStage stage) const;
+    // Return compute shader for compute pipeline, vertex or mesh shader for graphics
+    const vvl::ShaderObject *GetFirstShader(VkPipelineBindPoint bind_point) const;
     bool HasShaderObjects() const;
     bool IsValidShaderBound(ShaderObjectStage stage) const;
     bool IsValidShaderOrNullBound(ShaderObjectStage stage) const;
     std::vector<vvl::ShaderObject *> GetAllBoundGraphicsShaders();
     bool IsAnyGraphicsShaderBound() const;
+    VkShaderStageFlags GetAllActiveBoundStages() const;
 
     bool IsBoundSetCompatible(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const;
     bool IsBoundSetCompatible(uint32_t set, const vvl::ShaderObject &shader_object_state) const;
@@ -738,15 +753,9 @@ struct LastBound {
     const spirv::EntryPoint *GetFragmentEntryPoint() const;
 };
 
-static inline bool IsPipelineLayoutSetCompat(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b) {
-    if (!a || !b) {
-        return false;
-    }
-    if ((set >= a->set_compat_ids.size()) || (set >= b->set_compat_ids.size())) {
-        return false;
-    }
-    return a->set_compat_ids[set] == b->set_compat_ids[set];
-}
+// Used to compare 2 layouts independently when not tied to the last bound object
+bool IsPipelineLayoutSetCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b);
+std::string DescribePipelineLayoutSetNonCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b);
 
 enum LvlBindPoint {
     BindPoint_Graphics = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -800,6 +809,19 @@ static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlagBi
     return VK_PIPELINE_BIND_POINT_MAX_ENUM;
 }
 
+static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlags stage) {
+    // Assumes the call has checked stages have not been mixed
+    if (stage & kShaderStageAllGraphics) {
+        return VK_PIPELINE_BIND_POINT_GRAPHICS;
+    } else if (stage & VK_SHADER_STAGE_COMPUTE_BIT) {
+        return VK_PIPELINE_BIND_POINT_COMPUTE;
+    } else if (stage & kShaderStageAllRayTracing) {
+        return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+    } else {
+        assert(false);
+        return VK_PIPELINE_BIND_POINT_MAX_ENUM;
+    }
+}
 static LvlBindPoint inline ConvertToLvlBindPoint(VkShaderStageFlagBits stage) {
     switch (stage) {
         case VK_SHADER_STAGE_VERTEX_BIT:

@@ -162,9 +162,9 @@ class ExceptionAnnotator:
   def matching(self, *args: Type[BaseException]) -> List[BaseException]:
     result = []
     for entry in self._exceptions:
-      excption = entry.exception
-      if isinstance(excption, *args):
-        result.append(excption)
+      exception = entry.exception
+      if isinstance(exception, *args):
+        result.append(exception)
     return result
 
   def assert_success(self,

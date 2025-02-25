@@ -11,7 +11,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Iterable
 
-from crossbench import cli_helper
+from crossbench.parse import DurationParser, ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
 from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.results import LocalProbeResult, ProbeResult
@@ -35,7 +35,7 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
     parser = super().config_parser()
     parser.add_argument(
         "interval",
-        type=cli_helper.Duration.parse_non_zero,
+        type=DurationParser.positive_duration,
         default=dt.timedelta(seconds=1),
         help="Run the cmd at this interval and produce separate results.")
     return parser
@@ -66,9 +66,9 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
 
   def validate_env(self, env: HostEnvironment) -> None:
     super().validate_env(env)
-    if env.runner.repetitions != 1:
+    if env.repetitions != 1:
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
-                         f"repetitions={env.runner.repetitions}.")
+                         f"repetitions={env.repetitions}.")
 
   def get_context(self, run: Run) -> PollingProbeContext:
     return PollingProbeContext(self, run)
@@ -87,7 +87,7 @@ class ShellPollingProbe(PollingProbe):
     parser = super().config_parser()
     parser.add_argument(
         "cmd",
-        type=cli_helper.parse_sh_cmd,
+        type=ObjectParser.sh_cmd,
         required=True,
         help="Write stdout of this CMD as a result.")
     return parser

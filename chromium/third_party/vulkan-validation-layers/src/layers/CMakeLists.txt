@@ -29,6 +29,7 @@ target_sources(VkLayer_utils PRIVATE
     error_message/error_location.h
     error_message/error_strings.h
     error_message/record_object.h
+    error_message/log_message_type.h
     external/xxhash.h
     external/inplace_function.h
     ${API_TYPE}/generated/error_location_helper.cpp
@@ -156,6 +157,7 @@ target_sources(vvl PRIVATE
     core_checks/cc_descriptor.cpp
     core_checks/cc_device.cpp
     core_checks/cc_device_memory.cpp
+    core_checks/cc_device_generated_commands.cpp
     core_checks/cc_drawdispatch.cpp
     core_checks/cc_external_object.cpp
     core_checks/cc_image.cpp
@@ -173,6 +175,9 @@ target_sources(vvl PRIVATE
     core_checks/cc_shader_object.cpp
     core_checks/cc_state_tracker.h
     core_checks/cc_state_tracker.cpp
+    core_checks/cc_submit.h
+    core_checks/cc_submit.cpp
+    core_checks/cc_synchronization.h
     core_checks/cc_synchronization.cpp
     core_checks/cc_video.cpp
     core_checks/cc_vuid_maps.cpp
@@ -181,6 +186,8 @@ target_sources(vvl PRIVATE
     core_checks/cc_ycbcr.cpp
     drawdispatch/descriptor_validator.cpp
     drawdispatch/drawdispatch_vuids.cpp
+    error_message/spirv_logging.h
+    error_message/spirv_logging.cpp
     external/vma/vma.h
     external/vma/vma.cpp
     ${API_TYPE}/generated/best_practices.cpp
@@ -208,7 +215,7 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/thread_safety_counter_bodies.h
     ${API_TYPE}/generated/thread_safety_counter_definitions.h
     ${API_TYPE}/generated/thread_safety_counter_instances.h
-    ${API_TYPE}/generated/gpu_av_shader_hash.h
+    ${API_TYPE}/generated/gpuav_shader_hash.h
     ${API_TYPE}/generated/cmd_validation_copy_buffer_to_image_comp.h
     ${API_TYPE}/generated/cmd_validation_copy_buffer_to_image_comp.cpp
     ${API_TYPE}/generated/cmd_validation_dispatch_comp.h
@@ -217,8 +224,8 @@ target_sources(vvl PRIVATE
     ${API_TYPE}/generated/cmd_validation_draw_vert.cpp
     ${API_TYPE}/generated/cmd_validation_trace_rays_rgen.h
     ${API_TYPE}/generated/cmd_validation_trace_rays_rgen.cpp
-    gpu/core/gpu_settings.h
-    gpu/core/gpu_shader_cache_hash.h
+    gpu/core/gpuav_settings.h
+    gpu/core/gpuav_shader_cache_hash.h
     gpu/core/gpuav_constants.h
     gpu/cmd_validation/gpuav_cmd_validation_common.h
     gpu/cmd_validation/gpuav_cmd_validation_common.cpp
@@ -237,26 +244,24 @@ target_sources(vvl PRIVATE
     gpu/descriptor_validation/gpuav_image_layout.h
     gpu/descriptor_validation/gpuav_image_layout.cpp
     gpu/core/gpuav.h
-    gpu/core/gpu_state_tracker.cpp
-    gpu/core/gpu_state_tracker.h
     gpu/core/gpuav_record.cpp
     gpu/core/gpuav_setup.cpp
     gpu/debug_printf/debug_printf.cpp
     gpu/debug_printf/debug_printf.h
     gpu/error_message/gpuav_vuids.cpp
     gpu/error_message/gpuav_vuids.h
-    gpu/instrumentation/gpu_shader_instrumentor.cpp
-    gpu/instrumentation/gpu_shader_instrumentor.h
+    gpu/instrumentation/gpuav_shader_instrumentor.cpp
+    gpu/instrumentation/gpuav_shader_instrumentor.h
     gpu/instrumentation/gpuav_instrumentation.h
     gpu/instrumentation/gpuav_instrumentation.cpp
     gpu/resources/gpuav_subclasses.cpp
     gpu/resources/gpuav_subclasses.h
-    gpu/resources/gpu_shader_resources.h
-    gpu/resources/gpu_resources.h
-    gpu/resources/gpu_resources.cpp
-    gpu/shaders/gpu_error_codes.h
-    gpu/shaders/gpu_error_header.h
-    gpu/shaders/gpu_shaders_constants.h
+    gpu/resources/gpuav_shader_resources.h
+    gpu/resources/gpuav_resources.h
+    gpu/resources/gpuav_resources.cpp
+    gpu/shaders/gpuav_error_codes.h
+    gpu/shaders/gpuav_error_header.h
+    gpu/shaders/gpuav_shaders_constants.h
     object_tracker/object_lifetime_validation.h
     object_tracker/object_tracker_utils.cpp
     state_tracker/buffer_state.cpp
@@ -265,6 +270,8 @@ target_sources(vvl PRIVATE
     state_tracker/cmd_buffer_state.h
     state_tracker/descriptor_sets.cpp
     state_tracker/descriptor_sets.h
+    state_tracker/device_generated_commands_state.cpp
+    state_tracker/device_generated_commands_state.h
     state_tracker/device_memory_state.cpp
     state_tracker/device_memory_state.h
     state_tracker/device_state.cpp
@@ -310,6 +317,7 @@ target_sources(vvl PRIVATE
     stateless/sl_cmd_buffer_dynamic.cpp
     stateless/sl_cmd_buffer.cpp
     stateless/sl_descriptor.cpp
+    stateless/sl_device_generated_commands.cpp
     stateless/sl_device_memory.cpp
     stateless/sl_external_object.cpp
     stateless/sl_framebuffer.cpp

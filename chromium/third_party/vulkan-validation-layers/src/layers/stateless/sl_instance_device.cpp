@@ -183,12 +183,6 @@ bool StatelessValidation::manual_PreCallValidateCreateInstance(const VkInstanceC
                              "includes VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT but no "
                              "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT or VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT.");
         }
-        if (gpu_assisted && debug_printf) {
-            skip |= LogError(
-                "VUID-VkValidationFeaturesEXT-pEnabledValidationFeatures-02968", instance,
-                create_info_loc.pNext(Struct::VkValidationFeaturesEXT, Field::pEnabledValidationFeatures),
-                "includes both VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT and VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT.");
-        }
     }
 
     const auto *debug_report_callback = vku::FindStructInPNextChain<VkDebugReportCallbackCreateInfoEXT>(pCreateInfo->pNext);
@@ -410,6 +404,13 @@ void StatelessValidation::PostCallRecordCreateDevice(VkPhysicalDevice physicalDe
         VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&external_memory_host_props);
         DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
         phys_dev_ext_props.external_memory_host_props = external_memory_host_props;
+    }
+
+    if (IsExtEnabled(device_extensions.vk_ext_device_generated_commands)) {
+        VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT device_generated_commands_props = vku::InitStructHelper();
+        VkPhysicalDeviceProperties2 prop2 = vku::InitStructHelper(&device_generated_commands_props);
+        DispatchGetPhysicalDeviceProperties2Helper(physicalDevice, &prop2);
+        phys_dev_ext_props.device_generated_commands_props = device_generated_commands_props;
     }
 
      if (IsExtEnabled(device_extensions.vk_arm_render_pass_striped)) {
@@ -838,7 +839,8 @@ bool StatelessValidation::manual_PreCallValidateGetPhysicalDeviceImageFormatProp
                 skip |= LogError(
                     "VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02313", physicalDevice, format_info_loc,
                     "tiling is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT and flags contain VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT "
-                    "bit, but the pNext chain does not include VkImageFormatListCreateInfo with non-zero viewFormatCount.");
+                    "bit, but the pNext chain does not contain an instance of VkImageFormatListCreateInfo with non-zero "
+                    "viewFormatCount.");
             }
         }
     }

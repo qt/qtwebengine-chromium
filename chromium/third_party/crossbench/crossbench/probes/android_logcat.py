@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING, Iterable, Optional, Tuple, cast
 
 from crossbench.plt.android_adb import AndroidAdbPlatform
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeIncompatibleBrowser, ResultLocation)
+                                     ProbeIncompatibleBrowser)
+from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
@@ -58,7 +59,7 @@ class AndroidLogcatProbeContext(ProbeContext[AndroidLogcatProbe]):
 
   def __init__(self, probe: AndroidLogcatProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._start_time: Optional[str] = None
+    self._logcat_start_time: Optional[str] = None
 
   def _get_browser_platform_time(self) -> str:
     return self.browser_platform.sh_stdout("date",
@@ -74,21 +75,21 @@ class AndroidLogcatProbeContext(ProbeContext[AndroidLogcatProbe]):
     return cast(AndroidAdbPlatform, browser_platform)
 
   def start(self) -> None:
-    self._start_time = self._get_browser_platform_time()
+    self._logcat_start_time = self._get_browser_platform_time()
     self._log_to_logcat("logcat probe start")
 
   def stop(self) -> None:
     self._log_to_logcat("logcat probe end")
 
   def teardown(self) -> ProbeResult:
-    assert self._start_time
+    assert self._logcat_start_time
     file = self.local_result_path.with_suffix(".txt")
     with file.open("w", encoding="utf-8") as f:
-      self.runner_platform.sh(
+      self.host_platform.sh(
           "adb",
           "logcat",
           "-t",
-          self._start_time + ".000",
+          self._logcat_start_time + ".000",
           *self.probe.filterspec,
           stdout=f)
 

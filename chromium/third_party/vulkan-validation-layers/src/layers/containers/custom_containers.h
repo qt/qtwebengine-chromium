@@ -23,9 +23,7 @@
 #include <cassert>
 #include <limits>
 #include <memory>
-#include <map>
 #include <unordered_map>
-#include <set>
 #include <algorithm>
 #include <iterator>
 #include <type_traits>
@@ -35,6 +33,8 @@
 #ifdef USE_ROBIN_HOOD_HASHING
 #include "robin_hood.h"
 #else
+#include <map>
+#include <set>
 #include <unordered_set>
 #endif
 
@@ -1054,6 +1054,12 @@ template <typename T>
 bool Contains(const std::vector<T> &v, const T &value) {
     return std::find(v.cbegin(), v.cend(), value) != v.cend();
 }
+// Overload for the case of shared_ptr<const T> and shared_ptr<T>.
+// They are convertible but conversion is not performed during template type deduction.
+template <typename T>
+bool Contains(const std::vector<std::shared_ptr<const T>> &v, const std::shared_ptr<T> &value) {
+    return std::find(v.cbegin(), v.cend(), value) != v.cend();
+}
 
 //
 // if (auto* thing = vvl::Find(map, key)) { thing->jump(); }
@@ -1086,6 +1092,11 @@ const Value &FindExisting(const Container &container, const Key &key) {
     return it->second;
 }
 
+template <typename T>
+void Append(std::vector<T> &dst, const std::vector<T> &src) {
+    dst.insert(dst.end(), src.begin(), src.end());
+}
+
 // EraseIf is not implemented as std::erase(std::remove_if(...), ...) for two reasons:
 //   1) Robin Hood containers don't support two-argument erase functions
 //   2) STL remove_if requires the predicate to be const w.r.t the value-type, and std::erase_if doesn't AFAICT
@@ -1101,6 +1112,16 @@ typename Container::size_type EraseIf(Container &c, Predicate &&p) {
         }
     }
     return before_size - c.size();
+}
+
+// Replace with the std version after VVL switches to C++20.
+// https://en.cppreference.com/w/cpp/container/vector/erase2
+template <typename T, typename Pred>
+typename std::vector<T>::size_type erase_if(std::vector<T> &c, Pred pred) {
+    auto it = std::remove_if(c.begin(), c.end(), pred);
+    auto r = c.end() - it;
+    c.erase(it, c.end());
+    return r;
 }
 
 template <typename T>

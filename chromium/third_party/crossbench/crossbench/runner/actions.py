@@ -83,6 +83,12 @@ class Actions(helper.TimeScope):
   def _assert_is_active(self) -> None:
     assert self._is_active, "Actions have to be used in a with scope"
 
+  def current_window_id(self) -> str:
+    return self._browser.current_window_id()
+
+  def switch_window(self, window_id: str) -> None:
+    self._browser.switch_window(window_id)
+
   def js(self,
          js_code: str,
          timeout: Union[int, float, dt.timedelta] = 10,
@@ -93,17 +99,17 @@ class Actions(helper.TimeScope):
     if kwargs:
       js_code = js_code.format(**kwargs)
     delta = self.timing.timeout_timedelta(timeout)
-    return self._browser.js(
-        self._runner,  # pytype: disable=wrong-arg-types
-        js_code,
-        delta,
-        arguments=arguments)
+    return self._browser.js(js_code, delta, arguments=arguments)
 
-  def wait_js_condition(self, js_code: str, min_wait: Union[dt.timedelta,
-                                                            float],
-                        timeout: Union[dt.timedelta, float]) -> None:
+  def wait_js_condition(self,
+                        js_code: str,
+                        min_wait: Union[dt.timedelta, float],
+                        timeout: Union[dt.timedelta, float],
+                        delay: Union[dt.timedelta, float] = 0) -> None:
     wait_range = helper.WaitRange(
-        self.timing.timedelta(min_wait), self.timing.timeout_timedelta(timeout))
+        min=self.timing.timedelta(min_wait),
+        timeout=self.timing.timeout_timedelta(timeout),
+        delay=delay)
     assert "return" in js_code, (
         f"Missing return statement in js-wait code: {js_code}")
     for _, time_left in wait_range.wait_with_backoff():
@@ -117,14 +123,13 @@ class Actions(helper.TimeScope):
 
   def show_url(self, url: str, target: Optional[str] = None) -> None:
     self._assert_is_active()
-    if target and target != "_self":
+    if target and target in ("_blank", "_parent", "_top"):
       # TODO: use target in the driver instead.
       self.js(f"window.open('{url}','{target}');")
     else:
-      self._browser.show_url(
-          self._runner,  # pytype: disable=wrong-arg-types
-          url,
-          target=None)
+      if target not in (None, "_self", "_new_tab", "_new_window"):
+        raise ValueError(f"Invalid target: {target}")
+      self._browser.show_url(url, target=target)
 
   def wait(
       self, seconds: Union[dt.timedelta,

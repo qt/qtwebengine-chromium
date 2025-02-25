@@ -18,7 +18,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.17.2)
 
-project(VULKAN_LOADER VERSION 1.3.295 LANGUAGES C)
+project(VULKAN_LOADER VERSION 1.3.301 LANGUAGES C)
 
 option(CODE_COVERAGE "Enable Code Coverage" OFF)
 if (CODE_COVERAGE)
@@ -118,21 +118,25 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
 
     if(BUILD_WSI_XCB_SUPPORT)
         pkg_check_modules(XCB REQUIRED QUIET IMPORTED_TARGET xcb)
+        pkg_get_variable(XCB_INCLUDE_DIRS xcb includedir)
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_XCB_KHR)
-        target_link_libraries(platform_wsi INTERFACE PkgConfig::XCB)
+        target_include_directories(platform_wsi INTERFACE ${XCB_INCLUDE_DIRS})
     endif()
     if(BUILD_WSI_XLIB_SUPPORT)
         pkg_check_modules(X11 REQUIRED QUIET IMPORTED_TARGET x11)
+        pkg_get_variable(XLIB_INCLUDE_DIRS x11 includedir)
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_XLIB_XRANDR_EXT)
-        target_link_libraries(platform_wsi INTERFACE PkgConfig::X11)
+        target_include_directories(platform_wsi INTERFACE ${XLIB_INCLUDE_DIRS})
     endif()
     if(BUILD_WSI_WAYLAND_SUPPORT)
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_WAYLAND_KHR)
     endif()
     if(BUILD_WSI_DIRECTFB_SUPPORT)
         pkg_check_modules(DirectFB QUIET REQUIRED IMPORTED_TARGET directfb)
+        pkg_get_variable(DIRECTFB_INCLUDE_DIRS directfb includedir)
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_DIRECTFB_EXT)
-        target_link_libraries(platform_wsi INTERFACE PkgConfig::DirectFB)
+        # vulkan_core.h includes <directfb.h> but the header is installed to directfb/directfb.h
+        target_include_directories(platform_wsi INTERFACE ${DIRECTFB_INCLUDE_DIRS} ${DIRECTFB_INCLUDE_DIRS}/directfb)
     endif()
 elseif(CMAKE_SYSTEM_NAME MATCHES "QNX")
     message(FATAL_ERROR "See BUILD.md for QNX build")
@@ -186,6 +190,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 
     target_compile_options(loader_common_options INTERFACE -Wpointer-arith)
+
+    # Force GLIBC to use the 64 bit interface for file operations instead of 32 bit - More info in issue #1551
+    if("${CMAKE_SIZEOF_VOID_P}" EQUAL "4")
+        target_compile_definitions(loader_common_options INTERFACE _FILE_OFFSET_BITS=64)
+    endif()
 endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "MSVC" OR (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND CMAKE_C_COMPILER_FRONTEND_VARIANT MATCHES "MSVC"))

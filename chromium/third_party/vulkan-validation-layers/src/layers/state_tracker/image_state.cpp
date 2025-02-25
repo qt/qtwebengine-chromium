@@ -584,6 +584,15 @@ void Swapchain::PresentImage(uint32_t image_index, uint64_t present_id) {
     }
 }
 
+void Swapchain::ReleaseImage(uint32_t image_index) {
+    if (image_index >= images.size()) return;
+    assert(acquired_images > 0);
+    acquired_images--;
+    images[image_index].acquired = false;
+    images[image_index].acquire_semaphore.reset();
+    images[image_index].acquire_fence.reset();
+}
+
 void Swapchain::AcquireImage(uint32_t image_index, const std::shared_ptr<vvl::Semaphore> &semaphore_state,
                              const std::shared_ptr<vvl::Fence> &fence_state) {
     acquired_images++;
@@ -765,14 +774,17 @@ const Surface::PhysDevCache *Surface::GetPhysDevCache(VkPhysicalDevice phys_dev)
 
 void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilitiesKHR &surface_caps) {
     auto guard = Lock();
-    cache_[phys_dev].capabilities = surface_caps;
+    PhysDevCache &cache = cache_[phys_dev];
+    cache.capabilities = surface_caps;
+    cache.last_capability_query_used_present_mode = false;
 }
 
 void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurfaceCapabilities2KHR &surface_caps,
                                       VkPresentModeKHR present_mode) {
     auto guard = Lock();
     auto &cache = cache_[phys_dev];
-    // Get entry for a given presentation mode
+
+    // Get entry for the given presentation mode
     PresentModeInfo *info = nullptr;
     for (auto &cur_info : cache.present_mode_infos) {
         if (cur_info.present_mode == present_mode) {
@@ -785,6 +797,7 @@ void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurface
         info = &cache.present_mode_infos.back();
         info->present_mode = present_mode;
     }
+
     // Update entry
     info->surface_capabilities = surface_caps.surfaceCapabilities;
     const auto *present_scaling_caps = vku::FindStructInPNextChain<VkSurfacePresentScalingCapabilitiesEXT>(surface_caps.pNext);
@@ -796,6 +809,14 @@ void Surface::UpdateCapabilitiesCache(VkPhysicalDevice phys_dev, const VkSurface
         info->compatible_present_modes.emplace(compat_modes->pPresentModes,
                                                compat_modes->pPresentModes + compat_modes->presentModeCount);
     }
+    cache.last_capability_query_used_present_mode = true;
+}
+
+bool Surface::IsLastCapabilityQueryUsedPresentMode(VkPhysicalDevice phys_dev) const {
+    if (auto guard = Lock(); auto cache = GetPhysDevCache(phys_dev)) {
+        return cache->last_capability_query_used_present_mode;
+    }
+    return false;
 }
 
 VkSurfaceCapabilitiesKHR Surface::GetSurfaceCapabilities(VkPhysicalDevice phys_dev, const void *surface_info_pnext) const {

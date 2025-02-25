@@ -27,8 +27,7 @@
 #include <functional>
 #include <spirv/unified1/spirv.hpp>
 #include "vk_extension_helper.h"
-#include "state_tracker/shader_module.h"
-#include "state_tracker/device_state.h"
+#include "state_tracker/shader_instruction.h"
 #include "core_checks/core_validation.h"
 
 struct FeaturePointer {
@@ -132,7 +131,7 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityShaderViewportIndex, {0, &DeviceFeatures::shaderOutputViewportIndex, nullptr, ""}},
         {spv::CapabilityShaderLayer, {0, &DeviceFeatures::shaderOutputLayer, nullptr, ""}},
         {spv::CapabilityShaderViewportIndexLayerEXT, {0, nullptr, &DeviceExtensions::vk_ext_shader_viewport_index_layer, ""}},
-        {spv::CapabilityShaderViewportIndexLayerNV, {0, nullptr, &DeviceExtensions::vk_nv_viewport_array2, ""}},
+        {spv::CapabilityShaderViewportIndexLayerEXT, {0, nullptr, &DeviceExtensions::vk_nv_viewport_array2, ""}},
         {spv::CapabilityShaderViewportMaskNV, {0, nullptr, &DeviceExtensions::vk_nv_viewport_array2, ""}},
         {spv::CapabilityPerViewAttributesNV, {0, nullptr, &DeviceExtensions::vk_nvx_multiview_per_view_attributes, ""}},
         {spv::CapabilityStorageBuffer16BitAccess, {0, &DeviceFeatures::storageBuffer16BitAccess, nullptr, ""}},
@@ -186,13 +185,11 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityRoundingModeRTZ, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat16 & VK_TRUE) != 0"}},
         {spv::CapabilityRoundingModeRTZ, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat32 & VK_TRUE) != 0"}},
         {spv::CapabilityRoundingModeRTZ, {0, nullptr, nullptr, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat64 & VK_TRUE) != 0"}},
-        {spv::CapabilityComputeDerivativeGroupQuadsNV, {0, &DeviceFeatures::computeDerivativeGroupQuads, nullptr, ""}},
-        {spv::CapabilityComputeDerivativeGroupLinearNV, {0, &DeviceFeatures::computeDerivativeGroupLinear, nullptr, ""}},
+        {spv::CapabilityComputeDerivativeGroupQuadsKHR, {0, &DeviceFeatures::computeDerivativeGroupQuads, nullptr, ""}},
         {spv::CapabilityComputeDerivativeGroupQuadsKHR, {0, &DeviceFeatures::computeDerivativeGroupQuads, nullptr, ""}},
         {spv::CapabilityComputeDerivativeGroupLinearKHR, {0, &DeviceFeatures::computeDerivativeGroupLinear, nullptr, ""}},
-        {spv::CapabilityFragmentBarycentricNV, {0, &DeviceFeatures::fragmentShaderBarycentric, nullptr, ""}},
+        {spv::CapabilityComputeDerivativeGroupLinearKHR, {0, &DeviceFeatures::computeDerivativeGroupLinear, nullptr, ""}},
         {spv::CapabilityImageFootprintNV, {0, &DeviceFeatures::imageFootprint, nullptr, ""}},
-        {spv::CapabilityShadingRateNV, {0, &DeviceFeatures::shadingRateImage, nullptr, ""}},
         {spv::CapabilityMeshShadingNV, {0, nullptr, &DeviceExtensions::vk_nv_mesh_shader, ""}},
         {spv::CapabilityRayTracingKHR, {0, &DeviceFeatures::rayTracingPipeline, nullptr, ""}},
         {spv::CapabilityRayQueryKHR, {0, &DeviceFeatures::rayQuery, nullptr, ""}},
@@ -204,6 +201,7 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityTransformFeedback, {0, &DeviceFeatures::transformFeedback, nullptr, ""}},
         {spv::CapabilityGeometryStreams, {0, &DeviceFeatures::geometryStreams, nullptr, ""}},
         {spv::CapabilityFragmentDensityEXT, {0, &DeviceFeatures::fragmentDensityMap, nullptr, ""}},
+        {spv::CapabilityFragmentDensityEXT, {0, &DeviceFeatures::shadingRateImage, nullptr, ""}},
         {spv::CapabilityPhysicalStorageBufferAddresses, {0, &DeviceFeatures::bufferDeviceAddress, nullptr, ""}},
         {spv::CapabilityPhysicalStorageBufferAddresses, {0, &DeviceFeatures::bufferDeviceAddress, nullptr, ""}},
         {spv::CapabilityCooperativeMatrixNV, {0, &DeviceFeatures::cooperativeMatrix, nullptr, ""}},
@@ -213,22 +211,23 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityFragmentShaderPixelInterlockEXT, {0, &DeviceFeatures::fragmentShaderPixelInterlock, nullptr, ""}},
         {spv::CapabilityFragmentShaderShadingRateInterlockEXT, {0, &DeviceFeatures::fragmentShaderShadingRateInterlock, nullptr, ""}},
         {spv::CapabilityFragmentShaderShadingRateInterlockEXT, {0, &DeviceFeatures::shadingRateImage, nullptr, ""}},
-        {spv::CapabilityDemoteToHelperInvocationEXT, {0, &DeviceFeatures::shaderDemoteToHelperInvocation, nullptr, ""}},
-        {spv::CapabilityDemoteToHelperInvocationEXT, {0, &DeviceFeatures::shaderDemoteToHelperInvocation, nullptr, ""}},
+        {spv::CapabilityDemoteToHelperInvocation, {0, &DeviceFeatures::shaderDemoteToHelperInvocation, nullptr, ""}},
+        {spv::CapabilityDemoteToHelperInvocation, {0, &DeviceFeatures::shaderDemoteToHelperInvocation, nullptr, ""}},
         {spv::CapabilityFragmentShadingRateKHR, {0, &DeviceFeatures::pipelineFragmentShadingRate, nullptr, ""}},
         {spv::CapabilityFragmentShadingRateKHR, {0, &DeviceFeatures::primitiveFragmentShadingRate, nullptr, ""}},
         {spv::CapabilityFragmentShadingRateKHR, {0, &DeviceFeatures::attachmentFragmentShadingRate, nullptr, ""}},
         {spv::CapabilityWorkgroupMemoryExplicitLayoutKHR, {0, &DeviceFeatures::workgroupMemoryExplicitLayout, nullptr, ""}},
         {spv::CapabilityWorkgroupMemoryExplicitLayout8BitAccessKHR, {0, &DeviceFeatures::workgroupMemoryExplicitLayout8BitAccess, nullptr, ""}},
         {spv::CapabilityWorkgroupMemoryExplicitLayout16BitAccessKHR, {0, &DeviceFeatures::workgroupMemoryExplicitLayout16BitAccess, nullptr, ""}},
-        {spv::CapabilityDotProductInputAllKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductInputAllKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductInput4x8BitKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductInput4x8BitKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductInput4x8BitPackedKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductInput4x8BitPackedKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
-        {spv::CapabilityDotProductKHR, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInputAll, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInputAll, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInput4x8Bit, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInput4x8Bit, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInput4x8BitPacked, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProductInput4x8BitPacked, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProduct, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityDotProduct, {0, &DeviceFeatures::shaderIntegerDotProduct, nullptr, ""}},
+        {spv::CapabilityFragmentBarycentricKHR, {0, &DeviceFeatures::fragmentShaderBarycentric, nullptr, ""}},
         {spv::CapabilityFragmentBarycentricKHR, {0, &DeviceFeatures::fragmentShaderBarycentric, nullptr, ""}},
         {spv::CapabilityTextureSampleWeightedQCOM, {0, &DeviceFeatures::textureSampleWeighted, nullptr, ""}},
         {spv::CapabilityTextureBoxFilterQCOM, {0, &DeviceFeatures::textureBoxFilter, nullptr, ""}},
@@ -253,6 +252,12 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityQuadControlKHR, {0, &DeviceFeatures::shaderQuadControl, nullptr, ""}},
         {spv::CapabilityRawAccessChainsNV, {0, &DeviceFeatures::shaderRawAccessChains, nullptr, ""}},
         {spv::CapabilityReplicatedCompositesEXT, {0, &DeviceFeatures::shaderReplicatedComposites, nullptr, ""}},
+        {spv::CapabilityTensorAddressingNV, {0, &DeviceFeatures::cooperativeMatrixTensorAddressing, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixReductionsNV, {0, &DeviceFeatures::cooperativeMatrixReductions, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixConversionsNV, {0, &DeviceFeatures::cooperativeMatrixConversions, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixPerElementOperationsNV, {0, &DeviceFeatures::cooperativeMatrixPerElementOperations, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixTensorAddressingNV, {0, &DeviceFeatures::cooperativeMatrixTensorAddressing, nullptr, ""}},
+        {spv::CapabilityCooperativeMatrixBlockLoadsNV, {0, &DeviceFeatures::cooperativeMatrixBlockLoads, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -364,6 +369,8 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo> &GetSpirvExte
         {"SPV_KHR_compute_shader_derivatives", {0, nullptr, &DeviceExtensions::vk_khr_compute_shader_derivatives, ""}},
         {"SPV_EXT_replicated_composites", {0, nullptr, &DeviceExtensions::vk_ext_shader_replicated_composites, ""}},
         {"SPV_KHR_relaxed_extended_instruction", {0, nullptr, &DeviceExtensions::vk_khr_shader_relaxed_extended_instruction, ""}},
+        {"SPV_NV_cooperative_matrix2", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_matrix2, ""}},
+        {"SPV_NV_tensor_addressing", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_matrix2, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -679,6 +686,18 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "RayTracingDisplacementMicromapNV";
         case spv::CapabilityRawAccessChainsNV:
             return "RawAccessChainsNV";
+        case spv::CapabilityCooperativeMatrixReductionsNV:
+            return "CooperativeMatrixReductionsNV";
+        case spv::CapabilityCooperativeMatrixConversionsNV:
+            return "CooperativeMatrixConversionsNV";
+        case spv::CapabilityCooperativeMatrixPerElementOperationsNV:
+            return "CooperativeMatrixPerElementOperationsNV";
+        case spv::CapabilityCooperativeMatrixTensorAddressingNV:
+            return "CooperativeMatrixTensorAddressingNV";
+        case spv::CapabilityCooperativeMatrixBlockLoadsNV:
+            return "CooperativeMatrixBlockLoadsNV";
+        case spv::CapabilityTensorAddressingNV:
+            return "TensorAddressingNV";
         case spv::CapabilityIntegerFunctions2INTEL:
             return "IntegerFunctions2INTEL";
         case spv::CapabilityFunctionPointersINTEL:
@@ -715,8 +734,12 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "AtomicFloat32AddEXT";
         case spv::CapabilityAtomicFloat64AddEXT:
             return "AtomicFloat64AddEXT";
+        case spv::CapabilityOptNoneEXT:
+            return "OptNoneEXT";
         case spv::CapabilityAtomicFloat16AddEXT:
             return "AtomicFloat16AddEXT";
+        case spv::CapabilityArithmeticFenceEXT:
+            return "ArithmeticFenceEXT";
         case spv::CapabilitySubgroupBufferPrefetchINTEL:
             return "SubgroupBufferPrefetchINTEL";
         case spv::CapabilityGroupUniformArithmeticKHR:
@@ -882,8 +905,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityGeometryShaderPassthroughNV, "VK_NV_geometry_shader_passthrough"},
     {spv::CapabilityShaderViewportIndex, "VkPhysicalDeviceVulkan12Features::shaderOutputViewportIndex"},
     {spv::CapabilityShaderLayer, "VkPhysicalDeviceVulkan12Features::shaderOutputLayer"},
-    {spv::CapabilityShaderViewportIndexLayerEXT, "VK_EXT_shader_viewport_index_layer"},
-    {spv::CapabilityShaderViewportIndexLayerNV, "VK_NV_viewport_array2"},
+    {spv::CapabilityShaderViewportIndexLayerEXT, "VK_EXT_shader_viewport_index_layer OR VK_NV_viewport_array2"},
     {spv::CapabilityShaderViewportMaskNV, "VK_NV_viewport_array2"},
     {spv::CapabilityPerViewAttributesNV, "VK_NVX_multiview_per_view_attributes"},
     {spv::CapabilityStorageBuffer16BitAccess, "VkPhysicalDeviceVulkan11Features::storageBuffer16BitAccess"},
@@ -925,13 +947,9 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilitySignedZeroInfNanPreserve, "(VkPhysicalDeviceVulkan12Properties::shaderSignedZeroInfNanPreserveFloat16 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderSignedZeroInfNanPreserveFloat32 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderSignedZeroInfNanPreserveFloat64 == VK_TRUE)"},
     {spv::CapabilityRoundingModeRTE, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTEFloat16 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTEFloat32 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTEFloat64 == VK_TRUE)"},
     {spv::CapabilityRoundingModeRTZ, "(VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat16 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat32 == VK_TRUE) OR (VkPhysicalDeviceVulkan12Properties::shaderRoundingModeRTZFloat64 == VK_TRUE)"},
-    {spv::CapabilityComputeDerivativeGroupQuadsNV, "VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupQuads"},
-    {spv::CapabilityComputeDerivativeGroupLinearNV, "VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupLinear"},
-    {spv::CapabilityComputeDerivativeGroupQuadsKHR, "VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR::computeDerivativeGroupQuads"},
-    {spv::CapabilityComputeDerivativeGroupLinearKHR, "VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR::computeDerivativeGroupLinear"},
-    {spv::CapabilityFragmentBarycentricNV, "VkPhysicalDeviceFragmentShaderBarycentricFeaturesNV::fragmentShaderBarycentric"},
+    {spv::CapabilityComputeDerivativeGroupQuadsKHR, "VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR::computeDerivativeGroupQuads OR VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupQuads"},
+    {spv::CapabilityComputeDerivativeGroupLinearKHR, "VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR::computeDerivativeGroupLinear OR VkPhysicalDeviceComputeShaderDerivativesFeaturesNV::computeDerivativeGroupLinear"},
     {spv::CapabilityImageFootprintNV, "VkPhysicalDeviceShaderImageFootprintFeaturesNV::imageFootprint"},
-    {spv::CapabilityShadingRateNV, "VkPhysicalDeviceShadingRateImageFeaturesNV::shadingRateImage"},
     {spv::CapabilityMeshShadingNV, "VK_NV_mesh_shader"},
     {spv::CapabilityRayTracingKHR, "VkPhysicalDeviceRayTracingPipelineFeaturesKHR::rayTracingPipeline"},
     {spv::CapabilityRayQueryKHR, "VkPhysicalDeviceRayQueryFeaturesKHR::rayQuery"},
@@ -941,7 +959,7 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityRayTracingMotionBlurNV, "VkPhysicalDeviceRayTracingMotionBlurFeaturesNV::rayTracingMotionBlur"},
     {spv::CapabilityTransformFeedback, "VkPhysicalDeviceTransformFeedbackFeaturesEXT::transformFeedback"},
     {spv::CapabilityGeometryStreams, "VkPhysicalDeviceTransformFeedbackFeaturesEXT::geometryStreams"},
-    {spv::CapabilityFragmentDensityEXT, "VkPhysicalDeviceFragmentDensityMapFeaturesEXT::fragmentDensityMap"},
+    {spv::CapabilityFragmentDensityEXT, "VkPhysicalDeviceFragmentDensityMapFeaturesEXT::fragmentDensityMap OR VkPhysicalDeviceShadingRateImageFeaturesNV::shadingRateImage"},
     {spv::CapabilityPhysicalStorageBufferAddresses, "VkPhysicalDeviceVulkan12Features::bufferDeviceAddress OR VkPhysicalDeviceBufferDeviceAddressFeaturesEXT::bufferDeviceAddress"},
     {spv::CapabilityCooperativeMatrixNV, "VkPhysicalDeviceCooperativeMatrixFeaturesNV::cooperativeMatrix"},
     {spv::CapabilityIntegerFunctions2INTEL, "VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL::shaderIntegerFunctions2"},
@@ -949,16 +967,16 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityFragmentShaderSampleInterlockEXT, "VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT::fragmentShaderSampleInterlock"},
     {spv::CapabilityFragmentShaderPixelInterlockEXT, "VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT::fragmentShaderPixelInterlock"},
     {spv::CapabilityFragmentShaderShadingRateInterlockEXT, "VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT::fragmentShaderShadingRateInterlock OR VkPhysicalDeviceShadingRateImageFeaturesNV::shadingRateImage"},
-    {spv::CapabilityDemoteToHelperInvocationEXT, "VkPhysicalDeviceVulkan13Features::shaderDemoteToHelperInvocation OR VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT::shaderDemoteToHelperInvocation"},
+    {spv::CapabilityDemoteToHelperInvocation, "VkPhysicalDeviceVulkan13Features::shaderDemoteToHelperInvocation OR VkPhysicalDeviceShaderDemoteToHelperInvocationFeaturesEXT::shaderDemoteToHelperInvocation"},
     {spv::CapabilityFragmentShadingRateKHR, "VkPhysicalDeviceFragmentShadingRateFeaturesKHR::pipelineFragmentShadingRate OR VkPhysicalDeviceFragmentShadingRateFeaturesKHR::primitiveFragmentShadingRate OR VkPhysicalDeviceFragmentShadingRateFeaturesKHR::attachmentFragmentShadingRate"},
     {spv::CapabilityWorkgroupMemoryExplicitLayoutKHR, "VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR::workgroupMemoryExplicitLayout"},
     {spv::CapabilityWorkgroupMemoryExplicitLayout8BitAccessKHR, "VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR::workgroupMemoryExplicitLayout8BitAccess"},
     {spv::CapabilityWorkgroupMemoryExplicitLayout16BitAccessKHR, "VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR::workgroupMemoryExplicitLayout16BitAccess"},
-    {spv::CapabilityDotProductInputAllKHR, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
-    {spv::CapabilityDotProductInput4x8BitKHR, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
-    {spv::CapabilityDotProductInput4x8BitPackedKHR, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
-    {spv::CapabilityDotProductKHR, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
-    {spv::CapabilityFragmentBarycentricKHR, "VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR::fragmentShaderBarycentric"},
+    {spv::CapabilityDotProductInputAll, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
+    {spv::CapabilityDotProductInput4x8Bit, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
+    {spv::CapabilityDotProductInput4x8BitPacked, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
+    {spv::CapabilityDotProduct, "VkPhysicalDeviceVulkan13Features::shaderIntegerDotProduct OR VkPhysicalDeviceShaderIntegerDotProductFeaturesKHR::shaderIntegerDotProduct"},
+    {spv::CapabilityFragmentBarycentricKHR, "VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR::fragmentShaderBarycentric OR VkPhysicalDeviceFragmentShaderBarycentricFeaturesNV::fragmentShaderBarycentric"},
     {spv::CapabilityTextureSampleWeightedQCOM, "VkPhysicalDeviceImageProcessingFeaturesQCOM::textureSampleWeighted"},
     {spv::CapabilityTextureBoxFilterQCOM, "VkPhysicalDeviceImageProcessingFeaturesQCOM::textureBoxFilter"},
     {spv::CapabilityTextureBlockMatchQCOM, "VkPhysicalDeviceImageProcessingFeaturesQCOM::textureBlockMatch"},
@@ -980,6 +998,12 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityQuadControlKHR, "VkPhysicalDeviceShaderQuadControlFeaturesKHR::shaderQuadControl"},
     {spv::CapabilityRawAccessChainsNV, "VkPhysicalDeviceRawAccessChainsFeaturesNV::shaderRawAccessChains"},
     {spv::CapabilityReplicatedCompositesEXT, "VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT::shaderReplicatedComposites"},
+    {spv::CapabilityTensorAddressingNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixTensorAddressing"},
+    {spv::CapabilityCooperativeMatrixReductionsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixReductions"},
+    {spv::CapabilityCooperativeMatrixConversionsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixConversions"},
+    {spv::CapabilityCooperativeMatrixPerElementOperationsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixPerElementOperations"},
+    {spv::CapabilityCooperativeMatrixTensorAddressingNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixTensorAddressing"},
+    {spv::CapabilityCooperativeMatrixBlockLoadsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixBlockLoads"},
     };
 
     // VUs before catch unknown capabilities
@@ -1077,6 +1101,8 @@ static inline std::string SpvExtensionRequirments(std::string_view extension) {
     {"SPV_KHR_compute_shader_derivatives", {{vvl::Extension::_VK_KHR_compute_shader_derivatives}}},
     {"SPV_EXT_replicated_composites", {{vvl::Extension::_VK_EXT_shader_replicated_composites}}},
     {"SPV_KHR_relaxed_extended_instruction", {{vvl::Extension::_VK_KHR_shader_relaxed_extended_instruction}}},
+    {"SPV_NV_cooperative_matrix2", {{vvl::Extension::_VK_NV_cooperative_matrix2}}},
+    {"SPV_NV_tensor_addressing", {{vvl::Extension::_VK_NV_cooperative_matrix2}}},
     };
 
     // VUs before catch unknown extensions

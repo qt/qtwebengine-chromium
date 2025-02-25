@@ -71,6 +71,7 @@
 #endif  // _WIN32
 
 #if defined(VK_USE_PLATFORM_XLIB_KHR) || defined(VK_USE_PLATFORM_XCB_KHR)
+#include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #endif
 
@@ -243,8 +244,8 @@ auto GetVectorInit(const char *func_name, F &&f, T init, Ts &&...ts) -> std::vec
         err = f(ts..., &count, results.data());
         results.resize(count);
         iteration_count++;
-    } while (err == VK_INCOMPLETE || iteration_count < max_iterations);
-    if (err && iteration_count <= max_iterations) THROW_VK_ERR(func_name, err);
+    } while (err == VK_INCOMPLETE && iteration_count < max_iterations);
+    if (err) THROW_VK_ERR(func_name, err);
     return results;
 }
 
@@ -274,7 +275,7 @@ void setup_surface_capabilities2_chain(VkSurfaceCapabilities2KHR &start, std::un
 void setup_format_properties2_chain(VkFormatProperties2 &start, std::unique_ptr<format_properties2_chain> &chain, AppGpu &gpu);
 void setup_queue_properties2_chain(VkQueueFamilyProperties2 &start, std::unique_ptr<queue_properties2_chain> &chain, AppGpu &gpu);
 
-void prepare_phys_device_props2_twocall_chain_vectors(std::unique_ptr<phys_device_props2_chain> &chain);
+bool prepare_phys_device_props2_twocall_chain_vectors(std::unique_ptr<phys_device_props2_chain> &chain);
 
 /* An ptional contains either a value or nothing. The optional asserts if a value is trying to be gotten but none exist.
  * The interface is taken from C++17's <optional> with many aspects removed.
@@ -321,11 +322,8 @@ struct SurfaceExtension {
     VkSurfaceKHR (*create_surface)(AppInstance &) = nullptr;
     void (*destroy_window)(AppInstance &) = nullptr;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    VkBool32 supports_present = 0;
 
-    bool operator==(const SurfaceExtension &other) {
-        return name == other.name && surface == other.surface && supports_present == other.supports_present;
-    }
+    bool operator==(const SurfaceExtension &other) { return name == other.name && surface == other.surface; }
 };
 
 class APIVersion {
@@ -775,7 +773,7 @@ static void AppDestroyXcbWindow(AppInstance &inst) {
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 static void AppCreateXlibWindow(AppInstance &inst) {
     long visualMask = VisualScreenMask;
-    int numberOfVisuals;
+    int numberOfVisuals{};
 
     inst.xlib_display = XOpenDisplay(nullptr);
     if (inst.xlib_display == nullptr) {
@@ -784,12 +782,17 @@ static void AppCreateXlibWindow(AppInstance &inst) {
 
     XVisualInfo vInfoTemplate = {};
     vInfoTemplate.screen = DefaultScreen(inst.xlib_display);
-    XVisualInfo *visualInfo = XGetVisualInfo(inst.xlib_display, visualMask, &vInfoTemplate, &numberOfVisuals);
+    XVisualInfo *visualInfoBegin = XGetVisualInfo(inst.xlib_display, visualMask, &vInfoTemplate, &numberOfVisuals);
+    XVisualInfo *visualInfoEnd = visualInfoBegin + numberOfVisuals;
+    const Visual *rootVisual = DefaultVisual(inst.xlib_display, vInfoTemplate.screen);
+    const XVisualInfo *foundVisualInfo =
+        std::find_if(visualInfoBegin, visualInfoEnd, [rootVisual](const XVisualInfo &vi) { return vi.visual == rootVisual; });
+    const XVisualInfo *visualInfo = foundVisualInfo == visualInfoEnd ? visualInfoBegin : foundVisualInfo;
     inst.xlib_window = XCreateWindow(inst.xlib_display, RootWindow(inst.xlib_display, vInfoTemplate.screen), 0, 0, inst.width,
                                      inst.height, 0, visualInfo->depth, InputOutput, visualInfo->visual, 0, nullptr);
 
     XSync(inst.xlib_display, false);
-    XFree(visualInfo);
+    XFree(visualInfoBegin);
 }
 
 static VkSurfaceKHR AppCreateXlibSurface(AppInstance &inst) {
@@ -1197,10 +1200,10 @@ class AppSurface {
         surf_present_modes =
             GetVector<VkPresentModeKHR>("vkGetPhysicalDeviceSurfacePresentModesKHR", vkGetPhysicalDeviceSurfacePresentModesKHR,
                                         phys_device, surface_extension.surface);
-        const VkPhysicalDeviceSurfaceInfo2KHR surface_info2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR, nullptr,
-                                                               surface_extension.surface};
 
         if (inst.CheckExtensionEnabled(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
+            const VkPhysicalDeviceSurfaceInfo2KHR surface_info2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR, nullptr,
+                                                                   surface_extension.surface};
             VkSurfaceFormat2KHR init{};
             init.sType = VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR;
             surf_formats2 = GetVectorInit<VkSurfaceFormat2KHR>(
@@ -1398,21 +1401,22 @@ struct AppQueueFamilyProperties {
     VkQueueFamilyProperties props;
     uint32_t queue_index;
     void *pNext = nullptr;  // assumes the lifetime of the pNext chain outlives this object, eg parent object must keep both alive
-    bool is_present_platform_agnostic = true;
-    VkBool32 platforms_support_present = VK_FALSE;
+    bool can_present = false;
+    bool can_always_present = true;
+    std::vector<std::pair<std::string, VkBool32>> present_support;
     AppQueueFamilyProperties(AppInstance &inst, VkPhysicalDevice physical_device, VkQueueFamilyProperties family_properties,
                              uint32_t queue_index, void *pNext = nullptr)
         : props(family_properties), queue_index(queue_index), pNext(pNext) {
-        for (auto &surface_ext : inst.surface_extensions) {
+        for (const auto &surface_ext : inst.surface_extensions) {
+            present_support.push_back({surface_ext.name, VK_FALSE});
             VkResult err = vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, queue_index, surface_ext.surface,
-                                                                &surface_ext.supports_present);
+                                                                &present_support.back().second);
             if (err) THROW_VK_ERR("vkGetPhysicalDeviceSurfaceSupportKHR", err);
-
-            const bool first = (surface_ext == inst.surface_extensions.at(0));
-            if (!first && platforms_support_present != surface_ext.supports_present) {
-                is_present_platform_agnostic = false;
+            if (present_support.back().second) {
+                can_present = true;
+            } else {
+                can_always_present = false;
             }
-            platforms_support_present = surface_ext.supports_present;
         }
     }
 };

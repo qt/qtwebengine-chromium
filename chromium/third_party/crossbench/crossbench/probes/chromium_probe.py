@@ -7,12 +7,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.env import HostEnvironment
-
 from crossbench.probes.probe import Probe
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
+  from crossbench.env import HostEnvironment
 
 
 class ChromiumProbe(Probe):

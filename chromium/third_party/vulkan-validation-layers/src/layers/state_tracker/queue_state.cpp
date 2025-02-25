@@ -49,16 +49,11 @@ void vvl::QueueSubmission::EndUse() {
     }
 }
 
-void vvl::Queue::SetupSubmissions(std::vector<vvl::QueueSubmission> &submissions) {
-    assert(!submissions.empty());
-    for (auto &s : submissions) {
-        s.seq = ++seq_;
+vvl::PreSubmitResult vvl::Queue::PreSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
+    if (!submissions.empty()) {
+        submissions.back().end_batch = true;
     }
-    submissions.back().end_batch = true;
-}
-
-vvl::SubmitResult vvl::Queue::PostSubmit(std::vector<vvl::QueueSubmission> &&submissions) {
-    SubmitResult result;
+    PreSubmitResult result;
     for (auto &submission : submissions) {
         for (auto &cb_state : submission.cbs) {
             auto cb_guard = cb_state->WriteLock();
@@ -69,10 +64,14 @@ vvl::SubmitResult vvl::Queue::PostSubmit(std::vector<vvl::QueueSubmission> &&sub
             cb_state->IncrementResources();
             cb_state->Submit(VkHandle(), submission.perf_submit_pass, submission.loc.Get());
         }
-        assert(submission.seq != 0);
+        // seq_ is atomic so we don't need a lock until updating the deque below.
+        // Note that this relies on the external synchonization requirements for the
+        // VkQueue
+        submission.seq = ++seq_;
         submission.BeginUse();
         for (auto &wait : submission.wait_semaphores) {
             wait.semaphore->EnqueueWait(SubmissionReference(this, submission.seq), wait.payload);
+            timeline_wait_count_ += (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
         }
 
         for (auto &signal : submission.signal_semaphores) {
@@ -87,7 +86,6 @@ vvl::SubmitResult vvl::Queue::PostSubmit(std::vector<vvl::QueueSubmission> &&sub
         }
         {
             auto guard = Lock();
-            PostSubmit(submission);
             submissions_.emplace_back(std::move(submission));
             if (!thread_) {
                 thread_ = std::make_unique<std::thread>(&Queue::ThreadFunc, this);
@@ -137,6 +135,30 @@ void vvl::Queue::NotifyAndWait(const Location &loc, uint64_t until_seq) {
     Wait(loc, until_seq);
 }
 
+std::optional<vvl::SemaphoreInfo> vvl::Queue::FindTimelineWaitWithoutResolvingSignal(uint64_t until_seq) const {
+    // A simple optimization for a long sequence of submits without host waits.
+    // Stop iteration over submits if there are no timeline waits left. If only
+    // binary semaphores are used this will return immediately.
+    uint32_t processed_waits = 0;
+
+    auto guard = Lock();
+    for (auto it = submissions_.rbegin(); it != submissions_.rend() && processed_waits < timeline_wait_count_; ++it) {
+        const vvl::QueueSubmission &submission = *it;
+        if (submission.seq > until_seq) {
+            continue;
+        }
+        for (const auto &wait_info : submission.wait_semaphores) {
+            if (wait_info.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) {
+                if (!wait_info.semaphore->HasResolvingTimelineSignal(wait_info.payload)) {
+                    return wait_info;
+                }
+                processed_waits++;
+            }
+        }
+    }
+    return {};
+}
+
 void vvl::Queue::Destroy() {
     std::unique_ptr<std::thread> dead_thread;
     {
@@ -150,6 +172,13 @@ void vvl::Queue::Destroy() {
         dead_thread.reset();
     }
     StateObject::Destroy();
+}
+
+void vvl::Queue::PostSubmit() {
+    auto guard = Lock();
+    if (!submissions_.empty()) {
+        PostSubmit(submissions_.back());
+    }
 }
 
 vvl::QueueSubmission *vvl::Queue::NextSubmission() {
@@ -193,6 +222,7 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
     submission.EndUse();
     for (auto &wait : submission.wait_semaphores) {
         wait.semaphore->RetireWait(this, wait.payload, submission.loc.Get(), true);
+        timeline_wait_count_ -= (wait.semaphore->type == VK_SEMAPHORE_TYPE_TIMELINE) ? 1 : 0;
     }
     for (auto &cb_state : submission.cbs) {
         auto cb_guard = cb_state->WriteLock();
@@ -203,7 +233,7 @@ void vvl::Queue::Retire(QueueSubmission &submission) {
         cb_state->Retire(submission.perf_submit_pass, is_query_updated_after);
     }
     for (auto &signal : submission.signal_semaphores) {
-        signal.semaphore->RetireSignal(this, signal.payload, submission.loc.Get());
+        signal.semaphore->RetireSignal(signal.payload);
     }
     if (submission.fence) {
         submission.fence->Retire();

@@ -17,13 +17,14 @@
 #include <stdint.h>
 #include <vector>
 #include "link.h"
+#include "interface.h"
 #include "function_basic_block.h"
 #include "type_manager.h"
 #include "containers/custom_containers.h"
 
 class DebugReport;
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 struct ModuleHeader {
@@ -38,7 +39,8 @@ struct Settings {
     uint32_t shader_id;
     uint32_t output_buffer_descriptor_set;
     bool print_debug_info;
-    uint32_t max_instrumented_count;
+    uint32_t max_instrumentations_count;
+    bool support_non_semantic_info;
     bool support_int64;
     bool support_memory_model_device_scope;
     bool has_bindless_descriptors;
@@ -48,7 +50,8 @@ struct Settings {
 // There are other helper classes that are charge of handling the various parts of the module.
 class Module {
   public:
-    Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings);
+    Module(vvl::span<const uint32_t> words, DebugReport* debug_report, const Settings& settings,
+           const std::vector<std::vector<BindingLayout>>& set_index_to_bindings_layout_lut);
 
     // Memory that holds all the actual SPIR-V data, replicate the "Logical Layout of a Module" of SPIR-V.
     // Divided into sections to make easier to modify each part at different times, but still keeps it simple to write out all the
@@ -88,7 +91,8 @@ class Module {
     bool RunPassNonBindlessOOBTexelBuffer();
     bool RunPassBufferDeviceAddress();
     bool RunPassRayQuery();
-    bool RunPassDebugPrintf(uint32_t binding_slot = 0);
+    bool RunPassDebugPrintf(uint32_t binding_slot);
+    bool RunPassPostProcessDescriptorIndexing();
 
     void AddInterfaceVariables(uint32_t id, spv::StorageClass storage_class);
 
@@ -100,7 +104,7 @@ class Module {
     void AddDecoration(uint32_t target_id, spv::Decoration decoration, const std::vector<uint32_t>& operands);
     void AddMemberDecoration(uint32_t target_id, uint32_t index, spv::Decoration decoration, const std::vector<uint32_t>& operands);
 
-    const uint32_t max_instrumented_count_ = 0;  // zero is same as "unlimited"
+    const uint32_t max_instrumentations_count_ = 0;  // zero is same as "unlimited"
     bool use_bda_ = false;
     // provides a way to map back and know which original SPIR-V this was from
     const uint32_t shader_id_;
@@ -108,6 +112,7 @@ class Module {
     // This allows anything to be set in the GLSL for the set value, as we change it at runtime
     const uint32_t output_buffer_descriptor_set_;
 
+    const bool support_non_semantic_info_;
     const bool support_int64_;
     const bool support_memory_model_device_scope_;
 
@@ -125,7 +130,10 @@ class Module {
     DebugReport* debug_report_ = nullptr;
     void InternalWarning(const char* tag, const char* message);
     void InternalError(const char* tag, const char* message);
+
+    // < set, [ bindings ] >
+    const std::vector<std::vector<BindingLayout>>& set_index_to_bindings_layout_lut_;
 };
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

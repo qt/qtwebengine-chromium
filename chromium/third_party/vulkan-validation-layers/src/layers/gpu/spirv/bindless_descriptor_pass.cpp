@@ -19,16 +19,16 @@
 #include <iostream>
 
 #include "generated/instrumentation_bindless_descriptor_comp.h"
-#include "gpu/shaders/gpu_shaders_constants.h"
+#include "gpu/shaders/gpuav_shaders_constants.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
-
-static LinkInfo link_info = {instrumentation_bindless_descriptor_comp, instrumentation_bindless_descriptor_comp_size,
-                             LinkFunctions::inst_bindless_descriptor, 0, "inst_bindless_descriptor"};
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t BindlessDescriptorPass::GetLinkFunctionId() {
+    static LinkInfo link_info = {instrumentation_bindless_descriptor_comp, instrumentation_bindless_descriptor_comp_size,
+                                 LinkFunctions::inst_bindless_descriptor, 0, "inst_bindless_descriptor"};
+
     if (link_function_id == 0) {
         link_function_id = module_.TakeNextId();
         link_info.function_id = link_function_id;
@@ -105,6 +105,10 @@ uint32_t BindlessDescriptorPass::CreateFunctionCall(BasicBlock& block, Instructi
         descriptor_offset_id_ = module_.type_manager_.GetConstantZeroUint32().Id();
     }
 
+    BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[descriptor_set_][descriptor_binding_];
+    const Constant& binding_layout_size = module_.type_manager_.GetConstantUInt32(binding_layout.count);
+    const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
+
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
@@ -112,7 +116,7 @@ uint32_t BindlessDescriptorPass::CreateFunctionCall(BasicBlock& block, Instructi
     block.CreateInstruction(
         spv::OpFunctionCall,
         {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, set_constant.Id(),
-         binding_constant.Id(), descriptor_index_id, descriptor_offset_id_},
+         binding_constant.Id(), descriptor_index_id, descriptor_offset_id_, binding_layout_size.Id(), binding_layout_offset.Id()},
         inst_it);
 
     return function_result;
@@ -129,7 +133,7 @@ void BindlessDescriptorPass::Reset() {
     descriptor_offset_id_ = 0;
 }
 
-bool BindlessDescriptorPass::AnalyzeInstruction(const Function& function, const Instruction& inst) {
+bool BindlessDescriptorPass::RequiresInstrumentation(const Function& function, const Instruction& inst) {
     const uint32_t opcode = inst.Opcode();
 
     if (opcode == spv::OpLoad || opcode == spv::OpStore) {
@@ -254,7 +258,7 @@ bool BindlessDescriptorPass::AnalyzeInstruction(const Function& function, const 
         }
     }
 
-    if (descriptor_set_ >= gpuav::glsl::kDebugInputBindlessMaxDescSets) {
+    if (descriptor_set_ >= glsl::kDebugInputBindlessMaxDescSets) {
         module_.InternalWarning(Name(), "Tried to use a descriptor slot over the current max limit");
         return false;
     }
@@ -266,8 +270,8 @@ bool BindlessDescriptorPass::AnalyzeInstruction(const Function& function, const 
 }
 
 void BindlessDescriptorPass::PrintDebugInfo() {
-    std::cout << "BindlessDescriptorPass\n\tinstrumentation count: " << instrumented_count_ << '\n';
+    std::cout << "BindlessDescriptorPass instrumentation count: " << instrumentations_count_ << '\n';
 }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

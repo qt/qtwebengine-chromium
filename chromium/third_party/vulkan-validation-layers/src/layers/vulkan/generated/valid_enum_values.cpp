@@ -23,6 +23,7 @@
 // NOLINTBEGIN
 
 #include "stateless/stateless_validation.h"
+#include <vulkan/vk_enum_string_helper.h>
 
 //  Checking for values is a 2 part process
 //    1. Check if is valid at all
@@ -178,6 +179,9 @@ ValidValue StatelessValidation::IsValidEnumValue(VkObjectType value) const {
             return IsExtEnabled(device_extensions.vk_ext_shader_object) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
             return IsExtEnabled(device_extensions.vk_khr_pipeline_binary) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+        case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
+            return IsExtEnabled(device_extensions.vk_ext_device_generated_commands) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -755,6 +759,8 @@ ValidValue StatelessValidation::IsValidEnumValue(VkDynamicState value) const {
                            IsExtEnabled(device_extensions.vk_ext_line_rasterization)
                        ? ValidValue::Valid
                        : ValidValue::NoExtension;
+        case VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT:
+            return IsExtEnabled(device_extensions.vk_ext_depth_clamp_control) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1149,6 +1155,9 @@ ValidValue StatelessValidation::IsValidEnumValue(VkPresentModeKHR value) const {
         case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
         case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
             return IsExtEnabled(device_extensions.vk_khr_shared_presentable_image) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
+            return IsExtEnabled(device_extensions.vk_ext_present_mode_fifo_latest_ready) ? ValidValue::Valid
+                                                                                         : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1930,6 +1939,17 @@ ValidValue StatelessValidation::IsValidEnumValue(VkShaderCodeTypeEXT value) cons
 }
 
 template <>
+ValidValue StatelessValidation::IsValidEnumValue(VkDepthClampModeEXT value) const {
+    switch (value) {
+        case VK_DEPTH_CLAMP_MODE_VIEWPORT_RANGE_EXT:
+        case VK_DEPTH_CLAMP_MODE_USER_DEFINED_RANGE_EXT:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue StatelessValidation::IsValidEnumValue(VkLayerSettingTypeEXT value) const {
     switch (value) {
         case VK_LAYER_SETTING_TYPE_BOOL32_EXT:
@@ -2003,6 +2023,44 @@ ValidValue StatelessValidation::IsValidEnumValue(VkCubicFilterWeightsQCOM value)
 }
 
 template <>
+ValidValue StatelessValidation::IsValidEnumValue(VkIndirectExecutionSetInfoTypeEXT value) const {
+    switch (value) {
+        case VK_INDIRECT_EXECUTION_SET_INFO_TYPE_PIPELINES_EXT:
+        case VK_INDIRECT_EXECUTION_SET_INFO_TYPE_SHADER_OBJECTS_EXT:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue StatelessValidation::IsValidEnumValue(VkIndirectCommandsTokenTypeEXT value) const {
+    switch (value) {
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_EXECUTION_SET_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_PUSH_CONSTANT_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_SEQUENCE_INDEX_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_INDEX_BUFFER_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_VERTEX_BUFFER_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_INDEXED_COUNT_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_COUNT_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DISPATCH_EXT:
+            return ValidValue::Valid;
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_NV_EXT:
+            return IsExtEnabled(device_extensions.vk_nv_mesh_shader) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_EXT:
+            return IsExtEnabled(device_extensions.vk_ext_mesh_shader) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_TRACE_RAYS2_EXT:
+            return IsExtEnabled(device_extensions.vk_khr_ray_tracing_maintenance1) ? ValidValue::Valid : ValidValue::NoExtension;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue StatelessValidation::IsValidEnumValue(VkBuildAccelerationStructureModeKHR value) const {
     switch (value) {
         case VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR:
@@ -2029,6 +2087,10 @@ ValidValue StatelessValidation::IsValidEnumValue(VkShaderGroupShaderKHR value) c
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPipelineCacheHeaderVersion value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkPipelineCacheHeaderVersion value) const {
+    return nullptr;
 }
 
 template <>
@@ -2068,6 +2130,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkImageLayout value) cons
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkImageLayout value) const {
+    return string_VkImageLayout(value);
 }
 
 template <>
@@ -2121,9 +2187,16 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkObjectType value) const
             return {vvl::Extension::_VK_EXT_shader_object};
         case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
             return {vvl::Extension::_VK_KHR_pipeline_binary};
+        case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
+        case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
+            return {vvl::Extension::_VK_EXT_device_generated_commands};
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkObjectType value) const {
+    return string_VkObjectType(value);
 }
 
 template <>
@@ -2205,6 +2278,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkFormat value) const {
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkFormat value) const {
+    return string_VkFormat(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkImageTiling value) const {
@@ -2215,10 +2292,18 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkImageTiling value) cons
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkImageTiling value) const {
+    return string_VkImageTiling(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkImageType value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkImageType value) const {
+    return nullptr;
 }
 
 template <>
@@ -2253,25 +2338,45 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkQueryType value) const 
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkQueryType value) const {
+    return string_VkQueryType(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSharingMode value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkSharingMode value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkComponentSwizzle value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkComponentSwizzle value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkImageViewType value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkImageViewType value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkBlendFactor value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkBlendFactor value) const {
+    return nullptr;
 }
 
 template <>
@@ -2328,10 +2433,18 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkBlendOp value) const {
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkBlendOp value) const {
+    return string_VkBlendOp(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCompareOp value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCompareOp value) const {
+    return nullptr;
 }
 
 template <>
@@ -2414,24 +2527,42 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkDynamicState value) con
             return {vvl::Extension::_VK_EXT_attachment_feedback_loop_dynamic_state};
         case VK_DYNAMIC_STATE_LINE_STIPPLE_KHR:
             return {vvl::Extension::_VK_KHR_line_rasterization, vvl::Extension::_VK_EXT_line_rasterization};
+        case VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT:
+            return {vvl::Extension::_VK_EXT_depth_clamp_control};
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDynamicState value) const {
+    return string_VkDynamicState(value);
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFrontFace value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkFrontFace value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkVertexInputRate value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkVertexInputRate value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPrimitiveTopology value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkPrimitiveTopology value) const {
+    return nullptr;
 }
 
 template <>
@@ -2443,15 +2574,27 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkPolygonMode value) cons
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkPolygonMode value) const {
+    return string_VkPolygonMode(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkStencilOp value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkStencilOp value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkLogicOp value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkLogicOp value) const {
+    return nullptr;
 }
 
 template <>
@@ -2464,6 +2607,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkBorderColor value) cons
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkBorderColor value) const {
+    return string_VkBorderColor(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFilter value) const {
@@ -2473,6 +2620,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkFilter value) const {
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkFilter value) const {
+    return string_VkFilter(value);
 }
 
 template <>
@@ -2484,10 +2635,18 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerAddressMode valu
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkSamplerAddressMode value) const {
+    return string_VkSamplerAddressMode(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerMipmapMode value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkSamplerMipmapMode value) const {
+    return nullptr;
 }
 
 template <>
@@ -2508,6 +2667,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkDescriptorType value) c
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDescriptorType value) const {
+    return string_VkDescriptorType(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAttachmentLoadOp value) const {
@@ -2517,6 +2680,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkAttachmentLoadOp value)
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkAttachmentLoadOp value) const {
+    return string_VkAttachmentLoadOp(value);
 }
 
 template <>
@@ -2528,6 +2695,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkAttachmentStoreOp value
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkAttachmentStoreOp value) const {
+    return string_VkAttachmentStoreOp(value);
 }
 
 template <>
@@ -2543,10 +2714,18 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkPipelineBindPoint value
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkPipelineBindPoint value) const {
+    return string_VkPipelineBindPoint(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCommandBufferLevel value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCommandBufferLevel value) const {
+    return nullptr;
 }
 
 template <>
@@ -2560,6 +2739,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkIndexType value) const 
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkIndexType value) const {
+    return string_VkIndexType(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSubpassContents value) const {
@@ -2570,25 +2753,45 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkSubpassContents value) 
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkSubpassContents value) const {
+    return string_VkSubpassContents(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkTessellationDomainOrigin value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkTessellationDomainOrigin value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerYcbcrModelConversion value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkSamplerYcbcrModelConversion value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerYcbcrRange value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkSamplerYcbcrRange value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkChromaLocation value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkChromaLocation value) const {
+    return nullptr;
 }
 
 template <>
@@ -2600,6 +2803,10 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkDescriptorUpdateTemplat
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDescriptorUpdateTemplateType value) const {
+    return string_VkDescriptorUpdateTemplateType(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerReductionMode value) const {
@@ -2610,10 +2817,18 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkSamplerReductionMode va
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkSamplerReductionMode value) const {
+    return string_VkSamplerReductionMode(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkSemaphoreType value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkSemaphoreType value) const {
+    return nullptr;
 }
 
 template <>
@@ -2622,9 +2837,15 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkPresentModeKHR value) c
         case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
         case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
             return {vvl::Extension::_VK_KHR_shared_presentable_image};
+        case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
+            return {vvl::Extension::_VK_EXT_present_mode_fifo_latest_ready};
         default:
             return {};
     };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkPresentModeKHR value) const {
+    return string_VkPresentModeKHR(value);
 }
 
 template <>
@@ -2651,30 +2872,54 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkColorSpaceKHR value) co
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkColorSpaceKHR value) const {
+    return string_VkColorSpaceKHR(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkQueueGlobalPriorityKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkQueueGlobalPriorityKHR value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFragmentShadingRateCombinerOpKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkFragmentShadingRateCombinerOpKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkVideoEncodeTuningModeKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkVideoEncodeTuningModeKHR value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkLineRasterizationModeKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkLineRasterizationModeKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkTimeDomainKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkTimeDomainKHR value) const {
+    return nullptr;
 }
 
 template <>
@@ -2700,156 +2945,280 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkDebugReportObjectTypeEX
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDebugReportObjectTypeEXT value) const {
+    return string_VkDebugReportObjectTypeEXT(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkRasterizationOrderAMD value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkRasterizationOrderAMD value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkShaderInfoTypeAMD value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkShaderInfoTypeAMD value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkValidationCheckEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkValidationCheckEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPipelineRobustnessBufferBehaviorEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkPipelineRobustnessBufferBehaviorEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPipelineRobustnessImageBehaviorEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkPipelineRobustnessImageBehaviorEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDisplayPowerStateEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDisplayPowerStateEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDeviceEventTypeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDeviceEventTypeEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDisplayEventTypeEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDisplayEventTypeEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkViewportCoordinateSwizzleNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkViewportCoordinateSwizzleNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDiscardRectangleModeEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDiscardRectangleModeEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkConservativeRasterizationModeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkConservativeRasterizationModeEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkBlendOverlapEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkBlendOverlapEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCoverageModulationModeNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCoverageModulationModeNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkShadingRatePaletteEntryNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkShadingRatePaletteEntryNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCoarseSampleOrderTypeNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCoarseSampleOrderTypeNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkRayTracingShaderGroupTypeKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkRayTracingShaderGroupTypeKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkGeometryTypeKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkGeometryTypeKHR value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAccelerationStructureTypeKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkAccelerationStructureTypeKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCopyAccelerationStructureModeKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCopyAccelerationStructureModeKHR value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAccelerationStructureMemoryRequirementsTypeNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkAccelerationStructureMemoryRequirementsTypeNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkMemoryOverallocationBehaviorAMD value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkMemoryOverallocationBehaviorAMD value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPerformanceConfigurationTypeINTEL value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkPerformanceConfigurationTypeINTEL value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkQueryPoolSamplingModeINTEL value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkQueryPoolSamplingModeINTEL value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPerformanceOverrideTypeINTEL value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkPerformanceOverrideTypeINTEL value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkPerformanceParameterTypeINTEL value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkPerformanceParameterTypeINTEL value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkValidationFeatureEnableEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkValidationFeatureEnableEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkValidationFeatureDisableEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkValidationFeatureDisableEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCoverageReductionModeNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkCoverageReductionModeNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkProvokingVertexModeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkProvokingVertexModeEXT value) const {
+    return nullptr;
 }
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFullScreenExclusiveEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkFullScreenExclusiveEXT value) const {
+    return nullptr;
 }
 #endif  // VK_USE_PLATFORM_WIN32_KHR
 
@@ -2865,40 +3234,72 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkIndirectCommandsTokenTy
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkIndirectCommandsTokenTypeNV value) const {
+    return string_VkIndirectCommandsTokenTypeNV(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDepthBiasRepresentationEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDepthBiasRepresentationEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFragmentShadingRateTypeNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkFragmentShadingRateTypeNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkFragmentShadingRateNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkFragmentShadingRateNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAccelerationStructureMotionInstanceTypeNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkAccelerationStructureMotionInstanceTypeNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDeviceFaultAddressTypeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDeviceFaultAddressTypeEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkDeviceFaultVendorBinaryHeaderVersionEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDeviceAddressBindingTypeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDeviceAddressBindingTypeEXT value) const {
+    return nullptr;
 }
 
 template <>
@@ -2910,90 +3311,200 @@ vvl::Extensions StatelessValidation::GetEnumExtensions(VkMicromapTypeEXT value) 
             return {};
     };
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkMicromapTypeEXT value) const {
+    return string_VkMicromapTypeEXT(value);
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkBuildMicromapModeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkBuildMicromapModeEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCopyMicromapModeEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkCopyMicromapModeEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAccelerationStructureCompatibilityKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkAccelerationStructureCompatibilityKHR value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAccelerationStructureBuildTypeKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkAccelerationStructureBuildTypeKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkDirectDriverLoadingModeLUNARG value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDirectDriverLoadingModeLUNARG value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkOpticalFlowPerformanceLevelNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkOpticalFlowPerformanceLevelNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkOpticalFlowSessionBindingPointNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkOpticalFlowSessionBindingPointNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAntiLagModeAMD value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkAntiLagModeAMD value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkAntiLagStageAMD value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkAntiLagStageAMD value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkShaderCodeTypeEXT value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkShaderCodeTypeEXT value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions StatelessValidation::GetEnumExtensions(VkDepthClampModeEXT value) const {
+    return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkDepthClampModeEXT value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkLayerSettingTypeEXT value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkLayerSettingTypeEXT value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkLatencyMarkerNV value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkLatencyMarkerNV value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkOutOfBandQueueTypeNV value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkOutOfBandQueueTypeNV value) const {
+    return nullptr;
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkBlockMatchWindowCompareModeQCOM value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkBlockMatchWindowCompareModeQCOM value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkCubicFilterWeightsQCOM value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkCubicFilterWeightsQCOM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions StatelessValidation::GetEnumExtensions(VkIndirectExecutionSetInfoTypeEXT value) const {
+    return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkIndirectExecutionSetInfoTypeEXT value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions StatelessValidation::GetEnumExtensions(VkIndirectCommandsTokenTypeEXT value) const {
+    switch (value) {
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_NV_EXT:
+            return {vvl::Extension::_VK_NV_mesh_shader};
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_EXT:
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_COUNT_EXT:
+            return {vvl::Extension::_VK_EXT_mesh_shader};
+        case VK_INDIRECT_COMMANDS_TOKEN_TYPE_TRACE_RAYS2_EXT:
+            return {vvl::Extension::_VK_KHR_ray_tracing_maintenance1};
+        default:
+            return {};
+    };
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkIndirectCommandsTokenTypeEXT value) const {
+    return string_VkIndirectCommandsTokenTypeEXT(value);
 }
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkBuildAccelerationStructureModeKHR value) const {
     return {};
 }
+template <>
+const char* StatelessValidation::DescribeEnum(VkBuildAccelerationStructureModeKHR value) const {
+    return nullptr;
+}
 
 template <>
 vvl::Extensions StatelessValidation::GetEnumExtensions(VkShaderGroupShaderKHR value) const {
     return {};
+}
+template <>
+const char* StatelessValidation::DescribeEnum(VkShaderGroupShaderKHR value) const {
+    return nullptr;
 }
 
 // NOLINTEND

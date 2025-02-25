@@ -11,19 +11,20 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
-import crossbench.probes.helper as probes_helper
 from crossbench.benchmarks.base import BenchmarkProbeMixin
 from crossbench.benchmarks.motionmark.base import MotionMarkBenchmark
 from crossbench.helper import update_url_query
-from crossbench.probes import metric as cb_metric
+from crossbench.probes.helper import Flatten
 from crossbench.probes.json import JsonResultProbe
+from crossbench.probes.metric import Metric, MetricsMerger
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
   from crossbench.path import LocalPath
   from crossbench.runner.actions import Actions
-  from crossbench.runner.groups import BrowsersRunGroup, StoriesRunGroup
+  from crossbench.runner.groups.browsers import BrowsersRunGroup
+  from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
   from crossbench.types import Json
 
@@ -52,14 +53,13 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
   def flatten_json_data(self, json_data: List) -> Json:
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
-    return probes_helper.Flatten(
-        json_data[0], key_fn=_clean_up_path_segments).data
+    return Flatten(json_data[0], key_fn=_clean_up_path_segments).data
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
-    merged = cb_metric.MetricsMerger.merge_json_list(
+    merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
-    return self.write_group_result(group, merged, write_csv=True)
+    return self.write_group_result(group, merged)
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
@@ -96,12 +96,11 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
       if not self._valid_metric_key(metric_key):
         continue
       table[metric_key].append(
-          cb_metric.format_metric(metric["average"], metric["stddev"]))
+          Metric.format(metric["average"], metric["stddev"]))
     # Separate runs don't produce a score
     if total_metric := metrics.get("score") or metrics.get("Score"):
       table["Score"].append(
-          cb_metric.format_metric(total_metric["average"],
-                                  total_metric["stddev"]))
+          Metric.format(total_metric["average"], total_metric["stddev"]))
 
   def _valid_metric_key(self, metric_key: str) -> bool:
     parts = metric_key.split("/")
@@ -204,10 +203,11 @@ class MotionMark1Story(PressBenchmarkStory):
       )
   }
   SUBSTORIES = tuple(itertools.chain.from_iterable(ALL_STORIES.values()))
+  READY_TIMEOUT: dt.timedelta = dt.timedelta(seconds=10)
   DEVELOPER_READY_JS: str = (
       "return document.querySelector('tree > li') !== undefined;")
   # The default page is ready immediately.
-  READY_JS = "return true;"
+  READY_JS: str = "return true;"
 
   @classmethod
   def default_story_names(cls) -> Tuple[str, ...]:
@@ -237,14 +237,15 @@ class MotionMark1Story(PressBenchmarkStory):
       if use_developer_url:
         self._setup_filter_stories(actions)
 
-  def _setup_wait_until_ready(self, actions, use_developer_url) -> None:
+  def _setup_wait_until_ready(self, actions: Actions,
+                              use_developer_url: bool) -> None:
     if use_developer_url:
       wait_js = self.DEVELOPER_READY_JS
     else:
       wait_js = self.READY_JS
-    actions.wait_js_condition(wait_js, 0.2, 10)
+    actions.wait_js_condition(wait_js, 0.2, self.READY_TIMEOUT)
 
-  def _setup_filter_stories(self, actions) -> None:
+  def _setup_filter_stories(self, actions: Actions) -> None:
     num_enabled = actions.js(
         """
       let benchmarks = arguments[0];
@@ -275,7 +276,10 @@ class MotionMark1Story(PressBenchmarkStory):
       actions.wait_js_condition(
           """
           return window.benchmarkRunnerClient.results._results != undefined
-          """, self.substory_duration / 4, self.slow_duration)
+          """,
+          0.5,
+          self.slow_duration,
+          delay=self.substory_duration / 4)
 
 
 class MotionMark1Benchmark(MotionMarkBenchmark):

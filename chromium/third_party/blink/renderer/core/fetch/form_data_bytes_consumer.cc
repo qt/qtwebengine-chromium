@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/fetch/form_data_bytes_consumer.h"
 
 #include "base/debug/dump_without_crashing.h"
@@ -43,9 +38,8 @@ class DataOnlyBytesConsumer : public BytesConsumer {
   }
 
   // BytesConsumer implementation
-  Result BeginRead(const char** buffer, size_t* available) override {
-    *buffer = nullptr;
-    *available = 0;
+  Result BeginRead(base::span<const char>& buffer) override {
+    buffer = {};
     if (form_data_) {
       form_data_->Flatten(flatten_form_data_);
       form_data_ = nullptr;
@@ -53,8 +47,7 @@ class DataOnlyBytesConsumer : public BytesConsumer {
     }
     if (flatten_form_data_offset_ == flatten_form_data_.size())
       return Result::kDone;
-    *buffer = flatten_form_data_.data() + flatten_form_data_offset_;
-    *available = flatten_form_data_.size() - flatten_form_data_offset_;
+    buffer = base::span(flatten_form_data_).subspan(flatten_form_data_offset_);
     return Result::kOk;
   }
   Result EndRead(size_t read_size) override {
@@ -97,10 +90,7 @@ class DataOnlyBytesConsumer : public BytesConsumer {
     flatten_form_data_offset_ = 0;
   }
   PublicState GetPublicState() const override { return state_; }
-  Error GetError() const override {
-    NOTREACHED_IN_MIGRATION();
-    return Error();
-  }
+  Error GetError() const override { NOTREACHED(); }
   String DebugName() const override { return "DataOnlyBytesConsumer"; }
 
  private:
@@ -124,18 +114,17 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
     // data is just a Vector<char> and data pipe getter can be shared.
     form_data_ = form_data->Copy();
     form_data_->SetBoundary(FormDataEncoder::GenerateUniqueBoundaryString());
-    iter_ = form_data_->MutableElements().begin();
+    iter_ = form_data_->MutableElements().CheckedBegin();
   }
 
-  Result BeginRead(const char** buffer, size_t* available) override {
-    *buffer = nullptr;
-    *available = 0;
+  Result BeginRead(base::span<const char>& buffer) override {
+    buffer = {};
     if (state_ == PublicState::kClosed)
       return Result::kDone;
     if (state_ == PublicState::kErrored)
       return Result::kError;
 
-    if (iter_ == form_data_->MutableElements().end()) {
+    if (iter_ == form_data_->MutableElements().CheckedEnd()) {
       Close();
       return Result::kDone;
     }
@@ -152,7 +141,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
           simple_consumer_->SetClient(client_);
       }
       // Read from the bytes consumer.
-      Result result = simple_consumer_->BeginRead(buffer, available);
+      Result result = simple_consumer_->BeginRead(buffer);
       if (result == Result::kError) {
         SetError();
         return Result::kError;
@@ -161,7 +150,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
       if (result == Result::kDone) {
         simple_consumer_ = nullptr;
         ++iter_;
-        return BeginRead(buffer, available);
+        return BeginRead(buffer);
       }
       return result;
     }
@@ -196,7 +185,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
       }
 
       // Read from the data pipe consumer.
-      Result result = data_pipe_consumer_->BeginRead(buffer, available);
+      Result result = data_pipe_consumer_->BeginRead(buffer);
       if (result == Result::kError) {
         SetError();
         return Result::kError;
@@ -207,7 +196,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
         data_pipe_consumer_ = nullptr;
         completion_notifier_ = nullptr;
         ++iter_;
-        return BeginRead(buffer, available);
+        return BeginRead(buffer);
       }
       return result;
     }
@@ -246,8 +235,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
       return Result::kOk;
     }
 
-    NOTREACHED_IN_MIGRATION() << "No consumer. BeginRead() was not called?";
-    return Result::kError;
+    NOTREACHED() << "No consumer. BeginRead() was not called?";
   }
 
   scoped_refptr<EncodedFormData> DrainAsFormData() override {
@@ -366,7 +354,7 @@ class DataAndDataPipeBytesConsumer final : public BytesConsumer {
   Member<ExecutionContext> execution_context_;
   PublicState state_ = PublicState::kReadableOrWaiting;
   scoped_refptr<EncodedFormData> form_data_;
-  Vector<FormDataElement>::iterator iter_;
+  base::CheckedContiguousIterator<Vector<FormDataElement>::ValueType> iter_;
   Error error_;
   Member<BytesConsumer::Client> client_;
   Member<DataOnlyBytesConsumer> simple_consumer_;
@@ -417,9 +405,9 @@ class DataAndEncodedFileOrBlobBytesConsumer final : public BytesConsumer {
           break;
         }
         case FormDataElement::kEncodedBlob:
-          if (element.optional_blob_data_handle_) {
-            blob_data->AppendBlob(element.optional_blob_data_handle_, 0,
-                                  element.optional_blob_data_handle_->size());
+          if (element.blob_data_handle_) {
+            blob_data->AppendBlob(element.blob_data_handle_, 0,
+                                  element.blob_data_handle_->size());
           }
           break;
         case FormDataElement::kDataPipe:
@@ -438,12 +426,12 @@ class DataAndEncodedFileOrBlobBytesConsumer final : public BytesConsumer {
   }
 
   // BytesConsumer implementation
-  Result BeginRead(const char** buffer, size_t* available) override {
+  Result BeginRead(base::span<const char>& buffer) override {
     form_data_ = nullptr;
     // Delegate the operation to the underlying consumer. This relies on
     // the fact that we appropriately notify the draining information to
     // the underlying consumer.
-    return blob_bytes_consumer_->BeginRead(buffer, available);
+    return blob_bytes_consumer_->BeginRead(buffer);
   }
   Result EndRead(size_t read_size) override {
     return blob_bytes_consumer_->EndRead(read_size);

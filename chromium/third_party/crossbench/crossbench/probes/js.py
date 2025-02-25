@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from crossbench import cli_helper
+from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.probe import (ProbeConfigParser, ProbeKeyT,
-                                     ResultLocation)
-from crossbench.probes.results import ProbeResult
+from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
+from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 def parse_javascript(value: str) -> str:
   # TODO: maybe add more sanity checks
-  return cli_helper.parse_non_empty_str(value, name="javascript")
+  return ObjectParser.non_empty_str(value, name="javascript")
 
 
 class JSProbe(JsonResultProbe):
@@ -75,7 +75,7 @@ class JSProbe(JsonResultProbe):
 
   def to_json(self, actions: Actions) -> Json:
     data = actions.js(self._metric_js)
-    return cli_helper.parse_non_empty_dict(data, "JS metric data")
+    return ObjectParser.non_empty_dict(data, "JS metric data")
 
   def get_context(self, run: Run) -> JSProbeContext:
     return JSProbeContext(self, run)
@@ -84,7 +84,7 @@ class JSProbe(JsonResultProbe):
     merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
-    return self.write_group_result(group, merged, write_csv=True)
+    return self.write_group_result(group, merged)
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(

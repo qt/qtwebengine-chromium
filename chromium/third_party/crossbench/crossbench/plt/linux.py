@@ -15,15 +15,15 @@ from crossbench.plt.remote import RemotePlatformMixin
 
 
 class LinuxPlatform(PosixPlatform):
-  SEARCH_PATHS: Tuple[pth.RemotePath, ...] = (
-      pth.RemotePath("."),
-      pth.RemotePath("/usr/local/sbin"),
-      pth.RemotePath("/usr/local/bin"),
-      pth.RemotePath("/usr/sbin"),
-      pth.RemotePath("/usr/bin"),
-      pth.RemotePath("/sbin"),
-      pth.RemotePath("/bin"),
-      pth.RemotePath("/opt/google"),
+  SEARCH_PATHS: Tuple[pth.AnyPath, ...] = (
+      pth.AnyPosixPath("."),
+      pth.AnyPosixPath("/usr/local/sbin"),
+      pth.AnyPosixPath("/usr/local/bin"),
+      pth.AnyPosixPath("/usr/sbin"),
+      pth.AnyPosixPath("/usr/bin"),
+      pth.AnyPosixPath("/sbin"),
+      pth.AnyPosixPath("/bin"),
+      pth.AnyPosixPath("/opt/google"),
   )
 
   @property
@@ -77,9 +77,8 @@ class LinuxPlatform(PosixPlatform):
         details[info_bin] = self.sh_stdout(info_bin)
     return details
 
-  def search_binary(self,
-                    app_or_bin: pth.RemotePathLike) -> Optional[pth.RemotePath]:
-    app_or_bin_path: pth.RemotePath = self.path(app_or_bin)
+  def search_binary(self, app_or_bin: pth.AnyPathLike) -> Optional[pth.AnyPath]:
+    app_or_bin_path: pth.AnyPath = self.path(app_or_bin)
     if not app_or_bin_path.parts:
       raise ValueError("Got empty path")
     if result_path := self.which(app_or_bin_path):
@@ -93,7 +92,7 @@ class LinuxPlatform(PosixPlatform):
         return result_path
     return None
 
-  def screenshot(self, result_path: pth.RemotePath) -> None:
+  def screenshot(self, result_path: pth.AnyPath) -> None:
     # TODO: maybe use imagemagick's 'import' as more portable alternative
     self.sh("gnome-screenshot", "--file", result_path)
 

@@ -684,6 +684,111 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             return {&vk_struct->inheritedConditionalRendering,
                     "VkPhysicalDeviceConditionalRenderingFeaturesEXT::inheritedConditionalRendering"};
         }
+        case Feature::cooperativeMatrixBlockLoads: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixBlockLoads,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixBlockLoads"};
+        }
+        case Feature::cooperativeMatrixConversions: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixConversions,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixConversions"};
+        }
+        case Feature::cooperativeMatrixFlexibleDimensions: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixFlexibleDimensions,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixFlexibleDimensions"};
+        }
+        case Feature::cooperativeMatrixPerElementOperations: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixPerElementOperations,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixPerElementOperations"};
+        }
+        case Feature::cooperativeMatrixReductions: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixReductions,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixReductions"};
+        }
+        case Feature::cooperativeMatrixTensorAddressing: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixTensorAddressing,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixTensorAddressing"};
+        }
+        case Feature::cooperativeMatrixWorkgroupScope: {
+            auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrix2FeaturesNV *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrix2FeaturesNV>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->cooperativeMatrixWorkgroupScope,
+                    "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixWorkgroupScope"};
+        }
         case Feature::cooperativeMatrix: {
             auto vk_struct = const_cast<VkPhysicalDeviceCooperativeMatrixFeaturesKHR *>(
                 vku::FindStructInPNextChain<VkPhysicalDeviceCooperativeMatrixFeaturesKHR>(*inout_pnext_chain));
@@ -897,6 +1002,20 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             }
             return {&vk_struct->leastRepresentableValueForceUnormRepresentation,
                     "VkPhysicalDeviceDepthBiasControlFeaturesEXT::leastRepresentableValueForceUnormRepresentation"};
+        }
+        case Feature::depthClampControl: {
+            auto vk_struct = const_cast<VkPhysicalDeviceDepthClampControlFeaturesEXT *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceDepthClampControlFeaturesEXT>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceDepthClampControlFeaturesEXT;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->depthClampControl, "VkPhysicalDeviceDepthClampControlFeaturesEXT::depthClampControl"};
         }
         case Feature::depthClampZeroOne: {
             auto vk_struct = const_cast<VkPhysicalDeviceDepthClampZeroOneFeaturesEXT *>(
@@ -1674,10 +1793,10 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
                     "VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV::deviceGeneratedComputePipelines"};
         }
         case Feature::deviceGeneratedCommands: {
-            auto vk_struct = const_cast<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV *>(
-                vku::FindStructInPNextChain<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV>(*inout_pnext_chain));
+            auto vk_struct = const_cast<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT>(*inout_pnext_chain));
             if (!vk_struct) {
-                vk_struct = new VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV;
+                vk_struct = new VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT;
                 *vk_struct = vku::InitStructHelper();
                 if (*inout_pnext_chain) {
                     vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
@@ -1686,7 +1805,22 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
                 }
             }
             return {&vk_struct->deviceGeneratedCommands,
-                    "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV::deviceGeneratedCommands"};
+                    "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT::deviceGeneratedCommands"};
+        }
+        case Feature::dynamicGeneratedPipelineLayout: {
+            auto vk_struct = const_cast<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->dynamicGeneratedPipelineLayout,
+                    "VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT::dynamicGeneratedPipelineLayout"};
         }
         case Feature::deviceMemoryReport: {
             auto vk_struct = const_cast<VkPhysicalDeviceDeviceMemoryReportFeaturesEXT *>(
@@ -2684,6 +2818,20 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             }
             return {&vk_struct->graphicsPipelineLibrary,
                     "VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT::graphicsPipelineLibrary"};
+        }
+        case Feature::hdrVivid: {
+            auto vk_struct = const_cast<VkPhysicalDeviceHdrVividFeaturesHUAWEI *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceHdrVividFeaturesHUAWEI>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceHdrVividFeaturesHUAWEI;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->hdrVivid, "VkPhysicalDeviceHdrVividFeaturesHUAWEI::hdrVivid"};
         }
         case Feature::hostImageCopy: {
             auto vk_struct = const_cast<VkPhysicalDeviceHostImageCopyFeaturesEXT *>(
@@ -4119,6 +4267,21 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
             }
             return {&vk_struct->presentId, "VkPhysicalDevicePresentIdFeaturesKHR::presentId"};
         }
+        case Feature::presentModeFifoLatestReady: {
+            auto vk_struct = const_cast<VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT *>(
+                vku::FindStructInPNextChain<VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->presentModeFifoLatestReady,
+                    "VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT::presentModeFifoLatestReady"};
+        }
         case Feature::presentWait: {
             auto vk_struct = const_cast<VkPhysicalDevicePresentWaitFeaturesKHR *>(
                 vku::FindStructInPNextChain<VkPhysicalDevicePresentWaitFeaturesKHR>(*inout_pnext_chain));
@@ -5311,6 +5474,22 @@ FeatureAndName AddFeature(APIVersion api_version, vkt::Feature feature, void **i
                 }
             }
             return {&vk_struct->shaderEnqueue, "VkPhysicalDeviceShaderEnqueueFeaturesAMDX::shaderEnqueue"};
+        }
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case Feature::shaderMeshEnqueue: {
+            auto vk_struct = const_cast<VkPhysicalDeviceShaderEnqueueFeaturesAMDX *>(
+                vku::FindStructInPNextChain<VkPhysicalDeviceShaderEnqueueFeaturesAMDX>(*inout_pnext_chain));
+            if (!vk_struct) {
+                vk_struct = new VkPhysicalDeviceShaderEnqueueFeaturesAMDX;
+                *vk_struct = vku::InitStructHelper();
+                if (*inout_pnext_chain) {
+                    vvl::PnextChainAdd(*inout_pnext_chain, vk_struct);
+                } else {
+                    *inout_pnext_chain = vk_struct;
+                }
+            }
+            return {&vk_struct->shaderMeshEnqueue, "VkPhysicalDeviceShaderEnqueueFeaturesAMDX::shaderMeshEnqueue"};
         }
 #endif  // VK_ENABLE_BETA_EXTENSIONS
         case Feature::shaderExpectAssume: {

@@ -4,18 +4,26 @@
 
 from __future__ import annotations
 
-from typing import Tuple, Type
+from typing import TYPE_CHECKING, Tuple, Type
 
 from crossbench.probes.android_logcat import AndroidLogcatProbe
+from crossbench.probes.chrome_histograms import ChromeHistogramsProbe
 from crossbench.probes.debugger import DebuggerProbe
 from crossbench.probes.dtrace import DTraceProbe
+from crossbench.probes.dump_html import DumpHtmlProbe
+from crossbench.probes.frequency import FrequencyProbe
 from crossbench.probes.helper import INTERNAL_NAME_PREFIX
-from crossbench.probes.internal import (DurationsProbe, ErrorsProbe,
-                                        InternalProbe, LogProbe,
-                                        ResultsSummaryProbe, SystemDetailsProbe)
+from crossbench.probes.internal.durations import DurationsProbe
+from crossbench.probes.internal.errors import ErrorsProbe
+from crossbench.probes.internal.log import LogProbe
+from crossbench.probes.internal.summary import ResultsSummaryProbe
+from crossbench.probes.internal.system_details import SystemDetailsProbe
 from crossbench.probes.js import JSProbe
 from crossbench.probes.json import JsonResultProbe
-from crossbench.probes.perfetto import PerfettoProbe
+from crossbench.probes.perfetto.perfetto import PerfettoProbe
+from crossbench.probes.perfetto.trace_processor.trace_processor import \
+    TraceProcessorProbe
+from crossbench.probes.perfetto.tracing import TracingProbe
 from crossbench.probes.performance_entries import PerformanceEntriesProbe
 from crossbench.probes.polling import ShellPollingProbe
 from crossbench.probes.power_sampler import PowerSamplerProbe
@@ -26,15 +34,16 @@ from crossbench.probes.profiling.system_profiling import ProfilingProbe
 from crossbench.probes.screenshot import ScreenshotProbe
 from crossbench.probes.shell import ShellProbe
 from crossbench.probes.system_stats import SystemStatsProbe
-from crossbench.probes.trace_processor.trace_processor import \
-    TraceProcessorProbe
-from crossbench.probes.tracing import TracingProbe
+from crossbench.probes.thermal_monitor import ThermalMonitorProbe
 from crossbench.probes.v8.builtins_pgo import V8BuiltinsPGOProbe
 from crossbench.probes.v8.log import V8LogProbe
 from crossbench.probes.v8.rcs import V8RCSProbe
 from crossbench.probes.v8.turbolizer import V8TurbolizerProbe
 from crossbench.probes.video import VideoProbe
 from crossbench.probes.web_page_replay.recorder import WebPageReplayProbe
+
+if TYPE_CHECKING:
+  from crossbench.probes.internal.base import InternalProbe
 
 ABSTRACT_PROBES: Tuple[Type[Probe], ...] = (Probe, JsonResultProbe)
 
@@ -50,6 +59,7 @@ INTERNAL_PROBES: Tuple[Type[InternalProbe], ...] = (
     ErrorsProbe,
     LogProbe,
     SystemDetailsProbe,
+    ThermalMonitorProbe,
 )
 # ResultsSummaryProbe should always be processed last, and thus must be the
 # first probe to be added to any browser.
@@ -60,8 +70,11 @@ assert INTERNAL_PROBES[1] == DurationsProbe
 GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
     AndroidLogcatProbe,
     BrowserProfilingProbe,
+    ChromeHistogramsProbe,
     DTraceProbe,
     DebuggerProbe,
+    DumpHtmlProbe,
+    FrequencyProbe,
     JSProbe,
     PerfettoProbe,
     PerformanceEntriesProbe,

@@ -5,24 +5,25 @@
 from __future__ import annotations
 
 import abc
-import argparse
-from typing import (TYPE_CHECKING, Any, Dict, Hashable, Optional, Set, Tuple,
-                    Type, TypeVar)
+from typing import (TYPE_CHECKING, Dict, Hashable, Optional, Set, Tuple, Type,
+                    TypeVar)
 
 from crossbench import plt
-from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.config import ConfigParser
 from crossbench.probes.probe_context import ProbeContext, ProbeSessionContext
 from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
 if TYPE_CHECKING:
+  from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
-  from crossbench.runner.groups import (BrowserSessionRunGroup,
-                                        BrowsersRunGroup,
-                                        CacheTemperatureRunGroup,
-                                        RepetitionsRunGroup, StoriesRunGroup)
+  from crossbench.runner.groups.browsers import BrowsersRunGroup
+  from crossbench.runner.groups.cache_temperatures import \
+      CacheTemperaturesRunGroup
+  from crossbench.runner.groups.repetitions import RepetitionsRunGroup
+  from crossbench.runner.groups.session import BrowserSessionRunGroup
+  from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
 
 
@@ -144,7 +145,7 @@ class Probe(abc.ABC):
     return hash(self.key)
 
   @property
-  def runner_platform(self) -> plt.Platform:
+  def host_platform(self) -> plt.Platform:
     return plt.PLATFORM
 
   @property
@@ -201,7 +202,7 @@ class Probe(abc.ABC):
       raise ProbeIncompatibleBrowser(self, browser, "Only supported on macOS")
 
   def merge_cache_temperatures(self,
-                               group: CacheTemperatureRunGroup) -> ProbeResult:
+                               group: CacheTemperaturesRunGroup) -> ProbeResult:
     """
     For merging probe data from multiple browser cache temperatures with the
     same repetition, story and browser.

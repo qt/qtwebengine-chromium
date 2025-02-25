@@ -100,9 +100,9 @@ bool CoreChecks::VerifySetLayoutCompatibility(const DescriptorSetLayout &layout_
         } else if (layout_binding.descriptorType != bound_binding->descriptorType) {
             std::stringstream error_str;
             error_str << "Binding " << layout_binding.binding << " for " << FormatHandle(layout_dsl_handle)
-                      << " from pipeline layout is type '" << string_VkDescriptorType(layout_binding.descriptorType)
-                      << "' but binding " << layout_binding.binding << " for " << FormatHandle(bound_dsl_handle)
-                      << ", which is bound, is type '" << string_VkDescriptorType(bound_binding->descriptorType) << "'";
+                      << " from pipeline layout is type " << string_VkDescriptorType(layout_binding.descriptorType)
+                      << " but binding " << layout_binding.binding << " for " << FormatHandle(bound_dsl_handle)
+                      << ", which is bound, is type " << string_VkDescriptorType(bound_binding->descriptorType) << "";
             error_msg = error_str.str();
             return false;
         } else if (layout_binding.stageFlags != bound_binding->stageFlags) {
@@ -149,11 +149,16 @@ bool CoreChecks::VerifySetLayoutCompatibility(const vvl::DescriptorSet &descript
                                               const std::vector<std::shared_ptr<vvl::DescriptorSetLayout const>> &set_layouts,
                                               const VulkanTypedHandle &handle, const uint32_t layoutIndex,
                                               std::string &error_msg) const {
-    auto num_sets = set_layouts.size();
+    size_t num_sets = set_layouts.size();
     if (layoutIndex >= num_sets) {
         std::stringstream error_str;
-        error_str << FormatHandle(handle) << ") only contains " << num_sets << " setLayouts corresponding to sets 0-"
-                  << num_sets - 1 << ", but you're attempting to bind set to index " << layoutIndex;
+        error_str << FormatHandle(handle) << ") only contains ";
+        if (num_sets == 1) {
+            error_str << "1 setLayout, corresponding to index 0";
+        } else {
+            error_str << num_sets << " setLayouts, corresponding to index from 0 to " << num_sets - 1;
+        }
+        error_str << ", but you're attempting to bind set to index " << layoutIndex;
         error_msg = error_str.str();
         return false;
     }
@@ -377,7 +382,7 @@ bool CoreChecks::ValidateCmdBindDescriptorSets(const vvl::CommandBuffer &cb_stat
             const char *vuid = is_2 ? "VUID-VkBindDescriptorSetsInfoKHR-pDescriptorSets-06563"
                                     : "VUID-vkCmdBindDescriptorSets-pDescriptorSets-06563";
             skip |= LogError(vuid, objlist, set_loc,
-                             "(%s) that does not exist, and the layout was not created "
+                             "(%s) does not exist, and the pipeline layout was not created "
                              "VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT.",
                              FormatHandle(pDescriptorSets[set_idx]).c_str());
         }
@@ -802,7 +807,7 @@ bool CoreChecks::ValidateDrawState(const DescriptorSet &descriptor_set, uint32_t
     bool result = false;
     VkFramebuffer framebuffer = cb_state.activeFramebuffer ? cb_state.activeFramebuffer->VkHandle() : VK_NULL_HANDLE;
     // NOTE: GPU-AV needs non-const state objects to do lazy updates of descriptor state of only the dynamically used
-    // descriptors, via the non-const version of ValidateBinding(), this code uses the const path only even it gives up
+    // descriptors, via the non-const version of ValidateBindingDynamic(), this code uses the const path only even it gives up
     // non-const versions of its state objects here.
     const vvl::DescriptorValidator desc_val(const_cast<CoreChecks &>(*this), const_cast<vvl::CommandBuffer &>(cb_state),
                                             const_cast<DescriptorSet &>(descriptor_set), set_index, framebuffer, loc);
@@ -823,7 +828,7 @@ bool CoreChecks::ValidateDrawState(const DescriptorSet &descriptor_set, uint32_t
         binding_info.first = binding_pair.first;
         binding_info.second.emplace_back(binding_pair.second);
 
-        result |= desc_val.ValidateBinding(binding_info, *binding);
+        result |= desc_val.ValidateBindingStatic(binding_info, *binding);
     }
     return result;
 }
@@ -3655,16 +3660,17 @@ bool CoreChecks::ValidateCmdPushDescriptorSetWithTemplate(VkCommandBuffer comman
                              FormatHandle(descriptorUpdateTemplate).c_str(), template_ci.set, set);
         }
         auto template_layout = Get<vvl::PipelineLayout>(template_ci.pipelineLayout);
-        if (!IsPipelineLayoutSetCompat(set, layout_data.get(), template_layout.get())) {
+        if (!IsPipelineLayoutSetCompatible(set, layout_data.get(), template_layout.get())) {
             const LogObjectList objlist(commandBuffer, descriptorUpdateTemplate, template_ci.pipelineLayout, layout);
             const char *vuid = is_2 ? "VUID-VkPushDescriptorSetWithTemplateInfoKHR-layout-07993"
                                     : "VUID-vkCmdPushDescriptorSetWithTemplateKHR-layout-07993";
             skip |= LogError(vuid, objlist, loc.dot(Field::descriptorUpdateTemplate),
                              "%s created with %s is incompatible "
                              "with command parameter "
-                             "%s for set %" PRIu32,
+                             "%s for set %" PRIu32 ".\n%s",
                              FormatHandle(descriptorUpdateTemplate).c_str(), FormatHandle(template_ci.pipelineLayout).c_str(),
-                             FormatHandle(layout).c_str(), set);
+                             FormatHandle(layout).c_str(), set,
+                             DescribePipelineLayoutSetNonCompatible(set, layout_data.get(), template_layout.get()).c_str());
         }
     }
 

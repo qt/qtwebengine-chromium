@@ -311,7 +311,10 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpFragmentMaskFetchAMD:
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
+        case spv::OpAllocateNodePayloadsAMDX:
         case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpNodePayloadArrayLengthAMDX:
+        case spv::OpIsNodePayloadValidAMDX:
         case spv::OpGroupNonUniformQuadAllKHR:
         case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
@@ -334,15 +337,30 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpHitObjectIsHitNV:
         case spv::OpHitObjectIsMissNV:
         case spv::OpImageSampleFootprintNV:
+        case spv::OpCooperativeMatrixConvertNV:
         case spv::OpGroupNonUniformPartitionNV:
         case spv::OpFetchMicroTriangleVertexPositionNV:
         case spv::OpFetchMicroTriangleVertexBarycentricNV:
-        case spv::OpReportIntersectionNV:
+        case spv::OpReportIntersectionKHR:
         case spv::OpRayQueryGetIntersectionTriangleVertexPositionsKHR:
         case spv::OpCooperativeMatrixLoadNV:
         case spv::OpCooperativeMatrixMulAddNV:
         case spv::OpCooperativeMatrixLengthNV:
+        case spv::OpCooperativeMatrixReduceNV:
+        case spv::OpCooperativeMatrixLoadTensorNV:
+        case spv::OpCooperativeMatrixPerElementOpNV:
+        case spv::OpCreateTensorLayoutNV:
+        case spv::OpTensorLayoutSetDimensionNV:
+        case spv::OpTensorLayoutSetStrideNV:
+        case spv::OpTensorLayoutSliceNV:
+        case spv::OpTensorLayoutSetClampValueNV:
+        case spv::OpCreateTensorViewNV:
+        case spv::OpTensorViewSetDimensionNV:
+        case spv::OpTensorViewSetStrideNV:
         case spv::OpIsHelperInvocationEXT:
+        case spv::OpTensorViewSetClipNV:
+        case spv::OpTensorLayoutSetBlockSizeNV:
+        case spv::OpCooperativeMatrixTransposeNV:
         case spv::OpConvertUToImageNV:
         case spv::OpConvertUToSamplerNV:
         case spv::OpConvertImageToUNV:
@@ -387,6 +405,7 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionObjectToWorldKHR:
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
+        case spv::OpArithmeticFenceEXT:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -694,7 +713,13 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpFragmentMaskFetchAMD:
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
+        case spv::OpAllocateNodePayloadsAMDX:
+        case spv::OpTypeNodePayloadArrayAMDX:
         case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpNodePayloadArrayLengthAMDX:
+        case spv::OpIsNodePayloadValidAMDX:
+        case spv::OpConstantStringAMDX:
+        case spv::OpSpecConstantStringAMDX:
         case spv::OpGroupNonUniformQuadAllKHR:
         case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
@@ -718,17 +743,34 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpHitObjectIsMissNV:
         case spv::OpTypeHitObjectNV:
         case spv::OpImageSampleFootprintNV:
+        case spv::OpCooperativeMatrixConvertNV:
         case spv::OpGroupNonUniformPartitionNV:
         case spv::OpFetchMicroTriangleVertexPositionNV:
         case spv::OpFetchMicroTriangleVertexBarycentricNV:
-        case spv::OpReportIntersectionNV:
+        case spv::OpReportIntersectionKHR:
         case spv::OpRayQueryGetIntersectionTriangleVertexPositionsKHR:
         case spv::OpTypeAccelerationStructureKHR:
         case spv::OpTypeCooperativeMatrixNV:
         case spv::OpCooperativeMatrixLoadNV:
         case spv::OpCooperativeMatrixMulAddNV:
         case spv::OpCooperativeMatrixLengthNV:
+        case spv::OpCooperativeMatrixReduceNV:
+        case spv::OpCooperativeMatrixLoadTensorNV:
+        case spv::OpCooperativeMatrixPerElementOpNV:
+        case spv::OpTypeTensorLayoutNV:
+        case spv::OpTypeTensorViewNV:
+        case spv::OpCreateTensorLayoutNV:
+        case spv::OpTensorLayoutSetDimensionNV:
+        case spv::OpTensorLayoutSetStrideNV:
+        case spv::OpTensorLayoutSliceNV:
+        case spv::OpTensorLayoutSetClampValueNV:
+        case spv::OpCreateTensorViewNV:
+        case spv::OpTensorViewSetDimensionNV:
+        case spv::OpTensorViewSetStrideNV:
         case spv::OpIsHelperInvocationEXT:
+        case spv::OpTensorViewSetClipNV:
+        case spv::OpTensorLayoutSetBlockSizeNV:
+        case spv::OpCooperativeMatrixTransposeNV:
         case spv::OpConvertUToImageNV:
         case spv::OpConvertUToSamplerNV:
         case spv::OpConvertImageToUNV:
@@ -773,6 +815,7 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionObjectToWorldKHR:
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
+        case spv::OpArithmeticFenceEXT:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -1155,9 +1198,12 @@ enum class SpvType {
     kUntypedPointerKHR,
     kCooperativeMatrixKHR,
     kRayQueryKHR,
+    kNodePayloadArrayAMDX,
     kHitObjectNV,
     kAccelerationStructureKHR,
     kCooperativeMatrixNV,
+    kTensorLayoutNV,
+    kTensorViewNV,
 };
 
 static constexpr SpvType GetSpvType(uint32_t opcode) {
@@ -1198,12 +1244,18 @@ static constexpr SpvType GetSpvType(uint32_t opcode) {
             return SpvType::kCooperativeMatrixKHR;
         case spv::OpTypeRayQueryKHR:
             return SpvType::kRayQueryKHR;
+        case spv::OpTypeNodePayloadArrayAMDX:
+            return SpvType::kNodePayloadArrayAMDX;
         case spv::OpTypeHitObjectNV:
             return SpvType::kHitObjectNV;
         case spv::OpTypeAccelerationStructureKHR:
             return SpvType::kAccelerationStructureKHR;
         case spv::OpTypeCooperativeMatrixNV:
             return SpvType::kCooperativeMatrixNV;
+        case spv::OpTypeTensorLayoutNV:
+            return SpvType::kTensorLayoutNV;
+        case spv::OpTypeTensorViewNV:
+            return SpvType::kTensorViewNV;
         default:
             return SpvType::Empty;
     }

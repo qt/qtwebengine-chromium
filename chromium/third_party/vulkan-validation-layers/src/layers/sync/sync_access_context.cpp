@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-#include <cinttypes>
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/video_session_state.h"
 #include "state_tracker/render_pass_state.h"
@@ -389,7 +388,7 @@ HazardResult AccessContext::DetectHazard(const ImageState &image, const VkImageS
 
 class BarrierHazardDetector {
   public:
-    BarrierHazardDetector(SyncStageAccessIndex usage_index, VkPipelineStageFlags2KHR src_exec_scope,
+    BarrierHazardDetector(SyncStageAccessIndex usage_index, VkPipelineStageFlags2 src_exec_scope,
                           SyncStageAccessFlags src_access_scope)
         : usage_info_(SyncStageAccess::UsageInfo(usage_index)),
           src_exec_scope_(src_exec_scope),
@@ -406,13 +405,13 @@ class BarrierHazardDetector {
 
   private:
     const SyncStageAccessInfoType &usage_info_;
-    VkPipelineStageFlags2KHR src_exec_scope_;
+    VkPipelineStageFlags2 src_exec_scope_;
     SyncStageAccessFlags src_access_scope_;
 };
 
 class EventBarrierHazardDetector {
   public:
-    EventBarrierHazardDetector(SyncStageAccessIndex usage_index, VkPipelineStageFlags2KHR src_exec_scope,
+    EventBarrierHazardDetector(SyncStageAccessIndex usage_index, VkPipelineStageFlags2 src_exec_scope,
                                SyncStageAccessFlags src_access_scope, const AccessContext::ScopeMap &event_scope, QueueId queue_id,
                                ResourceUsageTag scope_tag)
         : usage_info_(SyncStageAccess::UsageInfo(usage_index)),
@@ -487,7 +486,7 @@ class EventBarrierHazardDetector {
     }
 
     const SyncStageAccessInfoType usage_info_;
-    VkPipelineStageFlags2KHR src_exec_scope_;
+    VkPipelineStageFlags2 src_exec_scope_;
     SyncStageAccessFlags src_access_scope_;
     const AccessContext::ScopeMap &event_scope_;
     QueueId scope_queue_id_;
@@ -497,7 +496,7 @@ class EventBarrierHazardDetector {
 };
 
 HazardResult AccessContext::DetectImageBarrierHazard(const ImageState &image, const VkImageSubresourceRange &subresource_range,
-                                                     VkPipelineStageFlags2KHR src_exec_scope,
+                                                     VkPipelineStageFlags2 src_exec_scope,
                                                      const SyncStageAccessFlags &src_access_scope, QueueId queue_id,
                                                      const ScopeMap &scope_map, const ResourceUsageTag scope_tag,
                                                      AccessContext::DetectOptions options) const {
@@ -513,7 +512,7 @@ HazardResult AccessContext::DetectImageBarrierHazard(const AttachmentViewGen &vi
     return DetectHazard(detector, view_gen, AttachmentViewGen::Gen::kViewSubresource, options);
 }
 
-HazardResult AccessContext::DetectImageBarrierHazard(const ImageState &image, VkPipelineStageFlags2KHR src_exec_scope,
+HazardResult AccessContext::DetectImageBarrierHazard(const ImageState &image, VkPipelineStageFlags2 src_exec_scope,
                                                      const SyncStageAccessFlags &src_access_scope,
                                                      const VkImageSubresourceRange &subresource_range,
                                                      const DetectOptions options) const {

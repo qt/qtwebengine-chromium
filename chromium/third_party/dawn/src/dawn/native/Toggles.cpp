@@ -506,6 +506,11 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
      {"polyfill_packed_4x8_dot_product",
       "Always use the polyfill version of dot4I8Packed() and dot4U8Packed().",
       "https://crbug.com/tint/1497", ToggleStage::Device}},
+    {Toggle::PolyfillPackUnpack4x8Norm,
+     {"polyfill_pack_unpack_4x8_norm",
+      "Always use the polyfill version of pack4x8snorm, pack4x8unorm, unpack4x8snorm, "
+      "unpack4x8unorm.",
+      "https://crbug.com/379551588", ToggleStage::Device}},
     {Toggle::D3D12PolyFillPackUnpack4x8,
      {"d3d12_polyfill_pack_unpack_4x8",
       "Always use the polyfill version of pack4xI8(), pack4xU8(), pack4xI8Clamp(), unpack4xI8() "
@@ -558,6 +563,17 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "COPY_SOURCE too on Nvidia since the shader resource states seem to miss flushing all caches "
       "and layout transitions causing rendering corruption.",
       "https://crbug.com/356905061", ToggleStage::Device}},
+    {Toggle::GLDepthBiasModifier,
+     {"gl_depth_bias_modifier",
+      "Empirically some GL drivers select n+1 when a depth value lies between 2^n and 2^(n+1), "
+      "while the WebGPU CTS is expecting n. Scale the depth bias value by multiple 0.5 on certain "
+      "backends to achieve conformant result.",
+      "https://crbug.com/42241017", ToggleStage::Device}},
+    {Toggle::VulkanMonolithicPipelineCache,
+     {"vulkan_monolithic_pipeline_cache",
+      "Use a monolithic VkPipelineCache per device. The embedder is responsible for calling "
+      "PerformIdleTasks() on the device to serialize VkPipelineCache to BlobCache if needed.",
+      "crbug.com/370343334", ToggleStage::Device}},
     {Toggle::NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,
      {"no_workaround_sample_mask_becomes_zero_for_all_but_last_color_target",
       "MacOS 12.0+ Intel has a bug where the sample mask is only applied for the last color "

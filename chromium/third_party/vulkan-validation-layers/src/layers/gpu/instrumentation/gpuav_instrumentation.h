@@ -17,28 +17,39 @@
 
 #pragma once
 
-#include "gpu/resources/gpuav_subclasses.h"
+#include <vulkan/vulkan.h>
+#include <string>
+#include <vector>
 
+struct Location;
+struct LogObjectList;
 namespace gpuav {
+struct DescriptorCommandBountSet;
+class Validator;
+class CommandBuffer;
 
-struct DescSetState;
+void UpdateInstrumentationDescSet(Validator& gpuav, CommandBuffer& cb_state, VkDescriptorSet instrumentation_desc_set,
+                                  const Location& loc);
 
-void SetupShaderInstrumentationResources(Validator& gpuav, CommandBuffer& cmd_buffer, VkPipelineBindPoint bind_point,
-                                         const Location& loc);
+void PreCallSetupShaderInstrumentationResources(Validator& gpuav, CommandBuffer& cb_state, VkPipelineBindPoint bind_point,
+                                                const Location& loc);
+
+void PostCallSetupShaderInstrumentationResources(Validator& gpuav, CommandBuffer& cb_statee, VkPipelineBindPoint bind_point,
+                                                 const Location& loc);
 
 // Return true iff a error has been found
 bool LogInstrumentationError(Validator& gpuav, VkCommandBuffer cmd_buffer, const LogObjectList& objlist, uint32_t operation_index,
-                             const uint32_t* error_record, const std::vector<DescSetState>& descriptor_sets,
+                             const uint32_t* error_record, const std::vector<DescriptorCommandBountSet>& descriptor_sets,
                              VkPipelineBindPoint pipeline_bind_point, bool uses_shader_object, bool uses_robustness,
                              const Location& loc);
 
 // Return true iff an error has been found in error_record, among the list of errors this function manages
 bool LogMessageInstBindlessDescriptor(Validator& gpuav, const uint32_t* error_record, std::string& out_error_msg,
-                                      std::string& out_vuid_msg, const std::vector<DescSetState>& descriptor_sets,
+                                      std::string& out_vuid_msg, const std::vector<DescriptorCommandBountSet>& descriptor_sets,
                                       const Location& loc, bool uses_shader_object, bool& out_oob_access);
 bool LogMessageInstNonBindlessOOB(Validator& gpuav, const uint32_t* error_record, std::string& out_error_msg,
-                                  std::string& out_vuid_msg, const std::vector<DescSetState>& descriptor_sets, const Location& loc,
-                                  bool uses_shader_object, bool& out_oob_access);
+                                  std::string& out_vuid_msg, const std::vector<DescriptorCommandBountSet>& descriptor_sets,
+                                  const Location& loc, bool uses_shader_object, bool& out_oob_access);
 bool LogMessageInstBufferDeviceAddress(const uint32_t* error_record, std::string& out_error_msg, std::string& out_vuid_msg,
                                        bool& out_oob_access);
 bool LogMessageInstRayQuery(const uint32_t* error_record, std::string& out_error_msg, std::string& out_vuid_msg);

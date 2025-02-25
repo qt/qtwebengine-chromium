@@ -9,8 +9,10 @@ import datetime as dt
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple
 
-from crossbench import cli_helper, helper
+from crossbench import helper
 from crossbench.benchmarks.base import Benchmark
+from crossbench.cli.ui import timer
+from crossbench.parse import DurationParser
 from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
@@ -46,7 +48,7 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
     logging.info("Starting Manual Benchmark...")
 
   def run(self, run: Run) -> None:
-    with cli_helper.timer():
+    with timer():
       logging.info("-" * 80)
       self._wait_for_input()
       # Empty line to preserve timer output.
@@ -96,14 +98,14 @@ class ManualBenchmark(Benchmark, metaclass=abc.ABCMeta):
         "--start-after",
         help="How long to wait until measurement starts",
         required=False,
-        type=cli_helper.Duration.parse_zero)
+        type=DurationParser.positive_or_zero_duration)
     parser.add_argument(
         "--run-for",
         "--stop-after",
         "--duration",
         help="How long to run measurement for",
         required=False,
-        type=cli_helper.Duration.parse_non_zero)
+        type=DurationParser.positive_duration)
     return parser
 
   @classmethod

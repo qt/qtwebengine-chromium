@@ -20,7 +20,7 @@ class _BaseCrossBenchArgumentParser(argparse.ArgumentParser):
   def fail(self, message) -> None:
     super().error(message)
 
-  def exit(self, status=0, message=None):
+  def exit(self, status=0, message=None) -> None:
     if message:
       if status == 0:
         logging.info(message)

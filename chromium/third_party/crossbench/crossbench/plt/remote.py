@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-  from crossbench.path import LocalPath, RemotePathLike
+  from crossbench.path import AnyPathLike, LocalPath
   from crossbench.plt.base import Platform
 
 
@@ -25,5 +25,5 @@ class RemotePlatformMixin:
   def host_platform(self) -> Platform:
     return self._host_platform
 
-  def host_path(self, path: RemotePathLike) -> LocalPath:
+  def host_path(self, path: AnyPathLike) -> LocalPath:
     return self._host_platform.local_path(path)

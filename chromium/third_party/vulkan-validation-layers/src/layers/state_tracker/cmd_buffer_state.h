@@ -262,6 +262,8 @@ class CommandBuffer : public RefcountedStateObject {
         bool rasterizer_discard_enable;
         // VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE
         bool depth_bias_enable = false;
+        // VK_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT
+        bool depth_clamp_enable = false;
         // VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT
         bool alpha_to_coverage_enable;
         // VK_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT
@@ -628,7 +630,8 @@ class CommandBuffer : public RefcountedStateObject {
     void ExecuteCommands(vvl::span<const VkCommandBuffer> secondary_command_buffers);
 
     void UpdateLastBoundDescriptorSets(VkPipelineBindPoint pipeline_bind_point, const vvl::PipelineLayout &pipeline_layout,
-                                       uint32_t first_set, uint32_t set_count, const VkDescriptorSet *pDescriptorSets,
+                                       vvl::Func bound_command, uint32_t first_set, uint32_t set_count,
+                                       const VkDescriptorSet *pDescriptorSets,
                                        std::shared_ptr<vvl::DescriptorSet> &push_descriptor_set, uint32_t dynamic_offset_count,
                                        const uint32_t *p_dynamic_offsets);
 
@@ -636,8 +639,9 @@ class CommandBuffer : public RefcountedStateObject {
                                           uint32_t first_set, uint32_t set_count, const uint32_t *buffer_indicies,
                                           const VkDeviceSize *buffer_offsets);
 
-    void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, const vvl::PipelineLayout &pipeline_layout, uint32_t set,
-                                uint32_t descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites);
+    void PushDescriptorSetState(VkPipelineBindPoint pipelineBindPoint, const vvl::PipelineLayout &pipeline_layout,
+                                vvl::Func bound_command, uint32_t set, uint32_t descriptorWriteCount,
+                                const VkWriteDescriptorSet *pDescriptorWrites);
 
     void UpdateDrawCmd(Func command);
     void UpdateDispatchCmd(Func command);

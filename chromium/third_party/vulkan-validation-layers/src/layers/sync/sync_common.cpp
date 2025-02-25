@@ -16,7 +16,6 @@
  */
 
 #include "state_tracker/buffer_state.h"
-#include "state_tracker/image_state.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "sync/sync_common.h"
 
@@ -35,16 +34,16 @@ SyncStageAccessFlags AccessScopeImpl(Flags flag_mask, const Map& map) {
     return scope;
 }
 
-SyncStageAccessFlags SyncStageAccess::AccessScopeByStage(VkPipelineStageFlags2KHR stages) {
+SyncStageAccessFlags SyncStageAccess::AccessScopeByStage(VkPipelineStageFlags2 stages) {
     return AccessScopeImpl(stages, syncStageAccessMaskByStageBit());
 }
 
-SyncStageAccessFlags SyncStageAccess::AccessScopeByAccess(VkAccessFlags2KHR accesses) {
+SyncStageAccessFlags SyncStageAccess::AccessScopeByAccess(VkAccessFlags2 accesses) {
     return AccessScopeImpl(sync_utils::ExpandAccessFlags(accesses), syncStageAccessMaskByAccessBit());
 }
 
 // Getting from stage mask and access mask to stage/access masks is something we need to be good at...
-SyncStageAccessFlags SyncStageAccess::AccessScope(VkPipelineStageFlags2KHR stages, VkAccessFlags2KHR accesses) {
+SyncStageAccessFlags SyncStageAccess::AccessScope(VkPipelineStageFlags2 stages, VkAccessFlags2 accesses) {
     // The access scope is the intersection of all stage/access types possible for the enabled stages and the enables
     // accesses (after doing a couple factoring of common terms the union of stage/access intersections is the intersections
     // of the union of all stage/access types for all the stages and the same unions for the access mask...
@@ -64,20 +63,4 @@ ResourceAccessRange MakeRange(VkDeviceSize offset, uint32_t first_index, uint32_
     const VkDeviceSize range_start = offset + (first_index * stride);
     const VkDeviceSize range_size = count * stride;
     return MakeRange(range_start, range_size);
-}
-
-ResourceAccessRange MakeRange(const vvl::VertexBufferBinding& binding, uint32_t first_index, const std::optional<uint32_t>& count,
-                              uint32_t stride) {
-    if (count) {
-        return MakeRange(binding.offset, first_index, count.value(), stride);
-    }
-    return MakeRange(binding);
-}
-
-ResourceAccessRange MakeRange(const vvl::IndexBufferBinding& binding, uint32_t first_index, const std::optional<uint32_t>& count,
-                              uint32_t index_size) {
-    if (count) {
-        return MakeRange(binding.offset, first_index, count.value(), index_size);
-    }
-    return MakeRange(binding);
 }

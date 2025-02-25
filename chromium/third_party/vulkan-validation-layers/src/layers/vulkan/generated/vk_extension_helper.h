@@ -27,7 +27,6 @@
 
 #include <string>
 #include <utility>
-#include <array>
 #include <vector>
 #include <cassert>
 
@@ -540,6 +539,7 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_ext_device_address_binding_report{kNotEnabled};
     ExtEnabled vk_ext_depth_clip_control{kNotEnabled};
     ExtEnabled vk_ext_primitive_topology_list_restart{kNotEnabled};
+    ExtEnabled vk_ext_present_mode_fifo_latest_ready{kNotEnabled};
     ExtEnabled vk_fuchsia_external_memory{kNotEnabled};
     ExtEnabled vk_fuchsia_external_semaphore{kNotEnabled};
     ExtEnabled vk_fuchsia_buffer_collection{kNotEnabled};
@@ -615,7 +615,11 @@ struct DeviceExtensions : public InstanceExtensions {
     ExtEnabled vk_nv_shader_atomic_float16_vector{kNotEnabled};
     ExtEnabled vk_ext_shader_replicated_composites{kNotEnabled};
     ExtEnabled vk_nv_ray_tracing_validation{kNotEnabled};
+    ExtEnabled vk_ext_device_generated_commands{kNotEnabled};
     ExtEnabled vk_mesa_image_alignment_control{kNotEnabled};
+    ExtEnabled vk_ext_depth_clamp_control{kNotEnabled};
+    ExtEnabled vk_huawei_hdr_vivid{kNotEnabled};
+    ExtEnabled vk_nv_cooperative_matrix2{kNotEnabled};
     ExtEnabled vk_khr_acceleration_structure{kNotEnabled};
     ExtEnabled vk_khr_ray_tracing_pipeline{kNotEnabled};
     ExtEnabled vk_khr_ray_query{kNotEnabled};
@@ -1069,11 +1073,11 @@ struct DeviceExtensions : public InstanceExtensions {
 #ifdef VK_ENABLE_BETA_EXTENSIONS
             {vvl::Extension::_VK_AMDX_shader_enqueue,
              Info(&DeviceExtensions::vk_amdx_shader_enqueue,
-                  {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
-                     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
-                    {&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME},
-                    {&DeviceExtensions::vk_khr_pipeline_library, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME},
-                    {&DeviceExtensions::vk_khr_spirv_1_4, VK_KHR_SPIRV_1_4_EXTENSION_NAME}}})},
+                  {{{&DeviceExtensions::vk_khr_synchronization2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_khr_spirv_1_4, VK_KHR_SPIRV_1_4_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_ext_extended_dynamic_state, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_khr_pipeline_library, VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME}}})},
 #endif  // VK_ENABLE_BETA_EXTENSIONS
             {vvl::Extension::_VK_AMD_mixed_attachment_samples, Info(&DeviceExtensions::vk_amd_mixed_attachment_samples, {})},
             {vvl::Extension::_VK_AMD_shader_fragment_mask, Info(&DeviceExtensions::vk_amd_shader_fragment_mask, {})},
@@ -1411,6 +1415,9 @@ struct DeviceExtensions : public InstanceExtensions {
              Info(&DeviceExtensions::vk_ext_primitive_topology_list_restart,
                   {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                      VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_EXT_present_mode_fifo_latest_ready,
+             Info(&DeviceExtensions::vk_ext_present_mode_fifo_latest_ready,
+                  {{{&DeviceExtensions::vk_khr_swapchain, VK_KHR_SWAPCHAIN_EXTENSION_NAME}}})},
 #ifdef VK_USE_PLATFORM_FUCHSIA
             {vvl::Extension::_VK_FUCHSIA_external_memory,
              Info(&DeviceExtensions::vk_fuchsia_external_memory,
@@ -1667,9 +1674,25 @@ struct DeviceExtensions : public InstanceExtensions {
             {vvl::Extension::_VK_EXT_shader_replicated_composites,
              Info(&DeviceExtensions::vk_ext_shader_replicated_composites, {})},
             {vvl::Extension::_VK_NV_ray_tracing_validation, Info(&DeviceExtensions::vk_nv_ray_tracing_validation, {})},
+            {vvl::Extension::_VK_EXT_device_generated_commands,
+             Info(&DeviceExtensions::vk_ext_device_generated_commands,
+                  {{{&DeviceExtensions::vk_khr_buffer_device_address, VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_khr_maintenance5, VK_KHR_MAINTENANCE_5_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_MESA_image_alignment_control, Info(&DeviceExtensions::vk_mesa_image_alignment_control,
                                                                     {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
                                                                        VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_EXT_depth_clamp_control,
+             Info(&DeviceExtensions::vk_ext_depth_clamp_control, {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                                                                    VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_HUAWEI_hdr_vivid,
+             Info(&DeviceExtensions::vk_huawei_hdr_vivid,
+                  {{{&DeviceExtensions::vk_khr_get_physical_device_properties2,
+                     VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_khr_swapchain, VK_KHR_SWAPCHAIN_EXTENSION_NAME},
+                    {&DeviceExtensions::vk_ext_hdr_metadata, VK_EXT_HDR_METADATA_EXTENSION_NAME}}})},
+            {vvl::Extension::_VK_NV_cooperative_matrix2,
+             Info(&DeviceExtensions::vk_nv_cooperative_matrix2,
+                  {{{&DeviceExtensions::vk_khr_cooperative_matrix, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME}}})},
             {vvl::Extension::_VK_KHR_acceleration_structure,
              Info(&DeviceExtensions::vk_khr_acceleration_structure,
                   {{{&DeviceExtensions::vk_feature_version_1_1, "VK_VERSION_1_1"},
@@ -2018,6 +2041,7 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_EXT_device_address_binding_report:
         case vvl::Extension::_VK_EXT_depth_clip_control:
         case vvl::Extension::_VK_EXT_primitive_topology_list_restart:
+        case vvl::Extension::_VK_EXT_present_mode_fifo_latest_ready:
         case vvl::Extension::_VK_FUCHSIA_external_memory:
         case vvl::Extension::_VK_FUCHSIA_external_semaphore:
         case vvl::Extension::_VK_FUCHSIA_buffer_collection:
@@ -2093,7 +2117,11 @@ constexpr bool IsDeviceExtension(vvl::Extension extension) {
         case vvl::Extension::_VK_NV_shader_atomic_float16_vector:
         case vvl::Extension::_VK_EXT_shader_replicated_composites:
         case vvl::Extension::_VK_NV_ray_tracing_validation:
+        case vvl::Extension::_VK_EXT_device_generated_commands:
         case vvl::Extension::_VK_MESA_image_alignment_control:
+        case vvl::Extension::_VK_EXT_depth_clamp_control:
+        case vvl::Extension::_VK_HUAWEI_hdr_vivid:
+        case vvl::Extension::_VK_NV_cooperative_matrix2:
         case vvl::Extension::_VK_KHR_acceleration_structure:
         case vvl::Extension::_VK_KHR_ray_tracing_pipeline:
         case vvl::Extension::_VK_KHR_ray_query:

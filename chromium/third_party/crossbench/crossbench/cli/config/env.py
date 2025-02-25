@@ -3,13 +3,14 @@
 # found in the LICENSE file.
 
 from __future__ import annotations
+
 import argparse
 from typing import TYPE_CHECKING
 
 import hjson
-from crossbench import cli_helper
 
 from crossbench.env import HostEnvironment, HostEnvironmentConfig
+from crossbench.parse import ObjectParser, PathParser
 
 if TYPE_CHECKING:
   from crossbench.path import LocalPath
@@ -26,7 +27,7 @@ def parse_inline_env_config(value: str) -> HostEnvironmentConfig:
   kwargs = None
   msg = ""
   try:
-    kwargs = cli_helper.parse_inline_hjson(value)
+    kwargs = ObjectParser.inline_hjson(value)
     return HostEnvironmentConfig(**kwargs)
   except Exception as e:
     msg = f"\n{e}"
@@ -35,7 +36,7 @@ def parse_inline_env_config(value: str) -> HostEnvironmentConfig:
 
 
 def parse_env_config_file(value: str) -> HostEnvironmentConfig:
-  config_path: LocalPath = cli_helper.parse_file_path(value)
+  config_path: LocalPath = PathParser.file_path(value)
   try:
     with config_path.open(encoding="utf-8") as f:
       data = hjson.load(f)

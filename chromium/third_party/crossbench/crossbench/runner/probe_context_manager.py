@@ -8,16 +8,16 @@ import abc
 import contextlib
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Generic, Iterable, List, Optional, Tuple,
-                    TypeVar)
+from typing import (TYPE_CHECKING, Dict, Generic, Iterable, List, Optional,
+                    Tuple, Type, TypeVar)
 
 from crossbench.helper.state import State, StateMachine
-from crossbench.probes.probe import Probe
-from crossbench.probes.probe_context import BaseProbeContext
+from crossbench.probes.probe_context import BaseProbeContext, ProbeContext
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
 from crossbench.runner.result_origin import ResultOrigin
 
 if TYPE_CHECKING:
+  from crossbench.probes.probe import Probe, ProbeT
   from crossbench.probes.results import ProbeResultDict
 
 ResultOriginT = TypeVar("ResultOriginT", bound=ResultOrigin)
@@ -31,7 +31,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
     self._state = StateMachine(State.INITIAL)
     self._origin = result_origin
     self._probe_results = probe_results
-    self._probe_contexts: List[ProbeContextT] = []
+    self._probe_contexts: Dict[Type[Probe], ProbeContextT] = {}
     # TODO: either prefix timers or use custom duration
     self._durations = result_origin.durations
     self._exceptions = result_origin.exceptions
@@ -91,12 +91,14 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
         self._probe_results[probe] = EmptyProbeResult()
       with self.capture(f"{probe.name} get_context"):
         if probe_context := self.get_probe_context(probe):
-          self._probe_contexts.append(probe_context)
+          probe_cls = type(probe)
+          assert probe_cls not in self._probe_contexts
+          self._probe_contexts[probe_cls] = probe_context
 
   def _setup_contexts(self):
-    for probe_context in self._probe_contexts:
+    for probe_context in self._probe_contexts.values():
       with self.capture(f"probes-setup {probe_context.name}"):
-        probe_context.setup()  # pytype: disable=wrong-arg-types
+        probe_context.setup()
 
   def _handle_setup_error(self, is_dry_run: bool) -> None:
     self._state.transition(State.SETUP, to=State.DONE)
@@ -104,7 +106,8 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
     assert not self.is_success
     # Special handling for crucial runner probes
     internal_probe_contexts = [
-        context for context in self._probe_contexts if context.probe.is_internal
+        context for context in self._probe_contexts.values()
+        if context.probe.is_internal
     ]
     self._teardown(internal_probe_contexts, is_dry_run, setup_error=True)
 
@@ -114,7 +117,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
     probe_start_time = dt.datetime.now()
     combined_contexts = contextlib.ExitStack()
 
-    for probe_context in self._probe_contexts:
+    for probe_context in self._probe_contexts.values():
       probe_context.set_start_time(probe_start_time)
       if not is_dry_run:
         combined_contexts.enter_context(probe_context.open())
@@ -126,8 +129,9 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
   def teardown(self, is_dry_run: bool, setup_error: bool = False) -> None:
     self._state.transition(State.READY, State.RUN, to=State.DONE)
     with self.measure("probes-teardown"):
-      self._teardown(self._probe_contexts, is_dry_run, setup_error)
-      self._probe_contexts = []
+      self._teardown(
+          list(self._probe_contexts.values()), is_dry_run, setup_error)
+      self._probe_contexts = {}
 
   def _teardown(self,
                 probe_contexts: List[ProbeContextT],
@@ -152,3 +156,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
   @abc.abstractmethod
   def get_probe_context(self, probe: Probe) -> Optional[ProbeContextT]:
     pass
+
+  def find_probe_context(self,
+                         cls: Type[ProbeT]) -> Optional[ProbeContext[ProbeT]]:
+    return self._probe_contexts.get(cls)

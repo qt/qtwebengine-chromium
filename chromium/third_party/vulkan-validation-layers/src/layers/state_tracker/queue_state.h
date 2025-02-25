@@ -35,11 +35,6 @@ class CommandBuffer;
 class Queue;
 
 struct QueueSubmission {
-    struct SemaphoreInfo {
-        SemaphoreInfo(std::shared_ptr<Semaphore> &&sem, uint64_t pl) : semaphore(std::move(sem)), payload(pl) {}
-        std::shared_ptr<Semaphore> semaphore;
-        uint64_t payload{0};
-    };
     QueueSubmission(const Location &loc_) : loc(loc_), completed(), waiter(completed.get_future()) {}
 
     bool end_batch{false};
@@ -76,7 +71,9 @@ static inline std::chrono::time_point<std::chrono::steady_clock> GetCondWaitTime
     return std::chrono::steady_clock::now() + std::chrono::seconds(10);
 }
 
-struct SubmitResult {
+struct PreSubmitResult {
+    uint64_t last_submission_seq = 0;
+
     bool has_external_fence = false;
     uint64_t submission_with_external_fence_seq = 0;
 };
@@ -97,10 +94,10 @@ class Queue : public StateObject {
 
     VkQueue VkHandle() const { return handle_.Cast<VkQueue>(); }
 
-    void SetupSubmissions(std::vector<QueueSubmission> &submissions);
-
+    // called from the various PreCallRecordQueueSubmit() methods
+    virtual PreSubmitResult PreSubmit(std::vector<QueueSubmission> &&submissions);
     // called from the various PostCallRecordQueueSubmit() methods
-    virtual SubmitResult PostSubmit(std::vector<QueueSubmission> &&submissions);
+    void PostSubmit();
 
     // Tell the queue thread that submissions up to and including the submission with
     // sequence number until_seq have finished. kU64Max means to finish all submissions.
@@ -112,6 +109,10 @@ class Queue : public StateObject {
 
     // Helper that combines Notify and Wait
     void NotifyAndWait(const Location &loc, uint64_t until_seq = kU64Max);
+
+    // Find a timeline wait that does not have a resolving signal submitted yet.
+    // Check submissions up to and including until_seq.
+    std::optional<SemaphoreInfo> FindTimelineWaitWithoutResolvingSignal(uint64_t until_seq) const;
 
   public:
     // Queue family index. As queueFamilyIndex parameter in vkGetDeviceQueue.
@@ -140,6 +141,9 @@ class Queue : public StateObject {
     virtual void PostSubmit(QueueSubmission &submission) {}
     // called when the worker thread decides a submissions has finished executing
     virtual void Retire(QueueSubmission &submission);
+
+  private:
+    uint32_t timeline_wait_count_ = 0;
 
   private:
     using LockGuard = std::unique_lock<std::mutex>;

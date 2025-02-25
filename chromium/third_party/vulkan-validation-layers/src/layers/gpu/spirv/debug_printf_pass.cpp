@@ -15,12 +15,12 @@
 
 #include "debug_printf_pass.h"
 #include "module.h"
-#include "gpu/shaders/gpu_error_header.h"
+#include "gpu/shaders/gpuav_error_header.h"
 #include <spirv/unified1/NonSemanticDebugPrintf.h>
 #include <cstring>
 #include <iostream>
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 // All functions are a list of uint32_t
@@ -36,7 +36,7 @@ uint32_t DebugPrintfPass::GetLinkFunctionId(uint32_t argument_count) {
     return link_function_id;
 }
 
-bool DebugPrintfPass::AnalyzeInstruction(const Instruction& inst) {
+bool DebugPrintfPass::RequiresInstrumentation(const Instruction& inst) {
     if (inst.Opcode() == spv::OpExtInst && inst.Word(3) == ext_import_id_ && inst.Word(4) == NonSemanticDebugPrintfDebugPrintf) {
         target_instruction_ = &inst;
         return true;
@@ -150,9 +150,10 @@ void DebugPrintfPass::CreateFunctionParams(uint32_t argument_id, const Type& arg
                 }
 
                 if (!module_.support_int64_) {
-                    module_.InternalError("DEBUG-PRINTF-INT64-SUPPORT",
-                                          "shaderInt64 feature is not supported, but need it to cast 64-bit float to a 64-bit int "
-                                          "to write to the output buffer");
+                    module_.InternalError(
+                        "DEBUG-PRINTF-INT64-SUPPORT",
+                        "shaderInt64 feature is not supported, but is required to cast a 64-bit float to a 64-bit int "
+                        "when writing to the output buffer");
                 }
                 module_.AddCapability(spv::CapabilityInt64);
 
@@ -294,7 +295,7 @@ void DebugPrintfPass::CreateDescriptorSet() {
     new_struct_inst->Fill({struct_type_id, uint32_type.Id(), runtime_array_type_id});
     const Type& struct_type = module_.type_manager_.AddType(std::move(new_struct_inst), SpvType::kStruct);
     module_.AddDecoration(struct_type_id, spv::DecorationBlock, {});
-    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferSize, spv::DecorationOffset, {0});
+    module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferDWordsCount, spv::DecorationOffset, {0});
     module_.AddMemberDecoration(struct_type_id, gpuav::kDebugPrintfOutputBufferData, spv::DecorationOffset, {4});
 
     // create a storage buffer interface variable
@@ -374,7 +375,7 @@ void DebugPrintfPass::CreateBufferWriteFunction(uint32_t argument_count, uint32_
     const uint32_t byte_written_id = module_.type_manager_.GetConstantUInt32(byte_written).Id();
     uint32_t atomic_add_id = 0;
 
-    // Add atomic and check if buffer size is large enough
+    // Atomically get a write index in the output buffer, and check if this index is with buffer's bounds
     {
         const uint32_t access_chain_id = module_.TakeNextId();
         check_block->CreateInstruction(spv::OpAccessChain, {pointer_type_id, access_chain_id, output_buffer_variable_id_, zero_id});
@@ -479,21 +480,23 @@ bool DebugPrintfPass::Run() {
         for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
             auto& block_instructions = (*block_it)->instructions_;
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
-                if (!AnalyzeInstruction(*(inst_it->get()))) continue;
+                if (!RequiresInstrumentation(*(inst_it->get()))) continue;
                 if (!Validate(*(function.get()))) continue;  // if not valid, don't attempt to instrument it
-                instrumented_count_++;
+                instrumentations_count_++;
 
                 CreateFunctionCall(block_it, &inst_it);
 
                 // remove the OpExtInst incase they don't support VK_KHR_non_semantic_info
-                inst_it = block_instructions.erase(inst_it);
-                inst_it--;
+                if (!module_.support_non_semantic_info_) {
+                    inst_it = block_instructions.erase(inst_it);
+                    inst_it--;
+                }
 
                 Reset();
             }
         }
     }
-    if (instrumented_count_ == 0) {
+    if (instrumentations_count_ == 0) {
         return false;
     }
 
@@ -505,22 +508,24 @@ bool DebugPrintfPass::Run() {
     }
 
     // remove the everything else possible incase they don't support VK_KHR_non_semantic_info
-    bool other_non_semantic = false;
-    for (auto inst_it = module_.ext_inst_imports_.begin(); inst_it != module_.ext_inst_imports_.end(); ++inst_it) {
-        const char* import_string = (inst_it->get())->GetAsString(2);
-        if (strcmp(import_string, "NonSemantic.DebugPrintf") == 0) {
-            module_.ext_inst_imports_.erase(inst_it);
-            break;
-        } else if (strcmp(import_string, "NonSemantic.") == 0) {
-            other_non_semantic = true;
-        }
-    }
-    if (!other_non_semantic) {
-        for (auto inst_it = module_.extensions_.begin(); inst_it != module_.extensions_.end(); ++inst_it) {
-            const char* import_string = (inst_it->get())->GetAsString(1);
-            if (strcmp(import_string, "SPV_KHR_non_semantic_info") == 0) {
-                module_.extensions_.erase(inst_it);
+    if (!module_.support_non_semantic_info_) {
+        bool other_non_semantic = false;
+        for (auto inst_it = module_.ext_inst_imports_.begin(); inst_it != module_.ext_inst_imports_.end(); ++inst_it) {
+            const char* import_string = (inst_it->get())->GetAsString(2);
+            if (strcmp(import_string, "NonSemantic.DebugPrintf") == 0) {
+                module_.ext_inst_imports_.erase(inst_it);
                 break;
+            } else if (strncmp(import_string, "NonSemantic.", 12) == 0) {
+                other_non_semantic = true;
+            }
+        }
+        if (!other_non_semantic) {
+            for (auto inst_it = module_.extensions_.begin(); inst_it != module_.extensions_.end(); ++inst_it) {
+                const char* import_string = (inst_it->get())->GetAsString(1);
+                if (strcmp(import_string, "SPV_KHR_non_semantic_info") == 0) {
+                    module_.extensions_.erase(inst_it);
+                    break;
+                }
             }
         }
     }
@@ -528,7 +533,9 @@ bool DebugPrintfPass::Run() {
     return true;
 }
 
-void DebugPrintfPass::PrintDebugInfo() { std::cout << "DebugPrintfPass\n\tinstrumentation count: " << instrumented_count_ << '\n'; }
+void DebugPrintfPass::PrintDebugInfo() {
+    std::cout << "DebugPrintfPass instrumentation count: " << instrumentations_count_ << '\n';
+}
 
 // Strictly speaking - the format given in GLSL_EXT_debug_printf is a client side implementation of SPIR-V
 // NonSemantic.DebugPrintf There is nothing stopping someone from creating a debug printf implementation
@@ -790,4 +797,4 @@ bool DebugPrintfPass::Validate(const Function& current_function) {
 }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

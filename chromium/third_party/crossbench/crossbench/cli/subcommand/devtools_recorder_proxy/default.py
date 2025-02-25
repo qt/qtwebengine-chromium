@@ -28,6 +28,9 @@ if TYPE_CHECKING:
   from crossbench.types import JsonDict
 
 
+CROSSBENCH_ROOT: pth.LocalPath = pth.LocalPath(__file__).parents[4]
+
+
 @enum.unique
 class State(BaseState):
   CONNECTED = enum.auto()
@@ -172,7 +175,7 @@ class CrossbenchDevToolsRecorderProxy:
   async def _run_command(self, args) -> Tuple[Response, str]:
     self._state.transition(State.CONNECTED, to=State.RUNNING)
     assert self._crossbench_process is None
-    cb_path = pth.LocalPath(__file__).parents[2] / "cb.py"
+    cb_path = CROSSBENCH_ROOT / "cb.py"
     os.environ["PYTHONUNBUFFERED"] = "1"
     cmd: ListCmdArgs = []
     if args.get("cmd") == "--help":
@@ -185,8 +188,8 @@ class CrossbenchDevToolsRecorderProxy:
       self._print_cmd_output = True
       with self._tmp_json.open("w", encoding="utf-8") as f:
         json.dump(args["json"], f)
-      assert self._tmp_json.exists()
-      assert cb_path.exists()
+      assert self._tmp_json.exists(), f"{self._tmp_json} does not exist."
+      assert cb_path.exists(), f"{cb_path} does not exist."
       cmd = [
           "load", "--env-validation=warn", "--verbose",
           f"--devtools-recorder={self._tmp_json.absolute()}",

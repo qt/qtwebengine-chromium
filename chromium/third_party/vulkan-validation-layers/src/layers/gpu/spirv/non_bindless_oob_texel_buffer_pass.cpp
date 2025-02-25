@@ -19,19 +19,19 @@
 #include <iostream>
 
 #include "generated/instrumentation_non_bindless_oob_texel_buffer_comp.h"
-#include "gpu/shaders/gpu_shaders_constants.h"
+#include "gpu/shaders/gpuav_shaders_constants.h"
 
-namespace gpu {
+namespace gpuav {
 namespace spirv {
 
 NonBindlessOOBTexelBufferPass::NonBindlessOOBTexelBufferPass(Module& module) : Pass(module) { module.use_bda_ = true; }
 
-static LinkInfo link_info = {instrumentation_non_bindless_oob_texel_buffer_comp,
-                             instrumentation_non_bindless_oob_texel_buffer_comp_size,
-                             LinkFunctions::inst_non_bindless_oob_texel_buffer, 0, "inst_non_bindless_oob_texel_buffer"};
-
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t NonBindlessOOBTexelBufferPass::GetLinkFunctionId() {
+    static LinkInfo link_info = {instrumentation_non_bindless_oob_texel_buffer_comp,
+                                 instrumentation_non_bindless_oob_texel_buffer_comp_size,
+                                 LinkFunctions::inst_non_bindless_oob_texel_buffer, 0, "inst_non_bindless_oob_texel_buffer"};
+
     if (link_function_id == 0) {
         link_function_id = module_.TakeNextId();
         link_info.function_id = link_function_id;
@@ -57,18 +57,21 @@ uint32_t NonBindlessOOBTexelBufferPass::CreateFunctionCall(BasicBlock& block, In
     }
 
     // Use the imageFetch() parameter to decide the offset
-    // TODO - This assumes no depth/arrayed/ms from AnalyzeInstruction
+    // TODO - This assumes no depth/arrayed/ms from RequiresInstrumentation
     descriptor_offset_id_ = CastToUint32(target_instruction_->Operand(1), block, inst_it);
+
+    BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[descriptor_set_][descriptor_binding_];
+    const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
 
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
 
-    block.CreateInstruction(
-        spv::OpFunctionCall,
-        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id,
-         descriptor_array_size_id_, set_constant.Id(), binding_constant.Id(), descriptor_index_id, descriptor_offset_id_},
-        inst_it);
+    block.CreateInstruction(spv::OpFunctionCall,
+                            {bool_type, function_result, function_def, injection_data.inst_position_id,
+                             injection_data.stage_info_id, descriptor_array_size_id_, set_constant.Id(), binding_constant.Id(),
+                             descriptor_index_id, descriptor_offset_id_, binding_layout_offset.Id()},
+                            inst_it);
 
     return function_result;
 }
@@ -84,7 +87,7 @@ void NonBindlessOOBTexelBufferPass::Reset() {
     descriptor_offset_id_ = 0;
 }
 
-bool NonBindlessOOBTexelBufferPass::AnalyzeInstruction(const Function& function, const Instruction& inst) {
+bool NonBindlessOOBTexelBufferPass::RequiresInstrumentation(const Function& function, const Instruction& inst) {
     const uint32_t opcode = inst.Opcode();
 
     if (opcode != spv::OpImageFetch && opcode != spv::OpImageWrite && opcode != spv::OpImageRead) {
@@ -152,9 +155,6 @@ bool NonBindlessOOBTexelBufferPass::AnalyzeInstruction(const Function& function,
             return false;  // Currently we mark these as "bindless"
         } else if (pointer_type->inst_.Opcode() == spv::OpTypeArray) {
             const Constant* array_size_const = module_.type_manager_.FindConstantById(pointer_type->inst_.Operand(1));
-            if (!array_size_const) {
-                return false;  // TODO - Handle Spec Constants here
-            }
             descriptor_array_size_id_ = array_size_const->Id();
         } else {
             module_.InternalError(Name(), "OpAccessChain has no array in it");
@@ -178,7 +178,7 @@ bool NonBindlessOOBTexelBufferPass::AnalyzeInstruction(const Function& function,
         }
     }
 
-    if (descriptor_set_ >= gpuav::glsl::kDebugInputBindlessMaxDescSets) {
+    if (descriptor_set_ >= glsl::kDebugInputBindlessMaxDescSets) {
         module_.InternalWarning(Name(), "Tried to use a descriptor slot over the current max limit");
         return false;
     }
@@ -190,7 +190,7 @@ bool NonBindlessOOBTexelBufferPass::AnalyzeInstruction(const Function& function,
 }
 
 void NonBindlessOOBTexelBufferPass::PrintDebugInfo() {
-    std::cout << "NonBindlessOOBTexelBufferPass\n\tinstrumentation count: " << instrumented_count_ << '\n';
+    std::cout << "NonBindlessOOBTexelBufferPass instrumentation count: " << instrumentations_count_ << '\n';
 }
 
 // Created own Run() because need to control finding the largest offset in a given block
@@ -205,12 +205,12 @@ bool NonBindlessOOBTexelBufferPass::Run() {
             auto& block_instructions = (*block_it)->instructions_;
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!AnalyzeInstruction(*function, *(inst_it->get()))) continue;
+                if (!RequiresInstrumentation(*function, *(inst_it->get()))) continue;
 
-                if (module_.max_instrumented_count_ != 0 && instrumented_count_ >= module_.max_instrumented_count_) {
+                if (module_.max_instrumentations_count_ != 0 && instrumentations_count_ >= module_.max_instrumentations_count_) {
                     return true;  // hit limit
                 }
-                instrumented_count_++;
+                instrumentations_count_++;
 
                 // Add any debug information to pass into the function call
                 InjectionData injection_data;
@@ -226,8 +226,8 @@ bool NonBindlessOOBTexelBufferPass::Run() {
         }
     }
 
-    return instrumented_count_ != 0;
+    return instrumentations_count_ != 0;
 }
 
 }  // namespace spirv
-}  // namespace gpu
+}  // namespace gpuav

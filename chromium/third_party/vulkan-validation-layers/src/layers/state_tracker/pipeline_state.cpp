@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 #include "state_tracker/pipeline_state.h"
+#include "generated/dynamic_state_helper.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/render_pass_state.h"
@@ -260,6 +261,7 @@ static CBDynamicFlags GetGraphicsDynamicState(Pipeline &pipe_state) {
                 case VK_DYNAMIC_STATE_EXTRA_PRIMITIVE_OVERESTIMATION_SIZE_EXT:
                 case VK_DYNAMIC_STATE_DEPTH_CLIP_ENABLE_EXT:
                 case VK_DYNAMIC_STATE_PROVOKING_VERTEX_MODE_EXT:
+                case VK_DYNAMIC_STATE_DEPTH_CLAMP_RANGE_EXT:
                 // VkPipelineTessellationStateCreateInfo
                 case VK_DYNAMIC_STATE_PATCH_CONTROL_POINTS_EXT:
                 case VK_DYNAMIC_STATE_TESSELLATION_DOMAIN_ORIGIN_EXT:
@@ -898,6 +900,19 @@ bool LastBound::IsDepthBiasEnable() const {
     return false;
 }
 
+bool LastBound::IsDepthClampEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT)) {
+            return cb_state.dynamic_state_value.depth_clamp_enable;
+        }
+    } else {
+        if (pipeline_state->RasterizationState()) {
+            return pipeline_state->RasterizationState()->depthClampEnable;
+        }
+    }
+    return false;
+}
+
 bool LastBound::IsStencilTestEnable() const {
     if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE)) {
         if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE)) {
@@ -1109,6 +1124,71 @@ bool LastBound::IsCoverageModulationTableEnable() const {
     return false;
 }
 
+bool LastBound::IsStippledLineEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT)) {
+            return cb_state.dynamic_state_value.stippled_line_enable;
+        }
+    } else {
+        if (const auto line_state_ci = vku::FindStructInPNextChain<VkPipelineRasterizationLineStateCreateInfoKHR>(
+                pipeline_state->RasterizationStatePNext())) {
+            return line_state_ci->stippledLineEnable;
+        }
+    }
+    return false;
+}
+
+bool LastBound::IsDiscardRectangleEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT)) {
+            return cb_state.dynamic_state_value.discard_rectangle_enable;
+        }
+    } else {
+        // VK_EXT_discard_rectangles had a special v2 added right away to give it dynamic state
+        // "If the VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT dynamic state is not enabled for the pipeline the presence of this
+        // structure in the VkGraphicsPipelineCreateInfo chain, and a discardRectangleCount greater than zero, implicitly enables
+        // discard rectangles in the pipeline"
+        const void *pipeline_pnext = pipeline_state->GetCreateInfoPNext();
+        if (const auto *discard_rectangle_state =
+                vku::FindStructInPNextChain<VkPipelineDiscardRectangleStateCreateInfoEXT>(pipeline_pnext)) {
+            return discard_rectangle_state->discardRectangleCount > 0;
+        }
+    }
+    return false;
+}
+
+bool LastBound::IsShadingRateImageEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV)) {
+            return cb_state.dynamic_state_value.shading_rate_image_enable;
+        }
+    } else {
+        if (auto viewport_state = pipeline_state->ViewportState()) {
+            if (const auto *shading_rate_image_state =
+                    vku::FindStructInPNextChain<VkPipelineViewportShadingRateImageStateCreateInfoNV>(viewport_state->pNext)) {
+                return shading_rate_image_state->shadingRateImageEnable;
+            }
+        }
+    }
+    return false;
+}
+
+bool LastBound::IsViewportWScalingEnable() const {
+    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV)) {
+        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV)) {
+            return cb_state.dynamic_state_value.viewport_w_scaling_enable;
+        }
+    } else {
+        if (auto viewport_state = pipeline_state->ViewportState()) {
+            if (const auto *viewport_w_scaling_state =
+                    vku::FindStructInPNextChain<VkPipelineViewportWScalingStateCreateInfoNV>(viewport_state->pNext)) {
+                return viewport_w_scaling_state->viewportWScalingEnable;
+            }
+        }
+    }
+    return false;
+}
+
 VkCoverageModulationModeNV LastBound::GetCoverageModulationMode() const {
     if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV)) {
         if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV)) {
@@ -1155,6 +1235,29 @@ vvl::ShaderObject *LastBound::GetShaderState(ShaderObjectStage stage) const {
     return shader_object_states[static_cast<uint32_t>(stage)];
 }
 
+const vvl::ShaderObject *LastBound::GetShaderStateIfValid(ShaderObjectStage stage) const {
+    if (!shader_object_bound[static_cast<uint32_t>(stage)]) {
+        return nullptr;
+    }
+    return shader_object_states[static_cast<uint32_t>(stage)];
+}
+
+const vvl::ShaderObject *LastBound::GetFirstShader(VkPipelineBindPoint bind_point) const {
+    if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
+        return GetShaderStateIfValid(ShaderObjectStage::COMPUTE);
+    } else if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+        if (const vvl::ShaderObject *vs = GetShaderStateIfValid(ShaderObjectStage::VERTEX)) {
+            return vs;
+        }
+
+        if (const vvl::ShaderObject *ms = GetShaderStateIfValid(ShaderObjectStage::MESH)) {
+            return ms;
+        }
+    }
+
+    return nullptr;
+}
+
 bool LastBound::HasShaderObjects() const {
     for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
         if (GetShader(static_cast<ShaderObjectStage>(i)) != VK_NULL_HANDLE) {
@@ -1164,12 +1267,7 @@ bool LastBound::HasShaderObjects() const {
     return false;
 }
 
-bool LastBound::IsValidShaderBound(ShaderObjectStage stage) const {
-    if (!shader_object_bound[static_cast<uint32_t>(stage)]) {
-        return false;
-    }
-    return shader_object_states[static_cast<uint32_t>(stage)] != nullptr;
-}
+bool LastBound::IsValidShaderBound(ShaderObjectStage stage) const { return GetShaderStateIfValid(stage) != nullptr; }
 
 bool LastBound::IsValidShaderOrNullBound(ShaderObjectStage stage) const {
     return shader_object_bound[static_cast<uint32_t>(stage)];
@@ -1213,6 +1311,39 @@ bool LastBound::IsAnyGraphicsShaderBound() const {
         IsValidShaderBound(ShaderObjectStage::MESH);
 }
 
+VkShaderStageFlags LastBound::GetAllActiveBoundStages() const {
+    if (pipeline_state) {
+        return pipeline_state->active_shaders;
+    }
+    // else shader object
+    VkShaderStageFlags stages = 0;
+    if (IsValidShaderBound(ShaderObjectStage::VERTEX)) {
+        stages |= VK_SHADER_STAGE_VERTEX_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_CONTROL)) {
+        stages |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_EVALUATION)) {
+        stages |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::GEOMETRY)) {
+        stages |= VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::FRAGMENT)) {
+        stages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::COMPUTE)) {
+        stages |= VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::TASK)) {
+        stages |= VK_SHADER_STAGE_TASK_BIT_EXT;
+    }
+    if (IsValidShaderBound(ShaderObjectStage::MESH)) {
+        stages |= VK_SHADER_STAGE_MESH_BIT_EXT;
+    }
+    return stages;
+}
+
 bool LastBound::IsBoundSetCompatible(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const {
     if ((set >= per_set.size()) || (set >= pipeline_layout.set_compat_ids.size())) {
         return false;
@@ -1249,6 +1380,32 @@ std::string LastBound::DescribeNonCompatibleSet(uint32_t set, const vvl::ShaderO
            << shader_object_state.set_compat_ids.size() << ")\n";
     } else {
         return per_set[set].compat_id_for_set->DescribeDifference(*(shader_object_state.set_compat_ids[set]));
+    }
+    return ss.str();
+}
+
+bool IsPipelineLayoutSetCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b) {
+    if (!a || !b) {
+        return false;
+    }
+    if ((set >= a->set_compat_ids.size()) || (set >= b->set_compat_ids.size())) {
+        return false;
+    }
+    return *(a->set_compat_ids[set]) == *(b->set_compat_ids[set]);
+}
+
+std::string DescribePipelineLayoutSetNonCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b) {
+    std::ostringstream ss;
+    if (!a || !b) {
+        ss << "The set (" << set << ") has a null VkPipelineLayout object\n";
+    } else if (set >= a->set_compat_ids.size()) {
+        ss << "The set (" << set << ") is out of bounds for the number of sets in the non-compatible VkDescriptorSetLayout ("
+           << a->set_compat_ids.size() << ")\n";
+    } else if (set >= b->set_compat_ids.size()) {
+        ss << "The set (" << set << ") is out of bounds for the number of sets in the non-compatible VkDescriptorSetLayout ("
+           << b->set_compat_ids.size() << ")\n";
+    } else {
+        return a->set_compat_ids[set]->DescribeDifference(*(b->set_compat_ids[set]));
     }
     return ss.str();
 }

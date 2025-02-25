@@ -9,13 +9,14 @@ from typing import TYPE_CHECKING, cast
 from crossbench import helper
 from crossbench.browsers.chromium.chromium import Chromium
 from crossbench.probes.chromium_probe import ChromiumProbe
-from crossbench.probes.probe import ProbeContext, ResultLocation
+from crossbench.probes.probe import ProbeContext
+from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import (BrowserProbeResult, LocalProbeResult,
                                        ProbeResult)
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.path import RemotePath
+  from crossbench.path import AnyPath
   from crossbench.runner.run import Run
 
 
@@ -42,7 +43,7 @@ class V8TurbolizerProbe(ChromiumProbe):
 class V8TurbolizerProbeContext(ProbeContext[V8TurbolizerProbe]):
 
   @property
-  def results_dir(self) -> RemotePath:
+  def results_dir(self) -> AnyPath:
     # Put v8.turbolizer files into separate dirs in case we have
     # multiple isolates
     turbolizer_log_dir = super().result_path

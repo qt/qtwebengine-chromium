@@ -219,6 +219,12 @@ bool CoreChecks::ValidateCreateShadersLinking(uint32_t createInfoCount, const Vk
                 "VUID-VkShaderCreateInfoEXT-flags-09405", device, create_info_loc.dot(Field::flags),
                 "contains VK_SHADER_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT, but computeFullSubgroups feature is not enabled.");
         }
+        if ((create_info.flags & VK_SHADER_CREATE_INDIRECT_BINDABLE_BIT_EXT) != 0 &&
+            enabled_features.deviceGeneratedCommands == VK_FALSE) {
+            skip |= LogError(
+                " VUID-VkShaderCreateInfoEXT-flags-11005", device, create_info_loc.dot(Field::flags),
+                "contains VK_SHADER_CREATE_INDIRECT_BINDABLE_BIT_EXT, but deviceGeneratedCommands feature is not enabled.");
+        }
     }
 
     if (linked_stage != invalid && non_linked_graphics_stage != invalid) {
@@ -674,6 +680,7 @@ bool CoreChecks::ValidateDrawShaderObjectLinking(const LastBound& last_bound_sta
     const vvl::ShaderObject* consumer = nullptr;
 
     for (const auto stage : graphics_stages) {
+        if (skip) break;
         consumer = last_bound_state.GetShaderState(VkShaderStageToShaderObjectStage(stage));
         if (!consumer) continue;
         if (next_stage != VK_SHADER_STAGE_ALL && consumer->create_info.stage != next_stage) {
@@ -697,12 +704,11 @@ bool CoreChecks::ValidateDrawShaderObjectLinking(const LastBound& last_bound_sta
             }
         }
 
-        if (!producer) {
-            producer = consumer;  // Will hit if consumer is vertex shader
-        } else if (consumer->spirv && producer->spirv && consumer->entrypoint && producer->entrypoint) {
+        if (producer && consumer->spirv && producer->spirv && consumer->entrypoint && producer->entrypoint) {
             skip |= ValidateInterfaceBetweenStages(*producer->spirv, *producer->entrypoint, *consumer->spirv, *consumer->entrypoint,
                                                    loc);
         }
+        producer = consumer;
     }
 
     return skip;

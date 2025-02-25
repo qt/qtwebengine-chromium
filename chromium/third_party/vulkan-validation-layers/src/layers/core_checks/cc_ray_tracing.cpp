@@ -217,12 +217,12 @@ bool CoreChecks::ValidateAccelerationStructuresMemoryAlisasing(const LogObjectLi
 }
 
 bool CoreChecks::ValidateAccelerationStructuresDeviceScratchBufferMemoryAlisasing(
-    const LogObjectList &objlist, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR *pInfos, uint32_t info_i,
-    const VkAccelerationStructureBuildRangeInfoKHR *range_infos, const ErrorObject &error_obj) const {
+    const LogObjectList &objlist, uint32_t info_count, const VkAccelerationStructureBuildGeometryInfoKHR *p_infos, uint32_t info_i,
+    const VkAccelerationStructureBuildRangeInfoKHR *const *pp_range_infos, const ErrorObject &error_obj) const {
     using sparse_container::range;
 
     bool skip = false;
-    const VkAccelerationStructureBuildGeometryInfoKHR &info = pInfos[info_i];
+    const VkAccelerationStructureBuildGeometryInfoKHR &info = p_infos[info_i];
     const Location info_i_loc = error_obj.location.dot(Field::pInfos, info_i);
     const auto src_as_state = Get<vvl::AccelerationStructureKHR>(info.srcAccelerationStructure);
     const auto dst_as_state = Get<vvl::AccelerationStructureKHR>(info.dstAccelerationStructure);
@@ -234,7 +234,7 @@ bool CoreChecks::ValidateAccelerationStructuresDeviceScratchBufferMemoryAlisasin
     // Cannot compute scratch buffer size from the CPU with indirect calls,
     // so cannot perform validation
     vvl::span<vvl::Buffer *const> info_scratches = GetBuffersByAddress(info.scratchData.deviceAddress);
-    const VkDeviceSize assumed_scratch_size = rt::ComputeScratchSize(rt_build_type, device, info, range_infos);
+    const VkDeviceSize assumed_scratch_size = rt::ComputeScratchSize(rt_build_type, device, info, pp_range_infos[info_i]);
 
     if (dst_as_state) {
         vvl::span<vvl::Buffer *const> dummy(nullptr, 0);
@@ -247,23 +247,25 @@ bool CoreChecks::ValidateAccelerationStructuresDeviceScratchBufferMemoryAlisasin
 
     // Loop on other acceleration structure builds info.
     // Given that comparisons are commutative, only need to consider elements after info_i
-    assert(infoCount > info_i);
-    for (auto [other_info_j, other_info] : vvl::enumerate(pInfos + info_i + 1, infoCount - (info_i + 1))) {
+    assert(info_count > info_i);
+    for (uint32_t other_info_j = info_i + 1; other_info_j < info_count; ++other_info_j) {
         // Validate that scratch buffer's memory does not overlap destination acceleration structure's memory, or source
         // acceleration structure's memory if build mode is update, or other scratch buffers' memory.
         // Here validation is pessimistic: if one buffer associated to pInfos[other_info_j].scratchData.deviceAddress has an
         // overlap, an error will be logged.
 
-        const Location other_info_j_loc = error_obj.location.dot(Field::pInfos, other_info_j + info_i + 1);
+        const VkAccelerationStructureBuildGeometryInfoKHR &other_info = p_infos[other_info_j];
+        const Location other_info_j_loc = error_obj.location.dot(Field::pInfos, other_info_j);
 
-        const auto other_dst_as_state = Get<vvl::AccelerationStructureKHR>(other_info->dstAccelerationStructure);
-        const auto other_src_as_state = Get<vvl::AccelerationStructureKHR>(other_info->srcAccelerationStructure);
+        const auto other_dst_as_state = Get<vvl::AccelerationStructureKHR>(other_info.dstAccelerationStructure);
+        const auto other_src_as_state = Get<vvl::AccelerationStructureKHR>(other_info.srcAccelerationStructure);
 
-        const bool other_info_in_update_mode = other_info->mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+        const bool other_info_in_update_mode = other_info.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
 
         if (other_dst_as_state) {
-            auto other_info_scratches = GetBuffersByAddress(other_info->scratchData.deviceAddress);
-            const VkDeviceSize assumed_other_scratch_size = rt::ComputeScratchSize(rt_build_type, device, *other_info, range_infos);
+            auto other_info_scratches = GetBuffersByAddress(other_info.scratchData.deviceAddress);
+            const VkDeviceSize assumed_other_scratch_size =
+                rt::ComputeScratchSize(rt_build_type, device, other_info, pp_range_infos[other_info_j]);
 
             const Location other_scratch_loc = other_info_j_loc.dot(Field::scratchData);
             const Location other_scratch_address_loc = other_scratch_loc.dot(Field::deviceAddress);
@@ -273,7 +275,7 @@ bool CoreChecks::ValidateAccelerationStructuresDeviceScratchBufferMemoryAlisasin
                 info_i_loc.dot(Field::scratchData).dot(Field::deviceAddress),
                 other_info_in_update_mode ? other_src_as_state.get() : nullptr,
                 other_info_j_loc.dot(Field::srcAccelerationStructure), *other_dst_as_state,
-                other_info_j_loc.dot(Field::dstAccelerationStructure), other_info_scratches, other_info->scratchData.deviceAddress,
+                other_info_j_loc.dot(Field::dstAccelerationStructure), other_info_scratches, other_info.scratchData.deviceAddress,
                 assumed_other_scratch_size, &other_scratch_address_loc);
         }
     }
@@ -550,13 +552,15 @@ bool CoreChecks::ValidateAccelerationBuffers(VkCommandBuffer cmd_buffer, uint32_
         }
     }
 
-    if (info_loc.function == Func::vkCmdBuildAccelerationStructuresKHR) {
+    if (info_loc.function == Func::vkCmdBuildAccelerationStructuresKHR &&
+        !(info.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR &&
+          (info.flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR))) {
         if (const auto dst_as_state = Get<vvl::AccelerationStructureKHR>(info.dstAccelerationStructure)) {
             const VkDeviceSize as_minimum_size =
                 rt::ComputeAccelerationStructureSize(rt::BuildType::Device, device, info, geometry_build_ranges);
             if (dst_as_state->create_info.size < as_minimum_size) {
                 const LogObjectList objlist(cmd_buffer, info.dstAccelerationStructure);
-                skip |= LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03675", objlist,
+                skip |= LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-10126", objlist,
                                  info_loc.dot(Field::dstAccelerationStructure),
                                  " was created with size (%" PRIu64
                                  "), but an acceleration structure build with corresponding ppBuildRangeInfos[%" PRIu32
@@ -740,7 +744,7 @@ bool CoreChecks::CommonBuildAccelerationStructureValidation(const VkAcceleration
                     objlist.add(info.srcAccelerationStructure);
                     skip |= LogError(vuid, objlist, geom_loc.dot(Field::flags), "is %s but was last specified as %s.",
                                      string_VkGeometryFlagsKHR(updated_geometry.flags).c_str(),
-                                     string_VkGeometryFlagsKHR(last_geometry.geometryType).c_str());
+                                     string_VkGeometryFlagsKHR(last_geometry.flags).c_str());
                 }
 
                 if (updated_geometry.geometryType == VK_GEOMETRY_TYPE_TRIANGLES_KHR) {
@@ -891,7 +895,7 @@ bool CoreChecks::PreCallValidateCmdBuildAccelerationStructuresKHR(
         skip |= ValidateAccelerationStructuresMemoryAlisasing(commandBuffer, infoCount, pInfos, info_i, error_obj);
 
         skip |= ValidateAccelerationStructuresDeviceScratchBufferMemoryAlisasing(commandBuffer, infoCount, pInfos, info_i,
-                                                                                 ppBuildRangeInfos[info_i], error_obj);
+                                                                                 ppBuildRangeInfos, error_obj);
     }
 
     return skip;
@@ -927,16 +931,19 @@ bool CoreChecks::PreCallValidateBuildAccelerationStructuresKHR(
             skip |= ValidateAccelStructBufferMemoryIsNotMultiInstance(*dst_as_state, info_loc.dot(Field::dstAccelerationStructure),
                                                                       "VUID-vkBuildAccelerationStructuresKHR-pInfos-03775");
 
-            const VkDeviceSize as_minimum_size =
-                rt::ComputeAccelerationStructureSize(rt::BuildType::Host, device, *info, ppBuildRangeInfos[info_i]);
-            if (dst_as_state->create_info.size < as_minimum_size) {
-                const LogObjectList objlist(info->dstAccelerationStructure);
-                skip |= LogError("VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-03675", objlist,
-                                 info_loc.dot(Field::dstAccelerationStructure),
-                                 " was created with size (%" PRIu64
-                                 "), but an acceleration structure build with corresponding ppBuildRangeInfos[%" PRIu32
-                                 "] requires a minimum size of (%" PRIu64 ").",
-                                 dst_as_state->create_info.size, info_i, as_minimum_size);
+            if (!(info->mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR &&
+                  (info->flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR))) {
+                const VkDeviceSize as_minimum_size =
+                    rt::ComputeAccelerationStructureSize(rt::BuildType::Host, device, *info, ppBuildRangeInfos[info_i]);
+                if (dst_as_state->create_info.size < as_minimum_size) {
+                    const LogObjectList objlist(info->dstAccelerationStructure);
+                    skip |= LogError("VUID-vkBuildAccelerationStructuresKHR-pInfos-10126", objlist,
+                                     info_loc.dot(Field::dstAccelerationStructure),
+                                     " was created with size (%" PRIu64
+                                     "), but an acceleration structure build with corresponding ppBuildRangeInfos[%" PRIu32
+                                     "] requires a minimum size of (%" PRIu64 ").",
+                                     dst_as_state->create_info.size, info_i, as_minimum_size);
+                }
             }
 
             if (info->type == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR) {
@@ -2028,7 +2035,6 @@ bool CoreChecks::ValidateRaytracingShaderBindingTable(VkCommandBuffer commandBuf
              [table_loc, &binding_table]() {
                  return "The following buffers have a size inferior to " + table_loc.Fields() + "->stride (" +
                         std::to_string(binding_table.stride) + "):";
-                 ;
              }},
         }}};
 

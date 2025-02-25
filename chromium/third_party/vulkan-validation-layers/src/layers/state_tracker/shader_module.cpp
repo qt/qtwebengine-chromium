@@ -21,7 +21,9 @@
 
 #include "utils/hash_util.h"
 #include "generated/spirv_grammar_helper.h"
-#include "spirv/1.2/GLSL.std.450.h"
+#include <spirv/1.2/GLSL.std.450.h>
+#include <spirv/unified1/NonSemanticShaderDebugInfo100.h>
+#include "error_message/spirv_logging.h"
 
 namespace spirv {
 
@@ -280,6 +282,12 @@ void ExecutionModeSet::Add(const Instruction& insn) {
         case spv::ExecutionModeStencilRefReplacingEXT:
             flags |= stencil_ref_replacing_bit;
             break;
+        case spv::ExecutionModeDerivativeGroupLinearKHR:
+            flags |= derivative_group_linear;
+            break;
+        case spv::ExecutionModeDerivativeGroupQuadsKHR:
+            flags |= derivative_group_quads;
+            break;
         default:
             break;
     }
@@ -442,6 +450,15 @@ bool EntryPoint::IsBuiltInWritten(spv::BuiltIn built_in, const Module& module_st
             }
         }
         break;
+    }
+    return false;
+}
+
+bool EntryPoint::HasBuiltIn(spv::BuiltIn built_in) const {
+    for (const auto* variable : built_in_variables) {
+        if (variable->decorations.builtin == built_in) {
+            return true;
+        }
     }
     return false;
 }
@@ -1079,6 +1096,18 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
                 break;
             }
 
+            case spv::OpLine:
+            case spv::OpSource: {
+                using_legacy_debug_info = true;
+                break;
+            }
+            case spv::OpExtInstImport: {
+                if (strcmp(insn.GetAsString(2), "NonSemantic.Shader.DebugInfo.100") == 0) {
+                    shader_debug_info_set_id = insn.ResultId();
+                }
+                break;
+            }
+
             // Build up Function mappings
             case spv::OpFunction:
                 last_func_id = insn.ResultId();
@@ -1339,6 +1368,38 @@ std::string Module::DescribeVariable(uint32_t id) const {
         }
         ss << '\n';
     }
+    return ss.str();
+}
+
+std::string Module::DescribeInstruction(const Instruction& error_insn) const {
+    if (static_data_.shader_debug_info_set_id == 0 && !static_data_.using_legacy_debug_info) {
+        return error_insn.Describe();
+    }
+
+    const Instruction* last_line_inst = nullptr;
+    for (const auto& insn : static_data_.instructions) {
+        const uint32_t opcode = insn.Opcode();
+        if (opcode == spv::OpExtInst && insn.Word(3) == static_data_.shader_debug_info_set_id &&
+            insn.Word(4) == NonSemanticShaderDebugInfo100DebugLine) {
+            last_line_inst = &insn;
+        } else if (opcode == spv::OpLine) {
+            last_line_inst = &insn;
+        } else if (opcode == spv::OpFunctionEnd) {
+            last_line_inst = nullptr;  // debug lines can't cross functions boundaries
+        }
+
+        if (insn == error_insn) {
+            break;
+        }
+    }
+    if (!last_line_inst) {
+        return error_insn.Describe();  // can't find a suitable line above instruciton
+    }
+
+    std::ostringstream ss;
+    ss << error_insn.Describe();
+    ss << "\nFrom shader debug information ";
+    GetShaderSourceInfo(ss, static_data_.instructions, *last_line_inst);
     return ss.str();
 }
 
