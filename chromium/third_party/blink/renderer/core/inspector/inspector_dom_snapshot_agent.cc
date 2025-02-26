@@ -219,13 +219,13 @@ void InspectorDOMSnapshotAgent::CharacterDataModified(
     CharacterData* character_data) {
   String origin_url = GetOriginUrl(character_data);
   if (origin_url)
-    origin_url_map_->insert(DOMNodeIds::IdForNode(character_data), origin_url);
+    origin_url_map_->map.insert(DOMNodeIds::IdForNode(character_data), origin_url);
 }
 
 void InspectorDOMSnapshotAgent::DidInsertDOMNode(Node* node) {
   String origin_url = GetOriginUrl(node);
   if (origin_url)
-    origin_url_map_->insert(DOMNodeIds::IdForNode(node), origin_url);
+    origin_url_map_->map.insert(DOMNodeIds::IdForNode(node), origin_url);
 }
 
 void InspectorDOMSnapshotAgent::EnableAndReset() {
@@ -267,8 +267,10 @@ Response InspectorDOMSnapshotAgent::getSnapshot(
   Document* document = inspected_frames_->Root()->GetDocument();
   if (!document)
     return Response::ServerError("Document is not available");
-  LegacyDOMSnapshotAgent legacySupport(dom_debugger_agent_,
-                                       origin_url_map_.get());
+  LegacyDOMSnapshotAgent legacySupport(
+      dom_debugger_agent_, origin_url_map_
+                               ? origin_url_map_->weak_ptr_factory.GetWeakPtr()
+                               : base::WeakPtr<OriginUrlMap>());
   return legacySupport.GetSnapshot(
       document, std::move(style_filter), std::move(include_event_listeners),
       std::move(include_paint_order), std::move(include_user_agent_shadow_tree),
@@ -496,11 +498,11 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node, int parent_index) {
       BuildArrayForElementAttributes(node));
   BuildLayoutTreeNode(node->GetLayoutObject(), node, index);
 
-  if (origin_url_map_ && origin_url_map_->Contains(backend_node_id)) {
-    String origin_url = origin_url_map_->at(backend_node_id);
+  if (origin_url_map_ && origin_url_map_->map.Contains(backend_node_id)) {
+    String origin_url = origin_url_map_->map.at(backend_node_id);
     // In common cases, it is implicit that a child node would have the same
     // origin url as its parent, so no need to mark twice.
-    if (!node->parentNode() || origin_url_map_->at(DOMNodeIds::IdForNode(
+    if (!node->parentNode() || origin_url_map_->map.at(DOMNodeIds::IdForNode(
                                    node->parentNode())) != origin_url) {
       SetRare(nodes->getOriginURL(nullptr), index, origin_url);
     }

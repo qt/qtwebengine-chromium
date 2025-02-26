@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INSPECTOR_DOM_SNAPSHOT_AGENT_H_
 
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/inspector/inspector_base_agent.h"
@@ -23,6 +24,7 @@ class Element;
 class InspectedFrames;
 class Node;
 class PaintLayer;
+struct OriginUrlMap;
 
 class CORE_EXPORT InspectorDOMSnapshotAgent final
     : public InspectorBaseAgent<protocol::DOMSnapshot::Metainfo> {
@@ -93,7 +95,6 @@ class CORE_EXPORT InspectorDOMSnapshotAgent final
   static void VisitPaintLayer(PaintLayer*, PaintOrderMap* paint_order_map);
 
   using CSSPropertyFilter = Vector<const CSSProperty*>;
-  using OriginUrlMap = WTF::HashMap<DOMNodeId, String>;
 
   // State of current snapshot.
   std::unique_ptr<protocol::Array<protocol::DOMSnapshot::DOMNode>> dom_nodes_;

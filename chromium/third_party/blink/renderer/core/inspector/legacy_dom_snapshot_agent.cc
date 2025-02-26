@@ -96,8 +96,8 @@ struct LegacyDOMSnapshotAgent::VectorStringHashTraits
 
 LegacyDOMSnapshotAgent::LegacyDOMSnapshotAgent(
     InspectorDOMDebuggerAgent* dom_debugger_agent,
-    OriginUrlMap* origin_url_map)
-    : origin_url_map_(origin_url_map),
+    base::WeakPtr<OriginUrlMap> origin_url_map)
+    : origin_url_map_(std::move(origin_url_map)),
       dom_debugger_agent_(dom_debugger_agent) {}
 
 LegacyDOMSnapshotAgent::~LegacyDOMSnapshotAgent() = default;
@@ -182,14 +182,15 @@ int LegacyDOMSnapshotAgent::VisitNode(Node* node,
           .setBackendNodeId(IdentifiersFactory::IntIdForNode(node))
           .build();
   if (origin_url_map_ &&
-      origin_url_map_->Contains(owned_value->getBackendNodeId())) {
-    String origin_url = origin_url_map_->at(owned_value->getBackendNodeId());
+      origin_url_map_->map.Contains(owned_value->getBackendNodeId())) {
+    String origin_url =
+        origin_url_map_->map.at(owned_value->getBackendNodeId());
     // In common cases, it is implicit that a child node would have the same
     // origin url as its parent, so no need to mark twice.
-    if (!node->parentNode() || origin_url_map_->at(DOMNodeIds::IdForNode(
+    if (!node->parentNode() || origin_url_map_->map.at(DOMNodeIds::IdForNode(
                                    node->parentNode())) != origin_url) {
       owned_value->setOriginURL(
-          origin_url_map_->at(owned_value->getBackendNodeId()));
+          origin_url_map_->map.at(owned_value->getBackendNodeId()));
     }
   }
   protocol::DOMSnapshot::DOMNode* value = owned_value.get();
