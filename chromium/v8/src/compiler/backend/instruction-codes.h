@@ -187,7 +187,7 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
   V(None)                       \
   TARGET_ADDRESSING_MODE_LIST(V)
 
-enum AddressingMode : uint8_t {
+enum AddressingMode {
 #define DECLARE_ADDRESSING_MODE(Name) kMode_##Name,
   ADDRESSING_MODE_LIST(DECLARE_ADDRESSING_MODE)
 #undef DECLARE_ADDRESSING_MODE
