@@ -107,6 +107,8 @@ template("msvc_toolchain") {
       if (host_os == "win") {
         # Flip the slashes so that copy/paste of the commands works.
         link = string_replace(link, "/", "\\")
+        # Add quotation marks so paths with whitespaces work.
+        link = "\"${link}\""
       }
       lib = "$link /lib"
       if (host_os != "win") {
