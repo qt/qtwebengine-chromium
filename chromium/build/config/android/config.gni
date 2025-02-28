@@ -346,6 +346,9 @@ if (is_android) {
     android_host_arch = "x86_64"
   } else if (host_cpu == "x86") {
     android_host_arch = "x86"
+  } else if (host_os == "mac" && host_cpu =="arm64") {
+    # sdk on mac arm64 still is in the form of "darwin-x86_64"
+    android_host_arch = "x86_64"
   } else {
     assert(false, "Need Android toolchain support for your build CPU arch.")
   }
