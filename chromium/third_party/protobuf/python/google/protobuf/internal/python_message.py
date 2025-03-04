@@ -56,7 +56,6 @@ import sys
 import weakref
 
 import six
-from six.moves import range
 
 # We use "as" to avoid name collisions with variables.
 from google.protobuf.internal import api_implementation

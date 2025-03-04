@@ -12,7 +12,6 @@ import fnmatch
 import json
 import logging
 import os
-import pipes
 import re
 import shutil
 import stat
@@ -198,7 +197,7 @@ class CalledProcessError(Exception):
     # A user should be able to simply copy and paste the command that failed
     # into their shell.
     copyable_command = '( cd {}; {} )'.format(os.path.abspath(self.cwd),
-        ' '.join(map(pipes.quote, self.args)))
+        ' '.join(map(shlex.quote, self.args)))
     return 'Command failed: {}\n{}'.format(copyable_command, self.output)
 
 
