@@ -1192,6 +1192,11 @@ error::Error GLES2DecoderPassthroughImpl::DoDetachShader(GLuint program,
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoDisable(GLenum cap) {
+  if (cap == GL_PRIMITIVE_RESTART_FIXED_INDEX &&
+      feature_info_->IsWebGLContext()) {
+    InsertError(GL_INVALID_ENUM, "Invalid cap.");
+    return error::kNoError;
+  }
   api()->glDisableFn(cap);
   return error::kNoError;
 }
@@ -1259,6 +1264,11 @@ error::Error GLES2DecoderPassthroughImpl::DoDrawElementsIndirect(
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoEnable(GLenum cap) {
+  if (cap == GL_PRIMITIVE_RESTART_FIXED_INDEX &&
+      feature_info_->IsWebGLContext()) {
+    InsertError(GL_INVALID_ENUM, "Invalid cap.");
+    return error::kNoError;
+  }
   api()->glEnableFn(cap);
   return error::kNoError;
 }
