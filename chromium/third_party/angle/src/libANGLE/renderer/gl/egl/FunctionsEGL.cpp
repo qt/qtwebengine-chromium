@@ -24,6 +24,10 @@
 // clang-format on
 #endif  // defined(ANGLE_HAS_LIBDRM)
 
+#if !defined(ANGLE_PLATFORM_QTWEBENGINE)
+static_assert(false)
+#endif
+
 namespace
 {
 
@@ -258,7 +262,7 @@ egl::Error FunctionsEGL::initialize(EGLAttrib platformType, EGLNativeDisplayType
         mEGLDisplay = getPlatformDisplay(platformType, nativeDisplay);
     }
 #endif
-#if defined(ANGLE_HAS_LIBDRM)
+#if defined(ANGLE_HAS_LIBDRM) && !defined(ANGLE_PLATFORM_QTWEBENGINE)
     if (mEGLDisplay == EGL_NO_DISPLAY && (platformType != EGL_PLATFORM_GBM_KHR || !nativeDisplay))
     {
         mEGLDisplay = getPreferredDisplay(&majorVersion, &minorVersion);
