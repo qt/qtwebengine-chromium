@@ -24,6 +24,10 @@
 // clang-format on
 #endif  // defined(ANGLE_HAS_LIBDRM)
 
+#if !defined(ANGLE_PLATFORM_QTWEBENGINE)
+static_assert(false)
+#endif
+
 namespace
 {
 
@@ -245,7 +249,7 @@ egl::Error FunctionsEGL::initialize(EGLAttrib platformType, EGLNativeDisplayType
     // extensions once the display is created and initialized.
     queryExtensions();
 
-#if defined(ANGLE_HAS_LIBDRM)
+#if defined(ANGLE_HAS_LIBDRM) && !defined(ANGLE_PLATFORM_QTWEBENGINE)
     mEGLDisplay = getPreferredDisplay(&majorVersion, &minorVersion);
 #endif  // defined(ANGLE_HAS_LIBDRM)
 
