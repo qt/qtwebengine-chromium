@@ -35,6 +35,10 @@
 #include "sandbox/linux/system_headers/linux_syscalls.h"
 #include "sandbox/linux/system_headers/linux_time.h"
 
+#if !defined(MAP_DROPPABLE)
+#define MAP_DROPPABLE	0x08    // Zero memory under memory pressure.
+#endif
+
 #if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)) && \
     !defined(__arm__) && !defined(__aarch64__) &&             \
     !defined(PTRACE_GET_THREAD_AREA)
@@ -238,7 +242,7 @@ ResultExpr RestrictMmapFlags() {
   // TODO(davidung), remove MAP_DENYWRITE with updated Tegra libraries.
   const uint64_t kAllowedMask = MAP_SHARED | MAP_PRIVATE | MAP_ANONYMOUS |
                                 MAP_STACK | MAP_NORESERVE | MAP_FIXED |
-                                MAP_DENYWRITE | MAP_LOCKED |
+                                MAP_DENYWRITE | MAP_LOCKED | MAP_DROPPABLE |
                                 kArchSpecificAllowedMask;
   const Arg<int> flags(3);
   return If((flags & ~kAllowedMask) == 0, Allow()).Else(CrashSIGSYS());
