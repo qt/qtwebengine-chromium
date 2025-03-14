@@ -16,6 +16,7 @@ export class GlassPane {
   private readonly arrowElement: HTMLSpanElement;
   private readonly onMouseDownBound: (event: Event) => void;
   private onClickOutsideCallback: ((arg0: Event) => void)|null;
+  #onHideCallback: (() => void)|null = null;
   private maxSize: Size|null;
   private positionX: number|null;
   private positionY: number|null;
@@ -82,6 +83,10 @@ export class GlassPane {
 
   setOutsideClickCallback(callback: ((arg0: Event) => void)|null): void {
     this.onClickOutsideCallback = callback;
+  }
+
+  setOnHideCallback(cb: () => void): void {
+    this.#onHideCallback = cb;
   }
 
   setMaxContentSize(size: Size|null): void {
