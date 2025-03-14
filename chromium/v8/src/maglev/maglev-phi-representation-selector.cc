@@ -219,7 +219,8 @@ void MaglevPhiRepresentationSelector::EnsurePhiInputsTagged(Phi* phi) {
   // should be tagged. We'll thus insert tagging operation on the untagged phi
   // inputs of {phi}.
 
-  for (int i = 0; i < phi->input_count(); i++) {
+  const int skip_backedge = phi->is_loop_phi() ? 1 : 0;
+  for (int i = 0; i < phi->input_count() - skip_backedge; i++) {
     ValueNode* input = phi->input(i).node();
     if (Phi* phi_input = input->TryCast<Phi>()) {
       phi->set_input(i, EnsurePhiTagged(phi_input, phi->predecessor_at(i),
@@ -327,8 +328,7 @@ void MaglevPhiRepresentationSelector::ConvertTaggedPhiTo(
   // registers to floating registers.
   phi->InitializeRegisterData();
 
-  const int skip_backedge = phi->is_loop_phi() ? 1 : 0;
-  for (int i = 0; i < phi->input_count() - skip_backedge; i++) {
+  for (int i = 0; i < phi->input_count(); i++) {
     ValueNode* input = phi->input(i).node();
 #define TRACE_INPUT_LABEL \
   "    @ Input " << i << " (" << PrintNodeLabel(graph_labeller(), input) << ")"
