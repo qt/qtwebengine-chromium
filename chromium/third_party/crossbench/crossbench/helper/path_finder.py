@@ -270,18 +270,41 @@ class BaseChromiumBinaryToolFinder(BaseToolFinder):
     return (relative_path,)
 
 
-class TraceconvFinder(BaseChromiumBinaryToolFinder):
+class PerfettoToolFinder(BaseChromiumBinaryToolFinder, metaclass=abc.ABCMeta):
+
+  @classmethod
+  @abc.abstractmethod
+  def default_binary_name(cls) -> str:
+    pass
+
+  @classmethod
+  def perfetto_tools_dir(cls) -> pth.AnyPath:
+    return pth.AnyPath("third_party/perfetto/tools")
 
   @classmethod
   def chrome_path(cls) -> pth.AnyPath:
-    return pth.AnyPath("third_party/perfetto/tools/traceconv")
+    return cls.perfetto_tools_dir() / cls.default_binary_name()
 
 
-class TraceProcessorFinder(BaseChromiumBinaryToolFinder):
+class TraceconvFinder(PerfettoToolFinder):
 
   @classmethod
-  def chrome_path(cls) -> pth.AnyPath:
-    return pth.AnyPath("third_party/perfetto/tools/trace_processor")
+  def default_binary_name(cls) -> str:
+    return "traceconv"
+
+
+class TraceboxFinder(PerfettoToolFinder):
+
+  @classmethod
+  def default_binary_name(cls) -> str:
+    return "tracebox"
+
+
+class TraceProcessorFinder(PerfettoToolFinder):
+
+  @classmethod
+  def default_binary_name(cls) -> str:
+    return "trace_processor"
 
 
 CROSSBENCH_DIR = pth.LocalPath(__file__).parents[2]

@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import shutil
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Type, Union
 
 from immutabledict import immutabledict
 
-from crossbench import helper, plt
+from crossbench import plt
+from crossbench.helper.cwd import ChangeCWD
 from crossbench.helper.path_finder import WprGoToolFinder
 from crossbench.network.replay.web_page_replay import WprRecorder
 from crossbench.parse import PathParser
@@ -126,8 +127,8 @@ class WebPageReplayProbe(Probe):
   def is_compatible(self, browser: Browser) -> bool:
     return browser.attributes.is_chromium_based and browser.platform.is_local
 
-  def get_context(self, run: Run) -> WprRecorderProbeContext:
-    return WprRecorderProbeContext(self, run)
+  def get_context_cls(self) -> Type[WprRecorderProbeContext]:
+    return WprRecorderProbeContext
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     results = [run.results[self].file for run in group.runs]
@@ -153,7 +154,7 @@ class WebPageReplayProbe(Probe):
     shutil.copy(first_wprgo, result_file)
     for repetition_file in results:
       self.httparchive_merge(repetition_file, result_file)
-    return ProbeResult(file=[result_file])
+    return LocalProbeResult(file=[result_file])
 
   def httparchive_merge(self, input_archive: LocalPath,
                         output_archive: LocalPath) -> None:
@@ -166,7 +167,7 @@ class WebPageReplayProbe(Probe):
         input_archive,
         output_archive,
     ]
-    with helper.ChangeCWD(self._wpr_go_bin.parent):
+    with ChangeCWD(self._wpr_go_bin.parent):
       self.host_platform.sh(*cmd)
 
 
@@ -227,5 +228,12 @@ class WprRecorderProbeContext(ProbeContext[WebPageReplayProbe]):
     pass
 
   def teardown(self) -> ProbeResult:
+    self._teardown_port_forwarding()
     self._recorder.stop()
     return LocalProbeResult(file=(self.local_result_path,))
+
+  def _teardown_port_forwarding(self) -> None:
+    if self._browser_platform.is_remote:
+      self._browser_platform.stop_reverse_port_forward(self._recorder.http_port)
+      self._browser_platform.stop_reverse_port_forward(
+          self._recorder.https_port)

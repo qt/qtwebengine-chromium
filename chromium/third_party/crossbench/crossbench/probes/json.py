@@ -10,16 +10,16 @@ import json
 import logging
 from collections import defaultdict
 from typing import (TYPE_CHECKING, Any, Callable, Dict, Generic, List, Optional,
-                    Type, TypeVar, Union)
+                    Tuple, Type, TypeVar, Union)
 
 from tabulate import tabulate
 
 from crossbench.probes import helper
 from crossbench.probes.metric import (CSVFormatter, MetricsMerger,
                                       metric_geomean)
-from crossbench.probes.probe import Probe, ProbeContext, ProbeMissingDataError
-from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
-                                       ProbeResult)
+from crossbench.probes.probe import Probe, ProbeContext
+from crossbench.probes.probe_error import ProbeMissingDataError
+from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.path import LocalPath
@@ -41,29 +41,11 @@ class JsonResultProbe(Probe, metaclass=abc.ABCMeta):
   subclass.
   """
 
-  FLATTEN = True
   SORT_KEYS = True
 
   @property
   def result_path_name(self) -> str:
     return f"{self.name}.json"
-
-  @abc.abstractmethod
-  def to_json(self, actions: Actions) -> Json:
-    """
-    Override in subclasses.
-    Returns json-serializable data.
-    """
-    return None
-
-  def flatten_json_data(self, json_data: Any) -> Json:
-    return helper.Flatten(json_data).data
-
-  def process_json_data(self, json_data) -> Any:
-    return json_data
-
-  def get_context(self, run: Run) -> JsonResultProbeContext:
-    return JsonResultProbeContext(self, run)
 
   def merge_repetitions(
       self,
@@ -153,7 +135,7 @@ class JsonResultProbe(Probe, metaclass=abc.ABCMeta):
     # 0 | metric 0 full path, metric path[0] ... metric path[N], metric 0 value
     #     ...                                                    ...
     # M | metric M full path, ...                                metric M value
-    headers = []
+    headers: List[Tuple[str, Any]] = []
     for label, info_value in group.info.items():
       headers.append((label, info_value))
     csv_data = csv_formatter(
@@ -189,8 +171,12 @@ class JsonResultProbe(Probe, metaclass=abc.ABCMeta):
 JsonResultProbeT = TypeVar("JsonResultProbeT", bound="JsonResultProbe")
 
 
-class JsonResultProbeContext(ProbeContext[JsonResultProbeT],
-                             Generic[JsonResultProbeT]):
+class JsonResultProbeContext(
+    ProbeContext[JsonResultProbeT],
+    Generic[JsonResultProbeT],
+    metaclass=abc.ABCMeta):
+
+  FLATTEN: bool = True
 
   def __init__(self, probe: JsonResultProbeT, run: Run) -> None:
     super().__init__(probe, run)
@@ -200,8 +186,13 @@ class JsonResultProbeContext(ProbeContext[JsonResultProbeT],
   def probe(self) -> JsonResultProbeT:
     return super().probe
 
+  @abc.abstractmethod
   def to_json(self, actions: Actions) -> Json:
-    return self.probe.to_json(actions)
+    """
+    Override in subclasses.
+    Returns json-serializable data.
+    """
+    return None
 
   def start(self) -> None:
     pass
@@ -211,7 +202,7 @@ class JsonResultProbeContext(ProbeContext[JsonResultProbeT],
 
   def teardown(self) -> ProbeResult:
     if self._json_data is None:
-      return EmptyProbeResult()
+      return self.empty_result()
     self._json_data = self.process_json_data(self._json_data)
     return self.write_json(self.run, self._json_data)
 
@@ -228,7 +219,7 @@ class JsonResultProbeContext(ProbeContext[JsonResultProbeT],
       assert json_data is not None, (
           f"Probe({self.probe.name}) produced no Json data.")
       raw_file = self.local_result_path
-      if self.probe.FLATTEN:
+      if self.FLATTEN:
         raw_file = raw_file.with_suffix(".json.nested")
         flattened_file = self.local_result_path
         flat_json_data = self.flatten_json_data(json_data)
@@ -247,7 +238,7 @@ class JsonResultProbeContext(ProbeContext[JsonResultProbeT],
     return LocalProbeResult(json=(raw_file,))
 
   def process_json_data(self, json_data: Json) -> Json:
-    return self.probe.process_json_data(json_data)
+    return json_data
 
   def flatten_json_data(self, json_data: Any) -> Json:
-    return self.probe.flatten_json_data(json_data)
+    return helper.Flatten(json_data).data

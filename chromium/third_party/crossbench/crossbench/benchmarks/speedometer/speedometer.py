@@ -8,15 +8,16 @@ import abc
 import datetime as dt
 import json
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    Type)
+from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
+                    Tuple, Type)
 
-from crossbench import helper
-from crossbench.benchmarks.base import (BenchmarkProbeMixin, PressBenchmark,
+from crossbench.benchmarks.base import (PressBenchmark,
                                         PressBenchmarkStoryFilter)
-from crossbench.parse import NumberParser
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
+from crossbench.helper import url_helper
+from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes.helper import Flatten
-from crossbench.probes.json import JsonResultProbe
+from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import Metric, MetricsMerger
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.stories.press_benchmark import PressBenchmarkStory
@@ -42,25 +43,31 @@ class SpeedometerProbe(
   Speedometer-specific probe (compatible with v2.X and v3.X).
   Extracts all speedometer times and scores.
   """
-  JS: str = "return window.suiteValues;"
   SORT_KEYS: bool = False
+  SCORE_METRIC_KEY: Final[str] = "Score"
 
-  def to_json(self, actions: Actions) -> Json:
-    return actions.js(self.JS)
-
-  def flatten_json_data(self, json_data: Any) -> Json:
-    # json_data may contain multiple iterations, merge those first
-    assert isinstance(json_data, list), f"Expected list got {type(json_data)}"
-    merged = MetricsMerger(
-        json_data, key_fn=_probe_remove_tests_segments).to_json(
-            value_fn=lambda values: values.geomean, sort=self.SORT_KEYS)
-    return Flatten(merged, sort=self.SORT_KEYS).data
+  @abc.abstractmethod
+  def get_context_cls(self) -> Type[SpeedometerProbeContext]:
+    pass
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
         repetitions_group.results[self].json
         for repetitions_group in group.repetitions_groups)
+    if self.SCORE_METRIC_KEY not in merged.data:
+      merged.data[self.SCORE_METRIC_KEY] = self._compute_total_score(merged)
     return self.write_group_result(group, merged)
+
+  def _compute_total_score(self, merged: MetricsMerger) -> Metric:
+    line_item_scores: List[List[float]] = []
+    for key, metric in merged.data.items():
+      if self._is_valid_metric_key(key):
+        line_item_scores.append(metric.values)
+    total_score = Metric()
+    for iteration_line_items_score_values in zip(*line_item_scores):
+      iteration_score = Metric(iteration_line_items_score_values).geomean
+      total_score.append(iteration_score)
+    return total_score
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
@@ -104,6 +111,23 @@ class SpeedometerProbe(
     pass
 
 
+class SpeedometerProbeContext(JsonResultProbeContext):
+  JS = "return JSON.stringify(window.suiteValues);"
+
+  def to_json(self, actions: Actions) -> Json:
+    # Use serialized json as transport format to preserve object key order.
+    json_payload = actions.js(self.JS)
+    return json.loads(json_payload)
+
+  def flatten_json_data(self, json_data: Any) -> Json:
+    # json_data may contain multiple iterations, merge those first
+    json_data = ObjectParser.non_empty_sequence(json_data,
+                                                f"{self.probe.name} metrics")
+    merged = MetricsMerger(
+        json_data, key_fn=_probe_remove_tests_segments).to_json(
+            value_fn=lambda values: values.geomean, sort=self.probe.SORT_KEYS)
+    return Flatten(merged, sort=self.probe.SORT_KEYS).data
+
 
 class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
   URL_LOCAL: str = "http://localhost:8000/"
@@ -113,8 +137,10 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
                substories: Sequence[str] = (),
                iterations: Optional[int] = None,
                url: Optional[str] = None):
-    self._iterations: int = iterations or self.DEFAULT_ITERATIONS
-    assert self.iterations >= 1, f"Invalid iterations count: '{iterations}'."
+    self._iterations: int = NumberParser.positive_int(
+        iterations or self.DEFAULT_ITERATIONS,
+        "iteration count",
+        parse_str=False)
     super().__init__(url=url, substories=substories)
 
   @property
@@ -140,9 +166,11 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
 
   @property
   def url_params(self) -> Dict[str, str]:
-    if self.iterations == self.DEFAULT_ITERATIONS:
-      return {}
-    return {"iterationCount": str(self.iterations)}
+    params: Dict[str, str] = {}
+    if self.iterations != self.DEFAULT_ITERATIONS:
+      params["iterationCount"] = str(self.iterations)
+    return params
+
 
   def setup(self, run: Run) -> None:
     updated_url = self.get_run_url(run)
@@ -155,7 +183,7 @@ class SpeedometerStory(PressBenchmarkStory, metaclass=abc.ABCMeta):
 
   def get_run_url(self, run: Run) -> str:
     url = super().get_run_url(run)
-    url = helper.update_url_query(url, self.url_params)
+    url = url_helper.update_url_query(url, self.url_params)
     if url != self.url:
       logging.info("CUSTOM URL: %s", url)
     return url

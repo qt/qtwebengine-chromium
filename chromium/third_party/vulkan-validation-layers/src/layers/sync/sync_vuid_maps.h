@@ -46,6 +46,7 @@ enum class QueueError {
     kExclusiveSrc,
     kExclusiveDst,
     kHostStage,
+    kSubmitQueueMustMatchSrcOrDst,
 };
 
 const vvl::unordered_map<QueueError, std::string> &GetQueueErrorSummaryMap();
@@ -59,7 +60,6 @@ enum class BufferError {
     kOffsetTooBig,
     kSizeOutOfRange,
     kSizeZero,
-    kQueueFamilyExternal,
 };
 
 const std::string &GetBufferBarrierVUID(const Location &loc, BufferError error);

@@ -245,9 +245,14 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityTileImageDepthReadAccessEXT, {0, &DeviceFeatures::shaderTileImageDepthReadAccess, nullptr, ""}},
         {spv::CapabilityTileImageStencilReadAccessEXT, {0, &DeviceFeatures::shaderTileImageStencilReadAccess, nullptr, ""}},
         {spv::CapabilityCooperativeMatrixKHR, {0, &DeviceFeatures::cooperativeMatrix, nullptr, ""}},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
         {spv::CapabilityShaderEnqueueAMDX, {0, &DeviceFeatures::shaderEnqueue, nullptr, ""}},
+#endif
+        {spv::CapabilityGroupNonUniformRotateKHR, {0, &DeviceFeatures::shaderSubgroupRotate, nullptr, ""}},
         {spv::CapabilityGroupNonUniformRotateKHR, {0, &DeviceFeatures::shaderSubgroupRotate, nullptr, ""}},
         {spv::CapabilityExpectAssumeKHR, {0, &DeviceFeatures::shaderExpectAssume, nullptr, ""}},
+        {spv::CapabilityExpectAssumeKHR, {0, &DeviceFeatures::shaderExpectAssume, nullptr, ""}},
+        {spv::CapabilityFloatControls2, {0, &DeviceFeatures::shaderFloatControls2, nullptr, ""}},
         {spv::CapabilityFloatControls2, {0, &DeviceFeatures::shaderFloatControls2, nullptr, ""}},
         {spv::CapabilityQuadControlKHR, {0, &DeviceFeatures::shaderQuadControl, nullptr, ""}},
         {spv::CapabilityRawAccessChainsNV, {0, &DeviceFeatures::shaderRawAccessChains, nullptr, ""}},
@@ -258,6 +263,11 @@ const std::unordered_multimap<uint32_t, RequiredSpirvInfo> &GetSpirvCapabilites(
         {spv::CapabilityCooperativeMatrixPerElementOperationsNV, {0, &DeviceFeatures::cooperativeMatrixPerElementOperations, nullptr, ""}},
         {spv::CapabilityCooperativeMatrixTensorAddressingNV, {0, &DeviceFeatures::cooperativeMatrixTensorAddressing, nullptr, ""}},
         {spv::CapabilityCooperativeMatrixBlockLoadsNV, {0, &DeviceFeatures::cooperativeMatrixBlockLoads, nullptr, ""}},
+        {spv::CapabilityRayTracingSpheresGeometryNV, {0, &DeviceFeatures::spheres, nullptr, ""}},
+        {spv::CapabilityRayTracingLinearSweptSpheresGeometryNV, {0, &DeviceFeatures::linearSweptSpheres, nullptr, ""}},
+        {spv::CapabilityRayTracingClusterAccelerationStructureNV, {0, &DeviceFeatures::clusterAccelerationStructure, nullptr, ""}},
+        {spv::CapabilityCooperativeVectorNV, {0, &DeviceFeatures::cooperativeVector, nullptr, ""}},
+        {spv::CapabilityCooperativeVectorTrainingNV, {0, &DeviceFeatures::cooperativeVectorTraining, nullptr, ""}},
     };
     // clang-format on
     return spirv_capabilities;
@@ -361,8 +371,11 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo> &GetSpirvExte
         {"SPV_HUAWEI_subpass_shading", {0, nullptr, &DeviceExtensions::vk_huawei_subpass_shading, ""}},
         {"SPV_NV_ray_tracing_motion_blur", {0, nullptr, &DeviceExtensions::vk_nv_ray_tracing_motion_blur, ""}},
         {"SPV_KHR_maximal_reconvergence", {0, nullptr, &DeviceExtensions::vk_khr_shader_maximal_reconvergence, ""}},
+        {"SPV_KHR_subgroup_rotate", {VK_API_VERSION_1_4, nullptr, nullptr, ""}},
         {"SPV_KHR_subgroup_rotate", {0, nullptr, &DeviceExtensions::vk_khr_shader_subgroup_rotate, ""}},
+        {"SPV_KHR_expect_assume", {VK_API_VERSION_1_4, nullptr, nullptr, ""}},
         {"SPV_KHR_expect_assume", {0, nullptr, &DeviceExtensions::vk_khr_shader_expect_assume, ""}},
+        {"SPV_KHR_float_controls2", {VK_API_VERSION_1_4, nullptr, nullptr, ""}},
         {"SPV_KHR_float_controls2", {0, nullptr, &DeviceExtensions::vk_khr_shader_float_controls2, ""}},
         {"SPV_KHR_quad_control", {0, nullptr, &DeviceExtensions::vk_khr_shader_quad_control, ""}},
         {"SPV_NV_raw_access_chains", {0, nullptr, &DeviceExtensions::vk_nv_raw_access_chains, ""}},
@@ -371,6 +384,8 @@ const std::unordered_multimap<std::string_view, RequiredSpirvInfo> &GetSpirvExte
         {"SPV_KHR_relaxed_extended_instruction", {0, nullptr, &DeviceExtensions::vk_khr_shader_relaxed_extended_instruction, ""}},
         {"SPV_NV_cooperative_matrix2", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_matrix2, ""}},
         {"SPV_NV_tensor_addressing", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_matrix2, ""}},
+        {"SPV_NV_cluster_acceleration_structure", {0, nullptr, &DeviceExtensions::vk_nv_cluster_acceleration_structure, ""}},
+        {"SPV_NV_cooperative_vector", {0, nullptr, &DeviceExtensions::vk_nv_cooperative_vector, ""}},
     };
     // clang-format on
     return spirv_extensions;
@@ -558,8 +573,10 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "RayQueryProvisionalKHR";
         case spv::CapabilityRayQueryKHR:
             return "RayQueryKHR";
+#ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::CapabilityUntypedPointersKHR:
             return "UntypedPointersKHR";
+#endif
         case spv::CapabilityRayTraversalPrimitiveCullingKHR:
             return "RayTraversalPrimitiveCullingKHR";
         case spv::CapabilityRayTracingKHR:
@@ -586,8 +603,10 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "Int64ImageEXT";
         case spv::CapabilityShaderClockKHR:
             return "ShaderClockKHR";
+#ifdef VK_ENABLE_BETA_EXTENSIONS
         case spv::CapabilityShaderEnqueueAMDX:
             return "ShaderEnqueueAMDX";
+#endif
         case spv::CapabilityQuadControlKHR:
             return "QuadControlKHR";
         case spv::CapabilitySampleMaskOverrideCoverageNV:
@@ -680,12 +699,18 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "BindlessTextureNV";
         case spv::CapabilityRayQueryPositionFetchKHR:
             return "RayQueryPositionFetchKHR";
+        case spv::CapabilityCooperativeVectorNV:
+            return "CooperativeVectorNV";
         case spv::CapabilityAtomicFloat16VectorNV:
             return "AtomicFloat16VectorNV";
         case spv::CapabilityRayTracingDisplacementMicromapNV:
             return "RayTracingDisplacementMicromapNV";
         case spv::CapabilityRawAccessChainsNV:
             return "RawAccessChainsNV";
+        case spv::CapabilityRayTracingSpheresGeometryNV:
+            return "RayTracingSpheresGeometryNV";
+        case spv::CapabilityRayTracingLinearSweptSpheresGeometryNV:
+            return "RayTracingLinearSweptSpheresGeometryNV";
         case spv::CapabilityCooperativeMatrixReductionsNV:
             return "CooperativeMatrixReductionsNV";
         case spv::CapabilityCooperativeMatrixConversionsNV:
@@ -696,6 +721,10 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "CooperativeMatrixTensorAddressingNV";
         case spv::CapabilityCooperativeMatrixBlockLoadsNV:
             return "CooperativeMatrixBlockLoadsNV";
+        case spv::CapabilityCooperativeVectorTrainingNV:
+            return "CooperativeVectorTrainingNV";
+        case spv::CapabilityRayTracingClusterAccelerationStructureNV:
+            return "RayTracingClusterAccelerationStructureNV";
         case spv::CapabilityTensorAddressingNV:
             return "TensorAddressingNV";
         case spv::CapabilityIntegerFunctions2INTEL:
@@ -742,6 +771,14 @@ static inline const char *string_SpvCapability(uint32_t input_value) {
             return "ArithmeticFenceEXT";
         case spv::CapabilitySubgroupBufferPrefetchINTEL:
             return "SubgroupBufferPrefetchINTEL";
+        case spv::CapabilitySubgroup2DBlockIOINTEL:
+            return "Subgroup2DBlockIOINTEL";
+        case spv::CapabilitySubgroup2DBlockTransformINTEL:
+            return "Subgroup2DBlockTransformINTEL";
+        case spv::CapabilitySubgroup2DBlockTransposeINTEL:
+            return "Subgroup2DBlockTransposeINTEL";
+        case spv::CapabilitySubgroupMatrixMultiplyAccumulateINTEL:
+            return "SubgroupMatrixMultiplyAccumulateINTEL";
         case spv::CapabilityGroupUniformArithmeticKHR:
             return "GroupUniformArithmeticKHR";
         default:
@@ -991,10 +1028,12 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityTileImageDepthReadAccessEXT, "VkPhysicalDeviceShaderTileImageFeaturesEXT::shaderTileImageDepthReadAccess"},
     {spv::CapabilityTileImageStencilReadAccessEXT, "VkPhysicalDeviceShaderTileImageFeaturesEXT::shaderTileImageStencilReadAccess"},
     {spv::CapabilityCooperativeMatrixKHR, "VkPhysicalDeviceCooperativeMatrixFeaturesKHR::cooperativeMatrix"},
+#ifdef VK_ENABLE_BETA_EXTENSIONS
     {spv::CapabilityShaderEnqueueAMDX, "VkPhysicalDeviceShaderEnqueueFeaturesAMDX::shaderEnqueue"},
-    {spv::CapabilityGroupNonUniformRotateKHR, "VkPhysicalDeviceShaderSubgroupRotateFeaturesKHR::shaderSubgroupRotate"},
-    {spv::CapabilityExpectAssumeKHR, "VkPhysicalDeviceShaderExpectAssumeFeaturesKHR::shaderExpectAssume"},
-    {spv::CapabilityFloatControls2, "VkPhysicalDeviceShaderFloatControls2FeaturesKHR::shaderFloatControls2"},
+#endif  // VK_ENABLE_BETA_EXTENSIONS
+    {spv::CapabilityGroupNonUniformRotateKHR, "VkPhysicalDeviceVulkan14Features::shaderSubgroupRotate OR VkPhysicalDeviceShaderSubgroupRotateFeatures::shaderSubgroupRotate"},
+    {spv::CapabilityExpectAssumeKHR, "VkPhysicalDeviceVulkan14Features::shaderExpectAssume OR VkPhysicalDeviceShaderExpectAssumeFeatures::shaderExpectAssume"},
+    {spv::CapabilityFloatControls2, "VkPhysicalDeviceVulkan14Features::shaderFloatControls2 OR VkPhysicalDeviceShaderFloatControls2Features::shaderFloatControls2"},
     {spv::CapabilityQuadControlKHR, "VkPhysicalDeviceShaderQuadControlFeaturesKHR::shaderQuadControl"},
     {spv::CapabilityRawAccessChainsNV, "VkPhysicalDeviceRawAccessChainsFeaturesNV::shaderRawAccessChains"},
     {spv::CapabilityReplicatedCompositesEXT, "VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT::shaderReplicatedComposites"},
@@ -1004,6 +1043,11 @@ static inline const char* SpvCapabilityRequirements(uint32_t capability) {
     {spv::CapabilityCooperativeMatrixPerElementOperationsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixPerElementOperations"},
     {spv::CapabilityCooperativeMatrixTensorAddressingNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixTensorAddressing"},
     {spv::CapabilityCooperativeMatrixBlockLoadsNV, "VkPhysicalDeviceCooperativeMatrix2FeaturesNV::cooperativeMatrixBlockLoads"},
+    {spv::CapabilityRayTracingSpheresGeometryNV, "VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV::spheres"},
+    {spv::CapabilityRayTracingLinearSweptSpheresGeometryNV, "VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV::linearSweptSpheres"},
+    {spv::CapabilityRayTracingClusterAccelerationStructureNV, "VkPhysicalDeviceClusterAccelerationStructureFeaturesNV::clusterAccelerationStructure"},
+    {spv::CapabilityCooperativeVectorNV, "VkPhysicalDeviceCooperativeVectorFeaturesNV::cooperativeVector"},
+    {spv::CapabilityCooperativeVectorTrainingNV, "VkPhysicalDeviceCooperativeVectorFeaturesNV::cooperativeVectorTraining"},
     };
 
     // VUs before catch unknown capabilities
@@ -1093,9 +1137,9 @@ static inline std::string SpvExtensionRequirments(std::string_view extension) {
     {"SPV_HUAWEI_subpass_shading", {{vvl::Extension::_VK_HUAWEI_subpass_shading}}},
     {"SPV_NV_ray_tracing_motion_blur", {{vvl::Extension::_VK_NV_ray_tracing_motion_blur}}},
     {"SPV_KHR_maximal_reconvergence", {{vvl::Extension::_VK_KHR_shader_maximal_reconvergence}}},
-    {"SPV_KHR_subgroup_rotate", {{vvl::Extension::_VK_KHR_shader_subgroup_rotate}}},
-    {"SPV_KHR_expect_assume", {{vvl::Extension::_VK_KHR_shader_expect_assume}}},
-    {"SPV_KHR_float_controls2", {{vvl::Extension::_VK_KHR_shader_float_controls2}}},
+    {"SPV_KHR_subgroup_rotate", {{vvl::Version::_VK_VERSION_1_4}, {vvl::Extension::_VK_KHR_shader_subgroup_rotate}}},
+    {"SPV_KHR_expect_assume", {{vvl::Version::_VK_VERSION_1_4}, {vvl::Extension::_VK_KHR_shader_expect_assume}}},
+    {"SPV_KHR_float_controls2", {{vvl::Version::_VK_VERSION_1_4}, {vvl::Extension::_VK_KHR_shader_float_controls2}}},
     {"SPV_KHR_quad_control", {{vvl::Extension::_VK_KHR_shader_quad_control}}},
     {"SPV_NV_raw_access_chains", {{vvl::Extension::_VK_NV_raw_access_chains}}},
     {"SPV_KHR_compute_shader_derivatives", {{vvl::Extension::_VK_KHR_compute_shader_derivatives}}},
@@ -1103,6 +1147,8 @@ static inline std::string SpvExtensionRequirments(std::string_view extension) {
     {"SPV_KHR_relaxed_extended_instruction", {{vvl::Extension::_VK_KHR_shader_relaxed_extended_instruction}}},
     {"SPV_NV_cooperative_matrix2", {{vvl::Extension::_VK_NV_cooperative_matrix2}}},
     {"SPV_NV_tensor_addressing", {{vvl::Extension::_VK_NV_cooperative_matrix2}}},
+    {"SPV_NV_cluster_acceleration_structure", {{vvl::Extension::_VK_NV_cluster_acceleration_structure}}},
+    {"SPV_NV_cooperative_vector", {{vvl::Extension::_VK_NV_cooperative_vector}}},
     };
 
     // VUs before catch unknown extensions
@@ -1141,7 +1187,7 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const spirv::Instructio
             } else if (it->second.extension) {
                 // kEnabledByApiLevel is not valid as some extension are promoted with feature bits to be used.
                 // If the new Api Level gives support, it will be caught in the "it->second.version" check instead.
-                if (IsExtEnabledByCreateinfo(device_extensions.*(it->second.extension))) {
+                if (IsExtEnabledByCreateinfo(extensions.*(it->second.extension))) {
                     has_support = true;
                 }
             } else if (it->second.property) {
@@ -1217,7 +1263,7 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const spirv::Instructio
         }
 
         // Portability checks
-        if (IsExtEnabled(device_extensions.vk_khr_portability_subset)) {
+        if (IsExtEnabled(extensions.vk_khr_portability_subset)) {
             if ((VK_FALSE == enabled_features.shaderSampleRateInterpolationFunctions) &&
                 (spv::CapabilityInterpolationFunction == insn.Word(1))) {
                 skip |= LogError("VUID-RuntimeSpirv-shaderSampleRateInterpolationFunctions-06325", device, loc,
@@ -1263,7 +1309,7 @@ bool CoreChecks::ValidateShaderCapabilitiesAndExtensions(const spirv::Instructio
                     has_support = true;
                 }
             } else if (it->second.extension) {
-                if (IsExtEnabled(device_extensions.*(it->second.extension))) {
+                if (IsExtEnabled(extensions.*(it->second.extension))) {
                     has_support = true;
                 }
             }

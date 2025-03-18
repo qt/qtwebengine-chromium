@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 namespace sync_utils {
 static constexpr uint32_t kNumPipelineStageBits = sizeof(VkPipelineStageFlags2) * 8;
 
-VkPipelineStageFlags2 DisabledPipelineStages(const DeviceFeatures &features, const DeviceExtensions& device_extensions) {
+VkPipelineStageFlags2 DisabledPipelineStages(const DeviceFeatures &features, const DeviceExtensions &device_extensions) {
     VkPipelineStageFlags2 result = 0;
     if (!features.geometryShader) {
         result |= VK_PIPELINE_STAGE_GEOMETRY_SHADER_BIT;
@@ -56,7 +56,12 @@ VkPipelineStageFlags2 DisabledPipelineStages(const DeviceFeatures &features, con
     if (!IsExtEnabled(device_extensions.vk_nv_ray_tracing) && !features.rayTracingPipeline) {
         result |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
     }
-    // TODO: VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
+    if (!IsExtEnabled(device_extensions.vk_nv_ray_tracing) && !IsExtEnabled(device_extensions.vk_khr_acceleration_structure)) {
+        result |= VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    }
+    if (!features.rayTracingMaintenance1) {
+        result |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR;
+    }
     return result;
 }
 
@@ -82,8 +87,7 @@ VkPipelineStageFlags2 ExpandPipelineStages(VkPipelineStageFlags2 stage_mask, VkQ
     }
     if (VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT & stage_mask) {
         expanded &= ~VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-        expanded |= VK_PIPELINE_STAGE_2_COPY_BIT | VK_PIPELINE_STAGE_2_RESOLVE_BIT | VK_PIPELINE_STAGE_2_BLIT_BIT |
-                    VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        expanded |= kAllTransferExpandBits;
     }
     if (VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT & stage_mask) {
         expanded &= ~VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT;
@@ -202,6 +206,13 @@ std::string StringAccessFlags(VkAccessFlags2 mask) {
     return string_VkAccessFlags2(mask);
 }
 
+void ReplaceExpandBitsWithMetaMask(VkFlags64 &mask, VkFlags64 expand_bits, VkFlags64 meta_mask) {
+    if ((mask & expand_bits) == expand_bits) {
+        mask &= ~expand_bits;
+        mask |= meta_mask;
+    }
+}
+
 ShaderStageAccesses GetShaderStageAccesses(VkShaderStageFlagBits shader_stage) {
     static const vvl::unordered_map<VkShaderStageFlagBits, ShaderStageAccesses> map = {
         // clang-format off
@@ -294,14 +305,6 @@ ShaderStageAccesses GetShaderStageAccesses(VkShaderStageFlagBits shader_stage) {
     auto it = map.find(shader_stage);
     assert(it != map.end());
     return it->second;
-}
-
-const std::shared_ptr<const vvl::Buffer> BufferBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
-    return state_tracker.Get<vvl::Buffer>(buffer);
-}
-
-const std::shared_ptr<const vvl::Image> ImageBarrier::GetResourceState(const ValidationStateTracker &state_tracker) const {
-    return state_tracker.Get<vvl::Image>(image);
 }
 
 }  // namespace sync_utils

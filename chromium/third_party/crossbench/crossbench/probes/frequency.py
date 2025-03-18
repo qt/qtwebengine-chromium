@@ -2,19 +2,23 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import dataclasses
-from typing import List
+from typing import TYPE_CHECKING, List, Type
 
 from immutabledict import immutabledict
 
 from crossbench import path as pth
-from crossbench.browsers.browser import Browser
 from crossbench.probes.cpu_frequency_map import CPUFrequencyMap
-from crossbench.env import HostEnvironment
 from crossbench.probes.env_modifier import EnvModifier
-from crossbench.probes.probe import (ProbeConfigParser, ProbeContext, ProbeKeyT)
-from crossbench.probes.results import EmptyProbeResult, ProbeResult
-from crossbench.runner.run import Run
+from crossbench.probes.probe import ProbeConfigParser, ProbeContext, ProbeKeyT
+
+if TYPE_CHECKING:
+  from crossbench.browsers.browser import Browser
+  from crossbench.env import HostEnvironment
+  from crossbench.probes.results import ProbeResult
+  from crossbench.runner.run import Run
 
 
 class FrequencyProbe(EnvModifier):
@@ -90,8 +94,8 @@ class FrequencyProbe(EnvModifier):
   def cpu_frequency_map(self) -> CPUFrequencyMap:
     return self._cpu_frequency_map
 
-  def get_context(self, run: Run):
-    return FrequencyProbeContext(self, run)
+  def get_context_cls(self) -> Type[FrequencyProbeContext]:
+    return FrequencyProbeContext
 
 
 @dataclasses.dataclass(frozen=True)
@@ -144,4 +148,4 @@ class FrequencyProbeContext(ProbeContext[FrequencyProbe]):
           state.dir / self._MAX_FREQUENCY_FILE, state.max)
 
   def teardown(self) -> ProbeResult:
-    return EmptyProbeResult()
+    return self.empty_result()

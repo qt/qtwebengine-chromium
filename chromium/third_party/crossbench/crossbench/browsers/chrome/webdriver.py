@@ -13,11 +13,12 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
 
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chrome.helper import ChromePathMixin
+from crossbench.browsers.chrome.paths import ChromePathMixin
+from crossbench.browsers.chromium import helper
 from crossbench.browsers.chromium.webdriver import (
-    ChromiumWebDriver, ChromiumWebDriverAndroid, ChromiumWebDriverChromeOsSsh,
-    ChromiumWebDriverSsh, LocalChromiumWebDriverAndroid,
-    build_chromedriver_instructions)
+    ChromiumBasedWebDriver, ChromiumWebDriverAndroid,
+    ChromiumWebDriverChromeOsSsh, ChromiumWebDriverSsh,
+    LocalChromiumWebDriverAndroid)
 from crossbench.browsers.webdriver import DriverException
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
   from selenium.webdriver.chromium.webdriver import ChromiumDriver
 
 
-class ChromeWebDriver(ChromePathMixin, ChromiumWebDriver):
+class ChromeWebDriver(ChromePathMixin, ChromiumBasedWebDriver):
 
   WEB_DRIVER_OPTIONS = ChromeOptions
   WEB_DRIVER_SERVICE = ChromeService
@@ -52,7 +53,7 @@ class ChromeWebDriver(ChromePathMixin, ChromiumWebDriver):
             "chrome://flags#enable-command-line-on-non-rooted-devices",
         ]
       if self.is_locally_compiled():
-        msg.append(build_chromedriver_instructions(self.app_path.parent))
+        msg.append(helper.build_chromedriver_instructions(self.app_path.parent))
       msg_str = "\n".join(msg)
       logging.error(msg_str)
       raise DriverException(msg_str) from e

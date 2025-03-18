@@ -15,7 +15,6 @@ const button_observer = new MutationObserver(mutations => {
     return
   }
   localStorage.setItem('already_run', 'already_run')
-  performance.mark('cookie_banner_shown')
   button.click()
 })
 

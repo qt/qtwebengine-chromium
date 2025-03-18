@@ -11,12 +11,12 @@ from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.splash_screen import SplashScreen
 from crossbench.browsers.viewport import Viewport
+from crossbench.cli.config.secrets import Secrets
 from crossbench.flags.base import Flags, FlagsData
 from crossbench.flags.chrome import ChromeFlags
 from crossbench.network.live import LiveNetwork
 
 if TYPE_CHECKING:
-  from crossbench.cli.config.secrets import Secret, SecretsDict, SecretType
   from crossbench.network.base import Network
 
 
@@ -32,7 +32,7 @@ class Settings:
                viewport: Optional[Viewport] = None,
                splash_screen: Optional[SplashScreen] = None,
                platform: Optional[plt.Platform] = None,
-               secrets: Optional[SecretsDict] = None,
+               secrets: Secrets = Secrets(),
                driver_logging: bool = False,
                wipe_system_user_data: bool = False,
                http_request_timeout: dt.timedelta = dt.timedelta()):
@@ -44,7 +44,7 @@ class Settings:
     self._network: Network = network or LiveNetwork()
     self._viewport: Viewport = viewport or Viewport.DEFAULT
     self._splash_screen: SplashScreen = splash_screen or SplashScreen.DEFAULT
-    self._secrets: SecretsDict = secrets or {}
+    self._secrets: Secrets = secrets
     self._driver_logging = driver_logging
     self._wipe_system_user_data = wipe_system_user_data
     self._http_request_timeout = http_request_timeout
@@ -99,7 +99,7 @@ class Settings:
     return self._network
 
   @property
-  def secrets(self) -> SecretsDict:
+  def secrets(self) -> Secrets:
     return self._secrets
 
   @property

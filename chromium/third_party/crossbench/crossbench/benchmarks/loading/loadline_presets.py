@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import argparse
 import logging
-from typing import TYPE_CHECKING, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type
 
 import numpy as np
 import pandas as pd
@@ -15,21 +15,21 @@ from tabulate import tabulate
 
 from crossbench import config
 from crossbench import path as pth
-from crossbench.benchmarks.base import BenchmarkProbeMixin
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.loading.config.pages import PagesConfig
-from crossbench.benchmarks.loading.loading_benchmark import (LoadingPageFilter,
-                                                             PageLoadBenchmark)
+from crossbench.benchmarks.loading.loading_benchmark import (LoadingBenchmark,
+                                                             LoadingPageFilter)
 from crossbench.flags.base import Flags
 from crossbench.probes.perfetto.trace_processor.trace_processor import \
     TraceProcessorProbe
 from crossbench.probes.probe import Probe, ProbeContext
-from crossbench.probes.results import EmptyProbeResult, ProbeResult
+from crossbench.probes.results import LocalProbeResult
 
 if TYPE_CHECKING:
   from crossbench.benchmarks.loading.page.base import Page
   from crossbench.browsers.attributes import BrowserAttributes
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.groups.browsers import BrowsersRunGroup
-  from crossbench.runner.runner import Run
 
 CONFIG_DIR = config.config_dir()
 LOADLINE_DIR = CONFIG_DIR / "benchmark" / "loadline"
@@ -60,8 +60,8 @@ class LoadLineProbe(BenchmarkProbeMixin, Probe):
   IS_GENERAL_PURPOSE = False
   NAME = "loadline_probe"
 
-  def get_context(self, run: Run) -> Optional[LoadLineProbeContext]:
-    return LoadLineProbeContext(self, run)
+  def get_context_cls(self,) -> Type[LoadLineProbeContext]:
+    return LoadLineProbeContext
 
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
     logging.info("-" * 80)
@@ -78,7 +78,7 @@ class LoadLineProbe(BenchmarkProbeMixin, Probe):
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     csv_file = group.get_local_probe_result_path(self).with_suffix(".csv")
     self._compute_score(group).to_csv(csv_file)
-    return ProbeResult(csv=(csv_file,))
+    return LocalProbeResult(csv=(csv_file,))
 
   def _compute_score(self, group: BrowsersRunGroup) -> pd.DataFrame:
     all_results = group.results.get_by_name(TraceProcessorProbe.NAME).csv_list
@@ -117,10 +117,10 @@ class LoadLineProbeContext(ProbeContext[LoadLineProbe]):
     pass
 
   def teardown(self) -> ProbeResult:
-    return EmptyProbeResult()
+    return self.empty_result()
 
 
-class LoadLineBenchmark(PageLoadBenchmark, metaclass=abc.ABCMeta):
+class LoadLineBenchmark(LoadingBenchmark, metaclass=abc.ABCMeta):
   STORY_FILTER_CLS = LoadLinePageFilter
   PROBES = (LoadLineProbe,)
   DEFAULT_REPETITIONS = 100

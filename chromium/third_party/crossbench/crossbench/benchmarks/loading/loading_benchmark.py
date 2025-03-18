@@ -10,7 +10,6 @@ import logging
 from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
                     Type)
 
-from crossbench.action_runner.basic_action_runner import BasicActionRunner
 from crossbench.action_runner.config import ActionRunnerConfig
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
 from crossbench.benchmarks.loading.config.pages import (
@@ -203,8 +202,9 @@ class LoadingPageFilter(StoryFilter[Page]):
     for page_config in config.pages:
       stories.append(cls._story_from_config(args, page_config, use_labels))
 
-    if use_labels:
+    if not use_labels:
       # Double check that the urls are unique
+
       urls = set(page_config.first_url for page_config in config.pages)
       if len(urls) != len(config.pages):
         raise argparse.ArgumentTypeError(
@@ -233,7 +233,7 @@ class LoadingPageFilter(StoryFilter[Page]):
       return LivePage(label, config.first_url, duration, playback, tabs,
                       args.about_blank_duration)
     return InteractivePage(label, config.blocks, config.setup, config.login,
-                           config.secrets.as_dict(), playback, tabs,
+                           config.secrets, playback, tabs,
                            args.about_blank_duration, args.run_login,
                            args.run_setup)
 
@@ -246,7 +246,7 @@ class LoadingPageFilter(StoryFilter[Page]):
     return self.stories
 
 
-class PageLoadBenchmark(SubStoryBenchmark):
+class LoadingBenchmark(SubStoryBenchmark):
   """
   Benchmark runner for loading pages.
 
@@ -271,11 +271,11 @@ class PageLoadBenchmark(SubStoryBenchmark):
   ) -> CrossBenchArgumentParser:
     parser = super().add_cli_parser(subparsers, aliases)
     cls.STORY_FILTER_CLS.add_cli_parser(parser)
-
     parser.add_argument(
         "--action-runner",
         type=ActionRunnerConfig.parse,
-        help="Set the action runner for interactive pages.")
+        help="Set the action runner for interactive pages.",
+        required=False)
     return parser
 
   @classmethod
@@ -342,11 +342,15 @@ class PageLoadBenchmark(SubStoryBenchmark):
   def __init__(self,
                stories: Sequence[Page],
                action_runner: Optional[ActionRunner] = None) -> None:
-    self._action_runner = action_runner or BasicActionRunner()
+    self._action_runner = action_runner
     for story in stories:
       assert isinstance(story, Page)
     super().__init__(stories)
 
   @property
-  def action_runner(self) -> ActionRunner:
+  def action_runner(self) -> Optional[ActionRunner]:
     return self._action_runner
+
+  @action_runner.setter
+  def action_runner(self, action_runner: Optional[ActionRunner]) -> None:
+    self._action_runner = action_runner

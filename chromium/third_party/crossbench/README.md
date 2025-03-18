@@ -69,11 +69,19 @@ You can specify a browser with `--browser=<name>`. You can repeat the
 multiple browsers use `--browser-config` (or pass simple flags after `--` to
 the browser).
 
+Single browser example:
 ```bash
 ./cb.py speedometer --browser=$BROWSER -- --enable-field-trial-config
 ```
-#### `--browser` flag on desktop:
 
+Multi-browser example:
+```bash
+./cb.py sp3 --stories='TodoMVC.*' \
+  --browser=firefox --browser=safari \
+  --browser=chrome-M123-dev --browser=./out/Release/Chromium.app
+```
+
+#### `--browser` flag on desktop:
 | Flag | Description |
 |------|-------------|
 |`--browser=chrome-stable`| Use the installed Chrome stable on the host. Also works with `beta`, `dev` and `canary` versions. |
@@ -81,9 +89,12 @@ the browser).
 |`--browser=safari-stable`| Use the installed Safari stable version on the host. Also works with `technology-preview` |
 |`--browser=firefox-stable`| Use the installed Firefox stable version on the host. Also works with `dev` and `nightly` versions. |
 |`--browser=./out/Release/chrome`| Use a locally compiled chrome version. Any path to a chrome binary will work. |
-|`--browser=chrome-m123`| Download the latest M123 chrome release and install it locally |
-|`--browser=chrome-125.0.6422.112`| Download and install a specific chrome version. |
-|`--browser=chrome-M100...M123`| Download and install a range of 24 different chrome milestones. |
+|`--browser=chrome-m123`| Download the latest M123 chrome stable release and install it locally |
+|`--browser=chrome-M123-canary`| Download the latest M123 chrome canary release and install it locally |
+|`--browser=chrome-125.0.6422.112`| Download and install a specific stable chrome version. |
+|`--browser=chrome-125.0.6422.112-dev`| Download and install a specific dev chrome version. |
+|`--browser=chrome-M100...M123`| Download and install a range of 24 different chrome stable milestones. |
+
 
 #### `--browser` flag on mobile:
 You can directly run on attached android devices using the device ID or unique device names.
@@ -125,6 +136,17 @@ for creating ephemeral sessions for testing.
 Both ChromeDriver and Autotest are pre-installed on ChromeOS test images.
 Detailed instructions for flashing Chromebooks with test images are provided at:
 go/arc-setup-dev-mode-dut#usb-cros-test-image.
+
+### Safari on macOS
+
+Safari needs some extra steps to work:
+
+- `safaridriver --enable` to allow automation
+- Open the Safari settings:
+  - "Advanced" tab: Check "Show features for web developers"
+  - "Developer" tab: Check "Allow remote automation"
+  - "Developer" tab: Optional, if you plan to use the apple-script browser, also check "Allow JavaScript from Apple Events"
+
 
 ### Probes
 Probes define a way to extract arbitrary (performance) numbers from a

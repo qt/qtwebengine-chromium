@@ -12,15 +12,15 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type
 import selenium.common.exceptions
 import urllib3.exceptions
 
-from crossbench import helper
 from crossbench.action_runner.action_runner_listener import \
     ActionRunnerListener
-from crossbench.action_runner.basic_action_runner import BasicActionRunner
-from crossbench.benchmarks.base import (BenchmarkProbeMixin, StoryFilter,
-                                        SubStoryBenchmark)
+from crossbench.action_runner.default_action_runner import DefaultActionRunner
+from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.loading.page.base import Page
 from crossbench.benchmarks.loading.page.live import LivePage
 from crossbench.benchmarks.loading.tab_controller import TabController
+from crossbench.helper import url_helper
 from crossbench.parse import NumberParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.runner.run import Run
+  from crossbench.types import JsonDict
 
 
 class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
@@ -46,10 +47,10 @@ class MemoryProbe(BenchmarkProbeMixin, JsonResultProbe):
   """
   NAME: str = "memory_probe"
 
-  def get_context(self, run: Run) -> MemoryProbeContext:
-    return MemoryProbeContext(self, run)
+  def get_context_cls(self) -> Type[MemoryProbeContext]:
+    return MemoryProbeContext
 
-  def to_json(self, actions: Actions) -> Dict[str, float]:
+  def to_json(self, actions: Actions) -> JsonDict:
     raise NotImplementedError(
         "should not be called, data comes from memory probe context")
 
@@ -106,7 +107,7 @@ class MemoryProbeContext(ActionRunnerListener,
   def start(self) -> None:
     pass
 
-  def to_json(self, actions: Actions) -> Dict[str, int]:
+  def to_json(self, actions: Actions) -> JsonDict:
     return {"alive_tab_count": self._tab_count - 1}
 
   def _increment_tab_count(self):
@@ -276,7 +277,7 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
     }
     if not args.random_per_page:
       url_params["randomperpage"] = "false"
-    url = helper.update_url_query(cls.URL, url_params)
+    url = url_helper.update_url_query(cls.URL, url_params)
     stories: Sequence[Page] = []
     page = LivePage("memory", url, dt.timedelta(seconds=2), tabs=args.tabs)
     stories = [page]
@@ -330,7 +331,7 @@ class MemoryBenchmark(SubStoryBenchmark):
                stories: Sequence[Page],
                skippable_tab_count: int = 0,
                action_runner: Optional[ActionRunner] = None) -> None:
-    self._action_runner = action_runner or BasicActionRunner()
+    self._action_runner = action_runner or DefaultActionRunner()
     for story in stories:
       assert isinstance(story, Page)
     super().__init__(stories)

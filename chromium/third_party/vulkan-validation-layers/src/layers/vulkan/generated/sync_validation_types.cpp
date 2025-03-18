@@ -3,8 +3,8 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@
 
 #include "sync_validation_types.h"
 // clang-format off
-const std::array<SyncStageAccessInfoType, 137>& syncStageAccessInfoByStageAccessIndex() {
-static const std::array<SyncStageAccessInfoType, 137> variable = { {
+const std::array<SyncAccessInfo, 139>& syncAccessInfoByAccessIndex() {
+static const std::array<SyncAccessInfo, 139> variable = { {
     {
         "SYNC_ACCESS_INDEX_NONE",
         VK_PIPELINE_STAGE_2_NONE,
         VK_ACCESS_2_NONE,
         SYNC_ACCESS_INDEX_NONE,
-        SyncStageAccessFlags(0)
+        SyncAccessFlags(0)
     },
     {
         "SYNC_DRAW_INDIRECT_INDIRECT_COMMAND_READ",
@@ -957,6 +957,20 @@ static const std::array<SyncStageAccessInfoType, 137> variable = { {
         SYNC_CLUSTER_CULLING_SHADER_HUAWEI_UNIFORM_READ_BIT
     },
     {
+        "SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_READ",
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV,
+        VK_ACCESS_2_TRANSFER_READ_BIT,
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_READ,
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_READ_BIT
+    },
+    {
+        "SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_WRITE",
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV,
+        VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_WRITE,
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_WRITE_BIT
+    },
+    {
         "SYNC_PRESENT_ENGINE_SYNCVAL_PRESENT_ACQUIRE_READ_SYNCVAL",
         VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL,
         VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL,
@@ -987,8 +1001,8 @@ static const std::array<SyncStageAccessInfoType, 137> variable = { {
 }};
 return variable;
 }
-const std::map<VkPipelineStageFlagBits2, SyncStageAccessFlags>& syncStageAccessMaskByStageBit() {
-    static const std::map<VkPipelineStageFlagBits2, SyncStageAccessFlags> variable = {
+const std::map<VkPipelineStageFlagBits2, SyncAccessFlags>& syncAccessMaskByStageBit() {
+    static const std::map<VkPipelineStageFlagBits2, SyncAccessFlags> variable = {
     { VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, (
         SYNC_DRAW_INDIRECT_INDIRECT_COMMAND_READ_BIT |
         SYNC_DRAW_INDIRECT_TRANSFORM_FEEDBACK_COUNTER_READ_BIT_EXT
@@ -1189,6 +1203,10 @@ const std::map<VkPipelineStageFlagBits2, SyncStageAccessFlags>& syncStageAccessM
         SYNC_CLUSTER_CULLING_SHADER_HUAWEI_SHADER_STORAGE_WRITE_BIT |
         SYNC_CLUSTER_CULLING_SHADER_HUAWEI_UNIFORM_READ_BIT
     )},
+    { VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV, (
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_READ_BIT |
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_WRITE_BIT
+    )},
     { VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL, (
         SYNC_PRESENT_ENGINE_BIT_SYNCVAL_PRESENT_ACQUIRE_READ_BIT_SYNCVAL |
         SYNC_PRESENT_ENGINE_BIT_SYNCVAL_PRESENT_PRESENTED_BIT_SYNCVAL
@@ -1197,8 +1215,8 @@ const std::map<VkPipelineStageFlagBits2, SyncStageAccessFlags>& syncStageAccessM
     return variable;
 }
 
-const std::map<VkAccessFlagBits2, SyncStageAccessFlags>& syncStageAccessMaskByAccessBit() {
-    static const std::map<VkAccessFlagBits2, SyncStageAccessFlags> variable = {
+const std::map<VkAccessFlagBits2, SyncAccessFlags>& syncAccessMaskByAccessBit() {
+    static const std::map<VkAccessFlagBits2, SyncAccessFlags> variable = {
     { VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, (
         SYNC_DRAW_INDIRECT_INDIRECT_COMMAND_READ_BIT |
         SYNC_ACCELERATION_STRUCTURE_BUILD_INDIRECT_COMMAND_READ_BIT
@@ -1248,7 +1266,8 @@ const std::map<VkAccessFlagBits2, SyncStageAccessFlags>& syncStageAccessMaskByAc
         SYNC_MICROMAP_BUILD_EXT_TRANSFER_READ_BIT |
         SYNC_COPY_TRANSFER_READ_BIT |
         SYNC_RESOLVE_TRANSFER_READ_BIT |
-        SYNC_BLIT_TRANSFER_READ_BIT
+        SYNC_BLIT_TRANSFER_READ_BIT |
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_READ_BIT
     )},
     { VK_ACCESS_2_TRANSFER_WRITE_BIT, (
         SYNC_ACCELERATION_STRUCTURE_BUILD_TRANSFER_WRITE_BIT |
@@ -1257,7 +1276,8 @@ const std::map<VkAccessFlagBits2, SyncStageAccessFlags>& syncStageAccessMaskByAc
         SYNC_COPY_TRANSFER_WRITE_BIT |
         SYNC_RESOLVE_TRANSFER_WRITE_BIT |
         SYNC_BLIT_TRANSFER_WRITE_BIT |
-        SYNC_CLEAR_TRANSFER_WRITE_BIT
+        SYNC_CLEAR_TRANSFER_WRITE_BIT |
+        SYNC_CONVERT_COOPERATIVE_VECTOR_MATRIX_NV_TRANSFER_WRITE_BIT
     )},
     { VK_ACCESS_2_HOST_READ_BIT, (
         SYNC_HOST_HOST_READ_BIT
@@ -1414,10 +1434,10 @@ const std::map<VkAccessFlagBits2, SyncStageAccessFlags>& syncStageAccessMaskByAc
         SYNC_PRESENT_ENGINE_BIT_SYNCVAL_PRESENT_PRESENTED_BIT_SYNCVAL
     )},
     { VK_ACCESS_2_MEMORY_READ_BIT, (
-        syncStageAccessReadMask
+        syncAccessReadMask
     )},
     { VK_ACCESS_2_MEMORY_WRITE_BIT, (
-        syncStageAccessWriteMask
+        syncAccessWriteMask
     )},
     };
     return variable;
@@ -1625,6 +1645,10 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkAccessFlags2>& syncDirectSt
         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
         VK_ACCESS_2_UNIFORM_READ_BIT
     )},
+    { VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV, (
+        VK_ACCESS_2_TRANSFER_READ_BIT |
+        VK_ACCESS_2_TRANSFER_WRITE_BIT
+    )},
     { VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL, (
         VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL |
         VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL
@@ -1643,7 +1667,8 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
         VK_PIPELINE_STAGE_2_RESOLVE_BIT |
         VK_PIPELINE_STAGE_2_BLIT_BIT |
         VK_PIPELINE_STAGE_2_CLEAR_BIT |
-        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR
+        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV
     )},
     { VK_QUEUE_GRAPHICS_BIT, (
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
@@ -1674,7 +1699,8 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
         VK_PIPELINE_STAGE_2_SUBPASS_SHADER_BIT_HUAWEI |
         VK_PIPELINE_STAGE_2_INVOCATION_MASK_BIT_HUAWEI |
         VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
-        VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI
+        VK_PIPELINE_STAGE_2_CLUSTER_CULLING_SHADER_BIT_HUAWEI |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV
     )},
     { VK_QUEUE_COMPUTE_BIT, (
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
@@ -1691,7 +1717,8 @@ const vvl::unordered_map<VkQueueFlagBits, VkPipelineStageFlags2>& syncAllCommand
         VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
         VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
         VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
-        VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT
+        VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV
     )},
     { VK_QUEUE_PROTECTED_BIT, (
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT |
@@ -1866,6 +1893,7 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR |
         VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR |
         VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
     { VK_PIPELINE_STAGE_2_CONDITIONAL_RENDERING_BIT_EXT, (
@@ -1952,6 +1980,9 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
     { VK_PIPELINE_STAGE_2_SUBPASS_SHADER_BIT_HUAWEI, (
         VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
     )},
+    { VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV, (
+        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
+    )},
     };
     return variable;
 }
@@ -1991,6 +2022,7 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
         VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR |
         VK_PIPELINE_STAGE_2_VIDEO_ENCODE_BIT_KHR |
         VK_PIPELINE_STAGE_2_OPTICAL_FLOW_BIT_NV |
+        VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV |
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
     { VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, (
@@ -2177,6 +2209,9 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
     { VK_PIPELINE_STAGE_2_SUBPASS_SHADER_BIT_HUAWEI, (
+        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
+    )},
+    { VK_PIPELINE_STAGE_2_CONVERT_COOPERATIVE_VECTOR_MATRIX_BIT_NV, (
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT
     )},
     };

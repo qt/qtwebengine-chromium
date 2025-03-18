@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Iterable, Iterator, List, Optional, Tuple
 from crossbench.exception import TInfoStack
 from crossbench.flags.base import Flags
 from crossbench.flags.js_flags import JSFlags
-from crossbench.helper import ChangeCWD, Durations
+from crossbench.helper.cwd import ChangeCWD
+from crossbench.helper.durations import Durations
 from crossbench.helper.state import BaseState, StateMachine
 from crossbench.probes.probe_context import ProbeSessionContext
 from crossbench.probes.results import EmptyProbeResult, ProbeResultDict
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
   from crossbench.runner.timing import Timing
-  from crossbench.types import JsonDict
+  from crossbench.types import JsonDict, JsonMapping
 
 
 @enum.unique
@@ -207,8 +208,8 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
             f"browser={self.browser.unique_name}", f"session={self.index}")
 
   @property
-  def info(self) -> JsonDict:
-    info_dict = super().info
+  def info(self) -> JsonMapping:
+    info_dict = dict(super().info)
     info_dict.update({"index": self.index})
     return info_dict
 

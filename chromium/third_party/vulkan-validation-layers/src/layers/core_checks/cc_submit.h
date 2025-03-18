@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 Valve Corporation
- * Copyright (c) 2024 LunarG, Inc.
+/* Copyright (c) 2025 The Khronos Group Inc.
+ * Copyright (c) 2025 Valve Corporation
+ * Copyright (c) 2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,16 +24,16 @@
 // QueueSubmit (it will validate in submission order). This file provides support for submit validation
 // where ordering is important.
 
-class ValidationObject;
-
 namespace vvl {
 struct QueueSubmission;
 }  // namespace vvl
 
+class Logger;
+
 // Performs validationn when QueueSubmision is ready to retire.
 struct QueueSubmissionValidator {
-    const ValidationObject& error_logger;
+    const Logger &error_logger;
 
-    QueueSubmissionValidator(const ValidationObject& error_logger) : error_logger(error_logger) {}
+    QueueSubmissionValidator(const Logger &error_logger) : error_logger(error_logger) {}
     void Validate(const vvl::QueueSubmission& submission) const;
 };

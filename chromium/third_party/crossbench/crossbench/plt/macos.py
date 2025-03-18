@@ -10,14 +10,16 @@ import json
 import logging
 import plistlib
 import re
+import socket
 import traceback as tb
 from subprocess import SubprocessError
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Type
 
 import psutil
 
 from crossbench import path as pth
 from crossbench.plt.posix import PosixPlatform
+from crossbench.plt.signals import MacOSSignals
 
 
 class MacOSPlatform(PosixPlatform):
@@ -39,6 +41,10 @@ class MacOSPlatform(PosixPlatform):
   def name(self) -> str:
     return "macos"
 
+  @property
+  def signals(self) -> Type[MacOSSignals]:
+    return MacOSSignals
+
   @functools.cached_property
   def version(self) -> str:
     return self.sh_stdout("sw_vers", "-productVersion").strip()
@@ -50,18 +56,45 @@ class MacOSPlatform(PosixPlatform):
   @functools.cached_property
   def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
     brand = self.sh_stdout("sysctl", "-n", "machdep.cpu.brand_string").strip()
-    cores_info = self._get_cpu_cores_info()
-    return f"{brand} {cores_info}"
+    num_cores = self.cpu_cores
+    return f"{brand} {num_cores} cores"
 
-  def _get_cpu_cores_info(self):
+  @functools.cached_property
+  def cpu_cores(self) -> int:
+    if self.is_local:
+      return super().cpu_cores
     cores = self.sh_stdout("sysctl", "-n", "machdep.cpu.core_count").strip()
-    return f"{cores} cores"
+    return int(cores)
 
   @property
   def is_battery_powered(self) -> bool:
     if self.is_local:
       return super().is_battery_powered
     return "Battery Power" in self.sh_stdout("pmset", "-g", "batt")
+
+  def get_relative_cpu_speed(self) -> float:
+    try:
+      lines = self.sh_stdout("pmset", "-g", "therm").split()
+      for index, line in enumerate(lines):
+        if line == "CPU_Speed_Limit":
+          return int(lines[index + 2]) / 100.0
+    except SubprocessError:
+      pass
+    logging.debug("Could not get relative CPU speed: %s", tb.format_exc())
+    return 1
+
+  @functools.lru_cache(maxsize=1)
+  def system_details(self) -> Dict[str, Any]:
+    details = super().system_details()
+    details.update({
+        "system_profiler":
+            self.sh_stdout("system_profiler", "SPHardwareDataType"),
+        "sysctl_machdep_cpu":
+            self.sh_stdout("sysctl", "machdep.cpu"),
+        "sysctl_hw":
+            self.sh_stdout("sysctl", "hw"),
+    })
+    return details
 
   def _find_app_binary_path(self, app_path: pth.AnyPath) -> pth.AnyPath:
     assert app_path.suffix == ".app", f"Expected .app but got {app_path}"
@@ -161,7 +194,12 @@ class MacOSPlatform(PosixPlatform):
     if self.exists(info_plist):
       plist = plistlib.loads(self.cat_bytes(info_plist))
       if version_string := plist.get("CFBundleShortVersionString"):
-        return version_string
+        display_name = plist.get("CFBundleDisplayName")
+        if not display_name:
+          # Fallback. Apps like Firefox have no CFBundleDisplayName.
+          display_name = plist.get("CFBundleName")
+        return f"{display_name} {version_string}"
+
 
     # Backup solution use the binary (not the .app bundle) with --version.
     maybe_bin_path: Optional[pth.AnyPath] = app_or_bin
@@ -212,29 +250,6 @@ class MacOSPlatform(PosixPlatform):
       return psutil.Process(int(pid)).as_dict()
 
     return None
-
-  def get_relative_cpu_speed(self) -> float:
-    try:
-      lines = self.sh_stdout("pmset", "-g", "therm").split()
-      for index, line in enumerate(lines):
-        if line == "CPU_Speed_Limit":
-          return int(lines[index + 2]) / 100.0
-    except SubprocessError:
-      pass
-    logging.debug("Could not get relative CPU speed: %s", tb.format_exc())
-    return 1
-
-  def system_details(self) -> Dict[str, Any]:
-    details = super().system_details()
-    details.update({
-        "system_profiler":
-            self.sh_stdout("system_profiler", "SPHardwareDataType"),
-        "sysctl_machdep_cpu":
-            self.sh_stdout("sysctl", "machdep.cpu"),
-        "sysctl_hw":
-            self.sh_stdout("sysctl", "hw"),
-    })
-    return details
 
   def check_system_monitoring(self, disable: bool = False) -> bool:
     return self.check_crowdstrike(disable)
@@ -343,3 +358,11 @@ class MacOSPlatform(PosixPlatform):
 
   def screenshot(self, result_path: pth.AnyPath) -> None:
     self.sh("screencapture", "-x", result_path)
+
+  def is_port_used(self, port: int) -> bool:
+    # We need a custom solution for macos:
+    # - psutil.net_connections requires root access on macos
+    # - 'ss' is not available by default on macos
+    # This is a semi-ideal solution as it creates a temporary local server.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+      return s.connect_ex(("localhost", port)) == 0

@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import abc
+import os
+import shutil
 import urllib.parse
 from typing import (TYPE_CHECKING, Dict, Final, Iterable, Optional, Tuple, Type,
                     Union)
@@ -98,7 +100,7 @@ class FirefoxDownloader(Downloader):
     candidate = archive_candidates[0]
     assert not self._archive_path.exists(), (
         f"Archive was already downloaded: {self._archive_path}")
-    candidate.replace(self._archive_path)
+    shutil.move(os.fspath(candidate), os.fspath(self._archive_path))
 
   @abc.abstractmethod
   def _install_archive(self, archive_path: LocalPath) -> None:

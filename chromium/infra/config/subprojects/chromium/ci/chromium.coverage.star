@@ -26,6 +26,16 @@ luci.gitiles_poller(
     schedule = "0 4 * * *",
 )
 
+# Use a separate poller to trigger the webview coverage builders.
+luci.gitiles_poller(
+    name = "code-coverage-webview-gitiles-trigger",
+    bucket = "ci",
+    repo = "https://chromium.googlesource.com/chromium/src",
+    refs = [settings.ref],
+    # Trigger coverage jobs once a day at 10 am UTC(2 am PST)
+    schedule = "0 10 * * *",
+)
+
 ci.defaults.set(
     executable = ci.DEFAULT_EXECUTABLE,
     builder_group = "chromium.coverage",
@@ -65,6 +75,18 @@ def coverage_builder(**kwargs):
         **kwargs
     )
 
+def coverage_webview_builder(**kwargs):
+    return ci.builder(
+        schedule = "triggered",
+        triggered_by = ["code-coverage-webview-gitiles-trigger"],
+        # This should allow one to be pending should code coverage
+        # builds take longer.
+        triggering_policy = scheduler.greedy_batching(
+            max_concurrent_invocations = 2,
+        ),
+        **kwargs
+    )
+
 coverage_builder(
     name = "android-code-coverage",
     builder_spec = builder_config.builder_spec(
@@ -73,7 +95,7 @@ coverage_builder(
             apply_configs = ["android"],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "main_builder",
             apply_configs = [
                 "download_xr_test_apks",
                 "mb",
@@ -129,19 +151,16 @@ coverage_builder(
     use_java_coverage = True,
 )
 
-ci.builder(
+coverage_webview_builder(
     name = "android-webview-code-coverage",
     description_html = "Builder for WebView java coverage",
-    # Trigger coverage jobs once a day at 10 am UTC(2 am PST)
-    schedule = "0 10 * * *",
-    triggered_by = [],
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = ["android"],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "main_builder",
             apply_configs = [
                 "download_xr_test_apks",
                 "mb",
@@ -209,7 +228,7 @@ coverage_builder(
             ],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "x86_builder_mb",
             build_config = builder_config.build_config.RELEASE,
             target_bits = 32,
             target_platform = builder_config.target_platform.ANDROID,
@@ -325,7 +344,7 @@ coverage_builder(
             # Keep this same as android-oreo-x86-rel
             "gl_tests_validating": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o_p.gl_tests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o_p_10.gl_tests.filter",
                 ],
             ),
             # Keep this same as android-oreo-x86-rel
@@ -407,7 +426,7 @@ coverage_builder(
             ],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "main_builder",
             apply_configs = [
                 "download_xr_test_apks",
                 "mb",
@@ -532,12 +551,9 @@ coverage_builder(
     use_clang_coverage = True,
 )
 
-ci.builder(
+coverage_webview_builder(
     name = "android-webview-code-coverage-native",
     description_html = "Builder for WebView clang coverage",
-    # Trigger coverage jobs once a day at 10 am UTC(2 am PST)
-    schedule = "0 10 * * *",
-    triggered_by = [],
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
@@ -547,7 +563,7 @@ ci.builder(
             ],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "main_builder",
             apply_configs = [
                 "download_xr_test_apks",
                 "mb",
@@ -629,7 +645,7 @@ coverage_builder(
             ],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "x64_builder",
             apply_configs = [
                 "cronet_builder",
                 "mb",
@@ -695,7 +711,7 @@ coverage_builder(
             ],
         ),
         chromium_config = builder_config.chromium_config(
-            config = "android",
+            config = "x64_builder",
             apply_configs = [
                 "cronet_builder",
                 "mb",

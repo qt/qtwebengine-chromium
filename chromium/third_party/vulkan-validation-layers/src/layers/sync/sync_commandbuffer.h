@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,15 @@
 #pragma once
 
 #include "sync/sync_renderpass.h"
+#include "sync/sync_reporting.h"
 #include "state_tracker/cmd_buffer_state.h"
 
+struct ReportKeyValues;
 class SyncValidator;
+
+namespace syncval {
+class ErrorMessages;
+}  // namespace syncval
 
 class AlternateResourceUsage {
   public:
@@ -28,6 +34,7 @@ class AlternateResourceUsage {
         using Record = std::unique_ptr<RecordBase>;
         virtual Record MakeRecord() const = 0;
         virtual std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const = 0;
+        virtual vvl::Func GetCommand() const = 0;
         virtual ~RecordBase() {}
     };
 
@@ -41,6 +48,7 @@ class AlternateResourceUsage {
     FormatterState Formatter(const SyncValidator &sync_state) const { return FormatterState(sync_state, *this); };
 
     std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const { return record_->Format(out, sync_state); };
+    vvl::Func GetCommand() const { return record_->GetCommand(); }
     AlternateResourceUsage() = default;
     AlternateResourceUsage(const RecordBase &record) : record_(record.MakeRecord()) {}
     AlternateResourceUsage(const AlternateResourceUsage &other) : record_() {
@@ -175,15 +183,11 @@ struct DebugNameProvider {
 };
 
 // Command execution context is the base class for command buffer and queue contexts
-// Preventing unintented leakage of subclass specific state, storing enough information
-// for message logging.
-// TODO: determine where to draw the design split for tag tracking (is there anything command to Queues and CB's)
-class CommandExecutionContext : public SyncValidationInfo {
+class CommandExecutionContext {
   public:
     using AccessLog = std::vector<ResourceUsageRecord>;
     using CommandBufferSet = std::vector<std::shared_ptr<const vvl::CommandBuffer>>;
-    CommandExecutionContext(const SyncValidator *sync_validator, VkQueueFlags queue_flags)
-        : SyncValidationInfo(sync_validator, queue_flags) {}
+    CommandExecutionContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
     virtual ~CommandExecutionContext() = default;
 
     // Are imported command buffers Submitted (QueueBatchContext), or Executed (CommandBufferAccessContext)
@@ -194,11 +198,11 @@ class CommandExecutionContext : public SyncValidationInfo {
 
     virtual ExecutionType Type() const = 0;
 
-    const char *ExecutionTypeString() {
+    const char *ExecutionTypeString() const {
         const char *type_string[] = {"Executed", "Submitted"};
         return type_string[Type()];
     }
-    const char *ExecutionUsageString() {
+    const char *ExecutionUsageString() const {
         const char *usage_string[] = {"executed_usage", "submitted_usage"};
         return usage_string[Type()];
     }
@@ -208,32 +212,25 @@ class CommandExecutionContext : public SyncValidationInfo {
     virtual const AccessContext *GetCurrentAccessContext() const = 0;
     virtual const SyncEventsContext *GetCurrentEventsContext() const = 0;
     virtual QueueId GetQueueId() const = 0;
-
     virtual VulkanTypedHandle Handle() const = 0;
+    virtual std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const = 0;
+    virtual void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const = 0;
 
-    virtual void BeginRenderPassReplaySetup(ReplayState &replay, const SyncOpBeginRenderPass &begin_op) {
-        // Must override if use by derived type is valid
-        assert(false);
-    }
-
-    virtual void NextSubpassReplaySetup(ReplayState &replay) {
-        // Must override if use by derived type is valid
-        assert(false);
-    }
-
-    virtual void EndRenderPassReplayCleanup(ReplayState &replay) {
-        // Must override if use by derived type is valid
-        assert(false);
-    }
-
+    std::string FormatHazard(const HazardResult &hazard, ReportKeyValues &key_values) const;
     bool ValidForSyncOps() const;
+    const SyncValidator &GetSyncState() const { return sync_state_; }
+
+  protected:
+    const SyncValidator &sync_state_;
+    const syncval::ErrorMessages &error_messages_;
+    const VkQueueFlags queue_flags_;
 };
 
 class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProvider {
   public:
     using SyncOpPointer = std::shared_ptr<SyncOpBase>;
-    constexpr static SyncStageAccessIndex kResolveRead = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_READ;
-    constexpr static SyncStageAccessIndex kResolveWrite = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE;
+    constexpr static SyncAccessIndex kResolveRead = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_READ;
+    constexpr static SyncAccessIndex kResolveWrite = SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE;
     constexpr static SyncOrdering kColorResolveOrder = SyncOrdering::kColorAttachment;
     // Although depth resolve runs on the color attachment output stage and uses color accesses, depth accesses
     // still participate in the ordering. That's why using raster and not only color attachment ordering
@@ -268,9 +265,11 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
 
     void Reset();
 
-    std::string FormatUsage(ResourceUsageTagEx tag_ex) const override;
-    std::string FormatUsage(const char *usage_string,
-                            const ResourceFirstAccess &access) const;  //  Only command buffers have "first usage"
+    ReportUsageInfo GetReportUsageInfo(ResourceUsageTagEx tag_ex) const;
+    std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const override;
+    void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const override;
+    std::string FormatUsage(const char *usage_string, const ResourceFirstAccess &access,
+                            ReportKeyValues &key_values) const;  //  Only command buffers have "first usage"
     AccessContext *GetCurrentAccessContext() override { return current_context_; }
     SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
     const AccessContext *GetCurrentAccessContext() const override { return current_context_; }
@@ -307,6 +306,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     void RecordExecutedCommandBuffer(const CommandBufferAccessContext &recorded_context);
     void ResolveExecutedCommandBuffer(const AccessContext &recorded_context, ResourceUsageTag offset);
 
+    // TODO: what about using queue_flags directly from base class?
     VkQueueFlags GetQueueFlags() const { return cb_state_ ? cb_state_->GetQueueFlags() : 0; }
 
     ExecutionType Type() const override { return kExecuted; }
@@ -352,7 +352,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // DebugNameProvider
     std::string GetDebugRegionName(const ResourceUsageRecord &record) const override;
 
-    std::vector<vvl::CommandBuffer::LabelCommand> &GetProxyLabelCommands() { return proxy_label_commands_; }
+    std::vector<vvl::LabelCommand> &GetProxyLabelCommands() { return proxy_label_commands_; }
 
   private:
     CommandBufferAccessContext(const SyncValidator &sync_validator, VkQueueFlags queue_flags);
@@ -401,7 +401,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
     // Secondary buffer validation uses proxy context and does local update (imitates Record).
     // Because in this case PreRecord is not called, the label state is not updated. We make
     // a copy of label state to update it locally together with proxy context.
-    std::vector<vvl::CommandBuffer::LabelCommand> proxy_label_commands_;
+    std::vector<vvl::LabelCommand> proxy_label_commands_;
 };
 
 namespace syncval_state {
@@ -419,20 +419,3 @@ class CommandBuffer : public vvl::CommandBuffer {
     void Reset(const Location &loc) override;
 };
 }  // namespace syncval_state
-
-// Message Creation Helpers
-struct SyncNodeFormatter {
-    const DebugReport *debug_report;
-    const vvl::StateObject *node;
-    const char *label;
-
-    SyncNodeFormatter(const SyncValidator &sync_state, const vvl::CommandBuffer *cb_state);
-    SyncNodeFormatter(const SyncValidator &sync_state, const vvl::Image *image);
-    SyncNodeFormatter(const SyncValidator &sync_state, const vvl::Queue *q_state);
-    SyncNodeFormatter(const SyncValidator &sync_state, const vvl::StateObject *state_object, const char *label_ = nullptr);
-};
-
-std::ostream &operator<<(std::ostream &out, const SyncNodeFormatter &formatter);
-std::ostream &operator<<(std::ostream &out, const HandleRecord::FormatterState &formatter);
-std::ostream &operator<<(std::ostream &out, const ResourceUsageRecord::FormatterState &formatter);
-std::ostream &operator<<(std::ostream &out, const HazardResult::HazardState &hazard);

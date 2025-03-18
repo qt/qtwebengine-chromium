@@ -710,7 +710,7 @@ void InstructionSelectorT<TurbofanAdapter>::VisitLoadTransform(Node* node) {
     default:
       UNIMPLEMENTED();
   }
-  if (params.kind == MemoryAccessKind::kProtected) {
+  if (params.kind == MemoryAccessKind::kProtectedByTrapHandler) {
     opcode |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
 
@@ -1072,7 +1072,8 @@ void InstructionSelectorT<Adapter>::VisitStore(typename Adapter::node_t node) {
 
   if (store_view.is_store_trap_on_null()) {
     code |= AccessModeField::encode(kMemoryAccessProtectedNullDereference);
-  } else if (store_view.access_kind() == MemoryAccessKind::kProtected) {
+  } else if (store_view.access_kind() ==
+             MemoryAccessKind::kProtectedByTrapHandler) {
     code |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
 
@@ -2067,6 +2068,18 @@ void InstructionSelectorT<Adapter>::VisitTruncateFloat64ToInt64(node_t node) {
 }
 
 template <typename Adapter>
+void InstructionSelectorT<Adapter>::VisitTruncateFloat64ToFloat16RawBits(
+    node_t node) {
+  UNIMPLEMENTED();
+}
+
+template <typename Adapter>
+void InstructionSelectorT<Adapter>::VisitChangeFloat16RawBitsToFloat64(
+    node_t node) {
+  UNIMPLEMENTED();
+}
+
+template <typename Adapter>
 void InstructionSelectorT<Adapter>::VisitTryTruncateFloat32ToInt64(
     node_t node) {
   Loong64OperandGeneratorT<Adapter> g(this);
@@ -2682,15 +2695,11 @@ void InstructionSelectorT<Adapter>::VisitFloat64Ieee754Unop(
 template <typename Adapter>
 void InstructionSelectorT<Adapter>::EmitMoveParamToFPR(node_t node,
                                                        int32_t index) {
-  if constexpr (Adapter::IsTurboshaft) {
-    UNIMPLEMENTED();
-  } else {
-    OperandGenerator g(this);
-    int count = linkage()->GetParameterLocation(index).GetLocation();
-    InstructionOperand out_op = g.TempRegister(-count);
-    Emit(kArchNop, out_op);
-    Emit(kLoong64BitcastLD, g.DefineAsRegister(node), out_op);
-  }
+  OperandGenerator g(this);
+  int count = linkage()->GetParameterLocation(index).GetLocation();
+  InstructionOperand out_op = g.TempRegister(-count);
+  Emit(kArchNop, out_op);
+  Emit(kLoong64BitcastLD, g.DefineAsRegister(node), out_op);
 }
 
 template <typename Adapter>
@@ -3184,7 +3193,7 @@ void VisitAtomicStore(InstructionSelectorT<Adapter>* selector,
     }
   }
 
-  if (store_params.kind() == MemoryAccessKind::kProtected) {
+  if (store_params.kind() == MemoryAccessKind::kProtectedByTrapHandler) {
     code |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
 
@@ -3226,7 +3235,7 @@ void VisitAtomicExchange(InstructionSelectorT<Adapter>* selector,
   temp[2] = g.TempRegister();
   InstructionCode code = opcode | AddressingModeField::encode(addressing_mode) |
                          AtomicWidthField::encode(width);
-  if (access_kind == MemoryAccessKind::kProtected) {
+  if (access_kind == MemoryAccessKind::kProtectedByTrapHandler) {
     code |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
   selector->Emit(code, 1, outputs, input_count, inputs, 3, temp);
@@ -3260,7 +3269,7 @@ void VisitAtomicCompareExchange(InstructionSelectorT<Adapter>* selector,
   temp[2] = g.TempRegister();
   InstructionCode code = opcode | AddressingModeField::encode(addressing_mode) |
                          AtomicWidthField::encode(width);
-  if (access_kind == MemoryAccessKind::kProtected) {
+  if (access_kind == MemoryAccessKind::kProtectedByTrapHandler) {
     code |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
   selector->Emit(code, 1, outputs, input_count, inputs, 3, temp);
@@ -3292,7 +3301,7 @@ void VisitAtomicBinop(InstructionSelectorT<Adapter>* selector,
   temps[3] = g.TempRegister();
   InstructionCode code = opcode | AddressingModeField::encode(addressing_mode) |
                          AtomicWidthField::encode(width);
-  if (access_kind == MemoryAccessKind::kProtected) {
+  if (access_kind == MemoryAccessKind::kProtectedByTrapHandler) {
     code |= AccessModeField::encode(kMemoryAccessProtectedMemOutOfBounds);
   }
   selector->Emit(code, 1, outputs, input_count, inputs, 4, temps);

@@ -9,13 +9,13 @@ import datetime as dt
 import itertools
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
 
-from crossbench.benchmarks.base import BenchmarkProbeMixin
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.motionmark.base import MotionMarkBenchmark
-from crossbench.helper import update_url_query
+from crossbench.helper import url_helper
 from crossbench.probes.helper import Flatten
-from crossbench.probes.json import JsonResultProbe
+from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import Metric, MetricsMerger
 from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.stories.press_benchmark import PressBenchmarkStory
@@ -43,17 +43,10 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
   MotionMark-specific Probe.
   Extracts all MotionMark times and scores.
   """
-  JS = """
-    return window.benchmarkRunnerClient.results.results;
-  """
 
-  def to_json(self, actions: Actions) -> Json:
-    return actions.js(self.JS)
-
-  def flatten_json_data(self, json_data: List) -> Json:
-    assert isinstance(json_data, list) and len(json_data) == 1, (
-        "Motion12MarkProbe requires a results list.")
-    return Flatten(json_data[0], key_fn=_clean_up_path_segments).data
+  @abc.abstractmethod
+  def get_context_cls(self) -> Type[MotionMark1ProbeContext]:
+    pass
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     merged = MetricsMerger.merge_json_list(
@@ -105,6 +98,20 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
   def _valid_metric_key(self, metric_key: str) -> bool:
     parts = metric_key.split("/")
     return len(parts) == 2 or parts[-1] == "score"
+
+
+class MotionMark1ProbeContext(JsonResultProbeContext):
+  JS = """
+    return window.benchmarkRunnerClient.results.results;
+  """
+
+  def to_json(self, actions: Actions) -> Json:
+    return actions.js(self.JS)
+
+  def flatten_json_data(self, json_data: List) -> Json:
+    assert isinstance(json_data, list) and len(json_data) == 1, (
+        "Motion12MarkProbe requires a results list.")
+    return Flatten(json_data[0], key_fn=_clean_up_path_segments).data
 
 
 class MotionMark1Story(PressBenchmarkStory):
@@ -223,7 +230,8 @@ class MotionMark1Story(PressBenchmarkStory):
 
   def prepare_test_url(self) -> str:
     if (url_params := self.url_params) or not self.has_default_substories:
-      updated_url = update_url_query(f"{self.url}/developer.html", url_params)
+      updated_url = url_helper.update_url_query(f"{self.url}/developer.html",
+                                                url_params)
       logging.info("CUSTOM URL: %s", updated_url)
       return updated_url
     return self.url

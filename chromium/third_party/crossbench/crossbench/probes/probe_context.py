@@ -59,14 +59,14 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     assert not self._is_active
     assert not self._is_success
 
-    with self.result_origin.exception_handler(f"Probe {self.name} start"):
+    with self.result_origin.exception_capture(f"Probe {self.name} start"):
       self._is_active = True
       self.start()
 
     try:
       yield
     finally:
-      with self.result_origin.exception_handler(f"Probe {self.name} stop"):
+      with self.result_origin.exception_capture(f"Probe {self.name} stop"):
         self.stop()
         self._is_success = True
         assert self._stop_time is None
@@ -157,10 +157,15 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     """Helper to create LocalProbeResult."""
     return LocalProbeResult(url=url, file=file, **kwargs)
 
+  def empty_result(self) -> EmptyProbeResult:
+    return EmptyProbeResult()
+
   def setup(self) -> None:
     """
     Called before starting the browser, typically used to set run-specific
     browser flags.
+    If an error is thrown here, *none* of the other hooks
+    (start, stop, teardown) will be called.
     """
 
   @abc.abstractmethod
@@ -230,7 +235,7 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
     """
     Called immediately before starting the given Run, after the browser started.
     This method should have as little overhead as possible. If possible,
-    delegate heavy computation to the "SetUp" method.
+    delegate heavy computation to the "setup" method.
     """
 
   def start_story_run(self) -> None:
@@ -259,13 +264,14 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
   def teardown(self) -> ProbeResult:
     """
     Called after stopping all probes and shutting down the browser.
+    Not called if an error was thrown in the setup method.
     Returns
     - None if no data was collected
     - If Data was collected:
       - Either a path (or list of paths) to results file
       - Directly a primitive json-serializable object containing the data
     """
-    return EmptyProbeResult()
+    return self.empty_result()
 
 
 class ProbeSessionContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):

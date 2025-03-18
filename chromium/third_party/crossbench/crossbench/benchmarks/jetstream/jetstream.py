@@ -8,11 +8,13 @@ import abc
 import json
 import logging
 from collections import defaultdict
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    cast)
+from typing import (TYPE_CHECKING, Any, Dict, Final, List, Optional, Sequence,
+                    Tuple, Type, cast)
 
-from crossbench.benchmarks.base import BenchmarkProbeMixin, PressBenchmark
-from crossbench.probes.json import JsonResultProbe
+from crossbench.benchmarks.base import PressBenchmark
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
+from crossbench.parse import ObjectParser
+from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import (CSVFormatter, Metric, MetricsMerger,
                                       geomean)
 from crossbench.probes.results import ProbeResult, ProbeResultDict
@@ -36,55 +38,16 @@ class JetStreamProbe(
   JetStream-specific Probe.
   Extracts all JetStream times and scores.
   """
-  FLATTEN: bool = False
-  JS: str = """
-  let results = Object.create(null);
-  let benchmarks = []
-  for (let benchmark of JetStream.benchmarks) {
-    const data = { score: benchmark.score };
-    if ("worst4" in benchmark) {
-      data.firstIteration = benchmark.firstIteration;
-      data.average = benchmark.average;
-      data.worst4 = benchmark.worst4;
-    } else if ("runTime" in benchmark) {
-      data.runTime = benchmark.runTime;
-      data.startupTime = benchmark.startupTime;
-    } else if ("mainRun" in benchmark) {
-      data.mainRun = benchmark.mainRun;
-      data.stdlib = benchmark.stdlib;
-    }
-    results[benchmark.plan.name] = data;
-    benchmarks.push(benchmark);
-  };
-  return results;
-"""
+
+  TOTAL_METRIC_KEY: Final[str] = "Total/score"
 
   @property
   def jetstream(self) -> JetStreamBenchmark:
     return cast(JetStreamBenchmark, self.benchmark)
 
-  def to_json(self, actions: Actions) -> Dict[str, float]:
-    data = actions.js(self.JS)
-    assert len(data) > 0, "No benchmark data generated"
-    return data
-
-  def process_json_data(self, json_data: Dict[str, Any]) -> Dict[str, Any]:
-    assert "Total" not in json_data, (
-        "JSON result data already contains a ['Total'] entry.")
-    json_data["Total"] = self._compute_total_metrics(json_data)
-    return json_data
-
-  def _compute_total_metrics(self, json_data: Dict[str,
-                                                   Any]) -> Dict[str, float]:
-    # Manually add all total scores
-    accumulated_metrics = defaultdict(list)
-    for _, metrics in json_data.items():
-      for metric, value in metrics.items():
-        accumulated_metrics[metric].append(value)
-    total: Dict[str, float] = {}
-    for metric, values in accumulated_metrics.items():
-      total[metric] = geomean(values)
-    return total
+  @abc.abstractmethod
+  def get_context_cls(self) -> Type[JetStreamProbeContext]:
+    pass
 
   def log_run_result(self, run: Run) -> None:
     self._log_result(run.results, single_result=True)
@@ -118,8 +81,8 @@ class JetStreamProbe(
       table[metric_key].append(
           Metric.format(metric_value["average"], metric_value["stddev"]))
       # Separate runs don't produce a score
-    if "Total/score" in metrics:
-      metric_value = metrics["Total/score"]
+    if self.TOTAL_METRIC_KEY in metrics:
+      metric_value = metrics[self.TOTAL_METRIC_KEY]
       table["Score"].append(
           Metric.format(metric_value["average"], metric_value["stddev"]))
 
@@ -127,7 +90,21 @@ class JetStreamProbe(
     merged = MetricsMerger.merge_json_list(
         story_group.results[self].json
         for story_group in group.repetitions_groups)
+    # We discard the score when merging separate line item runs, recompute it!
+    if self.TOTAL_METRIC_KEY not in merged.data:
+      merged.data[self.TOTAL_METRIC_KEY] = self._compute_total_score(merged)
     return self.write_group_result(group, merged, JetStreamCSVFormatter)
+
+  def _compute_total_score(self, merged: MetricsMerger) -> Metric:
+    line_item_scores: List[List[float]] = []
+    for key, metric in merged.data.items():
+      if self._is_valid_metric_key(key):
+        line_item_scores.append(metric.values)
+    total_score = Metric()
+    for iteration_line_items_score_values in zip(*line_item_scores):
+      iteration_score = Metric(iteration_line_items_score_values).geomean
+      total_score.append(iteration_score)
+    return total_score
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     return self.merge_browsers_json_list(group).merge(
@@ -141,7 +118,60 @@ class JetStreamProbe(
       return True
     return parts[0] != "Total" and parts[1] == "score"
 
+
+class JetStreamProbeContext(JsonResultProbeContext):
+  FLATTEN: bool = False
+  JS: str = """
+  let results = Object.create(null);
+  let benchmarks = []
+  for (let benchmark of JetStream.benchmarks) {
+    const data = { score: benchmark.score };
+    if ("worst4" in benchmark) {
+      data.firstIteration = benchmark.firstIteration;
+      data.average = benchmark.average;
+      data.worst4 = benchmark.worst4;
+    } else if ("runTime" in benchmark) {
+      data.runTime = benchmark.runTime;
+      data.startupTime = benchmark.startupTime;
+    } else if ("mainRun" in benchmark) {
+      data.mainRun = benchmark.mainRun;
+      data.stdlib = benchmark.stdlib;
+    }
+    results[benchmark.plan.name] = data;
+    benchmarks.push(benchmark);
+  };
+  return JSON.stringify(results);
+"""
+
+  def to_json(self, actions: Actions) -> Dict[str, float]:
+    # Use serialized json as transport format to preserve object key order.
+    json_payload = actions.js(self.JS)
+    json_data = json.loads(json_payload)
+    ObjectParser.non_empty_dict(json_data, f"{self.probe.name} metrics")
+    return json_data
+
+  def process_json_data(self, json_data: Json) -> Json:
+    assert isinstance(json_data, dict)
+    assert "Total" not in json_data, (
+        "JSON result data already contains a ['Total'] entry.")
+    json_data["Total"] = self._compute_total_metrics(json_data)
+    return json_data
+
+  def _compute_total_metrics(self, json_data: Dict[str,
+                                                   Any]) -> Dict[str, float]:
+    # Manually add all total scores
+    accumulated_metrics = defaultdict(list)
+    for _, metrics in json_data.items():
+      for metric, value in metrics.items():
+        accumulated_metrics[metric].append(value)
+    total: Dict[str, float] = {}
+    for metric, values in accumulated_metrics.items():
+      total[metric] = geomean(values)
+    return total
+
+
 class JetStreamCSVFormatter(CSVFormatter):
+  TOTAL_METRIC_KEY: Final[str] = JetStreamProbe.TOTAL_METRIC_KEY
 
   def format_items(self, data: Dict[str, Json],
                    sort: bool) -> Sequence[Tuple[str, Json]]:
@@ -149,12 +179,11 @@ class JetStreamCSVFormatter(CSVFormatter):
     if sort:
       items.sort()
     # Copy all /score items to the top:
-    total_key = "Total/score"
     score_items = []
     for key, value in items:
-      if key != total_key and key.endswith("/score"):
+      if key != self.TOTAL_METRIC_KEY and key.endswith("/score"):
         score_items.append((key, value))
-    total_item = [(total_key, data[total_key])]
+    total_item = [(self.TOTAL_METRIC_KEY, data[self.TOTAL_METRIC_KEY])]
     return total_item + score_items + items
 
 

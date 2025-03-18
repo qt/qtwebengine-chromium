@@ -3,8 +3,8 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2023-2024 Google Inc.
- * Copyright (c) 2023-2024 LunarG, Inc.
+ * Copyright (c) 2023-2025 Google Inc.
+ * Copyright (c) 2023-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,6 +86,8 @@ struct DeviceFeatures {
     bool bufferDeviceAddressEXT;
     // VkPhysicalDeviceBufferDeviceAddressFeaturesEXT
     bool bufferDeviceAddressMultiDeviceEXT;
+    // VkPhysicalDeviceClusterAccelerationStructureFeaturesNV
+    bool clusterAccelerationStructure;
     // VkPhysicalDeviceClusterCullingShaderFeaturesHUAWEI
     bool clustercullingShader;
     // VkPhysicalDeviceClusterCullingShaderFeaturesHUAWEI
@@ -124,6 +126,10 @@ struct DeviceFeatures {
     bool cooperativeMatrix;
     // VkPhysicalDeviceCooperativeMatrixFeaturesKHR, VkPhysicalDeviceCooperativeMatrixFeaturesNV
     bool cooperativeMatrixRobustBufferAccess;
+    // VkPhysicalDeviceCooperativeVectorFeaturesNV
+    bool cooperativeVector;
+    // VkPhysicalDeviceCooperativeVectorFeaturesNV
+    bool cooperativeVectorTraining;
     // VkPhysicalDeviceCopyMemoryIndirectFeaturesNV
     bool indirectCopy;
     // VkPhysicalDeviceCornerSampledImageFeaturesNV
@@ -152,7 +158,7 @@ struct DeviceFeatures {
     bool leastRepresentableValueForceUnormRepresentation;
     // VkPhysicalDeviceDepthClampControlFeaturesEXT
     bool depthClampControl;
-    // VkPhysicalDeviceDepthClampZeroOneFeaturesEXT
+    // VkPhysicalDeviceDepthClampZeroOneFeaturesKHR
     bool depthClampZeroOne;
     // VkPhysicalDeviceDepthClipControlFeaturesEXT
     bool depthClipControl;
@@ -230,7 +236,7 @@ struct DeviceFeatures {
     bool displacementMicromap;
     // VkPhysicalDeviceDynamicRenderingFeatures, VkPhysicalDeviceVulkan13Features
     bool dynamicRendering;
-    // VkPhysicalDeviceDynamicRenderingLocalReadFeaturesKHR
+    // VkPhysicalDeviceDynamicRenderingLocalReadFeatures, VkPhysicalDeviceVulkan14Features
     bool dynamicRenderingLocalRead;
     // VkPhysicalDeviceDynamicRenderingUnusedAttachmentsFeaturesEXT
     bool dynamicRenderingUnusedAttachments;
@@ -460,13 +466,13 @@ struct DeviceFeatures {
     bool primitiveFragmentShadingRate;
     // VkPhysicalDeviceFrameBoundaryFeaturesEXT
     bool frameBoundary;
-    // VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR
+    // VkPhysicalDeviceGlobalPriorityQueryFeatures, VkPhysicalDeviceVulkan14Features
     bool globalPriorityQuery;
     // VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT
     bool graphicsPipelineLibrary;
     // VkPhysicalDeviceHdrVividFeaturesHUAWEI
     bool hdrVivid;
-    // VkPhysicalDeviceHostImageCopyFeaturesEXT
+    // VkPhysicalDeviceHostImageCopyFeatures, VkPhysicalDeviceVulkan14Features
     bool hostImageCopy;
     // VkPhysicalDeviceHostQueryResetFeatures, VkPhysicalDeviceVulkan12Features
     bool hostQueryReset;
@@ -496,7 +502,7 @@ struct DeviceFeatures {
     bool minLod;
     // VkPhysicalDeviceImagelessFramebufferFeatures, VkPhysicalDeviceVulkan12Features
     bool imagelessFramebuffer;
-    // VkPhysicalDeviceIndexTypeUint8FeaturesKHR
+    // VkPhysicalDeviceIndexTypeUint8Features, VkPhysicalDeviceVulkan14Features
     bool indexTypeUint8;
     // VkPhysicalDeviceInheritedViewportScissorFeaturesNV
     bool inheritedViewportScissor2D;
@@ -510,28 +516,30 @@ struct DeviceFeatures {
     bool legacyDithering;
     // VkPhysicalDeviceLegacyVertexAttributesFeaturesEXT
     bool legacyVertexAttributes;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool bresenhamLines;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool rectangularLines;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool smoothLines;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool stippledBresenhamLines;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool stippledRectangularLines;
-    // VkPhysicalDeviceLineRasterizationFeaturesKHR
+    // VkPhysicalDeviceLineRasterizationFeatures, VkPhysicalDeviceVulkan14Features
     bool stippledSmoothLines;
     // VkPhysicalDeviceLinearColorAttachmentFeaturesNV
     bool linearColorAttachment;
     // VkPhysicalDeviceMaintenance4Features, VkPhysicalDeviceVulkan13Features
     bool maintenance4;
-    // VkPhysicalDeviceMaintenance5FeaturesKHR
+    // VkPhysicalDeviceMaintenance5Features, VkPhysicalDeviceVulkan14Features
     bool maintenance5;
-    // VkPhysicalDeviceMaintenance6FeaturesKHR
+    // VkPhysicalDeviceMaintenance6Features, VkPhysicalDeviceVulkan14Features
     bool maintenance6;
     // VkPhysicalDeviceMaintenance7FeaturesKHR
     bool maintenance7;
+    // VkPhysicalDeviceMaintenance8FeaturesKHR
+    bool maintenance8;
     // VkPhysicalDeviceMapMemoryPlacedFeaturesEXT
     bool memoryMapPlaced;
     // VkPhysicalDeviceMapMemoryPlacedFeaturesEXT
@@ -586,6 +594,8 @@ struct DeviceFeatures {
     bool opticalFlow;
     // VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT
     bool pageableDeviceLocalMemory;
+    // VkPhysicalDevicePartitionedAccelerationStructureFeaturesNV
+    bool partitionedAccelerationStructure;
     // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
     bool dynamicPipelineLayout;
     // VkPhysicalDevicePerStageDescriptorSetFeaturesNV
@@ -602,11 +612,13 @@ struct DeviceFeatures {
     bool pipelineExecutableInfo;
     // VkPhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT
     bool pipelineLibraryGroupHandles;
+    // VkPhysicalDevicePipelineOpacityMicromapFeaturesARM
+    bool pipelineOpacityMicromap;
     // VkPhysicalDevicePipelinePropertiesFeaturesEXT
     bool pipelinePropertiesIdentifier;
-    // VkPhysicalDevicePipelineProtectedAccessFeaturesEXT
+    // VkPhysicalDevicePipelineProtectedAccessFeatures, VkPhysicalDeviceVulkan14Features
     bool pipelineProtectedAccess;
-    // VkPhysicalDevicePipelineRobustnessFeaturesEXT
+    // VkPhysicalDevicePipelineRobustnessFeatures, VkPhysicalDeviceVulkan14Features
     bool pipelineRobustness;
     // VkPhysicalDevicePortabilitySubsetFeaturesKHR
     bool constantAlphaColorBlendFactors;
@@ -678,6 +690,10 @@ struct DeviceFeatures {
     bool rayQuery;
     // VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV
     bool rayTracingInvocationReorder;
+    // VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV
+    bool linearSweptSpheres;
+    // VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV
+    bool spheres;
     // VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR
     bool rayTracingMaintenance1;
     // VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR
@@ -790,13 +806,13 @@ struct DeviceFeatures {
     bool shaderEnqueue;
     // VkPhysicalDeviceShaderEnqueueFeaturesAMDX
     bool shaderMeshEnqueue;
-    // VkPhysicalDeviceShaderExpectAssumeFeaturesKHR
+    // VkPhysicalDeviceShaderExpectAssumeFeatures, VkPhysicalDeviceVulkan14Features
     bool shaderExpectAssume;
     // VkPhysicalDeviceShaderFloat16Int8Features, VkPhysicalDeviceVulkan12Features
     bool shaderFloat16;
     // VkPhysicalDeviceShaderFloat16Int8Features, VkPhysicalDeviceVulkan12Features
     bool shaderInt8;
-    // VkPhysicalDeviceShaderFloatControls2FeaturesKHR
+    // VkPhysicalDeviceShaderFloatControls2Features, VkPhysicalDeviceVulkan14Features
     bool shaderFloatControls2;
     // VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT
     bool shaderImageInt64Atomics;
@@ -824,9 +840,9 @@ struct DeviceFeatures {
     bool shaderSMBuiltins;
     // VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures, VkPhysicalDeviceVulkan12Features
     bool shaderSubgroupExtendedTypes;
-    // VkPhysicalDeviceShaderSubgroupRotateFeaturesKHR
+    // VkPhysicalDeviceShaderSubgroupRotateFeatures, VkPhysicalDeviceVulkan14Features
     bool shaderSubgroupRotate;
-    // VkPhysicalDeviceShaderSubgroupRotateFeaturesKHR
+    // VkPhysicalDeviceShaderSubgroupRotateFeatures, VkPhysicalDeviceVulkan14Features
     bool shaderSubgroupRotateClustered;
     // VkPhysicalDeviceShaderSubgroupUniformControlFlowFeaturesKHR
     bool shaderSubgroupUniformControlFlow;
@@ -872,14 +888,22 @@ struct DeviceFeatures {
     bool variablePointers;
     // VkPhysicalDeviceVariablePointersFeatures, VkPhysicalDeviceVulkan11Features
     bool variablePointersStorageBuffer;
-    // VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR
+    // VkPhysicalDeviceVertexAttributeDivisorFeatures, VkPhysicalDeviceVulkan14Features
     bool vertexAttributeInstanceRateDivisor;
-    // VkPhysicalDeviceVertexAttributeDivisorFeaturesKHR
+    // VkPhysicalDeviceVertexAttributeDivisorFeatures, VkPhysicalDeviceVulkan14Features
     bool vertexAttributeInstanceRateZeroDivisor;
+    // VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT
+    bool vertexAttributeRobustness;
     // VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT
     bool vertexInputDynamicState;
+    // VkPhysicalDeviceVideoEncodeAV1FeaturesKHR
+    bool videoEncodeAV1;
+    // VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR
+    bool videoEncodeQuantizationMap;
     // VkPhysicalDeviceVideoMaintenance1FeaturesKHR
     bool videoMaintenance1;
+    // VkPhysicalDeviceVideoMaintenance2FeaturesKHR
+    bool videoMaintenance2;
     // VkPhysicalDeviceVulkan12Features
     bool descriptorIndexing;
     // VkPhysicalDeviceVulkan12Features
@@ -902,6 +926,8 @@ struct DeviceFeatures {
     bool vulkanMemoryModelDeviceScope;
     // VkPhysicalDeviceVulkan13Features, VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures
     bool shaderZeroInitializeWorkgroupMemory;
+    // VkPhysicalDeviceVulkan14Features
+    bool pushDescriptor;
     // VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR
     bool workgroupMemoryExplicitLayout;
     // VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR

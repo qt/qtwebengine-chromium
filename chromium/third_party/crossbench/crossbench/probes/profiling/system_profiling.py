@@ -4,85 +4,37 @@
 
 from __future__ import annotations
 
-import abc
-import atexit
-import enum
-import io
-import json
 import logging
-import multiprocessing
 import shlex
-import signal
-import subprocess
-import time
-from functools import cached_property
-from typing import (TYPE_CHECKING, Any, Dict, Final, Iterable, List, Optional,
-                    Sequence, Tuple, Union, cast)
+from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Sequence,
+                    Tuple, Union, cast)
 
-from crossbench import helper
 from crossbench import path as pth
 from crossbench import plt
-from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chrome.version import ChromeVersion
-from crossbench.browsers.chromium.chromium import Chromium
-from crossbench.compat import StrEnumWithHelp
+from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
+from crossbench.helper import fs_helper
 from crossbench.parse import NumberParser, ObjectParser
-from crossbench.plt.base import ListCmdArgs
-from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
+from crossbench.probes.probe import (Probe, ProbeConfigParser,
                                      ProbeIncompatibleBrowser, ProbeKeyT)
+from crossbench.probes.profiling.context.android import AndroidProfilingContext
+from crossbench.probes.profiling.context.linux import LinuxProfilingContext
+from crossbench.probes.profiling.context.macos import MacOSProfilingContext
+from crossbench.probes.profiling.enum import (CallGraphMode, CleanupMode,
+                                              TargetMode)
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.v8.log import V8LogProbe
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
-  from crossbench.probes.results import ProbeResult
+  from crossbench.probes.profiling.context.base import ProfilingContext
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
-
-
-@enum.unique
-class CleanupMode(StrEnumWithHelp):
-
-  @classmethod
-  def _missing_(cls, value) -> Optional[CleanupMode]:
-    if value is True:
-      return CleanupMode.ALWAYS
-    if value is False:
-      return CleanupMode.NEVER
-    return super()._missing_(value)
-
-  ALWAYS = ("always", "Always clean up temp files")
-  AUTO = ("auto", "Best-guess auto-cleanup")
-  NEVER = ("never", "Always clean up temp files")
-
-
-@enum.unique
-class TargetMode(StrEnumWithHelp):
-  RENDERER_MAIN_ONLY = ("renderer_main_only",
-                        "Profile Renderer Main thread only")
-  RENDERER_PROCESS_ONLY = ("renderer_process_only",
-                           "Profile Renderer process only")
-  BROWSER_APP_ONLY = ("browser_app_only",
-                      "Profile all processes of the Browser App only")
-  SYSTEM_WIDE = ("system_wide", "Run system-wide profiling")
-
-
-@enum.unique
-class CallGraphMode(StrEnumWithHelp):
-  # Refer to the documentation below for more details and comparison
-  # between these options:
-  # https://android.googlesource.com/platform/system/extras/+/master/simpleperf/doc/README.md.
-  NO_CALL_GRAPH = ("no_call_graph", "Do not record a call graph")
-  DWARF = ("dwarf", "Run DWARF-based unwinding unwinding")
-  FRAME_POINTER = ("frame_pointer", "Run frame pointer unwinding")
 
 
 V8_INTERPRETED_FRAMES_FLAG = "--interpreted-frames-native-stack"
 
 RENDERER_CMD_PATH: Final[pth.LocalPath] = pth.LocalPath(
     __file__).parent / "linux-perf-chrome-renderer-cmd.sh"
-
 
 def perf_frequency(value: Any) -> Union[str, int]:
   if value == "max":
@@ -156,7 +108,7 @@ class ProfilingProbe(Probe):
         "target",
         type=TargetMode,
         default=TargetMode.BROWSER_APP_ONLY,
-        help=("Chrome-on-Android-only: "
+        help=("Chrome-on-Android/Chrome-on-Mac: "
               "Profile either Renderer main/process only, "
               "or all processes of the Browser App, or system-wide. "
               "If Renderer main/process profiling is selected, "
@@ -361,17 +313,6 @@ class ProfilingProbe(Probe):
   def add_counters(self) -> Tuple[str, ...]:
     return self._add_counters
 
-  def attach(self, browser: Browser) -> None:
-    super().attach(browser)
-    if browser.platform.is_linux or browser.platform.is_android:
-      assert browser.attributes.is_chromium_based, (
-          f"Expected Chromium-based browser, found {type(browser)}.")
-    if browser.attributes.is_chromium_based:
-      chromium = cast(Chromium, browser)
-      if not self._spare_renderer_process:
-        chromium.features.disable("SpareRendererForSitePerProcess")
-      self._attach(chromium)
-
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     browser_platform = browser.platform
     if browser_platform.is_linux:
@@ -382,6 +323,9 @@ class ProfilingProbe(Probe):
       self._validate_android(env, browser)
     else:
       raise ProbeIncompatibleBrowser(self, browser)
+    if browser.attributes.is_chromium_based:
+      chromium = cast(ChromiumBased, browser)
+      self._validate_chromium_based(chromium)
     if self.run_pprof:
       self._validate_pprof(env, browser)
     # Check that certain Android-only options are
@@ -390,6 +334,10 @@ class ProfilingProbe(Probe):
       self._validate_perf_settings(browser)
     if not browser_platform.is_android:
       self._validate_non_android_perf_settings(browser)
+
+  def _validate_chromium_based(self, browser: ChromiumBased) -> None:
+    if self._start_profiling_after_setup:
+      self._validate_benchmarking_extension_version(browser)
 
   def _validate_perf_settings(self, browser) -> None:
     unsupported_settings = (
@@ -431,23 +379,23 @@ class ProfilingProbe(Probe):
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
-  def _assert_is_chrome_with_extension(self, browser: Browser) -> None:
-    assert (
-        BrowserAttributes.CHROME in browser.attributes and
-        browser.major_version >= 124), (
-            "For RENDERER_MAIN_ONLY/RENDERER_PROCESS_ONLY profiling, "
-            "browser version >= M124 https://crrev.com/c/5374765 is required.")
-
-  def _requires_chrome_with_extension(self) -> bool:
-    return self._target in (TargetMode.RENDERER_MAIN_ONLY,
-                            TargetMode.RENDERER_PROCESS_ONLY
-                           ) or self._pin_renderer_main_core is not None
+    supported_mac_targets = (TargetMode.SYSTEM_WIDE,
+                             TargetMode.RENDERER_PROCESS_ONLY)
+    assert self._target in supported_mac_targets, (
+        f"Unsupported profile target for Mac: {self._target}. "
+        f"Should be one of {str(supported_mac_targets)}.")
 
   def _validate_android(self, env: HostEnvironment, browser: Browser) -> None:
     del env
-    if self._requires_chrome_with_extension():
-      self._assert_is_chrome_with_extension(browser)
     assert browser.platform.which("simpleperf"), "simpleperf is not available"
+
+  def _validate_benchmarking_extension_version(self,
+                                               browser: ChromiumBased) -> None:
+    assert (
+        browser.attributes.is_chromium_based and
+        browser.major_version >= 124), (
+            "For RENDERER_MAIN_ONLY/RENDERER_PROCESS_ONLY profiling, "
+            "browser version >= M124 https://crrev.com/c/5374765 is required.")
 
   def _validate_pprof(self, env: HostEnvironment, browser: Browser) -> None:
     assert self._run_pprof
@@ -468,7 +416,20 @@ class ProfilingProbe(Probe):
     except plt.SubprocessError:
       env.handle_warning("Please run gcert for generating pprof results")
 
-  def _attach(self, browser: Chromium) -> None:
+  def attach(self, browser: Browser) -> None:
+    super().attach(browser)
+    if browser.platform.is_linux or browser.platform.is_android:
+      assert browser.attributes.is_chromium_based, (
+          f"Expected Chromium-based browser, found {type(browser)}.")
+    if browser.attributes.is_chromium_based:
+      chromium = cast(ChromiumBased, browser)
+      self._attach_chromium(chromium)
+
+  def _attach_chromium(self, browser: ChromiumBased) -> None:
+    if not self._spare_renderer_process:
+      browser.features.disable("SpareRendererForSitePerProcess")
+    if self._start_profiling_after_setup:
+      browser.flags.enable_benchmarking_extension()
     if self._sample_js:
       if browser.platform.is_linux:
         browser.js_flags.set("--perf-prof")
@@ -544,7 +505,7 @@ class ProfilingProbe(Probe):
       return
     largest_perf_file = perf_files[-1]
     logging.critical("    %s : %s", largest_perf_file,
-                     helper.get_file_size(largest_perf_file))
+                     fs_helper.get_file_size(largest_perf_file))
     if len(perf_files) <= 1:
       return
     glob = "*.perf.data"
@@ -561,487 +522,3 @@ class ProfilingProbe(Probe):
     if run.browser_platform.is_android:
       return AndroidProfilingContext(self, run)
     raise NotImplementedError("Invalid platform")
-
-
-class ProfilingContext(ProbeContext[ProfilingProbe], metaclass=abc.ABCMeta):
-
-  def setup_v8_log_path(self) -> None:
-    if any(isinstance(probe, V8LogProbe) for probe in self.run.probes):
-      return
-    # Try to get a bit a cleaner output folder by redirecting v8 logging output
-    # to v8.log.
-    v8_log_dir = self.result_path.parent / V8LogProbe.NAME / "v8.log"
-    self.browser_platform.mkdir(v8_log_dir)
-    self.session.extra_js_flags["--logfile"] = str(v8_log_dir)
-
-
-class MacOSProfilingContext(ProfilingContext):
-  _process: Optional[subprocess.Popen]
-
-  def get_default_result_path(self) -> pth.AnyPath:
-    return super().get_default_result_path().parent / "profile.trace"
-
-  def start(self) -> None:
-    self._process = self.browser_platform.popen("xctrace", "record",
-                                                "--template", "Time Profiler",
-                                                "--all-processes", "--output",
-                                                self.result_path)
-    # xctrace takes some time to start up
-    time.sleep(3)
-    if self._process.poll():
-      raise ValueError("Could not start xctrace")
-    atexit.register(self.stop_process)
-
-  def stop(self) -> None:
-    # Needs to be SIGINT for xctrace, terminate won't work.
-    assert self._process
-    self._process.send_signal(signal.SIGINT)
-
-  def teardown(self) -> ProbeResult:
-    self.stop_process()
-    return self.browser_result(file=(self.result_path,))
-
-  def stop_process(self) -> None:
-    if self._process:
-      logging.info("  Waiting for xctrace profiles (slow)...")
-      with helper.Spinner():
-        helper.wait_and_kill(self._process, signal=signal.SIGINT, timeout=60)
-      self._process = None
-    atexit.unregister(self.stop_process)
-
-
-V8_PERF_PROF_PATH_FLAG_MIN_VERSION = ChromeVersion((118, 0, 5993, 48))
-PERF_DATA_PATTERN = "*.perf.data"
-JIT_DUMP_PATTERN = "jit-*.dump"
-
-
-class LinuxProfilingContext(ProfilingContext):
-  TEMP_FILE_PATTERNS = (
-      "*.perf.data.jitted",
-      "jitted-*.so",
-      JIT_DUMP_PATTERN,
-  )
-
-  def __init__(self, probe: ProfilingProbe, run: Run) -> None:
-    super().__init__(probe, run)
-    self._perf_process: Optional[subprocess.Popen] = None
-
-  def get_default_result_path(self) -> pth.AnyPath:
-    result_dir = super().get_default_result_path()
-    self.browser_platform.mkdir(result_dir)
-    return result_dir
-
-  @property
-  def has_perf_prof_path(self) -> bool:
-    # TODO: replace with full version comparison
-    return self.browser.major_version > V8_PERF_PROF_PATH_FLAG_MIN_VERSION.major
-
-  def setup(self) -> None:
-    self.setup_v8_log_path()
-    if self.has_perf_prof_path:
-      self.session.extra_js_flags["--perf-prof-path"] = str(self.result_path)
-
-  def start(self) -> None:
-    if not self.probe.sample_browser_process:
-      return
-    if self.run.browser.pid is None:
-      logging.warning("Cannot sample browser process")
-      return
-    perf_data_file: pth.AnyPath = self.result_path / "browser.perf.data"
-    # TODO: not fully working yet
-    self._perf_process = self.browser_platform.popen(
-        "perf", "record", f"--call-graph={self.probe.call_graph_mode or 'fp'}",
-        f"--freq={self.probe.frequency or 'max'}",
-        f"--clockid={self.probe.clockid or 'mono'}",
-        f"--output={perf_data_file}", f"--pid={self.run.browser.pid}")
-    if self._perf_process.poll():
-      raise ValueError("Could not start linux profiler")
-    atexit.register(self.stop_process)
-
-  def stop(self) -> None:
-    self.stop_process()
-
-  def stop_process(self) -> None:
-    if self._perf_process:
-      helper.wait_and_kill(self._perf_process)
-      self._perf_process = None
-
-  def teardown(self) -> ProbeResult:
-    # Waiting for linux-perf to flush all perf data
-    if self.probe.sample_browser_process:
-      logging.debug("Waiting for browser process to stop")
-      time.sleep(3)
-    if self.probe.sample_browser_process:
-      logging.info("Browser process did not stop after 3s. "
-                   "You might get partial profiles")
-    time.sleep(2)
-
-    perf_files: List[pth.AnyPath] = helper.sort_by_file_size(
-        list(self.browser_platform.glob(self.result_path, PERF_DATA_PATTERN)),
-        self.browser_platform)
-    raw_perf_files = perf_files
-    urls: List[str] = []
-    try:
-      if self.probe.sample_js:
-        perf_files = self._inject_v8_symbols(self.run, perf_files)
-      if self.probe.run_pprof:
-        urls = self._export_to_pprof(self.run, perf_files)
-    finally:
-      self._clean_up_temp_files(self.run)
-    if self.probe.run_pprof:
-      logging.debug("Profiling results: %s", urls)
-      return self.browser_result(url=urls, file=raw_perf_files)
-    if self.browser_platform.which("pprof"):
-      logging.info("Run pprof over all (or single) perf data files "
-                   "for interactive analysis:")
-      logging.info("   pprof --http=localhost:1984 %s",
-                   " ".join(map(str, perf_files)))
-    return self.browser_result(trace=perf_files)
-
-  def _inject_v8_symbols(self, run: Run,
-                         perf_files: List[pth.AnyPath]) -> List[pth.AnyPath]:
-    with run.actions(
-        f"Probe {self.probe.name}: "
-        f"Injecting V8 symbols into {len(perf_files)} profiles",
-        verbose=True), helper.Spinner():
-      # Filter out empty files
-      perf_files = [
-          file for file in perf_files
-          if self.browser_platform.file_size(file) > 0
-      ]
-      if self.browser_platform.is_remote:
-        # Use loop, as we cannot easily serialize the remote platform.
-        perf_jitted_files = [
-            linux_perf_probe_inject_v8_symbols(file, self.browser_platform)
-            for file in perf_files
-        ]
-      else:
-        assert self.browser_platform == plt.PLATFORM
-        with multiprocessing.Pool() as pool:
-          perf_jitted_files = list(
-              pool.imap(linux_perf_probe_inject_v8_symbols, perf_files))
-      return [file for file in perf_jitted_files if file is not None]
-
-  def _export_to_pprof(self, run: Run,
-                       perf_files: List[pth.AnyPath]) -> List[str]:
-    assert self.probe.run_pprof
-    run_details_json = json.dumps(run.get_browser_details_json())
-    with run.actions(
-        f"Probe {self.probe.name}: "
-        f"exporting {len(perf_files)} profiles to pprof (slow)",
-        verbose=True), helper.Spinner():
-      self.browser_platform.sh(
-          "gcertstatus >&/dev/null || "
-          "(echo 'Authenticating with gcert:'; gcert)",
-          shell=True)
-      size = len(perf_files)
-      items = zip(perf_files, [run_details_json] * size)
-      urls: List[str] = []
-      if self.browser_platform.is_remote:
-        # Use loop, as we cannot easily serialize the remote platform.
-        for perf_data_file, run_details in items:
-          url = linux_perf_probe_pprof(perf_data_file, run_details,
-                                       self.browser_platform)
-          if url:
-            urls.append(url)
-      else:
-        assert self.browser_platform == plt.PLATFORM
-        with multiprocessing.Pool() as pool:
-          urls = [
-              url for url in pool.starmap(linux_perf_probe_pprof, items) if url
-          ]
-      try:
-        if perf_files:
-          # TODO: Add "combined" profile again
-          pass
-      except Exception as e:  # pylint: disable=broad-except
-        logging.debug("Failed to run pprof: %s", e)
-      return urls
-
-  def _clean_up_temp_files(self, run: Run) -> None:
-    if self.probe.cleanup_mode == CleanupMode.NEVER:
-      logging.debug("%s: skipping cleanup", self.probe)
-      return
-    if self.probe.cleanup_mode == CleanupMode.AUTO:
-      if not self.probe.run_pprof:
-        logging.debug("%s: skipping auto cleanup without pprof upload",
-                      self.probe)
-        return
-    for pattern in self.TEMP_FILE_PATTERNS:
-      for file in run.out_dir.glob(pattern):
-        file.unlink()
-
-
-def prepare_linux_perf_env(platform: plt.Platform,
-                           cwd: pth.AnyPath) -> Dict[str, str]:
-  env: Dict[str, str] = dict(platform.environ)
-  env["JITDUMPDIR"] = str(platform.absolute(cwd))
-  return env
-
-
-KB = 1024
-
-
-def linux_perf_probe_inject_v8_symbols(
-    perf_data_file: pth.AnyPath,
-    platform: Optional[plt.Platform] = None) -> Optional[pth.AnyPath]:
-  platform = platform or plt.PLATFORM
-  assert platform.is_file(perf_data_file)
-  output_file = perf_data_file.with_suffix(".data.jitted")
-  assert not platform.exists(output_file)
-  env = prepare_linux_perf_env(platform, perf_data_file.parent)
-  try:
-    # TODO: use remote chdir
-    platform.sh(
-        "perf",
-        "inject",
-        "--jit",
-        f"--input={perf_data_file}",
-        f"--output={output_file}",
-        env=env)
-  except plt.SubprocessError as e:
-    if platform.file_size(perf_data_file) > 200 * KB:
-      logging.warning("Failed processing: %s\n%s", perf_data_file, e)
-    else:
-      # TODO: investigate why almost all small perf.data files fail
-      logging.debug("Failed processing small profile (likely empty): %s\n%s",
-                    perf_data_file, e)
-  if not platform.exists(output_file):
-    return None
-  return output_file
-
-
-def linux_perf_probe_pprof(
-    perf_data_file: pth.AnyPath,
-    run_details: str,
-    platform: Optional[plt.Platform] = None) -> Optional[str]:
-  size = helper.get_file_size(perf_data_file)
-  platform = platform or plt.PLATFORM
-  env = prepare_linux_perf_env(platform, perf_data_file.parent)
-  url = ""
-  try:
-    url = platform.sh_stdout(
-        "pprof",
-        "-flame",
-        f"-add_comment={run_details}",
-        perf_data_file,
-        env=env,
-    ).strip()
-  except plt.SubprocessError as e:
-    # Occasionally small .jitted files fail, likely due perf inject silently
-    # failing?
-    raw_perf_data_file = perf_data_file.with_suffix("")
-    if (perf_data_file.suffix == ".jitted" and
-        platform.exists(raw_perf_data_file)):
-      logging.debug(
-          "pprof best-effort: falling back to standard perf data "
-          "without js symbols: %s \n"
-          "Got failures for %s: %s", raw_perf_data_file, perf_data_file.name, e)
-      try:
-        perf_data_file = raw_perf_data_file
-        url = platform.sh_stdout(
-            "pprof",
-            "-flame",
-            f"-add_comment={run_details}",
-            raw_perf_data_file,
-        ).strip()
-      except plt.SubprocessError as e2:
-        logging.debug("pprof -flame failed: %s", e2)
-    if not url:
-      logging.warning("Failed processing: %s\n%s", perf_data_file, e)
-      return None
-  if perf_data_file.suffix == ".jitted":
-    logging.info("PPROF (with js-symbols):")
-  else:
-    logging.info("PPROF (no js-symbols):")
-  logging.info("  linux-perf:   %s %s", perf_data_file.name, size)
-  logging.info("  pprof result: %s", url)
-  return url
-
-
-class AndroidProfilingContext(ProfilingContext):
-
-  def __init__(self, probe: ProfilingProbe, run: Run) -> None:
-    super().__init__(probe, run)
-    self._simpleperf_process: Optional[subprocess.Popen] = None
-    self._story_ready = False
-
-  @cached_property
-  def _renderer_pid_tid(self) -> Tuple[int, int]:
-    assert self._story_ready, (
-        "Fetching renderer PID/TID before the story is loaded could lead to "
-        "the wrong PID/TID being used. This should never happen TM!")
-    renderer_pid: Optional[int] = None
-    renderer_main_tid: Optional[int] = None
-    with self.run.actions("Get Renderer PID/TID") as actions:
-      renderer_pid = actions.js(
-          "return chrome?.benchmarking?.getRendererPid?.();")
-      renderer_main_tid = actions.js(
-          "return chrome?.benchmarking?.getRendererMainTid?.();")
-    if renderer_pid is None or renderer_main_tid is None:
-      error_message = (
-          "Unable to get Renderer PID/TID from browser. "
-          "Is the browser binary a sufficiently new version? "
-          "For RENDERER_MAIN_ONLY/RENDERER_PROCESS_ONLY profiling, at least "
-          "https://chromium-review.googlesource.com/c/chromium/src/+/5374765 "
-          "is required.")
-      logging.error(error_message)
-      raise ValueError(error_message)
-    return renderer_pid, renderer_main_tid
-
-  def _generate_command_line(self) -> ListCmdArgs:
-    renderer_pid: Optional[int] = None
-    renderer_main_tid: Optional[int] = None
-    if self.probe.target in (TargetMode.RENDERER_MAIN_ONLY,
-                             TargetMode.RENDERER_PROCESS_ONLY):
-      renderer_pid, renderer_main_tid = self._renderer_pid_tid
-    return generate_simpleperf_command_line(
-        self.probe.target,
-        str(self.run.browser.path),
-        renderer_pid,
-        renderer_main_tid,
-        self.probe.call_graph_mode,
-        self.probe.frequency,
-        self.probe.count,
-        self.probe.cpu,
-        self.probe.events,
-        self.probe.grouped_events,
-        self.probe.add_counters,
-        self.result_path,
-    )
-
-  def _start_simpleperf(self) -> None:
-    command_line = self._generate_command_line()
-    logging.info("Starting simpleperf with command line: %s.", command_line)
-    self._simpleperf_process = self.browser_platform.popen(
-        *command_line, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    # Wait a bit for simpleperf to start and (potentially) terminate on error.
-    time.sleep(1)
-    if self._simpleperf_process.poll():
-      error_msg: str = ""
-      if stdout := self._simpleperf_process.stdout:
-        if isinstance(stdout, io.BufferedReader):
-          error_msg = stdout.read().decode("utf-8")
-          logging.error(error_msg)
-      raise ValueError(f"Unable to start simpleperf. {error_msg}")
-    atexit.register(self.stop_process)
-    self.browser.performance_mark("crossbench-probe-profiling-start")
-
-  def _get_simpleperf_pids(self) -> List[int]:
-    simpleperf_pids = []
-    for process in self.browser_platform.processes():
-      if process["name"] == "simpleperf":
-        simpleperf_pids.append(process["pid"])
-    return simpleperf_pids
-
-  def _stop_existing_simpleperf(self) -> None:
-    for simpleperf_pid in self._get_simpleperf_pids():
-      logging.warning("Terminating existing simpleperf process: %d.",
-                      simpleperf_pid)
-      self.browser_platform.terminate(simpleperf_pid)
-
-  def _cpu_mask(self, cpus: Iterable) -> str:
-    assert max(cpus) < 32, "Cpu index too high"
-    mask = 0
-    for cpu in cpus:
-      mask |= (1 << cpu)
-    return f"{mask:x}"
-
-  def _pin_renderer_main_core(self, cpu: int):
-    _, renderer_main_tid = self._renderer_pid_tid
-    self.browser_platform.sh("taskset", "-p", self._cpu_mask([cpu]),
-                             str(renderer_main_tid))
-
-  def get_default_result_path(self) -> pth.AnyPath:
-    return super().get_default_result_path().parent / "simpleperf.perf.data"
-
-  def setup(self) -> None:
-    assert self.browser.platform.is_android, (
-        f"Expected Android platform, found {type(self.browser.platform)}.")
-    assert self.browser.attributes.is_chromium_based, (
-        f"Expected Chromium-based browser, found {type(self.browser)}.")
-    if (self.browser.platform.is_android and
-        self.browser.attributes.is_chromium_based):
-      chromium = cast(Chromium, self.browser)
-      # Set `--enable-benchmarking` explicitly for
-      # retrieving Renderer PID, if needed.
-      chromium.flags.set("--enable-benchmarking")
-    self._stop_existing_simpleperf()
-
-  def start(self) -> None:
-    if not self.probe.start_profiling_after_setup:
-      self._start_simpleperf()
-
-  def start_story_run(self) -> None:
-    self._story_ready = True
-    if self.probe.pin_renderer_main_core is not None:
-      self._pin_renderer_main_core(self.probe.pin_renderer_main_core)
-
-    if self.probe.start_profiling_after_setup:
-      self._start_simpleperf()
-
-  def stop(self) -> None:
-    self.stop_process()
-
-  def stop_process(self) -> None:
-    if self._simpleperf_process:
-      helper.wait_and_kill(
-          self._simpleperf_process, timeout=30, signal=signal.SIGINT)
-      self._simpleperf_process = None
-      self.browser.performance_mark("crossbench-probe-profiling-stop")
-
-  def teardown(self) -> ProbeResult:
-    return self.browser_result(trace=[self.result_path])
-
-
-def generate_simpleperf_command_line(
-    target: TargetMode,
-    app_name: str,
-    renderer_pid: Optional[int],
-    renderer_main_tid: Optional[int],
-    call_graph_mode: CallGraphMode,
-    frequency: Optional[Union[int, str]],
-    count: Optional[int],
-    cpus: Tuple[int, ...],
-    events: Tuple[str, ...],
-    grouped_events: Tuple[str, ...],
-    add_counters: Tuple[str, ...],
-    output_path: pth.AnyPath,
-) -> ListCmdArgs:
-  command_line: ListCmdArgs = ["simpleperf", "record"]
-  if target == TargetMode.RENDERER_MAIN_ONLY:
-    assert renderer_main_tid is not None
-    command_line.extend(["-t", str(renderer_main_tid)])
-  elif target == TargetMode.RENDERER_PROCESS_ONLY:
-    assert renderer_pid is not None
-    command_line.extend(["-p", str(renderer_pid)])
-  elif target == TargetMode.BROWSER_APP_ONLY:
-    command_line.extend(["--app", app_name])
-  else:  # TargetMode.SYSTEM_WIDE
-    command_line.append("-a")
-  if call_graph_mode == CallGraphMode.FRAME_POINTER:
-    command_line.extend(["--call-graph", "fp"])
-  elif call_graph_mode == CallGraphMode.DWARF:
-    # Use "--post-unwind=yes" while unwinding with DWARF, to reduce
-    # unwinding overhead during profiling.
-    command_line.extend(["--call-graph", "dwarf", "--post-unwind=yes"])
-  else:
-    assert call_graph_mode == CallGraphMode.NO_CALL_GRAPH, (
-        f"Invalid call_graph_mode: {call_graph_mode}")
-  if frequency is not None:
-    command_line.extend(["-f", str(frequency)])
-  if count is not None:
-    command_line.extend(["-c", str(count)])
-  if cpus:
-    command_line.extend(["--cpu", ",".join(map(str, cpus))])
-  # Events and counters need to be provided after `-f` and `-c`.
-  if events:
-    command_line.extend(["-e", ",".join(events)])
-  if grouped_events:
-    command_line.extend(["--group", ",".join(grouped_events)])
-  if add_counters:
-    command_line.extend(["--add-counter", ",".join(add_counters)])
-    # `--no-inherit` is required by simpleperf when `--add-counter` is used.
-    command_line.append("--no-inherit")
-  command_line.extend(["-o", output_path])
-  return command_line

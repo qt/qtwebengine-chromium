@@ -230,8 +230,9 @@ MaglevPhiRepresentationSelector::ProcessPhi(Phi* node) {
 
   if (input_reprs.contains(ValueRepresentation::kTagged) ||
       input_reprs.contains(ValueRepresentation::kUint32) ||
+      input_reprs.contains(ValueRepresentation::kIntPtr) ||
       input_reprs.empty()) {
-    TRACE_UNTAGGING("  => Leaving tagged [tagged or uint32 inputs]");
+    TRACE_UNTAGGING("  => Leaving tagged [tagged, uint32 or intptr inputs]");
     EnsurePhiInputsTagged(node);
     return default_result;
   }
@@ -528,23 +529,36 @@ void MaglevPhiRepresentationSelector::ConvertTaggedPhiTo(
         DCHECK(phi->is_backedge_offset(i));
 
         DeoptFrame* deopt_frame = phi->merge_state()->backedge_deopt_frame();
-        if (repr == ValueRepresentation::kInt32) {
-          phi->change_input(
-              i, AddNodeAtBlockEnd(NodeBase::New<CheckedSmiUntag>(
-                                       builder_->zone(), {input_phi}),
-                                   phi->predecessor_at(i), deopt_frame));
-        } else {
-          DCHECK(repr == ValueRepresentation::kFloat64 ||
-                 repr == ValueRepresentation::kHoleyFloat64);
-          TaggedToFloat64ConversionType convertion_type =
-              repr == ValueRepresentation::kFloat64
-                  ? TaggedToFloat64ConversionType::kOnlyNumber
-                  : TaggedToFloat64ConversionType::kNumberOrOddball;
-          phi->change_input(
-              i, AddNodeAtBlockEnd(
-                     NodeBase::New<CheckedNumberOrOddballToFloat64>(
-                         builder_->zone(), {input_phi}, convertion_type),
-                     phi->predecessor_at(i), deopt_frame));
+        switch (repr) {
+          case ValueRepresentation::kInt32: {
+            phi->change_input(
+                i, AddNodeAtBlockEnd(NodeBase::New<CheckedSmiUntag>(
+                                         builder_->zone(), {input_phi}),
+                                     phi->predecessor_at(i), deopt_frame));
+            break;
+          }
+          case ValueRepresentation::kFloat64: {
+            phi->change_input(
+                i, AddNodeAtBlockEnd(
+                       NodeBase::New<CheckedNumberOrOddballToFloat64>(
+                           builder_->zone(), {input_phi},
+                           TaggedToFloat64ConversionType::kOnlyNumber),
+                       phi->predecessor_at(i), deopt_frame));
+            break;
+          }
+          case ValueRepresentation::kHoleyFloat64: {
+            phi->change_input(
+                i, AddNodeAtBlockEnd(
+                       NodeBase::New<CheckedNumberOrOddballToHoleyFloat64>(
+                           builder_->zone(), {input_phi},
+                           TaggedToFloat64ConversionType::kNumberOrOddball),
+                       phi->predecessor_at(i), deopt_frame));
+            break;
+          }
+          case ValueRepresentation::kTagged:
+          case ValueRepresentation::kIntPtr:
+          case ValueRepresentation::kUint32:
+            UNREACHABLE();
         }
         TRACE_UNTAGGING(TRACE_INPUT_LABEL
                         << ": Eagerly untagging Phi on backedge");
@@ -667,11 +681,13 @@ bool MaglevPhiRepresentationSelector::IsUntagging(Opcode op) {
   switch (op) {
     case Opcode::kCheckedSmiUntag:
     case Opcode::kUnsafeSmiUntag:
+    case Opcode::kCheckedNumberToInt32:
     case Opcode::kCheckedObjectToIndex:
     case Opcode::kCheckedTruncateNumberOrOddballToInt32:
     case Opcode::kTruncateNumberOrOddballToInt32:
     case Opcode::kCheckedNumberOrOddballToFloat64:
     case Opcode::kUncheckedNumberOrOddballToFloat64:
+    case Opcode::kCheckedNumberOrOddballToHoleyFloat64:
       return true;
     default:
       return false;

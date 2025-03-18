@@ -14,7 +14,7 @@ from perfetto.trace_processor.api import TraceProcessorConfig
 from perfetto.trace_uri_resolver.resolver import TraceUriResolver
 
 from crossbench import path as pth
-from crossbench.cli.config.probe import ProbeListConfig
+from crossbench.cli.config.probe_list import ProbeListConfig
 from crossbench.cli.parser import CrossBenchArgumentParser
 from crossbench.parse import PathParser
 from crossbench.probes.perfetto.trace_processor.trace_processor import (

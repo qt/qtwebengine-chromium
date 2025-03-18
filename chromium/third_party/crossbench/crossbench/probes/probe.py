@@ -9,8 +9,10 @@ from typing import (TYPE_CHECKING, Dict, Hashable, Optional, Set, Tuple, Type,
                     TypeVar)
 
 from crossbench import plt
-from crossbench.config import ConfigParser
+from crossbench.config import ConfigParser, UnusedPropertiesMode
 from crossbench.probes.probe_context import ProbeContext, ProbeSessionContext
+from crossbench.probes.probe_error import ProbeIncompatibleBrowser
+from crossbench.probes.probe_result_key import ProbeResultKey
 from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
@@ -33,7 +35,10 @@ ProbeT = TypeVar("ProbeT", bound="Probe")
 class ProbeConfigParser(ConfigParser[ProbeT]):
 
   def __init__(self, probe_cls: Type[ProbeT]) -> None:
-    super().__init__("Probe", probe_cls, allow_unused_config_data=False)
+    super().__init__(
+        probe_cls,
+        f"{probe_cls.NAME} probe parser",
+        unused_properties_mode=UnusedPropertiesMode.ERROR)
     self._probe_cls: Type[ProbeT] = probe_cls
 
   @property
@@ -41,30 +46,11 @@ class ProbeConfigParser(ConfigParser[ProbeT]):
     return self._probe_cls
 
 
-class ProbeMissingDataError(ValueError):
-  pass
-
-
-class ProbeValidationError(ValueError):
-
-  def __init__(self, probe: Probe, message: str) -> None:
-    self.probe = probe
-    super().__init__(f"Probe({probe.NAME}): {message}")
-
-
-class ProbeIncompatibleBrowser(ProbeValidationError):
-
-  def __init__(self,
-               probe: Probe,
-               browser: Browser,
-               message: str = "Incompatible browser") -> None:
-    super().__init__(probe, f"{message}, got {browser.attributes}")
-
 
 ProbeKeyT = Tuple[Tuple[str, Hashable], ...]
 
 
-class Probe(abc.ABC):
+class Probe(ProbeResultKey, abc.ABC):
   """
   Abstract Probe class.
 
@@ -231,14 +217,18 @@ class Probe(abc.ABC):
     del group
     return EmptyProbeResult()
 
-  @abc.abstractmethod
   def get_context(self: ProbeT, run: Run) -> Optional[ProbeContext[ProbeT]]:
-    pass
+    probe_cls: Type[ProbeContext[ProbeT]] = self.get_context_cls()
+    return probe_cls(self, run)
 
-  def get_session_context(
+  def get_context_cls(self: ProbeT) -> Type[ProbeContext[ProbeT]]:
+    raise NotImplementedError(f"Missing default ProbeContext class for {self}")
+
+  def get_session_context(  # pylint: disable=useless-return
       self: ProbeT,
       session: BrowserSessionRunGroup) -> Optional[ProbeSessionContext[ProbeT]]:
     del session
+    return None
 
   def log_run_result(self, run: Run) -> None:
     """

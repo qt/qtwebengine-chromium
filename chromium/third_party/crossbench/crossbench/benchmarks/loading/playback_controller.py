@@ -70,10 +70,11 @@ class TimeoutPlaybackController(PlaybackController):
 
   def __iter__(self) -> Iterator[None]:
     end = dt.datetime.now() + self.duration
-    while True:
+    yield None
+    if not self.duration:
+      return
+    while dt.datetime.now() <= end:
       yield None
-      if dt.datetime.now() > end:
-        return
 
 
 @dataclasses.dataclass(frozen=True)

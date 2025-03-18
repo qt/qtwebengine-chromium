@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import atexit
 import subprocess
-from typing import TYPE_CHECKING, Optional, TextIO
+from typing import TYPE_CHECKING, Optional, TextIO, Type
 
 from crossbench.parse import PathParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT, ProbeValidationError)
+                                     ProbeKeyT)
+from crossbench.probes.probe_error import ProbeValidationError
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
@@ -32,7 +33,8 @@ class DTraceProbe(Probe):
   @classmethod
   def config_parser(cls) -> ProbeConfigParser:
     parser = super().config_parser()
-    parser.add_argument("script_path", type=PathParser.non_empty_file_path)
+    parser.add_argument(
+        "script_path", required=True, type=PathParser.non_empty_file_path)
     return parser
 
   def __init__(self, script_path: LocalPath):
@@ -79,8 +81,8 @@ class DTraceProbe(Probe):
           self, "Cannot execute 'sudo dtrace'. "
           "This probe will fail to start.") from e
 
-  def get_context(self, run: Run) -> DTraceProbeContext:
-    return DTraceProbeContext(self, run)
+  def get_context_cls(self) -> Type[DTraceProbeContext]:
+    return DTraceProbeContext
 
 
 class DTraceProbeContext(ProbeContext[DTraceProbe]):

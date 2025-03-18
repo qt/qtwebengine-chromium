@@ -22,9 +22,8 @@ if TYPE_CHECKING:
   import re
 
   from crossbench.browsers.attributes import BrowserAttributes
-  from crossbench.browsers.splash_screen import SplashScreen
   from crossbench.browsers.viewport import Viewport
-  from crossbench.cli.config.secrets import Secret, SecretsDict
+  from crossbench.cli.config.secrets import Secrets, UsernamePassword
   from crossbench.env import HostEnvironment
   from crossbench.flags.chrome import ChromeFeatures
   from crossbench.flags.js_flags import JSFlags
@@ -114,16 +113,20 @@ class Browser(abc.ABC):
     self._unique_name = pth.safe_filename(name).lower()
 
   @property
+  def driver_logging(self) -> bool:
+    return self._settings.driver_logging
+
+  @property
   def network(self) -> Network:
     return self._settings.network
 
   @property
-  def secrets(self) -> SecretsDict:
+  def secrets(self) -> Secrets:
     return self._settings.secrets
 
   @property
-  def splash_screen(self) -> SplashScreen:
-    return self._settings.splash_screen
+  def settings(self):
+    return self._settings
 
   @property
   def viewport(self) -> Viewport:
@@ -140,6 +143,10 @@ class Browser(abc.ABC):
   @property
   def http_request_timeout(self) -> dt.timedelta:
     return self._settings.http_request_timeout
+
+  @property
+  def driver_path(self) -> Optional[pth.AnyPath]:
+    return self._settings.driver_path
 
   @property
   def probes(self) -> Iterable[Probe]:
@@ -202,6 +209,10 @@ class Browser(abc.ABC):
     assert self.log_file
     return self.log_file.with_suffix(".stdout.log")
 
+  @property
+  def driver_log_file(self) -> Optional[pth.LocalPath]:
+    return None
+
   def _resolve_binary(self, path: pth.AnyPath) -> pth.AnyPath:
     path = self.platform.absolute(path)
     assert self.platform.exists(path), f"Binary at path={path} does not exist."
@@ -241,6 +252,10 @@ class Browser(abc.ABC):
         "log": {}
     }
 
+  def validate_flags(self) -> None:
+    """ Helper method is called from the Runner before any Runs / Sessions
+    have started."""
+
   def validate_binary(self) -> None:
     """ Helper method is called from the Runner before any Runs / Sessions
     have started."""
@@ -256,7 +271,9 @@ class Browser(abc.ABC):
     self.start(session)
     assert self._is_running
 
-  def is_logged_in(self, secret: Secret, strict: bool = False) -> bool:
+  def is_logged_in(self,
+                   secret: UsernamePassword,
+                   strict: bool = False) -> bool:
     """Determines whether the browser is already logged in with the given
     credentials.
 

@@ -263,14 +263,8 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpColorAttachmentReadEXT:
         case spv::OpDepthAttachmentReadEXT:
         case spv::OpStencilAttachmentReadEXT:
-        case spv::OpUntypedVariableKHR:
-        case spv::OpUntypedAccessChainKHR:
-        case spv::OpUntypedInBoundsAccessChainKHR:
         case spv::OpSubgroupBallotKHR:
         case spv::OpSubgroupFirstInvocationKHR:
-        case spv::OpUntypedPtrAccessChainKHR:
-        case spv::OpUntypedInBoundsPtrAccessChainKHR:
-        case spv::OpUntypedArrayLengthKHR:
         case spv::OpSubgroupAllKHR:
         case spv::OpSubgroupAnyKHR:
         case spv::OpSubgroupAllEqualKHR:
@@ -311,10 +305,6 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpFragmentMaskFetchAMD:
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
-        case spv::OpAllocateNodePayloadsAMDX:
-        case spv::OpFinishWritingNodePayloadAMDX:
-        case spv::OpNodePayloadArrayLengthAMDX:
-        case spv::OpIsNodePayloadValidAMDX:
         case spv::OpGroupNonUniformQuadAllKHR:
         case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
@@ -337,12 +327,17 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpHitObjectIsHitNV:
         case spv::OpHitObjectIsMissNV:
         case spv::OpImageSampleFootprintNV:
+        case spv::OpCooperativeVectorMatrixMulNV:
+        case spv::OpCooperativeVectorMatrixMulAddNV:
         case spv::OpCooperativeMatrixConvertNV:
         case spv::OpGroupNonUniformPartitionNV:
         case spv::OpFetchMicroTriangleVertexPositionNV:
         case spv::OpFetchMicroTriangleVertexBarycentricNV:
+        case spv::OpCooperativeVectorLoadNV:
         case spv::OpReportIntersectionKHR:
         case spv::OpRayQueryGetIntersectionTriangleVertexPositionsKHR:
+        case spv::OpRayQueryGetClusterIdNV:
+        case spv::OpHitObjectGetClusterIdNV:
         case spv::OpCooperativeMatrixLoadNV:
         case spv::OpCooperativeMatrixMulAddNV:
         case spv::OpCooperativeMatrixLengthNV:
@@ -368,6 +363,19 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpConvertUToSampledImageNV:
         case spv::OpConvertSampledImageToUNV:
         case spv::OpRawAccessChainNV:
+        case spv::OpRayQueryGetIntersectionSpherePositionNV:
+        case spv::OpRayQueryGetIntersectionSphereRadiusNV:
+        case spv::OpRayQueryGetIntersectionLSSPositionsNV:
+        case spv::OpRayQueryGetIntersectionLSSRadiiNV:
+        case spv::OpRayQueryGetIntersectionLSSHitValueNV:
+        case spv::OpHitObjectGetSpherePositionNV:
+        case spv::OpHitObjectGetSphereRadiusNV:
+        case spv::OpHitObjectGetLSSPositionsNV:
+        case spv::OpHitObjectGetLSSRadiiNV:
+        case spv::OpHitObjectIsSphereHitNV:
+        case spv::OpHitObjectIsLSSHitNV:
+        case spv::OpRayQueryIsSphereHitNV:
+        case spv::OpRayQueryIsLSSHitNV:
         case spv::OpUCountLeadingZerosINTEL:
         case spv::OpUCountTrailingZerosINTEL:
         case spv::OpAbsISubINTEL:
@@ -406,6 +414,7 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
         case spv::OpArithmeticFenceEXT:
+        case spv::OpSubgroupMatrixMultiplyAccumulateINTEL:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -414,6 +423,18 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpGroupLogicalAndKHR:
         case spv::OpGroupLogicalOrKHR:
         case spv::OpGroupLogicalXorKHR:
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::OpUntypedVariableKHR:
+        case spv::OpUntypedAccessChainKHR:
+        case spv::OpUntypedInBoundsAccessChainKHR:
+        case spv::OpUntypedPtrAccessChainKHR:
+        case spv::OpUntypedInBoundsPtrAccessChainKHR:
+        case spv::OpUntypedArrayLengthKHR:
+        case spv::OpAllocateNodePayloadsAMDX:
+        case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpNodePayloadArrayLengthAMDX:
+        case spv::OpIsNodePayloadValidAMDX:
+#endif
             return true;
         default:
             return false;
@@ -662,15 +683,8 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpColorAttachmentReadEXT:
         case spv::OpDepthAttachmentReadEXT:
         case spv::OpStencilAttachmentReadEXT:
-        case spv::OpTypeUntypedPointerKHR:
-        case spv::OpUntypedVariableKHR:
-        case spv::OpUntypedAccessChainKHR:
-        case spv::OpUntypedInBoundsAccessChainKHR:
         case spv::OpSubgroupBallotKHR:
         case spv::OpSubgroupFirstInvocationKHR:
-        case spv::OpUntypedPtrAccessChainKHR:
-        case spv::OpUntypedInBoundsPtrAccessChainKHR:
-        case spv::OpUntypedArrayLengthKHR:
         case spv::OpSubgroupAllKHR:
         case spv::OpSubgroupAnyKHR:
         case spv::OpSubgroupAllEqualKHR:
@@ -713,13 +727,6 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpFragmentMaskFetchAMD:
         case spv::OpFragmentFetchAMD:
         case spv::OpReadClockKHR:
-        case spv::OpAllocateNodePayloadsAMDX:
-        case spv::OpTypeNodePayloadArrayAMDX:
-        case spv::OpFinishWritingNodePayloadAMDX:
-        case spv::OpNodePayloadArrayLengthAMDX:
-        case spv::OpIsNodePayloadValidAMDX:
-        case spv::OpConstantStringAMDX:
-        case spv::OpSpecConstantStringAMDX:
         case spv::OpGroupNonUniformQuadAllKHR:
         case spv::OpGroupNonUniformQuadAnyKHR:
         case spv::OpHitObjectGetWorldToObjectNV:
@@ -743,13 +750,19 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpHitObjectIsMissNV:
         case spv::OpTypeHitObjectNV:
         case spv::OpImageSampleFootprintNV:
+        case spv::OpTypeCooperativeVectorNV:
+        case spv::OpCooperativeVectorMatrixMulNV:
+        case spv::OpCooperativeVectorMatrixMulAddNV:
         case spv::OpCooperativeMatrixConvertNV:
         case spv::OpGroupNonUniformPartitionNV:
         case spv::OpFetchMicroTriangleVertexPositionNV:
         case spv::OpFetchMicroTriangleVertexBarycentricNV:
+        case spv::OpCooperativeVectorLoadNV:
         case spv::OpReportIntersectionKHR:
         case spv::OpRayQueryGetIntersectionTriangleVertexPositionsKHR:
         case spv::OpTypeAccelerationStructureKHR:
+        case spv::OpRayQueryGetClusterIdNV:
+        case spv::OpHitObjectGetClusterIdNV:
         case spv::OpTypeCooperativeMatrixNV:
         case spv::OpCooperativeMatrixLoadNV:
         case spv::OpCooperativeMatrixMulAddNV:
@@ -778,6 +791,19 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpConvertUToSampledImageNV:
         case spv::OpConvertSampledImageToUNV:
         case spv::OpRawAccessChainNV:
+        case spv::OpRayQueryGetIntersectionSpherePositionNV:
+        case spv::OpRayQueryGetIntersectionSphereRadiusNV:
+        case spv::OpRayQueryGetIntersectionLSSPositionsNV:
+        case spv::OpRayQueryGetIntersectionLSSRadiiNV:
+        case spv::OpRayQueryGetIntersectionLSSHitValueNV:
+        case spv::OpHitObjectGetSpherePositionNV:
+        case spv::OpHitObjectGetSphereRadiusNV:
+        case spv::OpHitObjectGetLSSPositionsNV:
+        case spv::OpHitObjectGetLSSRadiiNV:
+        case spv::OpHitObjectIsSphereHitNV:
+        case spv::OpHitObjectIsLSSHitNV:
+        case spv::OpRayQueryIsSphereHitNV:
+        case spv::OpRayQueryIsLSSHitNV:
         case spv::OpUCountLeadingZerosINTEL:
         case spv::OpUCountTrailingZerosINTEL:
         case spv::OpAbsISubINTEL:
@@ -816,6 +842,7 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpRayQueryGetIntersectionWorldToObjectKHR:
         case spv::OpAtomicFAddEXT:
         case spv::OpArithmeticFenceEXT:
+        case spv::OpSubgroupMatrixMultiplyAccumulateINTEL:
         case spv::OpGroupIMulKHR:
         case spv::OpGroupFMulKHR:
         case spv::OpGroupBitwiseAndKHR:
@@ -824,6 +851,22 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpGroupLogicalAndKHR:
         case spv::OpGroupLogicalOrKHR:
         case spv::OpGroupLogicalXorKHR:
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::OpTypeUntypedPointerKHR:
+        case spv::OpUntypedVariableKHR:
+        case spv::OpUntypedAccessChainKHR:
+        case spv::OpUntypedInBoundsAccessChainKHR:
+        case spv::OpUntypedPtrAccessChainKHR:
+        case spv::OpUntypedInBoundsPtrAccessChainKHR:
+        case spv::OpUntypedArrayLengthKHR:
+        case spv::OpAllocateNodePayloadsAMDX:
+        case spv::OpTypeNodePayloadArrayAMDX:
+        case spv::OpFinishWritingNodePayloadAMDX:
+        case spv::OpNodePayloadArrayLengthAMDX:
+        case spv::OpIsNodePayloadValidAMDX:
+        case spv::OpConstantStringAMDX:
+        case spv::OpSpecConstantStringAMDX:
+#endif
             return true;
         default:
             return false;
@@ -1195,11 +1238,10 @@ enum class SpvType {
     kPointer,
     kFunction,
     kForwardPointer,
-    kUntypedPointerKHR,
     kCooperativeMatrixKHR,
     kRayQueryKHR,
-    kNodePayloadArrayAMDX,
     kHitObjectNV,
+    kCooperativeVectorNV,
     kAccelerationStructureKHR,
     kCooperativeMatrixNV,
     kTensorLayoutNV,
@@ -1238,16 +1280,14 @@ static constexpr SpvType GetSpvType(uint32_t opcode) {
             return SpvType::kFunction;
         case spv::OpTypeForwardPointer:
             return SpvType::kForwardPointer;
-        case spv::OpTypeUntypedPointerKHR:
-            return SpvType::kUntypedPointerKHR;
         case spv::OpTypeCooperativeMatrixKHR:
             return SpvType::kCooperativeMatrixKHR;
         case spv::OpTypeRayQueryKHR:
             return SpvType::kRayQueryKHR;
-        case spv::OpTypeNodePayloadArrayAMDX:
-            return SpvType::kNodePayloadArrayAMDX;
         case spv::OpTypeHitObjectNV:
             return SpvType::kHitObjectNV;
+        case spv::OpTypeCooperativeVectorNV:
+            return SpvType::kCooperativeVectorNV;
         case spv::OpTypeAccelerationStructureKHR:
             return SpvType::kAccelerationStructureKHR;
         case spv::OpTypeCooperativeMatrixNV:

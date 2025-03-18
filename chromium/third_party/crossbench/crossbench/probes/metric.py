@@ -8,8 +8,8 @@ import json
 import logging
 import math
 from math import floor, log10
-from typing import (TYPE_CHECKING, Any, Callable, Dict, Hashable, Iterable,
-                    List, Optional, Sequence, Set, Tuple, Union)
+from typing import (TYPE_CHECKING, Any, Callable, Dict, Iterable, List,
+                    Optional, Sequence, Set, Tuple, Union)
 
 from crossbench.probes import helper
 
@@ -57,8 +57,11 @@ class Metric:
     assert isinstance(values, list)
     return cls(values)
 
-  def __init__(self, values: Optional[List] = None) -> None:
-    self.values = values or []
+  def __init__(self, values: Optional[Iterable] = None) -> None:
+    if not values:
+      self.values: List[float] = []
+    else:
+      self.values = list(values)
     self._is_numeric: bool = all(map(is_number, self.values))
 
   def __len__(self) -> int:
@@ -109,7 +112,7 @@ class Metric:
     self.values.append(value)
     self._is_numeric = self._is_numeric and is_number(value)
 
-  def to_json(self) -> JsonDict:
+  def to_json(self) -> Json:
     json_data: JsonDict = {"values": self.values}
     if not self.values:
       return json_data
@@ -126,10 +129,9 @@ class Metric:
         json_data["stddevPercent"] = (stddev / average) * 100
       return json_data
     # Try to simplify repeated non-numeric values
-    if not isinstance(self.values[0], Hashable):
-      return json_data
+    first_value = self.values[0]
     if len(set(self.values)) == 1:
-      return self.values[0]
+      return first_value
     return json_data
 
 

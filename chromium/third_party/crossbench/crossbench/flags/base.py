@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import (Any, Dict, Iterable, Iterator, List, Optional, Tuple, Type,
-                    TypeVar, Union)
+from typing import (Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple,
+                    Type, TypeVar, Union)
 
 
 class FrozenFlagsError(RuntimeError):
@@ -182,9 +182,10 @@ class BasicFlags(Freezable, collections.UserDict):
                        f"with a different previous value: {repr(old_value)}")
 
   # pylint: disable=arguments-differ
-  def update(self,
-             initial_data: FlagsData = None,
-             override: bool = False) -> None:
+  def update(  # type: ignore
+      self,
+      initial_data: FlagsData = None,
+      override: bool = False) -> None:
     # pylint: disable=arguments-differ
     if initial_data is None:
       return
@@ -210,13 +211,21 @@ class BasicFlags(Freezable, collections.UserDict):
     ret.merge(other)
     return ret
 
+  def filtered(self: BasicFlagsT, flag_names: Iterable[str]) -> BasicFlagsT:
+    flag_names_set: Set[str] = set(flag_names)
+    filtered_flags = {k: v for k, v in self.items() if k in flag_names_set}
+    return self.__class__(filtered_flags)
+
+  def contains_without_value(self, key: str):
+    return key in self.data and self.data[key] is None
+
   def _describe(self, flag_name: str) -> str:
     value = self.get(flag_name)
     if value is None:
       return flag_name
     return f"{flag_name}={value}"
 
-  def items(self) -> Iterable[Tuple[str, Optional[str]]]:
+  def items(self) -> Iterable[Tuple[str, Optional[str]]]:  # type: ignore
     return self.data.items()
 
   def to_dict(self) -> Dict[str, Optional[str]]:

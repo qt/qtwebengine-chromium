@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,25 +23,38 @@
 #include "sync/sync_common.h"
 #include "sync/sync_access_context.h"
 #include "sync/sync_commandbuffer.h"
+#include "sync/sync_error_messages.h"
 #include "sync/sync_stats.h"
 #include "sync/sync_submit.h"
+
+namespace syncval {
+// sync validation has no instance-level functionality
+class Instance : public vvl::Instance {
+  public:
+    Instance(vvl::dispatch::Instance *dispatch) : vvl::Instance(dispatch, LayerObjectTypeSyncValidation) {}
+};
+}  // namespace syncval
 
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkImage, syncval_state::ImageState, vvl::Image)
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkImageView, syncval_state::ImageViewState, vvl::ImageView)
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, syncval_state::CommandBuffer, vvl::CommandBuffer)
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkSwapchainKHR, syncval_state::Swapchain, vvl::Swapchain)
 
-class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
+class SyncValidator : public vvl::Device, public SyncStageAccess {
+    using BaseClass = vvl::Device;
+
   public:
     using ImageState = syncval_state::ImageState;
     using ImageViewState = syncval_state::ImageViewState;
-    using StateTracker = ValidationStateTracker;
     using Func = vvl::Func;
     using Struct = vvl::Struct;
     using Field = vvl::Field;
 
-    SyncValidator() { container_type = LayerObjectTypeSyncValidation; }
+    SyncValidator(vvl::dispatch::Device *dev, syncval::Instance *instance_vo)
+        : BaseClass(dev, instance_vo, LayerObjectTypeSyncValidation), error_messages_(*this) {}
     ~SyncValidator();
+
+    syncval::ErrorMessages error_messages_;
 
     // Stats object must be the first member of this class:
     // - it is the first to be constructed: can observe all subsequent syncval stats events
@@ -69,6 +82,8 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
     uint32_t debug_command_number = vvl::kU32Max;
     uint32_t debug_reset_count = 1;
     std::string debug_cmdbuf_pattern;
+
+    bool SyncError(SyncHazard hazard, const LogObjectList &objlist, const Location &loc, const std::string &error_message) const;
 
     // Ensures that the number of signals per timeline per queue does not exceed the specified limit.
     // If `queue` parameter is specified, then only that queue is checked (used by vkQueueWaitIdle).
@@ -129,6 +144,10 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                                          const VkImageViewCreateInfo *create_info,
                                                          VkFormatFeatureFlags2 format_features,
                                                          const VkFilterCubicImageViewImageFormatPropertiesEXT &cubic_props) final;
+    void PreCallRecordDestroyBuffer(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *pAllocator,
+                                    const RecordObject &record_obj) override;
+    void PreCallRecordDestroyImage(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator,
+                                   const RecordObject &record_obj) override;
 
     void RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
                                   const VkSubpassBeginInfo *pSubpassBeginInfo, Func command);
@@ -347,14 +366,13 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                     const RecordObject &record_obj) override;
 
     bool ValidateIndirectBuffer(const CommandBufferAccessContext &cb_context, const AccessContext &context,
-                                VkCommandBuffer commandBuffer, const VkDeviceSize struct_size, const VkBuffer buffer,
-                                const VkDeviceSize offset, const uint32_t drawCount, const uint32_t stride,
-                                const Location &loc) const;
+                                const VkDeviceSize struct_size, const VkBuffer buffer, const VkDeviceSize offset,
+                                const uint32_t drawCount, const uint32_t stride, const Location &loc) const;
     void RecordIndirectBuffer(CommandBufferAccessContext &cb_context, ResourceUsageTag tag, const VkDeviceSize struct_size,
                               const VkBuffer buffer, const VkDeviceSize offset, const uint32_t drawCount, uint32_t stride);
 
-    bool ValidateCountBuffer(const CommandBufferAccessContext &cb_context, const AccessContext &context,
-                             VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, const Location &loc) const;
+    bool ValidateCountBuffer(const CommandBufferAccessContext &cb_context, const AccessContext &context, VkBuffer buffer,
+                             VkDeviceSize offset, const Location &loc) const;
     void RecordCountBuffer(CommandBufferAccessContext &cb_context, ResourceUsageTag tag, VkBuffer buffer, VkDeviceSize offset);
 
     bool PreCallValidateCmdDispatch(VkCommandBuffer commandBuffer, uint32_t x, uint32_t y, uint32_t z,
@@ -588,16 +606,10 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
     bool PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence,
                                     const ErrorObject &error_obj) const override;
     void RecordQueueSubmit(VkQueue queue, VkFence fence, QueueSubmitCmdState *cmd_state);
-    void PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence,
-                                   const RecordObject &record_obj) override;
     bool PreCallValidateQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR *pSubmits, VkFence fence,
                                         const ErrorObject &error_obj) const override;
-    void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR *pSubmits, VkFence fence,
-                                       const RecordObject &record_obj) override;
     bool PreCallValidateQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits, VkFence fence,
                                      const ErrorObject &error_obj) const override;
-    void PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits, VkFence fence,
-                                    const RecordObject &record_obj) override;
     void PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, const RecordObject &record_obj) override;
     void PostCallRecordWaitForFences(VkDevice device, uint32_t fenceCount, const VkFence *pFences, VkBool32 waitAll,
                                      uint64_t timeout, const RecordObject &record_obj) override;
@@ -619,5 +631,11 @@ class SyncValidator : public ValidationStateTracker, public SyncStageAccess {
                                                    const RecordObject &record_obj) override;
     void PostCallRecordGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain, uint32_t *pSwapchainImageCount,
                                              VkImage *pSwapchainImages, const RecordObject &record_obj) override;
+    bool PreCallValidateCmdBuildAccelerationStructuresKHR(
+        VkCommandBuffer commandBuffer, uint32_t infoCount, const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
+        const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos, const ErrorObject &error_obj) const override;
+    void PreCallRecordCmdBuildAccelerationStructuresKHR(VkCommandBuffer commandBuffer, uint32_t infoCount,
+                                                        const VkAccelerationStructureBuildGeometryInfoKHR *pInfos,
+                                                        const VkAccelerationStructureBuildRangeInfoKHR *const *ppBuildRangeInfos,
+                                                        const RecordObject &record_obj) override;
 };
-

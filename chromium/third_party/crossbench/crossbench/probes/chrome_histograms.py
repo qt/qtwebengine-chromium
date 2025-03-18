@@ -10,17 +10,17 @@ import dataclasses
 import functools
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type
 
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.browser import Browser
-from crossbench.env import HostEnvironment
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.probe import ProbeConfigParser
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  from crossbench.browsers.browser import Browser
+  from crossbench.env import HostEnvironment
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
   from crossbench.types import Json
@@ -130,7 +130,9 @@ class ChromeHistogramsProbe(JsonResultProbe):
         type=parse_histogram_metrics,
         help=("Required dictionary of Chrome UMA histogram metric names. "
               "Histograms are recorded before and after a test and any "
-              "differences logged."))
+              "differences logged."
+              "See tools/metrics/histograms/metadata/storage/histograms.xml"
+              "or chrome://histograms for a list of available histograms."))
     return parser
 
   def __init__(self, metrics: Sequence[ChromeHistogramMetric]) -> None:
@@ -145,17 +147,14 @@ class ChromeHistogramsProbe(JsonResultProbe):
     super().validate_browser(env, browser)
     self.expect_browser(browser, BrowserAttributes.CHROMIUM_BASED)
 
-  def to_json(self, actions: Actions) -> Json:
-    raise NotImplementedError("should not be called, data comes from context")
-
-  def get_context(self, run: Run) -> ChromeHistogramsProbeContext:
-    return ChromeHistogramsProbeContext(self, run)
+  def get_context_cls(self) -> Type[ChromeHistogramsProbeContext]:
+    return ChromeHistogramsProbeContext
 
 
 @dataclasses.dataclass
 class ChromeHistogramBucket:
   min: int
-  max: int
+  max: Optional[int]
   count: int
 
 

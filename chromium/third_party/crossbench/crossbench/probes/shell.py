@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Optional
+from typing import TYPE_CHECKING, Iterable, List, Optional, Type
 
 from crossbench.parse import ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
@@ -35,27 +35,23 @@ class ShellProbe(Probe):
         "setup_cmd",
         aliases=("setup",),
         type=ObjectParser.sh_cmd,
-        required=False,
         help="CMD is run before the browser is started.")
     parser.add_argument(
         "start_cmd",
         type=ObjectParser.sh_cmd,
         aliases=("start",),
-        required=False,
         help=("CMD is run right before each story is started "
               "and the browser is already running."))
     parser.add_argument(
         "start_story_run_cmd",
         aliases=("start-story",),
         type=ObjectParser.sh_cmd,
-        required=False,
         help=("CMD is run right before the measurement phase "
               "of a story is started."))
     parser.add_argument(
         "stop_story_run_cmd",
         aliases=("stop-story",),
         type=ObjectParser.sh_cmd,
-        required=False,
         help=("CMD is run right after the measurement phase "
               "of a story has ended."))
     parser.add_argument(
@@ -69,7 +65,6 @@ class ShellProbe(Probe):
         "teardown_cmd",
         aliases=("teardown",),
         type=ObjectParser.sh_cmd,
-        required=False,
         help="CMD is run after the browser is stopped.")
     return parser
 
@@ -132,8 +127,8 @@ class ShellProbe(Probe):
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
-  def get_context(self, run: Run) -> ShellProbeContext:
-    return ShellProbeContext(self, run)
+  def get_context_cls(self) -> Type[ShellProbeContext]:
+    return ShellProbeContext
 
 
 class ShellProbeContext(ProbeContext[ShellProbe]):

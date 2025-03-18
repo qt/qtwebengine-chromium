@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
 
-from crossbench import helper
+from crossbench.helper import collection_helper
 from crossbench.runner.groups.base import RunGroup
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.run import Run
   from crossbench.stories.story import Story
-  from crossbench.types import JsonDict
+  from crossbench.types import JsonDict, JsonMapping
 
 
 class StoriesRunGroup(RunGroup):
@@ -37,7 +37,7 @@ class StoriesRunGroup(RunGroup):
              run_groups: Iterable[RepetitionsRunGroup],
              throw: bool = False) -> Tuple[StoriesRunGroup, ...]:
     return tuple(
-        helper.group_by(
+        collection_helper.group_by(
             run_groups,
             key=lambda run_group: run_group.browser,
             group=lambda _: cls(throw),
@@ -82,8 +82,8 @@ class StoriesRunGroup(RunGroup):
     )
 
   @property
-  def info(self) -> JsonDict:
-    info = {
+  def info(self) -> JsonMapping:
+    info: JsonDict = {
         "label": self.browser.label,
         "browser": self.browser.app_name.title(),
         "version": self.browser.version,

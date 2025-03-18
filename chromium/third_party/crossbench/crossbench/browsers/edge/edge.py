@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chromium.chromium import Chromium
+from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
 
 if TYPE_CHECKING:
   from crossbench.path import AnyPath
@@ -56,7 +56,7 @@ class EdgePathMixin:
     return "edge"
 
 
-class Edge(EdgePathMixin, Chromium):
+class Edge(EdgePathMixin, ChromiumBased):
   DEFAULT_FLAGS = (
       "--enable-benchmarking",
       "--disable-extensions",

@@ -7,61 +7,82 @@ from __future__ import annotations
 import abc
 import functools
 import logging
+import pathlib
 import re
-from typing import TYPE_CHECKING, Any, Dict, Generator, Iterator, Optional
+import shlex
+import subprocess
+from typing import (TYPE_CHECKING, Any, Dict, Generator, Iterator, Mapping,
+                    Optional, Type)
 
 from crossbench import path as pth
-from crossbench.plt.base import Environ, ListCmdArgs, Platform, SubprocessError
-from crossbench.plt.remote import RemotePlatformMixin
+from crossbench.plt import proc_helper
+from crossbench.plt.base import Environ, Platform, SubprocessError
+from crossbench.plt.remote import RemotePlatformMixin, RemotePopen
+from crossbench.plt.signals import PosixBaseSignal
 
 if TYPE_CHECKING:
+  from crossbench.plt.base import CmdArg, ListCmdArgs, ProcessLike
+  from crossbench.plt.signals import AnyPosixSignals, Signals
   from crossbench.types import JsonDict
 
+
+_GETCONF_PROC_RE: re.Pattern = re.compile(
+    r".*PROCESSORS_CONF[^0-9]+(?P<cores>[0-9]+)")
 
 class PosixPlatform(Platform, metaclass=abc.ABCMeta):
   # pylint: disable=locally-disabled, redefined-builtin
 
   def __init__(self) -> None:
     super().__init__()
-    self._default_tmp_dir: pth.AnyPath = pth.AnyPosixPath("")
+    self._default_tmp_dir: Optional[pth.AnyPath] = None
+
+  @property
+  def signals(self) -> Type[AnyPosixSignals]:
+    return PosixBaseSignal
 
   @functools.cached_property
   def version(self) -> str:  #pylint: disable=invalid-overridden-method
     return self.sh_stdout("uname", "-r").strip()
 
+  @functools.lru_cache(maxsize=1)
   def _raw_machine_arch(self):
     if self.is_local:
       return super()._raw_machine_arch()
     return self.sh_stdout("uname", "-m").strip()
 
-  def _get_cpu_cores_info(self) -> str:
+  def _read_possible_cpu_count(self) -> int:
     try:
       max_cores_file = self.path("/sys/devices/system/cpu/possible")
       _, max_core = self.cat(max_cores_file).strip().split("-", maxsplit=1)
-      cores = int(max_core) + 1
-      return f"{cores} cores"
+      return int(max_core) + 1
     except Exception as e:  # pylint: disable=broad-except
       logging.debug("Failed to get detailed CPU stats: %s", e)
-      return ""
+      return 0
 
-  _GET_CPONF_PROC_RE: re.Pattern = re.compile(
-      r".*PROCESSORS_CONF[^0-9]+(?P<cores>[0-9]+)")
+  @functools.cached_property
+  def cpu_cores(self) -> int:
+    if self.is_local:
+      return super().cpu_cores
+    if num_cores := self._read_possible_cpu_count():
+      return num_cores
+    if nproc := self.which("nproc"):
+      return int(self.sh_stdout(nproc))
+    if getconf := self.which("getconf"):
+      if result := _GETCONF_PROC_RE.search(self.sh_stdout(getconf, "-a")):
+        return int(result["cores"])
+    logging.debug("Failed to get num CPU cores")
+    return 0
 
+  @functools.lru_cache(maxsize=1)
   def cpu_details(self) -> Dict[str, Any]:
     if self.is_local:
       return super().cpu_details()
-    cores = -1
-    if self.which("nproc"):
-      cores = int(self.sh_stdout("nproc"))
-    elif self.which("getconf"):
-      result = self._GET_CPONF_PROC_RE.search(self.sh_stdout("getconf", "-a"))
-      if result:
-        cores = int(result["cores"])
     return {
-        "physical cores": cores,
+        "physical cores": self.cpu_cores,
         "info": self.cpu,
     }
 
+  @functools.lru_cache(maxsize=1)
   def os_details(self) -> JsonDict:
     if self.is_local:
       return super().os_details()
@@ -74,15 +95,16 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   _PY_VERSION: str = "import sys; print(64 if sys.maxsize > 2**32 else 32)"
 
+  @functools.lru_cache(maxsize=1)
   def python_details(self) -> JsonDict:
     if self.is_local:
       return super().python_details()
-    if not self.which("python3"):
-      return {"version": "unknown", "bits": 64}
-    return {
-        "version": self.sh_stdout("python3", "--version").strip(),
-        "bits": int(self.sh_stdout("python3", "-c", self._PY_VERSION).strip())
-    }
+    if python3 := self.which("python3"):
+      return {
+          "version": self.sh_stdout(python3, "--version").strip(),
+          "bits": int(self.sh_stdout(python3, "-c", self._PY_VERSION).strip())
+      }
+    return {"version": "unknown", "bits": 64}
 
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     app_or_bin = self.path(app_or_bin)
@@ -92,7 +114,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   @property
   def default_tmp_dir(self) -> pth.AnyPath:
-    if self._default_tmp_dir.parts:
+    if self._default_tmp_dir and self._default_tmp_dir.parts:
       return self._default_tmp_dir
     if self.is_local:
       self._default_tmp_dir = self.path(super().default_tmp_dir)
@@ -105,6 +127,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       tmp_path = self.path(env[tmp_var])
       if self.is_dir(tmp_path):
         self._default_tmp_dir = tmp_path
+        assert self.is_absolute(self._default_tmp_dir)
         return tmp_path
     self._default_tmp_dir = self.path("/tmp")
     assert self.is_dir(self._default_tmp_dir), (
@@ -112,9 +135,18 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     return self._default_tmp_dir
 
   def path(self, path: pth.AnyPathLike) -> pth.AnyPath:
+    converted_path = path
+    if isinstance(path, pathlib.PureWindowsPath):
+      # Special-case posix-absolute WindowsPath.
+      # for instance: WindowsPath("/usr/local/bin") or WindowsPath("C:/var/tmp")
+      parts = path.parts
+      if parts[0] in ("\\", "C:\\"):
+        # Reassemble parts for an absolute posix path.
+        parts = ("/", *path.parts[1:])
+        converted_path = pth.AnyPosixPath(*parts)
     if self.is_local:
-      return pth.LocalPosixPath(path)
-    return pth.AnyPosixPath(path)
+      return pth.LocalPosixPath(converted_path)
+    return pth.AnyPosixPath(converted_path)
 
   def which(self, binary_name: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     if self.is_local:
@@ -220,8 +252,9 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     to_path = self.path(to_path)
     if not self.exists(from_path):
       raise ValueError(f"Cannot copy non-existing source path: {from_path}")
-    self.mkdir(to_path.parent, parents=True, exist_ok=True)
-    self.sh("cp", "-R", from_path, to_path)
+    if from_path != to_path:
+      self.mkdir(to_path.parent, parents=True, exist_ok=True)
+      self.sh("cp", "-R", from_path, to_path)
     return to_path
 
   def copy_file(self, from_path: pth.AnyPathLike,
@@ -232,8 +265,9 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     to_path = self.path(to_path)
     if not self.exists(from_path):
       raise ValueError(f"Cannot copy non-existing source path: {from_path}")
-    self.mkdir(to_path.parent, parents=True, exist_ok=True)
-    self.sh("cp", from_path, to_path)
+    if from_path != to_path:
+      self.mkdir(to_path.parent, parents=True, exist_ok=True)
+      self.sh("cp", from_path, to_path)
     return to_path
 
   def set_file_contents(self,
@@ -278,13 +312,50 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
                                remote_path).rstrip("\n").split("\n"):
       yield remote_path / name
 
-  def terminate(self, proc_pid: int) -> None:
-    self.sh("kill", "-s", "TERM", str(proc_pid))
-
-  def process_info(self, pid: int) -> Optional[Dict[str, Any]]:
+  def chmod(self, path: pth.AnyPathLike, mode: int):
     if self.is_local:
-      return super().process_info(pid)
+      super().chmod(path, mode)
+    else:
+      # strip the prefix
+      oct_mode = oct(mode)[2:]
+      self.sh("chmod", oct_mode, self.path(path))
+
+  def send_signal(self, process: ProcessLike, signal: Signals):
+    if self.is_local:
+      super().send_signal(process, signal)
+      return
+    if pid := self.process_pid(process):
+      kill_process = self.sh(
+          "kill", f"-{int(signal)}", str(pid), check=False, capture_output=True)
+      # wait for the process to finish.
+      if kill_process.returncode > 0:
+        error_str = kill_process.stdout.decode("utf-8")
+        error_str += kill_process.stderr.decode("utf-8")
+        raise ProcessLookupError(f"{self}: {error_str}")
+
+  def terminate(self, process: ProcessLike) -> None:
+    if self.is_local:
+      super().terminate(process)
+    else:
+      try:
+        self.send_signal(process, self.signals.SIGTERM)
+      except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
+        pass
+
+  def kill(self, process: ProcessLike) -> None:
+    if self.is_local:
+      super().kill(process)
+    else:
+      try:
+        self.send_signal(process, self.signals.SIGKILL)
+      except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
+        pass
+
+  def process_info(self, process: ProcessLike) -> Optional[Dict[str, Any]]:
+    if self.is_local:
+      return super().process_info(process)
     try:
+      pid = self.process_pid(process)
       lines = self.sh_stdout("ps", "-o", "comm", "-p", str(pid)).splitlines()
       if len(lines) <= 1:
         return None
@@ -300,6 +371,9 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     if self.is_local:
       return super().environ
     return RemotePosixEnviron(self)
+
+  def is_port_used(self, port: int) -> bool:
+    return bool(self.sh_stdout("ss", "-HOlnt", "sport", "=", f"{port}"))
 
 
 class RemotePosixEnviron(Environ):
@@ -333,5 +407,33 @@ class RemotePosixEnviron(Environ):
     return self._environ.__len__()
 
 
+
 class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
-  pass
+  def popen(self,
+            *args: CmdArg,
+            bufsize=-1,
+            shell: bool = False,
+            stdout=None,
+            stderr=None,
+            stdin=None,
+            env: Optional[Mapping[str, str]] = None,
+            quiet: bool = False) -> subprocess.Popen:
+    del shell
+    assert not (self.is_android and env), "ADB does not support env vars"
+
+    with self.NamedTemporaryFile("popen_pid_") as temp_pid_file:
+      shell_cmd = shlex.join(map(str, args))
+      # Capture the PID and wait on the process to finish.
+      shell_cmd += f" & PID=$! && echo $PID >{temp_pid_file} && wait $PID"
+      if not quiet:
+        logging.debug("REMOTE SHELL: %s", shell_cmd)
+
+      host_platform_cmd = self.build_shell_cmd(shell_cmd)
+
+      remote_popen = RemotePopen(
+          self, host_platform_cmd, bufsize=bufsize, stdout=stdout,
+          stderr=stderr, stdin=stdin)
+      remote_pid = int(self.cat(temp_pid_file))
+      remote_popen.set_remote_pid(remote_pid)
+
+    return remote_popen

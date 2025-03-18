@@ -692,7 +692,10 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
 
         if (window.tabs.empty()) {
           // Remove the entry if there is nothing left to restore.
-          entries_.erase(entry_iterator);
+          // The entries_ may by changed after the tabs restored and the
+          // entry_iterator may be no longer valid. So call RemoveEntryById here
+          // instead of entries_.erase(entry_iterator).
+          RemoveEntryById(id);
         }
       }
 
@@ -745,7 +748,10 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
             CHECK(ValidateGroup(group));
             group.tabs.erase(group.tabs.begin() + i);
             if (group.tabs.empty()) {
-              entries_.erase(entry_iterator);
+              // The entries_ may by changed after the tabs restored and the
+              // entry_iterator may be no longer valid. So call RemoveEntryById
+              // here instead of entries_.erase(entry_iterator).
+              RemoveEntryById(id);
             }
 
             break;
@@ -759,7 +765,10 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
   }
 
   if (entry_id_matches_restore_id) {
-    entries_.erase(entry_iterator);
+    // The entries_ may by changed after the tabs restored and the
+    // entry_iterator may be no longer valid. So call RemoveEntryById here
+    // instead of entries_.erase(entry_iterator).
+    RemoveEntryById(id);
   }
 
   restoring_ = false;
@@ -938,8 +947,7 @@ bool TabRestoreServiceHelper::ValidateEntry(const Entry& entry) {
     case tab_restore::Type::GROUP:
       return ValidateGroup(static_cast<const Group&>(entry));
   }
-  NOTREACHED_IN_MIGRATION();
-  return false;
+  NOTREACHED();
 }
 
 void TabRestoreServiceHelper::PopulateTab(Tab* tab,
@@ -1121,8 +1129,7 @@ bool TabRestoreServiceHelper::FilterEntry(const Entry& entry) {
     case tab_restore::Type::GROUP:
       return IsGroupInteresting(static_cast<const Group&>(entry));
   }
-  NOTREACHED_IN_MIGRATION();
-  return false;
+  NOTREACHED();
 }
 
 void TabRestoreServiceHelper::UpdateTabBrowserIDs(SessionID::id_type old_id,

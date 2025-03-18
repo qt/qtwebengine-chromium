@@ -7,18 +7,20 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import enum
-import inspect
 import logging
 from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
-                    Sequence, Set, Tuple, Type, Union)
+                    Sequence, Set, Tuple, Type)
 
-from crossbench import compat, exception, helper
+from crossbench import compat, exception
 from crossbench import path as pth
 from crossbench import plt
-from crossbench.benchmarks.base import BenchmarkProbeMixin
-from crossbench.env import (HostEnvironment, HostEnvironmentConfig,
-                            ValidationMode)
+from crossbench.benchmarks import benchmark_validator
+from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
+from crossbench.env import EnvironmentConfig, HostEnvironment, ValidationMode
+from crossbench.helper import collection_helper
+from crossbench.helper.sleep_preventer import SystemSleepPreventer
 from crossbench.helper.state import BaseState, StateMachine
+from crossbench.helper.wait import WaitRange
 from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes import all as all_probes
 from crossbench.probes.internal.summary import ResultsSummaryProbe
@@ -39,6 +41,8 @@ from crossbench.runner.timing import Timing
 if TYPE_CHECKING:
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
+  from crossbench.runner.groups.base import RunGroup
+  from crossbench.runner.timing import AnyTimeUnit
   from crossbench.stories.story import Story
 
 
@@ -68,13 +72,14 @@ class ThreadMode(compat.StrEnumWithHelp):
       return [RunThreadGroup(runs)]
     groups: Dict[Any, List[Run]] = {}
     if self == ThreadMode.SESSION:
-      groups = helper.group_by(
+      groups = collection_helper.group_by(
           runs, lambda run: run.browser_session, sort_key=None)
     elif self == ThreadMode.PLATFORM:
-      groups = helper.group_by(
+      groups = collection_helper.group_by(
           runs, lambda run: run.browser_platform, sort_key=None)
     elif self == ThreadMode.BROWSER:
-      groups = helper.group_by(runs, lambda run: run.browser, sort_key=None)
+      groups = collection_helper.group_by(
+          runs, lambda run: run.browser, sort_key=None)
     else:
       raise ValueError(f"Unexpected thread mode: {self}")
     return [
@@ -138,7 +143,7 @@ class Runner:
         "--thread-mode",
         "--parallel",
         default=ThreadMode.NONE,
-        type=ThreadMode,
+        type=ThreadMode,  # type: ignore
         help=("Change how Runs are executed.\n" +
               ThreadMode.help_text(indent=2)))
 
@@ -194,8 +199,8 @@ class Runner:
                browsers: Sequence[Browser],
                benchmark: Benchmark,
                additional_probes: Iterable[Probe] = (),
-               platform: plt.Platform = plt.PLATFORM,
-               env_config: Optional[HostEnvironmentConfig] = None,
+               platform: Optional[plt.Platform] = None,
+               env_config: Optional[EnvironmentConfig] = None,
                env_validation_mode: ValidationMode = ValidationMode.THROW,
                repetitions: int = 1,
                warmup_repetitions: int = 0,
@@ -226,7 +231,7 @@ class Runner:
     self._measured_runs: List[Run] = []
     self._thread_mode = thread_mode
     self._exceptions = exception.Annotator(throw)
-    self._platform = platform
+    self._platform = platform or plt.PLATFORM
     self._env = HostEnvironment(self.platform, self.out_dir, self.browsers,
                                 self.probes, self.repetitions, env_config,
                                 env_validation_mode)
@@ -239,20 +244,13 @@ class Runner:
     self._create_symlinks: bool = create_symlinks
 
   def _prepare_benchmark(self) -> None:
-    benchmark_probe_cls: Type[BenchmarkProbeMixin]
+    benchmark_validator.validate_cls(type(self._benchmark))
     for benchmark_probe_cls in self._benchmark.PROBES:
-      assert inspect.isclass(benchmark_probe_cls), (
-          f"{self._benchmark}.PROBES must contain classes only, "
-          f"but got {type(benchmark_probe_cls)}")
-      assert issubclass(
-          benchmark_probe_cls,
-          Probe), (f"Expected Probe class but got {type(benchmark_probe_cls)}")
-      assert issubclass(benchmark_probe_cls, BenchmarkProbeMixin), (
-          f"{benchmark_probe_cls} should be BenchmarkProbeMixin "
-          f"for {type(self._benchmark)}.PROBES")
-      assert benchmark_probe_cls.NAME, (
-          f"Expected probe.NAME for {benchmark_probe_cls}")
-      self.attach_probe(benchmark_probe_cls(benchmark=self._benchmark))
+      probe = benchmark_probe_cls(benchmark=self._benchmark)
+      assert (isinstance(probe, Probe) and
+              isinstance(probe, BenchmarkProbeMixin)), (
+                  f"Expected BenchmarkProbe, got {probe}")
+      self.attach_probe(probe)
 
   def _validate_browser_labels(self) -> None:
     assert self.browsers, "No browsers provided"
@@ -262,15 +260,7 @@ class Runner:
   def _attach_default_probes(self, probe_list: Iterable[Probe]) -> None:
     assert len(self._probes) == 0
     assert len(self._default_probes) == 0
-    for probe_cls in all_probes.INTERNAL_PROBES:
-      if probe_cls == all_probes.ThermalMonitorProbe:
-        thermal_monitor_probe = all_probes.ThermalMonitorProbe(
-            cool_down_time=self._timing.cool_down_time,
-            threshold=self._cool_down_threshold)
-        self._attach_default_probe(thermal_monitor_probe)
-      else:
-        default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
-        self._attach_default_probe(default_probe)
+    self._attach_internal_probes()
 
     for index, probe in enumerate(probe_list):
       assert (not isinstance(probe, TraceProcessorProbe) or index == 0), (
@@ -280,6 +270,23 @@ class Runner:
     # Results probe must be first in the list, and thus last to be processed
     # so all other probes have data by the time we write the results summary.
     assert isinstance(self._probes[0], ResultsSummaryProbe)
+
+  def _attach_internal_probes(self):
+    for probe_cls in all_probes.NON_CONFIGURABLE_INTERNAL_PROBES:
+      default_probe: Probe = probe_cls()  # pytype: disable=not-instantiable
+      self._attach_default_probe(default_probe)
+
+    thermal_monitor_probe = all_probes.ThermalMonitorProbe(
+        cool_down_time=self._timing.cool_down_time,
+        threshold=self._cool_down_threshold)
+    self._attach_default_probe(thermal_monitor_probe)
+
+    # TODO: pass in the flag to the runner for a cleaner setup.
+    if any(browser.driver_logging for browser in self.browsers):
+      if not all(browser.driver_logging for browser in self.browsers):
+        raise RuntimeError("Driver logging must be enabled on all browsers")
+      driver_logging_probe = all_probes.BrowserDriverLogProbe()
+      self._attach_default_probe(driver_logging_probe)
 
   def _attach_default_probe(self, probe: Probe) -> None:
     self.attach_probe(probe)
@@ -400,26 +407,26 @@ class Runner:
   def has_browser_group(self) -> bool:
     return self._browser_group is not None
 
-  def wait(self,
-           time: Union[int, float, dt.timedelta],
-           absolute_time: bool = False) -> None:
+  def wait_range(self, min_wait: AnyTimeUnit, timeout: AnyTimeUnit,
+                 delay: AnyTimeUnit) -> WaitRange:
+    timing = self.timing
+    return WaitRange(
+        min=timing.timedelta(min_wait),
+        timeout=timing.timeout_timedelta(timeout),
+        delay=timing.timedelta(delay))
+
+  def wait(self, time: AnyTimeUnit, absolute_time: bool = False) -> None:
     if not time:
       return
-    if not absolute_time:
-      delta = self.timing.timedelta(time)
-    else:
-      if isinstance(time, (int, float)):
-        delta = dt.timedelta(seconds=time)
-      else:
-        delta = time
+    delta = self.timing.timedelta(time, absolute_time)
     self._platform.sleep(delta)
 
   def run(self, is_dry_run: bool = False) -> None:
     self._state.expect(RunnerState.INITIAL)
-    with helper.SystemSleepPreventer():
+    with SystemSleepPreventer(self._platform):
       with self._exceptions.annotate("Preparing"):
         self._setup()
-      with self._exceptions.annotate("Running"):
+      with self._exceptions.capture("Running"):
         self._run(is_dry_run)
 
     if self._exceptions.throw:
@@ -430,6 +437,9 @@ class Runner:
     self.assert_successful_sessions_and_runs()
 
   def _setup(self) -> None:
+    """ Mostly perform validations.
+    Unlike later phases, any exception in here will cause the runner to stop.
+    """
     self._state.transition(RunnerState.INITIAL, to=RunnerState.SETUP)
     logging.info("-" * 80)
     logging.info("SETUP")
@@ -438,33 +448,34 @@ class Runner:
         f"Invalid repetitions count: {self.repetitions}")
     assert self.browsers, "No browsers provided: self.browsers is empty"
     assert self.stories, "No stories provided: self.stories is empty"
-    self._validate_browsers()
-    self._exceptions.assert_success()
+    self._setup_validate_browsers()
     with self._exceptions.annotate("Preparing Runs"):
       self._all_runs = list(self.get_runs())
       assert self._all_runs, f"{type(self)}.get_runs() produced no runs"
       logging.info("DISCOVERED %d RUN(S)", len(self._all_runs))
       self._measured_runs = [run for run in self._all_runs if not run.is_warmup]
-    with self._exceptions.capture("Preparing Environment"):
+    with self._exceptions.annotate("Preparing Environment"):
       self._env.setup()
     with self._exceptions.annotate(
         f"Preparing Benchmark: {self._benchmark.NAME}"):
       self._benchmark.setup(self)
 
-  def _validate_browsers(self) -> None:
+  def _setup_validate_browsers(self) -> None:
     logging.info("PREPARING %d BROWSER(S)", len(self.browsers))
-    for browser in self.browsers:
-      with self._exceptions.capture(
-          f"Preparing browser type={browser.type_name} "
-          f"unique_name={browser.unique_name}"):
-        self._validate_browser(browser)
+    with self._exceptions.annotate("Validating all browsers"):
+      for browser in self.browsers:
+        with self._exceptions.capture(
+            f"Preparing browser type={browser.type_name} "
+            f"unique_name={browser.unique_name}"):
+          self._setup_validate_browser(browser)
 
-  def _validate_browser(self, browser: Browser) -> None:
+  def _setup_validate_browser(self, browser: Browser) -> None:
     browser.validate_binary()
     for probe in browser.probes:
       assert probe in self._probes, (
           f"Browser {browser} probe {probe} not in Runner.probes. "
           "Use Runner.attach_probe()")
+    browser.validate_flags()
 
   def has_any_live_network(self) -> bool:
     return any(browser.network.is_live for browser in self.browsers)
@@ -516,10 +527,26 @@ class Runner:
                index, name, timeout, throw)
 
   def assert_successful_sessions_and_runs(self) -> None:
-    failed_runs = list(run for run in self.runs if not run.is_success)
-    self._exceptions.assert_success(
-        f"Runs Failed: {len(failed_runs)}/{len(tuple(self.runs))} runs failed.",
-        RunnerException)
+    if self._exceptions.is_success:
+      return
+    failed_runs: int = len(list(run for run in self.runs if not run.is_success))
+    all_runs: int = len(tuple(self.runs))
+    num_exceptions = len(self._exceptions)
+    message: str = (
+        f"{failed_runs}/{all_runs} Runs had {num_exceptions} error(s).")
+    if not failed_runs:
+      # No need to log the error here, since merging probe data is the last
+      # step and errors have already been printed right before calling this
+      # helper.
+      message = f"Merged probe data with {num_exceptions} error(s)"
+    else:
+      # Print run failures, since they potentially have been printed the last
+      # time very high up.
+      logging.error("=" * 80)
+      logging.error("❗ %s", message.upper())
+      logging.error("=" * 80)
+    # Raise a RunnerException to be handled in the CLI.
+    self._exceptions.assert_success(message, RunnerException)
 
   def _get_thread_groups(self) -> List[RunThreadGroup]:
     # Also include warmup runs here.
@@ -553,36 +580,45 @@ class Runner:
   def _teardown(self) -> None:
     self._state.transition(RunnerState.RUNNING, to=RunnerState.TEARDOWN)
     logging.info("=" * 80)
-    logging.info("RUNS COMPLETED")
-    logging.info("-" * 80)
+    if self.is_success:
+      logging.info("✅ %s RUNS COMPLETED SUCCESSFULLY", len(self.runs))
+    else:
+      logging.warning("❗ %s RUNS COMPLETED WITH ERRORS", len(self.runs))
+    logging.info("=" * 80)
     logging.info("MERGING PROBE DATA")
+    self._teardown_merge_probe_data()
 
+  def _teardown_merge_probe_data(self) -> None:
     throw = self._exceptions.throw
-
-    logging.debug("MERGING PROBE DATA: cache temperatures")
     self._cache_temperatures_groups = CacheTemperaturesRunGroup.groups(
         self._measured_runs, throw)
-    for cache_temp_group in self._cache_temperatures_groups:
-      cache_temp_group.merge(self.probes)
-      self._exceptions.extend(cache_temp_group.exceptions, is_nested=True)
+    self._teardown_merge_run_group("cache temperatures",
+                                   self._cache_temperatures_groups)
 
-    logging.debug("MERGING PROBE DATA: repetitions")
     self._repetitions_groups = RepetitionsRunGroup.groups(
         self._cache_temperatures_groups, throw)
-    for repetition_group in self._repetitions_groups:
-      repetition_group.merge(self.probes)
-      self._exceptions.extend(repetition_group.exceptions, is_nested=True)
+    self._teardown_merge_run_group("repetitions", self._repetitions_groups)
 
-    logging.debug("MERGING PROBE DATA: stories")
     self._story_groups = StoriesRunGroup.groups(self._repetitions_groups, throw)
-    for story_group in self._story_groups:
-      story_group.merge(self.probes)
-      self._exceptions.extend(story_group.exceptions, is_nested=True)
+    self._teardown_merge_run_group("stories", self._story_groups)
 
-    logging.debug("MERGING PROBE DATA: browsers")
     self._browser_group = BrowsersRunGroup(self._story_groups, throw)
-    self._browser_group.merge(self.probes)
-    self._exceptions.extend(self._browser_group.exceptions, is_nested=True)
+    self._teardown_merge_run_group("browsers", [self._browser_group])
+
+  def _teardown_merge_run_group(self, group_name: str,
+                                groups: Iterable[RunGroup]) -> None:
+    logging.debug("MERGING PROBE DATA: %s", group_name)
+    group_exceptions = exception.ExceptionAnnotator(self._exceptions.throw)
+    try:
+      for group in groups:
+        group.merge(self.probes)
+        group_exceptions.extend(group.exceptions, is_nested=True)
+    finally:
+      self._exceptions.extend(group_exceptions)
+      if not group_exceptions.is_success:
+        group_exceptions.log(
+            f"❗ MERGED {group_name.upper()} PROBE DATA WITH ERRORS",
+            separator="-")
 
 
 TEMPERATURE_ICONS = {

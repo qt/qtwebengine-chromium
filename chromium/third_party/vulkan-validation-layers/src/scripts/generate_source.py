@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Copyright (c) 2021-2024 The Khronos Group Inc.
-# Copyright (c) 2021-2024 Valve Corporation
-# Copyright (c) 2021-2024 LunarG, Inc.
+# Copyright (c) 2021-2025 The Khronos Group Inc.
+# Copyright (c) 2021-2025 Valve Corporation
+# Copyright (c) 2021-2025 LunarG, Inc.
 # Copyright (c) 2021-2024 Google Inc.
 # Copyright (c) 2023-2024 RasterGrid Kft.
 #
@@ -33,7 +33,12 @@ from generate_spec_error_message import GenerateSpecErrorMessage
 
 def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFile: str, targetFilter: str, caching: bool):
 
-    has_clang_format = shutil.which('clang-format') is not None
+    try:
+        code = common_ci.RunShellCmd(f'clang-format --version')
+        has_clang_format = True
+    except:
+        has_clang_format = False
+
     if not has_clang_format:
         print("WARNING: Unable to find clang-format!")
 
@@ -61,7 +66,8 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     from generators.api_version_generator import ApiVersionOutputGenerator
     from generators.layer_dispatch_table_generator import LayerDispatchTableOutputGenerator
     from generators.layer_chassis_generator import LayerChassisOutputGenerator
-    from generators.layer_chassis_dispatch_generator import LayerChassisDispatchOutputGenerator
+    from generators.dispatch_object_generator import DispatchObjectGenerator
+    from generators.dispatch_vector_generator import DispatchVectorGenerator
     from generators.function_pointers_generator import FunctionPointersOutputGenerator
     from generators.best_practices_generator import BestPracticesOutputGenerator
     from generators.spirv_validation_generator import SpirvValidationHelperOutputGenerator
@@ -91,19 +97,11 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
     # Build up a list of all generators
     # Note: Options variable names MUST match order of constructor variable in generator
     generators = {
-        'thread_safety_counter_definitions.h' : {
+        'thread_safety_instance_defs.h' : {
             'generator' : ThreadSafetyOutputGenerator,
             'genCombined': True,
         },
-        'thread_safety_counter_instances.h' : {
-            'generator' : ThreadSafetyOutputGenerator,
-            'genCombined': True,
-        },
-        'thread_safety_counter_bodies.h' : {
-            'generator' : ThreadSafetyOutputGenerator,
-            'genCombined': True,
-        },
-        'thread_safety_commands.h' : {
+        'thread_safety_device_defs.h' : {
             'generator' : ThreadSafetyOutputGenerator,
             'genCombined': True,
         },
@@ -111,7 +109,12 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : ThreadSafetyOutputGenerator,
             'genCombined': True,
         },
-        'stateless_validation_helper.h' : {
+        'stateless_device_methods.h' : {
+            'generator' : StatelessValidationHelperOutputGenerator,
+            'genCombined': False,
+            'options' : [valid_usage_file],
+        },
+        'stateless_instance_methods.h' : {
             'generator' : StatelessValidationHelperOutputGenerator,
             'genCombined': False,
             'options' : [valid_usage_file],
@@ -138,7 +141,12 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : ValidFlagValuesOutputGenerator,
             'genCombined': True,
         },
-        'object_tracker.h' : {
+        'object_tracker_device_methods.h' : {
+            'generator' : ObjectTrackerOutputGenerator,
+            'genCombined': True,
+            'options' : [valid_usage_file],
+        },
+        'object_tracker_instance_methods.h' : {
             'generator' : ObjectTrackerOutputGenerator,
             'genCombined': True,
             'options' : [valid_usage_file],
@@ -196,7 +204,15 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : ApiVersionOutputGenerator,
             'genCombined': True,
         },
-        'chassis.h' : {
+        'validation_object_instance_methods.h' : {
+            'generator' : LayerChassisOutputGenerator,
+            'genCombined': True,
+        },
+        'validation_object_device_methods.h' : {
+            'generator' : LayerChassisOutputGenerator,
+            'genCombined': True,
+        },
+        'validation_object.cpp' : {
             'generator' : LayerChassisOutputGenerator,
             'genCombined': True,
         },
@@ -204,19 +220,35 @@ def RunGenerators(api: str, registry: str, grammar: str, directory: str, styleFi
             'generator' : LayerChassisOutputGenerator,
             'genCombined': True,
         },
-        'chassis_dispatch_helper.h' : {
-            'generator' : LayerChassisOutputGenerator,
+        'dispatch_object_device_methods.h' : {
+            'generator' : DispatchObjectGenerator,
             'genCombined': True,
         },
-        'layer_chassis_dispatch.h' : {
-            'generator' : LayerChassisDispatchOutputGenerator,
+        'dispatch_object_instance_methods.h' : {
+            'generator' : DispatchObjectGenerator,
             'genCombined': True,
         },
-        'layer_chassis_dispatch.cpp' : {
-            'generator' : LayerChassisDispatchOutputGenerator,
+        'dispatch_functions.h' : {
+            'generator' : DispatchObjectGenerator,
             'genCombined': True,
         },
-        'best_practices.h' : {
+        'dispatch_object.cpp' : {
+            'generator' : DispatchObjectGenerator,
+            'genCombined': True,
+        },
+        'dispatch_vector.h' : {
+            'generator' : DispatchVectorGenerator,
+            'genCombined': True,
+        },
+        'dispatch_vector.cpp' : {
+            'generator' : DispatchVectorGenerator,
+            'genCombined': True,
+        },
+        'best_practices_device_methods.h' : {
+            'generator' : BestPracticesOutputGenerator,
+            'genCombined': True,
+        },
+        'best_practices_instance_methods.h' : {
             'generator' : BestPracticesOutputGenerator,
             'genCombined': True,
         },
@@ -373,27 +405,42 @@ def main(argv):
     # The shaders requires glslangvalidator, so they are updated manually with generate_spirv when needed
     verify_exclude = [
         '.clang-format',
-        'cmd_validation_dispatch_comp.h',
-        'cmd_validation_dispatch_comp.cpp',
-        'cmd_validation_draw_vert.h',
-        'cmd_validation_draw_vert.cpp',
-        'cmd_validation_trace_rays_rgen.h',
-        'cmd_validation_trace_rays_rgen.cpp',
-        'cmd_validation_copy_buffer_to_image_comp.h',
-        'cmd_validation_copy_buffer_to_image_comp.cpp',
+        'validation_cmd_copy_buffer_to_image_comp.h',
+        'validation_cmd_copy_buffer_to_image_comp.cpp',
+        'validation_cmd_dispatch_comp.h',
+        'validation_cmd_dispatch_comp.cpp',
+        'validation_cmd_count_buffer_comp.h',
+        'validation_cmd_count_buffer_comp.cpp',
+        'validation_cmd_first_instance_comp.h',
+        'validation_cmd_first_instance_comp.cpp',
+        'validation_cmd_draw_indexed_comp.h',
+        'validation_cmd_draw_indexed_comp.cpp',
+        'validation_cmd_draw_indexed_indirect_index_buffer_comp.h',
+        'validation_cmd_draw_indexed_indirect_index_buffer_comp.cpp',
+        'validation_cmd_draw_indexed_indirect_vertex_buffer_comp.h',
+        'validation_cmd_draw_indexed_indirect_vertex_buffer_comp.cpp',
+        'validation_cmd_draw_mesh_indirect_comp.h',
+        'validation_cmd_draw_mesh_indirect_comp.cpp',
+        'validation_cmd_trace_rays_rgen.h',
+        'validation_cmd_trace_rays_rgen.cpp',
         'instrumentation_buffer_device_address_comp.h',
         'instrumentation_buffer_device_address_comp.cpp',
-        'instrumentation_bindless_descriptor_comp.h',
-        'instrumentation_bindless_descriptor_comp.cpp',
-        'instrumentation_non_bindless_oob_buffer_comp.h',
-        'instrumentation_non_bindless_oob_buffer_comp.cpp',
-        'instrumentation_non_bindless_oob_texel_buffer_comp.h',
-        'instrumentation_non_bindless_oob_texel_buffer_comp.cpp',
+        'instrumentation_descriptor_indexing_oob_bindless_comp.h',
+        'instrumentation_descriptor_indexing_oob_bindless_comp.cpp',
+        'instrumentation_descriptor_indexing_oob_non_bindless_comp.h',
+        'instrumentation_descriptor_indexing_oob_non_bindless_comp.cpp',
+        'instrumentation_descriptor_class_general_buffer_comp.h',
+        'instrumentation_descriptor_class_general_buffer_comp.cpp',
+        'instrumentation_descriptor_class_texel_buffer_comp.h',
+        'instrumentation_descriptor_class_texel_buffer_comp.cpp',
         'instrumentation_ray_query_comp.h',
         'instrumentation_ray_query_comp.cpp',
         'instrumentation_post_process_descriptor_index_comp.h',
         'instrumentation_post_process_descriptor_index_comp.cpp',
-        'gpuav_shader_hash.h'
+        'instrumentation_vertex_attribute_fetch_oob_vert.cpp',
+        'instrumentation_vertex_attribute_fetch_oob_vert.h',
+        'feature_requirements_helper.h', # https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8969
+        'feature_requirements_helper.cpp'
     ]
 
     parser = argparse.ArgumentParser(description='Generate source code for this repository')

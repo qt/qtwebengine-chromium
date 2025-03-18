@@ -9,7 +9,7 @@ from crossbench.benchmarks.jetstream import (JetStream20Benchmark,
                                              JetStream21Benchmark,
                                              JetStream22Benchmark,
                                              JetStream30Benchmark)
-from crossbench.benchmarks.loading.loading_benchmark import PageLoadBenchmark
+from crossbench.benchmarks.loading.loading_benchmark import LoadingBenchmark
 from crossbench.benchmarks.loading.loadline_presets import (
     LoadLinePhoneBenchmark, LoadLineTabletBenchmark)
 from crossbench.benchmarks.manual import ManualBenchmark

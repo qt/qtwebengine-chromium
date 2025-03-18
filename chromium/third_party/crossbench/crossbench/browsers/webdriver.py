@@ -19,6 +19,7 @@ from selenium.webdriver.remote.remote_connection import RemoteConnection
 
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.browser import Browser
+from crossbench.probes.internal.browser.driver_log import BrowserDriverLogProbe
 from crossbench.types import JsonDict
 
 if TYPE_CHECKING:
@@ -61,16 +62,15 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
                settings: Optional[Settings] = None):
     super().__init__(label, path, settings)
     self._driver_path = self._settings.driver_path
+    self._driver_log_file: Optional[LocalPath] = None
 
   @property
   def attributes(self) -> BrowserAttributes:
     return BrowserAttributes.WEBDRIVER
 
   @property
-  def driver_log_file(self) -> LocalPath:
-    log_file = self.log_file
-    assert log_file
-    return log_file.with_suffix(".driver.log")
+  def driver_log_file(self) -> Optional[LocalPath]:
+    return self._driver_log_file
 
   def validate_binary(self) -> None:
     super().validate_binary()
@@ -98,7 +98,7 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
       RemoteConnection.set_timeout(timeout.total_seconds())
     try:
       self._private_driver = self._start_driver(session, self._driver_path)
-    except selenium.common.exceptions.SessionNotCreatedException as e:
+    except selenium.common.exceptions.WebDriverException as e:
       msg = e.msg or "Could not create Webdriver session."
       raise DriverException(msg, self) from e
     self._is_running = True
@@ -146,11 +146,21 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
       timeouts.page_load = timing.timeout_timedelta(page_load).total_seconds()
     self._private_driver.timeouts = timeouts
 
+  def _setup_driver_log_file(self) -> LocalPath:
+    log_file = self.log_file
+    assert log_file, "Missing browser log file"
+    self._driver_log_file = log_file.with_suffix(".driver.log")
+    assert self._driver_log_file.name == BrowserDriverLogProbe.NAME, (
+        f"Expected driver log file name {BrowserDriverLogProbe.NAME}, "
+        f"but got: {self._driver_log_file}")
+    return self._driver_log_file
+
   def _setup_window(self) -> None:
     # Force main window to foreground.
     self._private_driver.switch_to.window(
         self._private_driver.current_window_handle)
-    if self.viewport.is_headless:
+    if (self.viewport.is_headless or
+        not self._private_driver.capabilities["setWindowRect"]):
       return
     if self.viewport.is_fullscreen:
       self._private_driver.fullscreen_window()
@@ -169,7 +179,7 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
   def details_json(self) -> JsonDict:
     details: JsonDict = super().details_json()
     log = cast(JsonDict, details["log"])
-    if self.log_file:
+    if self.driver_log_file:
       log["driver"] = os.fspath(self.driver_log_file)
     return details
 
@@ -177,9 +187,8 @@ class WebDriverBrowser(Browser, metaclass=abc.ABCMeta):
     logging.debug("WebDriverBrowser.show_url(%s, %s)", url, target)
     try:
       if target in ("_self", None):
-        handles = self._private_driver.window_handles
-        assert handles, "Browser has no more opened windows."
-        self._private_driver.switch_to.window(handles[-1])
+        # Do the navigation in the active tab.
+        pass
       elif target == "_new_tab":
         self._private_driver.switch_to.new_window("tab")
       elif target == "_new_window":
@@ -315,14 +324,7 @@ class RemoteWebDriver(WebDriverBrowser, Browser):
   def start(self, session: BrowserSessionRunGroup) -> None:
     # Driver has already been started. We just need to mark it as running.
     self._is_running = True
-    if self.viewport.is_fullscreen:
-      self._private_driver.fullscreen_window()
-    elif self.viewport.is_maximized:
-      self._private_driver.maximize_window()
-    else:
-      self._private_driver.set_window_position(self.viewport.x, self.viewport.y)
-      self._private_driver.set_window_size(self.viewport.width,
-                                           self.viewport.height)
+    self._setup_window()
 
   def quit(self) -> None:
     # External code that started the driver is responsible for shutting it down.

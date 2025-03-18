@@ -54,7 +54,7 @@ class ActionBlock(ConfigObject):
 
   @classmethod
   def config_parser(cls: Type[ActionBlock]) -> ConfigParser[ActionBlock]:
-    parser = ConfigParser(f"{cls.__name__} parser", cls)
+    parser = ConfigParser(cls)
     parser.add_argument("label", type=cls._parse_block_label, default="default")
     parser.add_argument(
         "index", type=NumberParser.positive_zero_int, default=0, required=False)
@@ -233,6 +233,8 @@ class ActionBlockListConfig(ConfigObject):
       if index != block.index:
         raise ValueError(
             f"blocks[{index}].index should be {index}, but got {block.index}")
-      found_get |= any(action.TYPE == ActionType.GET for action in block)
+      found_get |= any(
+          action.TYPE in (ActionType.GET, ActionType.MEET_CREATE)
+          for action in block)
     if not found_get:
       raise ValueError("Expected at least one get action in one of the blocks.")

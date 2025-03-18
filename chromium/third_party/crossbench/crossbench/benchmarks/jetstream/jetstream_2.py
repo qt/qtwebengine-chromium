@@ -5,11 +5,18 @@
 from __future__ import annotations
 
 import abc
+import argparse
 import datetime as dt
-from typing import TYPE_CHECKING, Tuple, Type
+import logging
+from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
+                    Type)
 
+from crossbench.benchmarks.base import PressBenchmarkStoryFilter
 from crossbench.benchmarks.jetstream.jetstream import (JetStreamBenchmark,
-                                                       JetStreamProbe)
+                                                       JetStreamProbe,
+                                                       JetStreamProbeContext)
+from crossbench.helper import url_helper
+from crossbench.parse import NumberParser
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
@@ -21,6 +28,10 @@ class JetStream2Probe(JetStreamProbe, metaclass=abc.ABCMeta):
   JetStream2-specific Probe.
   Extracts all JetStream2 times and scores.
   """
+
+
+class JetStream2ProbeContext(JetStreamProbeContext):
+  pass
 
 
 class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
@@ -92,9 +103,37 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
       "3d-cube-SP",
   )
 
+  def __init__(self,
+               substories: Sequence[str] = (),
+               iterations: Optional[int] = None,
+               url: Optional[str] = None):
+    self._iterations: Optional[int] = iterations
+    if iterations is not None:
+      self._iterations = NumberParser.positive_int(
+          self._iterations, "iteration count", parse_str=False)
+    super().__init__(url=url, substories=substories)
+
   @property
   def substory_duration(self) -> dt.timedelta:
     return dt.timedelta(seconds=2)
+
+  @property
+  def iterations(self) -> Optional[int]:
+    return self._iterations
+
+  @property
+  def url_params(self) -> Dict[str, str]:
+    params: Dict[str, str] = {}
+    if self.iterations:
+      params["iterationCount"] = str(self.iterations)
+    return params
+
+  def get_run_url(self, run: Run) -> str:
+    url = super().get_run_url(run)
+    url = url_helper.update_url_query(url, self.url_params)
+    if url != self.url:
+      logging.info("CUSTOM URL: %s", url)
+    return url
 
   def setup(self, run: Run) -> None:
     with run.actions("Setup") as actions:
@@ -133,5 +172,48 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
 ProbeClsTupleT = Tuple[Type[JetStream2Probe], ...]
 
 
+class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
+  __doc__ = PressBenchmarkStoryFilter.__doc__
+
+  @classmethod
+  def add_cli_parser(
+      cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser = super().add_cli_parser(parser)
+    parser.add_argument(
+        "--iterations",
+        "--iteration-count",
+        default=None,
+        type=NumberParser.positive_int,
+        help="Number of iterations each JetStream subtest is run "
+        "within the same session. \n"
+        "Note: --repetitions restarts the whole benchmark, --iterations runs "
+        "the same test tests n-times within the same session without the setup "
+        "overhead of starting up a whole new browser. \n"
+        "This option is not supported on the official benchmark "
+        "before version 3.0.")
+    return parser
+
+  @classmethod
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+    kwargs = super().kwargs_from_cli(args)
+    kwargs["iterations"] = args.iterations
+    return kwargs
+
+  def __init__(self,
+               story_cls: Type[JetStream2Story],
+               patterns: Sequence[str],
+               separate: bool = False,
+               url: Optional[str] = None,
+               iterations: Optional[int] = None):
+    self.iterations = iterations
+    assert issubclass(story_cls, JetStream2Story)
+    super().__init__(story_cls, patterns, separate, url)
+
+  def create_stories_from_names(self, names: List[str],
+                                separate: bool) -> Sequence[JetStream2Story]:
+    return self.story_cls.from_names(
+        names, separate=separate, url=self.url, iterations=self.iterations)
+
+
 class JetStream2Benchmark(JetStreamBenchmark):
-  pass
+  STORY_FILTER_CLS = JetStream2BenchmarkStoryFilter

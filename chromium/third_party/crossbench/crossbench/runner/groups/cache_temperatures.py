@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
 
-from crossbench import helper
+from crossbench.helper import collection_helper
 from crossbench.runner.groups.base import RunGroup
 
 if TYPE_CHECKING:
@@ -15,9 +15,8 @@ if TYPE_CHECKING:
   from crossbench.probes.probe import Probe
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
-  from crossbench.runner.runner import Runner
   from crossbench.stories.story import Story
-  from crossbench.types import JsonDict
+  from crossbench.types import JsonDict, JsonMapping
 
 
 class CacheTemperaturesRunGroup(RunGroup):
@@ -31,7 +30,7 @@ class CacheTemperaturesRunGroup(RunGroup):
              runs: Iterable[Run],
              throw: bool = False) -> Tuple[CacheTemperaturesRunGroup, ...]:
     return tuple(
-        helper.group_by(
+        collection_helper.group_by(
             runs,
             key=lambda run: (run.story, run.browser, run.repetition),
             group=lambda _: cls(throw),
@@ -85,8 +84,8 @@ class CacheTemperaturesRunGroup(RunGroup):
     )
 
   @property
-  def info(self) -> JsonDict:
-    info = {
+  def info(self) -> JsonMapping:
+    info: JsonDict = {
         "story": str(self.story),
         "repetition": self.repetition,
     }

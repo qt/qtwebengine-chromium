@@ -8,9 +8,9 @@ import atexit
 import datetime as dt
 import enum
 import subprocess
-from typing import TYPE_CHECKING, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type
 
-from crossbench import compat, helper
+from crossbench import compat
 from crossbench.parse import DurationParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
                                      ProbeKeyT)
@@ -90,8 +90,8 @@ class PowerMetricsProbe(Probe):
     super().validate_browser(env, browser)
     self.expect_macos(browser)
 
-  def get_context(self, run: Run) -> PowerMetricsProbeContext:
-    return PowerMetricsProbeContext(self, run)
+  def get_context_cls(self) -> Type[PowerMetricsProbeContext]:
+    return PowerMetricsProbeContext
 
 
 class PowerMetricsProbeContext(ProbeContext[PowerMetricsProbe]):
@@ -127,5 +127,5 @@ class PowerMetricsProbeContext(ProbeContext[PowerMetricsProbe]):
 
   def stop_process(self) -> None:
     if self._power_metrics_process:
-      helper.wait_and_kill(self._power_metrics_process)
+      self.browser_platform.wait_and_kill(self._power_metrics_process)
       self._power_metrics_process = None

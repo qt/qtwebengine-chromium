@@ -19,7 +19,7 @@ import crossbench
 import crossbench.exception
 from crossbench import path as pth
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.chromium.webdriver import ChromiumWebDriver
+from crossbench.browsers.chromium.webdriver import ChromiumBasedWebDriver
 from crossbench.browsers.edge.edge import EdgePathMixin
 
 if TYPE_CHECKING:
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
   from crossbench import plt
 
 
-class EdgeWebDriver(EdgePathMixin, ChromiumWebDriver):
+class EdgeWebDriver(EdgePathMixin, ChromiumBasedWebDriver):
 
   WEB_DRIVER_OPTIONS = EdgeOptions
   WEB_DRIVER_SERVICE = EdgeService
@@ -41,8 +41,10 @@ class EdgeWebDriver(EdgePathMixin, ChromiumWebDriver):
     finder = EdgeWebDriverDownloader(self)
     return finder.download()
 
-  def _create_driver(self, options: EdgeOptions,
-                     service: EdgeService) -> ChromiumDriver:
+  def _create_driver(
+      self,
+      options: EdgeOptions,  # type: ignore
+      service: EdgeService) -> ChromiumDriver:  # type: ignore
     return webdriver.Edge(options=options, service=service)
 
   @property

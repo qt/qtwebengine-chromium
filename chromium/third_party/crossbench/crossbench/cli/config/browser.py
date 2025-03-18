@@ -21,7 +21,9 @@ from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
 from crossbench.cli.config.driver import DriverConfig
 from crossbench.cli.config.driver_type import BrowserDriverType
-from crossbench.cli.config.network import NetworkConfig, NetworkSpeedPreset
+from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvironmentConfig
+from crossbench.cli.config.network import NetworkConfig
+from crossbench.cli.config.network_speed import NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
 from crossbench.parse import NumberParser, PathParser
 
@@ -38,9 +40,12 @@ SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox")
 # - "selenium:C:\out\x64.release\chrome:4G"
 NETWORK_PRESETS: str = "|".join(
     re.escape(preset.value) for preset in NetworkSpeedPreset)  # pytype: disable=missing-parameter
+ENV_PRESETS: str = "|".join(re.escape(preset) for preset in ENV_CONFIG_PRESETS)
+
 SHORT_FORM_RE = re.compile(r"((?P<driver>\w{3,}):)??"
                            r"(?P<path>([A-Z]:[/\\])?[^:]+)"
-                           f"(:(?P<network>{NETWORK_PRESETS}))?")
+                           f"(:(?P<network>{NETWORK_PRESETS}))?"
+                           f"(:(?P<env>{ENV_PRESETS}))?")
 ANDROID_PACKAGE_RE = re.compile(r"[a-z]+(\.[a-z]+){2,}")
 VERSION_FOR_RANGE_RE = re.compile(r"(?P<prefix>[^\d]*)(?P<milestone>\d+)")
 
@@ -53,6 +58,7 @@ class BrowserConfig(ConfigObject):
   # want to have the option to explicitly specify the default network in a
   # browser config.
   network: Optional[NetworkConfig] = None
+  env: Optional[EnvironmentConfig] = None
 
   def __post_init__(self) -> None:
     if not self.browser:
@@ -69,20 +75,21 @@ class BrowserConfig(ConfigObject):
   def parse_str(cls, value: str) -> BrowserConfig:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
-    network: Optional[NetworkConfig] = None
-    driver = DriverConfig.default()
     path: Optional[pth.AnyPathLike] = None
+    driver = DriverConfig.default()
+    network: Optional[NetworkConfig] = None
+    env: Optional[EnvironmentConfig] = None
     if ":" not in value or cls.value_has_path_prefix(value):
       # Variant 1: $PATH_OR_IDENTIFIER
       path = cls._parse_path_or_identifier(value)
     elif value[0] != "{":
       # Variant 2: ${DRIVER_TYPE}:${PATH_OR_IDENTIFIER}:${NETWORK}
-      driver, path, network = cls._parse_inline_short_form(value)
+      driver, path, network, env = cls._parse_inline_short_form(value)
     else:
       # Variant 3: Full inline hjson
       return cls.parse_inline_hjson(value)
     assert path, "Invalid path"
-    return cls(path, driver, network)
+    return cls(path, driver, network, env)
 
   @classmethod
   def parse_with_range(cls, value: Any) -> Tuple[BrowserConfig, ...]:
@@ -255,29 +262,31 @@ class BrowserConfig(ConfigObject):
   @classmethod
   def _parse_inline_short_form(
       cls, value: str
-  ) -> Tuple[DriverConfig, pth.AnyPathLike, Optional[NetworkConfig]]:
-    assert ":" in value
+  ) -> Tuple[DriverConfig, pth.AnyPathLike, Optional[NetworkConfig],
+             Optional[EnvironmentConfig]]:
+    assert ":" in value, f"Invalid short config {repr(value)} for {cls}"
     match = SHORT_FORM_RE.fullmatch(value)
     if not match:
       raise argparse.ArgumentTypeError(
           f"Invalid browser short form: '{value}' \n"
           "A browser path/identifier and "
           "at least a driver or network preset have to be present")
-    driver_identifier = match.group("driver")
     path_or_identifier = match.group("path")
-    network_identifier = match.group("network")
     if not path_or_identifier:
       raise argparse.ArgumentTypeError(
           "Browser short form: missing path or browser identifier.")
     driver = DriverConfig.default()
-    if driver_identifier is not None:
-      driver = cast(DriverConfig, DriverConfig.parse(match.group("driver")))
+    if driver_identifier := match.group("driver"):
+      driver = cast(DriverConfig, DriverConfig.parse(driver_identifier))
     path: pth.AnyPathLike = cls._parse_path_or_identifier(
         path_or_identifier, driver.type)
     network = None
-    if network_identifier is not None:
+    if network_identifier := match.group("network"):
       network = NetworkConfig.parse_str(network_identifier)
-    return (driver, path, network)
+    env = None
+    if env_identifier := match.group("env"):
+      env = EnvironmentConfig.parse_str(env_identifier)
+    return (driver, path, network, env)
 
   @classmethod
   def parse_text_io(cls, f: TextIO) -> BrowserConfig:
@@ -295,7 +304,7 @@ class BrowserConfig(ConfigObject):
 
   @classmethod
   def config_parser(cls) -> ConfigParser[BrowserConfig]:
-    parser = ConfigParser("BrowserConfig parser", cls)
+    parser = ConfigParser(cls)
     parser.add_argument(
         "browser",
         aliases=("path",),
@@ -304,7 +313,7 @@ class BrowserConfig(ConfigObject):
         depends_on=("driver",))
     parser.add_argument(
         "driver", type=DriverConfig, default=DriverConfig.default())
-    parser.add_argument("network", required=False, type=NetworkConfig)
+    parser.add_argument("network", type=NetworkConfig)
     return parser
 
   @property

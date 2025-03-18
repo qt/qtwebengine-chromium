@@ -30,3 +30,4 @@ class ActionType(ConfigEnum):
   WAIT_FOR_READY_STATE = ("wait_for_ready_state",
                           "Wait for a specific document.readyState")
   DUMP_HTML = ("dump_html", "Dump the current document's HTML")
+  MEET_CREATE = ("meet_create", "Create a Google Meet meeting")

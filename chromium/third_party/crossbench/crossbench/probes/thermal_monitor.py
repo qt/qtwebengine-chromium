@@ -11,7 +11,7 @@ import re
 from enum import IntEnum
 from typing import TYPE_CHECKING, Iterable, Optional
 
-from crossbench import helper
+from crossbench.helper.wait import WaitRange
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
 from crossbench.probes.probe import ProbeIncompatibleBrowser
@@ -21,6 +21,7 @@ from crossbench.probes.results import EmptyProbeResult, LocalProbeResult
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
+  from crossbench.probes.probe_context import ProbeContext
   from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
   from crossbench.types import Json
 
 THERMAL_STATUS_RE = re.compile(r"Thermal Status: (?P<status>\d+)")
-COOLDOWN_WAIT_RANGE = helper.WaitRange(
+COOLDOWN_WAIT_RANGE = WaitRange(
     min=dt.timedelta(seconds=1), timeout=dt.timedelta(minutes=5))
 
 
@@ -70,7 +71,7 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
                threshold: Optional[ThermalStatus] = None):
     super().__init__()
     self._threshold: Optional[ThermalStatus] = threshold
-    self._cool_down_time: Optional[dt.timedelta] = cool_down_time
+    self._cool_down_time: dt.timedelta = cool_down_time
     if threshold is not None and threshold <= 0:
       raise ValueError("Threshold must be positive")
 
@@ -154,13 +155,14 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
       logging.error("Significant thermal throttling detected during execution, "
                     "scores are not representative of the device performance.")
 
-  def get_context(self, run: Run) -> ThermalMonitorProbeContext:
+  def get_context(self, run: Run) -> Optional[ProbeContext]:
     if run.browser.platform.is_android:
       return AndroidThermalMonitorProbeContext(self, run)
     return ThermalMonitorProbeContext(self, run)
 
 
-class ThermalMonitorProbeContext(InternalJsonResultProbeContext):
+class ThermalMonitorProbeContext(
+    InternalJsonResultProbeContext[ThermalMonitorProbe]):
 
   def __init__(self, probe: ThermalMonitorProbe, run: Run) -> None:
     super().__init__(probe, run)

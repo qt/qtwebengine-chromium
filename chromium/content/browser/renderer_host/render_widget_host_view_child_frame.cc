@@ -25,6 +25,7 @@
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/cross_process_frame_connector.h"
 #include "content/browser/renderer_host/input/touch_selection_controller_client_child_frame.h"
+#include "content/browser/renderer_host/input/touch_selection_controller_input_observer.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
@@ -98,8 +99,13 @@ void RenderWidgetHostViewChildFrame::
   auto* root_view = frame_connector_->GetRootRenderWidgetHostView();
   if (root_view) {
     auto* manager = root_view->GetTouchSelectionControllerClientManager();
-    if (manager)
+    if (manager) {
       manager->RemoveObserver(this);
+#if BUILDFLAG(IS_ANDROID)
+      auto* observer = root_view->GetTouchSelectionControllerInputObserver();
+      host()->RemoveInputEventObserver(observer);
+#endif
+    }
   } else {
     // We should never get here, but maybe we are? Test this out with a
     // diagnostic we can track. If we do get here, it would explain
@@ -148,6 +154,11 @@ void RenderWidgetHostViewChildFrame::SetFrameConnector(
           std::make_unique<TouchSelectionControllerClientChildFrame>(this,
                                                                      manager);
       manager->AddObserver(this);
+
+#if BUILDFLAG(IS_ANDROID)
+      auto* observer = root_view->GetTouchSelectionControllerInputObserver();
+      host()->AddInputEventObserver(observer);
+#endif
     }
   }
 }
@@ -291,6 +302,19 @@ gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSize() {
 
   gfx::Rect requested_rect(GetRequestedRendererSize());
   requested_rect.Inset(insets_);
+  return requested_rect.size();
+}
+
+gfx::Size RenderWidgetHostViewChildFrame::GetVisibleViewportSizeDevicePx() {
+  // For subframes, the visual viewport corresponds to the main frame size so
+  // this method would not even be called, the main frame's value should be
+  // used instead. However a nested WebContents will have a ChildFrame view used
+  // for the main frame.
+  DCHECK(host()->owner_delegate());
+
+  gfx::Rect requested_rect(GetRequestedRendererSizeDevicePx());
+  auto scaled_insets = ScaleToCeiledInsets(insets_, GetDeviceScaleFactor());
+  requested_rect.Inset(scaled_insets);
   return requested_rect.size();
 }
 
@@ -557,7 +581,9 @@ void RenderWidgetHostViewChildFrame::GestureEventAck(
   TRACE_EVENT1("input", "RenderWidgetHostViewChildFrame::GestureEventAck",
                "type", blink::WebInputEvent::GetName(event.GetType()));
 
+#if !BUILDFLAG(IS_ANDROID)
   HandleSwipeToMoveCursorGestureAck(event);
+#endif
   input_helper_->GestureEventAckHelper(event, ack_source, ack_result);
 }
 
@@ -724,7 +750,7 @@ double RenderWidgetHostViewChildFrame::GetCSSZoomFactor() const {
 }
 
 gfx::PointF RenderWidgetHostViewChildFrame::TransformPointToRootCoordSpaceF(
-    const gfx::PointF& point) {
+    const gfx::PointF& point) const {
   return input_helper_->TransformPointToRootCoordSpace(point);
 }
 
@@ -741,7 +767,7 @@ gfx::PointF RenderWidgetHostViewChildFrame::TransformRootPointToViewCoordSpace(
   return input_helper_->TransformRootPointToViewCoordSpace(point);
 }
 
-bool RenderWidgetHostViewChildFrame::IsRenderWidgetHostViewChildFrame() {
+bool RenderWidgetHostViewChildFrame::IsRenderWidgetHostViewChildFrame() const {
   return true;
 }
 
@@ -963,6 +989,7 @@ ui::Compositor* RenderWidgetHostViewChildFrame::GetCompositor() {
   return GetRootView()->GetCompositor();
 }
 
+#if !BUILDFLAG(IS_ANDROID)
 void RenderWidgetHostViewChildFrame::HandleSwipeToMoveCursorGestureAck(
     const blink::WebGestureEvent& event) {
   if (!selection_controller_client_) {
@@ -990,5 +1017,6 @@ void RenderWidgetHostViewChildFrame::HandleSwipeToMoveCursorGestureAck(
       break;
   }
 }
+#endif
 
 }  // namespace content

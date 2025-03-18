@@ -1728,7 +1728,7 @@ static void demo_prepare_texture_buffer(struct demo *demo, const char *filename,
 
 static void demo_prepare_texture_image(struct demo *demo, const char *filename, struct texture_object *tex_obj,
                                        VkImageTiling tiling, VkImageUsageFlags usage, VkFlags required_props) {
-    const VkFormat tex_format = VK_FORMAT_R8G8B8A8_UNORM;
+    const VkFormat tex_format = VK_FORMAT_R8G8B8A8_SRGB;
     int32_t tex_width;
     int32_t tex_height;
     VkResult U_ASSERT_ONLY err;
@@ -1813,7 +1813,7 @@ static void demo_destroy_texture(struct demo *demo, struct texture_object *tex_o
 }
 
 static void demo_prepare_textures(struct demo *demo) {
-    const VkFormat tex_format = VK_FORMAT_R8G8B8A8_UNORM;
+    const VkFormat tex_format = VK_FORMAT_R8G8B8A8_SRGB;
     VkFormatProperties props;
     uint32_t i;
 
@@ -1870,8 +1870,8 @@ static void demo_prepare_textures(struct demo *demo) {
             demo_pop_cb_label(demo, demo->cmd);  // "StagingTexture"
 
         } else {
-            /* Can't support VK_FORMAT_R8G8B8A8_UNORM !? */
-            assert(!"No support for R8G8B8A8_UNORM as texture image format");
+            /* Can't support VK_FORMAT_R8G8B8A8_SRGB !? */
+            assert(!"No support for R8G8B8A8_SRGB as texture image format");
         }
 
         const VkSamplerCreateInfo sampler = {
@@ -4143,7 +4143,10 @@ static void demo_init_vk(struct demo *demo) {
     }
 
     volkLoadInstance(demo->inst);
+}
 
+static void demo_select_physical_device(struct demo *demo) {
+    VkResult err;
     /* Make initial call to query gpu_count, then second call for gpu info */
     uint32_t gpu_count = 0;
     err = vkEnumeratePhysicalDevices(demo->inst, &gpu_count, NULL);
@@ -4181,34 +4184,42 @@ static void demo_init_vk(struct demo *demo) {
     } else {
         /* Try to auto select most suitable device */
         if (demo->gpu_number == -1) {
-            uint32_t count_device_type[VK_PHYSICAL_DEVICE_TYPE_CPU + 1];
-            memset(count_device_type, 0, sizeof(count_device_type));
-
             VkPhysicalDeviceProperties physicalDeviceProperties;
+            int prev_priority = 0;
             for (uint32_t i = 0; i < gpu_count; i++) {
                 vkGetPhysicalDeviceProperties(physical_devices[i], &physicalDeviceProperties);
                 assert(physicalDeviceProperties.deviceType <= VK_PHYSICAL_DEVICE_TYPE_CPU);
-                count_device_type[physicalDeviceProperties.deviceType]++;
-            }
 
-            VkPhysicalDeviceType search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-            if (count_device_type[VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU]) {
-                search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-            } else if (count_device_type[VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU]) {
-                search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-            } else if (count_device_type[VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU]) {
-                search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU;
-            } else if (count_device_type[VK_PHYSICAL_DEVICE_TYPE_CPU]) {
-                search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_CPU;
-            } else if (count_device_type[VK_PHYSICAL_DEVICE_TYPE_OTHER]) {
-                search_for_device_type = VK_PHYSICAL_DEVICE_TYPE_OTHER;
-            }
+                // Continue next gpu if this gpu does not support the surface.
+                VkBool32 supported = VK_FALSE;
+                VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(physical_devices[i], 0, demo->surface, &supported);
+                if (result != VK_SUCCESS || !supported) continue;
 
-            for (uint32_t i = 0; i < gpu_count; i++) {
-                vkGetPhysicalDeviceProperties(physical_devices[i], &physicalDeviceProperties);
-                if (physicalDeviceProperties.deviceType == search_for_device_type) {
+                int priority = 0;
+                switch (physicalDeviceProperties.deviceType) {
+                    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                        priority = 5;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                        priority = 4;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                        priority = 3;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                        priority = 2;
+                        break;
+                    case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+                        priority = 1;
+                        break;
+                    default:
+                        priority = -1;
+                        break;
+                }
+
+                if (priority > prev_priority) {
                     demo->gpu_number = i;
-                    break;
+                    prev_priority = priority;
                 }
             }
         }
@@ -4298,6 +4309,24 @@ static void demo_init_vk(struct demo *demo) {
     }
 
     if (demo->validate) {
+        /*
+         * This is info for a temp callback to use during CreateInstance.
+         * After the instance is created, we use the instance-based
+         * function to register the final callback.
+         */
+        VkDebugUtilsMessengerCreateInfoEXT dbg_messenger_create_info;
+        // VK_EXT_debug_utils style
+        dbg_messenger_create_info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        dbg_messenger_create_info.pNext = NULL;
+        dbg_messenger_create_info.flags = 0;
+        dbg_messenger_create_info.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        dbg_messenger_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        dbg_messenger_create_info.pfnUserCallback = debug_messenger_callback;
+        dbg_messenger_create_info.pUserData = demo;
+
         err = vkCreateDebugUtilsMessengerEXT(demo->inst, &dbg_messenger_create_info, NULL, &demo->dbg_messenger);
         switch (err) {
             case VK_SUCCESS:
@@ -4491,8 +4520,6 @@ static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surfaceF
 
 static void demo_init_vk_swapchain(struct demo *demo) {
     VkResult U_ASSERT_ONLY err;
-
-    demo_create_surface(demo);
 
     // Iterate over each queue to learn whether it supports presenting:
     VkBool32 *supportsPresent = (VkBool32 *)malloc(demo->queue_family_count * sizeof(VkBool32));
@@ -4868,6 +4895,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
     demo.connection = hInstance;
     strncpy(demo.name, "Vulkan Cube", APP_NAME_STR_LEN);
     demo_create_window(&demo);
+    demo_create_surface(&demo);
+    demo_select_physical_device(&demo);
     demo_init_vk_swapchain(&demo);
 
     demo_prepare(&demo);
@@ -4907,6 +4936,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
 static void demo_main(struct demo *demo, void *caMetalLayer, int argc, const char *argv[]) {
     demo_init(demo, argc, (char **)argv);
     demo->caMetalLayer = caMetalLayer;
+    demo_create_surface(demo);
+    demo_select_physical_device(demo);
     demo_init_vk_swapchain(demo);
     demo_prepare(demo);
     demo->spin_angle = 0.4f;
@@ -4959,6 +4990,8 @@ static void processCommand(struct android_app *app, int32_t cmd) {
                 for (int i = 0; i < argc; i++) free(argv[i]);
 
                 demo.window = (void *)app->window;
+                demo_create_surface(&demo);
+                demo_select_physical_device(&demo);
                 demo_init_vk_swapchain(&demo);
                 demo_prepare(&demo);
                 initialized = true;
@@ -5044,6 +5077,8 @@ int main(int argc, char **argv) {
             break;
 #endif
     }
+    demo_create_surface(&demo);
+    demo_select_physical_device(&demo);
 
     demo_init_vk_swapchain(&demo);
 

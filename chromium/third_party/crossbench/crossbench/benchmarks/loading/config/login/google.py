@@ -4,15 +4,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from crossbench.benchmarks.loading.config.login.base import PresetLoginBlock
-from crossbench.cli.config.secret_type import SecretType
 
 if TYPE_CHECKING:
   from crossbench.action_runner.base import ActionRunner
   from crossbench.benchmarks.loading.page.interactive import InteractivePage
-  from crossbench.cli.config.secrets import Secret
+  from crossbench.cli.config.secrets import UsernamePassword
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
@@ -41,7 +40,9 @@ class GoogleLogin(PresetLoginBlock):
 
   def run_with(self, runner: ActionRunner, run: Run,
                page: InteractivePage) -> None:
-    secret: Secret = self.get_secret(run, page, SecretType.GOOGLE)
+    secret: Optional[UsernamePassword] = run.secrets.google
+    if not secret:
+      raise RuntimeError("No google login provided")
 
     if self.is_logged_in(run, secret, strict=True):
       return

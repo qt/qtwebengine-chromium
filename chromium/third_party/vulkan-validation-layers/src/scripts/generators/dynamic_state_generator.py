@@ -145,8 +145,8 @@ dynamic_state_map = {
         "command" : ["vkCmdSetFragmentShadingRateKHR"],
         "dependency" : ["rasterizerDiscardEnable"]
     },
-    "VK_DYNAMIC_STATE_LINE_STIPPLE_KHR" : {
-        "command" : ["vkCmdSetLineStippleKHR"],
+    "VK_DYNAMIC_STATE_LINE_STIPPLE" : {
+        "command" : ["vkCmdSetLineStipple"],
         "dependency" : ["rasterizerDiscardEnable", "stippledLineEnable"]
     },
     "VK_DYNAMIC_STATE_VERTEX_INPUT_EXT" : {
@@ -520,7 +520,7 @@ class DynamicStateOutputGenerator(BaseGenerator):
                 if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT)) {
                     ss << "vkCmdSetLineStippleEnableEXT last set stippledLineEnable to VK_TRUE.\\n";
                 } else {
-                    ss << "VkPipelineRasterizationLineStateCreateInfoEXT::stippledLineEnable was VK_TRUE in the last bound graphics pipeline.\\n";
+                    ss << "VkPipelineRasterizationLineStateCreateInfo::stippledLineEnable was VK_TRUE in the last bound graphics pipeline.\\n";
                 }''')
             if 'sampleLocationsEnable' in dependency:
                 out.append('''

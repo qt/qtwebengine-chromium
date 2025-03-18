@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Optional
 
 from crossbench import compat
@@ -46,6 +47,13 @@ class Safari(Browser):
                label: str,
                path: pth.AnyPath,
                settings: Optional[Settings] = None):
+    self._type_name: str = "safari"
+    # TODO: use version object
+    settings = settings or Settings()
+    if path == self.technology_preview_path(settings.platform):
+      # Use a custom type name since safari tech-preview does not have
+      # a different major version.
+      self._type_name = "safari_tp"
     super().__init__(label, path, settings=settings)
     assert self.platform.is_macos, "Safari only works on MacOS"
     self.bundle_name: str = ""
@@ -64,22 +72,21 @@ class Safari(Browser):
 
   @property
   def type_name(self) -> str:
-    return "safari"
+    return self._type_name
 
   @property
   def attributes(self) -> BrowserAttributes:
     return BrowserAttributes.SAFARI
 
   def clear_cache(self) -> None:
-    self._clear_cache()
-
-  def _clear_cache(self) -> None:
     logging.info("CLEAR CACHE: %s", self)
-    self.platform.exec_apple_script(f"""
-      tell application "{self.app_path}" to activate
-      tell application "System Events"
-          keystroke "e" using {{command down, option down}}
-      end tell""")
+    assert self.cache_dir, "Missing cache dir"
+    if not self.platform.exists(self.cache_dir.parent):
+      logging.warning("Could not find existing config dir for %s.", self)
+      return
+    self.platform.rm(self.cache_dir, dir=True, missing_ok=True)
+    # This magic wait lowers safaridriver startup failures.
+    self.platform.sleep(0.5)
 
   def _extract_version(self) -> str:
     # Use the shipped safaridriver to get the more detailed version
@@ -91,4 +98,6 @@ class Safari(Browser):
     driver_version = " (" + driver_version.split(" (", maxsplit=1)[1]
     assert self.path
     app_path = self.path.parents[2]
-    return self.platform.app_version(app_path) + driver_version
+    browser_version = str(
+        re.findall(r"[\d\.]+", self.platform.app_version(app_path))[0])
+    return browser_version + driver_version

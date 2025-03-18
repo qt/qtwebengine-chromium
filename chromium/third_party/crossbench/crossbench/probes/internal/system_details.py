@@ -4,9 +4,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type
 
-from crossbench.probes.internal.base import InternalJsonResultProbe
+from crossbench.probes.internal.base import (InternalJsonResultProbe,
+                                             InternalJsonResultProbeContext)
 from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
@@ -22,8 +23,14 @@ class SystemDetailsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.system.details"
 
-  def to_json(self, actions: Actions) -> Json:
-    return actions.run.browser_platform.system_details()
-
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     return EmptyProbeResult()
+
+  def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
+    return SystemDetailsProbeContext
+
+
+class SystemDetailsProbeContext(InternalJsonResultProbeContext):
+
+  def to_json(self, actions: Actions) -> Json:
+    return self.run.browser_platform.system_details()

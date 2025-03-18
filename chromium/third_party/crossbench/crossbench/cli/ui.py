@@ -6,11 +6,10 @@ import contextlib
 import datetime as dt
 import logging
 import sys
+import threading
 from typing import Iterator
 
 import colorama
-
-from crossbench import helper
 
 colorama.init()
 
@@ -55,5 +54,18 @@ def timer(msg: str = "Elapsed Time") -> Iterator[None]:
     indent = colorama.Cursor.FORWARD() * 3
     sys.stdout.write(f"{indent}{msg}: {delta}\r")
 
-  with helper.RepeatTimer(interval=0.25, function=print_timer):
+  with RepeatTimer(interval=0.25, function=print_timer):
     yield
+
+
+class RepeatTimer(threading.Timer):
+
+  def run(self) -> None:
+    while not self.finished.wait(self.interval):
+      self.function(*self.args, **self.kwargs)
+
+  def __enter__(self, *args, **kwargs):
+    self.start()
+
+  def __exit__(self, *args, **kwargs):
+    self.cancel()

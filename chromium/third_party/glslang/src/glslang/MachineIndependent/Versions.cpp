@@ -373,6 +373,7 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_texture_shadow_lod]          = EBhDisable;
     extensionBehavior[E_GL_EXT_draw_instanced]              = EBhDisable;
     extensionBehavior[E_GL_EXT_texture_array]               = EBhDisable;
+    extensionBehavior[E_GL_EXT_texture_offset_non_const]    = EBhDisable;
 
     // OVR extensions
     extensionBehavior[E_GL_OVR_multiview]                = EBhDisable;
@@ -395,6 +396,8 @@ void TParseVersions::initializeExtensionBehavior()
     extensionBehavior[E_GL_EXT_shader_subgroup_extended_types_float16] = EBhDisable;
     extensionBehavior[E_GL_EXT_shader_atomic_float]                    = EBhDisable;
     extensionBehavior[E_GL_EXT_shader_atomic_float2]                   = EBhDisable;
+
+    extensionBehavior[E_GL_EXT_integer_dot_product]                    = EBhDisable;
 
     // Record extensions not for spv.
     spvUnsupportedExt.push_back(E_GL_ARB_bindless_texture);
@@ -603,6 +606,8 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_EXT_texture_array 1\n"
 
             "#define GL_EXT_control_flow_attributes2 1\n"
+
+            "#define GL_EXT_integer_dot_product 1\n"
             ;
 
         if (spvVersion.spv == 0) {
@@ -633,6 +638,11 @@ void TParseVersions::getPreamble(std::string& preamble)
             "#define GL_EXT_multiview 1\n"
             "#define GL_NV_shader_sm_builtins 1\n"
             ;
+    }
+
+    if ((!isEsProfile() && version >= 130) ||
+        (isEsProfile() && version >= 300)) {
+        preamble += "#define GL_EXT_texture_offset_non_const 1\n";
     }
 
     if (version >= 300 /* both ES and non-ES */) {

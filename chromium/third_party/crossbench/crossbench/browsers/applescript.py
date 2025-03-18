@@ -13,13 +13,14 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
 import psutil
 
-from crossbench import helper, plt
+from crossbench import plt
 from crossbench.browsers.browser import Browser
-from crossbench.env import HostEnvironment, ValidationError
+from crossbench.env import ValidationError
 
 if TYPE_CHECKING:
   import datetime as dt
 
+  from crossbench.env import HostEnvironment
   from crossbench.path import AnyPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
@@ -193,4 +194,4 @@ class AppleScriptBrowser(Browser, metaclass=abc.ABCMeta):
 
   def quit(self) -> None:
     self._exec_apple_script("quit")
-    helper.wait_and_kill(self._browser_process)
+    self.platform.wait_and_kill(self._browser_process)

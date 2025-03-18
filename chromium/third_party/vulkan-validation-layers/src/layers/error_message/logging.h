@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,11 @@
 #include <vector>
 
 #include <vulkan/utility/vk_struct_helper.hpp>
+#include <vulkan/vk_enum_string_helper.h>
 
 #include "containers/custom_containers.h"
 #include "generated/vk_object_types.h"
+#include "error_message/log_message_type.h"
 
 #if defined __ANDROID__
 #include <android/log.h>
@@ -107,8 +109,8 @@ static inline uint64_t HandleToUint64(uint64_t h) { return h; }
 
 // Data we store per label for logging
 struct LoggingLabel {
-    std::string name;
-    std::array<float, 4> color;
+    std::string name{};
+    std::array<float, 4> color{};
 
     void Reset() { *this = LoggingLabel(); }
     bool Empty() const { return name.empty(); }
@@ -125,8 +127,6 @@ struct LoggingLabel {
         if (label_info && label_info->pLabelName) {
             name = label_info->pLabelName;
             std::copy_n(std::begin(label_info->color), 4, color.begin());
-        } else {
-            Reset();
         }
     }
 
@@ -144,20 +144,18 @@ struct LoggingLabelState {
     LoggingLabel insert_label;
 
     // Export the labels, but in reverse order since we want the most recent at the top.
-    std::vector<VkDebugUtilsLabelEXT> Export() const {
-        size_t count = labels.size() + (insert_label.Empty() ? 0 : 1);
-        std::vector<VkDebugUtilsLabelEXT> out(count);
+    void Export(std::vector<VkDebugUtilsLabelEXT> &exported_labels) const {
+        exported_labels.reserve(exported_labels.size() + 1 + labels.size());
 
-        if (!count) return out;
-
-        size_t index = count - 1;
         if (!insert_label.Empty()) {
-            out[index--] = insert_label.Export();
+            exported_labels.emplace_back(insert_label.Export());
         }
-        for (const auto &label : labels) {
-            out[index--] = label.Export();
-        }
-        return out;
+
+        std::for_each(labels.rbegin(), labels.rend(), [&exported_labels](const LoggingLabel &label) {
+            if (!label.Empty()) {
+                exported_labels.emplace_back(label.Export());
+            }
+        });
     }
 };
 
@@ -180,6 +178,14 @@ struct MessageFormatSettings {
     std::string application_name;
 };
 
+#if defined(__clang__)
+#define DECORATE_PRINTF(_fmt_argnum, _first_param_num) __attribute__((format(printf, _fmt_argnum, _first_param_num)))
+#elif defined(__GNUC__)
+#define DECORATE_PRINTF(_fmt_argnum, _first_param_num) __attribute__((format(gnu_printf, _fmt_argnum, _first_param_num)))
+#else
+#define DECORATE_PRINTF(_fmt_num, _first_param_num)
+#endif
+
 class DebugReport {
   public:
     std::vector<VkLayerDbgFunctionState> debug_callback_list;
@@ -193,6 +199,7 @@ class DebugReport {
     bool force_default_log_callback{false};
     uint32_t device_created = 0;
     MessageFormatSettings message_format_settings;
+    bool debug_stable_messages{false};
 
     void SetUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo);
     void SetMarkerObjectName(const VkDebugMarkerObjectNameInfoEXT *pNameInfo);
@@ -246,7 +253,81 @@ class DebugReport {
     vvl::unordered_map<uint64_t, std::string> debug_utils_object_name_map;
 };
 
-template DebugReport *GetLayerDataPtr<DebugReport>(void *data_key, std::unordered_map<void *, DebugReport *> &data_map);
+class Logger {
+  public:
+    Logger(DebugReport *dr) : debug_report(dr) {}
+    template <typename T>
+    std::string FormatHandle(T &&h) const {
+        return debug_report->FormatHandle(std::forward<T>(h));
+    }
+
+    // Debug Logging Helpers
+    bool DECORATE_PRINTF(5, 6)
+        LogError(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc, const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kErrorBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    // Currently works like LogWarning, but allows developer to better categorize the warning
+    bool DECORATE_PRINTF(5, 6) LogUndefinedValue(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc,
+                                                 const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kWarningBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    bool DECORATE_PRINTF(5, 6)
+        LogWarning(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc, const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kWarningBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    bool DECORATE_PRINTF(5, 6) LogPerformanceWarning(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc,
+                                                     const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kPerformanceWarningBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    bool DECORATE_PRINTF(5, 6)
+        LogInfo(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc, const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kInformationBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    bool DECORATE_PRINTF(5, 6)
+        LogVerbose(std::string_view vuid_text, const LogObjectList &objlist, const Location &loc, const char *format, ...) const {
+        va_list argptr;
+        va_start(argptr, format);
+        const bool result = debug_report->LogMsg(kVerboseBit, objlist, loc, vuid_text, format, argptr);
+        va_end(argptr);
+        return result;
+    }
+
+    void LogInternalError(std::string_view failure_location, const LogObjectList &obj_list, const Location &loc,
+                          std::string_view entrypoint, VkResult err) const {
+        const std::string_view err_string = string_VkResult(err);
+        std::string vuid = "INTERNAL-ERROR-";
+        vuid += entrypoint;
+        LogError(vuid, obj_list, loc, "at %s: %s() was called in the Validation Layer state tracking and failed with result = %s.",
+                 failure_location.data(), entrypoint.data(), err_string.data());
+    }
+
+    DebugReport *debug_report{nullptr};
+};
 
 VKAPI_ATTR VkResult LayerCreateMessengerCallback(DebugReport *debug_report, bool default_callback,
                                                  const VkDebugUtilsMessengerCreateInfoEXT *create_info,
@@ -265,8 +346,6 @@ static inline void LayerDestroyCallback(DebugReport *debug_report, T callback) {
 VKAPI_ATTR void ActivateInstanceDebugCallbacks(DebugReport *debug_report);
 
 VKAPI_ATTR void DeactivateInstanceDebugCallbacks(DebugReport *debug_report);
-
-VKAPI_ATTR void LayerDebugUtilsDestroyInstance(DebugReport *debug_report);
 
 VKAPI_ATTR VkBool32 VKAPI_CALL MessengerBreakCallback(VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
                                                       VkDebugUtilsMessageTypeFlagsEXT message_type,

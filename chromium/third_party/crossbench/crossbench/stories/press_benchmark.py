@@ -174,6 +174,10 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     super().log_run_details(run)
     self.log_run_test_url(run)
 
+  @property
+  def test_url(self) -> str:
+    return self.URL
+
   def log_run_test_url(self, run: Run):
     del run
-    logging.info("STORY PUBLIC TEST URL: %s", self.URL)
+    logging.info("STORY PUBLIC TEST URL: %s", self.test_url)

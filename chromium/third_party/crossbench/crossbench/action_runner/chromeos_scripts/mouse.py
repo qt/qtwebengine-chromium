@@ -13,9 +13,6 @@ import uinput
 
 screen_width = int(sys.argv[1])
 screen_height = int(sys.argv[2])
-click_duration = float(sys.argv[3])
-x = int(sys.argv[4])
-y = int(sys.argv[5])
 
 events = (
     uinput.ABS_X + (0, screen_width, 0, 0),
@@ -27,11 +24,22 @@ events = (
 with uinput.Device(events) as device:
   # The system needs a bit of time before it can start processing events from
   # the newly registered device.
-  time.sleep(0.1)
+  time.sleep(0.2)
 
-  device.emit(uinput.ABS_X, x, syn=False)
-  device.emit(uinput.ABS_Y, y)
+  sys.stdout.write("0\n")
+  sys.stdout.flush()
 
-  device.emit(uinput.BTN_LEFT, 1)
-  time.sleep(click_duration)
-  device.emit(uinput.BTN_LEFT, 0)
+  while True:
+    duration = float(sys.stdin.readline())
+    x = int(sys.stdin.readline())
+    y = int(sys.stdin.readline())
+
+    device.emit(uinput.ABS_X, x, syn=False)
+    device.emit(uinput.ABS_Y, y)
+
+    device.emit(uinput.BTN_LEFT, 1)
+    time.sleep(duration)
+    device.emit(uinput.BTN_LEFT, 0)
+
+    sys.stdout.write("0\n")
+    sys.stdout.flush()

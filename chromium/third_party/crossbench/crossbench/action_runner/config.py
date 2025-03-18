@@ -10,9 +10,9 @@ from typing import Any
 from crossbench.action_runner.android_input_action_runner import \
     AndroidInputActionRunner
 from crossbench.action_runner.base import ActionRunner
-from crossbench.action_runner.basic_action_runner import BasicActionRunner
 from crossbench.action_runner.chromeos_input_action_runner import \
     ChromeOSInputActionRunner
+from crossbench.action_runner.default_action_runner import DefaultActionRunner
 
 
 # TODO: migrate to full config.ConfigObject
@@ -23,7 +23,7 @@ class ActionRunnerConfig:
     if isinstance(value, ActionRunner):
       return value
     if value == "basic":
-      return BasicActionRunner()
+      return DefaultActionRunner()
     if value == "android":
       return AndroidInputActionRunner()
     if value == "chromeos":

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Final, Iterable, Optional, Tuple, Type, Union
 
 from crossbench import path as pth
 from crossbench.browsers.version import BrowserVersion, UnknownBrowserVersion
-from crossbench.helper import Spinner
+from crossbench.helper.spinner import Spinner
 
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
@@ -270,20 +270,20 @@ class RPMArchiveHelper(ArchiveHelper):
   @classmethod
   def extract(cls, platform: Platform, archive_path: pth.LocalPath,
               dest_path: pth.LocalPath) -> pth.LocalPath:
-    assert platform.which("rpm2cpio"), (
-        "Need rpm2cpio to extract downloaded .rpm archive")
-    assert platform.which("cpio"), (
-        "Need cpio to extract downloaded .rpm archive")
+    rpm2cpio = platform.which("rpm2cpio")
+    assert rpm2cpio, ("Need rpm2cpio to extract downloaded .rpm archive")
+    cpio = platform.which("cpio")
+    assert cpio, ("Need cpio to extract downloaded .rpm archive")
     cpio_file = archive_path.with_suffix(".cpio")
     assert not cpio_file.exists()
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     with cpio_file.open("w") as f:
-      platform.sh("rpm2cpio", archive_path, stdout=f)
+      platform.sh(rpm2cpio, archive_path, stdout=f)
     assert cpio_file.is_file(), f"Could not extract archive: {archive_path}"
     assert not dest_path.exists()
     with cpio_file.open() as f:
       platform.sh(
-          "cpio",
+          cpio,
           "--extract",
           f"--directory={dest_path}",
           "--make-directories",

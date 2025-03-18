@@ -9,7 +9,7 @@ import datetime as dt
 import logging
 import threading
 import time
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Iterable, Type
 
 from crossbench.parse import DurationParser, ObjectParser
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeKeyT
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
   from crossbench.path import LocalPath
   from crossbench.plt.base import CmdArg, TupleCmdArgs
   from crossbench.runner.run import Run
+
 
 class PollingProbe(Probe, metaclass=abc.ABCMeta):
   """
@@ -70,11 +71,11 @@ class PollingProbe(Probe, metaclass=abc.ABCMeta):
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
-  def get_context(self, run: Run) -> PollingProbeContext:
-    return PollingProbeContext(self, run)
+  def get_context_cls(self) -> Type[PollingProbeContext]:
+    return PollingProbeContext
 
 
-class ShellPollingProbe(PollingProbe):
+class PollingShellProbe(PollingProbe):
   """
   General-purpose probe to periodically collect the stdout of a given bash cmd.
   """

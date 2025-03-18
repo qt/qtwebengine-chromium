@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
-from abc import ABCMeta, abstractmethod
+import abc
 import argparse
 import re
-from typing import Any, Dict, Hashable, List, Pattern, TYPE_CHECKING, Type, Union
+from typing import (TYPE_CHECKING, Any, Dict, Hashable, List, Pattern, Type,
+                    Union)
 
 from immutabledict import immutabledict
 
@@ -16,6 +17,7 @@ from crossbench import path as pth
 from crossbench.compat import StrEnum
 from crossbench.config import ConfigObject
 from crossbench.parse import NumberParser, ObjectParser
+
 if TYPE_CHECKING:
   from crossbench.plt.base import Platform
 
@@ -38,15 +40,15 @@ if TYPE_CHECKING:
   FrequencyType = Union[_ExtremeFrequency, int]
 
 
-class CPUFrequencyMap(ConfigObject, metaclass=ABCMeta):
+class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
 
-  @abstractmethod
+  @abc.abstractmethod
   def get_target_frequencies(
       self, platform: Platform) -> immutabledict[pth.AnyPosixPath, int]:
     raise NotImplementedError()
 
   @property
-  @abstractmethod
+  @abc.abstractmethod
   def key(self) -> Hashable:
     raise NotImplementedError()
 

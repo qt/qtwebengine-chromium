@@ -26,6 +26,16 @@ wheel: <
 >
 
 wheel: <
+  name: "infra/python/wheels/mypy-py3"
+  version: "version:1.13.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/tomli-py3"
+  version: "version:2.0.1"
+>
+
+wheel: <
   name: "infra/python/wheels/selenium-py3"
   version: "version:4.10.0"
 >
@@ -42,7 +52,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/pyfakefs-py3"
-  version: "version:5.5.0"
+  version: "version:5.7.3"
 >
 
 wheel: <
@@ -102,7 +112,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/mypy-extensions-py3"
-  version: "version:0.4.3"
+  version: "version:1.0.0"
 >
 
 wheel: <
@@ -137,7 +147,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/typing-extensions-py3"
-  version: "version:4.3.0"
+  version: "version:4.12.2"
 >
 
 wheel: <
@@ -314,3 +324,34 @@ wheel: <
   name: "infra/python/wheels/protobuf-py3"
   version: "version:4.25.3"
 >
+
+wheel: <
+  name: "infra/python/wheels/pygments-py3"
+  version: "version:2.14.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-auth-py2_py3"
+  version: "version:2.32.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/rsa-py3"
+  version: "version:4.9.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/pyasn1_modules-py2_py3"
+  version: "version:0.3.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/cachetools-py3"
+  version: "version:5.3.3"
+>
+
+wheel: <
+  name: "infra/python/wheels/pyasn1-py2_py3"
+  version: "version:0.5.1"
+>
+

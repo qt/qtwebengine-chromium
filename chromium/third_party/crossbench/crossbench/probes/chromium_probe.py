@@ -19,3 +19,7 @@ class ChromiumProbe(Probe):
   def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_browser(browser, BrowserAttributes.CHROMIUM_BASED)
+
+  def attach(self, browser: Browser) -> None:
+    self.expect_browser(browser, BrowserAttributes.CHROMIUM_BASED)
+    super().attach(browser)

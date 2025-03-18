@@ -22,7 +22,8 @@ class Network(abc.ABC):
 
   def __init__(self,
                traffic_shaper: Optional[TrafficShaper] = None,
-               browser_platform: plt.Platform = plt.PLATFORM) -> None:
+               browser_platform: Optional[plt.Platform] = None) -> None:
+    browser_platform = browser_platform or plt.PLATFORM
     self._traffic_shaper = traffic_shaper or NoTrafficShaper(browser_platform)
     self._browser_platform = browser_platform
     self._host_platform = browser_platform.host_platform

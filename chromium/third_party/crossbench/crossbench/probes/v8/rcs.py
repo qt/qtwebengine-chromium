@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import TYPE_CHECKING, Optional, Union, cast
+from typing import TYPE_CHECKING, Optional, Type, Union
 
-from crossbench.browsers.chromium.chromium import Chromium
 from crossbench.probes.chromium_probe import ChromiumProbe
-from crossbench.probes.probe import ProbeContext, ProbeMissingDataError
+from crossbench.probes.probe import ProbeContext
+from crossbench.probes.probe_error import ProbeMissingDataError
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
@@ -32,13 +32,11 @@ class V8RCSProbe(ChromiumProbe):
   NAME = "v8.rcs"
 
   def attach(self, browser: Browser) -> None:
-    assert isinstance(browser, Chromium), "Expected Chromium-based browser."
     super().attach(browser)
-    chromium = cast(Chromium, browser)
-    chromium.js_flags.update(("--runtime-call-stats", "--allow-natives-syntax"))
+    browser.js_flags.update(("--runtime-call-stats", "--allow-natives-syntax"))
 
-  def get_context(self, run: Run) -> V8RCSProbeContext:
-    return V8RCSProbeContext(self, run)
+  def get_context_cls(self) -> Type[V8RCSProbeContext]:
+    return V8RCSProbeContext
 
   def concat_group_files(self,
                          group: Union[RepetitionsRunGroup,

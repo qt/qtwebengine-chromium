@@ -595,26 +595,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpStencilAttachmentReadEXT";
         case spv::OpTerminateInvocation:
             return "OpTerminateInvocation";
-        case spv::OpTypeUntypedPointerKHR:
-            return "OpTypeUntypedPointerKHR";
-        case spv::OpUntypedVariableKHR:
-            return "OpUntypedVariableKHR";
-        case spv::OpUntypedAccessChainKHR:
-            return "OpUntypedAccessChainKHR";
-        case spv::OpUntypedInBoundsAccessChainKHR:
-            return "OpUntypedInBoundsAccessChainKHR";
         case spv::OpSubgroupBallotKHR:
             return "OpSubgroupBallotKHR";
         case spv::OpSubgroupFirstInvocationKHR:
             return "OpSubgroupFirstInvocationKHR";
-        case spv::OpUntypedPtrAccessChainKHR:
-            return "OpUntypedPtrAccessChainKHR";
-        case spv::OpUntypedInBoundsPtrAccessChainKHR:
-            return "OpUntypedInBoundsPtrAccessChainKHR";
-        case spv::OpUntypedArrayLengthKHR:
-            return "OpUntypedArrayLengthKHR";
-        case spv::OpUntypedPrefetchKHR:
-            return "OpUntypedPrefetchKHR";
         case spv::OpSubgroupAllKHR:
             return "OpSubgroupAllKHR";
         case spv::OpSubgroupAnyKHR:
@@ -717,22 +701,6 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpFragmentFetchAMD";
         case spv::OpReadClockKHR:
             return "OpReadClockKHR";
-        case spv::OpAllocateNodePayloadsAMDX:
-            return "OpAllocateNodePayloadsAMDX";
-        case spv::OpEnqueueNodePayloadsAMDX:
-            return "OpEnqueueNodePayloadsAMDX";
-        case spv::OpTypeNodePayloadArrayAMDX:
-            return "OpTypeNodePayloadArrayAMDX";
-        case spv::OpFinishWritingNodePayloadAMDX:
-            return "OpFinishWritingNodePayloadAMDX";
-        case spv::OpNodePayloadArrayLengthAMDX:
-            return "OpNodePayloadArrayLengthAMDX";
-        case spv::OpIsNodePayloadValidAMDX:
-            return "OpIsNodePayloadValidAMDX";
-        case spv::OpConstantStringAMDX:
-            return "OpConstantStringAMDX";
-        case spv::OpSpecConstantStringAMDX:
-            return "OpSpecConstantStringAMDX";
         case spv::OpGroupNonUniformQuadAllKHR:
             return "OpGroupNonUniformQuadAllKHR";
         case spv::OpGroupNonUniformQuadAnyKHR:
@@ -805,6 +773,16 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpTypeHitObjectNV";
         case spv::OpImageSampleFootprintNV:
             return "OpImageSampleFootprintNV";
+        case spv::OpTypeCooperativeVectorNV:
+            return "OpTypeCooperativeVectorNV";
+        case spv::OpCooperativeVectorMatrixMulNV:
+            return "OpCooperativeVectorMatrixMulNV";
+        case spv::OpCooperativeVectorOuterProductAccumulateNV:
+            return "OpCooperativeVectorOuterProductAccumulateNV";
+        case spv::OpCooperativeVectorReduceSumAccumulateNV:
+            return "OpCooperativeVectorReduceSumAccumulateNV";
+        case spv::OpCooperativeVectorMatrixMulAddNV:
+            return "OpCooperativeVectorMatrixMulAddNV";
         case spv::OpCooperativeMatrixConvertNV:
             return "OpCooperativeMatrixConvertNV";
         case spv::OpEmitMeshTasksEXT:
@@ -819,6 +797,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpFetchMicroTriangleVertexPositionNV";
         case spv::OpFetchMicroTriangleVertexBarycentricNV:
             return "OpFetchMicroTriangleVertexBarycentricNV";
+        case spv::OpCooperativeVectorLoadNV:
+            return "OpCooperativeVectorLoadNV";
+        case spv::OpCooperativeVectorStoreNV:
+            return "OpCooperativeVectorStoreNV";
         case spv::OpReportIntersectionKHR:
             return "OpReportIntersectionKHR";
         case spv::OpIgnoreIntersectionNV:
@@ -837,6 +819,10 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpTypeAccelerationStructureKHR";
         case spv::OpExecuteCallableNV:
             return "OpExecuteCallableNV";
+        case spv::OpRayQueryGetClusterIdNV:
+            return "OpRayQueryGetClusterIdNV";
+        case spv::OpHitObjectGetClusterIdNV:
+            return "OpHitObjectGetClusterIdNV";
         case spv::OpTypeCooperativeMatrixNV:
             return "OpTypeCooperativeMatrixNV";
         case spv::OpCooperativeMatrixLoadNV:
@@ -905,6 +891,32 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpSamplerImageAddressingModeNV";
         case spv::OpRawAccessChainNV:
             return "OpRawAccessChainNV";
+        case spv::OpRayQueryGetIntersectionSpherePositionNV:
+            return "OpRayQueryGetIntersectionSpherePositionNV";
+        case spv::OpRayQueryGetIntersectionSphereRadiusNV:
+            return "OpRayQueryGetIntersectionSphereRadiusNV";
+        case spv::OpRayQueryGetIntersectionLSSPositionsNV:
+            return "OpRayQueryGetIntersectionLSSPositionsNV";
+        case spv::OpRayQueryGetIntersectionLSSRadiiNV:
+            return "OpRayQueryGetIntersectionLSSRadiiNV";
+        case spv::OpRayQueryGetIntersectionLSSHitValueNV:
+            return "OpRayQueryGetIntersectionLSSHitValueNV";
+        case spv::OpHitObjectGetSpherePositionNV:
+            return "OpHitObjectGetSpherePositionNV";
+        case spv::OpHitObjectGetSphereRadiusNV:
+            return "OpHitObjectGetSphereRadiusNV";
+        case spv::OpHitObjectGetLSSPositionsNV:
+            return "OpHitObjectGetLSSPositionsNV";
+        case spv::OpHitObjectGetLSSRadiiNV:
+            return "OpHitObjectGetLSSRadiiNV";
+        case spv::OpHitObjectIsSphereHitNV:
+            return "OpHitObjectIsSphereHitNV";
+        case spv::OpHitObjectIsLSSHitNV:
+            return "OpHitObjectIsLSSHitNV";
+        case spv::OpRayQueryIsSphereHitNV:
+            return "OpRayQueryIsSphereHitNV";
+        case spv::OpRayQueryIsLSSHitNV:
+            return "OpRayQueryIsLSSHitNV";
         case spv::OpUCountLeadingZerosINTEL:
             return "OpUCountLeadingZerosINTEL";
         case spv::OpUCountTrailingZerosINTEL:
@@ -989,6 +1001,18 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpArithmeticFenceEXT";
         case spv::OpSubgroupBlockPrefetchINTEL:
             return "OpSubgroupBlockPrefetchINTEL";
+        case spv::OpSubgroup2DBlockLoadINTEL:
+            return "OpSubgroup2DBlockLoadINTEL";
+        case spv::OpSubgroup2DBlockLoadTransformINTEL:
+            return "OpSubgroup2DBlockLoadTransformINTEL";
+        case spv::OpSubgroup2DBlockLoadTransposeINTEL:
+            return "OpSubgroup2DBlockLoadTransposeINTEL";
+        case spv::OpSubgroup2DBlockPrefetchINTEL:
+            return "OpSubgroup2DBlockPrefetchINTEL";
+        case spv::OpSubgroup2DBlockStoreINTEL:
+            return "OpSubgroup2DBlockStoreINTEL";
+        case spv::OpSubgroupMatrixMultiplyAccumulateINTEL:
+            return "OpSubgroupMatrixMultiplyAccumulateINTEL";
         case spv::OpGroupIMulKHR:
             return "OpGroupIMulKHR";
         case spv::OpGroupFMulKHR:
@@ -1006,6 +1030,40 @@ const char* string_SpvOpcode(uint32_t opcode) {
         case spv::OpGroupLogicalXorKHR:
             return "OpGroupLogicalXorKHR";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::OpTypeUntypedPointerKHR:
+            return "OpTypeUntypedPointerKHR";
+        case spv::OpUntypedVariableKHR:
+            return "OpUntypedVariableKHR";
+        case spv::OpUntypedAccessChainKHR:
+            return "OpUntypedAccessChainKHR";
+        case spv::OpUntypedInBoundsAccessChainKHR:
+            return "OpUntypedInBoundsAccessChainKHR";
+        case spv::OpUntypedPtrAccessChainKHR:
+            return "OpUntypedPtrAccessChainKHR";
+        case spv::OpUntypedInBoundsPtrAccessChainKHR:
+            return "OpUntypedInBoundsPtrAccessChainKHR";
+        case spv::OpUntypedArrayLengthKHR:
+            return "OpUntypedArrayLengthKHR";
+        case spv::OpUntypedPrefetchKHR:
+            return "OpUntypedPrefetchKHR";
+        case spv::OpAllocateNodePayloadsAMDX:
+            return "OpAllocateNodePayloadsAMDX";
+        case spv::OpEnqueueNodePayloadsAMDX:
+            return "OpEnqueueNodePayloadsAMDX";
+        case spv::OpTypeNodePayloadArrayAMDX:
+            return "OpTypeNodePayloadArrayAMDX";
+        case spv::OpFinishWritingNodePayloadAMDX:
+            return "OpFinishWritingNodePayloadAMDX";
+        case spv::OpNodePayloadArrayLengthAMDX:
+            return "OpNodePayloadArrayLengthAMDX";
+        case spv::OpIsNodePayloadValidAMDX:
+            return "OpIsNodePayloadValidAMDX";
+        case spv::OpConstantStringAMDX:
+            return "OpConstantStringAMDX";
+        case spv::OpSpecConstantStringAMDX:
+            return "OpSpecConstantStringAMDX";
+#endif
         default:
             return "Unknown Opcode";
     }
@@ -1041,8 +1099,6 @@ const char* string_SpvStorageClass(uint32_t storage_class) {
             return "StorageBuffer";
         case spv::StorageClassTileImageEXT:
             return "TileImageEXT";
-        case spv::StorageClassNodePayloadAMDX:
-            return "NodePayloadAMDX";
         case spv::StorageClassCallableDataKHR:
             return "CallableDataKHR";
         case spv::StorageClassIncomingCallableDataKHR:
@@ -1068,6 +1124,10 @@ const char* string_SpvStorageClass(uint32_t storage_class) {
         case spv::StorageClassHostOnlyINTEL:
             return "HostOnlyINTEL";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::StorageClassNodePayloadAMDX:
+            return "NodePayloadAMDX";
+#endif
         default:
             return "Unknown Storage Class";
     }
@@ -1110,6 +1170,8 @@ const char* string_SpvExecutionModel(uint32_t execution_model) {
         case spv::ExecutionModelMeshEXT:
             return "MeshEXT";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+#endif
         default:
             return "Unknown Execution Model";
     }
@@ -1217,18 +1279,6 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
             return "EarlyAndLateFragmentTestsAMD";
         case spv::ExecutionModeStencilRefReplacingEXT:
             return "StencilRefReplacingEXT";
-        case spv::ExecutionModeCoalescingAMDX:
-            return "CoalescingAMDX";
-        case spv::ExecutionModeIsApiEntryAMDX:
-            return "IsApiEntryAMDX";
-        case spv::ExecutionModeMaxNodeRecursionAMDX:
-            return "MaxNodeRecursionAMDX";
-        case spv::ExecutionModeStaticNumWorkgroupsAMDX:
-            return "StaticNumWorkgroupsAMDX";
-        case spv::ExecutionModeShaderIndexAMDX:
-            return "ShaderIndexAMDX";
-        case spv::ExecutionModeMaxNumWorkgroupsAMDX:
-            return "MaxNumWorkgroupsAMDX";
         case spv::ExecutionModeStencilRefUnchangedFrontAMD:
             return "StencilRefUnchangedFrontAMD";
         case spv::ExecutionModeStencilRefGreaterFrontAMD:
@@ -1245,8 +1295,6 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
             return "QuadDerivativesKHR";
         case spv::ExecutionModeRequireFullQuadsKHR:
             return "RequireFullQuadsKHR";
-        case spv::ExecutionModeSharesInputWithAMDX:
-            return "SharesInputWithAMDX";
         case spv::ExecutionModeOutputLinesEXT:
             return "OutputLinesEXT";
         case spv::ExecutionModeOutputPrimitivesEXT:
@@ -1306,6 +1354,22 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
         case spv::ExecutionModeNamedMaximumRegistersINTEL:
             return "NamedMaximumRegistersINTEL";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::ExecutionModeCoalescingAMDX:
+            return "CoalescingAMDX";
+        case spv::ExecutionModeIsApiEntryAMDX:
+            return "IsApiEntryAMDX";
+        case spv::ExecutionModeMaxNodeRecursionAMDX:
+            return "MaxNodeRecursionAMDX";
+        case spv::ExecutionModeStaticNumWorkgroupsAMDX:
+            return "StaticNumWorkgroupsAMDX";
+        case spv::ExecutionModeShaderIndexAMDX:
+            return "ShaderIndexAMDX";
+        case spv::ExecutionModeMaxNumWorkgroupsAMDX:
+            return "MaxNumWorkgroupsAMDX";
+        case spv::ExecutionModeSharesInputWithAMDX:
+            return "SharesInputWithAMDX";
+#endif
         default:
             return "Unknown Execution Mode";
     }
@@ -1419,22 +1483,6 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "BlockMatchSamplerQCOM";
         case spv::DecorationExplicitInterpAMD:
             return "ExplicitInterpAMD";
-        case spv::DecorationNodeSharesPayloadLimitsWithAMDX:
-            return "NodeSharesPayloadLimitsWithAMDX";
-        case spv::DecorationNodeMaxPayloadsAMDX:
-            return "NodeMaxPayloadsAMDX";
-        case spv::DecorationTrackFinishWritingAMDX:
-            return "TrackFinishWritingAMDX";
-        case spv::DecorationPayloadNodeNameAMDX:
-            return "PayloadNodeNameAMDX";
-        case spv::DecorationPayloadNodeBaseIndexAMDX:
-            return "PayloadNodeBaseIndexAMDX";
-        case spv::DecorationPayloadNodeSparseArrayAMDX:
-            return "PayloadNodeSparseArrayAMDX";
-        case spv::DecorationPayloadNodeArraySizeAMDX:
-            return "PayloadNodeArraySizeAMDX";
-        case spv::DecorationPayloadDispatchIndirectAMDX:
-            return "PayloadDispatchIndirectAMDX";
         case spv::DecorationOverrideCoverageNV:
             return "OverrideCoverageNV";
         case spv::DecorationPassthroughNV:
@@ -1598,6 +1646,24 @@ const char* string_SpvDecoration(uint32_t decoration) {
         case spv::DecorationCacheControlStoreINTEL:
             return "CacheControlStoreINTEL";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::DecorationNodeSharesPayloadLimitsWithAMDX:
+            return "NodeSharesPayloadLimitsWithAMDX";
+        case spv::DecorationNodeMaxPayloadsAMDX:
+            return "NodeMaxPayloadsAMDX";
+        case spv::DecorationTrackFinishWritingAMDX:
+            return "TrackFinishWritingAMDX";
+        case spv::DecorationPayloadNodeNameAMDX:
+            return "PayloadNodeNameAMDX";
+        case spv::DecorationPayloadNodeBaseIndexAMDX:
+            return "PayloadNodeBaseIndexAMDX";
+        case spv::DecorationPayloadNodeSparseArrayAMDX:
+            return "PayloadNodeSparseArrayAMDX";
+        case spv::DecorationPayloadNodeArraySizeAMDX:
+            return "PayloadNodeArraySizeAMDX";
+        case spv::DecorationPayloadDispatchIndirectAMDX:
+            return "PayloadDispatchIndirectAMDX";
+#endif
         default:
             return "Unknown Decoration";
     }
@@ -1737,10 +1803,6 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "BaryCoordPullModelAMD";
         case spv::BuiltInFragStencilRefEXT:
             return "FragStencilRefEXT";
-        case spv::BuiltInRemainingRecursionLevelsAMDX:
-            return "RemainingRecursionLevelsAMDX";
-        case spv::BuiltInShaderIndexAMDX:
-            return "ShaderIndexAMDX";
         case spv::BuiltInViewportMaskNV:
             return "ViewportMaskNV";
         case spv::BuiltInSecondaryPositionNV:
@@ -1823,6 +1885,12 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "IncomingRayFlagsKHR";
         case spv::BuiltInRayGeometryIndexKHR:
             return "RayGeometryIndexKHR";
+        case spv::BuiltInHitIsSphereNV:
+            return "HitIsSphereNV";
+        case spv::BuiltInHitIsLSSNV:
+            return "HitIsLSSNV";
+        case spv::BuiltInHitSpherePositionNV:
+            return "HitSpherePositionNV";
         case spv::BuiltInWarpsPerSMNV:
             return "WarpsPerSMNV";
         case spv::BuiltInSMCountNV:
@@ -1831,13 +1899,27 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "WarpIDNV";
         case spv::BuiltInSMIDNV:
             return "SMIDNV";
+        case spv::BuiltInHitLSSPositionsNV:
+            return "HitLSSPositionsNV";
         case spv::BuiltInHitKindFrontFacingMicroTriangleNV:
             return "HitKindFrontFacingMicroTriangleNV";
         case spv::BuiltInHitKindBackFacingMicroTriangleNV:
             return "HitKindBackFacingMicroTriangleNV";
+        case spv::BuiltInHitSphereRadiusNV:
+            return "HitSphereRadiusNV";
+        case spv::BuiltInHitLSSRadiiNV:
+            return "HitLSSRadiiNV";
+        case spv::BuiltInClusterIDNV:
+            return "ClusterIDNV";
         case spv::BuiltInCullMaskKHR:
             return "CullMaskKHR";
 
+#ifdef VK_ENABLE_BETA_EXTENSIONS
+        case spv::BuiltInRemainingRecursionLevelsAMDX:
+            return "RemainingRecursionLevelsAMDX";
+        case spv::BuiltInShaderIndexAMDX:
+            return "ShaderIndexAMDX";
+#endif
         default:
             return "Unknown BuiltIn";
     }
@@ -2186,16 +2268,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpDepthAttachmentReadEXT, {{OperandKind::Id}}},
         {spv::OpStencilAttachmentReadEXT, {{OperandKind::Id}}},
         {spv::OpTerminateInvocation, {{}}},
-        {spv::OpTypeUntypedPointerKHR, {{OperandKind::ValueEnum}}},
-        {spv::OpUntypedVariableKHR, {{OperandKind::ValueEnum, OperandKind::Id, OperandKind::Id}}},
-        {spv::OpUntypedAccessChainKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
-        {spv::OpUntypedInBoundsAccessChainKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpSubgroupBallotKHR, {{OperandKind::Id}}},
         {spv::OpSubgroupFirstInvocationKHR, {{OperandKind::Id}}},
-        {spv::OpUntypedPtrAccessChainKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
-        {spv::OpUntypedInBoundsPtrAccessChainKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
-        {spv::OpUntypedArrayLengthKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Literal}}},
-        {spv::OpUntypedPrefetchKHR, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpSubgroupAllKHR, {{OperandKind::Id}}},
         {spv::OpSubgroupAnyKHR, {{OperandKind::Id}}},
         {spv::OpSubgroupAllEqualKHR, {{OperandKind::Id}}},
@@ -2247,14 +2321,6 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpFragmentMaskFetchAMD, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpFragmentFetchAMD, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpReadClockKHR, {{OperandKind::Id}}},
-        {spv::OpAllocateNodePayloadsAMDX, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
-        {spv::OpEnqueueNodePayloadsAMDX, {{OperandKind::Id}}},
-        {spv::OpTypeNodePayloadArrayAMDX, {{OperandKind::Id}}},
-        {spv::OpFinishWritingNodePayloadAMDX, {{OperandKind::Id}}},
-        {spv::OpNodePayloadArrayLengthAMDX, {{OperandKind::Id}}},
-        {spv::OpIsNodePayloadValidAMDX, {{OperandKind::Id, OperandKind::Id}}},
-        {spv::OpConstantStringAMDX, {{OperandKind::LiteralString}}},
-        {spv::OpSpecConstantStringAMDX, {{OperandKind::LiteralString}}},
         {spv::OpGroupNonUniformQuadAllKHR, {{OperandKind::Id}}},
         {spv::OpGroupNonUniformQuadAnyKHR, {{OperandKind::Id}}},
         {spv::OpHitObjectRecordHitMotionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
@@ -2291,6 +2357,11 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpReorderThreadWithHintNV, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpTypeHitObjectNV, {{}}},
         {spv::OpImageSampleFootprintNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpTypeCooperativeVectorNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpCooperativeVectorMatrixMulNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpCooperativeVectorOuterProductAccumulateNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpCooperativeVectorReduceSumAccumulateNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpCooperativeVectorMatrixMulAddNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpCooperativeMatrixConvertNV, {{OperandKind::Id}}},
         {spv::OpEmitMeshTasksEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpSetMeshOutputsEXT, {{OperandKind::Id, OperandKind::Id}}},
@@ -2298,6 +2369,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpWritePackedPrimitiveIndices4x8NV, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpFetchMicroTriangleVertexPositionNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpFetchMicroTriangleVertexBarycentricNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpCooperativeVectorLoadNV, {{OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpCooperativeVectorStoreNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpReportIntersectionKHR, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpIgnoreIntersectionNV, {{}}},
         {spv::OpTerminateRayNV, {{}}},
@@ -2307,6 +2380,8 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpRayQueryGetIntersectionTriangleVertexPositionsKHR, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpTypeAccelerationStructureKHR, {{}}},
         {spv::OpExecuteCallableNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryGetClusterIdNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpHitObjectGetClusterIdNV, {{OperandKind::Id}}},
         {spv::OpTypeCooperativeMatrixNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpCooperativeMatrixLoadNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpCooperativeMatrixStoreNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
@@ -2341,6 +2416,19 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpConvertSampledImageToUNV, {{OperandKind::Id}}},
         {spv::OpSamplerImageAddressingModeNV, {{OperandKind::Literal}}},
         {spv::OpRawAccessChainNV, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpRayQueryGetIntersectionSpherePositionNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryGetIntersectionSphereRadiusNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryGetIntersectionLSSPositionsNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryGetIntersectionLSSRadiiNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryGetIntersectionLSSHitValueNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpHitObjectGetSpherePositionNV, {{OperandKind::Id}}},
+        {spv::OpHitObjectGetSphereRadiusNV, {{OperandKind::Id}}},
+        {spv::OpHitObjectGetLSSPositionsNV, {{OperandKind::Id}}},
+        {spv::OpHitObjectGetLSSRadiiNV, {{OperandKind::Id}}},
+        {spv::OpHitObjectIsSphereHitNV, {{OperandKind::Id}}},
+        {spv::OpHitObjectIsLSSHitNV, {{OperandKind::Id}}},
+        {spv::OpRayQueryIsSphereHitNV, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpRayQueryIsLSSHitNV, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpUCountLeadingZerosINTEL, {{OperandKind::Id}}},
         {spv::OpUCountTrailingZerosINTEL, {{OperandKind::Id}}},
         {spv::OpAbsISubINTEL, {{OperandKind::Id, OperandKind::Id}}},
@@ -2383,6 +2471,12 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpAtomicFAddEXT, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpArithmeticFenceEXT, {{OperandKind::Id}}},
         {spv::OpSubgroupBlockPrefetchINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpSubgroup2DBlockLoadINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpSubgroup2DBlockLoadTransformINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpSubgroup2DBlockLoadTransposeINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpSubgroup2DBlockPrefetchINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpSubgroup2DBlockStoreINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpSubgroupMatrixMultiplyAccumulateINTEL, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
         {spv::OpGroupIMulKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupFMulKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupBitwiseAndKHR, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},

@@ -55,6 +55,10 @@ class CombinedPage(Page):
     result["pages"] = list(page.details_json() for page in self._pages)
     return result
 
+  def teardown(self, run: Run) -> None:
+    for page in self._pages:
+      page.teardown(run)
+
   def run(self, run: Run) -> None:
     action_runner = get_action_runner(run)
     multiple_tabs = self.tabs.multiple_tabs

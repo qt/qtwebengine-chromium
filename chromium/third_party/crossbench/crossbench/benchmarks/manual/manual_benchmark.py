@@ -9,9 +9,9 @@ import datetime as dt
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple
 
-from crossbench import helper
 from crossbench.benchmarks.base import Benchmark
 from crossbench.cli.ui import timer
+from crossbench.helper import input_helper
 from crossbench.parse import DurationParser
 from crossbench.stories.story import Story
 
@@ -44,7 +44,7 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
       logging.critical(
           "The browser has launched. Measurement will start in %s" +
           " (or press enter to start immediately)", self._start_after)
-      helper.input_with_timeout(timeout=self._start_after)
+      input_helper.input_with_timeout(timeout=self._start_after)
     logging.info("Starting Manual Benchmark...")
 
   def run(self, run: Run) -> None:
@@ -66,7 +66,7 @@ class ManualStory(Story, metaclass=abc.ABCMeta):
       logging.critical(
           "Measurement has started. The browser will close in %s" +
           " (or press enter to close immediately)", self._run_for)
-      helper.input_with_timeout(timeout=self._run_for)
+      input_helper.input_with_timeout(timeout=self._run_for)
 
 
   @classmethod
@@ -97,14 +97,12 @@ class ManualBenchmark(Benchmark, metaclass=abc.ABCMeta):
     parser.add_argument(
         "--start-after",
         help="How long to wait until measurement starts",
-        required=False,
         type=DurationParser.positive_or_zero_duration)
     parser.add_argument(
         "--run-for",
         "--stop-after",
         "--duration",
         help="How long to run measurement for",
-        required=False,
         type=DurationParser.positive_duration)
     return parser
 

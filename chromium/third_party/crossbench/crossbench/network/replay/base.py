@@ -12,12 +12,12 @@ from urllib.parse import urlparse
 
 from crossbench import exception
 from crossbench import path as pth
-from crossbench import plt
-from crossbench.helper import Spinner
+from crossbench.helper.spinner import Spinner
 from crossbench.network.base import Network
 from crossbench.parse import PathParser
 
 if TYPE_CHECKING:
+  from crossbench import plt
   from crossbench.network.traffic_shaping.base import TrafficShaper
   from crossbench.path import LocalPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
@@ -34,7 +34,7 @@ class ReplayNetwork(Network):
   def __init__(self,
                archive: Union[pth.LocalPath, str],
                traffic_shaper: Optional[TrafficShaper] = None,
-               browser_platform: plt.Platform = plt.PLATFORM):
+               browser_platform: Optional[plt.Platform] = None):
     super().__init__(traffic_shaper, browser_platform)
     self._archive_path = self._ensure_archive(archive)
 

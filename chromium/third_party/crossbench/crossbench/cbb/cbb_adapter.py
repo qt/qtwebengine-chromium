@@ -128,7 +128,7 @@ class CbbRunner(crossbench.runner.runner.Runner):
 
 class CbbRun(Run):
 
-  def _create_session_dir(self) -> None:
+  def _setup_session_dir(self) -> None:
     # Don't create symlink loops and skip this step
     pass
 

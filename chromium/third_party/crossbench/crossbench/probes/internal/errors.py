@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Type
 
-from crossbench.probes.internal.base import InternalJsonResultProbe
+from crossbench.probes.internal.base import (InternalJsonResultProbe,
+                                             InternalJsonResultProbeContext)
 from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
@@ -26,9 +27,6 @@ class ErrorsProbe(InternalJsonResultProbe):
   """
   NAME = "cb.errors"
 
-  def to_json(self, actions: Actions) -> Json:
-    return actions.run.exceptions.to_json()
-
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     return self._merge_group(group, (run.results for run in group.runs))
 
@@ -42,7 +40,7 @@ class ErrorsProbe(InternalJsonResultProbe):
 
   def _merge_group(self, group,
                    results_iter: Iterable[ProbeResultDict]) -> ProbeResult:
-    merged_errors = []
+    merged_errors: List[Dict[str, Any]] = []
 
     for results in results_iter:
       result = results[self]
@@ -61,5 +59,13 @@ class ErrorsProbe(InternalJsonResultProbe):
 
     if not merged_errors:
       return EmptyProbeResult()
+    return self.write_group_result(group, merged_errors, csv_formatter=None)
 
-    return self.write_group_result(group, merged_errors)
+  def get_context_cls(self) -> Type[ErrorsProbeContext]:
+    return ErrorsProbeContext
+
+
+class ErrorsProbeContext(InternalJsonResultProbeContext):
+
+  def to_json(self, actions: Actions) -> Json:
+    return self.run.exceptions.to_json()

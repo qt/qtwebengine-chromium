@@ -1,19 +1,19 @@
 // Copyright (c) 2014-2024 The Khronos Group Inc.
-// 
+//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and/or associated documentation files (the "Materials"),
 // to deal in the Materials without restriction, including without limitation
 // the rights to use, copy, modify, merge, publish, distribute, sublicense,
 // and/or sell copies of the Materials, and to permit persons to whom the
 // Materials are furnished to do so, subject to the following conditions:
-// 
+//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Materials.
-// 
+//
 // MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS KHRONOS
 // STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS SPECIFICATIONS AND
-// HEADER INFORMATION ARE LOCATED AT https://www.khronos.org/registry/ 
-// 
+// HEADER INFORMATION ARE LOCATED AT https://www.khronos.org/registry/
+//
 // THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 // OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
@@ -24,10 +24,8 @@
 
 #include <assert.h>
 #include <string.h>
-#include <algorithm>
 #include <cstdlib>
 #include <iostream>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <fstream>
@@ -276,8 +274,11 @@ EnumValues HostAccessQualifierParams;
 EnumValues LoadCacheControlParams;
 EnumValues StoreCacheControlParams;
 EnumValues NamedMaximumNumberOfRegistersParams;
+EnumValues MatrixMultiplyAccumulateOperandsParams;
 EnumValues RawAccessChainOperandsParams;
 EnumValues FPEncodingParams;
+EnumValues CooperativeVectorMatrixLayoutParams;
+EnumValues ComponentTypeParams;
 
 std::pair<bool, std::string> ReadFile(const std::string& path)
 {
@@ -448,10 +449,16 @@ ClassOptionality ToOperandClassAndOptionality(const std::string& operandKind, co
             type = OperandStoreCacheControl;
         } else if (operandKind == "NamedMaximumNumberOfRegisters") {
             type = OperandNamedMaximumNumberOfRegisters;
+        } else if (operandKind == "MatrixMultiplyAccumulateOperands") {
+            type = OperandMatrixMultiplyAccumulateOperands;
         } else if (operandKind == "RawAccessChainOperands") {
             type = OperandRawAccessChainOperands;
         } else if (operandKind == "FPEncoding") {
             type = OperandFPEncoding;
+        } else if (operandKind == "CooperativeVectorMatrixLayout") {
+            type = OperandCooperativeVectorMatrixLayout;
+        } else if (operandKind == "ComponentType") {
+            type = OperandComponentType;
         }
 
         if (type == OperandNone) {
@@ -838,10 +845,16 @@ void jsonToSpirv(const std::string& jsonPath, bool buildingHeaders)
             establishOperandClass(enumName, OperandStoreCacheControl, &StoreCacheControlParams, operandEnum, category);
         } else if (enumName == "NamedMaximumNumberOfRegisters") {
             establishOperandClass(enumName, OperandNamedMaximumNumberOfRegisters, &NamedMaximumNumberOfRegistersParams, operandEnum, category);
+        } else if (enumName == "MatrixMultiplyAccumulateOperands") {
+            establishOperandClass(enumName, OperandMatrixMultiplyAccumulateOperands, &MatrixMultiplyAccumulateOperandsParams, operandEnum, category);
         } else if (enumName == "RawAccessChainOperands") {
             establishOperandClass(enumName, OperandRawAccessChainOperands, &RawAccessChainOperandsParams, operandEnum, category);
         } else if (enumName == "FPEncoding") {
             establishOperandClass(enumName, OperandFPEncoding, &FPEncodingParams, operandEnum, category);
+        } else if (enumName == "CooperativeVectorMatrixLayout") {
+            establishOperandClass(enumName, OperandCooperativeVectorMatrixLayout, &CooperativeVectorMatrixLayoutParams, operandEnum, category);
+        } else if (enumName == "ComponentType") {
+            establishOperandClass(enumName, OperandComponentType, &ComponentTypeParams, operandEnum, category);
         }
     }
 

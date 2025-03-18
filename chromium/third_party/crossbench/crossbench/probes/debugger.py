@@ -5,21 +5,21 @@
 from __future__ import annotations
 
 import shlex
-from typing import TYPE_CHECKING, Dict, Iterable
+from typing import TYPE_CHECKING, Dict, Iterable, Type
 
 from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.parse import PathParser
 from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
-                                     ProbeKeyT, ProbeValidationError)
+                                     ProbeKeyT)
+from crossbench.probes.probe_error import ProbeValidationError
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
   from crossbench.env import HostEnvironment
   from crossbench.path import LocalPath
-  from crossbench.runner.run import Run
+  from crossbench.probes.results import ProbeResult
 
 _DEBUGGER_LOOKUP: Dict[str, str] = {
     "macos": "lldb",
@@ -146,8 +146,8 @@ class DebuggerProbe(Probe):
       debugger_cmd += ["--args"]
     return shlex.join(debugger_cmd)
 
-  def get_context(self, run: Run) -> DebuggerContext:
-    return DebuggerContext(self, run)
+  def get_context_cls(self) -> Type[DebuggerContext]:
+    return DebuggerContext
 
 
 class DebuggerContext(ProbeContext[DebuggerProbe]):
@@ -159,4 +159,4 @@ class DebuggerContext(ProbeContext[DebuggerProbe]):
     pass
 
   def teardown(self) -> ProbeResult:
-    return EmptyProbeResult()
+    return self.empty_result()

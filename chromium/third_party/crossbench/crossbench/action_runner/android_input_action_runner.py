@@ -11,10 +11,12 @@ from typing import List, Optional
 
 from crossbench.action_runner.action import all as i_action
 from crossbench.action_runner.base import InputSourceNotImplementedError
-from crossbench.action_runner.basic_action_runner import BasicActionRunner
+from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
+from crossbench.action_runner.screenshot_annotation import \
+    ScreenshotPointAnnotation, ScreenshotRectAnnotation
 from crossbench.benchmarks.loading.point import Point
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.runner.actions import Actions
@@ -80,7 +82,7 @@ class ViewportInfo:
     return distance * self.actual_pixel_ratio
 
 
-class AndroidInputActionRunner(BasicActionRunner):
+class AndroidInputActionRunner(DefaultActionRunner):
 
   # Represents the position of the chrome main window relative to the entire
   # screen as reported by Android window manager.
@@ -130,10 +132,8 @@ return [
             raise ElementNotFoundError(action.selector)
           return
 
-      scrollable_top = scroll_area.top
-      scrollable_bottom = scroll_area.bottom
-
-      max_swipe_distance = scrollable_bottom - scrollable_top
+      (scrollable_top, scrollable_bottom,
+       max_swipe_distance) = scroll_area.get_scrollable_area()
 
       remaining_distance = abs(total_scroll_distance)
 
@@ -184,30 +184,50 @@ return [
 
     with run.actions("ClickAction", measure=False) as actions:
 
-      coordinates = action.coordinates
+      if coordinates_config := action.position.coordinates:
+        coordinates = coordinates_config.point()
+      elif selector_config := action.position.selector:
+        if selector_config.wait:
+          self.wait_for_element_impl(
+              actions,
+              selector=selector_config.selector,
+              timeout=action.timeout,
+              scroll_into_view=selector_config.scroll_into_view,
+              check_element_rect=True)
 
-      if action.selector:
-        viewport_info = self._get_viewport_info(run, actions, action.selector,
-                                                action.scroll_into_view)
+        viewport_info = self._get_viewport_info(
+            run, actions, selector_config.selector,
+            selector_config.scroll_into_view)
 
         rect = viewport_info.element_rect()
         if not rect:
           logging.warning("No clickable element_rect found for %s",
-                          action.selector)
-          if action.required:
-            raise ElementNotFoundError(action.selector)
+                          selector_config.selector)
+          if selector_config.required:
+            raise ElementNotFoundError(selector_config.selector)
           return
 
+        self.add_failure_screenshot_annotation(
+            ScreenshotRectAnnotation(label=selector_config.selector, rect=rect))
         coordinates = Point(rect.mid_x, rect.mid_y)
 
       cmd: List[str] = ["input"]
 
       if use_mouse:
         cmd.append("mouse")
-
+      assert coordinates, "missing coordinates"
+      self.add_failure_screenshot_annotation(
+          ScreenshotPointAnnotation(label="click", point=coordinates))
       cmd.extend(["tap", str(coordinates.x), str(coordinates.y)])
 
       run.browser_platform.sh(*cmd)
+
+      if action.verify:
+        self.wait_for_element_impl(
+            actions,
+            selector=action.verify,
+            timeout=action.timeout,
+            check_element_rect=True)
 
   def _swipe_impl(self, run: Run, start_x: int, start_y: int, end_x: int,
                   end_y: int, duration: dt.timedelta) -> None:
@@ -273,16 +293,12 @@ return [
     browser_main_window_name = self._get_browser_window_name(
         run.browser.attributes)
 
-    raw_window_config = run.browser_platform.sh_stdout(
-        "dumpsys",
-        "window",
-        "windows",
-        "|",
-        "grep",
-        "-E",
-        "-A100",
-        browser_main_window_name,
-    )
+    raw_window_config = run.browser_platform.sh_stdout("dumpsys", "window",
+                                                       "windows")
+
+    raw_window_config = raw_window_config[raw_window_config
+                                          .find(browser_main_window_name):]
+
     match = self._BOUNDS_RE.search(raw_window_config)
     if not match:
       raise RuntimeError("Could not find chrome window bounds")

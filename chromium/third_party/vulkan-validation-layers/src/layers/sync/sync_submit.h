@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019-2024 Valve Corporation
- * Copyright (c) 2019-2024 LunarG, Inc.
+ * Copyright (c) 2019-2025 Valve Corporation
+ * Copyright (c) 2019-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -154,7 +154,7 @@ struct PresentedImage : public PresentedImageRecord {
     subresource_adapter::ImageRangeGenerator range_gen;
 
     PresentedImage() = default;
-    void UpdateMemoryAccess(SyncStageAccessIndex usage, ResourceUsageTag tag, AccessContext &access_context) const;
+    void UpdateMemoryAccess(SyncAccessIndex usage, ResourceUsageTag tag, AccessContext &access_context) const;
     PresentedImage(const SyncValidator &sync_state, std::shared_ptr<QueueBatchContext> batch, VkSwapchainKHR swapchain,
                    uint32_t image_index, uint32_t present_index, ResourceUsageTag present_tag_);
     // For non-previsously presented images..
@@ -265,6 +265,7 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
         ~PresentResourceRecord() override {}
         PresentResourceRecord(const PresentedImageRecord &presented) : presented_(presented) {}
         std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const override;
+        vvl::Func GetCommand() const override { return vvl::Func::vkQueuePresentKHR; }
 
       private:
         PresentedImageRecord presented_;
@@ -277,6 +278,7 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
         AcquireResourceRecord(const PresentedImageRecord &presented, ResourceUsageTag tag, vvl::Func command)
             : presented_(presented), acquire_tag_(tag), command_(command) {}
         std::ostream &Format(std::ostream &out, const SyncValidator &sync_state) const override;
+        vvl::Func GetCommand() const override { return command_; }
 
       private:
         PresentedImageRecord presented_;
@@ -293,7 +295,8 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
     ~QueueBatchContext();
     void Trim();
 
-    std::string FormatUsage(ResourceUsageTagEx tag_ex) const override;
+    std::string FormatUsage(ResourceUsageTagEx tag_ex, ReportKeyValues &extra_properties) const override;
+    void AddUsageRecordExtraProperties(ResourceUsageTag tag, ReportKeyValues &extra_properties) const override;
     AccessContext *GetCurrentAccessContext() override { return current_access_context_; }
     const AccessContext *GetCurrentAccessContext() const override { return current_access_context_; }
     SyncEventsContext *GetCurrentEventsContext() override { return &events_context_; }
@@ -333,10 +336,11 @@ class QueueBatchContext : public CommandExecutionContext, public std::enable_sha
     void ApplyPredicatedWait(Predicate &predicate);
     void ApplyTaggedWait(QueueId queue_id, ResourceUsageTag tag);
     void ApplyAcquireWait(const AcquiredImage &acquired);
+    void OnResourceDestroyed(const ResourceAccessRange &resource_range);
 
-    void BeginRenderPassReplaySetup(ReplayState &replay, const SyncOpBeginRenderPass &begin_op) override;
-    void NextSubpassReplaySetup(ReplayState &replay) override;
-    void EndRenderPassReplayCleanup(ReplayState &replay) override;
+    void BeginRenderPassReplaySetup(ReplayState &replay, const SyncOpBeginRenderPass &begin_op);
+    void NextSubpassReplaySetup(ReplayState &replay);
+    void EndRenderPassReplayCleanup(ReplayState &replay);
 
     [[nodiscard]] std::vector<ConstPtr> RegisterAsyncContexts(const std::vector<ConstPtr> &batches_resolved);
     void ResolveLastBatch(const QueueBatchContext::ConstPtr &last_batch);

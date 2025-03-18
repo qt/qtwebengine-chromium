@@ -50,9 +50,17 @@ std::string Location::Fields() const {
 
 std::string Location::Message() const {
     std::stringstream out;
+    if (debug_region && !debug_region->empty()) {
+        out << "[ Debug region: " << *debug_region << " ] ";
+    }
     out << StringFunc() << "(): ";
     AppendFields(out);
-    return out.str();
+    std::string message = out.str();
+    // Remove space in the end when no fields are added
+    if (message.back() == ' ') {
+        message.pop_back();
+    }
+    return message;
 }
 
 namespace vvl {

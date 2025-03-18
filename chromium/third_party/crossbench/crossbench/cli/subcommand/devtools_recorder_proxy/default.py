@@ -16,14 +16,16 @@ import sys
 import tempfile
 from typing import TYPE_CHECKING, Any, Coroutine, Dict, Optional, Tuple
 
-import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets import server as websockets
 
-from crossbench import compat, helper
+from crossbench import compat
 from crossbench import path as pth
+from crossbench import plt
 from crossbench.helper.state import BaseState, StateMachine
 
 if TYPE_CHECKING:
+  from asyncio.subprocess import Process
+
   from crossbench.plt.base import ListCmdArgs
   from crossbench.types import JsonDict
 
@@ -73,7 +75,7 @@ class CrossbenchDevToolsRecorderProxy:
         use_auth_token=args.use_auth_token)
     instance.run()
 
-  _websocket: WebSocketServerProtocol
+  _websocket: websockets.WebSocketServerProtocol
 
   def __init__(self, use_auth_token: bool = True) -> None:
     self._token: str = secrets.token_hex(16)
@@ -82,7 +84,7 @@ class CrossbenchDevToolsRecorderProxy:
     self._port: int = self.DEFAULT_PORT
     self._state = StateMachine(State.CONNECTED)
     self._crossbench_task: Optional[asyncio.Task] = None
-    self._crossbench_process = None
+    self._crossbench_process: Optional[Process] = None
     self._tmp_json = pth.LocalPath(
         tempfile.mkdtemp("crossbench_proxy")) / "devtools_recorder.json"
 
@@ -96,7 +98,7 @@ class CrossbenchDevToolsRecorderProxy:
       logging.exception(e)
       serve = websockets.serve(self.handler, "localhost")
     async with serve as server:
-      self._port = server.sockets[0].getsockname()[1]
+      self._port = list(server.sockets)[0].getsockname()[1]
       logging.info("#" * 80)
       logging.info("#" * 80)
       logging.info("# Crossbench DevTools Recorder Replay Server Started")
@@ -112,7 +114,8 @@ class CrossbenchDevToolsRecorderProxy:
       logging.info("#" * 80)
       await asyncio.Future()  # run forever
 
-  async def handler(self, websocket: WebSocketServerProtocol) -> None:
+  async def handler(self,
+                    websocket: websockets.WebSocketServerProtocol) -> None:
     self._websocket = websocket
     async for message in websocket:
       await self._send_message(self._handle_message(message))
@@ -166,9 +169,9 @@ class CrossbenchDevToolsRecorderProxy:
     return None
 
   async def _stop_command(self) -> Tuple[Response, str]:
-    if self._crossbench_process:
+    if process := self._crossbench_process:
       logging.info("# CROSSBENCH COMMAND: KILL")
-      helper.wait_and_kill(self._crossbench_process)
+      plt.PLATFORM.wait_and_terminate(process)
     self._state.transition(State.CONNECTED, State.CONNECTED, to=State.CONNECTED)
     return await self._status_command()
 

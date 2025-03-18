@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional, Type
 
-from crossbench.probes.internal.base import InternalJsonResultProbe
+from crossbench.probes.internal.base import (InternalJsonResultProbe,
+                                             InternalJsonResultProbeContext)
 from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
-  from crossbench.types import JsonDict, JsonList
+  from crossbench.types import Json, JsonDict
 
 
 class ResultsSummaryProbe(InternalJsonResultProbe):
@@ -32,11 +33,8 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
   def is_attached(self) -> bool:
     return True
 
-  def to_json(self, actions: Actions) -> JsonDict:
-    return actions.run.details_json()
-
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
-    repetitions: JsonList = []
+    repetitions: List[JsonDict] = []
     browser: Optional[JsonDict] = None
 
     for run in group.runs:
@@ -47,12 +45,13 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
       if browser is None:
         browser = repetition_data["browser"]
         del browser["log"]
-      repetitions.append({
+      repetition_summary: JsonDict = {
           "cwd": repetition_data["cwd"],
           "probes": repetition_data["probes"],
           "success": repetition_data["success"],
           "errors": repetition_data["errors"],
-      })
+      }
+      repetitions.append(repetition_summary)
 
     merged_data: JsonDict = {
         "cwd": str(group.path),
@@ -118,3 +117,12 @@ class ResultsSummaryProbe(InternalJsonResultProbe):
         "errors": group.exceptions.error_messages(),
     }
     return self.write_group_result(group, merged_data, csv_formatter=None)
+
+  def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:
+    return ResultsSummaryProbeContext
+
+
+class ResultsSummaryProbeContext(InternalJsonResultProbeContext):
+
+  def to_json(self, actions: Actions) -> Json:
+    return self.run.details_json()

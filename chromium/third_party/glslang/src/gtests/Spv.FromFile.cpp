@@ -125,10 +125,17 @@ TEST_P(CompileToSpirv14Test, FromFile)
                             Target::Spv);
 }
 
-TEST_P(CompileToSpirv16Test, FromFile)
+TEST_P(CompileToSpirv16Test, FromFileTargetVulkan1_3)
 {
     loadFileCompileAndCheck(GlobalTestSettings.testRoot, GetParam(),
                             Source::GLSL, Semantics::Vulkan, glslang::EShTargetVulkan_1_3, glslang::EShTargetSpv_1_6,
+                            Target::Spv);
+}
+
+TEST_P(CompileToSpirv16Test, FromFileTargetVulkan1_4)
+{
+    loadFileCompileAndCheck(GlobalTestSettings.testRoot, GetParam(),
+                            Source::GLSL, Semantics::Vulkan, glslang::EShTargetVulkan_1_4, glslang::EShTargetSpv_1_6,
                             Target::Spv);
 }
 
@@ -411,6 +418,8 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.GeometryShaderPassthrough.geom",
         "spv.funcall.array.frag",
         "spv.load.bool.array.interface.block.frag",
+        "spv.int_dot.frag",
+        "spv.int_dot_Error.frag",
         "spv.interpOps.frag",
         "spv.int64.frag",
         "spv.intcoopmat.comp",
@@ -552,6 +561,9 @@ INSTANTIATE_TEST_SUITE_P(
         "spv.atomicRvalue.error.vert",
         "spv.sampledImageBlock.frag",
         "spv.multiple.var.same.const.frag",
+        "spv.textureoffset_non_const.vert",
+        "spv.sparsetextureoffset_non_const.vert",
+        "spv.sparsetextureoffset_non_const_fail.vert",
     })),
     FileNameAsCustomTestSuffix
 );

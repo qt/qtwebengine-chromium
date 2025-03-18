@@ -53,7 +53,8 @@ class Binary:
                linux: Optional[BinaryLookup] = None,
                android: Optional[BinaryLookup] = None,
                macos: Optional[BinaryLookup] = None,
-               win: Optional[BinaryLookup] = None) -> None:
+               win: Optional[BinaryLookup] = None,
+               chromeos: Optional[BinaryLookup] = None) -> None:
     self._name = name
     self._default = self._convert(default)
     self._posix = self._convert(posix)
@@ -62,7 +63,8 @@ class Binary:
     self._macos = self._convert(macos)
     self._win = self._convert(win)
     self._validate_win()
-    if not any((default, posix, linux, android, macos, win)):
+    self._chromeos = self._convert(chromeos)
+    if not any((chromeos, default, posix, linux, android, macos, win)):
       raise ValueError("At least one platform binary must be provided")
 
   def _convert(self,
@@ -103,6 +105,8 @@ class Binary:
     raise BinaryNotFoundError(self, platform)
 
   def platform_path(self, platform: Platform) -> Tuple[pth.AnyPath, ...]:
+    if self._chromeos and platform.is_chromeos:
+      return self._chromeos
     if self._linux and platform.is_linux:
       return self._linux
     if self._android and platform.is_android:
@@ -177,7 +181,18 @@ class WinBinary(Binary):
       raise UnsupportedPlatformError(self, platform, "windows")
 
 
+class ChromeOSBinary(Binary):
+
+  def __init__(self, name: pth.AnyPathLike):
+    super().__init__(pth.AnyPosixPath(name).name, chromeos=name)
+
+  def _validate_platform(self, platform: Platform) -> None:
+    if not platform.is_chromeos:
+      raise UnsupportedPlatformError(self, platform, "chromeos")
+
+
 class Binaries:
+  ADB = Binary("adb", default="adb", win="adb.exe")
   CPIO = LinuxBinary("cpio")
   FFMPEG = Binary("ffmpeg", posix="ffmpeg")
   GCERTSTATUS = Binary("gcertstatus", posix="gcertstatus")
@@ -192,6 +207,10 @@ class Binaries:
   RPM2CPIO = LinuxBinary("rpm2cpio")
   SIMPLEPERF = AndroidBinary("simpleperf")
   XCTRACE = MacOsBinary("xctrace")
+  CHROMEDRIVER = Binary(
+      "chromedriver",
+      chromeos="/usr/local/chromedriver/chromedriver",
+      linux="chromedriver")
 
 
 class Browsers:

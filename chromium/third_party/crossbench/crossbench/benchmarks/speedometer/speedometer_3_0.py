@@ -7,21 +7,20 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import enum
-import logging
 from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
                     Type, Union, cast)
 
-from crossbench import compat, helper
+from crossbench import compat
 from crossbench.benchmarks.speedometer.speedometer import (
     ProbeClsTupleT, SpeedometerBenchmark, SpeedometerBenchmarkStoryFilter,
-    SpeedometerProbe, SpeedometerStory)
+    SpeedometerProbe, SpeedometerProbeContext, SpeedometerStory)
 from crossbench.browsers import viewport as vp
-from crossbench.parse import DurationParser, NumberParser
+from crossbench.helper import url_helper
+from crossbench.parse import DurationParser, NumberParser, ObjectParser
 from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
   from crossbench.cli.parser import CrossBenchArgumentParser
-  from crossbench.runner.run import Run
   ShuffleSeedT = Optional[Union[str, int]]
   from crossbench.runner.actions import Actions
   from crossbench.types import Json
@@ -33,32 +32,10 @@ class Speedometer30Probe(SpeedometerProbe):
   Extracts all speedometer times and scores.
   """
   NAME: str = "speedometer_3.0"
-  JS: str = "return window.benchmarkClient.metrics"
 
   @property
   def speedometer(self) -> Speedometer30Benchmark:
     return cast(Speedometer30Benchmark, self.benchmark)
-
-  def to_json(self, actions: Actions) -> Json:
-    return actions.js(self.JS)
-
-  def process_json_data(self, json_data) -> Any:
-    # Move aggregate scores to the end
-    aggregate_keys = []
-    for metric_key in json_data.keys():
-      if metric_key.startswith("Iteration-"):
-        aggregate_keys.append(metric_key)
-    aggregate_keys.extend(["Geomean", "Score"])
-    for metric_key in aggregate_keys:
-      json_data[metric_key] = json_data.pop(metric_key)
-    return json_data
-
-  def flatten_json_data(self, json_data: Any) -> Json:
-    result: Dict[str, float] = {}
-    assert isinstance(json_data, dict), f"Expected dict, got {type(json_data)}"
-    for name, metric in json_data.items():
-      result[name] = metric["mean"]
-    return result
 
   def _is_valid_metric_key(self, metric_key: str) -> bool:
     parts = metric_key.split("/")
@@ -71,6 +48,24 @@ class Speedometer30Probe(SpeedometerProbe):
     if metric_key == "Geomean":
       return False
     return True
+
+  def get_context_cls(self) -> Type[Speedometer30ProbeContext]:
+    return Speedometer30ProbeContext
+
+
+class Speedometer30ProbeContext(SpeedometerProbeContext):
+  JS = "return JSON.stringify(window.benchmarkClient.metrics);"
+
+  def to_json(self, actions: Actions) -> Json:
+    json_data = super().to_json(actions)
+    return ObjectParser.non_empty_dict(json_data, "speedometer metrics")
+
+  def flatten_json_data(self, json_data: Any) -> Json:
+    result: Dict[str, float] = {}
+    assert isinstance(json_data, dict), f"Expected dict, got {type(json_data)}"
+    for name, metric in json_data.items():
+      result[name] = metric["mean"]
+    return result
 
 
 @enum.unique
@@ -294,7 +289,7 @@ class Speedometer30Story(SpeedometerStory):
 
   @property
   def url_params(self) -> Dict[str, str]:
-    url_params = super().url_params
+    url_params: Dict[str, str] = super().url_params
     if sync_wait := self.sync_wait:
       url_params["waitBeforeSync"] = str(to_ms(sync_wait))
     if sync_warmup := self.sync_warmup:
@@ -305,16 +300,17 @@ class Speedometer30Story(SpeedometerStory):
       url_params["viewport"] = f"{viewport.width}x{viewport.height}"
     if self.shuffle_seed is not None:
       url_params["shuffleSeed"] = str(self.shuffle_seed)
+    if tuple(self.substories) != self.default_story_names():
+      url_params["suites"] = ",".join(self.substories)
     return url_params
 
-  def log_run_test_url(self, run: Run) -> None:
-    del run
-    params = self.url_params
-    params["suites"] = ",".join(self.substories)
+  @property
+  def test_url(self) -> str:
+    params: Dict[str, str] = self.url_params
     params["developerMode"] = "true"
     params["startAutomatically"] = "true"
-    official_test_url = helper.update_url_query(self.URL, params)
-    logging.info("STORY PUBLIC TEST URL: %s", official_test_url)
+    official_test_url = url_helper.update_url_query(self.URL, params)
+    return official_test_url
 
 
 class Speedometer3BenchmarkStoryFilter(SpeedometerBenchmarkStoryFilter):
@@ -415,7 +411,7 @@ class Speedometer30Benchmark(SpeedometerBenchmark):
   Benchmark runner for Speedometer 3.0
   """
   NAME: str = "speedometer_3.0"
-  DEFAULT_STORY_CLS = Speedometer30Story
+  DEFAULT_STORY_CLS = Speedometer30Story  # type: ignore
   STORY_FILTER_CLS = Speedometer3BenchmarkStoryFilter
   PROBES: ProbeClsTupleT = (Speedometer30Probe,)
 

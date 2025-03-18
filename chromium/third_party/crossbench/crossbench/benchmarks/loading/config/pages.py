@@ -16,11 +16,12 @@ from crossbench import path as pth
 from crossbench.action_runner.action.click import ClickAction
 from crossbench.action_runner.action.enums import ReadyState
 from crossbench.action_runner.action.get import GetAction
+from crossbench.action_runner.action.position import PositionConfig
 from crossbench.action_runner.action.wait import WaitAction
 from crossbench.benchmarks.loading.config.blocks import ActionBlock
 from crossbench.benchmarks.loading.config.page import PageConfig
 from crossbench.benchmarks.loading.input_source import InputSource
-from crossbench.cli.config.secrets import SecretsConfig
+from crossbench.cli.config.secrets import Secrets
 from crossbench.config import ConfigObject
 from crossbench.parse import DurationParseError, DurationParser, ObjectParser
 
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
 @dataclasses.dataclass(frozen=True)
 class PagesConfig(ConfigObject):
   pages: Tuple[PageConfig, ...] = ()
-  secrets: Optional[SecretsConfig] = None
+  secrets: Optional[Secrets] = None
 
   def validate(self) -> None:
     super().validate()
@@ -99,9 +100,9 @@ class PagesConfig(ConfigObject):
       if "pages" not in config:
         raise argparse.ArgumentTypeError(
             "Config does not provide a 'pages' dict.")
-      secrets: Optional[SecretsConfig] = None
+      secrets: Optional[Secrets] = None
       if secrets_data := config.get("secrets"):
-        secrets = SecretsConfig.parse(secrets_data)
+        secrets = Secrets.parse(secrets_data)
       pages_config = ObjectParser.non_empty_dict(config["pages"], "pages")
       with exception.annotate_argparsing("Parsing config 'pages'"):
         pages = cls._parse_pages(pages_config, secrets)
@@ -109,10 +110,9 @@ class PagesConfig(ConfigObject):
     raise exception.UnreachableError()
 
   @classmethod
-  def _parse_pages(
-      cls,
-      data: Dict[str, Any],
-      secrets: Optional[SecretsConfig] = None) -> Tuple[PageConfig, ...]:
+  def _parse_pages(cls,
+                   data: Dict[str, Any],
+                   secrets: Optional[Secrets] = None) -> Tuple[PageConfig, ...]:
     pages = []
     for name, page_config in data.items():
       with exception.annotate_argparsing(f"Parsing story ...['{name}']"):
@@ -125,7 +125,8 @@ class PagesConfig(ConfigObject):
 class DevToolsRecorderPagesConfig(PagesConfig):
 
   @classmethod
-  def parse_str(cls: Type[PagesConfig], value: str) -> PagesConfig:
+  def parse_str(cls: Type[DevToolsRecorderPagesConfig],
+                value: str) -> DevToolsRecorderPagesConfig:
     raise NotImplementedError()
 
   @classmethod
@@ -176,8 +177,8 @@ class DevToolsRecorderPagesConfig(PagesConfig):
     selector = cls._parse_selectors(step["selectors"])
     return ClickAction(
         InputSource.JS,
-        selector=selector,
-        scroll_into_view=True,
+        position=PositionConfig.from_selector(
+            selector=selector, scroll_into_view=True),
         timeout=default_timeout)
 
   @classmethod
@@ -227,12 +228,13 @@ class ListPagesConfig(PagesConfig):
   VALID_EXTENSIONS: Tuple[str, ...] = (".txt", ".list")
 
   @classmethod
-  def parse_str(cls, value: str) -> PagesConfig:
+  def parse_str(cls, value: str) -> ListPagesConfig:
     raise argparse.ArgumentTypeError(
         f"URL list file {repr(value)} does not exist.")
 
   @classmethod
-  def parse_path(cls, path: pth.LocalPath, **kwargs) -> PagesConfig:
+  def parse_path(  # type: ignore
+      cls, path: pth.LocalPath, **kwargs) -> PagesConfig:
     assert not kwargs, f"{cls.__name__} does not support extra kwargs"
     pages: List[PageConfig] = []
     with exception.annotate_argparsing(f"Loading Pages list file: {path.name}"):
@@ -249,7 +251,7 @@ class ListPagesConfig(PagesConfig):
     return PagesConfig(pages=tuple(pages))
 
   @classmethod
-  def parse_dict(cls, config: Dict) -> PagesConfig:
+  def parse_dict(cls, config: Dict) -> PagesConfig:  # type: ignore
     config = ObjectParser.non_empty_dict(config, "pages")
     with exception.annotate_argparsing("Parsing scenarios / pages"):
       if "pages" not in config:

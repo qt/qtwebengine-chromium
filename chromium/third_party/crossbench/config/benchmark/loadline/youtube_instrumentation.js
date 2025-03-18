@@ -30,7 +30,6 @@ const button_observer = new MutationObserver(mutations => {
   });
   banner_observer.observe(
       banner_node, {attributes: true, attributeFilter: ['style']});
-  performance.mark('cookie_banner_shown')
   button.click()
 })
 

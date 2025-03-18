@@ -17,11 +17,12 @@ from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
 
-from crossbench import exception, helper
+from crossbench import exception
 from crossbench import path as pth
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.firefox.firefox import Firefox
 from crossbench.browsers.webdriver import WebDriverBrowser
+from crossbench.helper import url_helper
 
 if TYPE_CHECKING:
   from crossbench.runner.groups.session import BrowserSessionRunGroup
@@ -59,20 +60,20 @@ class FirefoxWebDriver(WebDriverBrowser, Firefox):
       options.profile = FirefoxProfile(self.cache_dir)
     self._log_browser_start(args, driver_path)
     service_args: List[str] = []
-    log_path: Optional[str] = None
+    driver_log_path: Optional[str] = None
     if self._settings.driver_logging:
+      # TODO: Separate browser from driver logging
       service_args += ["--log", "debug"]
-      log_path = os.fspath(self.driver_log_file)
+      driver_log_path = os.fspath(self._setup_driver_log_file())
     # Explicitly copy the env vars for FirefoxBrowserProfilerProbeContext
     env_copy = dict(self.platform.environ)
     service = FirefoxService(
         executable_path=os.fspath(driver_path),
-        log_path=log_path,
+        log_output=driver_log_path,  # type: ignore
+        # TODO: remove after upgrading the vpython selenium version.
+        log_path=driver_log_path,
         service_args=service_args,
         env=env_copy)
-    # TODO support remote platforms:
-    service.log_file = self.host_platform.local_path(self.stdout_log_file).open(
-        "w", encoding="utf-8")
     driver = webdriver.Firefox(options=options, service=service)
     return driver
 
@@ -160,7 +161,7 @@ class FirefoxDriverFinder:
     return (9999, 9999, 9999)
 
   def _load_releases(self) -> Dict[Tuple[int, ...], Dict]:
-    with helper.urlopen(self.RELEASES_URL) as response:
+    with url_helper.urlopen(self.RELEASES_URL) as response:
       releases = json.loads(response.read().decode("utf-8"))
     assert isinstance(releases, list)
     versions = {}

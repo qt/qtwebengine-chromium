@@ -8,10 +8,11 @@ import functools
 import logging
 import os
 import shutil
-from typing import Optional
+from typing import Optional, Type
 
 from crossbench import path as pth
 from crossbench.plt.base import Platform
+from crossbench.plt.signals import WinSignals
 
 
 class WinPlatform(Platform):
@@ -23,6 +24,10 @@ class WinPlatform(Platform):
       pth.LocalPath(os.path.expandvars("%APPDATA%")),
       pth.LocalPath(os.path.expandvars("%LOCALAPPDATA%")),
   )
+
+  @property
+  def signals(self) -> Type[WinSignals]:
+    return WinSignals
 
   @property
   def is_win(self) -> bool:
@@ -43,8 +48,10 @@ class WinPlatform(Platform):
 
   @functools.cached_property
   def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
-    return self.sh_stdout("wmic", "cpu", "get",
-                          "name").strip().splitlines()[2].strip()
+    return self.sh_stdout(
+      "powershell", "-c",
+      "Get-CIMInstance -query 'select * from Win32_Processor' | ft Name"
+    ).strip().splitlines()[2].strip()
 
   def search_binary(self, app_or_bin: pth.AnyPathLike) -> Optional[pth.AnyPath]:
     self.assert_is_local()
@@ -71,7 +78,10 @@ class WinPlatform(Platform):
     if version := self.sh_stdout(
         "powershell", "-command",
         f"(Get-Item '{app_or_bin}').VersionInfo.ProductVersion").strip():
-      return version
+      name = self.sh_stdout(
+          "powershell", "-command",
+          f"(Get-Item '{app_or_bin}').VersionInfo.ProductName").strip()
+      return f"{name} {version}"
     try:
       # Fall back to command-line tools.
       if version := self.sh_stdout(app_or_bin, "--version").strip():

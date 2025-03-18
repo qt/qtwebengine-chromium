@@ -32,6 +32,18 @@ class AmbiguousDriverIdentifier(argparse.ArgumentTypeError):
 IOS_UUID_RE = re.compile(r"[0-9A-Z]+-[0-9A-Z-]+")
 
 
+def driver_path(
+    value: Optional[pth.AnyPathLike],
+    type: BrowserDriverType,  #pylint: disable=redefined-builtin
+    name: str = "driver path"
+) -> Optional[pth.AnyPath]:
+  if not value:
+    return None
+  if type.is_remote_driver:
+    return PathParser.any_path(value, name)
+  return PathParser.binary_path(value, name)
+
+
 @dataclasses.dataclass(frozen=True)
 class DriverConfig(ConfigObject):
   type: BrowserDriverType = BrowserDriverType.default()
@@ -152,16 +164,15 @@ class DriverConfig(ConfigObject):
 
   @classmethod
   def config_parser(cls) -> ConfigParser[DriverConfig]:
-    parser = ConfigParser("DriverConfig parser", cls)
+    parser = ConfigParser(cls)
     parser.add_argument(
         "type",
         type=BrowserDriverType.parse,
         default=BrowserDriverType.default())
-    # TODO: likely distinguish between local and remote driver path
     parser.add_argument(
         "path",
-        type=PathParser.binary_path,
-        required=False,
+        type=driver_path,
+        depends_on=("type",),
         help="Path to the driver executable")
     parser.add_argument(
         "settings",
@@ -175,7 +186,6 @@ class DriverConfig(ConfigObject):
     parser.add_argument(
         "adb_bin",
         type=PathParser.binary_path,
-        required=False,
         help="Path to the adb binary, only valid for Android.")
     return parser
 
@@ -210,6 +220,12 @@ class DriverConfig(ConfigObject):
       # the ChromeOS validation function validates the "client".
       # Consider moving this logic elsewhere in the future.
       self.validate_chromeos()
+    if self.is_local:
+      self.validate_local()
+
+  def validate_local(self) -> None:
+    if self.path:
+      PathParser.binary_path(self.path)
 
   def validate_android(self) -> None:
     platform = plt.PLATFORM
@@ -271,10 +287,20 @@ class DriverConfig(ConfigObject):
       return self.get_ssh_platform()
     return plt.PLATFORM
 
+  def _parse_ssh_platform_driver_port(self) -> int:
+    port = None
+    if settings := self.settings:
+      port = settings.get("port")
+    if port in (None, 0):
+      # The driver port is allowed to be 0 on ssh platforms. If so, we will
+      # automatically start chromedriver.
+      return 0
+    return NumberParser.port_number(port)
+
   def get_ssh_platform(self) -> plt.Platform:
     assert self.settings
     host = ObjectParser.non_empty_str(self.settings.get("host"), "host")
-    port = NumberParser.port_number(self.settings.get("port"), "port")
+    port = self._parse_ssh_platform_driver_port()
     ssh_port = NumberParser.port_number(
         self.settings.get("ssh_port"), "ssh port")
     ssh_user = ObjectParser.non_empty_str(
