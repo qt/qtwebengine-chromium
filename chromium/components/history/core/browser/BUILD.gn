@@ -162,6 +162,8 @@ static_library("browser") {
       "top_sites_impl.cc",
       "top_sites_impl.h",
       "top_sites_observer.h",
+      "web_history_service.cc",
+      "web_history_service.h",
     ]
 
     public_deps -= [
