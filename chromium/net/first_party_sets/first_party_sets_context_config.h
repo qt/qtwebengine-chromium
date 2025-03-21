@@ -5,6 +5,7 @@
 #ifndef NET_FIRST_PARTY_SETS_FIRST_PARTY_SETS_CONTEXT_CONFIG_H_
 #define NET_FIRST_PARTY_SETS_FIRST_PARTY_SETS_CONTEXT_CONFIG_H_
 
+#include "build/build_config.h"
 #include "base/containers/flat_map.h"
 #include "base/functional/function_ref.h"
 #include "net/base/schemeful_site.h"
@@ -36,7 +37,11 @@ class NET_EXPORT FirstPartySetsContextConfig {
 
   FirstPartySetsContextConfig Clone() const;
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const FirstPartySetsContextConfig& other) const = default;
+#else
   bool operator==(const FirstPartySetsContextConfig& other) const;
+#endif
 
   bool empty() const { return customizations_.empty(); }
 

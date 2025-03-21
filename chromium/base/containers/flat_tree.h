@@ -349,10 +349,31 @@ class flat_tree {
   friend bool operator==(const flat_tree& lhs, const flat_tree& rhs) {
     return lhs.body_ == rhs.body_;
   }
-
+#if !BUILDFLAG(IS_MAC_13)
   friend auto operator<=>(const flat_tree& lhs, const flat_tree& rhs) {
     return lhs.body_ <=> rhs.body_;
   }
+#else
+  friend bool operator!=(const flat_tree& lhs, const flat_tree& rhs) {
+    return !(lhs == rhs);
+  }
+
+  friend bool operator<(const flat_tree& lhs, const flat_tree& rhs) {
+    return lhs.body_ < rhs.body_;
+  }
+
+  friend bool operator>(const flat_tree& lhs, const flat_tree& rhs) {
+    return rhs < lhs;
+  }
+
+  friend bool operator>=(const flat_tree& lhs, const flat_tree& rhs) {
+    return !(lhs < rhs);
+  }
+
+  friend bool operator<=(const flat_tree& lhs, const flat_tree& rhs) {
+    return !(lhs > rhs);
+  }
+#endif
 
   friend void swap(flat_tree& lhs, flat_tree& rhs) noexcept { lhs.swap(rhs); }
 

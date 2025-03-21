@@ -32,8 +32,8 @@ class TRIVIAL_ABI GSL_OWNER HeapArray {
   static_assert(!std::is_reference_v<T>,
                 "HeapArray cannot hold reference types");
 
-  using iterator = base::span<T>::iterator;
-  using const_iterator = base::span<const T>::iterator;
+  using iterator = typename base::span<T>::iterator;
+  using const_iterator = typename base::span<const T>::iterator;
 
   // Allocates initialized memory capable of holding `size` elements. No memory
   // is allocated for zero-sized arrays.

@@ -44,7 +44,9 @@ SetsMutation::SetsMutation(const SetsMutation&) = default;
 SetsMutation& SetsMutation::operator=(const SetsMutation&) = default;
 SetsMutation::~SetsMutation() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool SetsMutation::operator==(const SetsMutation& other) const = default;
+#endif
 
 std::ostream& operator<<(std::ostream& os, const SetsMutation& mutation) {
   os << "replacements: {";

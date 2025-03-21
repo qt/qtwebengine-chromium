@@ -31,8 +31,10 @@ FirstPartySetEntry::SiteIndex::SiteIndex() = default;
 
 FirstPartySetEntry::SiteIndex::SiteIndex(uint32_t value) : value_(value) {}
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetEntry::SiteIndex::operator==(const SiteIndex& other) const =
     default;
+#endif
 
 FirstPartySetEntry::FirstPartySetEntry() = default;
 
@@ -68,11 +70,13 @@ FirstPartySetEntry& FirstPartySetEntry::operator=(FirstPartySetEntry&&) =
 
 FirstPartySetEntry::~FirstPartySetEntry() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetEntry::operator==(const FirstPartySetEntry& other) const =
     default;
 
 bool FirstPartySetEntry::operator!=(const FirstPartySetEntry& other) const =
     default;
+#endif
 
 // static
 absl::optional<net::SiteType> FirstPartySetEntry::DeserializeSiteType(

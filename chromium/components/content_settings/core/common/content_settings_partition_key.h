@@ -64,8 +64,13 @@ class PartitionKey {
 
   PartitionKey(const PartitionKey& key);
   PartitionKey(PartitionKey&& key);
+#if BUILDFLAG(IS_MAC_13)
+  std::strong_ordering operator<=>(const PartitionKey&) const = default;
+  bool operator==(const PartitionKey&) const = default;
+#else
   std::strong_ordering operator<=>(const PartitionKey&) const;
   bool operator==(const PartitionKey&) const;
+#endif
 
   // When partitioning is enabled, `domain` and `name` are set to the same
   // values as the StoragePartitionConfig.

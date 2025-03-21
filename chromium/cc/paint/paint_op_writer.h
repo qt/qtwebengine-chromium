@@ -123,7 +123,7 @@ class CC_PAINT_EXPORT PaintOpWriter {
   // deserialization, and make it possible to allow dynamic sizing for some
   // data types (see the specialized/overloaded functions).
   template <typename T>
-  static constexpr size_t SerializedSize();
+  static size_t SerializedSize();
   template <typename T>
   static constexpr size_t SerializedSize(const T& data);
   static size_t SerializedSize(const PaintImage& image);
@@ -452,7 +452,7 @@ constexpr size_t PaintOpWriter::SerializedSizeSimple<size_t>() {
 }
 
 template <typename T>
-constexpr size_t PaintOpWriter::SerializedSize() {
+size_t PaintOpWriter::SerializedSize() {
   static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>);
   return SerializedSizeSimple<T>();
 }

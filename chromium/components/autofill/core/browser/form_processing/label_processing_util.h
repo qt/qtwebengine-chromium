@@ -8,7 +8,14 @@
 #include <optional>
 #include <vector>
 
+#include "build/build_config.h"
 #include "base/strings/string_piece.h"
+
+#if BUILDFLAG(IS_MAC_13)
+namespace std {
+typedef ::std::basic_string<char16_t> u16string;
+}
+#endif
 
 namespace autofill {
 

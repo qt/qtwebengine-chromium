@@ -260,6 +260,12 @@
 #define BUILDFLAG_INTERNAL_IS_QTWEBENGINE() (0)
 #endif
 
+#if defined(OS_MAC) && defined(__clang_major__) && __clang_major__ < 15
+#define BUILDFLAG_INTERNAL_IS_MAC_13() (1)
+#else
+#define BUILDFLAG_INTERNAL_IS_MAC_13() (0)
+#endif
+
 // Compiler detection. Note: clang masquerades as GCC on POSIX and as MSVC on
 // Windows.
 #if defined(__GNUC__)

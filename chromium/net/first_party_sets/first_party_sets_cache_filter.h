@@ -5,6 +5,7 @@
 #ifndef NET_FIRST_PARTY_SETS_FIRST_PARTY_SETS_CACHE_FILTER_H_
 #define NET_FIRST_PARTY_SETS_FIRST_PARTY_SETS_CACHE_FILTER_H_
 
+#include "build/build_config.h"
 #include "base/containers/flat_map.h"
 #include "net/base/net_export.h"
 #include "net/base/schemeful_site.h"
@@ -29,8 +30,11 @@ class NET_EXPORT FirstPartySetsCacheFilter {
     MatchInfo();
     MatchInfo(const MatchInfo& other);
     ~MatchInfo();
+#if BUILDFLAG(IS_MAC_13)
+    bool operator==(const MatchInfo& other) const = default;
+#else
     bool operator==(const MatchInfo& other) const;
-
+#endif
     // Stores the ID used to check whether cache should be bypassed. Only not
     // null if the request site matches the filter; nullopt if don't match.
     absl::optional<int64_t> clear_at_run_id;
@@ -50,7 +54,11 @@ class NET_EXPORT FirstPartySetsCacheFilter {
 
   ~FirstPartySetsCacheFilter();
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const FirstPartySetsCacheFilter& other) const = default;
+#else
   bool operator==(const FirstPartySetsCacheFilter& other) const;
+#endif
 
   FirstPartySetsCacheFilter Clone() const;
 

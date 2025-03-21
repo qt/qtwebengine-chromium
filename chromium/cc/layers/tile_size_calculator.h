@@ -5,6 +5,7 @@
 #ifndef CC_LAYERS_TILE_SIZE_CALCULATOR_H_
 #define CC_LAYERS_TILE_SIZE_CALCULATOR_H_
 
+#include "build/build_config.h"
 #include "base/memory/raw_ptr.h"
 #include "cc/cc_export.h"
 #include "ui/gfx/geometry/size.h"
@@ -32,8 +33,12 @@ class CC_EXPORT TileSizeCalculator {
     gfx::Size max_untiled_layer_size;
     gfx::Size default_tile_size;
     gfx::Size content_bounds;
-
+#if BUILDFLAG(IS_MAC_13)
+    bool operator==(const AffectingParams& other) const = default;
+#else
     bool operator==(const AffectingParams& other) const;
+#endif
+
   };
 
   PictureLayerImpl* layer_impl() const { return layer_impl_; }

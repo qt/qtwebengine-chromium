@@ -119,9 +119,11 @@ gfx::Size CalculateGpuRawDrawTileSize(const gfx::Size& base_tile_size,
 
 }  // namespace
 
+#if !BUILDFLAG(IS_MAC_13)
 // AffectingParams.
 bool TileSizeCalculator::AffectingParams::operator==(
     const AffectingParams& other) const = default;
+#endif
 
 // TileSizeCalculator.
 TileSizeCalculator::TileSizeCalculator(PictureLayerImpl* layer_impl)

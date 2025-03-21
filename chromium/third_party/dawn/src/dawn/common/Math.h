@@ -98,6 +98,10 @@ std::optional<size_t> AlignSizeofN(uint64_t n) {
     return Align(sizeof(T) * n, Alignment);
 }
 
+#if BUILDFLAG(IS_MAC_13)
+#define DAWN_FORCE_INLINE inline
+#endif
+
 template <typename T>
 DAWN_FORCE_INLINE T* AlignPtr(T* ptr, size_t alignment) {
     DAWN_ASSERT(IsPowerOfTwo(alignment));

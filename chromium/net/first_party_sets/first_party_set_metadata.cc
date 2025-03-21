@@ -24,11 +24,13 @@ FirstPartySetMetadata& FirstPartySetMetadata::operator=(
 
 FirstPartySetMetadata::~FirstPartySetMetadata() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetMetadata::operator==(
     const FirstPartySetMetadata& other) const = default;
 
 bool FirstPartySetMetadata::operator!=(
     const FirstPartySetMetadata& other) const = default;
+#endif
 
 std::ostream& operator<<(std::ostream& os,
                          const FirstPartySetMetadata& metadata) {

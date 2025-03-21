@@ -27,8 +27,8 @@ template <typename T,
 class FixedArray : public absl::FixedArray<T, N, A> {
  public:
   using absl::FixedArray<T, N, A>::FixedArray;
-  explicit FixedArray(absl::FixedArray<T, N, A>::size_type n,
-                      const absl::FixedArray<T, N, A>::allocator_type& a =
+  explicit FixedArray(typename absl::FixedArray<T, N, A>::size_type n,
+                      const typename absl::FixedArray<T, N, A>::allocator_type& a =
                           typename absl::FixedArray<T, N, A>::allocator_type())
       : FixedArray(n, T(), a) {}
 };

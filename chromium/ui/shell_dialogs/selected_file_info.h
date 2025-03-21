@@ -77,8 +77,11 @@ struct SHELL_DIALOGS_EXPORT SelectedFileInfo {
   SelectedFileInfo& operator=(const SelectedFileInfo& other);
   SelectedFileInfo& operator=(SelectedFileInfo&& other);
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const SelectedFileInfo& other) const = default;
+#else
   bool operator==(const SelectedFileInfo& other) const;
-
+#endif
   // A utility function to return the path to use in most cases; returns
   // `local_path` if not empty, else `file_path`.
   // TODO(https://crbug.com/1514384): Clean this up; the different path options

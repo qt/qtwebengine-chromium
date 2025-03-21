@@ -158,9 +158,9 @@ SysInfo::SplitHardwareModelNameDoNotUse(std::string_view name) {
 
   HardwareModelNameSplit split;
   const auto* begin = name.begin();
-  if (!StringToInt(std::string_view(begin + number_loc, begin + comma_loc),
+  if (!StringToInt(std::string(begin + number_loc, begin + comma_loc),
                    &split.model) ||
-      !StringToInt(std::string_view(begin + comma_loc + 1, name.end()),
+      !StringToInt(std::string(begin + comma_loc + 1, name.end()),
                    &split.variant)) {
     return absl::nullopt;
   }

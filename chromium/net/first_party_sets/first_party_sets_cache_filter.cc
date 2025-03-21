@@ -13,8 +13,10 @@ FirstPartySetsCacheFilter::MatchInfo::MatchInfo(
 
 FirstPartySetsCacheFilter::MatchInfo::MatchInfo::~MatchInfo() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetsCacheFilter::MatchInfo::operator==(
     const FirstPartySetsCacheFilter::MatchInfo& other) const = default;
+#endif
 
 FirstPartySetsCacheFilter::FirstPartySetsCacheFilter() = default;
 FirstPartySetsCacheFilter::FirstPartySetsCacheFilter(
@@ -31,8 +33,10 @@ FirstPartySetsCacheFilter& FirstPartySetsCacheFilter::operator=(
 
 FirstPartySetsCacheFilter::~FirstPartySetsCacheFilter() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetsCacheFilter::operator==(
     const FirstPartySetsCacheFilter& other) const = default;
+#endif
 
 FirstPartySetsCacheFilter FirstPartySetsCacheFilter::Clone() const {
   return FirstPartySetsCacheFilter(filter_, browser_run_id_);

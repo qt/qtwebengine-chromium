@@ -5,6 +5,7 @@
 #ifndef NET_FIRST_PARTY_SETS_SETS_MUTATION_H_
 #define NET_FIRST_PARTY_SETS_SETS_MUTATION_H_
 
+#include "build/build_config.h"
 #include "base/containers/flat_map.h"
 #include "net/base/net_export.h"
 #include "net/base/schemeful_site.h"
@@ -37,7 +38,11 @@ class NET_EXPORT SetsMutation {
   SetsMutation(SetsMutation&&);
   SetsMutation& operator=(SetsMutation&&);
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const SetsMutation& other) const = default;
+#else
   bool operator==(const SetsMutation& other) const;
+#endif
 
   const std::vector<base::flat_map<SchemefulSite, FirstPartySetEntry>>&
   replacements() const {

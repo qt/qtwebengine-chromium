@@ -107,11 +107,13 @@ GlobalFirstPartySets& GlobalFirstPartySets::operator=(GlobalFirstPartySets&&) =
 
 GlobalFirstPartySets::~GlobalFirstPartySets() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool GlobalFirstPartySets::operator==(const GlobalFirstPartySets& other) const =
     default;
 
 bool GlobalFirstPartySets::operator!=(const GlobalFirstPartySets& other) const =
     default;
+#endif
 
 GlobalFirstPartySets GlobalFirstPartySets::Clone() const {
   return GlobalFirstPartySets(public_sets_version_, entries_, aliases_,

@@ -5,6 +5,7 @@
 #ifndef NET_FIRST_PARTY_SETS_FIRST_PARTY_SET_METADATA_H_
 #define NET_FIRST_PARTY_SETS_FIRST_PARTY_SET_METADATA_H_
 
+#include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/first_party_sets/first_party_set_entry.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -28,8 +29,14 @@ class NET_EXPORT FirstPartySetMetadata {
 
   ~FirstPartySetMetadata();
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const FirstPartySetMetadata& other) const = default;
+  bool operator!=(const FirstPartySetMetadata& other) const = default;
+#else
   bool operator==(const FirstPartySetMetadata& other) const;
   bool operator!=(const FirstPartySetMetadata& other) const;
+#endif
+
 
   const absl::optional<FirstPartySetEntry>& frame_entry() const {
     return frame_entry_;

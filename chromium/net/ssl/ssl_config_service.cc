@@ -20,7 +20,10 @@ SSLContextConfig::~SSLContextConfig() = default;
 SSLContextConfig& SSLContextConfig::operator=(const SSLContextConfig&) =
     default;
 SSLContextConfig& SSLContextConfig::operator=(SSLContextConfig&&) = default;
+
+#if !BUILDFLAG(IS_MAC_13)
 bool SSLContextConfig::operator==(const SSLContextConfig&) const = default;
+#endif
 
 bool SSLContextConfig::InsecureHashesInTLSHandshakesEnabled() const {
   return insecure_hash_override.value_or(false);

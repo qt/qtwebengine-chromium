@@ -46,7 +46,7 @@ size_t GetResultSizeBytes(const HeaderDirectFromSellerSignals::Result& result) {
 
 }  // namespace
 
-HeaderDirectFromSellerSignals::Result::Result() = default;
+HeaderDirectFromSellerSignals::Result::Result(){};
 
 HeaderDirectFromSellerSignals::Result::Result(
     std::optional<std::string> seller_signals,

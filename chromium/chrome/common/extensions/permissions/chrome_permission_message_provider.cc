@@ -24,8 +24,6 @@ using extensions::mojom::APIPermissionID;
 
 namespace extensions {
 
-namespace {
-
 // Copyable wrapper to make PermissionMessages comparable.
 class ComparablePermission {
  public:
@@ -45,8 +43,6 @@ class ComparablePermission {
   raw_ptr<const PermissionMessage> msg_;
 };
 using ComparablePermissions = std::vector<ComparablePermission>;
-
-}  // namespace
 
 typedef std::set<PermissionMessage> PermissionMsgSet;
 

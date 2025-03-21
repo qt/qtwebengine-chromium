@@ -127,7 +127,7 @@ using VecValueType = typename Vec::value_type;
 
 template <typename Vec>
 using VecPtrLikeUnderlyingValueType =
-    std::pointer_traits<VecValueType<Vec>>::element_type;
+    typename std::pointer_traits<VecValueType<Vec>>::element_type;
 
 }  // namespace internal
 

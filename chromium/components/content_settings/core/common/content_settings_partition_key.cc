@@ -72,9 +72,12 @@ std::string PartitionKey::Serialize() const {
 
 PartitionKey::PartitionKey(const PartitionKey& key) = default;
 PartitionKey::PartitionKey(PartitionKey&& key) = default;
+
+#if !BUILDFLAG(IS_MAC_13)
 std::strong_ordering PartitionKey::operator<=>(const PartitionKey&) const =
     default;
 bool PartitionKey::operator==(const PartitionKey&) const = default;
+#endif
 
 // static
 const PartitionKey& PartitionKey::GetDefaultImpl() {

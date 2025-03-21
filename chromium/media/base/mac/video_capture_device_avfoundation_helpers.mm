@@ -19,7 +19,7 @@ NSArray<AVCaptureDevice*>* GetVideoCaptureDevices() {
   // Camera device types available on all apple platforms.
   NSArray* captureDeviceTypes = @[ AVCaptureDeviceTypeBuiltInWideAngleCamera ];
 
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) && !BUILDFLAG(IS_MAC_13)
   // MacOS has an additional 'external' device type we want to include.
   // AVCaptureDeviceTypeExternal since 14.0, AVCaptureDeviceTypeExternalUnknown
   // before. See crbug.com/1484830.

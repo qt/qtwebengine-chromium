@@ -172,7 +172,13 @@ class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT) SharedImageFormat final {
   int BitsPerPixel() const;
 
   bool operator==(const SharedImageFormat& o) const;
+
+#if BUILDFLAG(IS_MAC_13)
+  bool operator!=(const SharedImageFormat& o) const;
+  bool operator<(const SharedImageFormat& o) const;
+#else
   std::weak_ordering operator<=>(const SharedImageFormat& o) const;
+#endif
 
  private:
   enum class PlaneType : uint8_t {
@@ -198,7 +204,12 @@ class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT) SharedImageFormat final {
 #endif
 
       bool operator==(const MultiplanarFormat& o) const;
+#if BUILDFLAG(IS_MAC_13)
+      bool operator!=(const MultiplanarFormat& o) const;
+      bool operator<(const MultiplanarFormat& o) const;
+#else
       std::weak_ordering operator<=>(const MultiplanarFormat& o) const;
+#endif
     };
 
     SharedImageFormatUnion() {}

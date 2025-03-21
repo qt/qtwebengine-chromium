@@ -62,7 +62,9 @@ TransportInfo::TransportInfo(const TransportInfo&) = default;
 
 TransportInfo::~TransportInfo() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool TransportInfo::operator==(const TransportInfo& other) const = default;
+#endif
 
 std::string TransportInfo::ToString() const {
   return base::StrCat({

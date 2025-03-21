@@ -9,6 +9,7 @@
 #include "base/containers/flat_set.h"
 #include "base/functional/function_ref.h"
 #include "base/version.h"
+#include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/base/schemeful_site.h"
 #include "net/first_party_sets/first_party_set_entry.h"
@@ -48,8 +49,13 @@ class NET_EXPORT GlobalFirstPartySets {
 
   ~GlobalFirstPartySets();
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const GlobalFirstPartySets& other) const = default;
+  bool operator!=(const GlobalFirstPartySets& other) const = default;
+#else
   bool operator==(const GlobalFirstPartySets& other) const;
   bool operator!=(const GlobalFirstPartySets& other) const;
+#endif
 
   // Creates a clone of this instance.
   GlobalFirstPartySets Clone() const;

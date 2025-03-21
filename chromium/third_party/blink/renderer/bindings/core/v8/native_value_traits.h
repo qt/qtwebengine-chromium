@@ -76,7 +76,7 @@ template <typename T>
 struct NativeValueTraitsBase {
   STATIC_ONLY(NativeValueTraitsBase);
 
-  using ImplType = bindings::ImplTypeFor<T>::type;
+  using ImplType = typename bindings::ImplTypeFor<T>::type;
 
   // Pointer types have nullptr as IDL null value.
   // ScriptValue, String, and union types have IsNull member function.

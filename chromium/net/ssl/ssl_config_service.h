@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "build/build_config.h"
 #include "base/observer_list.h"
 #include "net/base/net_export.h"
 #include "net/ssl/ssl_config.h"
@@ -22,7 +23,11 @@ struct NET_EXPORT SSLContextConfig {
   SSLContextConfig& operator=(const SSLContextConfig&);
   SSLContextConfig& operator=(SSLContextConfig&&);
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const SSLContextConfig&) const = default;
+#else
   bool operator==(const SSLContextConfig&) const;
+#endif
 
   // Returns whether insecure hashes are allowed in TLS handshakes.
   bool InsecureHashesInTLSHandshakesEnabled() const;

@@ -8,6 +8,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "build/build_config.h"
+#if BUILDFLAG(IS_MAC_13)
+#include "base/ranges/algorithm.h"
+#undef _LIBCPP_HAS_NO_INCOMPLETE_RANGES
+#include <ranges>
+#endif
 #include <algorithm>
 #include <array>
 #include <concepts>
@@ -345,7 +351,7 @@ class GSL_POINTER span {
   constexpr reverse_iterator rend() const noexcept {
     return reverse_iterator(begin());
   }
-
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Bounds-checked copy of spans into spans. The spans must be the exact
   // same size or a hard CHECK() occurs. This is a non-std extension that
   // is inspired by the Rust slice::copy_from_slice() method.
@@ -363,7 +369,7 @@ class GSL_POINTER span {
     CHECK_EQ(size_bytes(), other.size_bytes());
     std::ranges::copy(other, data());
   }
-
+#endif
  private:
   // This field is not a raw_ptr<> because it was filtered by the rewriter
   // for: #constexpr-ctor-field-initializer, #global-scope, #union
@@ -521,7 +527,11 @@ class GSL_POINTER span<T, dynamic_extent, InternalPtrType> {
     requires(internal::LegalDataConversion<T, U>)
   {
     CHECK_EQ(size_bytes(), other.size_bytes());
+#if !BUILDFLAG(IS_MAC_13)
     std::ranges::copy(other, data());
+#else
+    base::ranges::copy(other, data());
+#endif
   }
 
  private:

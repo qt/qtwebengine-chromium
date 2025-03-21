@@ -29,8 +29,10 @@ SelectedFileInfo& SelectedFileInfo::operator=(const SelectedFileInfo& other) =
 SelectedFileInfo& SelectedFileInfo::operator=(SelectedFileInfo&& other) =
     default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool SelectedFileInfo::operator==(const SelectedFileInfo& other) const =
     default;
+#endif
 
 base::FilePath SelectedFileInfo::path() const {
   return local_path.empty() ? file_path : local_path;

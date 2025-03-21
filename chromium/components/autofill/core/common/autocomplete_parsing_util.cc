@@ -178,8 +178,10 @@ std::string AutocompleteParsingResult::ToString() const {
                        webauthn ? "true" : "false", "'"});
 }
 
+#if !BUILDFLAG(IS_MAC_13)
 bool AutocompleteParsingResult::operator==(
     const AutocompleteParsingResult&) const = default;
+#endif
 
 HtmlFieldType FieldTypeFromAutocompleteAttributeValue(std::string value) {
   if (value.empty())

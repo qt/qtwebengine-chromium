@@ -25,8 +25,10 @@ FirstPartySetEntryOverride& FirstPartySetEntryOverride::operator=(
 
 FirstPartySetEntryOverride::~FirstPartySetEntryOverride() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetEntryOverride::operator==(
     const FirstPartySetEntryOverride& other) const = default;
+#endif
 
 std::ostream& operator<<(std::ostream& os,
                          const FirstPartySetEntryOverride& override) {

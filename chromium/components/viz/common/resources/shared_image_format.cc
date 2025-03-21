@@ -491,6 +491,26 @@ bool SharedImageFormat::operator==(const SharedImageFormat& o) const {
   }
 }
 
+#if BUILDFLAG(IS_MAC_13)
+bool SharedImageFormat::operator!=(const SharedImageFormat& o) const {
+  return !operator==(o);
+}
+
+bool SharedImageFormat::operator<(const SharedImageFormat& o) const {
+  if (plane_type_ != o.plane_type()) {
+    return plane_type_ < o.plane_type();
+  }
+
+  switch (plane_type_) {
+    case PlaneType::kUnknown:
+      return false;
+    case PlaneType::kSinglePlane:
+      return singleplanar_format() < o.singleplanar_format();
+    case PlaneType::kMultiPlane:
+      return multiplanar_format() < o.multiplanar_format();
+  }
+}
+#else
 std::weak_ordering SharedImageFormat::operator<=>(
     const SharedImageFormat& o) const {
   if (plane_type_ != o.plane_type()) {
@@ -506,6 +526,7 @@ std::weak_ordering SharedImageFormat::operator<=>(
       return multiplanar_format() <=> o.multiplanar_format();
   }
 }
+#endif
 
 bool SharedImageFormat::SharedImageFormatUnion::MultiplanarFormat::operator==(
     const MultiplanarFormat& o) const {
@@ -513,11 +534,23 @@ bool SharedImageFormat::SharedImageFormatUnion::MultiplanarFormat::operator==(
          channel_format == o.channel_format;
 }
 
+#if BUILDFLAG(IS_MAC_13)
+bool SharedImageFormat::SharedImageFormatUnion::MultiplanarFormat::operator!=(
+    const MultiplanarFormat& o) const {
+  return !operator==(o);
+}
+bool SharedImageFormat::SharedImageFormatUnion::MultiplanarFormat::operator<(
+    const MultiplanarFormat& o) const {
+  return std::tie(plane_config, subsampling, channel_format) <
+         std::tie(o.plane_config, o.subsampling, o.channel_format);
+}
+#else
 std::weak_ordering
 SharedImageFormat::SharedImageFormatUnion::MultiplanarFormat::operator<=>(
     const MultiplanarFormat& o) const {
   return std::tie(plane_config, subsampling, channel_format) <=>
          std::tie(o.plane_config, o.subsampling, o.channel_format);
 }
+#endif
 
 }  // namespace viz

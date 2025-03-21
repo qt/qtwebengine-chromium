@@ -90,7 +90,7 @@ template <typename Container>
     { c[i] } -> std::same_as<typename Container::reference>;
   }
 struct ArrayTraits<Container> {
-  using Element = Container::value_type;
+  using Element = typename Container::value_type;
 
   // vector-like containers have no built-in null.
   static bool IsNull(const Container& c) { return false; }

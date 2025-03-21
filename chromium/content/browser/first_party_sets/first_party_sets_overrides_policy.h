@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_FIRST_PARTY_SETS_FIRST_PARTY_SETS_OVERRIDES_POLICY_H_
 #define CONTENT_BROWSER_FIRST_PARTY_SETS_FIRST_PARTY_SETS_OVERRIDES_POLICY_H_
 
+#include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "net/first_party_sets/sets_mutation.h"
 
@@ -22,7 +23,11 @@ class CONTENT_EXPORT FirstPartySetsOverridesPolicy {
 
   ~FirstPartySetsOverridesPolicy();
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const FirstPartySetsOverridesPolicy& other) const = default;
+#else
   bool operator==(const FirstPartySetsOverridesPolicy& other) const;
+#endif
 
   const net::SetsMutation& mutation() const { return mutation_; }
   net::SetsMutation& mutation() { return mutation_; }

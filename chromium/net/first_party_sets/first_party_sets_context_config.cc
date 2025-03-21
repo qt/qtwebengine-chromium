@@ -24,8 +24,10 @@ FirstPartySetsContextConfig FirstPartySetsContextConfig::Clone() const {
   return FirstPartySetsContextConfig(customizations_);
 }
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetsContextConfig::operator==(
     const FirstPartySetsContextConfig& other) const = default;
+#endif
 
 absl::optional<FirstPartySetEntryOverride>
 FirstPartySetsContextConfig::FindOverride(const SchemefulSite& site) const {

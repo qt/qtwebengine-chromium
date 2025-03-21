@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "build/build_config.h"
 #include "components/autofill/core/common/html_field_types.h"
 
 namespace autofill {
@@ -27,8 +28,11 @@ namespace autofill {
 struct AutocompleteParsingResult {
   std::string ToString() const;
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const AutocompleteParsingResult&) const = default;
+#else
   bool operator==(const AutocompleteParsingResult&) const;
-
+#endif
   // `section` corresponds to the string after "section-".
   std::string section;
   HtmlFieldMode mode = HtmlFieldMode::kNone;

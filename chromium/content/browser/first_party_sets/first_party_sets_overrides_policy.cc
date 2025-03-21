@@ -19,7 +19,8 @@ FirstPartySetsOverridesPolicy& FirstPartySetsOverridesPolicy::operator=(
 
 FirstPartySetsOverridesPolicy::~FirstPartySetsOverridesPolicy() = default;
 
+#if !BUILDFLAG(IS_MAC_13)
 bool FirstPartySetsOverridesPolicy::operator==(
     const FirstPartySetsOverridesPolicy& other) const = default;
-
+#endif
 }  // namespace content

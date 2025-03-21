@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 
+#include "build/build_config.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_export.h"
 #include "net/socket/next_proto.h"
@@ -43,8 +44,11 @@ struct NET_EXPORT TransportInfo {
   ~TransportInfo();
 
   // Instances of this type are comparable for equality.
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const TransportInfo& other) const = default;
+#else
   bool operator==(const TransportInfo& other) const;
-
+#endif
   // Returns a string representation of this struct, suitable for debugging.
   std::string ToString() const;
 

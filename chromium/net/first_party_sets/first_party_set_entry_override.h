@@ -5,6 +5,7 @@
 #ifndef NET_FIRST_PARTY_SETS_FIRST_PARTY_SET_ENTRY_OVERRIDE_H_
 #define NET_FIRST_PARTY_SETS_FIRST_PARTY_SET_ENTRY_OVERRIDE_H_
 
+#include "build/build_config.h"
 #include "net/base/net_export.h"
 #include "net/first_party_sets/first_party_set_entry.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -37,8 +38,11 @@ class NET_EXPORT FirstPartySetEntryOverride {
 
   ~FirstPartySetEntryOverride();
 
+#if BUILDFLAG(IS_MAC_13)
+  bool operator==(const FirstPartySetEntryOverride& other) const = default;
+#else
   bool operator==(const FirstPartySetEntryOverride& other) const;
-
+#endif
   // Returns true iff this override is a deletion.
   bool IsDeletion() const { return !entry_.has_value(); }
 
