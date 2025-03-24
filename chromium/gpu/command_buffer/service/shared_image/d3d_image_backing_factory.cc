@@ -704,6 +704,7 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
     return false;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const bool is_scanout = usage.Has(gpu::SHARED_IMAGE_USAGE_SCANOUT);
   const bool is_video_decode = usage.Has(gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE);
   if (is_scanout) {
@@ -717,6 +718,7 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
                  GetDXGIFormatForCreateTexture(format));
     }
   }
+#endif
 
   if (gmb_type == gfx::EMPTY_BUFFER) {
     if (GetDXGIFormatForCreateTexture(format) == DXGI_FORMAT_UNKNOWN) {
