@@ -238,6 +238,16 @@ bool Isolate::IsInitialArrayPrototype(Tagged<JSArray> array) {
 NATIVE_CONTEXT_FIELDS(NATIVE_CONTEXT_FIELD_ACCESSOR)
 #undef NATIVE_CONTEXT_FIELD_ACCESSOR
 
+SetCurrentIsolateScope::SetCurrentIsolateScope(Isolate* isolate)
+    : ptr_compr_cage_access_scope_(isolate),
+      previous_isolate_(Isolate::TryGetCurrent()) {
+  Isolate::SetCurrent(isolate);
+}
+
+SetCurrentIsolateScope::~SetCurrentIsolateScope() {
+  Isolate::SetCurrent(previous_isolate_);
+}
+
 }  // namespace internal
 }  // namespace v8
 
