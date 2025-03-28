@@ -16,6 +16,7 @@
 
 #include "base/check_op.h"
 #include "base/containers/span.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/i18n/file_util_icu.h"
@@ -38,6 +39,7 @@
 #include "ui/base/data_transfer_policy/data_transfer_policy_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
@@ -258,6 +260,11 @@ bool OSExchangeDataProviderWin::GetPlainTextURL(IDataObject* source,
       !plain_text.empty()) {
     GURL gurl(plain_text);
     if (gurl.is_valid()) {
+      if (base::FeatureList::IsEnabled(
+              features::kDragDropOnlySynthesizeHttpOrHttpsUrlsFromText) &&
+          IsRendererTainted() && !gurl.SchemeIsHTTPOrHTTPS()) {
+          return false;
+      }
       *url = gurl;
       return true;
     }

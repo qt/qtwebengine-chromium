@@ -9,6 +9,7 @@
 
 #include "base/check.h"
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/chromeos_buildflags.h"
@@ -17,6 +18,7 @@
 #include "ui/base/clipboard/file_info.h"
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/ui_base_features.h"
 #include "url/gurl.h"
 
 namespace ui {
@@ -117,8 +119,10 @@ bool OSExchangeDataProviderNonBacked::GetURLAndTitle(
     std::u16string* title) const {
   if ((formats_ & OSExchangeData::URL) == 0) {
     title->clear();
-    return GetPlainTextURL(url) ||
-           (policy == FilenameToURLPolicy::CONVERT_FILENAMES &&
+    if (GetPlainTextURL(url)) {
+       return true;
+    }
+    return (policy == FilenameToURLPolicy::CONVERT_FILENAMES &&
             GetFileURL(url));
   }
 
@@ -251,6 +255,12 @@ bool OSExchangeDataProviderNonBacked::GetPlainTextURL(GURL* url) const {
   GURL test_url(string_);
   if (!test_url.is_valid())
     return false;
+
+  if (base::FeatureList::IsEnabled(
+          features::kDragDropOnlySynthesizeHttpOrHttpsUrlsFromText) &&
+      IsRendererTainted() && !test_url.SchemeIsHTTPOrHTTPS()) {
+    return false;
+  }
 
   if (url)
     *url = test_url;

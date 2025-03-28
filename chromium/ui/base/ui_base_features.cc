@@ -249,6 +249,10 @@ BASE_FEATURE(kFocusFollowsCursor,
              "FocusFollowsCursor",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kDragDropOnlySynthesizeHttpOrHttpsUrlsFromText,
+             "DragDropOnlySynthesizeHttpOrHttpsUrlsFromText",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_WIN)
 // Enables InputPane API for controlling on screen keyboard.
 BASE_FEATURE(kInputPaneOnScreenKeyboard,
