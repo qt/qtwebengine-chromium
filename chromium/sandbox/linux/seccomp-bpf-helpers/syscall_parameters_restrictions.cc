@@ -32,16 +32,16 @@
 #include "sandbox/linux/system_headers/linux_syscalls.h"
 #include "sandbox/linux/system_headers/linux_time.h"
 
+#if !defined(MAP_DROPPABLE)
+#define MAP_DROPPABLE 0x08    // Zero memory under memory pressure.
+#endif
+
 // PNaCl toolchain does not provide sys/ioctl.h and sys/ptrace.h headers.
 #if !defined(OS_NACL_NONSFI)
 #include <sys/ioctl.h>
 #include <sys/ptrace.h>
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(__arm__) && \
     !defined(__aarch64__) && !defined(PTRACE_GET_THREAD_AREA)
-
-#if !defined(MAP_DROPPABLE)
-#define MAP_DROPPABLE	0x08    // Zero memory under memory pressure.
-#endif
 
 // Also include asm/ptrace-abi.h since ptrace.h in older libc (for instance
 // the one in Ubuntu 16.04 LTS) is missing PTRACE_GET_THREAD_AREA.
