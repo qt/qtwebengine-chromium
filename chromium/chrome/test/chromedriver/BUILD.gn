@@ -473,6 +473,10 @@ if (is_linux && !is_qtwebengine) {
       output_name = "webenginedriver"
       deps -= [ "//net/traffic_annotation:test_support" ]
 
+      if (is_linux || is_mac) {
+        deps += [ "//ui/gl:buildflags" ]
+      }
+
       if (is_linux) {
         sources += [
           "//content/public/common/content_switches.cc",
