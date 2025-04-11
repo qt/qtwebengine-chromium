@@ -4,13 +4,14 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
   import("//third_party/jni_zero/jni_zero.gni")
 }
 
-source_set("generic_sensor") {
+jumbo_source_set("generic_sensor") {
   visibility = [ "//services/device:*" ]
 
   output_name = "generic_sensor"
