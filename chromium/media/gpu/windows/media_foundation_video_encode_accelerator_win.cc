@@ -1239,6 +1239,13 @@ void MediaFoundationVideoEncodeAccelerator::UseOutputBitstreamBuffer(
   }
   auto encode_output = std::move(encoder_output_queue_.front());
   encoder_output_queue_.pop_front();
+  if (buffer.size() < encode_output->size()) {
+    NotifyErrorStatus(
+        {EncoderStatus::Codes::kInvalidOutputBuffer,
+         "Encoder output is too large: " + base::NumberToString(buffer.size()) +
+             " vs. " + base::NumberToString(encode_output->size())});
+    return;
+  }
   memcpy(buffer_ref->mapping.memory(), encode_output->memory(),
          encode_output->size());
 
@@ -2591,6 +2598,12 @@ void MediaFoundationVideoEncodeAccelerator::ProcessOutput() {
     auto encode_output = std::make_unique<EncodeOutput>(size, md);
     {
       MediaBufferScopedPointer scoped_buffer(output_buffer.Get());
+      if (!scoped_buffer.get() || encode_output->size() < size) {
+        NotifyErrorStatus({EncoderStatus::Codes::kInvalidOutputBuffer,
+                           "Failed to copy the output during encoding."});
+        return;
+      }
+
       memcpy(encode_output->memory(), scoped_buffer.get(), size);
     }
     encoder_output_queue_.push_back(std::move(encode_output));
@@ -2609,8 +2622,10 @@ void MediaFoundationVideoEncodeAccelerator::ProcessOutput() {
 
   {
     MediaBufferScopedPointer scoped_buffer(output_buffer.Get());
-    if (!buffer_ref->mapping.IsValid() || !scoped_buffer.get()) {
-      DLOG(ERROR) << "Failed to copy bitstream media buffer.";
+    if (!buffer_ref->mapping.IsValid() || !scoped_buffer.get() ||
+        buffer_ref->mapping.size() < size) {
+      NotifyErrorStatus({EncoderStatus::Codes::kInvalidOutputBuffer,
+                         "Failed to copy bitstream media buffer."});
       return;
     }
 
