@@ -3979,7 +3979,7 @@ Para administrar la configuración de esta cuenta, instala la app de Family Lin
 <translation id="3776508619697147021">Permitir que los sitios soliciten permiso para descargar múltiples archivos de forma automática</translation>
 <translation id="3776796446459804932">Esta extensión infringe la política de Chrome Web Store.</translation>
 <translation id="3777483481409781352">No se pudo activar el dispositivo celular</translation>
-<translation id="3777796259512476958">Saldrás de la mayoría de los sitios.</translation>
+<translation id="3777796259512476958">Se cerrará tu sesión en la mayoría de los sitios.</translation>
 <translation id="3778208826288864398">Se ingresó el PIN de forma incorrecta demasiadas veces; por lo tanto, se bloqueó la llave de seguridad. Deberás restablecerla.</translation>
 <translation id="3778740492972734840">&amp;Herramientas del desarrollador</translation>
 <translation id="3778868487658107119">Hazle preguntas. Encárgale tareas. Es tu versión personal de Google, está siempre lista para ayudarte.</translation>
@@ -9769,7 +9769,7 @@ Presiona un interruptor o tecla que ya esté asignado para quitar la asignación
 <translation id="7948407723851303488">Todas las páginas de <ph name="DOMAIN_NAME" /></translation>
 <translation id="7950629216186736592">Motivo: LBS solo admite URLs con http://, https:// y file://.</translation>
 <translation id="7950814699499457511">Activada • Esta extensión no publicó prácticas de privacidad, como la forma en que recopila y usa datos</translation>
-<translation id="7951265006188088697">Para agregar o administrar formas de pago de Google Pay, visita tu <ph name="BEGIN_LINK" />Cuenta de Google<ph name="END_LINK" /></translation>
+<translation id="7951265006188088697">Para agregar o administrar formas de pago de Google Pay, visita tu <ph name="BEGIN_LINK" />Cuenta de Google<ph name="END_LINK" />.</translation>
 <translation id="795130320946928025">Desactivar la tarjeta virtual</translation>
 <translation id="795240231873601803">Usa la inscripción empresarial para las cuentas de trabajo o instituciones educativas</translation>
 <translation id="7952708427581814389">Permitir que los sitios soliciten permiso para ver imágenes y texto del portapapeles</translation>
