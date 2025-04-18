@@ -285,7 +285,7 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
         const uint32_t vRowBytes = image->yuvRowBytes[AVIF_CHAN_V];
         for (uint32_t outerJ = 0; outerJ < image->height; outerJ += 2) {
             for (uint32_t outerI = 0; outerI < image->width; outerI += 2) {
-                int blockW = 2, blockH = 2;
+                uint32_t blockW = 2, blockH = 2;
                 if ((outerI + 1) >= image->width) {
                     blockW = 1;
                 }
@@ -294,10 +294,10 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
                 }
 
                 // Convert an entire 2x2 block to YUV, and populate any fully sampled channels as we go
-                for (int bJ = 0; bJ < blockH; ++bJ) {
-                    for (int bI = 0; bI < blockW; ++bI) {
-                        int i = outerI + bI;
-                        int j = outerJ + bJ;
+                for (uint32_t bJ = 0; bJ < blockH; ++bJ) {
+                    for (uint32_t bI = 0; bI < blockW; ++bI) {
+                        const uint32_t i = outerI + bI;
+                        const uint32_t j = outerJ + bJ;
 
                         // Unpack RGB into normalized float
                         if (state.rgb.channelBytes > 1) {
@@ -408,8 +408,8 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
 
                     float sumU = 0.0f;
                     float sumV = 0.0f;
-                    for (int bJ = 0; bJ < blockH; ++bJ) {
-                        for (int bI = 0; bI < blockW; ++bI) {
+                    for (uint32_t bJ = 0; bJ < blockH; ++bJ) {
+                        for (uint32_t bI = 0; bI < blockW; ++bI) {
                             sumU += yuvBlock[bI][bJ].u;
                             sumV += yuvBlock[bI][bJ].v;
                         }
@@ -434,10 +434,10 @@ avifResult avifImageRGBToYUV(avifImage * image, const avifRGBImage * rgb)
                 } else if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV422) {
                     // YUV422, average 2 samples (1x2), twice
 
-                    for (int bJ = 0; bJ < blockH; ++bJ) {
+                    for (uint32_t bJ = 0; bJ < blockH; ++bJ) {
                         float sumU = 0.0f;
                         float sumV = 0.0f;
-                        for (int bI = 0; bI < blockW; ++bI) {
+                        for (uint32_t bI = 0; bI < blockW; ++bI) {
                             sumU += yuvBlock[bI][bJ].u;
                             sumV += yuvBlock[bI][bJ].v;
                         }
