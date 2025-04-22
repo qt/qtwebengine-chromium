@@ -883,6 +883,9 @@ void MediaFoundationVideoEncodeAccelerator::ProcessOutputAsync() {
         new EncodeOutput(size, keyframe, timestamp));
     {
       MediaBufferScopedPointer scoped_buffer(output_buffer.Get());
+      if (!scoped_buffer.get() || encode_output->size() < size) {
+        return;
+      }
       memcpy(encode_output->memory(), scoped_buffer.get(), size);
     }
     encoder_output_queue_.push_back(std::move(encode_output));
@@ -898,6 +901,9 @@ void MediaFoundationVideoEncodeAccelerator::ProcessOutputAsync() {
 
   {
     MediaBufferScopedPointer scoped_buffer(output_buffer.Get());
+    if (!scoped_buffer.get() || buffer_ref->mapping.size() < size) {
+      return;
+    }
     memcpy(buffer_ref->mapping.memory(), scoped_buffer.get(), size);
   }
 
@@ -1081,6 +1087,9 @@ void MediaFoundationVideoEncodeAccelerator::UseOutputBitstreamBufferTask(
     std::unique_ptr<MediaFoundationVideoEncodeAccelerator::EncodeOutput>
         encode_output = std::move(encoder_output_queue_.front());
     encoder_output_queue_.pop_front();
+    if (buffer_ref->mapping.size() < encode_output->size()) {
+      return;
+    }
     memcpy(buffer_ref->mapping.memory(), encode_output->memory(),
            encode_output->size());
 
