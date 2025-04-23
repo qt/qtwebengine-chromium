@@ -307,7 +307,7 @@ int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion1,
   int bytes = 0;
   if (fp_mode == kSaveFPRegs) {
     // Restore all allocatable XMM registers.
-    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 2);
+    int delta = kDoubleSize * (XMMRegister::kNumRegisters - 1);
     for (int i = XMMRegister::kNumRegisters - 2; i >= 0; i--) {
       XMMRegister reg = XMMRegister::from_code(i);
       movsd(reg, Operand(esp, i * kDoubleSize));
