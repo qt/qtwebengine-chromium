@@ -76,14 +76,26 @@ base::ScopedFD GetPlaneFdForBo(gbm_bo* bo, size_t plane) {
   int ret;
   // Use DRM_RDWR to allow the fd to be mappable in another process.
   ret = drmPrimeHandleToFD(dev_fd, plane_handle, DRM_CLOEXEC | DRM_RDWR, &fd);
-  PLOG_IF(ERROR, ret != 0) << "Failed to get fd for plane.";
+  PLOG_IF(WARNING, ret != 0) << "Failed to get fd for plane with libdrm.";
 
   // Older DRM implementations blocked DRM_RDWR, but gave a read/write mapping
   // anyways
   if (ret) {
     ret = drmPrimeHandleToFD(dev_fd, plane_handle, DRM_CLOEXEC, &fd);
+    PLOG_IF(WARNING, ret != 0) << "Failed to get fd for plane even without DRM_RDWR.";
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE)
+  // drmPrimeHandleToFD() does not work with legacy radeon driver. Fallback to
+  // gbm_bo_get_fd_for_plane() which does provide fds per plane basis.
+  if (ret) {
+    fd = gbm_bo_get_fd_for_plane(bo, plane);
+    ret = (fd == -1) ? -1 : 0;
+    PLOG_IF(WARNING, ret != 0) << "Failed to get fd for plane even with GBM.";
+  }
+#endif
+
+  LOG_IF(ERROR, ret != 0) << "Failed to get fd for plane.";
   return ret ? base::ScopedFD() : base::ScopedFD(fd);
 #endif
 }
