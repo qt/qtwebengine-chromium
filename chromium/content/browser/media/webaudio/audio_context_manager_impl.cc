@@ -16,6 +16,7 @@
 
 namespace content {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // Returns the time in milleseconds following these rules:
@@ -28,6 +29,7 @@ int64_t GetBucketedTimeInMilliseconds(const base::TimeDelta& time) {
 }
 
 }  // namespace
+#endif
 
 void AudioContextManagerImpl::Create(
     RenderFrameHost* render_frame_host,
@@ -52,6 +54,7 @@ AudioContextManagerImpl::AudioContextManagerImpl(
       clock_(base::DefaultTickClock::GetInstance()) {}
 
 AudioContextManagerImpl::~AudioContextManagerImpl() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Takes care pending "audible start" times.
   base::TimeTicks now = clock_->NowTicks();
   for (const auto& entry : pending_audible_durations_) {
@@ -62,10 +65,12 @@ AudioContextManagerImpl::~AudioContextManagerImpl() {
   UMA_HISTOGRAM_EXACT_LINEAR("WebAudio.AudioContext.ConcurrentAudioContexts",
                              max_concurrent_audio_contexts_,
                              /*exclusive_max=*/101);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AudioContextManagerImpl::AudioContextAudiblePlaybackStarted(
     uint32_t audio_context_id) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!pending_audible_durations_[audio_context_id].is_null()) {
     mojo::ReportBadMessage(
         "AudioContextAudiblePlaybackStarted() called more than once with the "
@@ -75,6 +80,7 @@ void AudioContextManagerImpl::AudioContextAudiblePlaybackStarted(
 
   // Keeps track of the start audible time for this context.
   pending_audible_durations_[audio_context_id] = clock_->NowTicks();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   static_cast<RenderFrameHostImpl&>(render_frame_host())
       .AudioContextPlaybackStarted(audio_context_id);
@@ -82,6 +88,7 @@ void AudioContextManagerImpl::AudioContextAudiblePlaybackStarted(
 
 void AudioContextManagerImpl::AudioContextAudiblePlaybackStopped(
     uint32_t audio_context_id) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::TimeTicks then = pending_audible_durations_[audio_context_id];
   DCHECK(!then.is_null());
 
@@ -89,11 +96,13 @@ void AudioContextManagerImpl::AudioContextAudiblePlaybackStopped(
 
   // Resets the context slot because the context is not audible.
   pending_audible_durations_[audio_context_id] = base::TimeTicks();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   static_cast<RenderFrameHostImpl&>(render_frame_host())
       .AudioContextPlaybackStopped(audio_context_id);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AudioContextManagerImpl::RecordAudibleTime(base::TimeDelta audible_time) {
   DCHECK(!audible_time.is_zero());
 
@@ -113,6 +122,7 @@ void AudioContextManagerImpl::RecordAudibleTime(base::TimeDelta audible_time) {
       .SetAudibleTime(GetBucketedTimeInMilliseconds(audible_time))
       .Record(ukm_recorder);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AudioContextManagerImpl::AudioContextCreated(uint32_t audio_context_id) {
   concurrent_audio_context_ids_.insert(audio_context_id);
