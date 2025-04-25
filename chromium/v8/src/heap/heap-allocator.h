@@ -47,7 +47,7 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
   // Supports all `AllocationType` types.
   //
   // Returns a failed result on an unsuccessful allocation attempt.
-  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult
+  V8_WARN_UNUSED_RESULT inline AllocationResult
   AllocateRaw(int size_in_bytes, AllocationType allocation,
               AllocationOrigin origin = AllocationOrigin::kRuntime,
               AllocationAlignment alignment = kTaggedAligned,
@@ -57,7 +57,7 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
   //
   // Returns a failed result on an unsuccessful allocation attempt.
   template <AllocationType type>
-  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult AllocateRaw(
+  V8_WARN_UNUSED_RESULT inline AllocationResult AllocateRaw(
       int size_in_bytes, AllocationOrigin origin = AllocationOrigin::kRuntime,
       AllocationAlignment alignment = kTaggedAligned,
       AllocationHint hint = AllocationHint());
@@ -66,7 +66,7 @@ class V8_EXPORT_PRIVATE HeapAllocator final {
 
   // Supports all `AllocationType` types and allows specifying retry handling.
   template <AllocationRetryMode mode>
-  V8_WARN_UNUSED_RESULT V8_INLINE Tagged<HeapObject> AllocateRawWith(
+  V8_WARN_UNUSED_RESULT inline Tagged<HeapObject> AllocateRawWith(
       int size, AllocationType allocation,
       AllocationOrigin origin = AllocationOrigin::kRuntime,
       AllocationAlignment alignment = kTaggedAligned,

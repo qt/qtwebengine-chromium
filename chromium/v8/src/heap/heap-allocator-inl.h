@@ -182,6 +182,7 @@ HeapAllocator::AllocateRaw(int size_in_bytes, AllocationOrigin origin,
   return allocation;
 }
 
+V8_WARN_UNUSED_RESULT inline
 AllocationResult HeapAllocator::AllocateRaw(int size_in_bytes,
                                             AllocationType type,
                                             AllocationOrigin origin,
@@ -220,7 +221,7 @@ AllocationResult HeapAllocator::AllocateRaw(int size_in_bytes,
 }
 
 template <HeapAllocator::AllocationRetryMode mode>
-V8_WARN_UNUSED_RESULT V8_INLINE Tagged<HeapObject>
+V8_WARN_UNUSED_RESULT inline Tagged<HeapObject>
 HeapAllocator::AllocateRawWith(int size, AllocationType allocation,
                                AllocationOrigin origin,
                                AllocationAlignment alignment,
