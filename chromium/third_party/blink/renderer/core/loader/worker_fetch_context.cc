@@ -250,7 +250,7 @@ void WorkerFetchContext::PopulateResourceRequestBeforeCacheAccess(
   MixedContentChecker::UpgradeInsecureRequest(
       request, &GetResourceFetcherProperties().GetFetchClientSettingsObject(),
       global_scope_, mojom::RequestContextFrameType::kNone,
-      global_scope_->ContentSettingsClient());
+      global_scope_->ContentSettingsClient(), nullptr);
 }
 
 void WorkerFetchContext::WillSendRequest(ResourceRequest& request) {
@@ -274,7 +274,8 @@ void WorkerFetchContext::UpgradeResourceRequestForLoader(
         out_request,
         &GetResourceFetcherProperties().GetFetchClientSettingsObject(),
         global_scope_, mojom::RequestContextFrameType::kNone,
-        global_scope_->ContentSettingsClient());
+        global_scope_->ContentSettingsClient(),
+        nullptr);
   }
   SetFirstPartyCookie(out_request);
   if (!out_request.TopFrameOrigin())
