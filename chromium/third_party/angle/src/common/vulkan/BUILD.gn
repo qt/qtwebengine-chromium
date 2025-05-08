@@ -22,8 +22,12 @@ declare_args() {
 }
 
 config("angle_libvulkan_config") {
+  defines = []
   if (angle_use_custom_libvulkan) {
-    defines = [ "ANGLE_USE_CUSTOM_LIBVULKAN" ]
+    defines += [ "ANGLE_USE_CUSTOM_LIBVULKAN" ]
+  }
+  if (is_qtwebengine) {
+    defines += [ "ANGLE_PLATFORM_QTWEBENGINE" ]
   }
 }
 
