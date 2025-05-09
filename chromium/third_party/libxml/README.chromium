@@ -15,6 +15,7 @@ Modifications:
 
 - undo-sax-deprecation.patch: Un-deprecate xmlSAXParseMemory because it is used
   in chromium's copy of maldoca. See https://github.com/google/maldoca/issues/87
+- xml-attr-extra.patch: add an `extra` member to struct _xmlAttr.
 - Add helper classes in the chromium/ subdirectory.
 - Delete various unused files, see chromium/roll.py
 - Disable various unused libxml features:
