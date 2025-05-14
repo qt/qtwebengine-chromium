@@ -534,7 +534,10 @@ void LayerTreeHost::NotifyTransitionRequestsFinished(
     auto it = view_transition_callbacks_.find(sequence_id);
     if (it == view_transition_callbacks_.end())
       continue;
-    std::move(it->second).Run();
+    // The callback can cause more requests to be added and run the lifecycle, so
+    // unwind the stack before calling it.
+    task_runner_provider_->MainThreadTaskRunner()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(it->second)));
     view_transition_callbacks_.erase(it);
   }
 }
