@@ -502,7 +502,7 @@ struct _xmlNode {
     xmlNs           *nsDef;     /* namespace definitions on this node */
     void            *psvi;	/* for type/PSVI information */
     unsigned short   line;	/* line number */
-    unsigned short   extra;	/* extra data for XPath/XSLT */
+    unsigned int     extra;	/* extra data for XPath/XSLT */
 };
 
 /**
