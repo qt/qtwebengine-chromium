@@ -1929,17 +1929,17 @@ xsltGetSourceNodeFlags(xmlNodePtr node) {
     switch (node->type) {
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-            return ((xmlDocPtr) node)->extra >> XSLT_SOURCE_NODE_SHIFT_32;
+            return ((xmlDocPtr) node)->extra >> XSLT_SOURCE_NODE_SHIFT;
 
         case XML_ATTRIBUTE_NODE:
-            return ((xmlAttrPtr) node)->extra >> XSLT_SOURCE_NODE_SHIFT_32;
+            return ((xmlAttrPtr) node)->extra >> XSLT_SOURCE_NODE_SHIFT;
 
         case XML_ELEMENT_NODE:
         case XML_TEXT_NODE:
         case XML_CDATA_SECTION_NODE:
         case XML_PI_NODE:
         case XML_COMMENT_NODE:
-            return node->extra >> XSLT_SOURCE_NODE_SHIFT_32;
+            return node->extra >> XSLT_SOURCE_NODE_SHIFT;
 
         default:
             return 0;
@@ -1964,11 +1964,11 @@ xsltSetSourceNodeFlags(xsltTransformContextPtr ctxt, xmlNodePtr node,
     switch (node->type) {
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-            ((xmlDocPtr) node)->extra |= (flags << XSLT_SOURCE_NODE_SHIFT_32);
+            ((xmlDocPtr) node)->extra |= ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ATTRIBUTE_NODE:
-            ((xmlAttrPtr) node)->extra |= (flags << XSLT_SOURCE_NODE_SHIFT_32);
+            ((xmlAttrPtr) node)->extra |= ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ELEMENT_NODE:
@@ -1976,7 +1976,7 @@ xsltSetSourceNodeFlags(xsltTransformContextPtr ctxt, xmlNodePtr node,
         case XML_CDATA_SECTION_NODE:
         case XML_PI_NODE:
         case XML_COMMENT_NODE:
-            node->extra |= (flags << XSLT_SOURCE_NODE_SHIFT_16);
+            node->extra |= ((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         default:
@@ -1998,11 +1998,11 @@ xsltClearSourceNodeFlags(xmlNodePtr node, int flags) {
     switch (node->type) {
         case XML_DOCUMENT_NODE:
         case XML_HTML_DOCUMENT_NODE:
-            ((xmlDocPtr) node)->extra &= ~(flags << XSLT_SOURCE_NODE_SHIFT_32);
+            ((xmlDocPtr) node)->extra &= ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ATTRIBUTE_NODE:
-            ((xmlAttrPtr) node)->extra &= ~(flags << XSLT_SOURCE_NODE_SHIFT_32);
+            ((xmlAttrPtr) node)->extra &= ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         case XML_ELEMENT_NODE:
@@ -2010,7 +2010,7 @@ xsltClearSourceNodeFlags(xmlNodePtr node, int flags) {
         case XML_CDATA_SECTION_NODE:
         case XML_PI_NODE:
         case XML_COMMENT_NODE:
-            node->extra &= ~(flags << XSLT_SOURCE_NODE_SHIFT_16);
+            node->extra &= ~((unsigned) flags << XSLT_SOURCE_NODE_SHIFT);
             return 0;
 
         default:
@@ -2034,6 +2034,13 @@ xsltGetSourceNodeValue(xmlNodePtr node) {
 
         case XML_ATTRIBUTE_NODE:
             return (((xmlAttrPtr) node)->extra & XSLT_SOURCE_NODE_VALUE_MASK);
+
+        case XML_ELEMENT_NODE:
+        case XML_TEXT_NODE:
+        case XML_CDATA_SECTION_NODE:
+        case XML_PI_NODE:
+        case XML_COMMENT_NODE:
+            return (node->extra & XSLT_SOURCE_NODE_VALUE_MASK);
 
         default:
             return 0;
@@ -2061,7 +2068,48 @@ xsltSetSourceNodeValue(xmlNodePtr node, int value) {
             ((xmlAttrPtr) node)->extra |= (value & XSLT_SOURCE_NODE_VALUE_MASK);
             return 0;
 
+        case XML_ELEMENT_NODE:
+        case XML_TEXT_NODE:
+        case XML_CDATA_SECTION_NODE:
+        case XML_PI_NODE:
+        case XML_COMMENT_NODE:
+            node->extra &= ~XSLT_SOURCE_NODE_VALUE_MASK;
+            node->extra |= (value & XSLT_SOURCE_NODE_VALUE_MASK);
+            return 0;
         default:
+            return -1;
+    }
+}
+
+/**
+ * xsltClearSourceNodeExtraData:
+ * @node:  Node from source document
+ *
+ * Clears all associated extra data for a node.
+ *
+ * Returns 0 on success, -1 on error.
+ */
+int
+xsltClearSourceNodeExtraData(xmlNodePtr node) {
+    switch (node->type) {
+        case XML_DOCUMENT_NODE:
+        case XML_HTML_DOCUMENT_NODE:
+            ((xmlDocPtr) node)->extra = 0;
+            return 0;
+
+        case XML_ATTRIBUTE_NODE:
+            ((xmlAttrPtr) node)->extra = 0;
+            return 0;
+
+        case XML_ELEMENT_NODE:
+        case XML_TEXT_NODE:
+        case XML_CDATA_SECTION_NODE:
+        case XML_PI_NODE:
+        case XML_COMMENT_NODE:
+            node->extra = 0;
+            return 0;
+
+         default:
             return -1;
     }
 }
