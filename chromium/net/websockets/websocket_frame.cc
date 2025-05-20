@@ -36,12 +36,12 @@ using PackedMaskType = size_t;
 #endif  // defined(COMPILER_GCC) &&
         // (defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY))
 
-const uint8_t kFinalBit = 0x80;
-const uint8_t kReserved1Bit = 0x40;
-const uint8_t kReserved2Bit = 0x20;
-const uint8_t kReserved3Bit = 0x10;
-const uint8_t kOpCodeMask = 0xF;
-const uint8_t kMaskBit = 0x80;
+const uint8_t kFinalBitWF = 0x80;
+const uint8_t kReserved1BitWF = 0x40;
+const uint8_t kReserved2BitWF = 0x20;
+const uint8_t kReserved3BitWF = 0x10;
+const uint8_t kOpCodeMaskWF = 0xF;
+const uint8_t kMaskBitWF = 0x80;
 const uint64_t kMaxPayloadLengthWithoutExtendedLengthField = 125;
 const uint64_t kPayloadLengthWithTwoByteExtendedLengthField = 126;
 const uint64_t kPayloadLengthWithEightByteExtendedLengthField = 127;
@@ -102,7 +102,7 @@ int WriteWebSocketFrameHeader(const WebSocketFrameHeader& header,
                               const WebSocketMaskingKey* masking_key,
                               char* buffer,
                               int buffer_size) {
-  DCHECK((header.opcode & kOpCodeMask) == header.opcode)
+  DCHECK((header.opcode & kOpCodeMaskWF) == header.opcode)
       << "header.opcode must fit to kOpCodeMask.";
   DCHECK(header.payload_length <= static_cast<uint64_t>(INT64_MAX))
       << "WebSocket specification doesn't allow a frame longer than "
@@ -126,16 +126,16 @@ int WriteWebSocketFrameHeader(const WebSocketFrameHeader& header,
   int buffer_index = 0;
 
   uint8_t first_byte = 0u;
-  first_byte |= header.final ? kFinalBit : 0u;
-  first_byte |= header.reserved1 ? kReserved1Bit : 0u;
-  first_byte |= header.reserved2 ? kReserved2Bit : 0u;
-  first_byte |= header.reserved3 ? kReserved3Bit : 0u;
-  first_byte |= header.opcode & kOpCodeMask;
+  first_byte |= header.final ? kFinalBitWF : 0u;
+  first_byte |= header.reserved1 ? kReserved1BitWF : 0u;
+  first_byte |= header.reserved2 ? kReserved2BitWF : 0u;
+  first_byte |= header.reserved3 ? kReserved3BitWF : 0u;
+  first_byte |= header.opcode & kOpCodeMaskWF;
   buffer[buffer_index++] = first_byte;
 
   int extended_length_size = 0;
   uint8_t second_byte = 0u;
-  second_byte |= header.masked ? kMaskBit : 0u;
+  second_byte |= header.masked ? kMaskBitWF : 0u;
   if (header.payload_length <= kMaxPayloadLengthWithoutExtendedLengthField) {
     second_byte |= header.payload_length;
   } else if (header.payload_length <= UINT16_MAX) {
