@@ -104,14 +104,21 @@ class AudioArray final {
     return UNSAFE_BUFFERS(base::span(aligned_data_.get(), size_));
   }
 
-  T& at(size_t i) {
-    // Note that although it is a size_t, m_size is now guaranteed to be
+   T& at(size_t i) {
+    // Note that although it is a size_t, `m_size` is now guaranteed to be
     // no greater than max unsigned. This guarantee is enforced in Allocate().
     SECURITY_DCHECK(i < size());
     return as_span()[i];
   }
+  const T& at(size_t i) const {
+    // Note that although it is a size_t, `m_size` is now guaranteed to be
+    // no greater than max unsigned. This guarantee is enforced in Allocate().
+    SECURITY_DCHECK(i < size());
+    return as_span()[i];
+   }
 
   T& operator[](size_t i) { return at(i); }
+  const T& operator[](size_t i) const { return at(i); }
 
   void Zero() {
     // This multiplication is made safe by the check in Allocate().
