@@ -54,6 +54,56 @@ export class ExtensionsInfoList extends PolymerElement {
   private isEnabled_(isEnabled: boolean): string {
     return isEnabled ? "Enabled" : "Disabled";
   }
+
+  private hideUninstallButton_(isInstalled: boolean): boolean {
+    return isInstalled ? false : true;
+  }
+
+  private enableDisableButton_(isEnabled: boolean): string {
+    return isEnabled ? 'Disable' : 'Enable';
+  }
+
+  private async onUninstallClick_(event: Event) {
+    const id = (event.currentTarget as HTMLElement).dataset['id']!;
+    try {
+      const result =
+          await this.extensionUiBrowserProxy.handler.uninstallExtension(id);
+      if (result.error) {
+        console.error('Failed to remove extension:', result.error);
+      } else {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Failed to remove extension:', error);
+    };
+  }
+
+  private async onUnloadClick_(event: Event) {
+    const id = (event.currentTarget as HTMLElement).dataset['id']!;
+    try {
+      const result =
+          await this.extensionUiBrowserProxy.handler.unloadExtension(id);
+      if (result.error) {
+        console.error('Failed to unload extension:', result.error);
+      } else {
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Failed to unload extension:', error);
+    };
+  }
+
+  private async onEnableDisableClick_(event: Event) {
+    const id = (event.currentTarget as HTMLElement).dataset['id']!;
+    const enabled = (event.currentTarget as HTMLElement).dataset['enabled']!;
+    const isEnabled = (enabled == 'Enabled');
+    try {
+      await this.extensionUiBrowserProxy.handler.setExtensionEnabled(id, !isEnabled);
+      window.location.reload();
+    } catch (error) {
+      console.error('Failed to change extension state:', error);
+    }
+  }
 }
 
 declare global {
