@@ -33,6 +33,13 @@ export class ExtensionsToolbarElement extends PolymerElement {
     });
     this.proxy_.handler.loadExtension();
   }
+
+  private onInstallExtensionClick_() {
+    this.proxy_.callbackRouter.reloadPage.addListener(() => {
+      window.location.reload();
+    });
+    this.proxy_.handler.installExtension();
+  }
 }
 
 declare global {
