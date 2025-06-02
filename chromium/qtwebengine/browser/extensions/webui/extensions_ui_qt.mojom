@@ -10,6 +10,8 @@ struct ExtensionInfo {
   string version;
   string id;
   bool isEnabled;
+  bool isInstalled;
+  bool isLoaded;
 };
 
 // Used by the WebUI page to bootstrap bidirectional communication.
@@ -24,6 +26,10 @@ interface PageHandler {
   // Get visual data for all the traces currently stored locally.
   GetAllExtensionInfo() => (array<ExtensionInfo> reports);
   LoadExtension();
+  InstallExtension();
+  UninstallExtension(string id) => (string error);
+  UnloadExtension(string id) => (string error);
+  SetExtensionEnabled(string id, bool isEnabled) => ();
 };
 
 // WebUI-side handler for requests from the browser.
