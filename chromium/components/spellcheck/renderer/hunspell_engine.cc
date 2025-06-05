@@ -65,7 +65,7 @@ void HunspellEngine::InitializeHunspell() {
 
   if (bdict_file_->Initialize(std::move(file_))) {
     hunspell_ =
-        std::make_unique<Hunspell>(bdict_file_->data(), bdict_file_->length());
+        std::make_unique<Hunspell>(bdict_file_->bytes());
   } else {
     NOTREACHED() << "Could not mmap spellchecker dictionary.";
   }
