@@ -14264,3 +14264,5 @@ DEBUG_BREAK_BYTECODE_LIST(DEBUG_BREAK)
 ReduceResult MaglevGraphBuilder::VisitIllegal() { UNREACHABLE(); }
 
 }  // namespace v8::internal::maglev
+
+#undef TRACE
