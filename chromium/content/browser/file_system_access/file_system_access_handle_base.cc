@@ -401,6 +401,59 @@ void FileSystemAccessHandleBase::DidTakeMoveLocks(
                       "which is locked."})));
     return;
   }
+
+  if (manager()->permission_context() &&
+      dest_url.type() !=
+          storage::FileSystemType::kFileSystemTypeTemporary) {
+    // So far the destination path is considered safe with write access.
+    // However, it might still point to a blocklisted file type. Request a
+    // sensitive entry access check which will decide if the destination path
+    // should be allowed or blocked, and may spawn a confirmation UI.
+    manager()->permission_context()->ConfirmSensitiveEntryAccess(
+        context().storage_key.origin(),
+        (dest_url.type() == storage::FileSystemType::kFileSystemTypeLocal
+            ? FileSystemAccessPermissionContext::PathType::kLocal
+            : FileSystemAccessPermissionContext::PathType::kExternal),
+        dest_url.path(),
+        // TODO(crbug.com/40198034): Update once moving directory is supported.
+        FileSystemAccessPermissionContext::HandleType::kFile,
+        // This must be kSave as the move operation will save the file.
+        FileSystemAccessPermissionContext::UserAction::kSave,
+        context().frame_id,
+        base::BindOnce(
+            &FileSystemAccessHandleBase::DidVerifySensitiveEntryAccessForMove,
+            AsWeakPtr(), std::move(dest_url),
+            has_write_access, has_transient_user_activation,
+            std::move(callback), std::move(locks)));
+  } else {
+    // Skipping ConfirmSensitiveEntryAccess() as either of the following holds:
+    // (1) no permission context. Possibly because manager() is being destroyed
+    // or in a test.
+    // (2) destination file is in Bucket File System, i.e. not a real file.
+    DidVerifySensitiveEntryAccessForMove(
+        std::move(dest_url), has_write_access,
+        has_transient_user_activation, std::move(callback), std::move(locks),
+        FileSystemAccessPermissionContext::SensitiveEntryResult::kAllowed);
+  }
+}
+
+void FileSystemAccessHandleBase::DidVerifySensitiveEntryAccessForMove(
+    storage::FileSystemURL dest_url,
+    bool has_write_access,
+    bool has_transient_user_activation,
+    base::OnceCallback<void(blink::mojom::FileSystemAccessErrorPtr)> callback,
+    std::vector<scoped_refptr<LockHandle>> locks,
+    FileSystemAccessPermissionContext::SensitiveEntryResult
+        sensitive_entry_result) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (sensitive_entry_result !=
+      FileSystemAccessPermissionContext::SensitiveEntryResult::kAllowed) {
+    std::move(callback).Run(file_system_access_error::FromStatus(
+        blink::mojom::FileSystemAccessStatus::kInvalidArgument));
+    return;
+  }
+
   // Only allow overwriting moves if we have write access to the destination or
   // its parent.
   if (has_write_access) {
