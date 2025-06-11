@@ -552,8 +552,14 @@ void AudioParamTimeline::SetValueCurveAtTime(const Vector<float>& curve,
   }
 
   base::AutoLock locker(events_lock_);
-  InsertEvent(ParamEvent::CreateSetValueCurveEvent(curve, time, duration),
+  bool result = InsertEvent(ParamEvent::CreateSetValueCurveEvent(curve, time, duration),
               exception_state);
+
+  // `InsertEvent` will have already thrown an exception for us if `result` is
+  // false.
+  if (!result) {
+    return;
+  }
 
   // Insert a setValueAtTime event too to establish an event so that all
   // following events will process from the end of the curve instead of the
@@ -563,7 +569,7 @@ void AudioParamTimeline::SetValueCurveAtTime(const Vector<float>& curve,
               exception_state);
 }
 
-void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
+bool AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
                                      ExceptionState& exception_state) {
   TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("webaudio.audionode"),
                "AudioParamTimeline::InsertEvent");
@@ -596,7 +602,7 @@ void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
   if (events_.empty()) {
     events_.insert(0, std::move(event));
     new_events_.insert(events_[0].get());
-    return;
+    return true;
   }
 
   // Most of the time, we must insert after the last event. If the time of the
@@ -642,7 +648,7 @@ void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
               DOMExceptionCode::kNotSupportedError,
               EventToString(*event) + " overlaps " +
                   EventToString(*events_[i]));
-          return;
+          return false;
         }
       } else {
         // Here we handle existing events of types other than
@@ -655,7 +661,7 @@ void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
               DOMExceptionCode::kNotSupportedError,
               EventToString(*event) + " overlaps " +
                   EventToString(*events_[i]));
-          return;
+          return false;
         }
       }
       if (events_[i]->Time() < insert_time) {
@@ -687,7 +693,7 @@ void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
               DOMExceptionCode::kNotSupportedError,
               EventToString(*event) + " overlaps " +
                   EventToString(*events_[i]));
-          return;
+          return false;
         }
       }
       if (events_[i]->Time() < insert_time) {
@@ -702,6 +708,7 @@ void AudioParamTimeline::InsertEvent(std::unique_ptr<ParamEvent> event,
 
   events_.insert(insertion_idx, std::move(event));
   new_events_.insert(events_[insertion_idx].get());
+  return true;
 }
 
 bool AudioParamTimeline::HasValues(size_t current_frame,
