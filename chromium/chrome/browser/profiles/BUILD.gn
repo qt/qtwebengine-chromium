@@ -6,6 +6,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/common/features.gni")
 import("//components/enterprise/buildflags/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 
 # This target should be the default place for adding public interface things
 # (ie, non-factory, non-impl). There will likely need to be a :factory or :impl
@@ -233,7 +234,6 @@ source_set("profiles_extra_parts_impl") {
     "//chrome/browser/file_system_access",
     "//chrome/browser/ip_protection",
     "//chrome/browser/media/router",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/omnibox",
     "//chrome/browser/optimization_guide",
     "//chrome/browser/permissions",
@@ -369,6 +369,12 @@ source_set("profiles_extra_parts_impl") {
 
   if (enable_glic) {
     deps += [ "//chrome/browser/glic" ]
+  }
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
   }
 }
 

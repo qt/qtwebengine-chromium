@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//extensions/buildflags/buildflags.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
 
@@ -67,7 +68,6 @@ source_set("impl") {
     ":content_settings_factory",
     ":content_settings_util",
     "//chrome/browser:browser_process",
-    "//chrome/browser/media/webrtc",
     "//chrome/browser/permissions",
     "//chrome/browser/permissions/system",
     "//chrome/browser/picture_in_picture",
@@ -83,6 +83,12 @@ source_set("impl") {
     "//services/metrics/public/cpp:ukm_builders",
     "//ui/webui",
   ]
+
+  if (enable_webrtc) {
+    deps += [
+      "//chrome/browser/media/webrtc",
+    ]
+  }
 
   if (is_android) {
     sources += [ "request_desktop_site_web_contents_observer_android.cc" ]
