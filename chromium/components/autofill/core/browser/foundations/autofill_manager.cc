@@ -581,6 +581,7 @@ AutofillManager::GetServerPredictionsForForm(
   return cached_form->GetServerPredictions(field_ids);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::flat_map<FieldGlobalId, FieldType>
 AutofillManager::GetHeursticPredictionForForm(
     HeuristicSource source,
@@ -592,6 +593,7 @@ AutofillManager::GetHeursticPredictionForForm(
   }
   return cached_form->GetHeuristicPredictions(source, field_ids);
 }
+#endif
 
 void AutofillManager::ParseFormsAsync(
     const std::vector<FormData>& forms,

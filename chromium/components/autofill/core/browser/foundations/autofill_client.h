@@ -21,7 +21,9 @@
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/country_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_manager/entities/entity_data_manager.h"
+#endif
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/integrators/fast_checkout_client.h"
 #include "components/autofill/core/browser/integrators/password_form_classification.h"
@@ -243,6 +245,7 @@ class AutofillClient {
   // Returns the AutofillDriverFactory.
   virtual AutofillDriverFactory& GetAutofillDriverFactory() = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the VotesUploader.
   virtual VotesUploader& GetVotesUploader() = 0;
 
@@ -260,6 +263,7 @@ class AutofillClient {
   // Gets the EntityDataManager instance associated with the client, if there is
   // one.
   virtual EntityDataManager* GetEntityDataManager() = 0;
+#endif
 
   // Gets the AutofillOptimizationGuide instance associated with the client.
   // This function can return nullptr if we are on an unsupported platform, or
@@ -276,9 +280,11 @@ class AutofillClient {
   virtual FieldClassificationModelHandler*
   GetPasswordManagerFieldClassificationModelHandler();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Handles routing single-field form filling requests, such as for
   // Autocomplete and merchant promo codes.
   virtual SingleFieldFillRouter& GetSingleFieldFillRouter() = 0;
+#endif
 
   // Gets the AutocompleteHistoryManager instance associated with the client.
   virtual AutocompleteHistoryManager* GetAutocompleteHistoryManager() = 0;
@@ -517,10 +523,10 @@ class AutofillClient {
   // - May return null for platforms that don't support this.
   virtual LogManager* GetCurrentLogManager();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual autofill_metrics::FormInteractionsUkmLogger&
   GetFormInteractionsUkmLogger() = 0;
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
 
 #if BUILDFLAG(IS_ANDROID)

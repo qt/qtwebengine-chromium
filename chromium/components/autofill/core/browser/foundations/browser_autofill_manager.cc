@@ -64,8 +64,8 @@
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_encoding.h"
 #include "components/autofill/core/browser/crowdsourcing/determine_possible_field_types.h"
-#include "components/autofill/core/browser/crowdsourcing/votes_uploader.h"
 #if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/autofill/core/browser/crowdsourcing/votes_uploader.h"
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
@@ -85,9 +85,9 @@
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/filling/form_autofill_history.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/filling/form_filler.h"
 #include "components/autofill/core/browser/filling/payments/field_filling_payments_util.h"
-#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_import/form_data_importer.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/foundations/autofill_client.h"
@@ -166,6 +166,7 @@ using mojom::SubmissionSource;
 
 namespace {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 FillDataType GetFillDataTypeFromFillingPayload(
     const FillingPayload& filling_payload) {
   return absl::visit(
@@ -431,6 +432,7 @@ void LogSuggestionsCount(const SuggestionsContext& context,
         FillingProduct::kAddress);
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool ShouldOfferSingleFieldFill(const FormFieldData& field,
                                 const AutofillField* autofill_field,
@@ -524,7 +526,6 @@ void MaybeAddAddressSuggestionStrikes(AutofillClient& client,
   }
 #endif
 }
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // Returns the plus address to be used as the email override on profile
 // suggestions matching the user's gaia email.
@@ -615,6 +616,7 @@ void MaybeImportFromSubmittedForm(AutofillClient& client,
   client.GetSingleFieldFillRouter().OnWillSubmitForm(
       form_for_autocomplete, &form_structure, client.IsAutocompleteEnabled());
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace
 
@@ -627,11 +629,13 @@ BrowserAutofillManager::MetricsState::~MetricsState() {
   credit_card_form_event_logger.OnDestroyed();
   address_form_event_logger.OnDestroyed();
 }
+#endif
 
 BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver)
     : AutofillManager(driver) {}
 
 BrowserAutofillManager::~BrowserAutofillManager() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (metrics_->has_parsed_forms) {
     base::UmaHistogramBoolean(
         "Autofill.WebOTP.PhoneNumberCollection.ParseResult",
@@ -645,16 +649,8 @@ BrowserAutofillManager::~BrowserAutofillManager() {
     ProcessFieldLogEventsInForm(*form_structure);
   }
   client().GetSingleFieldFillRouter().CancelPendingQueries();
+#endif
 }
-#else
-BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
-                                               const std::string& app_locale)
-    : AutofillManager(driver)
-    , external_delegate_(std::make_unique<AutofillExternalDelegate>(this))
-
-{
-}
-#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 base::WeakPtr<AutofillManager> BrowserAutofillManager::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
@@ -945,8 +941,10 @@ void BrowserAutofillManager::OnFormSubmittedImpl(const FormData& form,
         last_unlocked_credit_card_cvc_, std::move(submitted_form),
         /*autofill_ai_shows_bubble=*/false);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::UpdatePendingForm(const FormData& form) {
   // Process the current pending form if different than supplied |form|.
   if (pending_form_data_ &&
@@ -982,7 +980,6 @@ void BrowserAutofillManager::ProcessPendingFormForUpload() {
       metrics_->initial_interaction_timestamp, last_unlocked_credit_card_cvc_,
       driver().GetPageUkmSourceId());
 }
-#endif
 
 void BrowserAutofillManager::LogSubmissionMetrics(
     const FormStructure* submitted_form,
@@ -1181,15 +1178,13 @@ SuggestionsContext BrowserAutofillManager::BuildSuggestionsContext(
       (IsAutofillManuallyTriggered(trigger_source) || got_autofillable_form);
 #else
   SuggestionsContext context;
-  context.is_autofill_available = IsAutofillEnabled();
+  context.is_autofill_available = client().IsAutofillEnabled();
   context.is_context_secure = true;
   context.should_show_mixed_content_warning = false;
   context.filling_product = FillingProduct::kNone;
   context.suppress_reason = SuppressReason::kNotSuppressed;
   context.do_not_generate_autofill_suggestions = false;
-  context.ablation_group = AblationGroup::kDefault;
-  context.conditional_ablation_group = AblationGroup::kDefault;
-  context.day_in_ablation_window = -1;
+  context.field_is_relevant_for_plus_addresses = false;
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   return context;
@@ -1229,8 +1224,8 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
     // that should be deleted with crbug.com/349982907.
     autofill_field->set_was_focused(true);
   }
-
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
+
   const FormFieldData& field = CHECK_DEREF(form.FindFieldByGlobalId(field_id));
   external_delegate_->OnQuery(form, field, caret_bounds, trigger_source,
                               /*update_datalist=*/true);
@@ -1242,13 +1237,13 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
       &BrowserAutofillManager::OnGenerateSuggestionsComplete,
       weak_ptr_factory_.GetWeakPtr(), form, field, trigger_source, context);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Check via the `AutofillAiDelegate` if there's data stored in user
   // annotations. IMPORTANT NOTE: If there's no data stored in user annotations,
   // `GenerateSuggestionsAndMaybeShowUI()` will be called and Autofill's regular
   // flow will continue.
   AutofillAiDelegate* delegate = client().GetAutofillAiDelegate();
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (delegate && form_structure && autofill_field &&
       delegate->IsEligibleForAutofillAi(*form_structure, *autofill_field)) {
     delegate->GetSuggestionsV2(
@@ -1261,6 +1256,7 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
             context, std::move(callback)));
     return;
   }
+#endif
 
   // IMPORTANT NOTE: DON'T ADD CODE HERE, but in
   // `GenerateSuggestionsAndMaybeShowUIPhase1()` instead.
@@ -1270,7 +1266,6 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
   GenerateSuggestionsAndMaybeShowUIPhase1(form, field, trigger_source, context,
                                           std::move(callback),
                                           /*autofill_ai_suggestions=*/{});
-#endif
 }
 
 void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase1(
@@ -1282,8 +1277,10 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase1(
     std::vector<Suggestion> autofill_ai_suggestions) {
   FormStructure* form_structure = nullptr;
   AutofillField* autofill_field = nullptr;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const AutofillPlusAddressDelegate* plus_address_delegate =
       client().GetPlusAddressDelegate();
+#endif
   // Note that this function cannot exit early in case GetCachedFormAndField()
   // yields nullptrs for form_structure and autofill_field. This happens in case
   // autofill_count() returns 0 (i.e. the number of autofillable fields is 0).
@@ -1296,6 +1293,7 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase1(
   std::ignore = GetCachedFormAndField(form.global_id(), field.global_id(),
                                       &form_structure, &autofill_field);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   context.field_is_relevant_for_plus_addresses =
       IsPlusAddressesManuallyTriggered(trigger_source) ||
       (!context.should_show_mixed_content_warning &&
@@ -1305,12 +1303,14 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase1(
        plus_address_delegate->IsFieldEligibleForPlusAddress(*autofill_field) &&
        plus_address_delegate->IsPlusAddressFillingEnabled(
            client().GetLastCommittedPrimaryMainFrameOrigin()));
+#endif
 
   auto generate_suggestions_and_maybe_show_ui_phase2 = base::BindOnce(
       &BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase2,
       weak_ptr_factory_.GetWeakPtr(), form, field, trigger_source,
       std::move(autofill_ai_suggestions), context, std::move(callback));
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (context.field_is_relevant_for_plus_addresses) {
     client().GetPlusAddressDelegate()->GetAffiliatedPlusAddresses(
         client().GetLastCommittedPrimaryMainFrameOrigin(),
@@ -1318,6 +1318,7 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase1(
 
     return;
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   std::move(generate_suggestions_and_maybe_show_ui_phase2)
       .Run(/*plus_addresses=*/{});
@@ -1331,6 +1332,7 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase2(
     SuggestionsContext context,
     OnGenerateSuggestionsCallback callback,
     std::vector<std::string> plus_addresses) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FormStructure* form_structure = nullptr;
   AutofillField* autofill_field = nullptr;
   // This function cannot exit early in case GetCachedFormAndField() yields
@@ -1346,7 +1348,6 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase2(
                                  plus_addresses),
           context, ranking_context);
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (context.is_autofill_available &&
       ShouldSuppressSuggestions(context.suppress_reason, log_manager())) {
     if (context.suppress_reason == SuppressReason::kAblation) {
@@ -1440,6 +1441,9 @@ void BrowserAutofillManager::GenerateSuggestionsAndMaybeShowUIPhase2(
 
     return;
   }
+#else
+  std::vector<Suggestion> suggestions = {};
+  AutofillField* autofill_field = nullptr;
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Check if other suggestion sources should be queried. Other suggestions may
@@ -1659,8 +1663,8 @@ void BrowserAutofillManager::OnGenerateSuggestionsComplete(
           !suggestions.empty())) {
     amount_extraction_manager_->TriggerCheckoutAmountExtraction();
   }
-
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
+
   if (show_suggestions) {
     // Send Autofill suggestions (could be an empty list).
     external_delegate_->OnSuggestionsReturned(field.global_id(), suggestions,
@@ -1668,6 +1672,7 @@ void BrowserAutofillManager::OnGenerateSuggestionsComplete(
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::MixPlusAddressAndAddressSuggestions(
     std::vector<Suggestion> plus_address_suggestions,
     std::vector<Suggestion> address_suggestions,
@@ -1676,7 +1681,6 @@ void BrowserAutofillManager::MixPlusAddressAndAddressSuggestions(
     const FormData& form,
     const FormFieldData& field,
     OnGenerateSuggestionsCallback callback) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   if (plus_address_suggestions.empty()) {
     std::move(callback).Run(/*show_suggestions=*/true,
                             std::move(address_suggestions), std::nullopt);
@@ -1701,7 +1705,6 @@ void BrowserAutofillManager::MixPlusAddressAndAddressSuggestions(
                           std::move(plus_address_suggestions), std::nullopt);
 }
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::FillOrPreviewProfileForm(
     mojom::ActionPersistence action_persistence,
     const FormData& form,
@@ -1981,6 +1984,7 @@ void BrowserAutofillManager::OnSelectControlSelectionChangedImpl(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   UpdatePendingForm(form);
 
   auto* logger = GetEventFormLogger(*autofill_field);
@@ -2000,6 +2004,7 @@ void BrowserAutofillManager::OnSelectControlSelectionChangedImpl(
       logger->OnEditedNonFilledField(autofill_field->global_id());
     }
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnDidFillAutofillFormDataImpl(
@@ -2264,18 +2269,18 @@ void BrowserAutofillManager::AnalyzeJavaScriptChangedAutofilledValue(
 #endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::OnCreditCardFetched(
     const FormData& form,
     const FieldGlobalId& field_id,
     AutofillTriggerSource fetched_credit_card_trigger_source,
     const CreditCard& credit_card) {
-#if !BUILDFLAG(IS_QTWEBENGINE)
   OnCreditCardFetchedSuccessfully(credit_card);
   FillOrPreviewCreditCardFormImpl(
       /*require_card_fetching=*/false, mojom::ActionPersistence::kFill, form,
       field_id, credit_card, fetched_credit_card_trigger_source);
-#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void BrowserAutofillManager::OnDidEndTextFieldEditingImpl() {
   external_delegate_->DidEndTextFieldEditing();

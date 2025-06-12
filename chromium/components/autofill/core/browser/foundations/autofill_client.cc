@@ -53,9 +53,11 @@ bool AutofillClient::IsOffTheRecord() const {
   return false;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const PersonalDataManager& AutofillClient::GetPersonalDataManager() const {
   return const_cast<AutofillClient*>(this)->GetPersonalDataManager();
 }
+#endif
 
 AutofillOptimizationGuide* AutofillClient::GetAutofillOptimizationGuide()
     const {
@@ -218,9 +220,11 @@ PasswordFormClassification AutofillClient::ClassifyAsPasswordForm(
 void AutofillClient::TriggerPlusAddressUserPerceptionSurvey(
     plus_addresses::hats::SurveyType survey_type) {}
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const syncer::SyncService* AutofillClient::GetSyncService() const {
   return const_cast<const syncer::SyncService*>(
       const_cast<AutofillClient*>(this)->GetSyncService());
 }
+#endif
 
 }  // namespace autofill

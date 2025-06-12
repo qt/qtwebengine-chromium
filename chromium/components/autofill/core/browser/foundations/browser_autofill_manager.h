@@ -122,9 +122,9 @@ class BrowserAutofillManager : public AutofillManager {
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
-#if !BUILDFLAG(IS_QTWEBENGINE)
   ~BrowserAutofillManager() override;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Whether the |field| should show an entry to scan a credit card.
   virtual bool ShouldShowScanCreditCard(const FormData& form,
                                         const FormFieldData& field);
@@ -701,12 +701,12 @@ class BrowserAutofillManager : public AutofillManager {
   std::unique_ptr<payments::AmountExtractionManager>
       amount_extraction_manager_ =
           std::make_unique<payments::AmountExtractionManager>(this);
-#endif
 
   // Helper class to autofill forms and fields. Do not use directly, use
   // form_filler() instead, because tests inject test objects.
   std::unique_ptr<FormFiller> form_filler_ =
       std::make_unique<FormFiller>(*this);
+#endif
 
   // Contains a list of four digit combinations that were found in the webpage
   // DOM. Populated after a standalone cvc field is processed on a form. Used to
