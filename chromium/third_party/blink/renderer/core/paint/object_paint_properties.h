@@ -174,47 +174,6 @@ class CORE_EXPORT ObjectPaintProperties
   template <typename NodeType>
   struct NodeIdRange {};
 
-  template <>
-  struct NodeIdRange<PaintPropertyNode> {
-    static constexpr NodeId kFirst = NodeId::kFirstTransform;
-    static constexpr NodeId kLast = NodeId::kClipAlias;
-  };
-  template <>
-  struct NodeIdRange<TransformPaintPropertyNodeOrAlias> {
-    static constexpr NodeId kFirst = NodeId::kFirstTransform;
-    static constexpr NodeId kLast = NodeId::kTransformAlias;
-  };
-  template <>
-  struct NodeIdRange<TransformPaintPropertyNode> {
-    static constexpr NodeId kFirst = NodeId::kFirstTransform;
-    static constexpr NodeId kLast = NodeId::kLastTransform;
-  };
-  template <>
-  struct NodeIdRange<ScrollPaintPropertyNode> {
-    static constexpr NodeId kFirst = NodeId::kFirstScroll;
-    static constexpr NodeId kLast = NodeId::kLastScroll;
-  };
-  template <>
-  struct NodeIdRange<EffectPaintPropertyNodeOrAlias> {
-    static constexpr NodeId kFirst = NodeId::kFirstEffect;
-    static constexpr NodeId kLast = NodeId::kEffectAlias;
-  };
-  template <>
-  struct NodeIdRange<EffectPaintPropertyNode> {
-    static constexpr NodeId kFirst = NodeId::kFirstEffect;
-    static constexpr NodeId kLast = NodeId::kLastEffect;
-  };
-  template <>
-  struct NodeIdRange<ClipPaintPropertyNodeOrAlias> {
-    static constexpr NodeId kFirst = NodeId::kFirstClip;
-    static constexpr NodeId kLast = NodeId::kClipAlias;
-  };
-  template <>
-  struct NodeIdRange<ClipPaintPropertyNode> {
-    static constexpr NodeId kFirst = NodeId::kFirstClip;
-    static constexpr NodeId kLast = NodeId::kLastClip;
-  };
-
  public:
   template <typename NodeType>
   bool HasNode() const {
@@ -578,6 +537,47 @@ class CORE_EXPORT ObjectPaintProperties
   mutable bool is_immutable_ = false;
 #endif
 };
+
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<PaintPropertyNode> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kClipAlias;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNodeOrAlias> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kTransformAlias;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<TransformPaintPropertyNode> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstTransform;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastTransform;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<ScrollPaintPropertyNode> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstScroll;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastScroll;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNodeOrAlias> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstEffect;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kEffectAlias;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<EffectPaintPropertyNode> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstEffect;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastEffect;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNodeOrAlias> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstClip;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kClipAlias;
+  };
+  template <>
+  struct ObjectPaintProperties::NodeIdRange<ClipPaintPropertyNode> {
+    static constexpr ObjectPaintProperties::NodeId kFirst = ObjectPaintProperties::NodeId::kFirstClip;
+    static constexpr ObjectPaintProperties::NodeId kLast = ObjectPaintProperties::NodeId::kLastClip;
+  };
 
 }  // namespace blink
 
