@@ -252,7 +252,10 @@ class OpenscreenSessionHost::AudioCapturingCallback final
   using AudioDataCallback =
       base::RepeatingCallback<void(std::unique_ptr<media::AudioBus> audio_bus,
                                    base::TimeTicks recorded_time)>;
-  using ErrorCallback = base::OnceCallback<void(std::string_view)>;
+
+  // NOTE: the caller is expected to take ownership of the error message, since
+  // we cannot otherwise make any guarantees about its lifetime.
+  using ErrorCallback = base::OnceCallback<void(std::string)>;
   AudioCapturingCallback(AudioDataCallback audio_data_callback,
                          ErrorCallback error_callback,
                          mojo::Remote<mojom::SessionObserver>& observer)
@@ -292,11 +295,12 @@ class OpenscreenSessionHost::AudioCapturingCallback final
 
   void OnCaptureError(media::AudioCapturerSource::ErrorCode code,
                       const std::string& message) override {
-    std::string error_message = base::StrCat(
-        {"AudioCaptureError occurred, code: ",
-         base::NumberToString(static_cast<int>(code)), ", message: ", message});
-    if (!error_callback_.is_null())
-      std::move(error_callback_).Run(error_message);
+    if (error_callback_) {
+      std::move(error_callback_)
+          .Run(base::StrCat({"AudioCaptureError occurred, code: ",
+                             base::NumberToString(static_cast<int>(code)),
+                             ", message: ", message}));
+     }
   }
 
   void OnCaptureMuted(bool is_muted) override {
@@ -795,7 +799,7 @@ void OpenscreenSessionHost::OnAsyncInitialized(
 }
 
 void OpenscreenSessionHost::ReportAndLogError(SessionError error,
-                                              std::string_view message) {
+                                              std::string message) {
   base::UmaHistogramEnumeration("MediaRouter.MirroringService.SessionError",
                                 error);
   logger_.LogError(error, message);
