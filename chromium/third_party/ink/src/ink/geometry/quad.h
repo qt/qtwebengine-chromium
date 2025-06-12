@@ -184,8 +184,8 @@ class Quad {
   bool Contains(Point point) const;
 
  private:
-  constexpr Quad(Point center, float width, float height, Angle rotation,
-                 float shear_factor) {
+  Quad(Point center, float width, float height, Angle rotation,
+       float shear_factor) {
     center_ = center;
     shear_factor_ = shear_factor;
     width_ = width;
