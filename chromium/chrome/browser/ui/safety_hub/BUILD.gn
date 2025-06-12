@@ -43,7 +43,6 @@ source_set("safety_hub") {
   } else {
     sources += [
       "card_data_helper.h",
-      "extensions_result.h",
       "password_status_check_result.h",
       "password_status_check_service.h",
       "password_status_check_service_factory.h",
@@ -56,8 +55,17 @@ source_set("safety_hub") {
       "//components/password_manager/core/browser/leak_detection:leak_detection_interface_headers",
       "//components/password_manager/core/browser/password_store:password_store_interface",
       "//components/password_manager/core/browser/ui",
-      "//extensions/browser",
     ]
+
+    if (enable_extensions) {
+        sources += [
+          "extensions_result.h",
+        ]
+
+        public_deps += [
+          "//extensions/browser",
+        ]
+    }
   }
 }
 
@@ -102,7 +110,6 @@ source_set("impl") {
   } else {
     sources += [
       "card_data_helper.cc",
-      "extensions_result.cc",
       "password_status_check_result.cc",
       "password_status_check_service.cc",
       "password_status_check_service_factory.cc",
@@ -111,14 +118,23 @@ source_set("impl") {
     ]
 
     deps += [
-      "//chrome/browser/extensions",
       "//chrome/browser/ui",
       "//chrome/browser/ui/webui/settings",
       "//components/password_manager/core/browser:password_form",
       "//components/password_manager/core/browser/leak_detection",
       "//components/password_manager/core/browser/ui",
-      "//extensions/browser",
     ]
+
+    if (enable_extensions) {
+      sources += [
+        "extensions_result.cc",
+      ]
+
+      deps += [
+        "//chrome/browser/extensions",
+        "//extensions/browser",
+      ]
+    }
   }
 }
 
@@ -242,7 +258,6 @@ source_set("unit_tests") {
     sources += [
       "abusive_notification_permissions_manager_unittest.cc",
       "card_data_helper_unittest.cc",
-      "extensions_result_unittest.cc",
       "notification_permission_review_service_unittest.cc",
       "password_status_check_result_unittest.cc",
       "password_status_check_service_unittest.cc",
@@ -276,13 +291,22 @@ source_set("unit_tests") {
       "//components/ukm:test_support",
       "//components/ukm/content",
       "//content/public/browser",
-      "//extensions/browser",
-      "//extensions/common",
       "//services/metrics/public/cpp:gen_ukm_builders",
       "//services/metrics/public/cpp:ukm_builders",
       "//services/network:test_support",
       "//testing/gmock",
       "//url",
     ]
+
+    if (enable_extensions) {
+      sources += [
+        "extensions_result_unittest.cc",
+      ]
+
+      deps += [
+        "//extensions/browser",
+        "//extensions/common",
+      ]
+    }
   }
 }

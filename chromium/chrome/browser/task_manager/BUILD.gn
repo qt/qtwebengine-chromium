@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//components/nacl/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")

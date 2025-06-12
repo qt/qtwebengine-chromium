@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//extensions/buildflags/buildflags.gni")
+
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 source_set("chooser_controller") {
@@ -47,9 +49,14 @@ source_set("unit_tests") {
   ]
   if (!is_android) {
     deps += [
-      "//chrome/browser/extensions:test_support",
       "//chrome/browser/web_applications:web_applications_test_support",
-      "//extensions:test_support",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions:test_support",
+        "//extensions:test_support",
+      ]
+    }
   }
 }

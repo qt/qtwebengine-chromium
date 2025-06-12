@@ -233,7 +233,6 @@ if (!is_android) {
       "//chrome/app:command_ids",
       "//chrome/browser/commerce",
       "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/extensions",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/reading_list",
       "//chrome/browser/ui:browser_list",
@@ -249,6 +248,12 @@ if (!is_android) {
       "//components/web_modal",
       "//components/webapps/common",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+      ]
+    }
   }
 
   source_set("tabs") {
@@ -527,7 +532,6 @@ if (!is_android) {
       "//chrome/browser",
       "//chrome/browser/commerce:commerce",
       "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/extensions",
       "//chrome/browser/optimization_guide",
       "//chrome/browser/sync",
       "//chrome/browser/ui",
@@ -564,5 +568,11 @@ if (!is_android) {
       "//ui/views",
       "//url",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+      ]
+    }
   }
 }

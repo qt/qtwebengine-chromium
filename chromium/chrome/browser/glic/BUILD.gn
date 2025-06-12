@@ -120,7 +120,6 @@ source_set("impl") {
     "//components/pdf/browser:browser",
     "//components/pdf/common:constants",
     "//components/sessions",
-    "//extensions/browser:browser",
     "//ui/webui",
     "//url",
   ]
@@ -132,6 +131,12 @@ source_set("impl") {
   if (enable_webrtc) {
     deps += [
       "//chrome/browser/media/webrtc",
+    ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//extensions/browser:browser",
     ]
   }
 }
@@ -203,7 +208,6 @@ source_set("browser_tests") {
     "//chrome/browser",
     "//chrome/browser:browser_process",
     "//chrome/browser:global_features",
-    "//chrome/browser/extensions:extensions",
     "//chrome/browser/glic/launcher",
     "//chrome/browser/policy:test_support",
     "//chrome/browser/ui",
@@ -211,9 +215,15 @@ source_set("browser_tests") {
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
     "//content/test:test_support",
-    "//extensions/browser",
     "//ui/events:test_support",
   ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:extensions",
+      "//extensions/browser",
+    ]
+  }
 }
 
 source_set("interactive_ui_tests") {
