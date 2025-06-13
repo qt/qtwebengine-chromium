@@ -46,8 +46,8 @@
 #define HAVE_VFP 1
 #define HAVE_VFPV3 0
 #define HAVE_SETEND 0
-#define HAVE_SVE 1
-#define HAVE_SVE2 1
+#define HAVE_SVE 0
+#define HAVE_SVE2 0
 #define HAVE_ALTIVEC 0
 #define HAVE_DCBZL 0
 #define HAVE_LDBRX 0
