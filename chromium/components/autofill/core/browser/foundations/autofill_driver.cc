@@ -17,18 +17,17 @@ namespace {
 bool IsValidTransition(AutofillDriver::LifecycleState previous_state,
                        AutofillDriver::LifecycleState old_state,
                        AutofillDriver::LifecycleState new_state) {
-  using enum AutofillDriver::LifecycleState;
   switch (old_state) {
-    case kInactive:
-      return new_state == kActive || new_state == kPendingReset ||
-             new_state == kPendingDeletion;
-    case kActive:
-      return new_state == kInactive || new_state == kPendingReset ||
-             new_state == kPendingDeletion;
-    case kPendingReset:
+    case AutofillDriver::LifecycleState::kInactive:
+      return new_state == AutofillDriver::LifecycleState::kActive || new_state == AutofillDriver::LifecycleState::kPendingReset ||
+             new_state == AutofillDriver::LifecycleState::kPendingDeletion;
+    case AutofillDriver::LifecycleState::kActive:
+      return new_state == AutofillDriver::LifecycleState::kInactive || new_state == AutofillDriver::LifecycleState::kPendingReset ||
+             new_state == AutofillDriver::LifecycleState::kPendingDeletion;
+    case AutofillDriver::LifecycleState::kPendingReset:
       return new_state == previous_state &&
-             (new_state == kInactive || new_state == kActive);
-    case kPendingDeletion:
+             (new_state == AutofillDriver::LifecycleState::kInactive || new_state == AutofillDriver::LifecycleState::kActive);
+    case AutofillDriver::LifecycleState::kPendingDeletion:
       return false;
   }
   return false;

@@ -645,7 +645,7 @@ DeserializeKeyframe(const mojom::AnimationKeyframeValue& value,
           std::move(timing_function));
     }
   } else {
-    static_assert(false, "Unsupported curve type");
+    static_assert(std::is_void_v<CurveType> && !std::is_void_v<CurveType>, "Unsupported curve type");
   }
 
   if (!keyframe) {

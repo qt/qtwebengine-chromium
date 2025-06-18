@@ -49,9 +49,9 @@ void StackUnwindData::Initialize(
   // |unwinders| is iterated backward since |unwinders_factory_| generates
   // unwinders in increasing priority order. |unwinders_| is stored in
   // decreasing priority order for ease of use within the class.
-  unwinders_.insert(unwinders_.end(),
-                    std::make_move_iterator(unwinders.rbegin()),
-                    std::make_move_iterator(unwinders.rend()));
+  for (auto it = unwinders.rbegin(); it != unwinders.rend(); ++it) {
+      unwinders_.push_back(std::move(*it));
+  }
 
   for (const auto& unwinder : unwinders_) {
     unwinder->Initialize(module_cache_);

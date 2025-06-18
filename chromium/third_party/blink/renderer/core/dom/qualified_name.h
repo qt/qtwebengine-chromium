@@ -179,18 +179,16 @@ class CORE_EXPORT QualifiedName {
   const AtomicString& LocalNameUpperSlow() const;
 
   void RegisterHTMLAttributeTriggersIndex(unsigned index) const {
-    using enum QualifiedNameImpl::StaticAndAttributeTriggersConstants;
     CHECK_EQ(impl_->is_static_and_html_attribute_triggers_index_,
-             kStaticWithNoIndex);
-    CHECK_LE(index, kLargestAllowedIndex);
+             QualifiedNameImpl::StaticAndAttributeTriggersConstants::kStaticWithNoIndex);
+    CHECK_LE(index, QualifiedNameImpl::StaticAndAttributeTriggersConstants::kLargestAllowedIndex);
     impl_->is_static_and_html_attribute_triggers_index_ = index;
     CHECK_EQ(*HTMLAttributeTriggersIndex(), index);
   }
 
   std::optional<unsigned> HTMLAttributeTriggersIndex() const {
-    using enum QualifiedNameImpl::StaticAndAttributeTriggersConstants;
     if (impl_->is_static_and_html_attribute_triggers_index_ >
-        kLargestAllowedIndex) {
+        QualifiedNameImpl::StaticAndAttributeTriggersConstants::kLargestAllowedIndex) {
       return std::nullopt;
     }
     return unsigned{impl_->is_static_and_html_attribute_triggers_index_};

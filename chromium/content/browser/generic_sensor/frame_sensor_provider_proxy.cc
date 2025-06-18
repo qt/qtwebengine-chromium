@@ -28,7 +28,7 @@ namespace content {
 
 namespace {
 
-constexpr std::vector<network::mojom::PermissionsPolicyFeature>
+std::vector<network::mojom::PermissionsPolicyFeature>
 SensorTypeToPermissionsPolicyFeatures(SensorType type) {
   switch (type) {
     case SensorType::AMBIENT_LIGHT:

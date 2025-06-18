@@ -33,13 +33,12 @@ struct EnumTraits<network::mojom::DeviceBoundSessionAccessType,
                   net::device_bound_sessions::SessionAccess::AccessType> {
   static network::mojom::DeviceBoundSessionAccessType ToMojom(
       net::device_bound_sessions::SessionAccess::AccessType access_type) {
-    using enum net::device_bound_sessions::SessionAccess::AccessType;
     switch (access_type) {
-      case kCreation:
+      case net::device_bound_sessions::SessionAccess::AccessType::kCreation:
         return network::mojom::DeviceBoundSessionAccessType::kCreation;
-      case kUpdate:
+      case net::device_bound_sessions::SessionAccess::AccessType::kUpdate:
         return network::mojom::DeviceBoundSessionAccessType::kUpdate;
-      case kTermination:
+      case net::device_bound_sessions::SessionAccess::AccessType::kTermination:
         return network::mojom::DeviceBoundSessionAccessType::kTermination;
     }
   }
@@ -47,16 +46,15 @@ struct EnumTraits<network::mojom::DeviceBoundSessionAccessType,
   static bool FromMojom(
       network::mojom::DeviceBoundSessionAccessType input,
       net::device_bound_sessions::SessionAccess::AccessType* output) {
-    using enum net::device_bound_sessions::SessionAccess::AccessType;
     switch (input) {
       case network::mojom::DeviceBoundSessionAccessType::kCreation:
-        *output = kCreation;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kCreation;
         return true;
       case network::mojom::DeviceBoundSessionAccessType::kUpdate:
-        *output = kUpdate;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kUpdate;
         return true;
       case network::mojom::DeviceBoundSessionAccessType::kTermination:
-        *output = kTermination;
+        *output = net::device_bound_sessions::SessionAccess::AccessType::kTermination;
         return true;
     }
   }

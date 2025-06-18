@@ -434,7 +434,7 @@ std::optional<base::Time> ResourceResponse::LastModified(
   return last_modified_;
 }
 
-std::optional<UnencodedDigest> ResourceResponse::UnencodedDigest() const {
+std::optional<UnencodedDigest> ResourceResponse::GetUnencodedDigest() const {
   if (!RuntimeEnabledFeatures::UnencodedDigestEnabled()) {
     return std::nullopt;
   }

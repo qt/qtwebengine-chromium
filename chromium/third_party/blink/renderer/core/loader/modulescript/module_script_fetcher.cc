@@ -39,7 +39,7 @@ bool ModuleScriptFetcher::WasModuleLoadSuccessful(
     HeapVector<Member<ConsoleMessage>>* error_messages) {
   DCHECK(error_messages);
   if (resource) {
-    for (const auto& message : resource->IntegrityReport().Messages()) {
+    for (const auto& message : resource->GetIntegrityReport().Messages()) {
       error_messages->push_back(MakeGarbageCollected<ConsoleMessage>(
           mojom::blink::ConsoleMessageSource::kSecurity,
           mojom::blink::ConsoleMessageLevel::kError, message));
