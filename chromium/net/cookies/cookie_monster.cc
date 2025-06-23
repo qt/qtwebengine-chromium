@@ -557,14 +557,17 @@ void CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper(
     return SetCanonicalCookieAsync(std::move(cookie), url, options,
                                    std::move(callback),
                                    std::move(cookie_access_result));
-  else
+  else {
+    CookieInclusionStatus status;
+    status.AddExclusionReason(CookieInclusionStatus::ExclusionReason::EXCLUDE_USER_PREFERENCES);
     std::move(callback).Run(
         CookieAccessResult(
             CookieEffectiveSameSite::STRICT_MODE,
-            CookieInclusionStatus(
-                CookieInclusionStatus::EXCLUDE_USER_PREFERENCES),
+            std::move(status),
             CookieAccessSemantics::NONLEGACY,
-            true /* FIXME: is_allowed_to_access_secure_cookies ?*/));
+            CookieScopeSemantics::NONLEGACY,
+            false /* is_allowed_to_access_secure_cookies */));
+  }
 }
 
 void CookieMonster::GetCookieListWithOptionsAsyncAndFiltered(
