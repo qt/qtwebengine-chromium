@@ -881,7 +881,7 @@ void PushMessagingServiceImpl::SubscribeFromDocument(
                      std::move(options), std::move(callback), render_process_id,
                      render_frame_id));
 #else
-  if (!IsPermissionSet(requesting_origin)) {
+  if (!IsPermissionSet(requesting_origin, options->user_visible_only)) {
     profile_->GetPermissionController()->RequestPermissionFromCurrentDocument(
       render_frame_host,
       content::PermissionRequestDescription(

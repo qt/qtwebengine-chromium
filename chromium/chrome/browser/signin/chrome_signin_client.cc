@@ -629,7 +629,7 @@ void ChromeSigninClient::RecordOpenTabCount(
 
     tabs_count += model->GetTabCount();
   }
-#else   // !BUILDFLAG(IS_ANDROID)
+#elif !BUILDFLAG(IS_QTWEBENGINE)
   for (Browser* browser : *BrowserList::GetInstance()) {
     if (browser->profile() != profile_) {
       continue;
