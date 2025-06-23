@@ -527,7 +527,11 @@ void ExtensionHost::OnEventAck(int event_id,
 
 content::JavaScriptDialogManager* ExtensionHost::GetJavaScriptDialogManager(
     WebContents* source) {
+#if BUILDFLAG(IS_QTWEBENGINE)
+  return nullptr;
+#else
   return javascript_dialogs::AppModalDialogManager::GetInstance();
+#endif
 }
 
 content::WebContents* ExtensionHost::AddNewContents(
