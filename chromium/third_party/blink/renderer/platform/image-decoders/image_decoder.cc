@@ -50,7 +50,10 @@
 #include "ui/gfx/geometry/size_conversions.h"
 
 #if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(IS_QTWEBENGINE)
 #include "third_party/blink/renderer/platform/image-decoders/avif/avif_image_decoder.h"
+#else
+#include "third_party/blink/renderer/platform/image-decoders/avif/crabbyavif_image_decoder.h"
 #endif
 
 #if BUILDFLAG(ENABLE_JXL_DECODER)
@@ -216,7 +219,11 @@ String SniffMimeTypeInternal(scoped_refptr<SegmentReader> reader) {
     return "image/bmp";
   }
 #if BUILDFLAG(ENABLE_AV1_DECODER)
+#if BUILDFLAG(IS_QTWEBENGINE)
   if (AVIFImageDecoder::MatchesAVIFSignature(fast_reader)) {
+#else
+  if (CrabbyAVIFImageDecoder::MatchesAVIFSignature(fast_reader)) {
+#endif
     return "image/avif";
   }
 #endif
@@ -333,16 +340,15 @@ std::unique_ptr<ImageDecoder> ImageDecoder::CreateByMimeType(
                               color_behavior, max_decoded_bytes);
 #if BUILDFLAG(ENABLE_AV1_DECODER)
   } else if (mime_type == "image/avif") {
+#if BUILDFLAG(IS_QTWEBENGINE)
     decoder = std::make_unique<AVIFImageDecoder>(
         alpha_option, high_bit_depth_decoding_option, color_behavior, aux_image,
         max_decoded_bytes, animation_option);
-#endif
-#if BUILDFLAG(ENABLE_JXL_DECODER)
-  } else if (mime_type == "image/jxl" &&
-             base::FeatureList::IsEnabled(features::kJXLImageFormat)) {
-    decoder = std::make_unique<JXLImageDecoder>(
+#else
+    decoder = std::make_unique<CrabbyAVIFImageDecoder>(
         alpha_option, high_bit_depth_decoding_option, color_behavior, aux_image,
         max_decoded_bytes, animation_option);
+#endif
 #endif
   }
 
