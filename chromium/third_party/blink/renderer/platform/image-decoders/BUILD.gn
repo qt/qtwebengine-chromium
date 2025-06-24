@@ -80,11 +80,27 @@ component("image_decoders") {
 
   if (enable_av1_decoder) {
     sources += [
+      "avif/avif_image_decoder.cc",
+      "avif/avif_image_decoder.h",
       "avif/crabbyavif_image_decoder.cc",
       "avif/crabbyavif_image_decoder.h",
     ]
 
-    deps += [ "//third_party/crabbyavif" ]
+    deps += [
+      "//third_party/crabbyavif",
+      "//third_party/libavif",
+    ]
+
+    if (is_qtwebengine) {
+      sources -= [
+        "avif/crabbyavif_image_decoder.cc",
+        "avif/crabbyavif_image_decoder.h"
+      ]
+
+      deps -= [
+        "//third_party/crabbyavif",
+      ]
+    }
   }
 }
 
@@ -130,4 +146,10 @@ source_set("unit_tests") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (enable_av1_decoder && is_qtwebengine) {
+    sources -= [
+      "avif/crabbyavif_image_decoder_test.cc",
+    ]
+  }
 }
