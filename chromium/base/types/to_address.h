@@ -32,10 +32,7 @@ template <typename P>
   requires requires(const P& p) { std::pointer_traits<P>::to_address(p); } ||
            requires(const P& p) { p.operator->(); }
 constexpr auto to_address(const P& p) noexcept {
-  if constexpr (requires { std::pointer_traits<P>::to_address(p); })
-    return std::pointer_traits<P>::to_address(p);
-  else
-    return std::to_address(p.operator->());
+  return std::to_address(p);
 }
 
 }  // namespace base
