@@ -70,7 +70,9 @@ void PrefChangeRegistrar::Remove(std::string_view path) {
   DCHECK(IsObserved(path));
 
   // Use std::map::erase directly once C++23 is supported.
-  auto it = observers_.find(path);
+  auto it = observers_.begin();
+  for (; it != observers_.end() && it->first != path; ++it) { }
+  // auto it = observers_.find(path);
   observers_.erase(it);
   service_->RemovePrefObserver(path, this);
 }
@@ -88,7 +90,10 @@ bool PrefChangeRegistrar::IsEmpty() const {
 }
 
 bool PrefChangeRegistrar::IsObserved(std::string_view pref) {
-  return observers_.find(pref) != observers_.end();
+  auto it = observers_.begin();
+  for (; it != observers_.end() && it->first != pref; ++it) { }
+  return it != observers_.end();
+  // return observers_.find(pref) != observers_.end();
 }
 
 void PrefChangeRegistrar::OnServiceDestroyed(PrefService* service) {
@@ -97,7 +102,10 @@ void PrefChangeRegistrar::OnServiceDestroyed(PrefService* service) {
 
 void PrefChangeRegistrar::OnPreferenceChanged(PrefService* service,
                                               std::string_view pref) {
-  if (auto iter = observers_.find(pref); iter != observers_.end()) {
+  auto iter = observers_.begin();
+  for (; iter != observers_.end() && iter->first != pref; ++iter) { }
+  if (iter != observers_.end()) {
+  // if (auto iter = observers_.find(pref); iter != observers_.end()) {
     iter->second.Run(pref);
   }
 }

@@ -5588,7 +5588,11 @@ std::optional<std::vector<StorageInterestGroup>> DoGetInterestGroupsForOwner(
     join_count.BindTime(1, now - blink::MaxInterestGroupLifetimeForMetadata());
 
     while (join_count.Step()) {
-      auto it = interest_group_by_name.find(join_count.ColumnStringView(0));
+      auto it = interest_group_by_name.begin();
+      while (it != interest_group_by_name.end() && it->first != join_count.ColumnStringView(0)) {
+        ++it;
+      }
+ //     auto it = interest_group_by_name.find(join_count.ColumnStringView(0));
       if (it == interest_group_by_name.end()) {
         // TODO(yaoxia): Return std::nullopt?
         continue;
@@ -5620,7 +5624,11 @@ std::optional<std::vector<StorageInterestGroup>> DoGetInterestGroupsForOwner(
     bid_count.BindTime(1, now - blink::MaxInterestGroupLifetimeForMetadata());
 
     while (bid_count.Step()) {
-      auto it = interest_group_by_name.find(bid_count.ColumnStringView(0));
+      auto it = interest_group_by_name.begin();
+      while (it != interest_group_by_name.end() && it->first != bid_count.ColumnStringView(0)) {
+        ++it;
+      }
+ //     auto it = interest_group_by_name.find(bid_count.ColumnStringView(0));
       if (it == interest_group_by_name.end()) {
         // TODO(yaoxia): Return std::nullopt?
         continue;
@@ -5652,7 +5660,11 @@ std::optional<std::vector<StorageInterestGroup>> DoGetInterestGroupsForOwner(
     prev_wins.BindTime(1, now - blink::MaxInterestGroupLifetimeForMetadata());
 
     while (prev_wins.Step()) {
-      auto it = interest_group_by_name.find(prev_wins.ColumnStringView(0));
+      auto it = interest_group_by_name.begin();
+      while (it != interest_group_by_name.end() && it->first != prev_wins.ColumnStringView(0)) {
+        ++it;
+      }
+//      auto it = interest_group_by_name.find(prev_wins.ColumnStringView(0));
       if (it == interest_group_by_name.end()) {
         // TODO(yaoxia): Return std::nullopt?
         continue;
