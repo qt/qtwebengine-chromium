@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "content/browser/media/capture/native_screen_capture_picker.h"
-
+#include "content/public/common/buildflags.h"
 #if BUILDFLAG(IS_MAC)
 #include "content/browser/media/capture/native_screen_capture_picker_mac.h"
 #include "media/base/media_switches.h"
@@ -13,7 +13,7 @@ namespace content {
 
 std::unique_ptr<NativeScreenCapturePicker>
 MaybeCreateNativeScreenCapturePicker() {
-#if BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_MAC) && BUILDFLAG(ENABLE_SCREEN_CAPTURE)
   if (base::FeatureList::IsEnabled(media::kUseSCContentSharingPicker)) {
     return CreateNativeScreenCapturePickerMac();
   }
