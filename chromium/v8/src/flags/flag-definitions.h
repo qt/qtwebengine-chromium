@@ -567,9 +567,6 @@ DEFINE_WEAK_IMPLICATION(maglev_future, maglev_speculative_hoist_phi_untagging)
 DEFINE_WEAK_IMPLICATION(maglev_future, maglev_inline_api_calls)
 DEFINE_WEAK_IMPLICATION(maglev_future, maglev_escape_analysis)
 DEFINE_WEAK_IMPLICATION(maglev_future, maglev_licm)
-// This might be too big of a hammer but we must prohibit moving the C++
-// trampolines while we are executing a C++ code.
-DEFINE_NEG_IMPLICATION(maglev_inline_api_calls, compact_code_space_with_stack)
 
 DEFINE_UINT(
     concurrent_maglev_max_threads, 2,
@@ -2118,12 +2115,6 @@ DEFINE_BOOL(compact_on_every_full_gc, false,
             "Perform compaction on every full GC")
 DEFINE_BOOL(compact_with_stack, true,
             "Perform compaction when finalizing a full GC with stack")
-DEFINE_BOOL(
-    compact_code_space_with_stack, true,
-    "Perform code space compaction when finalizing a full GC with stack")
-// Disabling compaction with stack implies also disabling code space compaction
-// with stack.
-DEFINE_NEG_NEG_IMPLICATION(compact_with_stack, compact_code_space_with_stack)
 DEFINE_BOOL(shortcut_strings_with_stack, true,
             "Shortcut Strings during GC with stack")
 DEFINE_BOOL(stress_compaction, false,
