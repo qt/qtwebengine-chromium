@@ -3520,8 +3520,13 @@ jumbo_source_set("browser") {
       ]
 
       deps += [
-        "//components/crash/content/browser/error_reporting",
         "//media/mojo/mojom:web_speech_recognition",
+      ]
+    }
+
+    if (!is_fuchsia) {
+      deps += [
+        "//components/crash/content/browser/error_reporting",
       ]
     }
 
