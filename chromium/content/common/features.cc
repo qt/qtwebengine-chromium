@@ -353,14 +353,15 @@ BASE_FEATURE(kSendBeaconThrowForBlobWithNonSimpleType,
 // When enabled, try to reuse an unlocked renderer process when COOP swap is
 // happening on prerender initial navigation. Please see crbug.com/41492112 for
 // more details.
+#if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
              "ProcessReuseOnPrerenderCOOPSwap",
-#if BUILDFLAG(IS_ANDROID)
-             base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #else
-             base::FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kProcessReuseOnPrerenderCOOPSwap,
+             "ProcessReuseOnPrerenderCOOPSwap",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 #endif
-);
 
 // Whether cross-site frames should get their own SiteInstance even when
 // strict site isolation is disabled. These SiteInstances will still be

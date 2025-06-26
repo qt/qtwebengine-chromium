@@ -111,11 +111,13 @@ BASE_FEATURE(kShowKiteForSupervisedUsers,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kForceSafeSearchForUnauthenticatedSupervisedUsers,
              "ForceSafeSearchForUnauthenticatedSupervisedUsers",
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kForceSafeSearchForUnauthenticatedSupervisedUsers,
+             "ForceSafeSearchForUnauthenticatedSupervisedUsers",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
@@ -139,11 +141,13 @@ BASE_FEATURE(kExemptYouTubeInfrastructureFromBlocking,
 // kUncredentialedFilteringFallbackForSupervisedUsers and
 // kWaitUntilAccessTokenAvailableForClassifyUrl flags, by inlining the
 // platform #defines.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
 BASE_FEATURE(kUncredentialedFilteringFallbackForSupervisedUsers,
              "UncredentialedFilteringFallbackForSupervisedUsers",
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
              base::FEATURE_ENABLED_BY_DEFAULT);
 #else
+BASE_FEATURE(kUncredentialedFilteringFallbackForSupervisedUsers,
+             "UncredentialedFilteringFallbackForSupervisedUsers",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 

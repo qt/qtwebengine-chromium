@@ -181,15 +181,16 @@ bool ThreadTypeLoggingLevelGreaterOrEqual(HangWatcher::ThreadType thread_type,
 // Enables the HangWatcher. When disabled, the HangWatcher thread should not be
 // started. Enabled by default only on platforms where the generated data is
 // used, to avoid unnecessary overhead.
-BASE_FEATURE(kEnableHangWatcher,
-             "EnableHangWatcher",
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_LINUX)
-             FEATURE_ENABLED_BY_DEFAULT
+BASE_FEATURE(kEnableHangWatcher,
+             "EnableHangWatcher",
+             FEATURE_ENABLED_BY_DEFAULT);
 #else
-             FEATURE_DISABLED_BY_DEFAULT
+BASE_FEATURE(kEnableHangWatcher,
+             "EnableHangWatcher",
+             FEATURE_DISABLED_BY_DEFAULT);
 #endif
-);
 
 // Browser process.
 // Note: Do not use the prepared macro as of no need for a local cache.

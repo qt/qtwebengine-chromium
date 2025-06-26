@@ -187,16 +187,21 @@ constexpr FeatureParam<BackupRefPtrEnabledProcesses>::Option
         {BackupRefPtrEnabledProcesses::kNonRenderer, kNonRendererStr},
         {BackupRefPtrEnabledProcesses::kAllProcesses, kAllProcessesStr}};
 
+#if PA_BUILDFLAG(IS_MAC) && PA_BUILDFLAG(PA_ARCH_CPU_ARM64)
 BASE_FEATURE_ENUM_PARAM(BackupRefPtrEnabledProcesses,
                         kBackupRefPtrEnabledProcessesParam,
                         &kPartitionAllocBackupRefPtr,
                         kPAFeatureEnabledProcessesStr,
-#if PA_BUILDFLAG(IS_MAC) && PA_BUILDFLAG(PA_ARCH_CPU_ARM64)
                         BackupRefPtrEnabledProcesses::kNonRenderer,
-#else
-                        BackupRefPtrEnabledProcesses::kAllProcesses,
-#endif
                         &kBackupRefPtrEnabledProcessesOptions);
+#else
+BASE_FEATURE_ENUM_PARAM(BackupRefPtrEnabledProcesses,
+                        kBackupRefPtrEnabledProcessesParam,
+                        &kPartitionAllocBackupRefPtr,
+                        kPAFeatureEnabledProcessesStr,
+                        BackupRefPtrEnabledProcesses::kAllProcesses,
+                        &kBackupRefPtrEnabledProcessesOptions);
+#endif
 
 constexpr FeatureParam<BackupRefPtrMode>::Option kBackupRefPtrModeOptions[] = {
     {BackupRefPtrMode::kDisabled, "disabled"},
