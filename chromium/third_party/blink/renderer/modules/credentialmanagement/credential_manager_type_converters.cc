@@ -565,7 +565,8 @@ TypeConverter<PublicKeyCredentialDescriptorPtr,
               blink::PublicKeyCredentialDescriptor>::
     Convert(const blink::PublicKeyCredentialDescriptor& descriptor) {
   std::optional<PublicKeyCredentialType> type =
-      ConvertTo<std::optional<PublicKeyCredentialType>>(descriptor.type());
+      mojo::TypeConverter<std::optional<PublicKeyCredentialType>,
+                          String>::Convert(descriptor.type());
   if (!type) {
     return nullptr;
   }
@@ -596,7 +597,8 @@ TypeConverter<PublicKeyCredentialParametersPtr,
               blink::PublicKeyCredentialParameters>::
     Convert(const blink::PublicKeyCredentialParameters& parameter) {
   std::optional<PublicKeyCredentialType> type =
-      ConvertTo<std::optional<PublicKeyCredentialType>>(parameter.type());
+      mojo::TypeConverter<std::optional<PublicKeyCredentialType>,
+                          String>::Convert(parameter.type());
   if (!type) {
     return nullptr;
   }
@@ -649,9 +651,10 @@ TypeConverter<PublicKeyCredentialCreationOptionsPtr,
   }
   mojo_options->challenge = ConvertTo<Vector<uint8_t>>(options.challenge());
 
+  using ParamsT = std::remove_cvref_t<decltype(options.pubKeyCredParams())>;
   mojo_options->public_key_parameters =
-      ConvertTo<WTF::Vector<PublicKeyCredentialParametersPtr>>(
-          options.pubKeyCredParams());
+      mojo::TypeConverter<WTF::Vector<PublicKeyCredentialParametersPtr>,
+                          ParamsT>::Convert(options.pubKeyCredParams());
   if (mojo_options->public_key_parameters.empty()) {
     return nullptr;
   }
@@ -755,9 +758,12 @@ TypeConverter<PublicKeyCredentialCreationOptionsPtr,
     }
     if (extensions->hasPayment() &&
         extensions->payment()->hasBrowserBoundPubKeyCredParams()) {
+      using ParamsT = std::remove_cvref_t<
+          decltype(extensions->payment()->browserBoundPubKeyCredParams())>;
       mojo_options->payment_browser_bound_key_parameters =
-          ConvertTo<WTF::Vector<PublicKeyCredentialParametersPtr>>(
-              extensions->payment()->browserBoundPubKeyCredParams());
+          mojo::TypeConverter<WTF::Vector<PublicKeyCredentialParametersPtr>,
+                              ParamsT>::
+              Convert(extensions->payment()->browserBoundPubKeyCredParams());
     }
     if (extensions->hasPrf()) {
       mojo_options->prf_enable = true;
@@ -938,9 +944,11 @@ TypeConverter<AuthenticationExtensionsClientInputsPtr,
   }
   if (inputs.hasPayment() &&
       inputs.payment()->hasBrowserBoundPubKeyCredParams()) {
-    mojo_inputs->payment_browser_bound_key_parameters =
-        ConvertTo<WTF::Vector<PublicKeyCredentialParametersPtr>>(
-            inputs.payment()->browserBoundPubKeyCredParams());
+    using ParamsT = std::remove_cvref_t<
+        decltype(inputs.payment()->browserBoundPubKeyCredParams())>;
+    mojo_inputs->payment_browser_bound_key_parameters = mojo::TypeConverter<
+        WTF::Vector<PublicKeyCredentialParametersPtr>,
+        ParamsT>::Convert(inputs.payment()->browserBoundPubKeyCredParams());
   }
   if (inputs.hasPrf()) {
     mojo_inputs->prf = true;
@@ -1261,7 +1269,9 @@ TypeConverter<LoginStatusOptionsPtr, blink::LoginStatusOptions>::Convert(
   if (options.hasAccounts()) {
     for (const auto& blink_account : options.accounts()) {
       mojo_options->accounts.push_back(
-          mojo::ConvertTo<LoginStatusAccountPtr>(*blink_account.Get()));
+          mojo::TypeConverter<
+              LoginStatusAccountPtr,
+              blink::IdentityProviderAccount>::Convert(*blink_account.Get()));
     }
   }
 

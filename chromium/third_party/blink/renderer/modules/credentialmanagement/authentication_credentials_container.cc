@@ -2233,7 +2233,9 @@ void AuthenticationCredentialsContainer::GetForIdentity(
               "respectively and will be deprecated soon."));
     }
 
-    rp_mode = mojo::ConvertTo<mojom::blink::RpMode>(v8_rp_mode);
+    rp_mode = mojo::TypeConverter<
+        mojom::blink::RpMode,
+        blink::V8IdentityCredentialRequestOptionsMode>::Convert(v8_rp_mode);
     if (rp_mode == mojom::blink::RpMode::kActive) {
       if (identity_provider_ptrs.size() > 1u) {
         resolver->Reject(MakeGarbageCollected<DOMException>(
