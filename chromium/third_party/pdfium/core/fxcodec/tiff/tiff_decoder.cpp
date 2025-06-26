@@ -197,7 +197,9 @@ bool CTiffContext::InitDecoder(
   std::unique_ptr<TIFFOpenOptions, TIFFOpenOptionsDeleter> options(
       TIFFOpenOptionsAlloc());
   CHECK(options);
+#if (TIFFLIB_MAJOR_VERSION == 4 && TIFFLIB_MINOR_VERSION > 6) || TIFFLIB_MAJOR_VERSION > 4
   TIFFOpenOptionsSetMaxCumulatedMemAlloc(options.get(), kMaxTiffAllocBytes);
+#endif
 
   io_in_ = file_ptr;
   tif_ctx_.reset(TIFFClientOpenExt(
