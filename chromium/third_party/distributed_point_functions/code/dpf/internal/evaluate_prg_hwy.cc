@@ -165,7 +165,7 @@ absl::Status EvaluateSeedsHwy(
   // Check if inputs and outputs are aligned.
   constexpr size_t kHwyAlignment = alignof(Aligned128);
 
-  #if defined(__GNUC__) && defined(__GNUC_MINOR__) && ((__GNUC__ << 16) + __GNUC_MINOR__ <= (11 << 16) + 4)
+  #if defined(__GNUC__) && defined(__GNUC_MINOR__) && ((__GNUC__ << 16) + __GNUC_MINOR__ <= (11 << 16) + 4) || ((__GNUC__ << 16) + __GNUC_MINOR__ <= (12 << 16) + 2)
   // Gcc Bug 109505
   // Try to avoid triggering endless loop in gcc and OOM
   // and try to avoid optimize conditional booleans in
