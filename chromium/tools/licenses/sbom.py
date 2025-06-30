@@ -13,6 +13,9 @@ import spdx_writer
 import pathlib
 import subprocess
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 # <webengine-root>/src/3rdparty/chromium
 ROOT = license_tools._REPOSITORY_ROOT
@@ -150,7 +153,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   metadatas = {}
   for d in third_party_dirs:
     if d in DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES:
-      print("Warning: Skipping '%s' because it has known parsing issue" % d)
+      logger.info("Skipping '%s' because it has known parsing issue" % d)
       continue
     try:
       dir_metadata, errors = license_tools.ParseDir(d, ROOT,
@@ -158,7 +161,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
                                                     enable_warnings=True,
                                                     optional_keys=optional_keys)
       if not dir_metadata:
-        print("Warning: Parsing '%s' returned nothing" % d)
+        logger.warning("Parsing '%s' returned nothing" % d)
       metadatas[d] = dir_metadata
       git_revision_info = GetDirectoryRevisionInfo(d)
       for dep_metadata in dir_metadata:
@@ -175,13 +178,13 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
         if 'Short Name' in dep_metadata:
           dep_metadata['Name'] = dep_metadata['Short Name']
         if dep_metadata['Name'] in PACKAGES_TO_CLEAN_BAD_URL:
-          print("Info: cleaning bad URL from package: %s" % dep_metadata['Name'])
+          logger.info("Cleaning bad URL from package: %s" % dep_metadata['Name'])
           del dep_metadata['URL']
     except license_tools.LicenseError as err:
-      print("Error: Failed parsing '%s': %s" % (d, err))
+      logger.error("Failed parsing '%s': %s" % (d, err))
       pass
     except Exception as err:
-      print("Error: Failed parsing '%s': %s" % (d, err))
+      logger.error("Failed parsing '%s': %s" % (d, err))
       pass
     license_tools.LogParseDirErrors(errors)
 
@@ -238,9 +241,12 @@ def main():
   parser.add_argument('--gn-version', required=True, help="GN version.")
   parser.add_argument('--package-id', required=True, help="Camelcase package id. This is used for several purposes")
   parser.add_argument('--namespace', required=True, help="Namespace of the document")
+  parser.add_argument('--verbose', action="store_true", help="Verbose output")
   parser.add_argument('output_file')
   args = parser.parse_args()
 
+  logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+  logger.info("sbom.py run with arguments: %s" % (' '.join(sys.argv)))
   gn_target_list = args.gn_target_list.split(';')
   build_dir_list = args.build_dir_list.split(';')
   if len(gn_target_list) != len(build_dir_list):
@@ -255,5 +261,4 @@ def main():
     f.write(spdx_text)
 
 if __name__ == '__main__':
-  print(sys.argv)
   sys.exit(main())
