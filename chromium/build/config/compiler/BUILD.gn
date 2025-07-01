@@ -338,7 +338,7 @@ config("compiler") {
   # This avoids risking miscompilations and security bugs on overflow.
   # When UBSan is enabled, we want to continue flagging overflows as a bug.
   if (!is_ubsan && (!is_win || is_clang)) {
-    if (is_win) {
+    if (is_win && !is_mingw) {
       cflags += [ "/clang:-fwrapv" ]
     } else {
       cflags += [ "-fwrapv" ]

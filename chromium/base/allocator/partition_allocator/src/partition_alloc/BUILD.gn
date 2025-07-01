@@ -667,9 +667,11 @@ if (is_clang_or_gcc || is_msvc || is_mingw) {
         "partition_alloc_base/threading/platform_thread_win.cc",
         "partition_alloc_base/time/time_win.cc",
       ]
-      libs += [
-        "winmm.lib",  # For timeGetTime.
-      ]
+      if(!is_mingw) {
+        libs += [
+          "winmm.lib",  # For timeGetTime.
+        ]
+      }
     }
 
     if (is_posix) {
