@@ -27,6 +27,10 @@
 #include "src/objects/tagged.h"
 #include "src/strings/string-builder-inl.h"
 
+#if defined(__arm__) && !defined(__aarch64__)
+#define SkipSIMD
+#endif
+
 namespace v8 {
 namespace internal {
 
@@ -3333,10 +3337,12 @@ template <typename SrcChar>
 bool FastJsonStringifier<Char>::AppendString(
     const SrcChar* chars, size_t length,
     const DisallowGarbageCollection& no_gc) {
+#ifndef SkipSIMD
   constexpr int kUseSimdLengthThreshold = 32;
   if (length >= kUseSimdLengthThreshold) {
     return AppendStringSIMD(chars, length, no_gc);
   }
+#endif
   return AppendStringSWAR(chars, length, 0, 0, no_gc);
 }
 
@@ -3386,6 +3392,7 @@ bool FastJsonStringifier<Char>::AppendStringSWAR(
   return AppendStringScalar(chars, length, i, uncopied_src_index, no_gc);
 }
 
+#ifndef SkipSIMD
 template <typename Char>
 template <typename SrcChar>
   requires(sizeof(SrcChar) == sizeof(uint8_t))
@@ -3439,6 +3446,7 @@ bool FastJsonStringifier<Char>::AppendStringSIMD(
                           no_gc) ||
          needs_escaping;
 }
+#endif
 
 template <typename Char>
 template <typename SrcChar>
