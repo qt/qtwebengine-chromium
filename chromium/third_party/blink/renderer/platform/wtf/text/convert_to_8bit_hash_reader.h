@@ -59,7 +59,9 @@ struct ConvertTo8BitHashReader {
     DCHECK_LE(p[7], 0xff);
 #ifdef __SSE2__
     __m128i x = _mm_loadu_si128(reinterpret_cast<const __m128i*>(p));
-    return _mm_cvtsi128_si64(_mm_packus_epi16(x, x));
+    uint64_t out;
+    _mm_storel_epi64(reinterpret_cast<__m128i *>(&out), _mm_packus_epi16(x, x));
+    return out;
 #elif defined(__ARM_NEON__)
     uint16x8_t x;
     memcpy(&x, p, sizeof(x));
@@ -81,7 +83,9 @@ struct ConvertTo8BitHashReader {
     DCHECK_LE(p[3], 0xff);
 #ifdef __SSE2__
     __m128i x = _mm_loadu_si64(reinterpret_cast<const __m128i*>(p));
-    return _mm_cvtsi128_si64(_mm_packus_epi16(x, x));
+    uint64_t out;
+    _mm_storel_epi64(reinterpret_cast<__m128i *>(&out), _mm_packus_epi16(x, x));
+    return out;
 #elif defined(__ARM_NEON__)
     uint16x4_t x;
     memcpy(&x, p, sizeof(x));
