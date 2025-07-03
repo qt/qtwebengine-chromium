@@ -647,27 +647,29 @@ class Int64LoweringReducer : public Next {
 
   V<Word32Pair> LowerClz(V<Word32Pair> input) {
     auto [low, high] = Unpack(input);
-    ScopedVar<Word32> result(this);
     IF (__ Word32Equal(high, 0)) {
-      result = __ Word32Add(32, __ Word32CountLeadingZeros(low));
+      return __ Tuple(
+        __ Word32Add(32, __ Word32CountLeadingZeros(low)),
+        __ Word32Constant(0));
     } ELSE {
-      result = __ Word32CountLeadingZeros(high);
+      return __ Tuple(
+        __ Word32CountLeadingZeros(high),
+        __ Word32Constant(0));
     }
-
-    return __ Tuple<Word32, Word32>(result, __ Word32Constant(0));
   }
 
   V<Word32Pair> LowerCtz(V<Word32Pair> input) {
     DCHECK(SupportedOperations::word32_ctz());
     auto [low, high] = Unpack(input);
-    ScopedVar<Word32> result(this);
     IF (__ Word32Equal(low, 0)) {
-      result = __ Word32Add(32, __ Word32CountTrailingZeros(high));
+      return __ Tuple(
+        __ Word32Add(32, __ Word32CountTrailingZeros(high)),
+        __ Word32Constant(0));
     } ELSE {
-      result = __ Word32CountTrailingZeros(low);
+      return __ Tuple(
+        __ Word32CountTrailingZeros(low),
+        __ Word32Constant(0));
     }
-
-    return __ Tuple<Word32, Word32>(result, __ Word32Constant(0));
   }
 
   V<Word32Pair> LowerPopCount(V<Word32Pair> input) {
