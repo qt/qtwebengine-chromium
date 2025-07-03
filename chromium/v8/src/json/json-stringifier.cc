@@ -24,6 +24,10 @@
 #include "src/objects/tagged.h"
 #include "src/strings/string-builder-inl.h"
 
+#if defined(__arm__) && !defined(__aarch64__)
+#define SkipSIMD
+#endif
+
 namespace v8 {
 namespace internal {
 
@@ -1982,11 +1986,13 @@ class FastJsonStringifier {
       const SrcChar* chars, uint32_t length, uint32_t start,
       uint32_t uncopied_src_index, const DisallowGarbageCollection& no_gc);
 
+#ifndef SkipSIMD
   template <typename SrcChar>
     requires(sizeof(SrcChar) == sizeof(uint8_t))
   V8_INLINE FastJsonStringifierResult
   AppendStringCheckedSIMD(const SrcChar* chars, uint32_t length,
                           const DisallowGarbageCollection& no_gc);
+#endif
 
   template <typename SrcChar>
     requires(sizeof(SrcChar) == sizeof(base::uc16))
@@ -2847,10 +2853,12 @@ template <typename SrcChar>
 FastJsonStringifierResult FastJsonStringifier<Char>::AppendStringChecked(
     const SrcChar* chars, uint32_t length,
     const DisallowGarbageCollection& no_gc) {
+#ifndef SkipSIMD
   constexpr int kUseSimdLengthThreshold = 32;
   if (length >= kUseSimdLengthThreshold) {
     return AppendStringCheckedSIMD(chars, length, no_gc);
   }
+#endif
   return AppendStringCheckedScalar(chars, length, 0, 0, no_gc);
 }
 
@@ -2873,6 +2881,7 @@ FastJsonStringifierResult FastJsonStringifier<Char>::AppendStringCheckedScalar(
   return SUCCESS;
 }
 
+#ifndef SkipSIMD
 template <typename Char>
 template <typename SrcChar>
   requires(sizeof(SrcChar) == sizeof(uint8_t))
@@ -2919,6 +2928,7 @@ FastJsonStringifierResult FastJsonStringifier<Char>::AppendStringCheckedSIMD(
   return AppendStringCheckedScalar(chars, length, start_index,
                                    uncopied_src_index, no_gc);
 }
+#endif
 
 template <typename Char>
 template <typename SrcChar>
