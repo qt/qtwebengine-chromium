@@ -6,6 +6,7 @@
 #define V8_DEBUG_DEBUG_INTERFACE_H_
 
 #include <memory>
+#include <optional>
 
 #include "include/v8-callbacks.h"
 #include "include/v8-date.h"
