@@ -19,6 +19,9 @@ android_library("androidx_window_shims_java") {
     "//third_party/androidx:androidx_core_core_java",
     "//third_party/androidx:androidx_window_window_java",
   ]
+  if (is_qtpdf) {
+    deps -= [ "//third_party/androidx:androidx_window_window_java" ]
+  }
 }
 
 # Helpers to use in place of androidx.window APIs.

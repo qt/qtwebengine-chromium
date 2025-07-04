@@ -1581,19 +1581,22 @@ template("define_all_androidx_targets") {
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
-    androidx_android_aar_prebuilt("androidx_window_window_java") {
-      aar_path = "cipd/libs/androidx_window_window/window-1.4.0-SNAPSHOT.aar"
-      info_path = "cipd/libs/androidx_window_window/androidx_window_window.info"
-      enable_bytecode_checks = false
-      deps = [
-        ":androidx_annotation_annotation_jvm_java",
-        ":androidx_collection_collection_jvm_java",
-        ":androidx_core_core_java",
-        ":androidx_window_window_core_android_java",
-        "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
-        "//third_party/android_deps:org_jspecify_jspecify_java",
-        "//third_party/kotlin_stdlib:kotlin_stdlib_java",
-      ]
+
+    if(!is_qtpdf) {
+      androidx_android_aar_prebuilt("androidx_window_window_java") {
+        aar_path = "cipd/libs/androidx_window_window/window-1.4.0-SNAPSHOT.aar"
+        info_path = "cipd/libs/androidx_window_window/androidx_window_window.info"
+        enable_bytecode_checks = false
+        deps = [
+         ":androidx_annotation_annotation_jvm_java",
+         ":androidx_collection_collection_jvm_java",
+         ":androidx_core_core_java",
+         ":androidx_window_window_core_android_java",
+         "//third_party/android_deps:org_jetbrains_kotlinx_kotlinx_coroutines_android_java",
+         "//third_party/android_deps:org_jspecify_jspecify_java",
+         "//third_party/kotlin_stdlib:kotlin_stdlib_java",
+        ]
+      }
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
@@ -2844,6 +2847,9 @@ template("define_all_androidx_targets") {
         ":androidx_transition_transition_java",
         ":androidx_window_window_java",
       ]
+      if (is_qtpdf) {
+        deps -= [ ":androidx_window_window_java" ]
+      }
     }
 
     # This is generated, do not edit. Update BuildConfigGenerator.groovy instead.
