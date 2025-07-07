@@ -71,7 +71,7 @@ if (metal_internal_shader_compilation_supported) {
 
     outputs = [ _metal_internal_shaders_air_file ]
 
-    metal_tool = "metal"
+    metal_tool = "xcrun metal"
 
     args = [
       "-c",
@@ -103,7 +103,7 @@ if (metal_internal_shader_compilation_supported) {
 
     outputs = [ _metal_internal_shaders_metallib_file ]
 
-    metal_tool = "metallib"
+    metal_tool = "xcrun metallib"
 
     args = [
       rebase_path(_metal_internal_shaders_air_file, root_build_dir),
