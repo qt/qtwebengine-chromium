@@ -37,7 +37,8 @@ if (metal_internal_shader_compilation_supported) {
     sources = [ _metal_internal_shaders_metal_source ]
 
     args = [
-      mac_bin_path + "metal",
+      "xcrun",
+      "metal",
       "-c",
       rebase_path(_metal_internal_shaders_metal_source, root_build_dir),
       "-o",
