@@ -1684,6 +1684,9 @@ config("toolchain") {
       "-Wno-dangling-pointer",
     ]
   }
+  if (!is_clang && is_win) {
+    defines += [ "_SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING" ]
+  }
 
   # Chromium uses a hand-picked subset of UBSan coverage. We want everything.
   if (is_ubsan) {
@@ -6937,7 +6940,11 @@ v8_source_set("v8_heap_base") {
   } else if (current_cpu == "arm") {
     sources += [ "src/heap/base/asm/arm/push_registers_asm.cc" ]
   } else if (current_cpu == "arm64") {
-    sources += [ "src/heap/base/asm/arm64/push_registers_asm.cc" ]
+    if (is_msvc) {
+      sources += [ "src/heap/base/asm/arm64/push_registers_asm.S" ]
+    } else {
+      sources += [ "src/heap/base/asm/arm64/push_registers_asm.cc" ]
+    }
   } else if (current_cpu == "ppc64") {
     sources += [ "src/heap/base/asm/ppc/push_registers_asm.cc" ]
   } else if (current_os == "zos") {
