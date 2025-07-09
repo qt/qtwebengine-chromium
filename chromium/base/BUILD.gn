@@ -1044,6 +1044,12 @@ jumbo_component("base") {
       ":rust_logger",
       "//third_party/rust/serde_json_lenient/v0_2/wrapper",
     ]
+
+    if (is_qtwebengine) {
+      deps -= [
+        ":rust_logger",
+      ]
+    }
   }
 
   # `raw_ptr` cannot be made a component due to CRT symbol issues.
@@ -2484,6 +2490,7 @@ jumbo_component("base") {
   }
 }
 
+if (!is_qtwebengine) {
 rust_bindgen("logging_log_severity_bindgen") {
   # TODO(danakj): Maybe combine all base bindgen targets, or all base/logging
   # ones even) into a single GN target? But the GN rule needs to handle multiple
@@ -2517,6 +2524,7 @@ rust_static_library("rust_logger") {
   crate_root = "logging/rust_logger.rs"
 
   cxx_bindings = [ "logging/rust_logger.rs" ]
+}
 }
 
 if (is_linux || is_chromeos) {
