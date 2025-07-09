@@ -35,6 +35,7 @@ static_library("test_config") {
   ]
 }
 
+if (!is_qtwebengine) {
 rust_static_library("test_rust_logger_consumer") {
   allow_unsafe = true  # Unsafe needed for FFI
   testonly = true
@@ -44,6 +45,7 @@ rust_static_library("test_rust_logger_consumer") {
   crate_root = "logging/test_rust_logger_consumer.rs"
 
   cxx_bindings = [ "logging/test_rust_logger_consumer.rs" ]
+}
 }
 
 static_library("test_support") {
@@ -216,6 +218,12 @@ static_library("test_support") {
     "//third_party/libxml:libxml_utils",
     "//third_party/libxml:xml_reader",
   ]
+
+  if (is_qtwebengine) {
+    public_deps -= [
+      ":test_rust_logger_consumer",
+    ]
+  }
 
   # Cronet doesn't need the Perfetto test support stuff. This dependency is
   # problematic for Cronet because of targets like

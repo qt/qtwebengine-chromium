@@ -31,10 +31,10 @@
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
 #include "base/debug/task_trace.h"
+#include "base/feature_list_buildflags.h"
 #include "base/functional/callback.h"
 #include "base/immediate_crash.h"
 #include "base/logging/logging_settings.h"
-#include "base/logging/rust_logger.rs.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/pending_task.h"
@@ -111,6 +111,10 @@ typedef FILE* FileHandle;
 
 #if BUILDFLAG(IS_FUCHSIA)
 #include "base/fuchsia/scoped_fx_logger.h"
+#endif
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "base/logging/rust_logger.rs.h"
 #endif
 
 namespace logging {
@@ -508,8 +512,10 @@ bool BaseInitLoggingImpl(const LoggingSettings& settings) {
   }
 #endif
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Connects Rust logging with the //base logging functionality.
   internal::init_rust_log_crate();
+#endif
 
   // Ignore file options unless logging to file is set.
   if ((g_logging_destination & LOG_TO_FILE) == 0) {

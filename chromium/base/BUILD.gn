@@ -1091,7 +1091,6 @@ jumbo_component("base") {
   deps += [ "//third_party/zlib" ]
 
   deps += [
-    ":rust_logger",
     "//third_party/rust/serde_json_lenient/v0_2/wrapper",
   ]
 
@@ -1112,6 +1111,16 @@ jumbo_component("base") {
     if (use_asan_backup_ref_ptr_v2) {
       deps += [ "//build/config/sanitizers:sanitizer_shared_hooks" ]
     }
+  }
+
+  if (enable_rust && !is_qtwebengine) {
+    deps += [
+      ":rust_logger",
+    ]
+    sources += [
+      "logging/rust_log_integration.cc",
+      "logging/rust_log_integration.h",
+    ]
   }
 
   # `raw_ptr` cannot be made a component due to CRT symbol issues.
@@ -1620,8 +1629,6 @@ jumbo_component("base") {
     "files/scoped_temp_file.h",
     "json/json_file_value_serializer.cc",
     "json/json_file_value_serializer.h",
-    "logging/rust_log_integration.cc",
-    "logging/rust_log_integration.h",
     "memory/discardable_memory.cc",
     "memory/discardable_memory.h",
     "memory/discardable_memory_allocator.cc",
@@ -2621,6 +2628,7 @@ if (is_android) {
   }
 }
 
+if (enable_rust) {
 rust_bindgen("logging_log_severity_bindgen") {
   # TODO(danakj): Maybe combine all base bindgen targets, or all base/logging
   # ones even) into a single GN target? But the GN rule needs to handle multiple
@@ -2676,6 +2684,7 @@ rust_static_library("rust_logger") {
   crate_root = "logging/rust_logger.rs"
 
   cxx_bindings = [ "logging/rust_logger.rs" ]
+}
 }
 
 if (is_linux || is_chromeos) {
