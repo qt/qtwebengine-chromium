@@ -361,6 +361,12 @@ jumbo_source_set("common") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (is_qtwebengine) {
+    deps -= [
+      "//third_party/blink/common/rust_crash",
+    ]
+  }
 }
 
 test("blink_common_unittests") {
