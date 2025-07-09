@@ -1090,9 +1090,11 @@ jumbo_component("base") {
   # Used by metrics/crc32
   deps += [ "//third_party/zlib" ]
 
-  deps += [
-    "//third_party/rust/serde_json_lenient/v0_2/wrapper",
-  ]
+  if (enable_rust) {
+    deps += [
+      "//third_party/rust/serde_json_lenient/v0_2/wrapper",
+    ]
+  }
 
   if (use_asan_backup_ref_ptr) {
     # Used by raw_ptr_service.cc to override {malloc,free,ignore_free} hooks.
@@ -1171,6 +1173,16 @@ jumbo_component("base") {
   # Base provides conversions between CXX types and base types (e.g.
   # std::string_view).
   public_deps += [ "//build/rust:cxx_cppdeps" ]
+
+
+  if (!enable_rust) {
+    sources -= [
+      "containers/span_rust.h",
+      "strings/string_view_rust.h",
+    ]
+
+    public_deps -= [ "//build/rust:cxx_cppdeps" ]
+  }
 
   # Needed for <atomic> if using newer C++ library than sysroot, except if
   # building inside the cros_sdk environment - use host_toolchain as a
@@ -3932,6 +3944,17 @@ test("base_unittests") {
   }
 
   deps += [ "//build/rust:cxx_cppdeps" ]
+
+  if (!enable_rust) {
+    sources -= [
+      "containers/span_rust_unittest.cc",
+      "strings/string_piece_rust_unittest.cc",
+    ]
+
+    deps -= [
+      "//build/rust:cxx_cppdeps",
+    ]
+  }
 
   data_deps = [
     "//base/test:immediate_crash_test_helper",
