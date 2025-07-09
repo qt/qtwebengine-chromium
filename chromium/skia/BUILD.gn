@@ -229,6 +229,12 @@ config("skia_library_config") {
       "SK_DEFAULT_FONT_CACHE_COUNT_LIMIT=256",
     ]
   }
+
+  if (is_qtwebengine) {
+      defines -= [
+        "SK_TYPEFACE_FACTORY_FONTATIONS",
+      ]
+  }
 }
 
 # Split out into separate target so that path_bridge can depend on the public
@@ -738,6 +744,13 @@ skia_source_set("skia_core_and_effects") {
     ]
   }
   visibility = [ ":skia" ]
+
+  if (is_qtwebengine) {
+    deps -= [
+      ":bridge_rust_side",
+      ":path_bridge",
+    ]
+  }
 }
 
 # Bits that involve special vector-y hardware.
