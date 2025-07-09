@@ -1048,6 +1048,7 @@ jumbo_component("base") {
     if (is_qtwebengine) {
       deps -= [
         ":rust_logger",
+        "//third_party/rust/serde_json_lenient/v0_2/wrapper",
       ]
     }
   }
@@ -1095,6 +1096,16 @@ jumbo_component("base") {
     # Base provides conversions between CXX types and base types (e.g.
     # std::string_view).
     public_deps += [ "//build/rust:cxx_cppdeps" ]
+  }
+
+
+  if (is_qtwebengine) {
+    sources -= [
+      "containers/span_rust.h",
+      "strings/string_view_rust.h",
+    ]
+
+    public_deps -= [ "//build/rust:cxx_cppdeps" ]
   }
 
   # Needed for <atomic> if using newer C++ library than sysroot, except if
@@ -3665,6 +3676,17 @@ test("base_unittests") {
 
   if (!is_nacl) {
     deps += [ "//build/rust:cxx_cppdeps" ]
+  }
+
+  if (is_qtwebengine) {
+    sources -= [
+      "containers/span_rust_unittest.cc",
+      "strings/string_piece_rust_unittest.cc",
+    ]
+
+    deps -= [
+      "//build/rust:cxx_cppdeps",
+    ]
   }
 
   data_deps = [
