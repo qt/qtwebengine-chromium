@@ -1150,9 +1150,18 @@ jumbo_component("base") {
   deps += [ "//third_party/zlib" ]
 
   deps += [
-    "logging/rust_logger",
     "//third_party/rust/serde_json_lenient/v0_2/wrapper",
   ]
+
+  if (enable_rust && !is_qtwebengine) {
+    deps += [
+      "logging/rust_logger",
+    ]
+    sources += [
+      "logging/rust_logger/print_rust_log_ffi.cc",
+      "logging/rust_logger/print_rust_log_ffi.h",
+    ]
+  }
 
   # `raw_ptr` cannot be made a component due to CRT symbol issues.
   # Its gateway to being a component is through `//base`, so we have
@@ -1657,8 +1666,6 @@ jumbo_component("base") {
     "files/scoped_temp_file.h",
     "json/json_file_value_serializer.cc",
     "json/json_file_value_serializer.h",
-    "logging/rust_logger/print_rust_log_ffi.cc",
-    "logging/rust_logger/print_rust_log_ffi.h",
     "memory/discardable_memory.cc",
     "memory/discardable_memory.h",
     "memory/discardable_memory_allocator.cc",
