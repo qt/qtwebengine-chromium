@@ -877,6 +877,10 @@ group("all_rust") {
   if (enable_rust_png && !is_cronet_build) {
     deps += [ "//skia" ]
   }
+
+  if (is_qtwebengine) {
+    deps = []
+  }
 }
 
 # This group exists to give targets for the waterfall to refer to.
