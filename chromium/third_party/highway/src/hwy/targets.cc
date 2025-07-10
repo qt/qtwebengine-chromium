@@ -306,12 +306,12 @@ static int64_t DetectTargets() {
 
   const uint64_t flags = FlagsFromCPUID();
   // Set target bit(s) if all their group's flags are all set.
-  if ((flags & kGroupAVX3_SPR) == kGroupAVX3_SPR) {
-    bits |= HWY_AVX3_SPR;
-  }
-  if ((flags & kGroupAVX3_DL) == kGroupAVX3_DL) {
-    bits |= HWY_AVX3_DL;
-  }
+  // if ((flags & kGroupAVX3_SPR) == kGroupAVX3_SPR) {
+  //   bits |= HWY_AVX3_SPR;
+  // }
+  // if ((flags & kGroupAVX3_DL) == kGroupAVX3_DL) {
+  //   bits |= HWY_AVX3_DL;
+  // }
   if ((flags & kGroupAVX3) == kGroupAVX3) {
     bits |= HWY_AVX3;
   }
