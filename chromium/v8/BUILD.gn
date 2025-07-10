@@ -278,7 +278,7 @@ declare_args() {
 
   # Disable write barriers when GCs are non-incremental and
   # heap has single generation.
-  v8_disable_write_barriers = false
+  v8_disable_write_barriers = true
 
   # Ensure that write barriers are always used.
   # Useful for debugging purposes.
@@ -1633,13 +1633,15 @@ config("toolchain") {
     }
   }
 
-  cflags += [
-    # Disable warnings about offsetof being used on non-standard-layout types.
-    # offsetof is only specified for standard-layout types, but its behaviour
-    # on non-standard-layout types is implementation defined (rather than UB),
-    # and our supported compilers have the expected reasonable behaviour.
-    "-Wno-invalid-offsetof",
-  ]
+  if (!is_msvc || is_clang) {
+    cflags += [
+      # Disable warnings about offsetof being used on non-standard-layout types.
+      # offsetof is only specified for standard-layout types, but its behaviour
+      # on non-standard-layout types is implementation defined (rather than UB),
+      # and our supported compilers have the expected reasonable behaviour.
+      "-Wno-invalid-offsetof",
+    ]
+  }
 
   if (!is_clang && !is_win) {
     cflags += [
@@ -1686,6 +1688,11 @@ config("toolchain") {
   }
   if (!is_clang && is_win) {
     defines += [ "_SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING" ]
+  }
+
+  # Disable "Function must return a value" errors on MSVC. Triggered by code marked unreachable
+  if (is_msvc) {
+    cflags += [ "/wd4716" ]
   }
 
   # Chromium uses a hand-picked subset of UBSan coverage. We want everything.

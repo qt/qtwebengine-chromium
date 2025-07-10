@@ -308,7 +308,7 @@ template <class T, std::size_t N, std::size_t... I>
 
 template <typename Element>
 struct MemorySpanIteratorPointerTraits {
-  using pointer = ::v8::MemorySpan<Element>::Iterator;
+  using pointer = typename ::v8::MemorySpan<Element>::Iterator;
   using element_type = Element;
   using difference_type = ptrdiff_t;
 

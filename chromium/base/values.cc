@@ -1083,35 +1083,35 @@ Value& Value::List::operator[](size_t index) {
 }
 
 bool Value::List::contains(bool val) const {
-  return contains(val, &Value::is_bool, &Value::GetBool);
+  return contains<bool, bool>(val, &Value::is_bool, &Value::GetBool);
 }
 
 bool Value::List::contains(int val) const {
-  return contains(val, &Value::is_int, &Value::GetInt);
+  return contains<int, int>(val, &Value::is_int, &Value::GetInt);
 }
 
 bool Value::List::contains(double val) const {
-  return contains(val, &Value::is_double, &Value::GetDouble);
+  return contains<double, double>(val, &Value::is_double, &Value::GetDouble);
 }
 
 bool Value::List::contains(std::string_view val) const {
-  return contains(val, &Value::is_string, &Value::GetString);
+  return contains<std::string_view, const std::string&>(val, &Value::is_string, &Value::GetString);
 }
 
 bool Value::List::contains(const char* val) const {
-  return contains(std::string_view(val), &Value::is_string, &Value::GetString);
+  return contains<std::string_view, const std::string&>(std::string_view(val), &Value::is_string, &Value::GetString);
 }
 
 bool Value::List::contains(const BlobStorage& val) const {
-  return contains(val, &Value::is_blob, &Value::GetBlob);
+  return contains<BlobStorage, const BlobStorage&>(val, &Value::is_blob, &Value::GetBlob);
 }
 
 bool Value::List::contains(const Dict& val) const {
-  return contains(val, &Value::is_dict, &Value::GetDict);
+  return contains<Dict, const Dict&>(val, &Value::is_dict, &Value::GetDict);
 }
 
 bool Value::List::contains(const List& val) const {
-  return contains(val, &Value::is_list, &Value::GetList);
+  return contains<List, const List&>(val, &Value::is_list, &Value::GetList);
 }
 
 void Value::List::clear() {

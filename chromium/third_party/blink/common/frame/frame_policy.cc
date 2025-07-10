@@ -27,8 +27,6 @@ FramePolicy::FramePolicy(const FramePolicy& lhs) = default;
 
 FramePolicy::~FramePolicy() = default;
 
-bool operator==(const FramePolicy& lhs, const FramePolicy& rhs) = default;
-
 bool operator!=(const FramePolicy& lhs, const FramePolicy& rhs) {
   return !(lhs == rhs);
 }

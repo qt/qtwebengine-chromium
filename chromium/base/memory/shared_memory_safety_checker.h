@@ -72,7 +72,7 @@ using SharedAtomic = std::atomic<T>;
 // which is non-trivially-copyable class on msvc, we can at lest check if used
 // atomic is lock free
 #if defined(COMPILER_MSVC)
-#define SKIP_SAFETY_CHECK_FOR(X)                   \
+#define SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(X)     \
   namespace base::subtle {                         \
   template <>                                      \
   struct SharedMemorySafetyChecker<X> {            \

@@ -678,8 +678,8 @@ void SVGUseElement::SynchronizeAllSVGAttributes() const {
 
 void SVGUseElement::CollectExtraStyleForPresentationAttribute(
     HeapVector<CSSPropertyValue, 8>& style) {
-  auto pres_attrs =
-      std::to_array<const SVGAnimatedPropertyBase*>({x_.Get(), y_.Get()});
+  std::array<const SVGAnimatedPropertyBase*, 2> pres_attrs
+      {x_.Get(), y_.Get()};
   AddAnimatedPropertiesToPresentationAttributeStyle(pres_attrs, style);
   SVGGraphicsElement::CollectExtraStyleForPresentationAttribute(style);
 }

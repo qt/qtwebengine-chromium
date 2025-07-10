@@ -44,6 +44,11 @@ struct CRYPTO_EXPORT SecureAllocator {
 
   SecureAllocator() noexcept = default;
 
+  template<class Other>
+  SecureAllocator(const SecureAllocator<Other>&) {}
+  template<class Other>
+  SecureAllocator(SecureAllocator<Other>&&) {}
+
   T* allocate(std::size_t n) { return std::allocator<T>().allocate(n); }
 
   void deallocate(T* p, std::size_t n) noexcept {
@@ -55,6 +60,11 @@ struct CRYPTO_EXPORT SecureAllocator {
       std::allocator<T>().deallocate(p, n);
     }
   }
+
+  template<class Other>
+  struct rebind {
+      typedef SecureAllocator<Other> other;
+  };
 };
 
 // On supported platforms, a process bound string cannot have its content read

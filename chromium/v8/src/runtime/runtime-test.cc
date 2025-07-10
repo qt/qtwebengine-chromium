@@ -1197,7 +1197,7 @@ RUNTIME_FUNCTION(Runtime_SetAllocationTimeout) {
 namespace {
 
 int FixedArrayLenFromSize(int size) {
-  return std::min({(size - OFFSET_OF_DATA_START(FixedArray)) / kTaggedSize,
+  return std::min({(int)(size - OFFSET_OF_DATA_START(FixedArray)) / kTaggedSize,
                    FixedArray::kMaxRegularLength});
 }
 

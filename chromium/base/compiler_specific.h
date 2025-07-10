@@ -914,8 +914,12 @@ inline constexpr bool AnalyzerAssumeTrue(bool arg) {
 //   // from earlier calls, assuming the args match.
 //   CONST_FUNCTION int Func(int);
 // ```
+#if !defined(COMPILER_MSVC) || defined(__clang__) // MSVC has no concept of gnu::const, and throws a compiler error
 #if __has_cpp_attribute(gnu::const)
 #define CONST_FUNCTION [[gnu::const]]
+#else
+#define CONST_FUNCTION
+#endif
 #else
 #define CONST_FUNCTION
 #endif

@@ -10,23 +10,36 @@
 #include "build/build_config.h"
 #include "core/fxcrt/span.h"
 
+#if defined(COMPILER_MSVC)
+#include <stdlib.h>
+#endif
+
 namespace fxcrt {
 
 namespace internal {
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+// TODO(thestig): See
+// https://developercommunity.visualstudio.com/t/Mark-some-built-in-functions-as-constexp/362558
+// https://developercommunity.visualstudio.com/t/constexpr-byte-swapping-optimization/983963
+#define FXCRT_BYTESWAPS_CONSTEXPR
+#else
+#define FXCRT_BYTESWAPS_CONSTEXPR constexpr
+#endif
+
 // Returns a value with all bytes in |x| swapped, i.e. reverses the endianness.
 // TODO(thestig): Once C++23 is available, replace with std::byteswap.
-inline constexpr uint16_t ByteSwap(uint16_t x) {
+inline FXCRT_BYTESWAPS_CONSTEXPR uint16_t ByteSwap(uint16_t x) {
 #if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "MSVC is not supported."
+  return _byteswap_ushort(x);
 #else
   return __builtin_bswap16(x);
 #endif
 }
 
-inline constexpr uint32_t ByteSwap(uint32_t x) {
+inline FXCRT_BYTESWAPS_CONSTEXPR uint32_t ByteSwap(uint32_t x) {
 #if defined(COMPILER_MSVC) && !defined(__clang__)
-#error "MSVC is not supported."
+  return _byteswap_ulong(x);
 #else
   return __builtin_bswap32(x);
 #endif

@@ -929,7 +929,7 @@ template <>
 size_t InstructionSelectorT<TurbofanAdapter>::AddOperandToStateValueDescriptor(
     StateValueList* values, InstructionOperandVector* inputs,
     OperandGeneratorT<TurbofanAdapter>* g,
-    StateObjectDeduplicator* deduplicator, Node* input, MachineType type,
+    InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator* deduplicator, Node* input, MachineType type,
     FrameStateInputKind kind, Zone* zone) {
   DCHECK_NOT_NULL(input);
   switch (input->opcode()) {
@@ -937,7 +937,7 @@ size_t InstructionSelectorT<TurbofanAdapter>::AddOperandToStateValueDescriptor(
       values->PushArgumentsElements(ArgumentsStateTypeOf(input->op()));
       // The elements backing store of an arguments object participates in the
       // duplicate object counting, but can itself never appear duplicated.
-      DCHECK_EQ(StateObjectDeduplicator::kNotDuplicated,
+      DCHECK_EQ(InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator::kNotDuplicated,
                 deduplicator->GetObjectId(input));
       deduplicator->InsertObject(input);
       return 0;
@@ -951,7 +951,7 @@ size_t InstructionSelectorT<TurbofanAdapter>::AddOperandToStateValueDescriptor(
     case IrOpcode::kTypedObjectState:
     case IrOpcode::kObjectId: {
       size_t id = deduplicator->GetObjectId(input);
-      if (id == StateObjectDeduplicator::kNotDuplicated) {
+      if (id == InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator::kNotDuplicated) {
         DCHECK_EQ(IrOpcode::kTypedObjectState, input->opcode());
         size_t entries = 0;
         id = deduplicator->InsertObject(input);
@@ -1012,7 +1012,7 @@ class InstructionSelectorT<TurbofanAdapter>::CachedStateValuesBuilder {
  public:
   explicit CachedStateValuesBuilder(StateValueList* values,
                                     InstructionOperandVector* inputs,
-                                    StateObjectDeduplicator* deduplicator)
+                                    InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator* deduplicator)
       : values_(values),
         inputs_(inputs),
         deduplicator_(deduplicator),
@@ -1035,7 +1035,7 @@ class InstructionSelectorT<TurbofanAdapter>::CachedStateValuesBuilder {
  private:
   StateValueList* values_;
   InstructionOperandVector* inputs_;
-  StateObjectDeduplicator* deduplicator_;
+  InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator* deduplicator_;
   size_t values_start_;
   size_t nested_start_;
   size_t inputs_start_;
@@ -1046,7 +1046,7 @@ template <>
 size_t InstructionSelectorT<TurbofanAdapter>::AddInputsToFrameStateDescriptor(
     StateValueList* values, InstructionOperandVector* inputs,
     OperandGeneratorT<TurbofanAdapter>* g,
-    StateObjectDeduplicator* deduplicator, node_t node,
+    InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator* deduplicator, node_t node,
     FrameStateInputKind kind, Zone* zone) {
   // StateValues are often shared across different nodes, and processing them
   // is expensive, so cache the result of processing a StateValue so that we
@@ -1287,7 +1287,7 @@ size_t InstructionSelectorT<TurboshaftAdapter>::AddInputsToFrameStateDescriptor(
 template <>
 size_t InstructionSelectorT<TurbofanAdapter>::AddInputsToFrameStateDescriptor(
     FrameStateDescriptor* descriptor, node_t state_node, OperandGenerator* g,
-    StateObjectDeduplicator* deduplicator, InstructionOperandVector* inputs,
+    InstructionSelectorT<TurbofanAdapter>::StateObjectDeduplicator* deduplicator, InstructionOperandVector* inputs,
     FrameStateInputKind kind, Zone* zone) {
   FrameState state{state_node};
   size_t entries = 0;
@@ -1446,7 +1446,7 @@ void InstructionSelectorT<Adapter>::AppendDeoptimizeArguments(
   int const state_id = sequence()->AddDeoptimizationEntry(
       descriptor, kind, reason, node_id, feedback);
   args->push_back(g.TempImmediate(state_id));
-  StateObjectDeduplicator deduplicator(instruction_zone());
+  InstructionSelectorT<Adapter>::StateObjectDeduplicator deduplicator(instruction_zone());
   AddInputsToFrameStateDescriptor(descriptor, frame_state, &g, &deduplicator,
                                   args, FrameStateInputKind::kAny,
                                   instruction_zone());
@@ -1664,7 +1664,7 @@ void InstructionSelectorT<Adapter>::InitializeCallBuffer(
         DeoptimizeReason::kUnknown, this->id(call), FeedbackSource());
     buffer->instruction_args.push_back(g.TempImmediate(state_id));
 
-    StateObjectDeduplicator deduplicator(instruction_zone());
+    InstructionSelectorT<Adapter>::StateObjectDeduplicator deduplicator(instruction_zone());
 
     frame_state_entries =
         1 + AddInputsToFrameStateDescriptor(

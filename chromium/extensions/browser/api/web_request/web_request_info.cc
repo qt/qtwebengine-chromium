@@ -136,10 +136,10 @@ std::optional<base::Value::Dict> CreateRequestBodyData(
   // Get the data presenters, ordered by how specific they are.
   ParsedDataPresenter parsed_data_presenter(request_headers);
   RawDataPresenter raw_data_presenter;
-  const auto presenters = std::to_array<UploadDataPresenter*>({
+  const std::array<UploadDataPresenter*, 2> presenters{
       &parsed_data_presenter,  // 1: any parseable forms? (Specific to forms.)
       &raw_data_presenter      // 2: any data at all? (Non-specific.)
-  });
+  };
   // Keys for the results of the corresponding presenters.
   static const auto kKeys = std::to_array<const char*>({
       keys_wri::kRequestBodyFormDataKey,

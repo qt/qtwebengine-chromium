@@ -565,7 +565,7 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
 
 // Do not use this variable directly, use Isolate::Current() instead.
 // Defined outside of Isolate because Isolate uses V8_EXPORT_PRIVATE.
-__attribute__((tls_model(V8_TLS_MODEL))) extern thread_local Isolate*
+ATTRIBUTE_V8_TLS_MODEL extern thread_local Isolate*
     g_current_isolate_ V8_CONSTINIT;
 
 // HiddenFactory exists so Isolate can privately inherit from it without making

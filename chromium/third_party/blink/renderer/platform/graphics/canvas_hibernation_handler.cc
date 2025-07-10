@@ -401,7 +401,7 @@ void CanvasHibernationHandler::HibernateOrLogFailure(
 }
 
 void CanvasHibernationHandler::Hibernate() {
-  TRACE_EVENT0("blink", __PRETTY_FUNCTION__);
+  TRACE_EVENT0("blink", PRETTY_FUNCTION);
   DCHECK(!IsHibernating());
   DCHECK(hibernation_scheduled_);
 
