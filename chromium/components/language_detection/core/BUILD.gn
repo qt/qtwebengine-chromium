@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/ml.gni")
 
 # We need a component because this gives access to a per-process
 # singleton instance of the model. Without a component, we end up an
@@ -32,6 +33,28 @@ component("core") {
     "//third_party/tflite_support:tflite_support_proto",
   ]
   defines = [ "IS_LANGUAGE_DETECTION_IMPL" ]
+
+  if (!use_ml) {
+    sources -= [
+      "language_detection_model.cc",
+      "language_detection_model.h",
+    ]
+
+    if (use_blink) {
+      sources -= [
+        "language_detection_provider.cc",
+        "language_detection_provider.h",
+      ]
+    }
+
+    deps -= [
+      ":internals",
+      "//components/optimization_guide/core:features",
+      "//third_party/tflite",
+      "//third_party/tflite_support",
+      "//third_party/tflite_support:tflite_support_proto",
+    ]
+  }
 }
 
 static_library("internals") {
@@ -57,6 +80,12 @@ static_library("internals") {
     "//third_party/tflite",
     "//third_party/utf",
   ]
+
+  if (!use_ml) {
+    deps -= [
+      "//third_party/tflite",
+    ]
+  }
 }
 
 source_set("unit_tests") {

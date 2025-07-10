@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/jumbo.gni")
+import("//build/config/ml.gni")
 import("//build/config/ui.gni")
 import("//content/common/features.gni")
 import("//device/vr/buildflags/buildflags.gni")
@@ -607,6 +608,14 @@ jumbo_source_set("browser_sources") {
     "//ui/shell_dialogs",
     "//ui/surface",
   ]
+
+  if (!use_ml) {
+    deps -= [
+      "//components/language_detection/content/browser",
+      "//components/language_detection/content/common",
+      "//components/language_detection/core/browser:language_detection_model_service",
+    ]
+  }
 
   allow_circular_includes_from = [
     # This target is a pair with content / browser.They always go together and
