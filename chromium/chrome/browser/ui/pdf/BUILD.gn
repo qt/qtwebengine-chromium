@@ -6,7 +6,7 @@ import("//pdf/features.gni")
 import("//services/screen_ai/buildflags/features.gni")
 
 assert(enable_pdf)
-assert(enable_screen_ai_service)
+#assert(enable_screen_ai_service)
 
 source_set("pdf") {
   sources = [
