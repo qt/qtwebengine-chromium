@@ -302,4 +302,7 @@ struct URLResponseHead {
 
   // True if the response used a shared dictionary for decoding its body.
   bool did_use_shared_dictionary = false;
+
+ // True when a proxy will handle the redirect checks.
+  bool bypass_redirect_checks = false;
 };
