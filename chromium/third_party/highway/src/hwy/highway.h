@@ -268,7 +268,7 @@ namespace hwy {
 #define HWY_CHOOSE_AVX3_ZEN4(FUNC_NAME) nullptr
 #endif
 
-#if HWY_TARGETS & HWY_AVX3_SPR
+#if (HWY_TARGETS & HWY_AVX3_SPR) && 0
 #define HWY_CHOOSE_AVX3_SPR(FUNC_NAME) &N_AVX3_SPR::FUNC_NAME
 #else
 #define HWY_CHOOSE_AVX3_SPR(FUNC_NAME) nullptr
