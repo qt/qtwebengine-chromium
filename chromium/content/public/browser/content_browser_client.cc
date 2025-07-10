@@ -26,6 +26,7 @@
 #include "components/language_detection/content/browser/content_language_detection_driver.h"
 #include "components/language_detection/content/common/language_detection.mojom.h"
 #include "components/language_detection/core/browser/language_detection_model_provider.h"
+#include "components/ml/buildflags.h"
 #include "content/browser/ai/echo_ai_manager_impl.h"
 #include "content/browser/cpu_performance/cpu_performance.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -1870,7 +1871,9 @@ void ContentBrowserClient::BindAIManager(
     base::SupportsUserData* context_user_data,
     RenderFrameHost* rfh,
     mojo::PendingReceiver<blink::mojom::AIManager> receiver) {
+#if BUILDFLAG(USE_ML)
   EchoAIManagerImpl::Create(std::move(receiver));
+#endif
 }
 
 void ContentBrowserClient::BindTranslationManager(
