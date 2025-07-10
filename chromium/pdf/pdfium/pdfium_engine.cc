@@ -2686,7 +2686,11 @@ void PDFiumEngine::HandleLongPress(const blink::WebTouchEvent& event) {
 
 SkBitmap PDFiumEngine::GetImageForOcr(int page_index, int image_index) {
   DCHECK(PageIndexInBounds(page_index));
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   return pages_[page_index]->GetImageForOcr(image_index);
+#else
+  return {};
+#endif
 }
 
 bool PDFiumEngine::GetPrintScaling() {

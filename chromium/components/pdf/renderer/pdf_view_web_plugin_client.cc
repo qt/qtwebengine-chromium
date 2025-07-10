@@ -203,6 +203,7 @@ PdfViewWebPluginClient::CreateAssociatedURLLoader(
   return GetFrame()->CreateAssociatedURLLoader(options);
 }
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 void PdfViewWebPluginClient::PerformOcr(
     const SkBitmap& image,
     base::OnceCallback<void(screen_ai::mojom::VisualAnnotationPtr)> callback) {
@@ -231,6 +232,7 @@ void PdfViewWebPluginClient::OnOcrDisconnected() {
   CHECK(ocr_disconnect_callback_);
   ocr_disconnect_callback_.Run();
 }
+#endif // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
 void PdfViewWebPluginClient::UpdateTextInputState() {
   // `widget` is null in Print Preview.

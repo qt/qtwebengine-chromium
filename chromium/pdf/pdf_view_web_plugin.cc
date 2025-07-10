@@ -1299,11 +1299,13 @@ void PdfViewWebPlugin::DocumentLoadComplete() {
   if (accessibility_state_ == AccessibilityState::kPending)
     LoadAccessibility();
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   // To avoid delaying page load for searchify, start searchify after document
   // load is completed.
   client_->SetOcrDisconnectedCallback(engine_->GetOcrDisconnectHandler());
   engine_->StartSearchify(
       base::BindRepeating(&Client::PerformOcr, client_->GetWeakPtr()));
+#endif
 
   if (!full_frame_)
     return;
@@ -2834,6 +2836,7 @@ void PdfViewWebPlugin::PrepareAndSetAccessibilityPageInfo(int32_t page_index) {
     return;
   }
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   // Wait for the page to be loaded and searchified before getting accessibility
   // page info.
   // Ensure page is loaded so that it can schedule a searchify operation if
@@ -2847,6 +2850,7 @@ void PdfViewWebPlugin::PrepareAndSetAccessibilityPageInfo(int32_t page_index) {
         kAccessibilityPageDelay * 10);
     return;
   }
+#endif
 
   ++next_accessibility_page_index_;
 
