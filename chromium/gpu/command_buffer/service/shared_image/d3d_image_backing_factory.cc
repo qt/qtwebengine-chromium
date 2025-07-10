@@ -890,8 +890,6 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
 #if !BUILDFLAG(IS_QTWEBENGINE)
   const bool is_scanout = usage.Has(gpu::SHARED_IMAGE_USAGE_SCANOUT);
   const bool is_video_decode = usage.Has(gpu::SHARED_IMAGE_USAGE_VIDEO_DECODE);
-  const bool is_buffer =
-      usage.Has(gpu::SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER);
   if (is_scanout) {
     if (is_video_decode || gmb_type == gfx::DXGI_SHARED_HANDLE) {
       // Video decode and video frames via GMBs are handled specially in
@@ -904,6 +902,8 @@ bool D3DImageBackingFactory::IsSupported(SharedImageUsageSet usage,
     }
   }
 #endif
+  const bool is_buffer =
+      usage.Has(gpu::SHARED_IMAGE_USAGE_WEBGPU_SHARED_BUFFER);
 
   if (gmb_type == gfx::EMPTY_BUFFER) {
     if (GetDXGIFormatForCreateTexture(format) == DXGI_FORMAT_UNKNOWN &&
