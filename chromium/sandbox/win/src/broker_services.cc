@@ -431,7 +431,6 @@ ResultCode BrokerServicesBase::PreSpawnTarget(
 #endif
   if (!policy_base)
     return SBOX_ERROR_BAD_PARAMS;
-  }
 
   ConfigBase* config_base = static_cast<ConfigBase*>(policy_base->GetConfig());
   if (!config_base->IsConfigured()) {
