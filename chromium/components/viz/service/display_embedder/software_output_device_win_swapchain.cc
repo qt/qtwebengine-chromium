@@ -15,7 +15,7 @@ namespace viz {
 
 namespace {
 
-constexpr DXGI_FORMAT kDXGISwapChainFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+constexpr DXGI_FORMAT kDXGISwapChainFormat_ = DXGI_FORMAT_B8G8R8A8_UNORM;
 
 D3D11_BOX ToD3D11Box(const gfx::Rect& gfx_rect) {
   D3D11_BOX d3d11_box = {.left = static_cast<UINT>(gfx_rect.x()),
@@ -66,7 +66,7 @@ void SoftwareOutputDeviceWinSwapChain::ResizeDelegated() {
 
     HRESULT hr = dxgi_swapchain_->ResizeBuffers(2, viewport_pixel_size_.width(),
                                                 viewport_pixel_size_.height(),
-                                                kDXGISwapChainFormat, 0);
+                                                kDXGISwapChainFormat_, 0);
     if (FAILED(hr)) {
       LOG(ERROR) << "IDXGISwapChain::ResizeBuffers failed: "
                  << logging::SystemErrorCodeToString(hr);
@@ -109,7 +109,7 @@ void SoftwareOutputDeviceWinSwapChain::ResizeDelegated() {
     DXGI_SWAP_CHAIN_DESC1 dxgi_swapchain_desc = {
         .Width = static_cast<UINT>(viewport_pixel_size_.width()),
         .Height = static_cast<UINT>(viewport_pixel_size_.height()),
-        .Format = kDXGISwapChainFormat,
+        .Format = kDXGISwapChainFormat_,
         .Stereo = FALSE,
         .SampleDesc = {.Count = 1, .Quality = 0},
         .BufferUsage = 0,
