@@ -5,6 +5,7 @@
 #include "src/heap/read-only-promotion.h"
 
 #include <unordered_set>
+#include <string>
 
 #include "src/common/assert-scope.h"
 #include "src/execution/isolate.h"
@@ -21,11 +22,17 @@ namespace v8 {
 namespace internal {
 namespace {
 
+struct KeyEqualSafe {
+  bool operator()(const Tagged<HeapObject> a, const Tagged<HeapObject> b) const {
+    return a.SafeEquals(b);
+  }
+};
+
 // Convenience aliases:
 using HeapObjectSet = std::unordered_set<Tagged<HeapObject>, Object::Hasher,
-                                         Object::KeyEqualSafe>;
+                                         KeyEqualSafe>;
 using HeapObjectMap = std::unordered_map<Tagged<HeapObject>, Tagged<HeapObject>,
-                                         Object::Hasher, Object::KeyEqualSafe>;
+                                         Object::Hasher, KeyEqualSafe>;
 using HeapObjectList = std::vector<Tagged<HeapObject>>;
 
 bool Contains(const HeapObjectSet& s, Tagged<HeapObject> o) {
