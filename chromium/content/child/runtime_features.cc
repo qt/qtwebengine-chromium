@@ -34,7 +34,9 @@
 #include "net/base/features.h"
 #include "services/device/public/cpp/device_features.h"
 #include "services/network/public/cpp/features.h"
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/features.mojom-features.h"
+#endif
 #include "third_party/blink/public/common/buildflags.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/features_generated.h"

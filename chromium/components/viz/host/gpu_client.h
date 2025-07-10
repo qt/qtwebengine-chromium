@@ -22,7 +22,7 @@
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "services/viz/public/mojom/gpu.mojom.h"
 
-#if !BUILDFLAG(USE_ML)
+#if BUILDFLAG(USE_ML)
 #include "services/webnn/public/mojom/webnn_context_provider.mojom.h"
 #endif  // BUILDFLAG(USE_ML)
 

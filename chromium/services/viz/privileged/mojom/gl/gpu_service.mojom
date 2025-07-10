@@ -49,10 +49,6 @@ import "mojo/public/mojom/base/unguessable_token.mojom";
 
 [EnableIf=is_win]
 import "ui/gfx/mojom/dxgi_info.mojom";
-[EnableIf=use_ml]
-import "services/webnn/public/mojom/features.mojom";
-[EnableIf=use_ml]
-import "services/webnn/public/mojom/webnn_context_provider.mojom";
 
 interface GpuService {
   // Tells the GPU service to create a new channel for communication with a
