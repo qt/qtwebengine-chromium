@@ -22,6 +22,7 @@
 #include "base/trace_event/typed_macros.h"
 #include "base/tracing/protos/chrome_track_event.pbzero.h"
 #include "components/crx_file/id_util.h"
+#include "components/ml/buildflags.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/constants.h"
@@ -1103,6 +1104,7 @@ void NativeExtensionBindingsSystem::SetScriptingParams(ScriptContext* context) {
 
 void NativeExtensionBindingsSystem::UpdateBindingsForPromptAPI(
     ScriptContext* context) {
+#if BUILDFLAG(USE_ML)
   v8::Isolate* isolate = context->isolate();
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> v8_context = context->v8_context();
@@ -1136,6 +1138,7 @@ void NativeExtensionBindingsSystem::UpdateBindingsForPromptAPI(
   success = chrome_ai_object->CreateDataProperty(
       v8_context, language_model_name, language_model_value);
   CHECK(success.IsJust() && success.FromJust());
+#endif // BUILDFLAG(USE_ML)
 }
 
 }  // namespace extensions

@@ -3735,6 +3735,26 @@ jumbo_source_set("browser") {
       "//components/payments/mojom",
       "//content/browser/payments:payment_app_proto",
     ]
+
+    if (!use_ml) {
+      sources -= [
+        "ai/echo_ai_language_model.cc",
+        "ai/echo_ai_language_model.h",
+        "ai/echo_ai_manager_impl.cc",
+        "ai/echo_ai_manager_impl.h",
+        "ai/echo_ai_rewriter.cc",
+        "ai/echo_ai_rewriter.h",
+        "ai/echo_ai_summarizer.cc",
+        "ai/echo_ai_summarizer.h",
+        "ai/echo_ai_writer.cc",
+        "ai/echo_ai_writer.h",
+      ]
+
+      deps -= [
+        "//components/optimization_guide/core:features", # FIXME: is it really a PromptAPI dep?
+      ]
+    }
+
     if (is_win) {
       sources -= [
         "renderer_host/legacy_render_widget_host_win.cc",
