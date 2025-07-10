@@ -295,11 +295,19 @@ BASE_FEATURE(kDigitalGoodsApi,
 // Enables the BTM (Bounce Tracking Mitigation) feature.
 // On by default to allow for collecting metrics. All potentially dangerous
 // behavior (database persistence, storage deletion) will be gated by params.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 BASE_FEATURE(kBtm, "DIPS", base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kBtm, "DIPS", base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 // Flag used to control |interaction_ttl| separately from the kBtm feature
 // flag.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 BASE_FEATURE(kBtmTtl, "DIPSTtl", base::FEATURE_ENABLED_BY_DEFAULT);
+#else
+BASE_FEATURE(kBtmTtl, "DIPSTtl", base::FEATURE_DISABLED_BY_DEFAULT);
+#endif
 
 // Set whether DIPS persists its database to disk.
 const base::FeatureParam<bool> kBtmPersistedDatabaseEnabled{
