@@ -12,7 +12,7 @@
 #if defined(V8_USE_PERFETTO)
 
 // Trace category prefixes used in tests.
-PERFETTO_DEFINE_TEST_CATEGORY_PREFIXES("v8-cat", "cat", "v8.Test2");
+PERFETTO_DEFINE_TEST_CATEGORY_PREFIXES("v8-cat", "cat", "v8.Test2", "test");
 
 // List of categories used by built-in V8 trace events.
 PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
