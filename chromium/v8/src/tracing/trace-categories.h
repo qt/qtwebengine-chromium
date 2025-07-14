@@ -16,7 +16,7 @@
 #include "perfetto/tracing/track_event_legacy.h"
 
 // Trace category prefixes used in tests.
-PERFETTO_DEFINE_TEST_CATEGORY_PREFIXES("v8-cat", "cat", "v8.Test2");
+PERFETTO_DEFINE_TEST_CATEGORY_PREFIXES("v8-cat", "cat", "v8.Test2", "test");
 
 // List of categories used by built-in V8 trace events.
 // clang-format off
