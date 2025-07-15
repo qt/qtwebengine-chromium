@@ -119,7 +119,9 @@ NOINLINE void MaybeTriggerAsanError(const GURL& url) {
     // Ensure that ASAN works even in Rust code.
     LOG(ERROR) << "Intentionally causing ASAN heap overflow in Rust"
                << " because user navigated to " << url.spec();
+#if !BUILDFLAG(IS_QTWEBENGINE)
     crash_in_rust_with_overflow();
+#endif
   }
 }
 #endif  // ADDRESS_SANITIZER
