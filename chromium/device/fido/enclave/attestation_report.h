@@ -72,7 +72,7 @@ const size_t REPORT_DATA_SIZE = 64;
 //
 // See Table 22 in <https://www.amd.com/system/files/TechDocs/56860.pdf>.
 #if defined(_MSC_VER) && !defined(__clang__)
-#pragma pack(1)
+#pragma pack(push, 1)
 struct AttestationReportData {
 #else
 struct __attribute__((packed)) AttestationReportData {
@@ -191,6 +191,10 @@ struct __attribute__((packed)) AttestationReportData {
 
   std::array<uint8_t, 168> reserved5;
 };
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma pack(pop)
+#endif
 
 // An ECDSA signature.
 //
