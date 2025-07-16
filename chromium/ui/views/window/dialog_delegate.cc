@@ -243,12 +243,14 @@ bool DialogDelegate::RunCloseCallback(
   if (absl::holds_alternative<base::OnceClosure>(callback)) {
     already_started_close_ = true;
     absl::get<base::OnceClosure>(std::move(callback)).Run();
+    return true;
   } else {
     already_started_close_ =
         absl::get<base::RepeatingCallback<bool()>>(callback).Run();
+    return already_started_close_;
   }
 
-  return already_started_close_;
+  NOTREACHED();
 }
 
 View* DialogDelegate::GetInitiallyFocusedView() {
