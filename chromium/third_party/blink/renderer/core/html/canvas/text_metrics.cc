@@ -107,7 +107,7 @@ void TextMetrics::Update(const Font* font,
                          const TextBaseline& baseline,
                          const TextAlign& align,
                          const String& text) {
-  const SimpleFontData* font_data = font.PrimaryFont();
+  const SimpleFontData* font_data = font->PrimaryFont();
   if (!font_data)
     return;
 
@@ -158,7 +158,7 @@ void TextMetrics::Update(const Font* font,
       run_width = run_with_offset.shape_result_->Width();
       run_glyph_bounds = run_with_offset.shape_result_->ComputeInkBounds();
     } else {
-      run_width = font.Width(text_run, &run_glyph_bounds);
+      run_width = font->Width(text_run, &run_glyph_bounds);
     }
     runs_with_offset_.push_back(run_with_offset);
 

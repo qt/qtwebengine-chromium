@@ -3574,7 +3574,7 @@ void BaseRenderingContext2D::DrawTextInternal(
   }
 
   const Font& font =
-      (cluster_font != nullptr) ? *cluster_font : AccessFont(canvas);
+      (cluster_font != nullptr) ? *cluster_font : *AccessFont(canvas);
   const SimpleFontData* font_data = font.PrimaryFont();
   DCHECK(font_data);
   if (!font_data) {
@@ -3598,9 +3598,9 @@ void BaseRenderingContext2D::DrawTextInternal(
   gfx::RectF bounds;
   double font_width = 0;
   if (run_start == 0 && run_end == text.length()) [[likely]] {
-    font_width = font->Width(text_run, &bounds);
+    font_width = font.Width(text_run, &bounds);
   } else {
-    font_width = font->SubRunWidth(text_run, run_start, run_end, &bounds);
+    font_width = font.SubRunWidth(text_run, run_start, run_end, &bounds);
   }
 
   bool use_max_width = (max_width && *max_width < font_width);
@@ -3662,7 +3662,7 @@ void BaseRenderingContext2D::DrawTextInternal(
         Font::DrawType draw_type = (canvas && canvas->IsPrinting())
                                        ? Font::DrawType::kGlyphsAndClusters
                                        : Font::DrawType::kGlyphsOnly;
-        font->DrawBidiText(c, text_run_paint_info, location,
+        font.DrawBidiText(c, text_run_paint_info, location,
                           Font::kUseFallbackIfFontNotReady, *flags, draw_type);
       },
       [](const SkIRect& rect)  // overdraw test lambda
