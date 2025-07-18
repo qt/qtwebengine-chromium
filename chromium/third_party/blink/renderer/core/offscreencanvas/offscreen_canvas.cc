@@ -646,6 +646,7 @@ bool OffscreenCanvas::PushFrame(scoped_refptr<CanvasResource>&& canvas_resource,
   current_frame_damage_rect_.join(damage_rect);
   if (current_frame_damage_rect_.isEmpty() || !canvas_resource)
     return false;
+  canvas_resource->SetOriginClean(OriginClean());
   const base::TimeTicks commit_start_time = base::TimeTicks::Now();
   const bool needs_vertical_flip = !canvas_resource->IsOriginTopLeft();
   GetOrCreateResourceDispatcher()->DispatchFrame(
