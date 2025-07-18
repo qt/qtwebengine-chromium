@@ -999,7 +999,7 @@ void GetLoadedScripts(Isolate* v8_isolate,
 std::optional<v8::ScriptOrigin> GetScriptOrigin(Isolate* v8_isolate,
                                                 int script_id) {
   i::Isolate* isolate = reinterpret_cast<i::Isolate*>(v8_isolate);
-  EnterV8NoScriptNoExceptionScope api_scope(isolate);
+  ENTER_V8_NO_SCRIPT_NO_EXCEPTION(isolate);
   {
     i::DisallowGarbageCollection no_gc;
     i::Script::Iterator iterator(isolate);
