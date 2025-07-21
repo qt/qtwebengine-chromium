@@ -44,6 +44,7 @@ devtools_module("ai_assistance") {
     "../../models/text_utils:bundle",
     "../../models/trace:bundle",
     "../../models/workspace:bundle",
+    "../../panels/common:bundle",
     "../../panels/elements:bundle",
     "../../panels/network:bundle",
     "../../panels/sources:bundle",
