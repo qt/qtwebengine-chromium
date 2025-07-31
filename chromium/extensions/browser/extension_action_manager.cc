@@ -97,6 +97,9 @@ ExtensionAction* ExtensionActionManager::GetExtensionAction(
     return nullptr;
   }
 
+// Extensions are always loaded in disabled state in WebEngine
+// and the ExtensionsAction is created when the loading is finished.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Only create action info for enabled extensions.
   // This avoids bugs where actions are recreated just after being removed
   // in response to OnExtensionUnloaded().
@@ -105,6 +108,7 @@ ExtensionAction* ExtensionActionManager::GetExtensionAction(
            .Contains(extension.id())) {
     return nullptr;
   }
+#endif
 
   auto action = std::make_unique<ExtensionAction>(extension, *action_info);
 
