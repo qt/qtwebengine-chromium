@@ -2783,8 +2783,10 @@ void FederatedAuthRequestImpl::CompleteRequest(
 
   if (!should_delay_callback || should_complete_request_immediately_) {
     CleanUp();
-    webid::GetPageData(render_frame_host().GetPage())
-        ->SetPendingWebIdentityRequest(nullptr);
+    if (static_cast<RenderFrameHostImpl*>(&render_frame_host())->has_document_associated_data()) {
+      webid::GetPageData(render_frame_host().GetPage())
+          ->SetPendingWebIdentityRequest(nullptr);
+    }
     errors_logged_to_console_ = false;
 
     blink::mojom::TokenErrorPtr error;
