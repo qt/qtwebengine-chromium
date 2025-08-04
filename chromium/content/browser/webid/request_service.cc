@@ -2149,8 +2149,10 @@ void RequestService::CompleteRequestInternal(
     return;
   }
   CleanUp();
-  GetPageData(render_frame_host().GetPage())
-      ->SetPendingWebIdentityRequest(nullptr);
+  if (static_cast<RenderFrameHostImpl*>(&render_frame_host())->has_document_associated_data()) {
+    GetPageData(render_frame_host().GetPage())
+        ->SetPendingWebIdentityRequest(nullptr);
+  }
 
   blink::mojom::TokenErrorPtr error;
   if (token_error) {

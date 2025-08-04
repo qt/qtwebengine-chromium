@@ -7742,8 +7742,10 @@ BrowserContext* RenderFrameHostImpl::GetBrowserContext() {
 // layer.  See referenced bug for further details.
 void RenderFrameHostImpl::ReportInspectorIssue(
     blink::mojom::InspectorIssueInfoPtr info) {
-  devtools_instrumentation::BuildAndReportBrowserInitiatedIssue(
-      this, std::move(info));
+  if (has_document_associated_data()) {
+    devtools_instrumentation::BuildAndReportBrowserInitiatedIssue(
+        this, std::move(info));
+  }
 }
 
 void RenderFrameHostImpl::WriteIntoTrace(
