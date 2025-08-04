@@ -3780,8 +3780,9 @@ void LocalFrame::PostMessageEvent(
   // Preparation of the MessageEvent.
   MessageEvent* message_event = MessageEvent::Create();
   DOMWindow* window = nullptr;
-  if (source_frame)
+  if (source_frame) {
     window = source_frame->DomWindow();
+  }
   MessagePortArray* ports = nullptr;
   if (GetDocument()) {
     ports = MessagePort::EntanglePorts(*GetDocument()->GetExecutionContext(),
@@ -3798,10 +3799,15 @@ void LocalFrame::PostMessageEvent(
         message.user_activation->was_active);
   }
 
+ const MessageEvent::MessageOriginKind message_origin_kind =
+     SecurityOrigin::CreateFromString(source_origin)
+             ->IsSameOriginWith(DomWindow()->GetSecurityOrigin())
+         ? MessageEvent::kMessageIsSameOrigin
+         : MessageEvent::kMessageIsCrossOrigin;
   message_event->initMessageEvent(
       event_type_names::kMessage, false, false, std::move(message.message),
-      source_origin, "" /*lastEventId*/, window, ports, user_activation,
-      message.delegated_capability);
+      source_origin, message_origin_kind, "" /*lastEventId*/, window, ports,
+      user_activation, message.delegated_capability);
 
   // If the agent cluster id had a value it means this was locked when it
   // was serialized.
