@@ -2714,6 +2714,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
     return *document_associated_data_;
   }
 
+  bool has_document_associated_data() const {
+    return document_associated_data_.has_value();
+  }
+
   // Called when we commit speculative RFH early due to not having an alive
   // current frame. This happens when the renderer crashes before navigating to
   // a new URL using speculative RenderFrameHost.
