@@ -120,6 +120,7 @@ MessageEvent::MessageEvent(const String& origin,
 
 MessageEvent::MessageEvent(scoped_refptr<SerializedScriptValue> data,
                            const String& origin,
+                           MessageOriginKind message_origin_kind,
                            const String& last_event_id,
                            EventTarget* source,
                            MessagePortArray* ports,
@@ -128,6 +129,8 @@ MessageEvent::MessageEvent(scoped_refptr<SerializedScriptValue> data,
       data_type_(kDataTypeSerializedScriptValue),
       data_as_serialized_script_value_(
           SerializedScriptValue::Unpack(std::move(data))),
+      data_is_from_untrusted_source_(message_origin_kind ==
+                                     kMessageIsCrossOrigin),
       origin_(origin),
       last_event_id_(last_event_id),
       source_(source),
@@ -141,6 +144,7 @@ MessageEvent::MessageEvent(scoped_refptr<SerializedScriptValue> data,
 MessageEvent::MessageEvent(
     scoped_refptr<SerializedScriptValue> data,
     const String& origin,
+    MessageOriginKind message_origin_kind,
     const String& last_event_id,
     EventTarget* source,
     Vector<MessagePortChannel> channels,
@@ -150,6 +154,8 @@ MessageEvent::MessageEvent(
       data_type_(kDataTypeSerializedScriptValue),
       data_as_serialized_script_value_(
           SerializedScriptValue::Unpack(std::move(data))),
+      data_is_from_untrusted_source_(message_origin_kind ==
+                                     kMessageIsCrossOrigin),
       origin_(origin),
       last_event_id_(last_event_id),
       source_(source),
@@ -245,6 +251,7 @@ void MessageEvent::initMessageEvent(
     bool cancelable,
     scoped_refptr<SerializedScriptValue> data,
     const String& origin,
+    MessageOriginKind message_origin_kind,
     const String& last_event_id,
     EventTarget* source,
     MessagePortArray* ports,
@@ -259,6 +266,7 @@ void MessageEvent::initMessageEvent(
   data_as_serialized_script_value_ =
       SerializedScriptValue::Unpack(std::move(data));
   is_data_dirty_ = true;
+  data_is_from_untrusted_source_ = message_origin_kind == kMessageIsCrossOrigin;
   origin_ = origin;
   last_event_id_ = last_event_id;
   source_ = source;
@@ -321,6 +329,10 @@ ScriptValue MessageEvent::data(ScriptState* script_state) {
         MessagePortArray message_ports = ports();
         SerializedScriptValue::DeserializeOptions options;
         options.message_ports = &message_ports;
+        options.slow_mode =
+            RuntimeEnabledFeatures::
+                MaskDeserializationTimeForCrossOriginMessagesEnabled() &&
+            data_is_from_untrusted_source_;
         value = data_as_serialized_script_value_->Deserialize(isolate, options);
       } else {
         value = v8::Null(isolate);
@@ -342,6 +354,11 @@ ScriptValue MessageEvent::data(ScriptState* script_state) {
   }
 
   return ScriptValue(isolate, value);
+}
+
+const String& MessageEvent::originForBindings() {
+  data_is_from_untrusted_source_ = false;
+  return origin();
 }
 
 const AtomicString& MessageEvent::InterfaceName() const {
