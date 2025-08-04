@@ -2301,6 +2301,10 @@
       status: "stable",
     },
     {
+      name: "MaskDeserializationTimeForCrossOriginMessages",
+      status: "experimental",
+    },
+    {
       // crbug.com/486880
       name: "MaskingGraphemeClusters",
       status: "test",

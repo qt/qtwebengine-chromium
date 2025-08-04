@@ -13792,6 +13792,7 @@ Called by update_use_counter_feature_enum.py.-->
   <int value="4779" label="UserFeatureNgHydration"/>
   <int value="4780" label="CapturedSurfaceControl"/>
   <int value="4793" label="AttributionReportingCrossAppWebSupportHeader"/>
+  <int value="5625" label="SlowDeserialization"/>
 </enum>
 
 <enum name="FeaturePolicyFeature">
