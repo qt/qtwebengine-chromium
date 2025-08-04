@@ -1995,9 +1995,12 @@ void Request::CompleteRequestInternal(
     return;
   }
   CleanUp();
-  auto* page_data = GetPageData(render_frame_host().GetPage());
-  CHECK_EQ(page_data->PendingWebIdentityRequest(), this);
-  page_data->SetPendingWebIdentityRequest(nullptr);
+  if (static_cast<RenderFrameHostImpl*>(&render_frame_host())
+          ->has_document_associated_data()) {
+    auto* page_data = GetPageData(render_frame_host().GetPage());
+    CHECK_EQ(page_data->PendingWebIdentityRequest(), this);
+    page_data->SetPendingWebIdentityRequest(nullptr);
+  }
 
   blink::mojom::TokenErrorPtr error;
   if (token_error) {
