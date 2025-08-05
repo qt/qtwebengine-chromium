@@ -36,10 +36,6 @@ namespace errors = manifest_errors;
 
 namespace {
 
-BASE_FEATURE(kValidateBackgroundScriptMimeType,
-             "ValidateBackgroundScriptMimeType",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 const char kBackground[] = "background";
 
 static base::LazyInstance<BackgroundInfo>::DestructorAtExit
@@ -173,12 +169,9 @@ bool BackgroundInfo::LoadBackgroundScripts(Extension* extension,
     const std::string& background_script = background_scripts[i].GetString();
 
     std::string mime_type;
-    // TODO(https://crbug.com/40059598): Remove this if-check and always
-    // validate the mime type in M139.
-    if (base::FeatureList::IsEnabled(kValidateBackgroundScriptMimeType) &&
-        (!net::GetWellKnownMimeTypeFromFile(
-             base::FilePath::FromUTF8Unsafe(background_script), &mime_type) ||
-         !blink::IsSupportedJavascriptMimeType(mime_type))) {
+    if (!net::GetWellKnownMimeTypeFromFile(base::FilePath::FromUTF8Unsafe(background_script),
+                                           &mime_type) ||
+         !blink::IsSupportedJavascriptMimeType(mime_type)) {
       // Issue a warning and ignore this file. This is a warning and not a
       // hard-error to preserve both backwards compatibility and potential
       // future-compatibility if mime types change.
