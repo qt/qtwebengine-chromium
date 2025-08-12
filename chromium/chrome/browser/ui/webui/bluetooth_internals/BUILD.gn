@@ -29,6 +29,13 @@ source_set("bluetooth_internals") {
     "//ui/webui",
   ]
 
+  if (is_qtwebengine) {
+    public_deps -= [ "//chrome/browser:browser_public_dependencies" ]
+    deps -= [
+      "//chrome/browser/profiles:profile",
+      "//chrome/common",
+    ]
+  }
   if (is_chromeos) {
     deps += [
       "//ash/public/cpp",
