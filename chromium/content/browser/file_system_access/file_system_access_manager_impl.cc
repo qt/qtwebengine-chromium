@@ -122,7 +122,12 @@ void ShowFilePickerOnUIThread(const url::Origin& requesting_origin,
 
   FileSystemChooser::ScopedObjects scoped_objects(
       // Drop fullscreen mode so that the user sees the URL bar.
-      /*fullscreen_block=*/web_contents->ForSecurityDropFullscreen());
+      /*fullscreen_block=*/web_contents->ForSecurityDropFullscreen(),
+      // Maybe tuck the pip window so that it would not block the file picker
+      // UI.
+      /*pip_tucker=*/GetContentClient()
+          ->browser()
+          ->MaybeGetScopedPictureInPictureTucker(web_contents));
 
   FileSystemChooser::CreateAndShow(web_contents, options, std::move(callback),
                                    std::move(scoped_objects));
