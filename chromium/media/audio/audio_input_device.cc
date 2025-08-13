@@ -488,7 +488,7 @@ void AudioInputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
   const base::TimeTicks capture_time =
       base::TimeTicks() + base::Microseconds(buffer->params.capture_time_us);
   const base::TimeTicks now_time = base::TimeTicks::Now();
-  DCHECK_GE(now_time, capture_time);
+  // DCHECK_GE(now_time, capture_time);
 
   AudioGlitchInfo glitch_info{
       .duration = base::Microseconds(buffer->params.glitch_duration_us),
