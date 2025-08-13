@@ -25,6 +25,12 @@ ExtensionURLLoaderThrottle::ExtensionURLLoaderThrottle(
 
 ExtensionURLLoaderThrottle::~ExtensionURLLoaderThrottle() = default;
 
+void ExtensionURLLoaderThrottle::OnExtensionThrottleManagerDestruct(
+    ExtensionThrottleManager* manager) {
+  manager_observation_.Reset();
+  manager_ = nullptr;
+}
+
 void ExtensionURLLoaderThrottle::WillStartRequest(
     network::ResourceRequest* request,
     bool* defer) {
