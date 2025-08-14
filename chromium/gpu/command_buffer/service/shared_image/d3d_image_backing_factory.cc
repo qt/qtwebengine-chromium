@@ -188,9 +188,10 @@ D3DImageBackingFactory::D3DImageBackingFactory(
       use_update_subresource1_(UseUpdateSubresource1(workarounds)) {
   CHECK(angle_d3d11_device_);
 
-  UINT format_support;
-  HRESULT hr =
-      d3d11_device_->CheckFormatSupport(DXGI_FORMAT_NV12, &format_support);
+  UINT format_support = 0;
+  HRESULT hr = E_FAIL;
+  if (d3d11_device_)
+      hr = d3d11_device_->CheckFormatSupport(DXGI_FORMAT_NV12, &format_support);
   constexpr auto kRequiredUsage = D3D11_FORMAT_SUPPORT_TEXTURE2D |
                                   D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
                                   D3D11_FORMAT_SUPPORT_RENDER_TARGET;
