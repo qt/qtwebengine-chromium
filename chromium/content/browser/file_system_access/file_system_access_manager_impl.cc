@@ -121,13 +121,13 @@ void ShowFilePickerOnUIThread(const url::Origin& requesting_origin,
     return;
   }
 
-  // Drop fullscreen mode so that the user sees the URL bar.
-  base::ScopedClosureRunner fullscreen_block =
-      web_contents->ForSecurityDropFullscreen(
-          /*display_id=*/display::kInvalidDisplayId);
+  FileSystemChooser::ScopedObjects scoped_objects(
+      // Drop fullscreen mode so that the user sees the URL bar.
+      /*fullscreen_block=*/web_contents->ForSecurityDropFullscreen(
+          display::kInvalidDisplayId));
 
   FileSystemChooser::CreateAndShow(web_contents, options, std::move(callback),
-                                   std::move(fullscreen_block));
+                                   std::move(scoped_objects));
 }
 
 // Called after creating a file that was picked by a save file picker. If

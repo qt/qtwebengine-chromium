@@ -231,12 +231,22 @@ void AbortedCallback(FileSystemChooser::ResultCallback callback) {
 }
 }  // namespace
 
+FileSystemChooser::ScopedObjects::ScopedObjects() = default;
+FileSystemChooser::ScopedObjects::~ScopedObjects() = default;
+FileSystemChooser::ScopedObjects::ScopedObjects(ScopedObjects&&) = default;
+FileSystemChooser::ScopedObjects& FileSystemChooser::ScopedObjects::operator=(
+    ScopedObjects&&) = default;
+
+FileSystemChooser::ScopedObjects::ScopedObjects(
+    base::ScopedClosureRunner&& fullscreen_block)
+    : fullscreen_block(std::move(fullscreen_block)) {}
+
 // static
 void FileSystemChooser::CreateAndShow(
     WebContents* web_contents,
     const Options& options,
     ResultCallback callback,
-    base::ScopedClosureRunner fullscreen_block) {
+    FileSystemChooser::ScopedObjects scoped_objects) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (web_contents->GetVisibility() == Visibility::HIDDEN) {
     AbortedCallback(std::move(callback));
@@ -244,7 +254,8 @@ void FileSystemChooser::CreateAndShow(
   }
   // `listener` deletes itself.
   auto* listener = new FileSystemChooser(options.type(), std::move(callback),
-                                         std::move(fullscreen_block), web_contents);
+                                         std::move(scoped_objects),
+                                         web_contents);
   listener->dialog_ = ui::SelectFileDialog::Create(
       listener,
       GetContentClient()->browser()->CreateSelectFilePolicy(web_contents));
@@ -308,12 +319,13 @@ bool FileSystemChooser::IsShellIntegratedExtension(
 
 FileSystemChooser::FileSystemChooser(ui::SelectFileDialog::Type type,
                                      ResultCallback callback,
-                                     base::ScopedClosureRunner fullscreen_block,
+                                     FileSystemChooser::ScopedObjects scoped_objects,
                                      WebContents* web_contents)
     : WebContentsObserver(web_contents),
       callback_(std::move(callback)),
       type_(ValidateType(type)),
-      fullscreen_block_(std::move(fullscreen_block)) {}
+      scoped_objects_(std::move(scoped_objects)) {}
+
 
 FileSystemChooser::~FileSystemChooser() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
