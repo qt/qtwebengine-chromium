@@ -279,16 +279,26 @@ base::FilePath FileSystemChooser::Options::ResolveSuggestedNameExtension(
   return suggested_name;
 }
 
+FileSystemChooser::ScopedObjects::ScopedObjects() = default;
+FileSystemChooser::ScopedObjects::~ScopedObjects() = default;
+FileSystemChooser::ScopedObjects::ScopedObjects(ScopedObjects&&) = default;
+FileSystemChooser::ScopedObjects& FileSystemChooser::ScopedObjects::operator=(
+    ScopedObjects&&) = default;
+
+FileSystemChooser::ScopedObjects::ScopedObjects(
+    base::ScopedClosureRunner&& fullscreen_block)
+    : fullscreen_block(std::move(fullscreen_block)) {}
+
 // static
 void FileSystemChooser::CreateAndShow(
     WebContents* web_contents,
     const Options& options,
     ResultCallback callback,
-    base::ScopedClosureRunner fullscreen_block) {
+    FileSystemChooser::ScopedObjects scoped_objects) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // `listener` deletes itself.
   auto* listener = new FileSystemChooser(options.type(), std::move(callback),
-                                         std::move(fullscreen_block));
+                                         std::move(scoped_objects));
   listener->dialog_ = ui::SelectFileDialog::Create(
       listener,
       GetContentClient()->browser()->CreateSelectFilePolicy(web_contents));
@@ -351,12 +361,13 @@ bool FileSystemChooser::IsShellIntegratedExtension(
   return false;
 }
 
-FileSystemChooser::FileSystemChooser(ui::SelectFileDialog::Type type,
-                                     ResultCallback callback,
-                                     base::ScopedClosureRunner fullscreen_block)
+FileSystemChooser::FileSystemChooser(
+    ui::SelectFileDialog::Type type,
+    ResultCallback callback,
+    FileSystemChooser::ScopedObjects scoped_objects)
     : type_(type),
       callback_(std::move(callback)),
-      fullscreen_block_(std::move(fullscreen_block)) {
+      scoped_objects_(std::move(scoped_objects)) {
   CHECK(IsValidFileDialogType(type_));
 }
 
