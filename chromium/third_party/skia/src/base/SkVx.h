@@ -742,7 +742,7 @@ SIN Vec<N,float>   fma(const Vec<N,float>& x,
 }
 
 #if !defined(SKNX_NO_SIMD) && (defined(__GNUC__) || defined(__clang__))
-#if defined(__AVX2__)
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
     SI Vec<4,float> fma(const Vec<4,float>& x, const Vec<4,float>& y, const Vec<4,float>& z) {
         return to_vec<4,float>(_mm_fmadd_ps(to_vext<4,float>(x),
                                             to_vext<4,float>(y),
@@ -754,7 +754,7 @@ SIN Vec<N,float>   fma(const Vec<N,float>& x,
                                                to_vext<8,float>(y),
                                                to_vext<8,float>(z)));
     }
-#if defined(__AVX512F__)
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SKX
     SI Vec<16,float> fma(const Vec<16,float>& x, const Vec<16,float>& y, const Vec<16,float>& z) {
         return to_vec<16,float>(_mm512_fmadd_ps(to_vext<16,float>(x),
                                                 to_vext<16,float>(y),
