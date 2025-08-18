@@ -1412,6 +1412,8 @@ jumbo_component("net") {
       "proxy_resolution/proxy_chain_util_apple.h",
       "proxy_resolution/proxy_resolver_apple.cc",
       "proxy_resolution/proxy_resolver_apple.h",
+      "socket/socket_apple.cc",
+      "socket/socket_apple.h",
     ]
   }
 
