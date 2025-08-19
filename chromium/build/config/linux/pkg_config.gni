@@ -111,7 +111,7 @@ template("pkg_config") {
         include_relativized = rebase_path(include, root_build_dir)
         cflags += [ "-isystem$include_relativized" ]
       } else {
-        cflags += [ "-isystem$include" ]
+        cflags += [ "-I$include" ]
       }
     }
 
