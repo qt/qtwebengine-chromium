@@ -2302,7 +2302,7 @@
     },
     {
       name: "MaskDeserializationTimeForCrossOriginMessages",
-      status: "experimental",
+      status: "stable",
     },
     {
       // crbug.com/486880
