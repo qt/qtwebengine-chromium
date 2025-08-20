@@ -495,7 +495,6 @@ void WasmTableObject::Fill(Isolate* isolate,
   }
 }
 
-#if V8_ENABLE_SANDBOX || DEBUG
 bool FunctionSigMatchesTable(wasm::CanonicalTypeIndex sig_id,
                              wasm::CanonicalValueType table_type) {
   DCHECK(table_type.is_object_reference());
@@ -515,7 +514,6 @@ bool FunctionSigMatchesTable(wasm::CanonicalTypeIndex sig_id,
   return wasm::GetWasmEngine()->type_canonicalizer()->IsCanonicalSubtype(
       sig_id, canonical_table_type);
 }
-#endif  // V8_ENABLE_SANDBOX || DEBUG
 
 // static
 void WasmTableObject::UpdateDispatchTable(
