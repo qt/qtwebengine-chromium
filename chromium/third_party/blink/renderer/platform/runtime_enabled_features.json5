@@ -2673,7 +2673,7 @@
     },
     {
       name: "MaskDeserializationTimeForCrossOriginMessages",
-      status: "experimental",
+      status: "stable",
     },
     {
       name:"MeasureMemory",
