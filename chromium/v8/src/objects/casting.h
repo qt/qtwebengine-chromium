@@ -151,6 +151,20 @@ concept HasCastImplementation = requires(Holder<From> value) {
   { UncheckedCast<To>(value) } -> std::same_as<Holder<To>>;
 };
 
+// `CheckedCast<T>(value)` casts `value` to a tagged object of type `T`,
+// with a always-on dynamic type check ensuring that `value` is a tagged object
+// of type `T`. Null-valued holders are allowed.
+template <typename To, typename From, template <typename> class Holder>
+  requires HasCastImplementation<Holder, To, From>
+inline Holder<To> CheckedCast(
+    Holder<From> value,
+    const v8::SourceLocation& loc = INIT_SOURCE_LOCATION_IN_DEBUG) {
+  DCHECK_WITH_MSG_AND_LOC(NullOrIs<To>(value),
+                          V8_PRETTY_FUNCTION_VALUE_OR("Cast type check"), loc);
+  CHECK(NullOrIs<To>(value));
+  return UncheckedCast<To>(value);
+}
+
 // `Cast<T>(value)` casts `value` to a tagged object of type `T`, with a debug
 // check that `value` is a tagged object of type `T`. Null-valued holders are
 // allowed.
