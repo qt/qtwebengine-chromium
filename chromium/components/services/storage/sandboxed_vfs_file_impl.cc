@@ -9,6 +9,8 @@
 
 #include "components/services/storage/sandboxed_vfs_file_impl.h"
 
+#include <cstring>
+
 #include "base/notreached.h"
 #include "sql/sandboxed_vfs.h"
 
