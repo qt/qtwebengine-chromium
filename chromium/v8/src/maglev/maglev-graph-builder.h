@@ -265,8 +265,9 @@ class MaglevGraphBuilder {
       int inlining_id = SourcePosition::kNotInlined,
       MaglevGraphBuilder* parent = nullptr);
 
-  void Build() {
+  bool Build() {
     DCHECK(!is_inline());
+    if (should_abort_compilation_) return false;
 
     StartPrologue();
     for (int i = 0; i < parameter_count(); i++) {
@@ -294,6 +295,7 @@ class MaglevGraphBuilder {
     in_prologue_ = false;
 
     BuildBody();
+    return !should_abort_compilation_;
   }
 
   ReduceResult BuildInlined(ValueNode* context, ValueNode* function,
@@ -2273,6 +2275,8 @@ class MaglevGraphBuilder {
     return bytecode().length();
   }
 
+  bool should_abort_compilation() const { return should_abort_compilation_; }
+
   LocalIsolate* const local_isolate_;
   MaglevCompilationUnit* const compilation_unit_;
   MaglevGraphBuilder* const parent_;
@@ -2332,6 +2336,8 @@ class MaglevGraphBuilder {
   base::Optional<base::Vector<ValueNode*>> inlined_arguments_;
   BytecodeOffset caller_bytecode_offset_;
   ValueNode* inlined_new_target_ = nullptr;
+
+  bool should_abort_compilation_ = false;
 
   // Bytecode offset at which compilation should start.
   int entrypoint_;

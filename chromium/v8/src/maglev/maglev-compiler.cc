@@ -491,7 +491,7 @@ bool MaglevCompiler::Compile(LocalIsolate* local_isolate,
     {
       TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.compile"),
                    "V8.Maglev.GraphBuilding");
-      graph_builder.Build();
+      if (!graph_builder.Build()) return false;
 
       if (v8_flags.print_maglev_graphs) {
         std::cout << "\nAfter graph buiding" << std::endl;
