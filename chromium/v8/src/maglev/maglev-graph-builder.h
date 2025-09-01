@@ -186,8 +186,9 @@ class MaglevGraphBuilder {
       int inlining_id = SourcePosition::kNotInlined,
       MaglevGraphBuilder* parent = nullptr);
 
-  void Build() {
+  bool Build() {
     DCHECK(!is_inline());
+    if (should_abort_compilation_) return false;
 
     StartPrologue();
     for (int i = 0; i < parameter_count(); i++) {
@@ -226,6 +227,7 @@ class MaglevGraphBuilder {
     }
 
     BuildBody();
+    return !should_abort_compilation_;
   }
 
   ReduceResult BuildInlined(ValueNode* context, ValueNode* function,
@@ -364,6 +366,8 @@ class MaglevGraphBuilder {
     return v8_flags.maglev_speculative_hoist_phi_untagging ||
            v8_flags.maglev_licm;
   }
+
+  bool should_abort_compilation() const { return should_abort_compilation_; }
 
   bool TopLevelFunctionPassMaglevPrintFilter() {
     if (parent_) {
@@ -2961,8 +2965,14 @@ class MaglevGraphBuilder {
     DCHECK_IMPLIES(merge_states_[offset],
                    merge_states_[offset]->predecessor_count() ==
                        predecessor_count_[offset] + diff);
-    predecessor_count_[offset] += diff;
+    uint32_t updated_pred_count = predecessor_count_[offset] + diff;
+    if (updated_pred_count > NodeBase::kMaxInputs) {
+      should_abort_compilation_ = true;
+      return;
+    }
+    predecessor_count_[offset] = updated_pred_count;
   }
+
   uint32_t predecessor_count(uint32_t offset) {
     DCHECK_LE(offset, bytecode().length());
     DCHECK_IMPLIES(!decremented_predecessor_offsets_.empty(),
@@ -3037,6 +3047,8 @@ class MaglevGraphBuilder {
   BytecodeOffset caller_bytecode_offset_;
   bool caller_is_inside_loop_;
   ValueNode* inlined_new_target_ = nullptr;
+
+  bool should_abort_compilation_ = false;
 
   // Bytecode offset at which compilation should start.
   int entrypoint_;
