@@ -15,6 +15,7 @@
 #include "src/base/vector.h"
 #include "src/builtins/builtins-constructor.h"
 #include "src/builtins/builtins.h"
+#include "src/codegen/bailout-reason.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/common/assert-scope.h"
@@ -7145,6 +7146,11 @@ ReduceResult MaglevGraphBuilder::BuildInlined(ValueNode* context,
   // can manually set up the arguments.
   DCHECK_NOT_NULL(current_block_);
 
+  if (should_abort_compilation_) {
+    // We will abort the compilation at the end.
+    return BuildAbort(AbortReason::kMaglevGraphBuildingFailed);
+  }
+
   // Set receiver.
   ValueNode* receiver =
       GetConvertReceiver(compilation_unit_->shared_function_info(), args);
@@ -7362,7 +7368,7 @@ ReduceResult MaglevGraphBuilder::TryBuildInlinedCall(
   ReduceResult result =
       inner_graph_builder.BuildInlined(context, function, new_target, args);
 
-  // Prapagate back (or reset) builder state.
+  // Propagate back (or reset) builder state.
   unobserved_context_slot_stores_ =
       inner_graph_builder.unobserved_context_slot_stores_;
   latest_checkpointed_frame_.reset();

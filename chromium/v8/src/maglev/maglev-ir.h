@@ -1708,9 +1708,9 @@ class NodeBase : public ZoneObject {
   template <class T, int size>
   using NextBitField = ReservedField::Next<T, size>;
 
+ public:
   static constexpr int kMaxInputs = InputCountField::kMax;
 
- public:
   template <class T>
   static constexpr Opcode opcode_of = detail::opcode_of_helper<T>::value;
 
