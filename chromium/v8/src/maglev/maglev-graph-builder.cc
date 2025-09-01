@@ -15,6 +15,7 @@
 #include "src/base/vector.h"
 #include "src/builtins/builtins-constructor.h"
 #include "src/builtins/builtins.h"
+#include "src/codegen/bailout-reason.h"
 #include "src/codegen/cpu-features.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/common/assert-scope.h"
@@ -7853,6 +7854,11 @@ ReduceResult MaglevGraphBuilder::BuildInlined(ValueNode* context,
                                               ValueNode* new_target,
                                               const CallArguments& args) {
   DCHECK(is_inline());
+
+  if (should_abort_compilation_) {
+    // We will abort the compilation at the end.
+    return BuildAbort(AbortReason::kMaglevGraphBuildingFailed);
+  }
 
   // Manually create the prologue of the inner function graph, so that we
   // can manually set up the arguments.
