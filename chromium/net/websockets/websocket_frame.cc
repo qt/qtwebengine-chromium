@@ -52,7 +52,7 @@ using PackedMaskType = size_t;
 #endif  // defined(COMPILER_GCC) &&
         // (defined(ARCH_CPU_X86_FAMILY) || defined(ARCH_CPU_ARM_FAMILY))
 
-constexpr size_t kWebSocketCloseCodeLength = 2;
+constexpr size_t kWebSocketCloseCodeLengthWF = 2;
 
 constexpr uint8_t kFinalBitWF = 0x80;
 constexpr uint8_t kReserved1BitWF = 0x40;
@@ -293,7 +293,7 @@ ParseCloseFrameResult ParseCloseFrame(base::span<const char> payload) {
   }
 
   const base::span<const char> reason_span =
-      payload.subspan(kWebSocketCloseCodeLength);
+      payload.subspan(kWebSocketCloseCodeLengthWF);
   const auto reason = base::as_string_view(reason_span);
 
   if (base::IsStringUTF8AllowingNoncharacters(reason)) {
